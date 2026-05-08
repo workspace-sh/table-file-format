@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyGroup } from "../core/index.js";
 import type { Field, Row, TableSchema, View } from "../core/types.js";
@@ -213,6 +214,33 @@ const styles = css.create({
     },
   },
 
+  // Editable-cell input
+  cellInput: {
+    width: "100%",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    fontSize: 13,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderRadius: 4,
+    borderColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1e",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+    outlineStyle: "none",
+  },
+  cellEditable: {
+    cursor: "text",
+  },
+
   // "doc" badge for rows with a markdown body
   bodyBadge: {
     paddingHorizontal: 6,
@@ -275,11 +303,127 @@ function CellValue({ field, value }: { field: Field | undefined; value: unknown 
   return <html.span>{formatValue(value)}</html.span>;
 }
 
+function coerceValue(field: Field | undefined, raw: string): unknown {
+  if (!field) return raw;
+  switch (field.type) {
+    case "integer": {
+      const n = Number(raw);
+      return Number.isInteger(n) ? n : raw === "" ? null : raw;
+    }
+    case "number": {
+      const n = Number(raw);
+      return Number.isNaN(n) ? (raw === "" ? null : raw) : n;
+    }
+    case "boolean":
+      return raw === "true";
+    default:
+      return raw;
+  }
+}
+
+interface EditableCellProps {
+  field: Field | undefined;
+  value: unknown;
+  onCommit: (next: unknown) => void;
+}
+
+function EditableCell({ field, value, onCommit }: EditableCellProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>("");
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      const el = inputRef.current;
+      if (el && "select" in el && typeof el.select === "function") el.select();
+      else el?.focus?.();
+    }
+  }, [editing]);
+
+  const startEdit = () => {
+    setDraft(value === undefined || value === null ? "" : String(value));
+    setEditing(true);
+  };
+
+  const commit = (raw: string) => {
+    setEditing(false);
+    const next = coerceValue(field, raw);
+    if (next !== value) onCommit(next);
+  };
+
+  const cancel = () => setEditing(false);
+
+  // Boolean: toggle on click, no draft state
+  if (field?.type === "boolean") {
+    return (
+      <html.input
+        type="checkbox"
+        checked={value === true}
+        onChange={(e: { target: { checked: boolean } }) => onCommit(e.target.checked)}
+      />
+    );
+  }
+
+  // Enum: select dropdown
+  const enumValues = field?.constraints?.enum;
+  if (enumValues && enumValues.length > 0) {
+    if (!editing) {
+      return (
+        <html.span onClick={startEdit} style={styles.cellEditable}>
+          <CellValue field={field} value={value} />
+        </html.span>
+      );
+    }
+    return (
+      <html.select
+        ref={inputRef as React.Ref<HTMLSelectElement>}
+        value={typeof value === "string" ? value : ""}
+        onChange={(e: { target: { value: string } }) => commit(e.target.value)}
+        onBlur={cancel}
+        style={styles.cellInput}
+      >
+        <html.option value="">—</html.option>
+        {enumValues.map((opt) => (
+          <html.option key={opt} value={opt}>
+            {opt}
+          </html.option>
+        ))}
+      </html.select>
+    );
+  }
+
+  // Text/number/integer: text input on click
+  if (!editing) {
+    return (
+      <html.span onClick={startEdit} style={styles.cellEditable}>
+        <CellValue field={field} value={value} />
+      </html.span>
+    );
+  }
+
+  const inputType = field?.type === "integer" || field?.type === "number" ? "number" : "text";
+  return (
+    <html.input
+      ref={inputRef as React.Ref<HTMLInputElement>}
+      type={inputType}
+      value={draft}
+      onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
+      onBlur={() => commit(draft)}
+      onKeyDown={(e: { key: string }) => {
+        if (e.key === "Enter") commit(draft);
+        else if (e.key === "Escape") cancel();
+      }}
+      style={styles.cellInput}
+    />
+  );
+}
+
 interface ViewProps {
   view: View;
   rows: Row[];
   schema: TableSchema;
   bodies?: Record<string, string>;
+  onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -296,7 +440,7 @@ function BodyBadge() {
   return <html.span style={styles.bodyBadge}>doc</html.span>;
 }
 
-export function TableView({ view, rows, schema, bodies }: ViewProps) {
+export function TableView({ view, rows, schema, bodies, onUpdateRow }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
@@ -317,7 +461,15 @@ export function TableView({ view, rows, schema, bodies }: ViewProps) {
         >
           {fields.map((name) => (
             <html.span key={name} style={styles.tableCell}>
-              <CellValue field={fieldMap.get(name)} value={row[name]} />
+              {onUpdateRow ? (
+                <EditableCell
+                  field={fieldMap.get(name)}
+                  value={row[name]}
+                  onCommit={(next) => onUpdateRow(row.id, name, next)}
+                />
+              ) : (
+                <CellValue field={fieldMap.get(name)} value={row[name]} />
+              )}
               {name === titleField && bodies?.[row.id] ? <BodyBadge /> : null}
             </html.span>
           ))}
