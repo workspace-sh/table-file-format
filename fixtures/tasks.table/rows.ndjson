@@ -1,0 +1,8 @@
+{"id":"t1","title":"Land .table extension","project":"p2","status":"done","priority":1,"assignee":"leslie"}
+{"id":"t2","title":"Wire RSD + StyleX","project":"p2","status":"doing","priority":2,"assignee":"leslie"}
+{"id":"t3","title":"Fixtures + tests","project":"p2","status":"doing","priority":3,"assignee":"claude"}
+{"id":"t4","title":"Settings panel","project":"p1","status":"todo","priority":2,"assignee":"leslie"}
+{"id":"t5","title":"Markdown editor polish","project":"p1","status":"doing","priority":1,"assignee":"sam"}
+{"id":"t6","title":"App icon","project":"p3","status":"todo","priority":3,"assignee":"sam"}
+{"id":"t7","title":"Sync conflict resolution","project":"p5","status":"todo","priority":4,"assignee":"claude"}
+{"id":"t8","title":"OG images","project":"p7","status":"done","priority":5,"assignee":"sam"}

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "v1",
+    "name": "All tasks by priority",
+    "layout": "table",
+    "sort": [{ "field": "priority", "direction": "asc" }]
+  },
+  {
+    "id": "v2",
+    "name": "Kanban by status",
+    "layout": "kanban",
+    "kanban_field": "status"
+  }
+]
