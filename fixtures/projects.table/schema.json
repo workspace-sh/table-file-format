@@ -5,7 +5,7 @@
     { "name": "owner", "type": "string" },
     { "name": "budget", "type": "number" },
     { "name": "launched", "type": "date" },
-    { "name": "summary", "type": "string" }
+    { "name": "summary", "type": "string", "format": "markdown" }
   ],
   "primaryKey": ["title"],
   "schema-version": 1

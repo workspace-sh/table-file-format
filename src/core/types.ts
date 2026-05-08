@@ -117,5 +117,11 @@ export interface ParsedTable {
   rows: Row[];
   views: View[];
   meta: TableMeta;
+  /**
+   * Optional long-form markdown bodies, keyed by row.id.
+   * Each entry corresponds to a `bodies/{id}.md` file.
+   * Rows without a body simply have no entry here.
+   */
+  bodies?: Record<string, string>;
   path: string;
 }
