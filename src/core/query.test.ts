@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFilters, applySort, applyGroup, applyView } from "./query.js";
+import { applyFilters, applySort, applyGroup, applyView, searchRows } from "./query.js";
 import type { ParsedTable, Row, TableSchema, View } from "./types.js";
 
 const schema: TableSchema = {
@@ -85,4 +85,54 @@ test("applyView: filter then sort", () => {
   assert.equal(result.length, 3);
   assert.equal(result[0]!.id, "r3"); // priority 2
   assert.equal(result[result.length - 1]!.id, "r4"); // null last
+});
+
+test("searchRows: empty/whitespace query returns all rows unchanged", () => {
+  assert.equal(searchRows(rows, "").length, rows.length);
+  assert.equal(searchRows(rows, "   ").length, rows.length);
+});
+
+test("searchRows: case-insensitive substring match across string fields", () => {
+  const docs: Row[] = [
+    { id: "r1", title: "Workspace v1", status: "active" },
+    { id: "r2", title: "Sync engine", status: "on-hold" },
+    { id: "r3", title: "Brand redesign", status: "done" },
+  ];
+  const hits = searchRows(docs, "WORK");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.id, "r1");
+});
+
+test("searchRows: matches against system id", () => {
+  const docs: Row[] = [
+    { id: "p42", title: "x" },
+    { id: "p99", title: "y" },
+  ];
+  const hits = searchRows(docs, "42");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.id, "p42");
+});
+
+test("searchRows: schema restricts the searched fields to string-y types", () => {
+  // Without schema, all string-typed values are searched, including 'priority'
+  // serialised numbers — but priority is integer, not string, so that's fine.
+  // With schema, we ONLY look at fields the schema declares as string-y.
+  const docs: Row[] = [
+    { id: "r1", title: "alpha", status: "done", priority: 1 },
+    { id: "r2", title: "beta", status: "todo", priority: 9 },
+  ];
+  // "9" appears as a number in priority; should NOT match (numbers aren't searched)
+  const hits = searchRows(docs, "9", { schema });
+  assert.equal(hits.length, 0);
+});
+
+test("searchRows: includes long-form bodies when provided", () => {
+  const docs: Row[] = [
+    { id: "r1", title: "Plain title" },
+    { id: "r2", title: "Other" },
+  ];
+  const bodies = { r1: "# Heading\n\nBody mentions a unique-token-xyz." };
+  const hits = searchRows(docs, "unique-token-xyz", { bodies });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.id, "r1");
 });

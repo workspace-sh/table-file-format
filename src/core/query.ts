@@ -13,6 +13,44 @@ export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   return rows.filter((row) => filters.every((f) => matchesFilter(row, f)));
 }
 
+/**
+ * Browser-safe text search: case-insensitive substring match over every
+ * string-typed field plus the system `id`. Does not search nested objects
+ * or arrays. Optional `bodies` lets the search reach into long-form
+ * markdown content too.
+ *
+ * This is the spec-mandated fallback path for readers without
+ * `index.sqlite` (or with a stale one). The Node-side FTS5-backed search
+ * via `queryIndex` will be more performant for large tables; this scans
+ * linearly.
+ */
+export function searchRows(
+  rows: Row[],
+  query: string,
+  options?: { schema?: TableSchema; bodies?: Record<string, string> },
+): Row[] {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return rows;
+  const needle = trimmed.toLowerCase();
+  const stringFields = options?.schema
+    ? options.schema.fields
+        .filter((f) => f.type === "string" || f.type === "date" || f.type === "datetime")
+        .map((f) => f.name)
+    : null;
+
+  return rows.filter((row) => {
+    if (typeof row.id === "string" && row.id.toLowerCase().includes(needle)) return true;
+    const fieldNames = stringFields ?? Object.keys(row);
+    for (const name of fieldNames) {
+      const v = row[name];
+      if (typeof v === "string" && v.toLowerCase().includes(needle)) return true;
+    }
+    const body = options?.bodies?.[row.id];
+    if (typeof body === "string" && body.toLowerCase().includes(needle)) return true;
+    return false;
+  });
+}
+
 export function applySort(rows: Row[], sorts: ViewSort[], schema: TableSchema): Row[] {
   if (!sorts.length) return rows;
   const fieldsByName = new Map(schema.fields.map((f) => [f.name, f]));
