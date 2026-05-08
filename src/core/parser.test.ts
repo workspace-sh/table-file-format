@@ -38,3 +38,15 @@ test("parseTable throws on row missing system id", async () => {
     await parseTable(resolve(here, "..", "..", "fixtures-broken-DOES-NOT-EXIST"));
   });
 });
+
+test("parseTable reads bodies/{id}.md and keys them by row id", async () => {
+  const t = await parseTable(resolve(fixturesDir, "projects.table"));
+  assert.ok(t.bodies, "bodies map should be present when bodies/ exists");
+  assert.ok("p2" in t.bodies!, "p2 should have a body in fixtures");
+  assert.match(t.bodies!.p2!, /Table file format spike/);
+});
+
+test("parseTable returns no bodies field when bodies/ is absent", async () => {
+  const t = await parseTable(resolve(fixturesDir, "tasks.table"));
+  assert.equal(t.bodies, undefined);
+});

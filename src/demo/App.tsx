@@ -83,23 +83,28 @@ export function App() {
             </html.span>
           </html.div>
         </html.div>
-        {renderView(view, rows, table.schema)}
+        {renderView(view, rows, table.schema, table.bodies)}
       </html.div>
     </html.div>
   );
 }
 
-function renderView(view: View, rows: Row[], schema: TableSchema) {
+function renderView(
+  view: View,
+  rows: Row[],
+  schema: TableSchema,
+  bodies: Record<string, string> | undefined,
+) {
   switch (view.layout) {
     case "kanban":
-      return <KanbanView view={view} rows={rows} schema={schema} />;
+      return <KanbanView view={view} rows={rows} schema={schema} bodies={bodies} />;
     case "gallery":
-      return <GalleryView view={view} rows={rows} schema={schema} />;
+      return <GalleryView view={view} rows={rows} schema={schema} bodies={bodies} />;
     case "list":
-      return <ListView view={view} rows={rows} schema={schema} />;
+      return <ListView view={view} rows={rows} schema={schema} bodies={bodies} />;
     case "calendar":
     case "table":
     default:
-      return <TableView view={view} rows={rows} schema={schema} />;
+      return <TableView view={view} rows={rows} schema={schema} bodies={bodies} />;
   }
 }

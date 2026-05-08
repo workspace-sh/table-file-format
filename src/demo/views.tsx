@@ -212,6 +212,44 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
   },
+
+  // "doc" badge for rows with a markdown body
+  bodyBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginLeft: 6,
+    borderRadius: 4,
+    fontSize: 9,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    backgroundColor: {
+      default: "#dbeafe",
+      "@media (prefers-color-scheme: dark)": "#1e293b",
+    },
+    color: {
+      default: "#1e40af",
+      "@media (prefers-color-scheme: dark)": "#93c5fd",
+    },
+  },
+
+  // Body excerpt (gallery cards)
+  bodyExcerpt: {
+    fontSize: 11,
+    lineHeight: 1.45,
+    color: {
+      default: "#3c3c43",
+      "@media (prefers-color-scheme: dark)": "#a1a1aa",
+    },
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    marginTop: 4,
+  },
 });
 
 function fieldsByName(schema: TableSchema): Map<string, Field> {
@@ -241,11 +279,27 @@ interface ViewProps {
   view: View;
   rows: Row[];
   schema: TableSchema;
+  bodies?: Record<string, string>;
 }
 
-export function TableView({ view, rows, schema }: ViewProps) {
+function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
+  if (!body) return undefined;
+  const stripped = body
+    .replace(/^#+\s+/gm, "") // drop leading markdown heading hashes
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length <= max) return stripped;
+  return stripped.slice(0, max).replace(/\s+\S*$/, "") + "…";
+}
+
+function BodyBadge() {
+  return <html.span style={styles.bodyBadge}>doc</html.span>;
+}
+
+export function TableView({ view, rows, schema, bodies }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
+  const titleField = fields[0];
 
   return (
     <html.div style={styles.table}>
@@ -264,6 +318,7 @@ export function TableView({ view, rows, schema }: ViewProps) {
           {fields.map((name) => (
             <html.span key={name} style={styles.tableCell}>
               <CellValue field={fieldMap.get(name)} value={row[name]} />
+              {name === titleField && bodies?.[row.id] ? <BodyBadge /> : null}
             </html.span>
           ))}
         </html.div>
@@ -295,28 +350,32 @@ export function KanbanView({ view, rows, schema }: ViewProps) {
   );
 }
 
-export function GalleryView({ view, rows, schema }: ViewProps) {
+export function GalleryView({ view, rows, schema, bodies }: ViewProps) {
   const galleryField = view.gallery_field;
   const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
   const fieldMap = fieldsByName(schema);
 
   return (
     <html.div style={styles.gallery}>
-      {rows.map((row) => (
-        <html.div key={row.id} style={[styles.card, styles.galleryCard]}>
-          {galleryField && (
-            <html.span style={styles.galleryCardHero}>
-              {formatValue(row[galleryField])}
-            </html.span>
-          )}
-          <CardBody row={row} fields={fields} fieldMap={fieldMap} hideTitle={!!galleryField} />
-        </html.div>
-      ))}
+      {rows.map((row) => {
+        const excerpt = bodyExcerpt(bodies?.[row.id]);
+        return (
+          <html.div key={row.id} style={[styles.card, styles.galleryCard]}>
+            {galleryField && (
+              <html.span style={styles.galleryCardHero}>
+                {formatValue(row[galleryField])}
+              </html.span>
+            )}
+            <CardBody row={row} fields={fields} fieldMap={fieldMap} hideTitle={!!galleryField} />
+            {excerpt && <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>}
+          </html.div>
+        );
+      })}
     </html.div>
   );
 }
 
-export function ListView({ view, rows, schema }: ViewProps) {
+export function ListView({ view, rows, schema, bodies }: ViewProps) {
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
   const secondaryFields = fields.slice(1);
@@ -331,6 +390,7 @@ export function ListView({ view, rows, schema }: ViewProps) {
         >
           <html.span style={styles.listItemTitle}>
             {titleField ? formatValue(row[titleField]) : ""}
+            {bodies?.[row.id] ? <BodyBadge /> : null}
           </html.span>
           {secondaryFields.map((name) => (
             <html.span key={name} style={styles.listItemSecondary}>
