@@ -1,4 +1,4 @@
-// ---- Schema (Frictionless Table Schema superset) ----
+// ---- Schema ----
 
 export type FieldType =
   | "string"
@@ -33,29 +33,20 @@ export interface Field {
   description?: string;
   format?: string;
   constraints?: FieldConstraints;
-  "x-table-attachment"?: boolean;
-  "x-table-relation"?: {
-    target: string;
+  attachment?: boolean;
+  relation?: {
+    table: string;
     field: string;
   };
-  "x-table-deprecated"?: boolean;
+  deprecated?: boolean;
   [key: string]: unknown;
-}
-
-export interface ForeignKey {
-  fields: string[];
-  reference: {
-    resource: string;
-    fields: string[];
-  };
 }
 
 export interface TableSchema {
   fields: Field[];
   primaryKey?: string[];
-  foreignKeys?: ForeignKey[];
   missingValues?: string[];
-  "x-table-schema-version"?: number;
+  "schema-version"?: number;
   [key: string]: unknown;
 }
 
@@ -107,6 +98,8 @@ export interface View {
 // ---- Meta ----
 
 export interface TableMeta {
+  format?: "table";
+  formatVersion?: number;
   title?: string;
   description?: string;
   created_at?: string;
@@ -114,6 +107,8 @@ export interface TableMeta {
   generator?: string;
   [key: string]: unknown;
 }
+
+export const TABLE_FORMAT_VERSION = 1;
 
 // ---- Parsed Table ----
 

@@ -1,0 +1,12 @@
+{
+  "fields": [
+    { "name": "title", "type": "string", "constraints": { "required": true } },
+    { "name": "status", "type": "string", "constraints": { "enum": ["planning", "active", "on-hold", "done"] } },
+    { "name": "owner", "type": "string" },
+    { "name": "budget", "type": "number" },
+    { "name": "launched", "type": "date" },
+    { "name": "summary", "type": "string" }
+  ],
+  "primaryKey": ["title"],
+  "schema-version": 1
+}
