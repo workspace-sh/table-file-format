@@ -285,12 +285,37 @@ optional packages (`@workspace/table-frictionless`,
 
 ## 11. Versioning
 
+The spec covers two version axes only — the spec itself, and the
+schema. Data versioning (edit history, undo, audit, real-time
+collaboration) is **explicitly the consuming app's concern** (see
+docs/DECISIONS.md §D14).
+
+### Spec version — `formatVersion`
+
 The spec itself is versioned by `formatVersion` in `meta.json`. The
-current value is `1`. Breaking changes bump the major; additive changes
-do not. Readers SHOULD warn on `formatVersion` higher than they
-recognise but MAY still attempt to read.
+current value is `1`. Breaking changes bump the major; additive
+changes do not. Readers SHOULD warn on `formatVersion` higher than
+they recognise but MAY still attempt to read.
+
+### Schema version — `schema-version`
 
 The schema is independently versioned via the `schema-version` field
 on `schema.json`, which the app increments when it changes the schema
 in ways the app considers significant (typically: reordering enums,
 changing constraints).
+
+### Data versioning (NOT in the format)
+
+The format does **not** specify a per-row history, edit log,
+concurrency semantics, or conflict-resolution model. Every NDJSON-row
+design choice (line-diffability, per-row bodies in separate files,
+append-friendly ordering) exists so **git is the version-control
+substrate** — any consumer that uses git gets full history, diffing,
+merging, branching, and authorship for free.
+
+Apps that need versioning beyond what git provides (in-app undo,
+"what did this row look like yesterday," audit trail, real-time
+collaboration) implement it themselves. A future optional
+`history.ndjson` extension is reserved at the directory root for a
+portable append-only edit log, but it is **not yet specified** — its
+shape will be designed when a consumer's UX actually motivates it.
