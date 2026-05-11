@@ -154,3 +154,84 @@ in chat or memory only.
 (`claude/gather-context-files-zx3sm`) had become the de-facto trunk.
 Switching to `develop` + PR-driven workflow gives the spike a clean
 review surface and makes the work auditable.
+
+## D14: Data versioning is the consuming app's concern (parked)
+
+The format does **not** specify a data-versioning model — no per-row
+history, no edit log, no concurrency/conflict semantics, no audit
+trail format. The spec covers two distinct version axes only:
+
+- **`formatVersion`** in `meta.json` — versions the spec itself
+  (currently `1`).
+- **`schema-version`** in `schema.json` — versions the user's data
+  schema (bumps on structural change: field added/deprecated, enum
+  reordered, constraints tightened).
+
+Everything else — undo/redo, "what did this cell look like
+yesterday," real-time collaboration, audit logs — is left to the
+consuming app.
+
+**Why:** every NDJSON-row design choice in `.table/` (line-diffable
+rows, per-row bodies in separate files, attachments by filename,
+append-friendly ordering) exists so **git is the version-control
+substrate**. For any consumer that uses git, the format gets full
+history, branching, merging, diffing, and authorship for free.
+Specifying a parallel in-format versioning system would reinvent what
+git already does well and would bias the format toward one app's UX
+needs over others.
+
+Where each app-level need belongs:
+
+| Need | Owner | How |
+|---|---|---|
+| Undo/redo within an editing session | App | In-memory stack of inverse edits |
+| Async collaboration (two users, different times) | Git | Line-diffable rows merge cleanly |
+| Real-time collaboration (two users, same moment) | App | CRDTs / OT — separate research area |
+| "What did this row look like yesterday?" | App or git | `git log` / `git blame` for git-backed; app-side log otherwise |
+| Audit / compliance trail | App | Append-only event log; see reserved extension below |
+| Schema migration tracking | Format | `schema-version` bumps on structural change |
+
+### Reserved extension: `history.ndjson`
+
+Not yet specified, not yet implemented. Reserved for if/when a
+consuming app needs a portable, in-format edit log. Likely shape when
+it lands: an optional `history.ndjson` at the directory root, one
+event per line:
+
+```json
+{"id":"e_xyz","at":"2026-04-28T15:00:00Z","by":"leslie","op":"set","row":"p1","field":"status","from":"todo","to":"doing"}
+```
+
+Properties (intended):
+- `rows.ndjson` remains canonical; the log is purely additive.
+- Append-only, line-diffable, plays nicely with git on top.
+- Apps that care implement it; apps that don't, ignore it.
+- Readers MUST tolerate absence; MAY ignore unknown `op` values.
+
+This shape is **not normative until specced**. Don't write tooling
+against it yet.
+
+### Workspace-specific guidance
+
+For the parent Workspace product (the primary consumer):
+- **Editing sessions** should maintain an in-memory undo stack —
+  pure React state, no format involvement. The current demo will get
+  this in a follow-up; format stays untouched.
+- **Per-file edit history** for Workspace's UX (e.g., a sidebar
+  showing "5 minutes ago: leslie changed status of p1") will likely
+  motivate the `history.ndjson` extension above. Defer the design
+  until Workspace actually starts building that UX.
+- **Real-time collaboration** between Workspace users on the same
+  `.table/` is a separate undertaking with its own data-model
+  decisions (Y.js / Automerge / custom CRDT). Out of scope for the
+  format spec.
+- **Cross-user sharing without real-time collab** is what git does
+  well — and the format already supports this perfectly. Workspace
+  can expose this with or without exposing git semantics to the user
+  (commits-on-save, optimistic-merge-on-open, etc.).
+
+**Why park rather than spec now:** specifying a versioning model
+before a consumer has actually built against it bakes assumptions we
+don't have signal for. Better to keep the format lean and let
+Workspace's first real history UX drive what the extension needs to
+look like.
