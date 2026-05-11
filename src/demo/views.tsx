@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyGroup } from "../core/index.js";
 import type { Field, Row, TableSchema, View } from "../core/types.js";
+import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
 
 const styles = css.create({
   // Table
@@ -214,6 +215,34 @@ const styles = css.create({
     },
   },
 
+  // Clickable header cell wrapper
+  headerCellWrapper: {
+    position: "relative",
+    display: "flex",
+    flex: 1,
+  },
+  headerCellButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    textAlign: "left",
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  headerCellDeprecated: {
+    textDecorationLine: "line-through",
+    opacity: 0.6,
+  },
+
   // Editable-cell input
   cellInput: {
     width: "100%",
@@ -424,6 +453,10 @@ interface ViewProps {
   schema: TableSchema;
   bodies?: Record<string, string>;
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
+  onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  onAddEnumValue?: (fieldName: string, value: string) => void;
+  onMoveField?: (fieldName: string, delta: -1 | 1) => void;
+  onAddField?: (field: Field) => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -440,19 +473,69 @@ function BodyBadge() {
   return <html.span style={styles.bodyBadge}>doc</html.span>;
 }
 
-export function TableView({ view, rows, schema, bodies, onUpdateRow }: ViewProps) {
+export function TableView({
+  view,
+  rows,
+  schema,
+  bodies,
+  onUpdateRow,
+  onUpdateField,
+  onAddEnumValue,
+  onMoveField,
+  onAddField,
+}: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
+  const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
+  const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
+  const canAddField = !!onAddField;
 
   return (
     <html.div style={styles.table}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-        {fields.map((name) => (
-          <html.span key={name} style={[styles.tableCell, styles.tableHeaderCell]}>
-            {name}
-          </html.span>
-        ))}
+        {fields.map((name) => {
+          const field = fieldMap.get(name);
+          const isEditing = editingFieldName === name;
+          const fieldIndex = schema.fields.findIndex((f) => f.name === name);
+          if (!schemaEditable) {
+            return (
+              <html.span key={name} style={[styles.tableCell, styles.tableHeaderCell]}>
+                {field?.title ?? name}
+              </html.span>
+            );
+          }
+          return (
+            <html.span key={name} style={styles.headerCellWrapper}>
+              <html.button
+                onClick={() => setEditingFieldName(isEditing ? null : name)}
+                style={[
+                  styles.headerCellButton,
+                  field?.deprecated && styles.headerCellDeprecated,
+                ]}
+              >
+                {field?.title ?? name}
+              </html.button>
+              {isEditing && field && (
+                <SchemaFieldEditor
+                  field={field}
+                  fieldIndex={fieldIndex}
+                  totalFields={schema.fields.length}
+                  onUpdate={(patch) => onUpdateField!(name, patch)}
+                  onAddEnumValue={(value) => onAddEnumValue!(name, value)}
+                  onMove={(delta) => onMoveField!(name, delta)}
+                  onClose={() => setEditingFieldName(null)}
+                />
+              )}
+            </html.span>
+          );
+        })}
+        {canAddField && (
+          <AddFieldButton
+            existingNames={new Set(schema.fields.map((f) => f.name))}
+            onAdd={onAddField!}
+          />
+        )}
       </html.div>
       {rows.map((row, i) => (
         <html.div
