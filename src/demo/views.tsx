@@ -39,9 +39,12 @@ const styles = css.create({
   },
   tableCell: {
     flex: 1,
-    paddingVertical: 10,
+    display: "flex",
+    alignItems: "center",
     paddingHorizontal: 14,
+    minHeight: 38,
     fontSize: 13,
+    boxSizing: "border-box",
   },
   tableHeaderCell: {
     fontSize: 11,
@@ -247,7 +250,7 @@ const styles = css.create({
   cellInput: {
     width: "100%",
     paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingVertical: 2,
     fontSize: 13,
     borderWidth: 1,
     borderStyle: "solid",
@@ -265,12 +268,25 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
     outlineStyle: "none",
+    minHeight: 22,
+    boxSizing: "border-box",
   },
-  cellEditable: {
+  // Idle (display) wrapper inside an editable cell — fills the cell so
+  // clicks anywhere in the cell start editing, not just on the text run.
+  cellEditableIdle: {
+    display: "flex",
+    flex: 1,
+    alignItems: "center",
+    width: "100%",
+    minHeight: 22,
     cursor: "text",
   },
 
-  // "doc" badge for rows with a markdown body
+  // "doc" badge for rows with a markdown body — clickable variant overrides
+  bodyBadgeButton: {
+    borderWidth: 0,
+    cursor: "pointer",
+  },
   bodyBadge: {
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -290,7 +306,15 @@ const styles = css.create({
     },
   },
 
-  // Body excerpt (gallery cards)
+  // Body excerpt (gallery cards) — clickable when onOpenBody is provided
+  bodyExcerptButton: {
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+    backgroundColor: "transparent",
+  },
   bodyExcerpt: {
     fontSize: 11,
     lineHeight: 1.45,
@@ -398,7 +422,7 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
   if (enumValues && enumValues.length > 0) {
     if (!editing) {
       return (
-        <html.span onClick={startEdit} style={styles.cellEditable}>
+        <html.span onClick={startEdit} style={styles.cellEditableIdle}>
           <CellValue field={field} value={value} />
         </html.span>
       );
@@ -424,13 +448,26 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
   // Text/number/integer: text input on click
   if (!editing) {
     return (
-      <html.span onClick={startEdit} style={styles.cellEditable}>
+      <html.span onClick={startEdit} style={styles.cellEditableIdle}>
         <CellValue field={field} value={value} />
       </html.span>
     );
   }
 
-  const inputType = field?.type === "integer" || field?.type === "number" ? "number" : "text";
+  // Native HTML5 controls for time-shaped fields. On RN these would be
+  // swapped for @react-native-community/datetimepicker (or similar); the
+  // RSD strict-subset purity is deliberately broken here in favour of
+  // platform-native pickers — see PR description.
+  const inputType =
+    field?.type === "integer" || field?.type === "number"
+      ? "number"
+      : field?.type === "date"
+        ? "date"
+        : field?.type === "datetime"
+          ? "datetime-local"
+          : field?.type === "time"
+            ? "time"
+            : "text";
   return (
     <html.input
       ref={inputRef as React.Ref<HTMLInputElement>}
@@ -457,6 +494,7 @@ interface ViewProps {
   onAddEnumValue?: (fieldName: string, value: string) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onAddField?: (field: Field) => void;
+  onOpenBody?: (rowId: string) => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -469,8 +507,19 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
   return stripped.slice(0, max).replace(/\s+\S*$/, "") + "…";
 }
 
-function BodyBadge() {
-  return <html.span style={styles.bodyBadge}>doc</html.span>;
+function BodyBadge({ onClick }: { onClick?: () => void }) {
+  if (!onClick) return <html.span style={styles.bodyBadge}>doc</html.span>;
+  return (
+    <html.button
+      onClick={(e: { stopPropagation: () => void }) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={[styles.bodyBadge, styles.bodyBadgeButton]}
+    >
+      doc
+    </html.button>
+  );
 }
 
 export function TableView({
@@ -483,6 +532,7 @@ export function TableView({
   onAddEnumValue,
   onMoveField,
   onAddField,
+  onOpenBody,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
@@ -490,6 +540,7 @@ export function TableView({
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   const canAddField = !!onAddField;
+  const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
   return (
     <html.div style={styles.table}>
@@ -521,6 +572,7 @@ export function TableView({
                   field={field}
                   fieldIndex={fieldIndex}
                   totalFields={schema.fields.length}
+                  align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
                   onUpdate={(patch) => onUpdateField!(name, patch)}
                   onAddEnumValue={(value) => onAddEnumValue!(name, value)}
                   onMove={(delta) => onMoveField!(name, delta)}
@@ -553,7 +605,9 @@ export function TableView({
               ) : (
                 <CellValue field={fieldMap.get(name)} value={row[name]} />
               )}
-              {name === titleField && bodies?.[row.id] ? <BodyBadge /> : null}
+              {name === titleField && bodies?.[row.id] ? (
+                <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+              ) : null}
             </html.span>
           ))}
         </html.div>
@@ -585,7 +639,7 @@ export function KanbanView({ view, rows, schema }: ViewProps) {
   );
 }
 
-export function GalleryView({ view, rows, schema, bodies }: ViewProps) {
+export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
   const galleryField = view.gallery_field;
   const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
   const fieldMap = fieldsByName(schema);
@@ -594,6 +648,7 @@ export function GalleryView({ view, rows, schema, bodies }: ViewProps) {
     <html.div style={styles.gallery}>
       {rows.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
+        const hasBody = !!bodies?.[row.id];
         return (
           <html.div key={row.id} style={[styles.card, styles.galleryCard]}>
             {galleryField && (
@@ -602,7 +657,18 @@ export function GalleryView({ view, rows, schema, bodies }: ViewProps) {
               </html.span>
             )}
             <CardBody row={row} fields={fields} fieldMap={fieldMap} hideTitle={!!galleryField} />
-            {excerpt && <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>}
+            {excerpt && (
+              hasBody && onOpenBody ? (
+                <html.button
+                  onClick={() => onOpenBody(row.id)}
+                  style={[styles.bodyExcerpt, styles.bodyExcerptButton]}
+                >
+                  {excerpt}
+                </html.button>
+              ) : (
+                <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>
+              )
+            )}
           </html.div>
         );
       })}
@@ -610,7 +676,7 @@ export function GalleryView({ view, rows, schema, bodies }: ViewProps) {
   );
 }
 
-export function ListView({ view, rows, schema, bodies }: ViewProps) {
+export function ListView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
   const secondaryFields = fields.slice(1);
@@ -625,7 +691,9 @@ export function ListView({ view, rows, schema, bodies }: ViewProps) {
         >
           <html.span style={styles.listItemTitle}>
             {titleField ? formatValue(row[titleField]) : ""}
-            {bodies?.[row.id] ? <BodyBadge /> : null}
+            {bodies?.[row.id] ? (
+              <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+            ) : null}
           </html.span>
           {secondaryFields.map((name) => (
             <html.span key={name} style={styles.listItemSecondary}>
