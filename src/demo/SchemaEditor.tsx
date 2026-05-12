@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
 import type { Field, FieldAlignment, FieldType } from "../core/types.js";
 import { defaultAlignFor } from "../core/types.js";
+
+/** Fixed width for the "+ Field" trailing column slot. Exported so the
+ *  table body rows can render a matching spacer and stay aligned. */
+export const ADD_FIELD_COLUMN_WIDTH = 84;
 
 /**
  * User-facing labels for the spec's technical type vocabulary. The
@@ -32,12 +37,8 @@ function friendlyType(type: FieldType): string {
 
 const styles = css.create({
   popover: {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    zIndex: 10,
-    marginTop: 6,
-    minWidth: 260,
+    position: "fixed",
+    zIndex: 50,
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
@@ -50,14 +51,16 @@ const styles = css.create({
       default: "#ffffff",
       "@media (prefers-color-scheme: dark)": "#1c1c1e",
     },
+    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
     display: "flex",
     flexDirection: "column",
     gap: 8,
   },
-  popoverRightAligned: {
-    left: "auto",
-    right: 0,
-  },
+  popoverPosition: (top: number, left: number, width: number) => ({
+    top,
+    left,
+    width,
+  }),
   identity: {
     display: "flex",
     flexDirection: "row",
@@ -249,7 +252,9 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
+    justifyContent: "center",
+    width: ADD_FIELD_COLUMN_WIDTH,
+    flexShrink: 0,
   },
   addFieldButton: {
     paddingHorizontal: 8,
@@ -304,17 +309,23 @@ interface SchemaFieldEditorProps {
   fieldIndex: number;
   totalFields: number;
   align?: "left" | "right";
+  /** Trigger element's viewport rect (from getBoundingClientRect). */
+  anchorRect: { top: number; left: number; right: number; bottom: number };
   onUpdate: (patch: Partial<Field>) => void;
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
 }
 
+const POPOVER_WIDTH = 280;
+const POPOVER_GAP = 6;
+
 export function SchemaFieldEditor({
   field,
   fieldIndex,
   totalFields,
   align = "left",
+  anchorRect,
   onUpdate,
   onAddEnumValue,
   onMove,
@@ -322,6 +333,13 @@ export function SchemaFieldEditor({
 }: SchemaFieldEditorProps) {
   const ref = useDismiss(true, onClose);
   const [enumDraft, setEnumDraft] = useState("");
+
+  // Compute viewport-coordinate position from the anchor's rect.
+  const popoverTop = anchorRect.bottom + POPOVER_GAP;
+  const popoverLeft =
+    align === "right"
+      ? Math.max(8, anchorRect.right - POPOVER_WIDTH)
+      : Math.min(window.innerWidth - POPOVER_WIDTH - 8, anchorRect.left);
 
   const hasEnum = Array.isArray(field.constraints?.enum);
 
@@ -340,10 +358,10 @@ export function SchemaFieldEditor({
     setEnumDraft("");
   };
 
-  return (
+  return createPortal(
     <html.div
       ref={ref}
-      style={[styles.popover, align === "right" && styles.popoverRightAligned]}
+      style={[styles.popover, styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH)]}
     >
       <html.div style={styles.identity}>
         <html.span>{field.name}</html.span>
@@ -459,7 +477,8 @@ export function SchemaFieldEditor({
           ↓ Move down
         </html.button>
       </html.div>
-    </html.div>
+    </html.div>,
+    document.body,
   );
 }
 
@@ -481,6 +500,8 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<FieldType>("string");
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const ref = useDismiss(open, () => setOpen(false));
 
   const trimmed = name.trim();
@@ -495,14 +516,37 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
     setOpen(false);
   };
 
+  const popoverTop = anchorRect ? anchorRect.bottom + POPOVER_GAP : 0;
+  const popoverLeft = anchorRect
+    ? Math.max(8, anchorRect.right - POPOVER_WIDTH)
+    : 0;
+
   return (
     <html.div style={styles.addFieldWrapper}>
       {!open ? (
-        <html.button onClick={() => setOpen(true)} style={styles.addFieldButton}>
+        <html.button
+          ref={(el: HTMLButtonElement | null) => {
+            triggerRef.current = el;
+          }}
+          onClick={() => {
+            if (triggerRef.current) {
+              setAnchorRect(triggerRef.current.getBoundingClientRect());
+            }
+            setOpen(true);
+          }}
+          style={styles.addFieldButton}
+        >
           + Field
         </html.button>
       ) : (
-        <html.div ref={ref} style={[styles.popover, styles.popoverRightAligned]}>
+        createPortal(
+          <html.div
+            ref={ref}
+            style={[
+              styles.popover,
+              styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH),
+            ]}
+          >
           <html.span style={styles.label}>Name</html.span>
           <html.input
             type="text"
@@ -542,7 +586,9 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
               Cancel
             </html.button>
           </html.div>
-        </html.div>
+          </html.div>,
+          document.body,
+        )
       )}
     </html.div>
   );
