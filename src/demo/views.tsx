@@ -4,6 +4,15 @@ import { applyGroup, effectiveAlign } from "../core/index.js";
 import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
 
+/**
+ * Escape hatch for HTML5 drag-and-drop. RSD's strict subset doesn't
+ * type draggable / onDragStart / onDragOver / onDrop because RN has no
+ * equivalent. The spike is web-only by design; the RN port will use
+ * react-native-draggable-flatlist (or similar) in Workspace's UI kit.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Drag: any = html.div;
+
 const styles = css.create({
   // Table
   table: {
@@ -93,7 +102,37 @@ const styles = css.create({
       default: "#f5f5f7",
       "@media (prefers-color-scheme: dark)": "#17171a",
     },
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: "transparent",
     gap: 8,
+  },
+  kanbanColumnDropTarget: {
+    borderColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+  },
+  kanbanCardWrapper: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  cardDragging: {
+    opacity: 0.4,
+  },
+  listItemDragging: {
+    opacity: 0.4,
+  },
+  listItemDropTarget: {
+    borderTopWidth: 2,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+  },
+  draggableHandle: {
+    cursor: "grab",
   },
   kanbanColumnHeader: {
     display: "flex",
@@ -367,13 +406,13 @@ function visibleFields(view: View, schema: TableSchema): string[] {
 function cellAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.tableCellAlignCenter;
   if (align === "right") return styles.tableCellAlignRight;
-  return null;
+  return false as const;
 }
 
 function headerAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.headerCellButtonCenter;
   if (align === "right") return styles.headerCellButtonRight;
-  return null;
+  return false as const;
 }
 
 function formatValue(value: unknown): string {
@@ -530,6 +569,7 @@ interface ViewProps {
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onAddField?: (field: Field) => void;
   onOpenBody?: (rowId: string) => void;
+  onUpdateView?: (patch: Partial<View>) => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -677,24 +717,96 @@ export function TableView({
   );
 }
 
-export function KanbanView({ view, rows, schema }: ViewProps) {
+export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   const groupField = view.kanban_field ?? "status";
   const groups = applyGroup(rows, groupField, schema);
   const fields = visibleFields(view, schema).filter((f) => f !== groupField);
   const fieldMap = fieldsByName(schema);
+  const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
+  const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+  const canDrag = !!onUpdateRow;
+
+  const drop = (columnKey: string) => {
+    if (!draggedRowId || !onUpdateRow) return;
+    const row = rows.find((r) => r.id === draggedRowId);
+    if (row && row[groupField] !== columnKey) {
+      onUpdateRow(
+        draggedRowId,
+        groupField,
+        columnKey === "(empty)" ? null : columnKey,
+      );
+    }
+    setDraggedRowId(null);
+    setHoveredColumn(null);
+  };
 
   return (
     <html.div style={styles.kanban}>
       {Object.entries(groups).map(([key, groupRows]) => (
-        <html.div key={key} style={styles.kanbanColumn}>
+        <Drag
+          key={key}
+          style={[
+            styles.kanbanColumn,
+            hoveredColumn === key && draggedRowId && styles.kanbanColumnDropTarget,
+          ]}
+          onDragOver={
+            canDrag
+              ? (e: { preventDefault: () => void }) => {
+                  e.preventDefault();
+                  if (hoveredColumn !== key) setHoveredColumn(key);
+                }
+              : undefined
+          }
+          onDragLeave={
+            canDrag
+              ? () => setHoveredColumn((prev: string | null) => (prev === key ? null : prev))
+              : undefined
+          }
+          onDrop={
+            canDrag
+              ? (e: { preventDefault: () => void }) => {
+                  e.preventDefault();
+                  drop(key);
+                }
+              : undefined
+          }
+        >
           <html.div style={styles.kanbanColumnHeader}>
             <html.span>{key}</html.span>
             <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
           </html.div>
           {groupRows.map((row) => (
-            <Card key={row.id} row={row} fields={fields} fieldMap={fieldMap} />
+            <Drag
+              key={row.id}
+              draggable={canDrag}
+              onDragStart={
+                canDrag
+                  ? (e: {
+                      dataTransfer?: { setData: (t: string, v: string) => void };
+                    }) => {
+                      e.dataTransfer?.setData("text/plain", row.id);
+                      setDraggedRowId(row.id);
+                    }
+                  : undefined
+              }
+              onDragEnd={
+                canDrag
+                  ? () => {
+                      setDraggedRowId(null);
+                      setHoveredColumn(null);
+                    }
+                  : undefined
+              }
+              style={[
+                styles.kanbanCardWrapper,
+                canDrag && styles.draggableHandle,
+                draggedRowId === row.id && styles.cardDragging,
+              ]}
+            >
+              <Card row={row} fields={fields} fieldMap={fieldMap} />
+            </Drag>
           ))}
-        </html.div>
+        </Drag>
       ))}
     </html.div>
   );
@@ -737,32 +849,114 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProp
   );
 }
 
-export function ListView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
+export function ListView({
+  view,
+  rows,
+  schema,
+  bodies,
+  onOpenBody,
+  onUpdateView,
+}: ViewProps) {
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
   const secondaryFields = fields.slice(1);
   const fieldMap = fieldsByName(schema);
+  const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
+  const [overRowId, setOverRowId] = useState<string | null>(null);
+  const canDrag = !!onUpdateView;
+
+  const drop = (targetRowId: string) => {
+    if (!draggedRowId || !onUpdateView || draggedRowId === targetRowId) {
+      setDraggedRowId(null);
+      setOverRowId(null);
+      return;
+    }
+    const ids = rows.map((r) => r.id);
+    const from = ids.indexOf(draggedRowId);
+    const to = ids.indexOf(targetRowId);
+    if (from === -1 || to === -1) {
+      setDraggedRowId(null);
+      setOverRowId(null);
+      return;
+    }
+    const next = [...ids];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    onUpdateView({ order: next });
+    setDraggedRowId(null);
+    setOverRowId(null);
+  };
 
   return (
     <html.div style={styles.list}>
-      {rows.map((row, i) => (
-        <html.div
-          key={row.id}
-          style={[styles.listItem, i === rows.length - 1 && styles.listItemLast]}
-        >
-          <html.span style={styles.listItemTitle}>
-            {titleField ? formatValue(row[titleField]) : ""}
-            {bodies?.[row.id] ? (
-              <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-            ) : null}
-          </html.span>
-          {secondaryFields.map((name) => (
-            <html.span key={name} style={styles.listItemSecondary}>
-              <CellValue field={fieldMap.get(name)} value={row[name]} />
+      {rows.map((row, i) => {
+        const isDropTarget =
+          overRowId === row.id && !!draggedRowId && draggedRowId !== row.id;
+        return (
+          <Drag
+            key={row.id}
+            draggable={canDrag}
+            onDragStart={
+              canDrag
+                ? (e: {
+                    dataTransfer?: { setData: (t: string, v: string) => void };
+                  }) => {
+                    e.dataTransfer?.setData("text/plain", row.id);
+                    setDraggedRowId(row.id);
+                  }
+                : undefined
+            }
+            onDragOver={
+              canDrag
+                ? (e: { preventDefault: () => void }) => {
+                    e.preventDefault();
+                    if (overRowId !== row.id) setOverRowId(row.id);
+                  }
+                : undefined
+            }
+            onDragLeave={
+              canDrag
+                ? () => setOverRowId((prev: string | null) => (prev === row.id ? null : prev))
+                : undefined
+            }
+            onDrop={
+              canDrag
+                ? (e: { preventDefault: () => void }) => {
+                    e.preventDefault();
+                    drop(row.id);
+                  }
+                : undefined
+            }
+            onDragEnd={
+              canDrag
+                ? () => {
+                    setDraggedRowId(null);
+                    setOverRowId(null);
+                  }
+                : undefined
+            }
+            style={[
+              styles.listItem,
+              i === rows.length - 1 && styles.listItemLast,
+              canDrag && styles.draggableHandle,
+              draggedRowId === row.id && styles.listItemDragging,
+              isDropTarget && styles.listItemDropTarget,
+            ]}
+          >
+            <html.span style={styles.listItemTitle}>
+              {titleField ? formatValue(row[titleField]) : ""}
+              {bodies?.[row.id] ? (
+                <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+              ) : null}
             </html.span>
-          ))}
-        </html.div>
-      ))}
+            {secondaryFields.map((name) => (
+              <html.span key={name} style={styles.listItemSecondary}>
+                <CellValue field={fieldMap.get(name)} value={row[name]} />
+              </html.span>
+            ))}
+          </Drag>
+        );
+      })}
     </html.div>
   );
 }
