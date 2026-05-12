@@ -28,42 +28,47 @@ body {
 }
 
 /* -----------------------------------------------------------------------
- * Focus rings
+ * Focus rings and text selection
  *
- * Suppress the browser default (macOS blue, etc.) and apply a subtle,
- * Airtable-style indicator only for :focus-visible — i.e. keyboard
- * navigation. Mouse clicks don't trigger it; that matches Airtable /
- * Notion / Sheets convention.
+ * Suppress every browser default. Form elements (input/select/textarea)
+ * have NO focus indicator beyond the text caret — the focused cell looks
+ * identical to a cell at rest. Buttons get a subtle outline for keyboard
+ * nav only (:focus-visible, neutral gray, not blue).
  *
- * NOTE: this is web-only. On RN, focus rings work via state-driven
- * styles (useFocused + onFocus/onBlur in the strict-attribute whitelist).
- * The RN port in Workspace's UI kit substitutes a small `useFocused`
- * hook that toggles a styled "focused" class on the same elements.
+ * Text selection (which auto-selects the input's value on focus) uses a
+ * neutral muted highlight instead of the OS-default blue so the focused
+ * cell doesn't read as "blue everywhere".
+ *
+ * NOTE: this is web-only. RN port substitutes a state-driven `useFocused`
+ * hook in Workspace's UI kit (onFocus/onBlur are in RSD's whitelist on
+ * both platforms).
  * --------------------------------------------------------------------- */
 :focus {
   outline: none;
 }
 
 :focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid #9ca3af;
   outline-offset: 1px;
   border-radius: 3px;
 }
 
-/* Form elements carry their own inset focus indicator via box-shadow on
- * the styled component (e.g. cellInput in views.tsx). Skip the outer
- * outline for them so we don't double up — Safari triggers :focus-visible
- * for inputs on mouse click (unlike Chrome/Firefox where it's keyboard
- * only), which would otherwise produce a prominent ring on every cell
- * edit. */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline: none;
 }
 
+::selection {
+  background-color: rgba(156, 163, 175, 0.35);
+  color: inherit;
+}
+
 @media (prefers-color-scheme: dark) {
   :focus-visible {
-    outline-color: #60a5fa;
+    outline-color: #6b7280;
+  }
+  ::selection {
+    background-color: rgba(107, 114, 128, 0.45);
   }
 }
