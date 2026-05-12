@@ -26,6 +26,10 @@ const styles = css.create({
     flexDirection: "column",
     gap: 8,
   },
+  popoverRightAligned: {
+    left: "auto",
+    right: 0,
+  },
   identity: {
     display: "flex",
     flexDirection: "row",
@@ -220,6 +224,7 @@ interface SchemaFieldEditorProps {
   field: Field;
   fieldIndex: number;
   totalFields: number;
+  align?: "left" | "right";
   onUpdate: (patch: Partial<Field>) => void;
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
@@ -230,6 +235,7 @@ export function SchemaFieldEditor({
   field,
   fieldIndex,
   totalFields,
+  align = "left",
   onUpdate,
   onAddEnumValue,
   onMove,
@@ -256,7 +262,10 @@ export function SchemaFieldEditor({
   };
 
   return (
-    <html.div ref={ref} style={styles.popover}>
+    <html.div
+      ref={ref}
+      style={[styles.popover, align === "right" && styles.popoverRightAligned]}
+    >
       <html.div style={styles.identity}>
         <html.span>{field.name}</html.span>
         <html.span style={styles.typeBadge}>{field.type}</html.span>
@@ -385,7 +394,7 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
           + Field
         </html.button>
       ) : (
-        <html.div ref={ref} style={styles.popover}>
+        <html.div ref={ref} style={[styles.popover, styles.popoverRightAligned]}>
           <html.span style={styles.label}>Name</html.span>
           <html.input
             type="text"
