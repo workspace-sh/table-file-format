@@ -109,7 +109,6 @@ const styles = css.create({
   kanbanCardWrapper: {
     display: "flex",
     flexDirection: "column",
-    userSelect: "none",
   },
   cardDragging: {
     opacity: 0.4,
@@ -232,7 +231,6 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
     gap: 12,
-    userSelect: "none",
   },
   listItemLast: {
     borderBottomWidth: 0,
@@ -628,10 +626,14 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
 }
 
 /**
- * Track the pointer's viewport coordinates while a drag is active.
- * Returns null when no drag is in progress. Uses document-level
- * pointermove on web; the RN port (in Workspace's UI kit) substitutes
- * react-native-gesture-handler since native has no document equivalent.
+ * Drag session: tracks pointer viewport coords AND disables text
+ * selection globally while a drag is active. Both concerns are about
+ * "we're in the middle of a drag gesture" so they live in the same hook.
+ *
+ * On web (this implementation): document.pointermove + body.style.userSelect.
+ * On RN (Workspace UI kit substitution): react-native-gesture-handler
+ * driving the same return shape — no body-level userSelect concept on
+ * native, so that part becomes a no-op.
  */
 function useDragPointer(active: boolean) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -644,7 +646,27 @@ function useDragPointer(active: boolean) {
       setPos({ x: e.clientX, y: e.clientY });
     };
     document.addEventListener("pointermove", onMove);
-    return () => document.removeEventListener("pointermove", onMove);
+
+    // Prevent text/UI highlight when the pointer drags across cell
+    // content. Restore the previous value on cleanup so we don't leak
+    // a permanent change to body styles.
+    const prevUserSelect = document.body.style.userSelect;
+    const prevWebkitUserSelect = (document.body.style as unknown as {
+      webkitUserSelect: string;
+    }).webkitUserSelect;
+    document.body.style.userSelect = "none";
+    (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
+      "none";
+    // Clear any selection already in place so it doesn't visually persist
+    // while we drag.
+    window.getSelection()?.removeAllRanges();
+
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.body.style.userSelect = prevUserSelect;
+      (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
+        prevWebkitUserSelect;
+    };
   }, [active]);
   return pos;
 }
