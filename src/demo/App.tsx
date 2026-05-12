@@ -194,6 +194,16 @@ export function App() {
     });
   }, []);
 
+  const updateActiveView = useCallback(
+    (patch: Partial<View>) => {
+      setTable((t) => ({
+        ...t,
+        views: t.views.map((v) => (v.id === activeViewId ? { ...v, ...patch } : v)),
+      }));
+    },
+    [activeViewId],
+  );
+
   const viewRows = applyView(table, view);
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
@@ -251,6 +261,7 @@ export function App() {
           onMoveField: moveField,
           onAddField: addField,
           onOpenBody: openBody,
+          onUpdateView: updateActiveView,
         })}
       </html.div>
       {activeBodyRowId && (
@@ -286,6 +297,7 @@ interface ViewCallbacks {
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
   onOpenBody: (rowId: string) => void;
+  onUpdateView: (patch: Partial<View>) => void;
 }
 
 function renderView(
@@ -303,6 +315,7 @@ function renderView(
           rows={rows}
           schema={schema}
           bodies={bodies}
+          onUpdateRow={cb.onUpdateRow}
           onOpenBody={cb.onOpenBody}
         />
       );
@@ -324,6 +337,7 @@ function renderView(
           schema={schema}
           bodies={bodies}
           onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
         />
       );
     case "calendar":

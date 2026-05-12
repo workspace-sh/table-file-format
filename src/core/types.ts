@@ -127,6 +127,13 @@ export interface View {
   filter?: ViewFilter[];
   sort?: ViewSort[];
   group?: ViewGroup;
+  /**
+   * Manual row ordering by system id. When present and non-empty, takes
+   * precedence over `sort` for the listed rows; rows not in the array
+   * appear after, in their natural arrival order. Set by manual reorder
+   * gestures (drag-and-drop in list/kanban-within-column views).
+   */
+  order?: string[];
   kanban_field?: string;
   gallery_field?: string;
   calendar_field?: string;
