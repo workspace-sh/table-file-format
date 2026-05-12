@@ -50,6 +50,18 @@ body {
   border-radius: 3px;
 }
 
+/* Form elements carry their own inset focus indicator via box-shadow on
+ * the styled component (e.g. cellInput in views.tsx). Skip the outer
+ * outline for them so we don't double up — Safari triggers :focus-visible
+ * for inputs on mouse click (unlike Chrome/Firefox where it's keyboard
+ * only), which would otherwise produce a prominent ring on every cell
+ * edit. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
 @media (prefers-color-scheme: dark) {
   :focus-visible {
     outline-color: #60a5fa;
