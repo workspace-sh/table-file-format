@@ -109,10 +109,35 @@ export function applyGroup(
   return result;
 }
 
+/**
+ * Apply a manual row ordering. Rows mentioned in `order` come first, in
+ * that sequence; rows not mentioned follow in the input's order. Stable
+ * for both groups.
+ */
+export function applyOrder(rows: Row[], order: string[] | undefined): Row[] {
+  if (!order || order.length === 0) return rows;
+  const orderIndex = new Map(order.map((id, i) => [id, i]));
+  const mentioned: Row[] = [];
+  const unmentioned: Row[] = [];
+  for (const row of rows) {
+    if (orderIndex.has(row.id)) mentioned.push(row);
+    else unmentioned.push(row);
+  }
+  mentioned.sort((a, b) => orderIndex.get(a.id)! - orderIndex.get(b.id)!);
+  return [...mentioned, ...unmentioned];
+}
+
 export function applyView(parsed: ParsedTable, view: View): Row[] {
   let rows = parsed.rows;
   if (view.filter) rows = applyFilters(rows, view.filter);
-  if (view.sort) rows = applySort(rows, view.sort, parsed.schema);
+  // Manual order takes precedence over sort. The user dragged things
+  // into place; the view becomes manual-order until the order array is
+  // cleared.
+  if (view.order && view.order.length > 0) {
+    rows = applyOrder(rows, view.order);
+  } else if (view.sort) {
+    rows = applySort(rows, view.sort, parsed.schema);
+  }
   return rows;
 }
 

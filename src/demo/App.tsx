@@ -1,10 +1,14 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyView, searchRows, validate } from "../core/index.js";
-import type { ParsedTable, Row, TableSchema, View } from "../core/types.js";
+import type { Field, ParsedTable, Row, TableSchema, View } from "../core/types.js";
 import { projectsTable } from "./loadFixture.js";
 import { Sidebar } from "./Sidebar.js";
 import { TableView, KanbanView, GalleryView, ListView } from "./views.js";
+import { BodyEditor } from "./BodyEditor.js";
+
+const INITIAL_SCHEMA_VERSION =
+  (projectsTable.schema["schema-version"] as number | undefined) ?? 1;
 
 const styles = css.create({
   root: {
@@ -61,6 +65,21 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
     },
   },
+  schemaBumpBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    fontSize: 10,
+    fontWeight: "600",
+    backgroundColor: {
+      default: "#fef3c7",
+      "@media (prefers-color-scheme: dark)": "#3f2e0a",
+    },
+    color: {
+      default: "#92400e",
+      "@media (prefers-color-scheme: dark)": "#fbbf24",
+    },
+  },
   searchInput: {
     width: 240,
     paddingHorizontal: 10,
@@ -85,10 +104,16 @@ const styles = css.create({
   },
 });
 
+function bumpSchemaVersion(schema: TableSchema): TableSchema {
+  const current = (schema["schema-version"] as number | undefined) ?? 1;
+  return { ...schema, "schema-version": current + 1 };
+}
+
 export function App() {
   const [table, setTable] = useState<ParsedTable>(projectsTable);
   const [activeViewId, setActiveViewId] = useState(table.views[0]?.id ?? "");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0];
   if (!view) throw new Error("table has no views");
@@ -105,6 +130,80 @@ export function App() {
     [],
   );
 
+  const updateBody = useCallback((rowId: string, content: string) => {
+    setTable((t) => {
+      const bodies = { ...(t.bodies ?? {}) };
+      if (content.length === 0) delete bodies[rowId];
+      else bodies[rowId] = content;
+      return { ...t, bodies };
+    });
+  }, []);
+
+  const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
+  const closeBody = useCallback(() => setActiveBodyRowId(null), []);
+
+  // Cosmetic field edits (title, description) do NOT bump schema-version.
+  // Structural edits (required, deprecated, enum add, add field, reorder) DO.
+  const updateField = useCallback((fieldName: string, patch: Partial<Field>) => {
+    setTable((t) => {
+      const fields = t.schema.fields.map((f) =>
+        f.name === fieldName ? { ...f, ...patch } : f,
+      );
+      const isStructural =
+        "constraints" in patch || "deprecated" in patch || "relation" in patch;
+      const nextSchema: TableSchema = isStructural
+        ? bumpSchemaVersion({ ...t.schema, fields })
+        : { ...t.schema, fields };
+      return { ...t, schema: nextSchema };
+    });
+  }, []);
+
+  const addEnumValue = useCallback((fieldName: string, value: string) => {
+    setTable((t) => {
+      const fields = t.schema.fields.map((f) => {
+        if (f.name !== fieldName) return f;
+        const existing = f.constraints?.enum ?? [];
+        if (existing.includes(value)) return f;
+        return {
+          ...f,
+          constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
+        };
+      });
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const moveField = useCallback((fieldName: string, delta: -1 | 1) => {
+    setTable((t) => {
+      const from = t.schema.fields.findIndex((f) => f.name === fieldName);
+      if (from === -1) return t;
+      const to = from + delta;
+      if (to < 0 || to >= t.schema.fields.length) return t;
+      const fields = t.schema.fields.slice();
+      const [moved] = fields.splice(from, 1);
+      fields.splice(to, 0, moved!);
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const addField = useCallback((field: Field) => {
+    setTable((t) => {
+      if (t.schema.fields.some((f) => f.name === field.name)) return t;
+      const fields = [...t.schema.fields, field];
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const updateActiveView = useCallback(
+    (patch: Partial<View>) => {
+      setTable((t) => ({
+        ...t,
+        views: t.views.map((v) => (v.id === activeViewId ? { ...v, ...patch } : v)),
+      }));
+    },
+    [activeViewId],
+  );
+
   const viewRows = applyView(table, view);
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
@@ -112,6 +211,9 @@ export function App() {
   });
   const errors = validate(table.schema, table.rows);
   const searching = searchQuery.trim().length > 0;
+  const currentSchemaVersion =
+    (table.schema["schema-version"] as number | undefined) ?? 1;
+  const schemaBumped = currentSchemaVersion > INITIAL_SCHEMA_VERSION;
 
   return (
     <html.div style={styles.root}>
@@ -142,12 +244,60 @@ export function App() {
                 ? "schema valid"
                 : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
             </html.span>
+            {schemaBumped && (
+              <>
+                <html.span>·</html.span>
+                <html.span style={styles.schemaBumpBadge}>
+                  schema v{currentSchemaVersion}
+                </html.span>
+              </>
+            )}
           </html.div>
         </html.div>
-        {renderView(view, visibleRows, table.schema, table.bodies, updateRow)}
+        {renderView(view, visibleRows, table.schema, table.bodies, {
+          onUpdateRow: updateRow,
+          onUpdateField: updateField,
+          onAddEnumValue: addEnumValue,
+          onMoveField: moveField,
+          onAddField: addField,
+          onOpenBody: openBody,
+          onUpdateView: updateActiveView,
+        })}
       </html.div>
+      {activeBodyRowId && (
+        <BodyEditor
+          rowId={activeBodyRowId}
+          rowTitle={rowTitleFor(table, activeBodyRowId)}
+          content={table.bodies?.[activeBodyRowId] ?? ""}
+          onSave={(content) => updateBody(activeBodyRowId, content)}
+          onClose={closeBody}
+        />
+      )}
     </html.div>
   );
+}
+
+function rowTitleFor(table: ParsedTable, rowId: string): string {
+  const row = table.rows.find((r) => r.id === rowId);
+  if (!row) return rowId;
+  // Prefer the first string-typed field; fall back to id.
+  for (const field of table.schema.fields) {
+    if (field.type === "string") {
+      const v = row[field.name];
+      if (typeof v === "string" && v.length > 0) return v;
+    }
+  }
+  return rowId;
+}
+
+interface ViewCallbacks {
+  onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
+  onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
+  onAddEnumValue: (fieldName: string, value: string) => void;
+  onMoveField: (fieldName: string, delta: -1 | 1) => void;
+  onAddField: (field: Field) => void;
+  onOpenBody: (rowId: string) => void;
+  onUpdateView: (patch: Partial<View>) => void;
 }
 
 function renderView(
@@ -155,15 +305,41 @@ function renderView(
   rows: Row[],
   schema: TableSchema,
   bodies: Record<string, string> | undefined,
-  onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void,
+  cb: ViewCallbacks,
 ) {
   switch (view.layout) {
     case "kanban":
-      return <KanbanView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <KanbanView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onUpdateRow={cb.onUpdateRow}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "gallery":
-      return <GalleryView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <GalleryView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "list":
-      return <ListView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <ListView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
+        />
+      );
     case "calendar":
     case "table":
     default:
@@ -173,7 +349,12 @@ function renderView(
           rows={rows}
           schema={schema}
           bodies={bodies}
-          onUpdateRow={onUpdateRow}
+          onUpdateRow={cb.onUpdateRow}
+          onUpdateField={cb.onUpdateField}
+          onAddEnumValue={cb.onAddEnumValue}
+          onMoveField={cb.onMoveField}
+          onAddField={cb.onAddField}
+          onOpenBody={cb.onOpenBody}
         />
       );
   }
