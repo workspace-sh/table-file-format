@@ -5,6 +5,7 @@ import type { Field, ParsedTable, Row, TableSchema, View } from "../core/types.j
 import { projectsTable } from "./loadFixture.js";
 import { Sidebar } from "./Sidebar.js";
 import { TableView, KanbanView, GalleryView, ListView } from "./views.js";
+import { BodyEditor } from "./BodyEditor.js";
 
 const INITIAL_SCHEMA_VERSION =
   (projectsTable.schema["schema-version"] as number | undefined) ?? 1;
@@ -112,6 +113,7 @@ export function App() {
   const [table, setTable] = useState<ParsedTable>(projectsTable);
   const [activeViewId, setActiveViewId] = useState(table.views[0]?.id ?? "");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0];
   if (!view) throw new Error("table has no views");
@@ -127,6 +129,18 @@ export function App() {
     },
     [],
   );
+
+  const updateBody = useCallback((rowId: string, content: string) => {
+    setTable((t) => {
+      const bodies = { ...(t.bodies ?? {}) };
+      if (content.length === 0) delete bodies[rowId];
+      else bodies[rowId] = content;
+      return { ...t, bodies };
+    });
+  }, []);
+
+  const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
+  const closeBody = useCallback(() => setActiveBodyRowId(null), []);
 
   // Cosmetic field edits (title, description) do NOT bump schema-version.
   // Structural edits (required, deprecated, enum add, add field, reorder) DO.
@@ -236,10 +250,33 @@ export function App() {
           onAddEnumValue: addEnumValue,
           onMoveField: moveField,
           onAddField: addField,
+          onOpenBody: openBody,
         })}
       </html.div>
+      {activeBodyRowId && (
+        <BodyEditor
+          rowId={activeBodyRowId}
+          rowTitle={rowTitleFor(table, activeBodyRowId)}
+          content={table.bodies?.[activeBodyRowId] ?? ""}
+          onSave={(content) => updateBody(activeBodyRowId, content)}
+          onClose={closeBody}
+        />
+      )}
     </html.div>
   );
+}
+
+function rowTitleFor(table: ParsedTable, rowId: string): string {
+  const row = table.rows.find((r) => r.id === rowId);
+  if (!row) return rowId;
+  // Prefer the first string-typed field; fall back to id.
+  for (const field of table.schema.fields) {
+    if (field.type === "string") {
+      const v = row[field.name];
+      if (typeof v === "string" && v.length > 0) return v;
+    }
+  }
+  return rowId;
 }
 
 interface ViewCallbacks {
@@ -248,6 +285,7 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
+  onOpenBody: (rowId: string) => void;
 }
 
 function renderView(
@@ -259,11 +297,35 @@ function renderView(
 ) {
   switch (view.layout) {
     case "kanban":
-      return <KanbanView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <KanbanView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "gallery":
-      return <GalleryView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <GalleryView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "list":
-      return <ListView view={view} rows={rows} schema={schema} bodies={bodies} />;
+      return (
+        <ListView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "calendar":
     case "table":
     default:
@@ -278,6 +340,7 @@ function renderView(
           onAddEnumValue={cb.onAddEnumValue}
           onMoveField={cb.onMoveField}
           onAddField={cb.onAddField}
+          onOpenBody={cb.onOpenBody}
         />
       );
   }
