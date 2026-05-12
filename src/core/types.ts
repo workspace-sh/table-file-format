@@ -134,6 +134,12 @@ export interface View {
    * gestures (drag-and-drop in list/kanban-within-column views).
    */
   order?: string[];
+  /**
+   * Per-column widths in pixels, keyed by field name. Columns not listed
+   * use the default flex distribution. Purely cosmetic — does not affect
+   * data or schema. Set by column-resize gestures in table views.
+   */
+  columnWidths?: Record<string, number>;
   kanban_field?: string;
   gallery_field?: string;
   calendar_field?: string;

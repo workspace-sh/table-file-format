@@ -2,16 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyGroup, effectiveAlign } from "../core/index.js";
 import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
-import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
-
-/**
- * Escape hatch for HTML5 drag-and-drop. RSD's strict subset doesn't
- * type draggable / onDragStart / onDragOver / onDrop because RN has no
- * equivalent. The spike is web-only by design; the RN port will use
- * react-native-draggable-flatlist (or similar) in Workspace's UI kit.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const Drag: any = html.div;
+import {
+  ADD_FIELD_COLUMN_WIDTH,
+  AddFieldButton,
+  SchemaFieldEditor,
+} from "./SchemaEditor.js";
 
 const styles = css.create({
   // Table
@@ -344,6 +339,12 @@ const styles = css.create({
     cursor: "text",
   },
 
+  // Spacer in body rows to mirror the "+ Field" header column slot
+  addFieldSpacer: {
+    width: ADD_FIELD_COLUMN_WIDTH,
+    flexShrink: 0,
+  },
+
   // "doc" badge for rows with a markdown body — clickable variant overrides
   bodyBadgeButton: {
     borderWidth: 0,
@@ -613,6 +614,8 @@ export function TableView({
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const headerButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
@@ -647,7 +650,18 @@ export function TableView({
               style={[styles.headerCellWrapper, !isLast && styles.tableCellSeparator]}
             >
               <html.button
-                onClick={() => setEditingFieldName(isEditing ? null : name)}
+                ref={(el: HTMLButtonElement | null) => {
+                  headerButtonRefs.current[name] = el;
+                }}
+                onClick={() => {
+                  if (isEditing) {
+                    setEditingFieldName(null);
+                  } else {
+                    const el = headerButtonRefs.current[name];
+                    if (el) setAnchorRect(el.getBoundingClientRect());
+                    setEditingFieldName(name);
+                  }
+                }}
                 style={[
                   styles.headerCellButton,
                   field?.deprecated && styles.headerCellDeprecated,
@@ -656,16 +670,20 @@ export function TableView({
               >
                 {field?.title ?? name}
               </html.button>
-              {isEditing && field && (
+              {isEditing && field && anchorRect && (
                 <SchemaFieldEditor
                   field={field}
                   fieldIndex={fieldIndex}
                   totalFields={schema.fields.length}
                   align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
+                  anchorRect={anchorRect}
                   onUpdate={(patch) => onUpdateField!(name, patch)}
                   onAddEnumValue={(value) => onAddEnumValue!(name, value)}
                   onMove={(delta) => onMoveField!(name, delta)}
-                  onClose={() => setEditingFieldName(null)}
+                  onClose={() => {
+                    setEditingFieldName(null);
+                    setAnchorRect(null);
+                  }}
                 />
               )}
             </html.span>
@@ -686,7 +704,7 @@ export function TableView({
           {fields.map((name, idx) => {
             const field = fieldMap.get(name);
             const align = effectiveAlign(field);
-            const isLast = idx === fields.length - 1;
+            const isLast = idx === fields.length - 1 && !canAddField;
             return (
               <html.span
                 key={name}
@@ -711,6 +729,7 @@ export function TableView({
               </html.span>
             );
           })}
+          {canAddField && <html.div style={styles.addFieldSpacer} />}
         </html.div>
       ))}
     </html.div>
@@ -725,6 +744,18 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
+
+  // Fallback: if the user releases the pointer outside any column (or scrolls
+  // off-screen), clear the drag state so the demo doesn't stay in "dragging".
+  useEffect(() => {
+    if (!draggedRowId) return;
+    const onUp = () => {
+      setDraggedRowId(null);
+      setHoveredColumn(null);
+    };
+    document.addEventListener("pointerup", onUp);
+    return () => document.removeEventListener("pointerup", onUp);
+  }, [draggedRowId]);
 
   const drop = (columnKey: string) => {
     if (!draggedRowId || !onUpdateRow) return;
@@ -743,30 +774,28 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   return (
     <html.div style={styles.kanban}>
       {Object.entries(groups).map(([key, groupRows]) => (
-        <Drag
+        <html.div
           key={key}
           style={[
             styles.kanbanColumn,
-            hoveredColumn === key && draggedRowId && styles.kanbanColumnDropTarget,
+            hoveredColumn === key && draggedRowId !== null && styles.kanbanColumnDropTarget,
           ]}
-          onDragOver={
+          onPointerEnter={
             canDrag
-              ? (e: { preventDefault: () => void }) => {
-                  e.preventDefault();
-                  if (hoveredColumn !== key) setHoveredColumn(key);
+              ? () => {
+                  if (draggedRowId) setHoveredColumn(key);
                 }
               : undefined
           }
-          onDragLeave={
+          onPointerLeave={
             canDrag
-              ? () => setHoveredColumn((prev: string | null) => (prev === key ? null : prev))
+              ? () => setHoveredColumn((prev) => (prev === key ? null : prev))
               : undefined
           }
-          onDrop={
+          onPointerUp={
             canDrag
-              ? (e: { preventDefault: () => void }) => {
-                  e.preventDefault();
-                  drop(key);
+              ? () => {
+                  if (draggedRowId) drop(key);
                 }
               : undefined
           }
@@ -776,24 +805,13 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
             <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
           </html.div>
           {groupRows.map((row) => (
-            <Drag
+            <html.div
               key={row.id}
-              draggable={canDrag}
-              onDragStart={
-                canDrag
-                  ? (e: {
-                      dataTransfer?: { setData: (t: string, v: string) => void };
-                    }) => {
-                      e.dataTransfer?.setData("text/plain", row.id);
-                      setDraggedRowId(row.id);
-                    }
-                  : undefined
-              }
-              onDragEnd={
+              onPointerDown={
                 canDrag
                   ? () => {
-                      setDraggedRowId(null);
-                      setHoveredColumn(null);
+                      setDraggedRowId(row.id);
+                      setHoveredColumn(key);
                     }
                   : undefined
               }
@@ -804,9 +822,9 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
               ]}
             >
               <Card row={row} fields={fields} fieldMap={fieldMap} />
-            </Drag>
+            </html.div>
           ))}
-        </Drag>
+        </html.div>
       ))}
     </html.div>
   );
@@ -865,6 +883,17 @@ export function ListView({
   const [overRowId, setOverRowId] = useState<string | null>(null);
   const canDrag = !!onUpdateView;
 
+  // Fallback: clear drag state on document-level pointerup
+  useEffect(() => {
+    if (!draggedRowId) return;
+    const onUp = () => {
+      setDraggedRowId(null);
+      setOverRowId(null);
+    };
+    document.addEventListener("pointerup", onUp);
+    return () => document.removeEventListener("pointerup", onUp);
+  }, [draggedRowId]);
+
   const drop = (targetRowId: string) => {
     if (!draggedRowId || !onUpdateView || draggedRowId === targetRowId) {
       setDraggedRowId(null);
@@ -893,45 +922,27 @@ export function ListView({
         const isDropTarget =
           overRowId === row.id && !!draggedRowId && draggedRowId !== row.id;
         return (
-          <Drag
+          <html.div
             key={row.id}
-            draggable={canDrag}
-            onDragStart={
-              canDrag
-                ? (e: {
-                    dataTransfer?: { setData: (t: string, v: string) => void };
-                  }) => {
-                    e.dataTransfer?.setData("text/plain", row.id);
-                    setDraggedRowId(row.id);
-                  }
-                : undefined
+            onPointerDown={
+              canDrag ? () => setDraggedRowId(row.id) : undefined
             }
-            onDragOver={
-              canDrag
-                ? (e: { preventDefault: () => void }) => {
-                    e.preventDefault();
-                    if (overRowId !== row.id) setOverRowId(row.id);
-                  }
-                : undefined
-            }
-            onDragLeave={
-              canDrag
-                ? () => setOverRowId((prev: string | null) => (prev === row.id ? null : prev))
-                : undefined
-            }
-            onDrop={
-              canDrag
-                ? (e: { preventDefault: () => void }) => {
-                    e.preventDefault();
-                    drop(row.id);
-                  }
-                : undefined
-            }
-            onDragEnd={
+            onPointerEnter={
               canDrag
                 ? () => {
-                    setDraggedRowId(null);
-                    setOverRowId(null);
+                    if (draggedRowId && draggedRowId !== row.id) setOverRowId(row.id);
+                  }
+                : undefined
+            }
+            onPointerLeave={
+              canDrag
+                ? () => setOverRowId((prev) => (prev === row.id ? null : prev))
+                : undefined
+            }
+            onPointerUp={
+              canDrag
+                ? () => {
+                    if (draggedRowId) drop(row.id);
                   }
                 : undefined
             }
@@ -954,7 +965,7 @@ export function ListView({
                 <CellValue field={fieldMap.get(name)} value={row[name]} />
               </html.span>
             ))}
-          </Drag>
+          </html.div>
         );
       })}
     </html.div>
