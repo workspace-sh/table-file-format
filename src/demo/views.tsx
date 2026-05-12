@@ -107,6 +107,7 @@ const styles = css.create({
   kanbanCardWrapper: {
     display: "flex",
     flexDirection: "column",
+    userSelect: "none",
   },
   cardDragging: {
     opacity: 0.4,
@@ -188,6 +189,7 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
     gap: 12,
+    userSelect: "none",
   },
   listItemLast: {
     borderBottomWidth: 0,
@@ -737,15 +739,41 @@ export function TableView({
 
 export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   const groupField = view.kanban_field ?? "status";
-  const groups = applyGroup(rows, groupField, schema);
+  const groupFieldDef = schema.fields.find((f) => f.name === groupField);
+  const enumValues = groupFieldDef?.constraints?.enum;
   const fields = visibleFields(view, schema).filter((f) => f !== groupField);
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
 
-  // Fallback: if the user releases the pointer outside any column (or scrolls
-  // off-screen), clear the drag state so the demo doesn't stay in "dragging".
+  // Live preview: while dragging, render groups as if the dragged row
+  // were already in the hovered column. The actual mutation only commits
+  // on pointerup via onUpdateRow.
+  const displayRows =
+    draggedRowId && hoveredColumn
+      ? rows.map((r) =>
+          r.id === draggedRowId
+            ? { ...r, [groupField]: hoveredColumn === "(empty)" ? null : hoveredColumn }
+            : r,
+        )
+      : rows;
+  const groups = applyGroup(displayRows, groupField, schema);
+
+  // Persistent columns: when the group field has an enum constraint,
+  // show ALL enum values as columns (even when empty) so the user can
+  // drop cards into a column that currently has no rows.
+  const columnKeys: string[] = enumValues
+    ? (() => {
+        const keys = [...enumValues];
+        for (const k of Object.keys(groups)) {
+          if (!keys.includes(k)) keys.push(k);
+        }
+        return keys;
+      })()
+    : Object.keys(groups);
+
+  // Fallback: clear drag state on document-level pointerup.
   useEffect(() => {
     if (!draggedRowId) return;
     const onUp = () => {
@@ -757,7 +785,11 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   }, [draggedRowId]);
 
   const drop = (columnKey: string) => {
-    if (!draggedRowId || !onUpdateRow) return;
+    if (!draggedRowId || !onUpdateRow) {
+      setDraggedRowId(null);
+      setHoveredColumn(null);
+      return;
+    }
     const row = rows.find((r) => r.id === draggedRowId);
     if (row && row[groupField] !== columnKey) {
       onUpdateRow(
@@ -772,59 +804,62 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
 
   return (
     <html.div style={styles.kanban}>
-      {Object.entries(groups).map(([key, groupRows]) => (
-        <html.div
-          key={key}
-          style={[
-            styles.kanbanColumn,
-            hoveredColumn === key && draggedRowId !== null && styles.kanbanColumnDropTarget,
-          ]}
-          onPointerEnter={
-            canDrag
-              ? () => {
-                  if (draggedRowId) setHoveredColumn(key);
-                }
-              : undefined
-          }
-          onPointerLeave={
-            canDrag
-              ? () => setHoveredColumn((prev) => (prev === key ? null : prev))
-              : undefined
-          }
-          onPointerUp={
-            canDrag
-              ? () => {
-                  if (draggedRowId) drop(key);
-                }
-              : undefined
-          }
-        >
-          <html.div style={styles.kanbanColumnHeader}>
-            <html.span>{key}</html.span>
-            <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
-          </html.div>
-          {groupRows.map((row) => (
-            <html.div
-              key={row.id}
-              onPointerDown={
-                canDrag
-                  ? () => {
-                      setDraggedRowId(row.id);
-                      setHoveredColumn(key);
-                    }
-                  : undefined
-              }
-              style={[
-                styles.kanbanCardWrapper,
-                canDrag && styles.draggableHandle,
-                draggedRowId === row.id && styles.cardDragging,
-              ]}
-            >
-              <Card row={row} fields={fields} fieldMap={fieldMap} />
+      {columnKeys.map((key) => {
+        const groupRows = groups[key] ?? [];
+        return (
+          <html.div
+            key={key}
+            style={[
+              styles.kanbanColumn,
+              hoveredColumn === key && draggedRowId !== null && styles.kanbanColumnDropTarget,
+            ]}
+            onPointerEnter={
+              canDrag
+                ? () => {
+                    if (draggedRowId) setHoveredColumn(key);
+                  }
+                : undefined
+            }
+            onPointerLeave={
+              canDrag
+                ? () => setHoveredColumn((prev) => (prev === key ? null : prev))
+                : undefined
+            }
+            onPointerUp={
+              canDrag
+                ? () => {
+                    if (draggedRowId) drop(key);
+                  }
+                : undefined
+            }
+          >
+            <html.div style={styles.kanbanColumnHeader}>
+              <html.span>{key}</html.span>
+              <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
             </html.div>
-          ))}
-        </html.div>
-      ))}
+            {groupRows.map((row) => (
+              <html.div
+                key={row.id}
+                onPointerDown={
+                  canDrag
+                    ? () => {
+                        setDraggedRowId(row.id);
+                        setHoveredColumn(key);
+                      }
+                    : undefined
+                }
+                style={[
+                  styles.kanbanCardWrapper,
+                  canDrag && styles.draggableHandle,
+                  draggedRowId === row.id && styles.cardDragging,
+                ]}
+              >
+                <Card row={row} fields={fields} fieldMap={fieldMap} />
+              </html.div>
+            ))}
+          </html.div>
+        );
+      })}
     </html.div>
   );
 }
@@ -879,94 +914,108 @@ export function ListView({
   const secondaryFields = fields.slice(1);
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
-  const [overRowId, setOverRowId] = useState<string | null>(null);
+  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
   const canDrag = !!onUpdateView;
 
-  // Fallback: clear drag state on document-level pointerup
+  // Live reorder preview: while dragging, rebuild the visible order so
+  // the dragged row physically appears in its hover-target position. The
+  // preview is computed from the BASE rows (not the previous preview),
+  // so hovering A then B gives the same result as hovering B directly.
+  const displayRows: Row[] = previewOrder
+    ? (() => {
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        const ordered: Row[] = [];
+        for (const id of previewOrder) {
+          const r = byId.get(id);
+          if (r) ordered.push(r);
+        }
+        // Any base rows not in previewOrder go at the end (shouldn't
+        // happen since preview is computed from all current ids, but
+        // safe).
+        for (const r of rows) if (!previewOrder.includes(r.id)) ordered.push(r);
+        return ordered;
+      })()
+    : rows;
+
+  // Fallback: clear drag state on document-level pointerup. Drop is
+  // committed by the row's own onPointerUp; this only fires when the
+  // pointer releases outside any row.
   useEffect(() => {
     if (!draggedRowId) return;
     const onUp = () => {
       setDraggedRowId(null);
-      setOverRowId(null);
+      setPreviewOrder(null);
     };
     document.addEventListener("pointerup", onUp);
     return () => document.removeEventListener("pointerup", onUp);
   }, [draggedRowId]);
 
-  const drop = (targetRowId: string) => {
-    if (!draggedRowId || !onUpdateView || draggedRowId === targetRowId) {
-      setDraggedRowId(null);
-      setOverRowId(null);
-      return;
-    }
+  const computePreviewOrder = (targetRowId: string): string[] => {
+    if (!draggedRowId) return rows.map((r) => r.id);
     const ids = rows.map((r) => r.id);
     const from = ids.indexOf(draggedRowId);
     const to = ids.indexOf(targetRowId);
-    if (from === -1 || to === -1) {
-      setDraggedRowId(null);
-      setOverRowId(null);
-      return;
-    }
+    if (from === -1 || to === -1) return ids;
     const next = [...ids];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved!);
-    onUpdateView({ order: next });
+    return next;
+  };
+
+  const commitDrop = () => {
+    if (!draggedRowId || !onUpdateView || !previewOrder) {
+      setDraggedRowId(null);
+      setPreviewOrder(null);
+      return;
+    }
+    onUpdateView({ order: previewOrder });
     setDraggedRowId(null);
-    setOverRowId(null);
+    setPreviewOrder(null);
   };
 
   return (
     <html.div style={styles.list}>
-      {rows.map((row, i) => {
-        const isDropTarget =
-          overRowId === row.id && !!draggedRowId && draggedRowId !== row.id;
-        return (
-          <html.div
-            key={row.id}
-            onPointerDown={
-              canDrag ? () => setDraggedRowId(row.id) : undefined
-            }
-            onPointerEnter={
-              canDrag
-                ? () => {
-                    if (draggedRowId && draggedRowId !== row.id) setOverRowId(row.id);
+      {displayRows.map((row, i) => (
+        <html.div
+          key={row.id}
+          onPointerDown={
+            canDrag
+              ? () => {
+                  setDraggedRowId(row.id);
+                  setPreviewOrder(rows.map((r) => r.id));
+                }
+              : undefined
+          }
+          onPointerEnter={
+            canDrag
+              ? () => {
+                  if (draggedRowId && draggedRowId !== row.id) {
+                    setPreviewOrder(computePreviewOrder(row.id));
                   }
-                : undefined
-            }
-            onPointerLeave={
-              canDrag
-                ? () => setOverRowId((prev) => (prev === row.id ? null : prev))
-                : undefined
-            }
-            onPointerUp={
-              canDrag
-                ? () => {
-                    if (draggedRowId) drop(row.id);
-                  }
-                : undefined
-            }
-            style={[
-              styles.listItem,
-              i === rows.length - 1 && styles.listItemLast,
-              canDrag && styles.draggableHandle,
-              draggedRowId === row.id && styles.listItemDragging,
-              isDropTarget && styles.listItemDropTarget,
-            ]}
-          >
-            <html.span style={styles.listItemTitle}>
-              {titleField ? formatValue(row[titleField]) : ""}
-              {bodies?.[row.id] ? (
-                <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-              ) : null}
+                }
+              : undefined
+          }
+          onPointerUp={canDrag ? () => commitDrop() : undefined}
+          style={[
+            styles.listItem,
+            i === displayRows.length - 1 && styles.listItemLast,
+            canDrag && styles.draggableHandle,
+            draggedRowId === row.id && styles.listItemDragging,
+          ]}
+        >
+          <html.span style={styles.listItemTitle}>
+            {titleField ? formatValue(row[titleField]) : ""}
+            {bodies?.[row.id] ? (
+              <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+            ) : null}
+          </html.span>
+          {secondaryFields.map((name) => (
+            <html.span key={name} style={styles.listItemSecondary}>
+              <CellValue field={fieldMap.get(name)} value={row[name]} />
             </html.span>
-            {secondaryFields.map((name) => (
-              <html.span key={name} style={styles.listItemSecondary}>
-                <CellValue field={fieldMap.get(name)} value={row[name]} />
-              </html.span>
-            ))}
-          </html.div>
-        );
-      })}
+          ))}
+        </html.div>
+      ))}
     </html.div>
   );
 }
