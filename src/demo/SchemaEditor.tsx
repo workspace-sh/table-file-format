@@ -2,6 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { Field, FieldType } from "../core/types.js";
 
+/**
+ * User-facing labels for the spec's technical type vocabulary. The
+ * on-disk type identifiers stay as-is (string, integer, etc.); these are
+ * purely for UI presentation. Showing the technical name as a small
+ * meta-tag alongside is intentional — power users and developers should
+ * still be able to see what's actually written to schema.json.
+ */
+const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  string: "Text",
+  integer: "Whole number",
+  number: "Number",
+  boolean: "Checkbox",
+  date: "Date",
+  datetime: "Date & time",
+  time: "Time",
+  year: "Year",
+  array: "List",
+  object: "Structured",
+  duration: "Duration",
+  geopoint: "Location",
+  geojson: "Map shape",
+};
+
+function friendlyType(type: FieldType): string {
+  return FIELD_TYPE_LABELS[type] ?? type;
+}
+
 const styles = css.create({
   popover: {
     position: "absolute",
@@ -50,6 +77,10 @@ const styles = css.create({
     },
   },
   typeBadge: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -64,6 +95,12 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
+  },
+  typeBadgeTechnical: {
+    fontSize: 9,
+    fontWeight: "400",
+    textTransform: "none",
+    opacity: 0.7,
   },
   label: {
     fontSize: 10,
@@ -268,7 +305,10 @@ export function SchemaFieldEditor({
     >
       <html.div style={styles.identity}>
         <html.span>{field.name}</html.span>
-        <html.span style={styles.typeBadge}>{field.type}</html.span>
+        <html.span style={styles.typeBadge}>
+          <html.span>{friendlyType(field.type)}</html.span>
+          <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
+        </html.span>
       </html.div>
 
       <html.span style={styles.label}>Display title</html.span>
@@ -415,7 +455,7 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
           >
             {ADDABLE_TYPES.map((t) => (
               <html.option key={t} value={t}>
-                {t}
+                {friendlyType(t)} · {t}
               </html.option>
             ))}
           </html.select>
