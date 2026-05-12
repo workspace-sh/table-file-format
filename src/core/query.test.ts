@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFilters, applySort, applyGroup, applyView, searchRows } from "./query.js";
+import {
+  applyFilters,
+  applySort,
+  applyGroup,
+  applyView,
+  applyOrder,
+  searchRows,
+} from "./query.js";
 import type { ParsedTable, Row, TableSchema, View } from "./types.js";
 
 const schema: TableSchema = {
@@ -135,4 +142,57 @@ test("searchRows: includes long-form bodies when provided", () => {
   const hits = searchRows(docs, "unique-token-xyz", { bodies });
   assert.equal(hits.length, 1);
   assert.equal(hits[0]!.id, "r1");
+});
+
+test("applyOrder: places mentioned rows first in the given sequence", () => {
+  const docs: Row[] = [
+    { id: "r1", title: "A" },
+    { id: "r2", title: "B" },
+    { id: "r3", title: "C" },
+    { id: "r4", title: "D" },
+  ];
+  const out = applyOrder(docs, ["r3", "r1"]);
+  assert.deepEqual(
+    out.map((r) => r.id),
+    ["r3", "r1", "r2", "r4"],
+  );
+});
+
+test("applyOrder: returns input unchanged when order is empty/undefined", () => {
+  const docs: Row[] = [
+    { id: "r1", title: "A" },
+    { id: "r2", title: "B" },
+  ];
+  assert.deepEqual(applyOrder(docs, undefined), docs);
+  assert.deepEqual(applyOrder(docs, []), docs);
+});
+
+test("applyView: order overrides sort when present", () => {
+  const parsed: ParsedTable = { schema, rows, views: [], meta: {}, path: "" };
+  const view: View = {
+    id: "v1",
+    name: "Manual",
+    layout: "list",
+    sort: [{ field: "priority", direction: "asc" }],
+    order: ["r4", "r2"],
+  };
+  const result = applyView(parsed, view);
+  // r4, r2 first by order, then r1/r3 in their arrival order (not sort)
+  assert.equal(result[0]!.id, "r4");
+  assert.equal(result[1]!.id, "r2");
+});
+
+test("applyView: order falls back to sort when order is empty", () => {
+  const parsed: ParsedTable = { schema, rows, views: [], meta: {}, path: "" };
+  const view: View = {
+    id: "v1",
+    name: "Sorted",
+    layout: "list",
+    sort: [{ field: "priority", direction: "asc" }],
+    order: [],
+  };
+  const result = applyView(parsed, view);
+  // sort by priority asc; null last
+  assert.equal(result[0]!.id, "r1"); // priority 1
+  assert.equal(result[result.length - 1]!.id, "r4"); // null
 });
