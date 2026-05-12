@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import type { Field, FieldType } from "../core/types.js";
+import type { Field, FieldAlignment, FieldType } from "../core/types.js";
+import { defaultAlignFor } from "../core/types.js";
 
 /**
  * User-facing labels for the spec's technical type vocabulary. The
@@ -167,6 +168,47 @@ const styles = css.create({
     flexDirection: "row",
     gap: 6,
     marginTop: 6,
+  },
+  alignmentRow: {
+    display: "flex",
+    flexDirection: "row",
+    gap: 4,
+  },
+  alignmentButton: {
+    flex: 1,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontWeight: "500",
+    borderRadius: 4,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  alignmentButtonActive: {
+    backgroundColor: {
+      default: "#e8e8ed",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+    borderColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
   },
   button: {
     flex: 1,
@@ -374,6 +416,32 @@ export function SchemaFieldEditor({
           />
         </>
       )}
+
+      <html.span style={styles.label}>
+        Alignment <html.span style={styles.typeBadgeTechnical}>
+          · auto = {defaultAlignFor(field.type)}
+        </html.span>
+      </html.span>
+      <html.div style={styles.alignmentRow}>
+        {(["auto", "left", "center", "right"] as const).map((opt) => {
+          const isAuto = opt === "auto";
+          const isActive = isAuto ? field.align === undefined : field.align === opt;
+          return (
+            <html.button
+              key={opt}
+              onClick={() =>
+                onUpdate({ align: isAuto ? undefined : (opt as FieldAlignment) })
+              }
+              style={[
+                styles.alignmentButton,
+                isActive && styles.alignmentButtonActive,
+              ]}
+            >
+              {isAuto ? "Auto" : opt[0]!.toUpperCase() + opt.slice(1)}
+            </html.button>
+          );
+        })}
+      </html.div>
 
       <html.div style={styles.actionRow}>
         <html.button

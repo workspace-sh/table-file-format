@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { applyGroup } from "../core/index.js";
-import type { Field, Row, TableSchema, View } from "../core/types.js";
+import { applyGroup, effectiveAlign } from "../core/index.js";
+import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
 
 const styles = css.create({
@@ -41,10 +41,27 @@ const styles = css.create({
     flex: 1,
     display: "flex",
     alignItems: "center",
+    justifyContent: "flex-start",
     paddingHorizontal: 14,
     minHeight: 38,
     fontSize: 13,
     boxSizing: "border-box",
+  },
+  tableCellAlignCenter: {
+    justifyContent: "center",
+    textAlign: "center",
+  },
+  tableCellAlignRight: {
+    justifyContent: "flex-end",
+    textAlign: "right",
+  },
+  tableCellSeparator: {
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
   },
   tableHeaderCell: {
     fontSize: 11,
@@ -241,6 +258,12 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
+  headerCellButtonCenter: {
+    textAlign: "center",
+  },
+  headerCellButtonRight: {
+    textAlign: "right",
+  },
   headerCellDeprecated: {
     textDecorationLine: "line-through",
     opacity: 0.6,
@@ -339,6 +362,18 @@ function fieldsByName(schema: TableSchema): Map<string, Field> {
 
 function visibleFields(view: View, schema: TableSchema): string[] {
   return view.fields ?? schema.fields.map((f) => f.name);
+}
+
+function cellAlignStyle(align: FieldAlignment) {
+  if (align === "center") return styles.tableCellAlignCenter;
+  if (align === "right") return styles.tableCellAlignRight;
+  return null;
+}
+
+function headerAlignStyle(align: FieldAlignment) {
+  if (align === "center") return styles.headerCellButtonCenter;
+  if (align === "right") return styles.headerCellButtonRight;
+  return null;
 }
 
 function formatValue(value: unknown): string {
@@ -545,24 +580,38 @@ export function TableView({
   return (
     <html.div style={styles.table}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-        {fields.map((name) => {
+        {fields.map((name, idx) => {
           const field = fieldMap.get(name);
           const isEditing = editingFieldName === name;
           const fieldIndex = schema.fields.findIndex((f) => f.name === name);
+          const align = effectiveAlign(field);
+          const isLast = idx === fields.length - 1 && !canAddField;
           if (!schemaEditable) {
             return (
-              <html.span key={name} style={[styles.tableCell, styles.tableHeaderCell]}>
+              <html.span
+                key={name}
+                style={[
+                  styles.tableCell,
+                  styles.tableHeaderCell,
+                  cellAlignStyle(align),
+                  !isLast && styles.tableCellSeparator,
+                ]}
+              >
                 {field?.title ?? name}
               </html.span>
             );
           }
           return (
-            <html.span key={name} style={styles.headerCellWrapper}>
+            <html.span
+              key={name}
+              style={[styles.headerCellWrapper, !isLast && styles.tableCellSeparator]}
+            >
               <html.button
                 onClick={() => setEditingFieldName(isEditing ? null : name)}
                 style={[
                   styles.headerCellButton,
                   field?.deprecated && styles.headerCellDeprecated,
+                  headerAlignStyle(align),
                 ]}
               >
                 {field?.title ?? name}
@@ -594,22 +643,34 @@ export function TableView({
           key={row.id}
           style={[styles.tableRow, i === rows.length - 1 && styles.tableRowLast]}
         >
-          {fields.map((name) => (
-            <html.span key={name} style={styles.tableCell}>
-              {onUpdateRow ? (
-                <EditableCell
-                  field={fieldMap.get(name)}
-                  value={row[name]}
-                  onCommit={(next) => onUpdateRow(row.id, name, next)}
-                />
-              ) : (
-                <CellValue field={fieldMap.get(name)} value={row[name]} />
-              )}
-              {name === titleField && bodies?.[row.id] ? (
-                <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-              ) : null}
-            </html.span>
-          ))}
+          {fields.map((name, idx) => {
+            const field = fieldMap.get(name);
+            const align = effectiveAlign(field);
+            const isLast = idx === fields.length - 1;
+            return (
+              <html.span
+                key={name}
+                style={[
+                  styles.tableCell,
+                  cellAlignStyle(align),
+                  !isLast && styles.tableCellSeparator,
+                ]}
+              >
+                {onUpdateRow ? (
+                  <EditableCell
+                    field={field}
+                    value={row[name]}
+                    onCommit={(next) => onUpdateRow(row.id, name, next)}
+                  />
+                ) : (
+                  <CellValue field={field} value={row[name]} />
+                )}
+                {name === titleField && bodies?.[row.id] ? (
+                  <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+                ) : null}
+              </html.span>
+            );
+          })}
         </html.div>
       ))}
     </html.div>

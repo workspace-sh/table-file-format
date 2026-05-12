@@ -26,12 +26,21 @@ export interface FieldConstraints {
   pattern?: string;
 }
 
+export type FieldAlignment = "left" | "center" | "right";
+
 export interface Field {
   name: string;
   type: FieldType;
   title?: string;
   description?: string;
   format?: string;
+  /**
+   * Display alignment for the field's values. Optional; when absent,
+   * readers use the per-type default (numerics right, booleans center,
+   * everything else left). Setting this explicitly overrides the default.
+   * Purely cosmetic — does not affect data validation or storage.
+   */
+  align?: FieldAlignment;
   constraints?: FieldConstraints;
   attachment?: boolean;
   relation?: {
@@ -40,6 +49,35 @@ export interface Field {
   };
   deprecated?: boolean;
   [key: string]: unknown;
+}
+
+/**
+ * Default display alignment for a given field type, following the
+ * convention used by spreadsheet/database apps (Airtable, Sheets, etc.).
+ * Numerics right-align so digits line up; booleans center; everything
+ * else left.
+ */
+export function defaultAlignFor(type: FieldType): FieldAlignment {
+  switch (type) {
+    case "integer":
+    case "number":
+    case "year":
+      return "right";
+    case "boolean":
+      return "center";
+    default:
+      return "left";
+  }
+}
+
+/**
+ * Resolve a field's effective alignment: the explicit `align` annotation
+ * if present, otherwise the type-based default. Returns "left" when the
+ * field is undefined.
+ */
+export function effectiveAlign(field: Field | undefined): FieldAlignment {
+  if (!field) return "left";
+  return field.align ?? defaultAlignFor(field.type);
 }
 
 export interface TableSchema {
