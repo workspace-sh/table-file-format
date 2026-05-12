@@ -2,11 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyGroup, effectiveAlign } from "../core/index.js";
 import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
-import {
-  ADD_FIELD_COLUMN_WIDTH,
-  AddFieldButton,
-  SchemaFieldEditor,
-} from "./SchemaEditor.js";
+import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
 
 const styles = css.create({
   // Table
@@ -339,9 +335,12 @@ const styles = css.create({
     cursor: "text",
   },
 
-  // Spacer in body rows to mirror the "+ Field" header column slot
+  // Spacer in body rows to mirror the "+ Field" header column slot.
+  // Width must match SchemaEditor's `addFieldWrapper.width` — kept as a
+  // literal here because StyleX is static-extraction-only and can't
+  // resolve cross-module constants inside css.create().
   addFieldSpacer: {
-    width: ADD_FIELD_COLUMN_WIDTH,
+    width: 84,
     flexShrink: 0,
   },
 

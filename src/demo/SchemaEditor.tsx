@@ -4,8 +4,16 @@ import { html, css } from "react-strict-dom";
 import type { Field, FieldAlignment, FieldType } from "../core/types.js";
 import { defaultAlignFor } from "../core/types.js";
 
-/** Fixed width for the "+ Field" trailing column slot. Exported so the
- *  table body rows can render a matching spacer and stay aligned. */
+/**
+ * Fixed width for the "+ Field" trailing column slot. Body rows in
+ * TableView render a matching-width spacer to keep columns aligned.
+ *
+ * NOTE: this literal is duplicated as `84` inside the StyleX rules below
+ * and in views.tsx's spacer rule. StyleX is static-extraction only and
+ * cannot resolve cross-module identifiers (it would interpret the import
+ * as a `.stylex.js` theme variable). If you change this, update both
+ * `addFieldWrapper.width` here and `addFieldSpacer.width` in views.tsx.
+ */
 export const ADD_FIELD_COLUMN_WIDTH = 84;
 
 /**
@@ -253,7 +261,7 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    width: ADD_FIELD_COLUMN_WIDTH,
+    width: 84, // == ADD_FIELD_COLUMN_WIDTH; StyleX needs a literal
     flexShrink: 0,
   },
   addFieldButton: {
