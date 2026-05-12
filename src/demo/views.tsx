@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
 import { applyGroup, effectiveAlign } from "../core/index.js";
 import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
@@ -125,6 +127,47 @@ const styles = css.create({
   },
   draggableHandle: {
     cursor: "grab",
+  },
+
+  // Floating ghost — follows the pointer during drag. Rendered via portal
+  // so it escapes any clipping ancestor (e.g. table's rounded corners).
+  ghost: {
+    position: "fixed",
+    zIndex: 100,
+    pointerEvents: "none",
+    width: 240,
+    opacity: 0.95,
+    borderRadius: 8,
+    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.25)",
+    transform: "rotate(-2deg)",
+  },
+  ghostPosition: (x: number, y: number) => ({
+    left: x,
+    top: y,
+  }),
+  ghostListRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1e",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+    fontSize: 13,
+    fontWeight: "500",
   },
   kanbanColumnHeader: {
     display: "flex",
@@ -584,6 +627,50 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
   return stripped.slice(0, max).replace(/\s+\S*$/, "") + "…";
 }
 
+/**
+ * Track the pointer's viewport coordinates while a drag is active.
+ * Returns null when no drag is in progress. Uses document-level
+ * pointermove on web; the RN port (in Workspace's UI kit) substitutes
+ * react-native-gesture-handler since native has no document equivalent.
+ */
+function useDragPointer(active: boolean) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!active) {
+      setPos(null);
+      return;
+    }
+    const onMove = (e: PointerEvent) => {
+      setPos({ x: e.clientX, y: e.clientY });
+    };
+    document.addEventListener("pointermove", onMove);
+    return () => document.removeEventListener("pointermove", onMove);
+  }, [active]);
+  return pos;
+}
+
+/**
+ * Floating ghost that follows the pointer during drag. Rendered via
+ * createPortal to document.body so no parent overflow clips it.
+ */
+function DragGhost({
+  pointerPos,
+  children,
+}: {
+  pointerPos: { x: number; y: number } | null;
+  children: ReactNode;
+}) {
+  if (!pointerPos) return null;
+  return createPortal(
+    <html.div
+      style={[styles.ghost, styles.ghostPosition(pointerPos.x + 14, pointerPos.y + 14)]}
+    >
+      {children}
+    </html.div>,
+    document.body,
+  );
+}
+
 function BodyBadge({ onClick }: { onClick?: () => void }) {
   if (!onClick) return <html.span style={styles.bodyBadge}>doc</html.span>;
   return (
@@ -746,6 +833,7 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
+  const pointerPos = useDragPointer(!!draggedRowId);
 
   // Live preview: while dragging, render groups as if the dragged row
   // were already in the hovered column. The actual mutation only commits
@@ -860,6 +948,16 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
           </html.div>
         );
       })}
+      {draggedRowId &&
+        (() => {
+          const row = rows.find((r) => r.id === draggedRowId);
+          if (!row) return null;
+          return (
+            <DragGhost pointerPos={pointerPos}>
+              <Card row={row} fields={fields} fieldMap={fieldMap} />
+            </DragGhost>
+          );
+        })()}
     </html.div>
   );
 }
@@ -916,6 +1014,7 @@ export function ListView({
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
   const canDrag = !!onUpdateView;
+  const pointerPos = useDragPointer(!!draggedRowId);
 
   // Live reorder preview: while dragging, rebuild the visible order so
   // the dragged row physically appears in its hover-target position. The
@@ -1016,6 +1115,18 @@ export function ListView({
           ))}
         </html.div>
       ))}
+      {draggedRowId &&
+        (() => {
+          const row = rows.find((r) => r.id === draggedRowId);
+          if (!row) return null;
+          return (
+            <DragGhost pointerPos={pointerPos}>
+              <html.div style={styles.ghostListRow}>
+                {titleField ? formatValue(row[titleField]) : row.id}
+              </html.div>
+            </DragGhost>
+          );
+        })()}
     </html.div>
   );
 }
