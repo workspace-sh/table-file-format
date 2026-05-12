@@ -26,3 +26,32 @@ body {
     color: #f5f5f7;
   }
 }
+
+/* -----------------------------------------------------------------------
+ * Focus rings
+ *
+ * Suppress the browser default (macOS blue, etc.) and apply a subtle,
+ * Airtable-style indicator only for :focus-visible — i.e. keyboard
+ * navigation. Mouse clicks don't trigger it; that matches Airtable /
+ * Notion / Sheets convention.
+ *
+ * NOTE: this is web-only. On RN, focus rings work via state-driven
+ * styles (useFocused + onFocus/onBlur in the strict-attribute whitelist).
+ * The RN port in Workspace's UI kit substitutes a small `useFocused`
+ * hook that toggles a styled "focused" class on the same elements.
+ * --------------------------------------------------------------------- */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :focus-visible {
+    outline-color: #60a5fa;
+  }
+}
