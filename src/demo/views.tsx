@@ -342,19 +342,26 @@ const styles = css.create({
     opacity: 0.6,
   },
 
-  // Editable-cell input — visually identical to the surrounding cell.
-  // The text caret is the focus indicator; no border, no shadow, no
-  // accent colour. Calmest possible treatment.
+  // Editable-cell input — subtle 1px inset border in neutral gray when
+  // active. Visible enough to mark "you're in this cell" without the
+  // branded-blue prominence. Same colour family as the focus-visible
+  // outline and cell separators — feels like the cell's edge got a
+  // touch firmer, nothing more.
   cellInput: {
     width: "100%",
     paddingHorizontal: 6,
     paddingVertical: 2,
     fontSize: 13,
     borderWidth: 0,
+    borderRadius: 2,
     backgroundColor: "transparent",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+    boxShadow: {
+      default: "inset 0 0 0 1px #9ca3af",
+      "@media (prefers-color-scheme: dark)": "inset 0 0 0 1px #6b7280",
     },
     outlineStyle: "none",
     minHeight: 22,
