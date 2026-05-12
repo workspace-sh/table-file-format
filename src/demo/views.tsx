@@ -342,29 +342,19 @@ const styles = css.create({
     opacity: 0.6,
   },
 
-  // Editable-cell input — Airtable-style: inset 2px focus indicator
-  // instead of a hard border + browser focus ring. The input is only
-  // mounted while editing, so the indicator is always-on while visible.
+  // Editable-cell input — visually identical to the surrounding cell.
+  // The text caret is the focus indicator; no border, no shadow, no
+  // accent colour. Calmest possible treatment.
   cellInput: {
     width: "100%",
     paddingHorizontal: 6,
     paddingVertical: 2,
     fontSize: 13,
     borderWidth: 0,
-    borderRadius: 3,
-    backgroundColor: {
-      default: "#ffffff",
-      "@media (prefers-color-scheme: dark)": "#1c1c1e",
-    },
+    backgroundColor: "transparent",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-    // Subtle inset accent; replaces the prominent macOS-blue border the
-    // browser would otherwise draw plus our previous 1px borderColor.
-    boxShadow: {
-      default: "inset 0 0 0 2px #3b82f6",
-      "@media (prefers-color-scheme: dark)": "inset 0 0 0 2px #60a5fa",
     },
     outlineStyle: "none",
     minHeight: 22,
