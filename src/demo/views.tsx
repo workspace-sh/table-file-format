@@ -48,6 +48,17 @@ const styles = css.create({
     minHeight: 38,
     fontSize: 13,
     boxSizing: "border-box",
+    // Subtle inset when the cell contains a focused descendant (i.e. the
+    // input is open). Indicator lives on the cell, not on the input, so
+    // the input itself can stay layout-neutral and the text doesn't shift
+    // on edit-mode swap. :focus-within is CSS-only — RN port via the same
+    // useFocused hook pattern documented in strict.css.
+    ":focus-within": {
+      boxShadow: {
+        default: "inset 0 0 0 1px #9ca3af",
+        "@media (prefers-color-scheme: dark)": "inset 0 0 0 1px #6b7280",
+      },
+    },
   },
   tableCellAlignCenter: {
     justifyContent: "center",
@@ -342,26 +353,20 @@ const styles = css.create({
     opacity: 0.6,
   },
 
-  // Editable-cell input — subtle 1px inset border in neutral gray when
-  // active. Visible enough to mark "you're in this cell" without the
-  // branded-blue prominence. Same colour family as the focus-visible
-  // outline and cell separators — feels like the cell's edge got a
-  // touch firmer, nothing more.
+  // Editable-cell input — layout-identical to the idle wrapper
+  // (cellEditableIdle) so swapping between display and edit doesn't shift
+  // anything by even a pixel. Zero padding, zero border, transparent.
+  // The focus indicator is on the parent tableCell via :focus-within.
   cellInput: {
     width: "100%",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     fontSize: 13,
     borderWidth: 0,
-    borderRadius: 2,
     backgroundColor: "transparent",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-    boxShadow: {
-      default: "inset 0 0 0 1px #9ca3af",
-      "@media (prefers-color-scheme: dark)": "inset 0 0 0 1px #6b7280",
     },
     outlineStyle: "none",
     minHeight: 22,
