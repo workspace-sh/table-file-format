@@ -94,10 +94,11 @@ NPM resolves locally. No publishing required for local development.
 
 ## Running
 
-**Node 22 LTS, npm 10+.** Pinned via `.nvmrc` and `engines` at root.
+**Node 22.20.0.** Pinned via `.nvmrc` at root (matches the Workspace
+org convention — see `react-native-enriched-markdown`'s `.nvmrc`).
 
 ```sh
-nvm use                  # picks up .nvmrc → Node 22
+nvm use                  # picks up .nvmrc → Node 22.20.0
 ```
 
 All commands run from the monorepo root. Namespaced consistently so the
