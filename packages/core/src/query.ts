@@ -6,7 +6,7 @@ import type {
   View,
   ViewFilter,
   ViewSort,
-} from "./types.js";
+} from "./types";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;

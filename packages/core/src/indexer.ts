@@ -1,4 +1,4 @@
-import type { Row } from "./types.js";
+import type { Row } from "./types";
 
 const NOT_IMPLEMENTED = "indexer not yet implemented";
 

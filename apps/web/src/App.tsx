@@ -15,8 +15,8 @@ import {
   ListView,
   TableView,
 } from "@workspace/table-ui";
-import { projectsTable } from "./loadFixture.js";
-import { Sidebar } from "./Sidebar.js";
+import { projectsTable } from "./loadFixture";
+import { Sidebar } from "./Sidebar";
 
 const INITIAL_SCHEMA_VERSION =
   (projectsTable.schema["schema-version"] as number | undefined) ?? 1;

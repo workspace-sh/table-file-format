@@ -10,7 +10,7 @@ import type {
   TableSchema,
   View,
 } from "@workspace/table-core";
-import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
+import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 
 const styles = css.create({
   // Table

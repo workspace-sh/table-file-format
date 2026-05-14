@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validate, validateBodies } from "./validator.js";
-import type { Row, TableSchema } from "./types.js";
+import { validate, validateBodies } from "./validator";
+import type { Row, TableSchema } from "./types";
 
 const schema: TableSchema = {
   fields: [

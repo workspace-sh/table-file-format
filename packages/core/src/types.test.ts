@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { defaultAlignFor, effectiveAlign } from "./types.js";
-import type { Field } from "./types.js";
+import { defaultAlignFor, effectiveAlign } from "./types";
+import type { Field } from "./types";
 
 test("defaultAlignFor: numerics right-align", () => {
   assert.equal(defaultAlignFor("integer"), "right");

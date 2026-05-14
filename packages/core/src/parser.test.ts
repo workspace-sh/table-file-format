@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { parseTable } from "./parser.js";
+import { parseTable } from "./parser";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // packages/core/src/parser.test.ts → repo root → fixtures/

@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
+import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types";
 
 export async function parseTable(dir: string): Promise<ParsedTable> {
   const schema = await readJson<TableSchema>(join(dir, "schema.json"));

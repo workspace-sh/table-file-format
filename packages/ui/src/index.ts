@@ -3,10 +3,10 @@ export {
   KanbanView,
   GalleryView,
   ListView,
-} from "./views.js";
+} from "./views";
 export {
   AddFieldButton,
   SchemaFieldEditor,
   ADD_FIELD_COLUMN_WIDTH,
-} from "./SchemaEditor.js";
-export { BodyEditor } from "./BodyEditor.js";
+} from "./SchemaEditor";
+export { BodyEditor } from "./BodyEditor";

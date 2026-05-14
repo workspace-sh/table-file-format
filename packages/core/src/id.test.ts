@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newId } from "./id.js";
+import { newId } from "./id";
 
 test("newId returns a non-empty string", () => {
   const id = newId();

@@ -1,5 +1,5 @@
-export * from "./types.js";
-export { newId } from "./id.js";
-export { validate, validateBodies, type ValidationError } from "./validator.js";
-export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query.js";
-export { buildIndex, queryIndex, isIndexStale, dropIndex } from "./indexer.js";
+export * from "./types";
+export { newId } from "./id";
+export { validate, validateBodies, type ValidationError } from "./validator";
+export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query";
+export { buildIndex, queryIndex, isIndexStale, dropIndex } from "./indexer";
