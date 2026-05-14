@@ -94,37 +94,48 @@ NPM resolves locally. No publishing required for local development.
 
 ## Running
 
+All commands run from the monorepo root. Namespaced consistently so the
+syntax is the same across every surface.
+
 ```sh
 npm install                       # installs everything; symlinks workspace packages
 
-# Web — full demo
-npm run dev                       # vite at http://localhost:5173
-npm run build:web
+# Format library
+npm run core:build                # tsc → packages/core/dist/
+npm run core:test                 # node:test suite (48 tests)
+npm run core:test:watch           # watch mode
+npm run core:typecheck
 
-# Format library tests
-npm run test -w @workspace/table-core      # node:test suite (48 tests)
+# Web (full demo)
+npm run web:dev                   # vite at http://localhost:5173
+npm run web:build                 # production bundle
+npm run web:preview               # preview the built bundle
+npm run web:typecheck
+npm run dev                       # alias for `web:dev`
 
-# Typecheck a specific workspace
-npm run typecheck -w @workspace/table-web
-npm run typecheck -w @workspace/table-ui
-npm run typecheck -w @workspace/table-mobile
-npm run typecheck -w @workspace/table-macos
+# Mobile (Expo 56 preview, iOS + Android)
+npm run mobile:prebuild           # one-time: generate ios/ + android/
+npm run mobile:start              # metro dev server
+npm run mobile:ios                # build + launch iOS simulator
+npm run mobile:android            # build + launch Android emulator
+npm run mobile:typecheck
 
-# Mobile (Expo 56)
-npm run prebuild -w @workspace/table-mobile     # generates ios/, android/
-npm run ios -w @workspace/table-mobile          # or `android` / `start`
+# macOS (bare RN + react-native-macos)
+# First time: bootstrap the native macos/ Xcode project — see
+# apps/macos/README.md (mirror react-native-source-editor's setup).
+npm run macos:start               # metro dev server
+npm run macos:run                 # build + launch the macOS app
+npm run macos:typecheck
 
-# macOS (bare RN)
-# See apps/macos/README.md for one-time native-project bootstrap.
-npm run macos -w @workspace/table-macos
+# UI package — typecheck only (no runtime; it's a library of components)
+npm run ui:typecheck
 ```
 
-> **Heads-up on npm 11 + workspaces:** `npm test` at the root tries to
-> propagate to every workspace, which fails on workspaces without a
-> `test` script. Use `npm run test -w @workspace/table-core` to run the
-> format-library tests directly. The root `package.json` exposes
-> short aliases (`npm run dev`, `npm run build:web`) for the common
-> single-workspace commands.
+> **Heads-up on npm 11 + workspaces:** lifecycle script names (`test`,
+> `build`, `start`) propagate to every workspace by default, which fails
+> on workspaces that don't define them. That's why root scripts are
+> namespaced (`core:test`, not `test`). Avoid running bare `npm test` /
+> `npm build` / `npm start` at the root — use the namespaced commands.
 
 ## Status
 
