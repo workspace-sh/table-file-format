@@ -94,13 +94,10 @@ NPM resolves locally. No publishing required for local development.
 
 ## Running
 
-Node 22 LTS (or 20 LTS, or 24+) — pinned via `.nvmrc` at the repo root.
-Metro / React Native reject Node 23 with `EBADENGINE` warnings; if you
-hit those, switch:
+**Node 22 LTS, npm 10+.** Pinned via `.nvmrc` and `engines` at root.
 
 ```sh
 nvm use                  # picks up .nvmrc → Node 22
-# or: fnm use, volta install node@22, mise use node@22
 ```
 
 All commands run from the monorepo root. Namespaced consistently so the
