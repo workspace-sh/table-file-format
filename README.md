@@ -101,11 +101,16 @@ npm install                       # installs everything; symlinks workspace pack
 npm run dev                       # vite at http://localhost:5173
 npm run build:web
 
-# Format library
-npm test                          # node:test suite (48 tests)
-npm run typecheck                 # typecheck every workspace
+# Format library tests
+npm run test -w @workspace/table-core      # node:test suite (48 tests)
 
-# Mobile (Expo)
+# Typecheck a specific workspace
+npm run typecheck -w @workspace/table-web
+npm run typecheck -w @workspace/table-ui
+npm run typecheck -w @workspace/table-mobile
+npm run typecheck -w @workspace/table-macos
+
+# Mobile (Expo 56)
 npm run prebuild -w @workspace/table-mobile     # generates ios/, android/
 npm run ios -w @workspace/table-mobile          # or `android` / `start`
 
@@ -113,6 +118,13 @@ npm run ios -w @workspace/table-mobile          # or `android` / `start`
 # See apps/macos/README.md for one-time native-project bootstrap.
 npm run macos -w @workspace/table-macos
 ```
+
+> **Heads-up on npm 11 + workspaces:** `npm test` at the root tries to
+> propagate to every workspace, which fails on workspaces without a
+> `test` script. Use `npm run test -w @workspace/table-core` to run the
+> format-library tests directly. The root `package.json` exposes
+> short aliases (`npm run dev`, `npm run build:web`) for the common
+> single-workspace commands.
 
 ## Status
 

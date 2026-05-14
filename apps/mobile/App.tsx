@@ -2,7 +2,7 @@ import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { applyView, validate } from "@workspace/table-core";
 import type { ParsedTable, View } from "@workspace/table-core";
-import { fixture } from "./src/fixture.js";
+import { fixture } from "./src/fixture";
 
 const styles = css.create({
   root: {

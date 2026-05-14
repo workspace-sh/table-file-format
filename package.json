@@ -10,14 +10,12 @@
     "apps/macos"
   ],
   "scripts": {
-    "test": "npm run test -w @workspace/table-core",
-    "test:watch": "npm run test:watch -w @workspace/table-core",
-    "build": "npm run build -w @workspace/table-core",
-    "typecheck": "npm run typecheck --workspaces --if-present",
     "dev": "npm run dev -w @workspace/table-web",
-    "build:web": "npm run build -w @workspace/table-web"
+    "build:web": "npm run build -w @workspace/table-web",
+    "build:core": "npm run build -w @workspace/table-core"
   },
   "devDependencies": {
+    "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }
 }

@@ -4,21 +4,19 @@
     "slug": "table-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "sh.workspace.table.mobile"
     },
     "android": {
-      "package": "sh.workspace.table.mobile",
-      "edgeToEdgeEnabled": true
+      "package": "sh.workspace.table.mobile"
     },
     "plugins": [
       [
         "expo-build-properties",
         {
-          "ios": { "deploymentTarget": "15.1" },
+          "ios": { "deploymentTarget": "16.4" },
           "android": { "minSdkVersion": 24 }
         }
       ]
