@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "react-native start",
+    "clear": "watchman watch-del-all && react-native start --reset-cache",
     "macos": "react-native run-macos",
     "typecheck": "tsc --noEmit"
   },

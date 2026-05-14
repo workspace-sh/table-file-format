@@ -5,9 +5,14 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
+    "clear": "watchman watch-del-all && expo start --clear",
     "prebuild": "expo prebuild",
+    "clean": "expo prebuild --clean",
+    "ios": "expo run:ios",
+    "ios:device": "expo run:ios --device",
+    "ios:device:release": "expo run:ios --device --configuration Release",
+    "android": "expo run:android",
+    "android:device": "expo run:android --device",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

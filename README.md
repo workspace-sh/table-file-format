@@ -117,17 +117,23 @@ npm run web:preview               # preview the built bundle
 npm run web:typecheck
 npm run dev                       # alias for `web:dev`
 
-# Mobile (Expo 56 preview, iOS + Android)
+# Mobile (Expo 55, iOS + Android)
 npm run mobile:prebuild           # one-time: generate ios/ + android/
+npm run mobile:clean              # prebuild --clean (regenerate from scratch)
 npm run mobile:start              # metro dev server
+npm run mobile:clear              # watchman clear + metro --reset-cache
 npm run mobile:ios                # build + launch iOS simulator
+npm run mobile:ios:device         # build + launch on a paired iOS device
+npm run mobile:ios:device:release # release build on a paired iOS device
 npm run mobile:android            # build + launch Android emulator
+npm run mobile:android:device     # build + launch on a paired Android device
 npm run mobile:typecheck
 
 # macOS (bare RN + react-native-macos)
 # First time: bootstrap the native macos/ Xcode project — see
 # apps/macos/README.md (mirror react-native-source-editor's setup).
 npm run macos:start               # metro dev server
+npm run macos:clear               # watchman clear + metro --reset-cache
 npm run macos:run                 # build + launch the macOS app
 npm run macos:typecheck
 

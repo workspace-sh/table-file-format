@@ -11,26 +11,27 @@
   ],
   "scripts": {
     "dev": "npm run web:dev",
-
     "core:build": "npm run build -w @workspace/table-core",
     "core:test": "npm run test -w @workspace/table-core",
     "core:test:watch": "npm run test:watch -w @workspace/table-core",
     "core:typecheck": "npm run typecheck -w @workspace/table-core",
-
     "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
-
     "web:dev": "npm run dev -w @workspace/table-web",
     "web:build": "npm run build -w @workspace/table-web",
     "web:preview": "npm run preview -w @workspace/table-web",
     "web:typecheck": "npm run typecheck -w @workspace/table-web",
-
     "mobile:start": "npm run start -w @workspace/table-mobile",
+    "mobile:clear": "npm run clear -w @workspace/table-mobile",
     "mobile:prebuild": "npm run prebuild -w @workspace/table-mobile",
+    "mobile:clean": "npm run clean -w @workspace/table-mobile",
     "mobile:ios": "npm run ios -w @workspace/table-mobile",
+    "mobile:ios:device": "npm run ios:device -w @workspace/table-mobile",
+    "mobile:ios:device:release": "npm run ios:device:release -w @workspace/table-mobile",
     "mobile:android": "npm run android -w @workspace/table-mobile",
+    "mobile:android:device": "npm run android:device -w @workspace/table-mobile",
     "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
-
     "macos:start": "npm run start -w @workspace/table-macos",
+    "macos:clear": "npm run clear -w @workspace/table-macos",
     "macos:run": "npm run macos -w @workspace/table-macos",
     "macos:typecheck": "npm run typecheck -w @workspace/table-macos"
   },
