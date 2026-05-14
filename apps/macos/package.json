@@ -6,6 +6,8 @@
     "start": "react-native start",
     "clear": "watchman watch-del-all && react-native start --reset-cache",
     "macos": "react-native run-macos",
+    "pods": "cd macos && pod install",
+    "clean:pods": "cd macos && rm -rf Pods Podfile.lock build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

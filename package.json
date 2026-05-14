@@ -11,34 +11,52 @@
   ],
   "scripts": {
     "dev": "npm run web:dev",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run macos:typecheck",
+
     "core:build": "npm run build -w @workspace/table-core",
     "core:test": "npm run test -w @workspace/table-core",
     "core:test:watch": "npm run test:watch -w @workspace/table-core",
     "core:typecheck": "npm run typecheck -w @workspace/table-core",
+
     "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
+
     "web:dev": "npm run dev -w @workspace/table-web",
     "web:build": "npm run build -w @workspace/table-web",
     "web:preview": "npm run preview -w @workspace/table-web",
     "web:typecheck": "npm run typecheck -w @workspace/table-web",
-    "mobile:start": "npm run start -w @workspace/table-mobile",
-    "mobile:clear": "npm run clear -w @workspace/table-mobile",
-    "mobile:prebuild": "npm run prebuild -w @workspace/table-mobile",
-    "mobile:clean": "npm run clean -w @workspace/table-mobile",
-    "mobile:ios": "npm run ios -w @workspace/table-mobile",
-    "mobile:ios:device": "npm run ios:device -w @workspace/table-mobile",
-    "mobile:ios:device:release": "npm run ios:device:release -w @workspace/table-mobile",
-    "mobile:android": "npm run android -w @workspace/table-mobile",
-    "mobile:android:device": "npm run android:device -w @workspace/table-mobile",
+
+    "ios:clean": "rm -rf apps/mobile/ios",
+    "ios:prebuild": "npm run prebuild:ios -w @workspace/table-mobile",
+    "ios:start": "npm run start -w @workspace/table-mobile",
+    "ios:clear": "npm run clear -w @workspace/table-mobile",
+    "ios:run": "npm run ios -w @workspace/table-mobile",
+    "ios:run:device": "npm run ios:device -w @workspace/table-mobile",
+    "ios:run:device:release": "npm run ios:device:release -w @workspace/table-mobile",
+    "ios:dev": "concurrently \"npm run ios:clear\" \"npm run ios:run\"",
+
+    "android:clean": "rm -rf apps/mobile/android",
+    "android:prebuild": "npm run prebuild:android -w @workspace/table-mobile",
+    "android:start": "npm run start -w @workspace/table-mobile",
+    "android:clear": "npm run clear -w @workspace/table-mobile",
+    "android:run": "npm run android -w @workspace/table-mobile",
+    "android:run:device": "npm run android:device -w @workspace/table-mobile",
+    "android:dev": "concurrently \"npm run android:clear\" \"npm run android:run\"",
+
     "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
+
+    "macos:pods": "npm run pods -w @workspace/table-macos",
+    "macos:clean": "npm run clean:pods -w @workspace/table-macos",
     "macos:start": "npm run start -w @workspace/table-macos",
     "macos:clear": "npm run clear -w @workspace/table-macos",
     "macos:run": "npm run macos -w @workspace/table-macos",
+    "macos:dev": "concurrently \"npm run macos:clear\" \"npm run macos:run\"",
     "macos:typecheck": "npm run typecheck -w @workspace/table-macos"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "concurrently": "^9.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }

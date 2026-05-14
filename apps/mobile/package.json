@@ -4,10 +4,10 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --dev-client",
     "clear": "watchman watch-del-all && expo start --clear",
-    "prebuild": "expo prebuild",
-    "clean": "expo prebuild --clean",
+    "prebuild:ios": "expo prebuild --platform ios",
+    "prebuild:android": "expo prebuild --platform android",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "ios:device:release": "expo run:ios --device --configuration Release",

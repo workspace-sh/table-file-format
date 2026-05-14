@@ -117,24 +117,36 @@ npm run web:preview               # preview the built bundle
 npm run web:typecheck
 npm run dev                       # alias for `web:dev`
 
-# Mobile (Expo 55, iOS + Android)
-npm run mobile:prebuild           # one-time: generate ios/ + android/
-npm run mobile:clean              # prebuild --clean (regenerate from scratch)
-npm run mobile:start              # metro dev server
-npm run mobile:clear              # watchman clear + metro --reset-cache
-npm run mobile:ios                # build + launch iOS simulator
-npm run mobile:ios:device         # build + launch on a paired iOS device
-npm run mobile:ios:device:release # release build on a paired iOS device
-npm run mobile:android            # build + launch Android emulator
-npm run mobile:android:device     # build + launch on a paired Android device
-npm run mobile:typecheck
+# iOS (Expo 55)
+npm run ios:prebuild              # one-time: generate ios/ Xcode project
+npm run ios:clean                 # rm -rf apps/mobile/ios
+npm run ios:start                 # expo dev-client metro server
+npm run ios:clear                 # watchman clear + metro --reset-cache
+npm run ios:run                   # build + launch on iOS simulator
+npm run ios:run:device            # build + launch on a paired iOS device
+npm run ios:run:device:release    # release build on a paired iOS device
+npm run ios:dev                   # concurrently: ios:clear + ios:run
+
+# Android (Expo 55)
+npm run android:prebuild          # one-time: generate android/ project
+npm run android:clean             # rm -rf apps/mobile/android
+npm run android:start             # expo dev-client metro server
+npm run android:clear             # watchman clear + metro --reset-cache
+npm run android:run               # build + launch on emulator
+npm run android:run:device        # build + launch on a paired device
+npm run android:dev               # concurrently: android:clear + android:run
+
+npm run mobile:typecheck          # tsc --noEmit for the mobile app
 
 # macOS (bare RN + react-native-macos)
 # First time: bootstrap the native macos/ Xcode project — see
 # apps/macos/README.md (mirror react-native-source-editor's setup).
+npm run macos:pods                # cd macos && pod install
+npm run macos:clean               # rm Pods/ Podfile.lock build/
 npm run macos:start               # metro dev server
 npm run macos:clear               # watchman clear + metro --reset-cache
 npm run macos:run                 # build + launch the macOS app
+npm run macos:dev                 # concurrently: macos:clear + macos:run
 npm run macos:typecheck
 
 # UI package — typecheck only (no runtime; it's a library of components)
