@@ -1,11 +1,17 @@
-import projectsSchema from "../../fixtures/projects.table/schema.json" with { type: "json" };
-import projectsViews from "../../fixtures/projects.table/views.json" with { type: "json" };
-import projectsMeta from "../../fixtures/projects.table/meta.json" with { type: "json" };
-import projectsRowsRaw from "../../fixtures/projects.table/rows.ndjson?raw";
-import type { ParsedTable, Row, TableMeta, TableSchema, View } from "../core/types.js";
+import projectsSchema from "../../../fixtures/projects.table/schema.json" with { type: "json" };
+import projectsViews from "../../../fixtures/projects.table/views.json" with { type: "json" };
+import projectsMeta from "../../../fixtures/projects.table/meta.json" with { type: "json" };
+import projectsRowsRaw from "../../../fixtures/projects.table/rows.ndjson?raw";
+import type {
+  ParsedTable,
+  Row,
+  TableMeta,
+  TableSchema,
+  View,
+} from "@workspace/table-core";
 
 const projectsBodyFiles = import.meta.glob<string>(
-  "../../fixtures/projects.table/bodies/*.md",
+  "../../../fixtures/projects.table/bodies/*.md",
   { eager: true, query: "?raw", import: "default" },
 );
 

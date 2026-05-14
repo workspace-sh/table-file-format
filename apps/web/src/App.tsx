@@ -1,11 +1,22 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { applyView, searchRows, validate } from "../core/index.js";
-import type { Field, ParsedTable, Row, TableSchema, View } from "../core/types.js";
+import { applyView, searchRows, validate } from "@workspace/table-core";
+import type {
+  Field,
+  ParsedTable,
+  Row,
+  TableSchema,
+  View,
+} from "@workspace/table-core";
+import {
+  BodyEditor,
+  GalleryView,
+  KanbanView,
+  ListView,
+  TableView,
+} from "@workspace/table-ui";
 import { projectsTable } from "./loadFixture.js";
 import { Sidebar } from "./Sidebar.js";
-import { TableView, KanbanView, GalleryView, ListView } from "./views.js";
-import { BodyEditor } from "./BodyEditor.js";
 
 const INITIAL_SCHEMA_VERSION =
   (projectsTable.schema["schema-version"] as number | undefined) ?? 1;

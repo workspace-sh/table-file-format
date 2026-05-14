@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
-import type { Field, FieldAlignment, FieldType } from "../core/types.js";
-import { defaultAlignFor } from "../core/types.js";
+import type { Field, FieldAlignment, FieldType } from "@workspace/table-core";
+import { defaultAlignFor } from "@workspace/table-core";
 
 /**
  * Fixed width for the "+ Field" trailing column slot. Body rows in

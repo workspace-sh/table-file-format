@@ -5,7 +5,8 @@ import { dirname, resolve } from "node:path";
 import { parseTable } from "./parser.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixturesDir = resolve(here, "..", "..", "fixtures");
+// packages/core/src/parser.test.ts → repo root → fixtures/
+const fixturesDir = resolve(here, "..", "..", "..", "fixtures");
 
 test("parseTable reads projects.table fixture", async () => {
   const t = await parseTable(resolve(fixturesDir, "projects.table"));
@@ -35,7 +36,7 @@ test("parseTable preserves cross-table relation declaration on tasks", async () 
 
 test("parseTable throws on row missing system id", async () => {
   await assert.rejects(async () => {
-    await parseTable(resolve(here, "..", "..", "fixtures-broken-DOES-NOT-EXIST"));
+    await parseTable(resolve(here, "..", "..", "..", "fixtures-broken-DOES-NOT-EXIST"));
   });
 });
 

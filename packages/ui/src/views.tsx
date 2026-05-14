@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
-import { applyGroup, effectiveAlign } from "../core/index.js";
-import type { Field, FieldAlignment, Row, TableSchema, View } from "../core/types.js";
+import { applyGroup, effectiveAlign } from "@workspace/table-core";
+import type {
+  Field,
+  FieldAlignment,
+  Row,
+  TableSchema,
+  View,
+} from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor.js";
 
 const styles = css.create({

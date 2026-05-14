@@ -1,32 +1,23 @@
 {
-  "name": "@workspace/table-core",
+  "name": "table-file-format",
   "version": "0.1.0",
-  "type": "module",
-  "main": "dist/core/index.js",
-  "types": "dist/core/index.d.ts",
+  "private": true,
+  "description": "Spike for the open .table/ data-matrix file format — workspace root.",
+  "workspaces": [
+    "packages/*",
+    "apps/web",
+    "apps/mobile",
+    "apps/macos"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "node --import tsx --test src/**/*.test.ts",
-    "test:watch": "node --import tsx --test --watch src/**/*.test.ts",
-    "dev": "vite",
-    "build:web": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "nanoid": "^5.0.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-strict-dom": "0.0.55",
-    "vite-plugin-babel": "^1.3.2"
+    "test": "npm run test -w @workspace/table-core",
+    "test:watch": "npm run test:watch -w @workspace/table-core",
+    "build": "npm run build -w @workspace/table-core",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @workspace/table-web",
+    "build:web": "npm run build -w @workspace/table-web"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.1.1",
-    "autoprefixer": "^10.4.22",
-    "tsx": "^4.0.0",
-    "typescript": "^5.4.0",
-    "vite": "^7.2.4"
+    "typescript": "^5.4.0"
   }
 }

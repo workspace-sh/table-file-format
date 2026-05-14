@@ -59,29 +59,59 @@ const visibleRows = applyView(projects, view);
 const body = projects.bodies?.[visibleRows[0]!.id];
 ```
 
-## Repo layout
+## Repo layout — NPM workspace monorepo
 
 ```
 .
-├── src/
-│   ├── core/        format library (parser, writer, validator, query, indexer stubs)
-│   └── demo/        Vite + react-strict-dom + StyleX viewer
+├── packages/
+│   ├── core/             @workspace/table-core
+│   │                     pure-TS format library — parser/writer/validator/query/
+│   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
+│   └── ui/               @workspace/table-ui
+│                         RSD/StyleX view components — TableView, KanbanView,
+│                         GalleryView, ListView, SchemaEditor, BodyEditor.
+│                         Currently web-targeted; cross-platform lifting tracked.
+├── apps/
+│   ├── web/              @workspace/table-web
+│   │                     Vite 7 + React 19 + RSD 0.0.55 + StyleX (PostCSS).
+│   │                     Full demo with editing, drag-and-drop, search, etc.
+│   ├── mobile/           @workspace/table-mobile
+│   │                     Expo 55 — iOS + Android. Minimal list viewer.
+│   │                     `npm run prebuild` to generate native projects.
+│   └── macos/            @workspace/table-macos
+│                         Bare RN + react-native-macos 0.81. Minimal viewer.
 ├── fixtures/
 │   ├── projects.table/   7 rows, 7 views, one body
 │   └── tasks.table/      8 rows, cross-table relation to projects
 └── docs/
-    ├── SPEC.md      format specification
-    ├── ARCHITECTURE.md   code organisation, build pipeline, design choices
-    └── DECISIONS.md      log of non-obvious design decisions and their reasoning
+    ├── SPEC.md
+    ├── ARCHITECTURE.md
+    └── DECISIONS.md
 ```
+
+Apps consume packages via the workspace alias (`"@workspace/table-core": "*"`);
+NPM resolves locally. No publishing required for local development.
 
 ## Running
 
 ```sh
-npm install
-npm run dev          # starts the demo viewer at http://localhost:5173
-npm test             # node:test suite (33 tests, format library only)
-npx tsc --noEmit     # typecheck without emit
+npm install                       # installs everything; symlinks workspace packages
+
+# Web — full demo
+npm run dev                       # vite at http://localhost:5173
+npm run build:web
+
+# Format library
+npm test                          # node:test suite (48 tests)
+npm run typecheck                 # typecheck every workspace
+
+# Mobile (Expo)
+npm run prebuild -w @workspace/table-mobile     # generates ios/, android/
+npm run ios -w @workspace/table-mobile          # or `android` / `start`
+
+# macOS (bare RN)
+# See apps/macos/README.md for one-time native-project bootstrap.
+npm run macos -w @workspace/table-macos
 ```
 
 ## Status
@@ -100,10 +130,14 @@ npx tsc --noEmit     # typecheck without emit
 - `index.sqlite` cache: `buildIndex` / `queryIndex` / `isIndexStale` / `dropIndex`
 
 **Open** (tracked as issues):
-- Inline cell editing in the demo viewer
-- Cross-table relation drilldown
-- Markdown ↔ `.table/` cross-reference addressing
-- CSV converter (`fromCSV` / `toCSV`)
+- Cross-table relation drilldown (#3)
+- Markdown ↔ `.table/` cross-reference addressing (#4)
+- CSV converter (`fromCSV` / `toCSV`) (#5)
+- `index.sqlite` cache implementation (#6)
+- Granular parser/writer/validator named exports (#7)
+- Lift `@workspace/table-ui` from web-only to cross-platform
+  (replace `react-dom/createPortal`, abstract `document.pointermove`,
+  pseudo-state styles → `useFocused`-style hooks)
 
 **Deliberately deferred** (no spec, no plan):
 - Data versioning — undo/redo, edit history, real-time collaboration,

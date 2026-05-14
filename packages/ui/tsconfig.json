@@ -5,13 +5,12 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "outDir": "dist",
-    "declaration": true,
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "dist-web"]
+  "exclude": ["node_modules"]
 }
