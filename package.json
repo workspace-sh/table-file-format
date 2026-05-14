@@ -34,6 +34,9 @@
     "macos:run": "npm run macos -w @workspace/table-macos",
     "macos:typecheck": "npm run typecheck -w @workspace/table-macos"
   },
+  "engines": {
+    "node": "^20.19.4 || ^22.13.0 || ^24.3.0 || >=25.0.0"
+  },
   "devDependencies": {
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
