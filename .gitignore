@@ -9,9 +9,9 @@ apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/.expo/
 apps/mobile/.expo-shared/
-apps/macos/macos/
-apps/macos/ios/
-apps/macos/android/
+apps/desktop/macos/
+apps/desktop/ios/
+apps/desktop/android/
 
 # Native build outputs
 **/build/

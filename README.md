@@ -77,9 +77,11 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │   │                     Full demo with editing, drag-and-drop, search, etc.
 │   ├── mobile/           @workspace/table-mobile
 │   │                     Expo 55 — iOS + Android. Minimal list viewer.
-│   │                     `npm run prebuild` to generate native projects.
-│   └── macos/            @workspace/table-macos
+│   │                     `npm run mobile:prebuild` to generate native projects.
+│   └── desktop/          @workspace/table-desktop
 │                         Bare RN + react-native-macos 0.81. Minimal viewer.
+│                         `macos/` Xcode project inside (gitignored,
+│                         bootstrap per README).
 ├── fixtures/
 │   ├── projects.table/   7 rows, 7 views, one body
 │   └── tasks.table/      8 rows, cross-table relation to projects
@@ -117,37 +119,28 @@ npm run web:preview               # preview the built bundle
 npm run web:typecheck
 npm run dev                       # alias for `web:dev`
 
-# iOS (Expo 55)
-npm run ios:prebuild              # one-time: generate ios/ Xcode project
-npm run ios:clean                 # rm -rf apps/mobile/ios
-npm run ios:start                 # expo dev-client metro server
-npm run ios:clear                 # watchman clear + metro --reset-cache
-npm run ios:run                   # build + launch on iOS simulator
-npm run ios:run:device            # build + launch on a paired iOS device
-npm run ios:run:device:release    # release build on a paired iOS device
-npm run ios:dev                   # concurrently: ios:clear + ios:run
+# Mobile (Expo 55, iOS + Android — Metro on port 8082)
+npm run mobile:prebuild           # generate ios/ + android/ (or :ios / :android)
+npm run mobile:start              # expo start --dev-client --port 8082
+npm run mobile:clear              # watchman watch-del-all + expo start --clear
+npm run mobile:ios                # expo run:ios on simulator
+npm run mobile:ios:device         # expo run:ios --device
+npm run mobile:ios:device:release # expo run:ios --device --configuration Release
+npm run mobile:android            # expo run:android on emulator
+npm run mobile:android:device     # expo run:android --device
+npm run mobile:dev                # concurrently: mobile:clear + mobile:ios
+npm run mobile:typecheck
 
-# Android (Expo 55)
-npm run android:prebuild          # one-time: generate android/ project
-npm run android:clean             # rm -rf apps/mobile/android
-npm run android:start             # expo dev-client metro server
-npm run android:clear             # watchman clear + metro --reset-cache
-npm run android:run               # build + launch on emulator
-npm run android:run:device        # build + launch on a paired device
-npm run android:dev               # concurrently: android:clear + android:run
-
-npm run mobile:typecheck          # tsc --noEmit for the mobile app
-
-# macOS (bare RN + react-native-macos)
+# Desktop (bare RN + react-native-macos, Metro on port 8083)
 # First time: bootstrap the native macos/ Xcode project — see
-# apps/macos/README.md (mirror react-native-source-editor's setup).
-npm run macos:pods                # cd macos && pod install
-npm run macos:clean               # rm Pods/ Podfile.lock build/
-npm run macos:start               # metro dev server
-npm run macos:clear               # watchman clear + metro --reset-cache
-npm run macos:run                 # build + launch the macOS app
-npm run macos:dev                 # concurrently: macos:clear + macos:run
-npm run macos:typecheck
+# apps/desktop/README.md (mirror react-native-source-editor's setup).
+npm run desktop:pods              # cd macos && pod install
+npm run desktop:clean:pods        # rm Pods/ Podfile.lock build/
+npm run desktop:start             # react-native start --port 8083
+npm run desktop:start:clean       # watchman clear + start --reset-cache
+npm run desktop:macos             # react-native run-macos --port 8083
+npm run desktop:dev               # concurrently: start:clean + macos
+npm run desktop:typecheck
 
 # UI package — typecheck only (no runtime; it's a library of components)
 npm run ui:typecheck

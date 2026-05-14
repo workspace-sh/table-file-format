@@ -7,11 +7,11 @@
     "packages/*",
     "apps/web",
     "apps/mobile",
-    "apps/macos"
+    "apps/desktop"
   ],
   "scripts": {
     "dev": "npm run web:dev",
-    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run macos:typecheck",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace/table-core",
     "core:test": "npm run test -w @workspace/table-core",
@@ -25,32 +25,26 @@
     "web:preview": "npm run preview -w @workspace/table-web",
     "web:typecheck": "npm run typecheck -w @workspace/table-web",
 
-    "ios:clean": "rm -rf apps/mobile/ios",
-    "ios:prebuild": "npm run prebuild:ios -w @workspace/table-mobile",
-    "ios:start": "npm run start -w @workspace/table-mobile",
-    "ios:clear": "npm run clear -w @workspace/table-mobile",
-    "ios:run": "npm run ios -w @workspace/table-mobile",
-    "ios:run:device": "npm run ios:device -w @workspace/table-mobile",
-    "ios:run:device:release": "npm run ios:device:release -w @workspace/table-mobile",
-    "ios:dev": "concurrently \"npm run ios:clear\" \"npm run ios:run\"",
-
-    "android:clean": "rm -rf apps/mobile/android",
-    "android:prebuild": "npm run prebuild:android -w @workspace/table-mobile",
-    "android:start": "npm run start -w @workspace/table-mobile",
-    "android:clear": "npm run clear -w @workspace/table-mobile",
-    "android:run": "npm run android -w @workspace/table-mobile",
-    "android:run:device": "npm run android:device -w @workspace/table-mobile",
-    "android:dev": "concurrently \"npm run android:clear\" \"npm run android:run\"",
-
+    "mobile:start": "cd apps/mobile && npx expo start --dev-client --port 8082",
+    "mobile:clear": "cd apps/mobile && watchman watch-del-all && npx expo start --clear",
+    "mobile:prebuild": "cd apps/mobile && npx expo prebuild",
+    "mobile:prebuild:ios": "cd apps/mobile && npx expo prebuild --platform ios",
+    "mobile:prebuild:android": "cd apps/mobile && npx expo prebuild --platform android",
+    "mobile:ios": "cd apps/mobile && npx expo run:ios --port 8082",
+    "mobile:ios:device": "cd apps/mobile && npx expo run:ios --device --port 8082",
+    "mobile:ios:device:release": "cd apps/mobile && npx expo run:ios --device --configuration Release",
+    "mobile:android": "cd apps/mobile && npx expo run:android --port 8082",
+    "mobile:android:device": "cd apps/mobile && npx expo run:android --device --port 8082",
+    "mobile:dev": "concurrently \"npm run mobile:clear\" \"npm run mobile:ios\"",
     "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
 
-    "macos:pods": "npm run pods -w @workspace/table-macos",
-    "macos:clean": "npm run clean:pods -w @workspace/table-macos",
-    "macos:start": "npm run start -w @workspace/table-macos",
-    "macos:clear": "npm run clear -w @workspace/table-macos",
-    "macos:run": "npm run macos -w @workspace/table-macos",
-    "macos:dev": "concurrently \"npm run macos:clear\" \"npm run macos:run\"",
-    "macos:typecheck": "npm run typecheck -w @workspace/table-macos"
+    "desktop:start": "cd apps/desktop && npx react-native start --port 8083",
+    "desktop:start:clean": "watchman watch-del-all && cd apps/desktop && npx react-native start --port 8083 --reset-cache",
+    "desktop:macos": "cd apps/desktop && npx react-native run-macos --port 8083",
+    "desktop:dev": "concurrently \"npm run desktop:start:clean\" \"npm run desktop:macos\"",
+    "desktop:pods": "cd apps/desktop/macos && pod install",
+    "desktop:clean:pods": "cd apps/desktop/macos && rm -rf Pods Podfile.lock build",
+    "desktop:typecheck": "npm run typecheck -w @workspace/table-desktop"
   },
   "engines": {
     "node": ">=20"

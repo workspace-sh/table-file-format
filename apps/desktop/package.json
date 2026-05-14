@@ -1,13 +1,10 @@
 {
-  "name": "@workspace/table-macos",
+  "name": "@workspace/table-desktop",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "react-native start",
-    "clear": "watchman watch-del-all && react-native start --reset-cache",
-    "macos": "react-native run-macos",
-    "pods": "cd macos && pod install",
-    "clean:pods": "cd macos && rm -rf Pods Podfile.lock build",
+    "start": "react-native start --port 8083",
+    "macos": "react-native run-macos --port 8083",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
