@@ -94,12 +94,9 @@ NPM resolves locally. No publishing required for local development.
 
 ## Running
 
-**Node 22.20.0.** Pinned via `.nvmrc` at root (matches the Workspace
-org convention — see `react-native-enriched-markdown`'s `.nvmrc`).
-
-```sh
-nvm use                  # picks up .nvmrc → Node 22.20.0
-```
+Pinned to Node 22.20.0 via `.nvmrc` (matches the rest of the
+workspace-sh org). If your nvm/fnm auto-switches on cd, you don't have
+to think about it.
 
 All commands run from the monorepo root. Namespaced consistently so the
 syntax is the same across every surface.
