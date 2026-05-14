@@ -48,6 +48,17 @@ const styles = css.create({
     minHeight: 38,
     fontSize: 13,
     boxSizing: "border-box",
+    // Subtle inset when the cell contains a focused descendant (i.e. the
+    // input is open). Indicator lives on the cell, not on the input, so
+    // the input itself can stay layout-neutral and the text doesn't shift
+    // on edit-mode swap. :focus-within is CSS-only — RN port via the same
+    // useFocused hook pattern documented in strict.css.
+    ":focus-within": {
+      boxShadow: {
+        default: "inset 0 0 0 1px #9ca3af",
+        "@media (prefers-color-scheme: dark)": "inset 0 0 0 1px #6b7280",
+      },
+    },
   },
   tableCellAlignCenter: {
     justifyContent: "center",
@@ -342,29 +353,20 @@ const styles = css.create({
     opacity: 0.6,
   },
 
-  // Editable-cell input — Airtable-style: inset 2px focus indicator
-  // instead of a hard border + browser focus ring. The input is only
-  // mounted while editing, so the indicator is always-on while visible.
+  // Editable-cell input — layout-identical to the idle wrapper
+  // (cellEditableIdle) so swapping between display and edit doesn't shift
+  // anything by even a pixel. Zero padding, zero border, transparent.
+  // The focus indicator is on the parent tableCell via :focus-within.
   cellInput: {
     width: "100%",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     fontSize: 13,
     borderWidth: 0,
-    borderRadius: 3,
-    backgroundColor: {
-      default: "#ffffff",
-      "@media (prefers-color-scheme: dark)": "#1c1c1e",
-    },
+    backgroundColor: "transparent",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-    // Subtle inset accent; replaces the prominent macOS-blue border the
-    // browser would otherwise draw plus our previous 1px borderColor.
-    boxShadow: {
-      default: "inset 0 0 0 2px #3b82f6",
-      "@media (prefers-color-scheme: dark)": "inset 0 0 0 2px #60a5fa",
     },
     outlineStyle: "none",
     minHeight: 22,
