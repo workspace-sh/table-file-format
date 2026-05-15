@@ -6,8 +6,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     width: 240,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    paddingBlock: 16,
+    paddingInline: 12,
     borderRightWidth: 1,
     borderRightStyle: "solid",
     borderRightColor: {
@@ -22,8 +22,8 @@ const styles = css.create({
   header: {
     display: "flex",
     flexDirection: "column",
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingInline: 8,
+    paddingBlock: 8,
     marginBottom: 12,
   },
   tableTitle: {
@@ -43,7 +43,7 @@ const styles = css.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    paddingHorizontal: 8,
+    paddingInline: 8,
     marginBottom: 4,
     color: {
       default: "#8e8e93",
@@ -58,8 +58,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingInline: 8,
+    paddingBlock: 6,
     borderRadius: 6,
     cursor: "pointer",
   },

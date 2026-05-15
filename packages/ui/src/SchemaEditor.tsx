@@ -93,8 +93,8 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "baseline",
     gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingInline: 6,
+    paddingBlock: 2,
     borderRadius: 4,
     fontSize: 10,
     fontWeight: "500",
@@ -125,8 +125,8 @@ const styles = css.create({
     },
   },
   input: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingInline: 8,
+    paddingBlock: 6,
     fontSize: 12,
     borderWidth: 1,
     borderStyle: "solid",
@@ -161,8 +161,8 @@ const styles = css.create({
     marginBottom: 4,
   },
   enumPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingInline: 6,
+    paddingBlock: 2,
     borderRadius: 4,
     fontSize: 11,
     backgroundColor: {
@@ -187,7 +187,7 @@ const styles = css.create({
   },
   alignmentButton: {
     flex: 1,
-    paddingVertical: 5,
+    paddingBlock: 5,
     fontSize: 11,
     fontWeight: "500",
     borderRadius: 4,
@@ -223,8 +223,8 @@ const styles = css.create({
   },
   button: {
     flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingInline: 8,
+    paddingBlock: 6,
     fontSize: 12,
     fontWeight: "500",
     borderRadius: 4,
@@ -265,8 +265,8 @@ const styles = css.create({
     flexShrink: 0,
   },
   addFieldButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingInline: 8,
+    paddingBlock: 4,
     fontSize: 11,
     fontWeight: "600",
     borderRadius: 4,

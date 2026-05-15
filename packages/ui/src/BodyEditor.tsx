@@ -38,8 +38,8 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingInline: 16,
+    paddingBlock: 12,
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: {
@@ -68,8 +68,8 @@ const styles = css.create({
     },
   },
   closeButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingInline: 8,
+    paddingBlock: 4,
     fontSize: 16,
     backgroundColor: "transparent",
     borderWidth: 0,
@@ -103,8 +103,8 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingInline: 16,
+    paddingBlock: 10,
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: {
@@ -126,8 +126,8 @@ const styles = css.create({
     gap: 8,
   },
   button: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingInline: 12,
+    paddingBlock: 6,
     fontSize: 12,
     fontWeight: "500",
     borderRadius: 4,

@@ -6,6 +6,7 @@ import { fixture } from "./src/fixture";
 
 const styles = css.create({
   root: {
+    display: "flex",
     flex: 1,
     backgroundColor: {
       default: "#ffffff",
@@ -13,9 +14,11 @@ const styles = css.create({
     },
   },
   scroll: {
+    display: "flex",
+    flexDirection: "column",
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingInline: 16,
+    paddingBlock: 16,
   },
   title: {
     fontSize: 22,
@@ -37,7 +40,7 @@ const styles = css.create({
   row: {
     display: "flex",
     flexDirection: "column",
-    paddingVertical: 12,
+    paddingBlock: 12,
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: {

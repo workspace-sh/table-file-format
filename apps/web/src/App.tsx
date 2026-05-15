@@ -32,8 +32,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingInline: 24,
+    paddingBlock: 20,
     overflow: "auto",
   },
   header: {
@@ -77,8 +77,8 @@ const styles = css.create({
     },
   },
   schemaBumpBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingInline: 6,
+    paddingBlock: 1,
     borderRadius: 4,
     fontSize: 10,
     fontWeight: "600",
@@ -93,8 +93,8 @@ const styles = css.create({
   },
   searchInput: {
     width: 240,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingInline: 10,
+    paddingBlock: 6,
     fontSize: 13,
     borderWidth: 1,
     borderStyle: "solid",

@@ -50,7 +50,7 @@ const styles = css.create({
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
-    paddingHorizontal: 14,
+    paddingInline: 14,
     minHeight: 38,
     fontSize: 13,
     boxSizing: "border-box",
@@ -165,8 +165,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingBlock: 10,
+    paddingInline: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderStyle: "solid",
@@ -197,7 +197,7 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
-    paddingHorizontal: 4,
+    paddingInline: 4,
     marginBottom: 4,
   },
   kanbanCount: {
@@ -226,8 +226,8 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#c7c7cc",
     },
     marginBottom: 6,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    paddingInline: 4,
+    paddingBlock: 4,
   },
 
   // List
@@ -239,8 +239,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingBlock: 10,
+    paddingInline: 12,
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: {
@@ -310,8 +310,8 @@ const styles = css.create({
 
   // Pill (for enum values)
   pill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingInline: 8,
+    paddingBlock: 2,
     borderRadius: 999,
     fontSize: 11,
     fontWeight: "500",
@@ -333,8 +333,8 @@ const styles = css.create({
   },
   headerCellButton: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingBlock: 10,
+    paddingInline: 14,
     backgroundColor: "transparent",
     borderWidth: 0,
     textAlign: "left",
@@ -365,8 +365,8 @@ const styles = css.create({
   // The focus indicator is on the parent tableCell via :focus-within.
   cellInput: {
     width: "100%",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    paddingInline: 0,
+    paddingBlock: 0,
     fontSize: 13,
     borderWidth: 0,
     backgroundColor: "transparent",
@@ -404,8 +404,8 @@ const styles = css.create({
     cursor: "pointer",
   },
   bodyBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingInline: 6,
+    paddingBlock: 1,
     marginLeft: 6,
     borderRadius: 4,
     fontSize: 9,
