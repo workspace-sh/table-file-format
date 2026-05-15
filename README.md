@@ -120,23 +120,23 @@ npm run web:typecheck
 npm run dev                       # alias for `web:dev`
 
 # Mobile (Expo 55, iOS + Android — Metro on port 8082)
-npm run mobile:prebuild           # generate ios/ + android/ (or :ios / :android)
+# Expo's `run:ios` / `run:android` start Metro themselves; no concurrency needed.
+npm run mobile:prebuild           # generate ios/ + android/ via CNG
 npm run mobile:start              # expo start --dev-client --port 8082
 npm run mobile:clear              # watchman watch-del-all + expo start --clear
-npm run mobile:ios                # expo run:ios on simulator
+npm run mobile:ios                # expo run:ios on simulator (starts Metro)
 npm run mobile:ios:device         # expo run:ios --device
 npm run mobile:ios:device:release # expo run:ios --device --configuration Release
-npm run mobile:android            # expo run:android on emulator
+npm run mobile:android            # expo run:android on emulator (starts Metro)
 npm run mobile:android:device     # expo run:android --device
-npm run mobile:dev                # concurrently: mobile:clear + mobile:ios
 npm run mobile:typecheck
 
 # Desktop (bare RN + react-native-macos, Metro on port 8083)
+# Bare RN needs Metro + run-macos as separate processes — :dev handles both.
 # First time: bootstrap the native macos/ Xcode project — see
 # apps/desktop/README.md (mirror react-native-source-editor's setup).
 npm run desktop:pods              # cd macos && pod install
-npm run desktop:clean:pods        # rm Pods/ Podfile.lock build/
-npm run desktop:start             # react-native start --port 8083
+npm run desktop:start             # start --reset-cache (port 8083)
 npm run desktop:start:clean       # watchman clear + start --reset-cache
 npm run desktop:macos             # react-native run-macos --port 8083
 npm run desktop:dev               # concurrently: start:clean + macos
