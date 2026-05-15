@@ -7,7 +7,9 @@ import { fixture } from "./src/fixture";
 const styles = css.create({
   root: {
     display: "flex",
-    flex: 1,
+    flexDirection: "column",
+    width: "100%",
+    height: "100%",
     backgroundColor: {
       default: "#ffffff",
       "@media (prefers-color-scheme: dark)": "#0e0e10",

@@ -13,6 +13,7 @@
     "@workspace/table-core": "*",
     "expo": "~55.0.19",
     "expo-build-properties": "~55.0.5",
+    "expo-dev-client": "~55.0.34",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.6",
