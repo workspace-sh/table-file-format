@@ -70,7 +70,16 @@ const styles = css.create({
     },
   },
   tableCell: {
-    flex: 1,
+    // Explicit flex parts — Yoga's `flex: 1` shorthand might not set
+    // flexBasis: 0 the way CSS does, so cells start at content size and
+    // grow from there (longer content wins, breaking column distribution
+    // inside a horizontal ScrollView). Be explicit to force CSS-style
+    // semantics: every cell starts at 0 and grows proportionally to fill
+    // the row's definite minWidth.
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    overflow: "hidden",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
@@ -350,11 +359,15 @@ const styles = css.create({
     },
   },
 
-  // Clickable header cell wrapper
+  // Clickable header cell wrapper — same explicit flex semantics as
+  // tableCell so headers line up with body cells.
   headerCellWrapper: {
     position: "relative",
     display: "flex",
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    overflow: "hidden",
   },
   headerCellButton: {
     flex: 1,
