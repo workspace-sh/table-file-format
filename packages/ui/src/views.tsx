@@ -10,7 +10,20 @@ import type {
   TableSchema,
   View,
 } from "@workspace/table-core";
-import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { ADD_FIELD_COLUMN_WIDTH, AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+
+/**
+ * Target cell width for the table layout. Used to compute the table's
+ * `minWidth` so the table has a definite cross-axis width inside a
+ * horizontal ScrollView — without this, Yoga can't apply
+ * `align-items: stretch` to rows, every row drifts to its own
+ * content-natural width, and columns misalign across rows.
+ *
+ * On macOS / web (wide windows) this is just a floor — the table
+ * grows past it via `width: 100%` on the outer container. On mobile
+ * it determines where horizontal scroll kicks in: `ncols * 180`px.
+ */
+const MIN_CELL_WIDTH = 180;
 
 const styles = css.create({
   // Table
@@ -26,18 +39,14 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
+  // Function style — dynamic minWidth computed per-view by TableView so
+  // Yoga has a definite cross-axis inside horizontal ScrollView.
+  tableMinWidth: (n: number) => ({
+    minWidth: n,
+  }),
   tableRow: {
-    // `width: 100%` + `alignSelf: stretch` is an attempt to force every
-    // row to the parent table's full width even when the parent is
-    // unbounded (inside a horizontal ScrollView). If Yoga honors this,
-    // all rows have identical width and the `flex: 1` cells inside
-    // distribute equally → columns align. If it doesn't (Yoga sometimes
-    // collapses 100% to content width when parent is unbounded), this
-    // is a no-op and we fall back to fixed cell widths.
     display: "flex",
     flexDirection: "row",
-    width: "100%",
-    alignSelf: "stretch",
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: {
@@ -56,8 +65,6 @@ const styles = css.create({
   },
   tableCell: {
     flex: 1,
-    flexShrink: 0,
-    minWidth: 120,
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
@@ -342,8 +349,6 @@ const styles = css.create({
     position: "relative",
     display: "flex",
     flex: 1,
-    flexShrink: 0,
-    minWidth: 120,
   },
   headerCellButton: {
     flex: 1,
@@ -757,8 +762,19 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
+  // Definite cross-axis width for the table. Inside a horizontal
+  // ScrollView (mobile), Yoga can't apply align-items: stretch to rows
+  // unless the parent has a definite width; without that, each row sizes
+  // to its own content and columns drift apart across rows. Giving the
+  // table this minWidth tells Yoga the cross-axis size, so rows all
+  // stretch to it and `flex: 1` cells distribute equally. On wide
+  // screens (macOS / web) the minWidth is just a floor — the table
+  // grows past it via the flex container.
+  const tableMinWidth =
+    fields.length * MIN_CELL_WIDTH + (canAddField ? ADD_FIELD_COLUMN_WIDTH : 0);
+
   return (
-    <html.div style={styles.table}>
+    <html.div style={[styles.table, styles.tableMinWidth(tableMinWidth)]}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
         {fields.map((name, idx) => {
           const field = fieldMap.get(name);
