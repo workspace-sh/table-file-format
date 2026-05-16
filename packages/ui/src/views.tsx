@@ -39,8 +39,14 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
-  // Function style — dynamic minWidth computed per-view by TableView so
-  // Yoga has a definite cross-axis inside horizontal ScrollView.
+  // Function style — dynamic minWidth applied to both the table and every
+  // row. Needed because Yoga's `align-items: stretch` apparently doesn't
+  // treat a parent's `minWidth` as definite enough to propagate to
+  // children (empirically verified: applying it only to the table left
+  // rows sizing to their own content widths inside horizontal ScrollView).
+  // Applying the same minWidth to each row gives the row its OWN definite
+  // cross-axis, which lets the `flex: 1` cells inside distribute that
+  // shared width equally → columns align across rows.
   tableMinWidth: (n: number) => ({
     minWidth: n,
   }),
@@ -775,7 +781,13 @@ export function TableView({
 
   return (
     <html.div style={[styles.table, styles.tableMinWidth(tableMinWidth)]}>
-      <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+      <html.div
+        style={[
+          styles.tableRow,
+          styles.tableHeaderRow,
+          styles.tableMinWidth(tableMinWidth),
+        ]}
+      >
         {fields.map((name, idx) => {
           const field = fieldMap.get(name);
           const isEditing = editingFieldName === name;
@@ -852,7 +864,11 @@ export function TableView({
       {rows.map((row, i) => (
         <html.div
           key={row.id}
-          style={[styles.tableRow, i === rows.length - 1 && styles.tableRowLast]}
+          style={[
+            styles.tableRow,
+            i === rows.length - 1 && styles.tableRowLast,
+            styles.tableMinWidth(tableMinWidth),
+          ]}
         >
           {fields.map((name, idx) => {
             const field = fieldMap.get(name);
