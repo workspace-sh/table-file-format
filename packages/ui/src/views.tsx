@@ -10,7 +10,7 @@ import type {
   TableSchema,
   View,
 } from "@workspace/table-core";
-import { ADD_FIELD_COLUMN_WIDTH, AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 
 /**
  * Target cell width for the table layout. Used to compute the table's
@@ -39,17 +39,6 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
-  // Function style — dynamic minWidth applied to both the table and every
-  // row. Needed because Yoga's `align-items: stretch` apparently doesn't
-  // treat a parent's `minWidth` as definite enough to propagate to
-  // children (empirically verified: applying it only to the table left
-  // rows sizing to their own content widths inside horizontal ScrollView).
-  // Applying the same minWidth to each row gives the row its OWN definite
-  // cross-axis, which lets the `flex: 1` cells inside distribute that
-  // shared width equally → columns align across rows.
-  tableMinWidth: (n: number) => ({
-    minWidth: n,
-  }),
   tableRow: {
     display: "flex",
     flexDirection: "row",
@@ -70,15 +59,19 @@ const styles = css.create({
     },
   },
   tableCell: {
-    // Explicit flex parts — Yoga's `flex: 1` shorthand might not set
-    // flexBasis: 0 the way CSS does, so cells start at content size and
-    // grow from there (longer content wins, breaking column distribution
-    // inside a horizontal ScrollView). Be explicit to force CSS-style
-    // semantics: every cell starts at 0 and grows proportionally to fill
-    // the row's definite minWidth.
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
+    // Fixed cell width. Three RSD-native attempts (minWidth on table,
+    // minWidth on rows, explicit flexBasis:0) failed to give cross-row
+    // column alignment inside <ScrollView horizontal> on RN — Yoga
+    // doesn't enforce uniform child widths in unbounded flex parents,
+    // regardless of how definite-looking the cross-axis hints are.
+    // Fixed widths sidestep the problem: every row is sum of identical
+    // fixed cell widths, so columns trivially align. Same approach
+    // Airtable and Notion use. Trade-off: long titles truncate via
+    // `overflow: hidden` — acceptable per spike scope; per-column-type
+    // widths (title 220, pill 110, date 130, etc.) are a follow-up.
+    width: MIN_CELL_WIDTH,
+    flexShrink: 0,
+    flexGrow: 0,
     overflow: "hidden",
     display: "flex",
     alignItems: "center",
@@ -359,14 +352,14 @@ const styles = css.create({
     },
   },
 
-  // Clickable header cell wrapper — same explicit flex semantics as
-  // tableCell so headers line up with body cells.
+  // Clickable header cell wrapper — matches tableCell's fixed width so
+  // header columns align with body cells.
   headerCellWrapper: {
     position: "relative",
     display: "flex",
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
+    width: MIN_CELL_WIDTH,
+    flexShrink: 0,
+    flexGrow: 0,
     overflow: "hidden",
   },
   headerCellButton: {
@@ -781,26 +774,9 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
-  // Definite cross-axis width for the table. Inside a horizontal
-  // ScrollView (mobile), Yoga can't apply align-items: stretch to rows
-  // unless the parent has a definite width; without that, each row sizes
-  // to its own content and columns drift apart across rows. Giving the
-  // table this minWidth tells Yoga the cross-axis size, so rows all
-  // stretch to it and `flex: 1` cells distribute equally. On wide
-  // screens (macOS / web) the minWidth is just a floor — the table
-  // grows past it via the flex container.
-  const tableMinWidth =
-    fields.length * MIN_CELL_WIDTH + (canAddField ? ADD_FIELD_COLUMN_WIDTH : 0);
-
   return (
-    <html.div style={[styles.table, styles.tableMinWidth(tableMinWidth)]}>
-      <html.div
-        style={[
-          styles.tableRow,
-          styles.tableHeaderRow,
-          styles.tableMinWidth(tableMinWidth),
-        ]}
-      >
+    <html.div style={styles.table}>
+      <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
         {fields.map((name, idx) => {
           const field = fieldMap.get(name);
           const isEditing = editingFieldName === name;
@@ -877,11 +853,7 @@ export function TableView({
       {rows.map((row, i) => (
         <html.div
           key={row.id}
-          style={[
-            styles.tableRow,
-            i === rows.length - 1 && styles.tableRowLast,
-            styles.tableMinWidth(tableMinWidth),
-          ]}
+          style={[styles.tableRow, i === rows.length - 1 && styles.tableRowLast]}
         >
           {fields.map((name, idx) => {
             const field = fieldMap.get(name);
