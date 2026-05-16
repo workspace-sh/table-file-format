@@ -557,7 +557,8 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
     }
     return (
       <html.select
-        ref={inputRef as React.Ref<HTMLSelectElement>}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
         onChange={(e: { target: { value: string } }) => commit(e.target.value)}
         onBlur={cancel}
@@ -598,7 +599,8 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
             : "text";
   return (
     <html.input
-      ref={inputRef as React.Ref<HTMLInputElement>}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={inputRef as any}
       type={inputType}
       value={draft}
       onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
