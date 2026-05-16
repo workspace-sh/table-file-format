@@ -27,8 +27,17 @@ const styles = css.create({
     overflow: "hidden",
   },
   tableRow: {
+    // `width: 100%` + `alignSelf: stretch` is an attempt to force every
+    // row to the parent table's full width even when the parent is
+    // unbounded (inside a horizontal ScrollView). If Yoga honors this,
+    // all rows have identical width and the `flex: 1` cells inside
+    // distribute equally → columns align. If it doesn't (Yoga sometimes
+    // collapses 100% to content width when parent is unbounded), this
+    // is a no-op and we fall back to fixed cell widths.
     display: "flex",
     flexDirection: "row",
+    width: "100%",
+    alignSelf: "stretch",
     borderBottomWidth: 1,
     borderBottomStyle: "solid",
     borderBottomColor: {

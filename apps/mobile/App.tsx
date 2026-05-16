@@ -119,10 +119,9 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
     schema: table.schema,
     bodies: table.bodies,
   };
-  // Wrap table + kanban in a horizontal ScrollView so portrait users can
-  // scroll past the viewport — Airtable / Notion / Trello pattern. Cells
-  // have `minWidth: 120` in the UI package so they don't collapse mid-word
-  // when content is wider than the screen. Gallery wraps naturally; List
+  // Table + kanban scroll horizontally (Airtable/Notion/Trello pattern).
+  // Cells now use fixed `width: 180` in the UI package so columns line
+  // up across rows regardless of content. Gallery wraps naturally; List
   // is vertical-only — neither needs horizontal scroll.
   switch (view.layout) {
     case "kanban":
@@ -196,7 +195,13 @@ export default function App() {
               onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
               style={styles.searchInput}
             />
-            {renderView(view, table, visibleRows)}
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {renderView(view, table, visibleRows)}
+            </ScrollView>
           </html.div>
         </Safe>
       </html.div>
