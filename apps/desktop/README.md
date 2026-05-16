@@ -80,12 +80,12 @@ Deployment target: macOS 14.0. New Architecture (Fabric) enabled.
 
 ## Reference
 
-`/Users/leslieoa/Code/Projects/workspace/Research/react-native-source-editor/example/macos-app/`
-— working RN-macOS + RSD 0.0.55 + react-native-macos 0.81.7 setup; the
-canonical source for the macos/ Xcode project structure.
+[`workspace-sh/react-native-source-editor`](https://github.com/workspace-sh/react-native-source-editor)'s
+`example/macos-app/` — working RN-macOS + RSD 0.0.55 + react-native-macos
+0.81.7 setup; the canonical source for the macos/ Xcode project structure.
 
-The parent `workspace` product's `apps/desktop/` is the in-org reference
-for this exact folder shape.
+Workspace product's `apps/desktop/` is the other in-org reference for
+this exact folder shape.
 
 ## Xcode 26 / fmt consteval workaround
 

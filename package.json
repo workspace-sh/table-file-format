@@ -2,6 +2,7 @@
   "name": "table-file-format",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Spike for the open .table/ data-matrix file format — workspace root.",
   "workspaces": [
     "packages/*",
