@@ -13,6 +13,14 @@ import {
   TableView,
 } from "@workspace/table-ui";
 
+// Horizontal page padding. Used as positive padding on the scroll
+// container AND as negative margin on horizontally-scrolling sections
+// (table, kanban) so their scroll viewport extends to the screen edges
+// — iOS edge-to-edge pattern. Content starts at the same x as the
+// title/tabs/search above, but scrolls past the right padding instead
+// of being clipped by it.
+const MOBILE_H_PADDING = 16;
+
 const styles = css.create({
   root: {
     display: "flex",
@@ -28,7 +36,7 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    paddingInline: 16,
+    paddingInline: MOBILE_H_PADDING,
     paddingBlock: 16,
   },
   title: {
@@ -126,7 +134,12 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
   switch (view.layout) {
     case "kanban":
       return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -MOBILE_H_PADDING }}
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
+        >
           <KanbanView {...common} />
         </ScrollView>
       );
@@ -136,7 +149,12 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
       return <ListView {...common} />;
     default:
       return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -MOBILE_H_PADDING }}
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
+        >
           <TableView {...common} />
         </ScrollView>
       );
