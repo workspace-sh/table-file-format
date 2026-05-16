@@ -8,6 +8,11 @@ ws_dir = ws_dir.parent until
   ws_dir.expand_path.to_s == '/'
 require "#{ws_dir}/node_modules/react-native-macos/scripts/react_native_pods.rb"
 
+# `use_react_native!`'s `:path` is treated as relative to the Podfile dir.
+# Compute the relative walk-up dynamically rather than hardcoding `../../..`
+# so this keeps working if apps/desktop/macos/ ever moves.
+rn_macos_rel_path = Pathname.new("#{ws_dir}/node_modules/react-native-macos").relative_path_from(Pathname.new(__dir__)).to_s
+
 prepare_react_native_project!
 
 target 'TableDesktop-macOS' do
@@ -15,7 +20,7 @@ target 'TableDesktop-macOS' do
   use_native_modules!
 
   use_react_native!(
-    :path => "#{ws_dir}/node_modules/react-native-macos",
+    :path => rn_macos_rel_path,
     :fabric_enabled => true,
     # The JS app root — one level up from this macos/ directory.
     :app_path => "#{Pod::Config.instance.installation_root}/.."

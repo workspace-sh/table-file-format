@@ -18,6 +18,7 @@ apps/desktop/macos/Pods/
 apps/desktop/macos/build/
 apps/desktop/macos/Podfile.lock
 apps/desktop/macos/.xcode.env.local
+apps/desktop/macos/.spm.pods/
 apps/desktop/macos/**/xcuserdata/
 apps/desktop/macos/**/*.xcuserstate
 

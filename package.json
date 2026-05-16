@@ -6,8 +6,7 @@
   "workspaces": [
     "packages/*",
     "apps/web",
-    "apps/mobile",
-    "apps/desktop"
+    "apps/mobile"
   ],
   "scripts": {
     "dev": "npm run web:dev",
@@ -35,12 +34,13 @@
     "mobile:android:device": "cd apps/mobile && npx expo run:android --device --port 8082",
     "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
 
-    "desktop:start": "npm run start --workspace=apps/desktop -- --reset-cache",
-    "desktop:start:clean": "watchman watch-del-all && npm run start --workspace=apps/desktop -- --reset-cache",
-    "desktop:macos": "npx --workspace=apps/desktop react-native run-macos --port 8083",
+    "desktop:install": "cd apps/desktop && npm install --legacy-peer-deps",
+    "desktop:start": "cd apps/desktop && npx react-native start --port 8083 --reset-cache",
+    "desktop:start:clean": "watchman watch-del-all && cd apps/desktop && npx react-native start --port 8083 --reset-cache",
+    "desktop:macos": "cd apps/desktop && npx react-native run-macos --port 8083",
     "desktop:dev": "concurrently \"npm run desktop:start:clean\" \"npm run desktop:macos\"",
     "desktop:pods": "cd apps/desktop/macos && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install",
-    "desktop:typecheck": "npm run typecheck -w @workspace/table-desktop"
+    "desktop:typecheck": "cd apps/desktop && npm run typecheck"
   },
   "engines": {
     "node": ">=20"

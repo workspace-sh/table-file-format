@@ -16,14 +16,32 @@ committed (bare RN — not CNG). It does not yet use
 `@workspace/table-ui` (web-only APIs). Cross-platform UI lifting is a
 follow-up.
 
+## Standalone install, not a workspace member
+
+Unlike `apps/web` and `apps/mobile`, this app is **NOT** in the root
+`workspaces` array — it has its own `node_modules` and
+`package-lock.json`. That's deliberate: RN-macOS's generated Xcode
+build phases hardcode `${PODS_ROOT}/../../node_modules/X` paths
+(notably the hermes-engine "Replace Hermes" script). In an npm
+workspaces monorepo those packages hoist to the repo root and the
+hardcoded paths break.
+
+`@workspace/table-core` is linked locally via `file:../../packages/core`
+— npm 9+ symlinks `file:` deps by default, so live edits in
+`packages/core/src/` propagate to desktop without a rebuild step.
+
+This mirrors what `workspace-sh/workspace`'s `apps/desktop` and
+`workspace.sh/markdown`'s `example/macos-app` do: bare RN apps stay
+standalone; only library packages and lighter-weight apps (Expo,
+Vite/web) live as workspace members.
+
 ## Bootstrap (one-time)
 
 ```sh
 # From the monorepo root:
-npm install --legacy-peer-deps
-
-# Install CocoaPods:
-npm run desktop:pods
+npm install --legacy-peer-deps    # installs root + packages/* + apps/web + apps/mobile
+npm run desktop:install           # installs apps/desktop standalone
+npm run desktop:pods              # CocoaPods inside apps/desktop/macos
 ```
 
 That's it. Run with the commands below.
