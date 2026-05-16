@@ -47,6 +47,8 @@ const styles = css.create({
   },
   tableCell: {
     flex: 1,
+    flexShrink: 0,
+    minWidth: 120,
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
@@ -331,6 +333,8 @@ const styles = css.create({
     position: "relative",
     display: "flex",
     flex: 1,
+    flexShrink: 0,
+    minWidth: 120,
   },
   headerCellButton: {
     flex: 1,

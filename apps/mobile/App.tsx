@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ComponentType, ReactNode } from "react";
+import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { applyView, searchRows, validate } from "@workspace/table-core";
@@ -118,15 +119,28 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
     schema: table.schema,
     bodies: table.bodies,
   };
+  // Wrap table + kanban in a horizontal ScrollView so portrait users can
+  // scroll past the viewport — Airtable / Notion / Trello pattern. Cells
+  // have `minWidth: 120` in the UI package so they don't collapse mid-word
+  // when content is wider than the screen. Gallery wraps naturally; List
+  // is vertical-only — neither needs horizontal scroll.
   switch (view.layout) {
     case "kanban":
-      return <KanbanView {...common} />;
+      return (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <KanbanView {...common} />
+        </ScrollView>
+      );
     case "gallery":
       return <GalleryView {...common} />;
     case "list":
       return <ListView {...common} />;
     default:
-      return <TableView {...common} />;
+      return (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TableView {...common} />
+        </ScrollView>
+      );
   }
 }
 
