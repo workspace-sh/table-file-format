@@ -50,8 +50,9 @@ const styles = css.create({
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
-    paddingInline: 14,
-    minHeight: 38,
+    paddingInline: 16,
+    paddingBlock: 10,
+    minHeight: 40,
     fontSize: 13,
     boxSizing: "border-box",
     // Subtle inset when the cell contains a focused descendant (i.e. the
@@ -310,8 +311,8 @@ const styles = css.create({
 
   // Pill (for enum values)
   pill: {
-    paddingInline: 8,
-    paddingBlock: 2,
+    paddingInline: 10,
+    paddingBlock: 3,
     borderRadius: 999,
     fontSize: 11,
     fontWeight: "500",
@@ -334,7 +335,7 @@ const styles = css.create({
   headerCellButton: {
     flex: 1,
     paddingBlock: 10,
-    paddingInline: 14,
+    paddingInline: 16,
     backgroundColor: "transparent",
     borderWidth: 0,
     textAlign: "left",
