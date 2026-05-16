@@ -11,17 +11,14 @@ import type {
   View,
 } from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { useViewportWidth } from "./internal/useViewportWidth";
 
 /**
- * Target cell width for the table layout. Used to compute the table's
- * `minWidth` so the table has a definite cross-axis width inside a
- * horizontal ScrollView — without this, Yoga can't apply
- * `align-items: stretch` to rows, every row drifts to its own
- * content-natural width, and columns misalign across rows.
- *
- * On macOS / web (wide windows) this is just a floor — the table
- * grows past it via `width: 100%` on the outer container. On mobile
- * it determines where horizontal scroll kicks in: `ncols * 180`px.
+ * Minimum readable column width. On narrow viewports (mobile portrait)
+ * every cell renders at this exact width and the table extends past the
+ * viewport → horizontal scroll. On wide viewports (macOS / web) we
+ * compute `Math.max(MIN_CELL_WIDTH, viewport / ncols)` so columns fill
+ * the available width Airtable-style instead of leaving empty space.
  */
 const MIN_CELL_WIDTH = 180;
 
@@ -39,6 +36,11 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
+  // Dynamic cell width — computed per-render from viewport width / ncols.
+  // Applied at use-site to both header and body cells so columns align.
+  cellWidth: (w: number) => ({
+    width: w,
+  }),
   tableRow: {
     display: "flex",
     flexDirection: "row",
@@ -59,17 +61,10 @@ const styles = css.create({
     },
   },
   tableCell: {
-    // Fixed cell width. Three RSD-native attempts (minWidth on table,
-    // minWidth on rows, explicit flexBasis:0) failed to give cross-row
-    // column alignment inside <ScrollView horizontal> on RN — Yoga
-    // doesn't enforce uniform child widths in unbounded flex parents,
-    // regardless of how definite-looking the cross-axis hints are.
-    // Fixed widths sidestep the problem: every row is sum of identical
-    // fixed cell widths, so columns trivially align. Same approach
-    // Airtable and Notion use. Trade-off: long titles truncate via
-    // `overflow: hidden` — acceptable per spike scope; per-column-type
-    // widths (title 220, pill 110, date 130, etc.) are a follow-up.
-    width: MIN_CELL_WIDTH,
+    // Width comes from `cellWidth()` function-style — dynamic per render
+    // so cells fill wide viewports (macOS / web) and snap to
+    // MIN_CELL_WIDTH on mobile (triggering horizontal scroll). Static
+    // structural styles only here; width applied at use-site.
     flexShrink: 0,
     flexGrow: 0,
     overflow: "hidden",
@@ -352,12 +347,11 @@ const styles = css.create({
     },
   },
 
-  // Clickable header cell wrapper — matches tableCell's fixed width so
-  // header columns align with body cells.
+  // Clickable header cell wrapper — width applied at use-site via the
+  // same cellWidth function-style so headers align with body cells.
   headerCellWrapper: {
     position: "relative",
     display: "flex",
-    width: MIN_CELL_WIDTH,
     flexShrink: 0,
     flexGrow: 0,
     overflow: "hidden",
@@ -774,6 +768,16 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
+  // Responsive cell width: cells fill the viewport when there's room
+  // (macOS / web wide windows) and snap to MIN_CELL_WIDTH on narrow
+  // viewports (mobile portrait), triggering horizontal scroll via the
+  // consumer's ScrollView wrapper. Reactive to resize / orientation
+  // change via `useViewportWidth` (web: window resize listener; native:
+  // RN's useWindowDimensions).
+  const viewportWidth = useViewportWidth();
+  const totalCols = fields.length + (canAddField ? 1 : 0);
+  const cellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(viewportWidth / totalCols));
+
   return (
     <html.div style={styles.table}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
@@ -789,6 +793,7 @@ export function TableView({
                 key={name}
                 style={[
                   styles.tableCell,
+                  styles.cellWidth(cellWidth),
                   styles.tableHeaderCell,
                   cellAlignStyle(align),
                   !isLast && styles.tableCellSeparator,
@@ -801,7 +806,11 @@ export function TableView({
           return (
             <html.span
               key={name}
-              style={[styles.headerCellWrapper, !isLast && styles.tableCellSeparator]}
+              style={[
+                styles.headerCellWrapper,
+                styles.cellWidth(cellWidth),
+                !isLast && styles.tableCellSeparator,
+              ]}
             >
               <html.button
                 ref={(el: HTMLButtonElement | null) => {
@@ -864,6 +873,7 @@ export function TableView({
                 key={name}
                 style={[
                   styles.tableCell,
+                  styles.cellWidth(cellWidth),
                   cellAlignStyle(align),
                   !isLast && styles.tableCellSeparator,
                 ]}
