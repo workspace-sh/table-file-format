@@ -9,9 +9,10 @@
     "apps/web",
     "apps/mobile"
   ],
+  "//workspaces": "apps/desktop is intentionally NOT a workspace member — bare RN doesn't compose with npm hoisting. See apps/desktop/README.md.",
   "scripts": {
     "dev": "npm run web:dev",
-    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace/table-core",
     "core:test": "npm run test -w @workspace/table-core",
@@ -19,6 +20,8 @@
     "core:typecheck": "npm run typecheck -w @workspace/table-core",
 
     "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
+
+    "fixtures:typecheck": "npm run typecheck -w @workspace/table-fixtures",
 
     "web:dev": "npm run dev -w @workspace/table-web",
     "web:build": "npm run build -w @workspace/table-web",

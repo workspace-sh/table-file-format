@@ -2,13 +2,13 @@ import { useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyView, searchRows, validate } from "@workspace/table-core";
 import type { ParsedTable, View } from "@workspace/table-core";
+import { projectsTable } from "@workspace/table-fixtures";
 import {
   GalleryView,
   KanbanView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
-import { fixture } from "./src/fixture";
 
 const styles = css.create({
   root: {
@@ -129,7 +129,7 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
 }
 
 export default function App() {
-  const table: ParsedTable = fixture;
+  const table: ParsedTable = projectsTable;
   const [activeViewId, setActiveViewId] = useState<string>(table.views[0]!.id);
   const [query, setQuery] = useState<string>("");
 

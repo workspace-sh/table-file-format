@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@workspace/table-core": "*",
+    "@workspace/table-fixtures": "*",
     "@workspace/table-ui": "*",
     "expo": "~55.0.19",
     "expo-build-properties": "~55.0.5",

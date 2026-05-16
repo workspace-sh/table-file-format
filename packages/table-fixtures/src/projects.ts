@@ -1,17 +1,17 @@
 /**
- * Inline fixture for the mobile app.
+ * Inline copy of the canonical `fixtures/projects.table/` for consumers
+ * that can't load arbitrary non-JS files from outside their package.
  *
- * Unlike `apps/web/src/loadFixture.ts` (which uses Vite's import.meta.glob
- * to load the on-disk `fixtures/projects.table/` directory at build time),
- * the mobile app has no equivalent Metro primitive for loading arbitrary
- * non-JS files from outside the package. For the spike we inline the
- * canonical fixture rows here. A future iteration could:
- *   - bundle the fixture via metro-config asset extensions, OR
- *   - generate a TS file from the on-disk fixture at build time
+ * Web (`apps/web`) loads the on-disk fixture directly via Vite's
+ * `import.meta.glob`. Metro (mobile + desktop) has no equivalent
+ * primitive, so they import THIS module instead. A future iteration
+ * could codegen this file from the on-disk fixture at build time so
+ * there's a single source of truth; for the spike, sync manually when
+ * the on-disk version changes.
  */
 import type { ParsedTable } from "@workspace/table-core";
 
-export const fixture: ParsedTable = {
+export const projectsTable: ParsedTable = {
   path: "fixtures/projects.table",
   schema: {
     fields: [
