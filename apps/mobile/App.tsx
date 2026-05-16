@@ -154,8 +154,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <Safe style={{ flex: 1 }}>
-        <html.div style={styles.root}>
+      <html.div style={styles.root}>
+        <Safe style={{ flex: 1 }}>
           <html.div style={styles.scroll}>
             <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
             <html.span style={styles.subtitle}>
@@ -184,8 +184,8 @@ export default function App() {
             />
             {renderView(view, table, visibleRows)}
           </html.div>
-        </html.div>
-      </Safe>
+        </Safe>
+      </html.div>
     </SafeAreaProvider>
   );
 }
