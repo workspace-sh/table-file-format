@@ -50,5 +50,12 @@
     "name": "Calendar",
     "layout": "calendar",
     "calendar_field": "launched"
+  },
+  {
+    "id": "v9",
+    "name": "Q1 2026",
+    "layout": "calendar",
+    "calendar_field": "launched",
+    "calendar_range": { "start": "2026-01-01", "end": "2026-03-31" }
   }
 ]

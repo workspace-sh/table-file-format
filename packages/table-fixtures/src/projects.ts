@@ -144,6 +144,13 @@ export const projectsTable: ParsedTable = {
       layout: "calendar",
       calendar_field: "launched",
     },
+    {
+      id: "v9",
+      name: "Q1 2026",
+      layout: "calendar",
+      calendar_field: "launched",
+      calendar_range: { start: "2026-01-01", end: "2026-03-31" },
+    },
   ],
   bodies: {
     p2: "# Table file format spike\n\nOpen, app-agnostic data-matrix file format. Sits in the same niche as Airtable, Google Tables, and Obsidian Bases — a portable database that also reads as a spreadsheet for information workers.\n\n## Architecture\n\nA `.table/` is a directory: schema.json, rows.ndjson, views.json, meta.json, attachments/, bodies/{id}.md, index.sqlite.",

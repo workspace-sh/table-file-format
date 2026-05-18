@@ -174,6 +174,13 @@ two `"table"` views named "Active" and "Done").
 - `board_field` — column field for board layouts.
 - `gallery_field` — hero/lead field for gallery cards.
 - `calendar_field` — date field for calendar layouts.
+- `calendar_range` — optional `{start, end}` (YYYY-MM-DD) bound for
+  `layout: "calendar"` views. When present, calendar navigation is
+  locked to this window: prev / next disable at the bounds and the
+  initial cursor snaps inside the range. Useful for project calendars
+  (locked to project duration), sprint cycles, event-specific
+  calendars. Apps that don't recognise the field should still render
+  the calendar correctly — they'll just allow free navigation.
 
 ## 5. `meta.json`
 

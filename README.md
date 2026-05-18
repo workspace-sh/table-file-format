@@ -84,7 +84,7 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │                         `macos/` Xcode project inside (gitignored,
 │                         bootstrap per README).
 ├── fixtures/
-│   ├── projects.table/   7 rows, 8 views, one body
+│   ├── projects.table/   7 rows, 9 views, one body
 │   └── tasks.table/      8 rows, cross-table relation to projects
 └── docs/
     ├── SPEC.md

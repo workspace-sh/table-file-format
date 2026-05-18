@@ -346,6 +346,10 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
   },
+  calendarNavDisabled: {
+    opacity: 0.3,
+    cursor: "default",
+  },
   calendarWeekdays: {
     display: "flex",
     flexDirection: "row",
@@ -1393,11 +1397,29 @@ export function CalendarView({
   onOpenBody,
 }: ViewProps) {
   const calField = view.calendar_field;
+  const range = view.calendar_range;
+
+  // Range bounds, normalised to first-of-month so we compare cursors
+  // at the same granularity as `cursor` (which is always first-of-month).
+  // Invalid dates in the range silently degrade to "no bound".
+  const rangeStart = (() => {
+    if (!range?.start) return null;
+    const d = new Date(range.start.slice(0, 10));
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  })();
+  const rangeEnd = (() => {
+    if (!range?.end) return null;
+    const d = new Date(range.end.slice(0, 10));
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  })();
 
   // Anchor the cursor on the earliest date in the data so the calendar
   // doesn't render an empty month when fixture dates are in the past
-  // relative to "today".
+  // relative to "today". Then clamp into the range if set.
   const [cursor, setCursor] = useState(() => {
+    let initial: Date;
     if (calField) {
       const earliest = rows
         .map((r) => r[calField])
@@ -1406,11 +1428,19 @@ export function CalendarView({
         .filter((d) => !Number.isNaN(d.getTime()))
         .sort((a, b) => a.getTime() - b.getTime())[0];
       if (earliest) {
-        return new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+        initial = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+      } else {
+        const now = new Date();
+        initial = new Date(now.getFullYear(), now.getMonth(), 1);
       }
+    } else {
+      const now = new Date();
+      initial = new Date(now.getFullYear(), now.getMonth(), 1);
     }
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
+    // Clamp to range bounds.
+    if (rangeStart && initial < rangeStart) initial = rangeStart;
+    if (rangeEnd && initial > rangeEnd) initial = rangeEnd;
+    return initial;
   });
 
   if (!calField) {
@@ -1472,12 +1502,22 @@ export function CalendarView({
       d.getDate(),
     ).padStart(2, "0")}`;
 
+  // Range-aware navigation. When prev/next would step outside the
+  // bounds (if any), the button disables visually + functionally.
+  const canGoPrev = !rangeStart || cursor > rangeStart;
+  const canGoNext = !rangeEnd || cursor < rangeEnd;
+
   return (
     <html.div style={styles.calendar}>
       <html.div style={styles.calendarHeader}>
         <html.button
-          onClick={() => setCursor(new Date(year, month - 1, 1))}
-          style={styles.calendarNav}
+          onClick={
+            canGoPrev
+              ? () => setCursor(new Date(year, month - 1, 1))
+              : undefined
+          }
+          disabled={!canGoPrev}
+          style={[styles.calendarNav, !canGoPrev && styles.calendarNavDisabled]}
         >
           ‹
         </html.button>
@@ -1485,8 +1525,13 @@ export function CalendarView({
           {monthName} {year}
         </html.span>
         <html.button
-          onClick={() => setCursor(new Date(year, month + 1, 1))}
-          style={styles.calendarNav}
+          onClick={
+            canGoNext
+              ? () => setCursor(new Date(year, month + 1, 1))
+              : undefined
+          }
+          disabled={!canGoNext}
+          style={[styles.calendarNav, !canGoNext && styles.calendarNavDisabled]}
         >
           ›
         </html.button>

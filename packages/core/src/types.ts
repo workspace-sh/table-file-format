@@ -143,6 +143,24 @@ export interface View {
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;
+  /**
+   * Optional date-range bound on `layout: "calendar"` views. When set,
+   * the calendar's prev / next navigation is locked to this window —
+   * the user can't browse before `start` or after `end`. Initial cursor
+   * snaps inside the range.
+   *
+   * Use cases: a project calendar locked to the project's duration,
+   * a sprint view locked to a 2-week cycle, an event calendar locked
+   * to the event week. None of Notion / Airtable / Google Calendar
+   * supports this natively (they use filters to achieve a similar
+   * effect); we surface it as a first-class view property because
+   * Workspace's project-shaped use cases want it cheap.
+   *
+   * Dates are YYYY-MM-DD strings. Inclusive on both ends at month
+   * granularity (cursor is clamped to first-of-month within the
+   * range).
+   */
+  calendar_range?: { start: string; end: string };
   [key: string]: unknown;
 }
 
