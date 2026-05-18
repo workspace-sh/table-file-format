@@ -5,7 +5,7 @@ import type { ParsedTable, View } from "@workspace/table-core";
 import { projectsTable } from "@workspace/table-fixtures";
 import {
   GalleryView,
-  KanbanView,
+  BoardView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
@@ -117,8 +117,8 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
     bodies: table.bodies,
   };
   switch (view.layout) {
-    case "kanban":
-      return <KanbanView {...common} />;
+    case "board":
+      return <BoardView {...common} />;
     case "gallery":
       return <GalleryView {...common} />;
     case "list":

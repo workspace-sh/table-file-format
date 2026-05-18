@@ -115,15 +115,15 @@ const styles = css.create({
     },
   },
 
-  // Kanban
-  kanban: {
+  // Board
+  board: {
     display: "flex",
     flexDirection: "row",
     gap: 12,
     overflowX: "auto",
     paddingBottom: 8,
   },
-  kanbanColumn: {
+  boardColumn: {
     display: "flex",
     flexDirection: "column",
     minWidth: 240,
@@ -139,13 +139,13 @@ const styles = css.create({
     borderColor: "transparent",
     gap: 8,
   },
-  kanbanColumnDropTarget: {
+  boardColumnDropTarget: {
     borderColor: {
       default: "#3478f6",
       "@media (prefers-color-scheme: dark)": "#0a84ff",
     },
   },
-  kanbanCardWrapper: {
+  boardCardWrapper: {
     display: "flex",
     flexDirection: "column",
   },
@@ -207,7 +207,7 @@ const styles = css.create({
     fontSize: 13,
     fontWeight: "500",
   },
-  kanbanColumnHeader: {
+  boardColumnHeader: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
@@ -222,7 +222,7 @@ const styles = css.create({
     paddingInline: 4,
     marginBottom: 4,
   },
-  kanbanCount: {
+  boardCount: {
     marginLeft: 6,
     fontSize: 11,
     fontWeight: "400",
@@ -287,7 +287,7 @@ const styles = css.create({
     },
   },
 
-  // Card (shared by kanban + gallery)
+  // Card (shared by board + gallery)
   card: {
     display: "flex",
     flexDirection: "column",
@@ -900,8 +900,8 @@ export function TableView({
   );
 }
 
-export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
-  const groupField = view.kanban_field ?? "status";
+export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
+  const groupField = view.board_field ?? "status";
   const groupFieldDef = schema.fields.find((f) => f.name === groupField);
   const enumValues = groupFieldDef?.constraints?.enum;
   const fields = visibleFields(view, schema).filter((f) => f !== groupField);
@@ -967,15 +967,15 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   };
 
   return (
-    <html.div style={styles.kanban}>
+    <html.div style={styles.board}>
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
         return (
           <html.div
             key={key}
             style={[
-              styles.kanbanColumn,
-              hoveredColumn === key && draggedRowId !== null && styles.kanbanColumnDropTarget,
+              styles.boardColumn,
+              hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
             ]}
             onPointerEnter={
               canDrag
@@ -997,9 +997,9 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
                 : undefined
             }
           >
-            <html.div style={styles.kanbanColumnHeader}>
+            <html.div style={styles.boardColumnHeader}>
               <html.span>{key}</html.span>
-              <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
+              <html.span style={styles.boardCount}>{groupRows.length}</html.span>
             </html.div>
             {groupRows.map((row) => (
               <html.div
@@ -1013,7 +1013,7 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
                     : undefined
                 }
                 style={[
-                  styles.kanbanCardWrapper,
+                  styles.boardCardWrapper,
                   canDrag && styles.draggableHandle,
                   draggedRowId === row.id && styles.cardDragging,
                 ]}

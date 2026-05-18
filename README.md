@@ -18,7 +18,7 @@ my-data.table/
 ├── schema.json          required — typed fields, constraints, version
 ├── rows.ndjson          required — one JSON record per line, every row
 │                                   carries a system `id` (nanoid)
-├── views.json           optional — saved views (table/kanban/gallery/list/calendar)
+├── views.json           optional — saved views (table/board/gallery/list/calendar)
 ├── meta.json            optional — manifest, title, timestamps, generator
 ├── attachments/         optional — files referenced by row values
 ├── bodies/              optional — long-form markdown bodies, one per row
@@ -68,7 +68,7 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │   │                     pure-TS format library — parser/writer/validator/query/
 │   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
 │   └── ui/               @workspace/table-ui
-│                         RSD/StyleX view components — TableView, KanbanView,
+│                         RSD/StyleX view components — TableView, BoardView,
 │                         GalleryView, ListView, SchemaEditor, BodyEditor.
 │                         Currently web-targeted; cross-platform lifting tracked.
 ├── apps/

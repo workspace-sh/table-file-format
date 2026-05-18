@@ -1,6 +1,6 @@
 export {
   TableView,
-  KanbanView,
+  BoardView,
   GalleryView,
   ListView,
 } from "./views";

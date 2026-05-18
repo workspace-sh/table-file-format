@@ -140,7 +140,7 @@ storage outside the `.table/` directory.
 
 ### Layouts
 
-`table`, `kanban`, `gallery`, `list`, `calendar`.
+`table`, `board`, `gallery`, `list`, `calendar`.
 
 ### Filter operators
 
@@ -164,7 +164,7 @@ storage outside the `.table/` directory.
 
 ### Layout-specific fields
 
-- `kanban_field` — column field for kanban layouts.
+- `board_field` — column field for board layouts.
 - `gallery_field` — hero/lead field for gallery cards.
 - `calendar_field` — date field for calendar layouts.
 

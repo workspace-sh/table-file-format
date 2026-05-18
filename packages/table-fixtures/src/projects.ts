@@ -120,9 +120,9 @@ export const projectsTable: ParsedTable = {
     },
     {
       id: "v5",
-      name: "Kanban by status",
-      layout: "kanban",
-      kanban_field: "status",
+      name: "Board by status",
+      layout: "board",
+      board_field: "status",
       fields: ["title", "owner", "budget"],
     },
     {

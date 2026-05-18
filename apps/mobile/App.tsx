@@ -8,14 +8,14 @@ import type { ParsedTable, View } from "@workspace/table-core";
 import { projectsTable } from "@workspace/table-fixtures";
 import {
   GalleryView,
-  KanbanView,
+  BoardView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
 
 // Horizontal page padding. Used as positive padding on the scroll
 // container AND as negative margin on horizontally-scrolling sections
-// (table, kanban) so their scroll viewport extends to the screen edges
+// (table, board) so their scroll viewport extends to the screen edges
 // — iOS edge-to-edge pattern. Content starts at the same x as the
 // title/tabs/search above, but scrolls past the right padding instead
 // of being clipped by it.
@@ -127,12 +127,12 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
     schema: table.schema,
     bodies: table.bodies,
   };
-  // Table + kanban scroll horizontally (Airtable/Notion/Trello pattern).
+  // Table + board scroll horizontally (Airtable/Notion/Trello pattern).
   // Cells now use fixed `width: 180` in the UI package so columns line
   // up across rows regardless of content. Gallery wraps naturally; List
   // is vertical-only — neither needs horizontal scroll.
   switch (view.layout) {
-    case "kanban":
+    case "board":
       return (
         <ScrollView
           horizontal
@@ -140,7 +140,7 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
           style={{ marginHorizontal: -MOBILE_H_PADDING }}
           contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
         >
-          <KanbanView {...common} />
+          <BoardView {...common} />
         </ScrollView>
       );
     case "gallery":

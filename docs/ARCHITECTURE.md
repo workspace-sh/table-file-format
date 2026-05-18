@@ -18,7 +18,7 @@
 │   └── demo/        Vite + RSD + StyleX viewer (web only)
 │       ├── App.tsx
 │       ├── Sidebar.tsx
-│       ├── views.tsx        TableView / KanbanView / GalleryView / ListView
+│       ├── views.tsx        TableView / BoardView / GalleryView / ListView
 │       ├── loadFixture.ts   pulls fixtures/projects.table/ via Vite imports
 │       ├── main.tsx
 │       ├── strict.css

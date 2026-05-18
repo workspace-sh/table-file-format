@@ -11,7 +11,7 @@ import type {
 import {
   BodyEditor,
   GalleryView,
-  KanbanView,
+  BoardView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
@@ -319,9 +319,9 @@ function renderView(
   cb: ViewCallbacks,
 ) {
   switch (view.layout) {
-    case "kanban":
+    case "board":
       return (
-        <KanbanView
+        <BoardView
           view={view}
           rows={rows}
           schema={schema}

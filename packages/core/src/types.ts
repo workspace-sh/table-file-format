@@ -94,7 +94,7 @@ export type Row = Record<string, unknown> & { id: string };
 
 // ---- Views ----
 
-export type ViewLayout = "table" | "kanban" | "gallery" | "calendar" | "list";
+export type ViewLayout = "table" | "board" | "gallery" | "calendar" | "list";
 
 export type FilterOperator =
   | "eq" | "neq"
@@ -131,7 +131,7 @@ export interface View {
    * Manual row ordering by system id. When present and non-empty, takes
    * precedence over `sort` for the listed rows; rows not in the array
    * appear after, in their natural arrival order. Set by manual reorder
-   * gestures (drag-and-drop in list/kanban-within-column views).
+   * gestures (drag-and-drop in list/board-within-column views).
    */
   order?: string[];
   /**
@@ -140,7 +140,7 @@ export interface View {
    * data or schema. Set by column-resize gestures in table views.
    */
   columnWidths?: Record<string, number>;
-  kanban_field?: string;
+  board_field?: string;
   gallery_field?: string;
   calendar_field?: string;
   [key: string]: unknown;
