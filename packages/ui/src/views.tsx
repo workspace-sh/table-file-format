@@ -287,6 +287,147 @@ const styles = css.create({
     },
   },
 
+  // Calendar — month grid (7 cols × 6 rows = 42 cells).
+  calendar: {
+    display: "flex",
+    flexDirection: "column",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  calendarHeader: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingInline: 12,
+    paddingBlock: 10,
+    backgroundColor: {
+      default: "#f5f5f7",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  calendarTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarNav: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    fontSize: 16,
+    fontWeight: "600",
+    cursor: "pointer",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarWeekdays: {
+    display: "flex",
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  calendarWeekday: {
+    paddingBlock: 6,
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    textAlign: "center",
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  calendarGrid: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  calendarDay: {
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 80,
+    paddingInline: 4,
+    paddingBlock: 4,
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    gap: 2,
+    overflow: "hidden",
+  },
+  calendarDayOther: {
+    opacity: 0.4,
+  },
+  calendarDayNum: {
+    fontSize: 11,
+    fontWeight: "500",
+    paddingInline: 2,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarRowChip: {
+    fontSize: 10,
+    paddingInline: 4,
+    paddingBlock: 2,
+    borderRadius: 3,
+    borderWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#dbeafe",
+      "@media (prefers-color-scheme: dark)": "#1e293b",
+    },
+    color: {
+      default: "#1e40af",
+      "@media (prefers-color-scheme: dark)": "#93c5fd",
+    },
+  },
+  calendarEmpty: {
+    padding: 24,
+    textAlign: "center",
+    fontSize: 13,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+
   // Card (shared by board + gallery)
   card: {
     display: "flex",
@@ -1203,6 +1344,175 @@ export function ListView({
             </DragGhost>
           );
         })()}
+    </html.div>
+  );
+}
+
+/**
+ * Minimal calendar view — month grid. Anchors rows on their
+ * `view.calendar_field` (date string). Days outside the current month
+ * render dimmed. Prev / next month navigation; "today" highlight is
+ * deferred for now.
+ *
+ * Date parsing: tolerant of `YYYY-MM-DD` strings (the .table format's
+ * `date` type) and full ISO datetime strings (extracts the date
+ * portion). Non-string / invalid values are skipped silently.
+ *
+ * Layout: 7 columns × 6 rows. Day cells use the same viewport-aware
+ * `cellWidth` function-style as TableView, sized to `viewport / 7`
+ * so the grid fills the available width.
+ */
+export function CalendarView({
+  view,
+  rows,
+  schema,
+  bodies,
+  onOpenBody,
+}: ViewProps) {
+  const calField = view.calendar_field;
+  const viewportWidth = useViewportWidth();
+  const dayCellWidth = Math.floor(viewportWidth / 7);
+
+  // Anchor the cursor on the earliest date in the data so the calendar
+  // doesn't render an empty month when fixture dates are in the past
+  // relative to "today".
+  const [cursor, setCursor] = useState(() => {
+    if (calField) {
+      const earliest = rows
+        .map((r) => r[calField])
+        .filter((v): v is string => typeof v === "string" && v.length >= 10)
+        .map((s) => new Date(s.slice(0, 10)))
+        .filter((d) => !Number.isNaN(d.getTime()))
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+      if (earliest) {
+        return new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+      }
+    }
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  if (!calField) {
+    return (
+      <html.div style={styles.calendarEmpty}>
+        <html.span>
+          No `calendar_field` configured on this view.
+        </html.span>
+      </html.div>
+    );
+  }
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const monthName = cursor.toLocaleString("default", { month: "long" });
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  // 6 weeks × 7 days = 42 cells. Fill leading + trailing with adjacent
+  // months so the grid is always rectangular regardless of which day
+  // of the week the 1st falls on.
+  const cells: Array<{ date: Date; inMonth: boolean }> = [];
+  for (let i = firstWeekday - 1; i >= 0; i--) {
+    cells.push({
+      date: new Date(year, month - 1, daysInPrevMonth - i),
+      inMonth: false,
+    });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ date: new Date(year, month, d), inMonth: true });
+  }
+  let tail = 1;
+  while (cells.length < 42) {
+    cells.push({ date: new Date(year, month + 1, tail++), inMonth: false });
+  }
+
+  // Bucket rows by YYYY-MM-DD.
+  const rowsByDate = new Map<string, Row[]>();
+  for (const row of rows) {
+    const value = row[calField];
+    if (typeof value !== "string" || value.length < 10) continue;
+    const key = value.slice(0, 10);
+    if (!rowsByDate.has(key)) rowsByDate.set(key, []);
+    rowsByDate.get(key)!.push(row);
+  }
+
+  const titleField = schema.fields[0]?.name;
+  const dateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+
+  return (
+    <html.div style={styles.calendar}>
+      <html.div style={styles.calendarHeader}>
+        <html.button
+          onClick={() => setCursor(new Date(year, month - 1, 1))}
+          style={styles.calendarNav}
+        >
+          ‹
+        </html.button>
+        <html.span style={styles.calendarTitle}>
+          {monthName} {year}
+        </html.span>
+        <html.button
+          onClick={() => setCursor(new Date(year, month + 1, 1))}
+          style={styles.calendarNav}
+        >
+          ›
+        </html.button>
+      </html.div>
+      <html.div style={styles.calendarWeekdays}>
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+          <html.span
+            key={d}
+            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
+          >
+            {d}
+          </html.span>
+        ))}
+      </html.div>
+      <html.div style={styles.calendarGrid}>
+        {cells.map((cell, i) => {
+          const key = dateKey(cell.date);
+          const dayRows = rowsByDate.get(key) ?? [];
+          return (
+            <html.div
+              key={i}
+              style={[
+                styles.calendarDay,
+                styles.cellWidth(dayCellWidth),
+                !cell.inMonth && styles.calendarDayOther,
+              ]}
+            >
+              <html.span style={styles.calendarDayNum}>
+                {cell.date.getDate()}
+              </html.span>
+              {dayRows.map((row) => {
+                const label = titleField
+                  ? formatValue(row[titleField])
+                  : row.id;
+                if (onOpenBody && bodies?.[row.id]) {
+                  return (
+                    <html.button
+                      key={row.id}
+                      onClick={() => onOpenBody(row.id)}
+                      style={styles.calendarRowChip}
+                    >
+                      {label}
+                    </html.button>
+                  );
+                }
+                return (
+                  <html.span key={row.id} style={styles.calendarRowChip}>
+                    {label}
+                  </html.span>
+                );
+              })}
+            </html.div>
+          );
+        })}
+      </html.div>
     </html.div>
   );
 }

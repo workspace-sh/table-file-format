@@ -69,7 +69,8 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
 │   └── ui/               @workspace/table-ui
 │                         RSD/StyleX view components — TableView, BoardView,
-│                         GalleryView, ListView, SchemaEditor, BodyEditor.
+│                         GalleryView, ListView, CalendarView, SchemaEditor,
+│                         BodyEditor.
 │                         Currently web-targeted; cross-platform lifting tracked.
 ├── apps/
 │   ├── web/              @workspace/table-web
@@ -83,7 +84,7 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │                         `macos/` Xcode project inside (gitignored,
 │                         bootstrap per README).
 ├── fixtures/
-│   ├── projects.table/   7 rows, 7 views, one body
+│   ├── projects.table/   7 rows, 8 views, one body
 │   └── tasks.table/      8 rows, cross-table relation to projects
 └── docs/
     ├── SPEC.md

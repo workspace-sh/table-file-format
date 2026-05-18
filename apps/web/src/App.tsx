@@ -10,8 +10,9 @@ import type {
 } from "@workspace/table-core";
 import {
   BodyEditor,
-  GalleryView,
   BoardView,
+  CalendarView,
+  GalleryView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
@@ -352,6 +353,15 @@ function renderView(
         />
       );
     case "calendar":
+      return (
+        <CalendarView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "table":
     default:
       return (

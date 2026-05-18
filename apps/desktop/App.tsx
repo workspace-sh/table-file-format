@@ -4,8 +4,9 @@ import { applyView, searchRows, validate } from "@workspace/table-core";
 import type { ParsedTable, View } from "@workspace/table-core";
 import { projectsTable } from "@workspace/table-fixtures";
 import {
-  GalleryView,
   BoardView,
+  CalendarView,
+  GalleryView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
@@ -123,6 +124,8 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
       return <GalleryView {...common} />;
     case "list":
       return <ListView {...common} />;
+    case "calendar":
+      return <CalendarView {...common} />;
     default:
       return <TableView {...common} />;
   }

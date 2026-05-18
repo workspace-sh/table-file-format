@@ -44,5 +44,11 @@
     "name": "Quick list",
     "layout": "list",
     "fields": ["title", "owner"]
+  },
+  {
+    "id": "v8",
+    "name": "Calendar",
+    "layout": "calendar",
+    "calendar_field": "launched"
   }
 ]

@@ -3,6 +3,7 @@ export {
   BoardView,
   GalleryView,
   ListView,
+  CalendarView,
 } from "./views";
 export {
   AddFieldButton,
