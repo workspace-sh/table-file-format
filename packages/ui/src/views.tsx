@@ -360,7 +360,12 @@ const styles = css.create({
     // Container-relative width (not viewport-relative) so weekday
     // headers and day cells share the same column geometry regardless
     // of how wide the calendar's parent is. 100/7 = 14.2857%.
+    // box-sizing: border-box is critical on web — without it, the
+    // default content-box makes padding sit *outside* the percentage,
+    // so 7 cells overflow the container and only 6 fit per row. RN is
+    // border-box natively, so this just unifies the two platforms.
     width: "14.2857%",
+    boxSizing: "border-box",
     flexShrink: 0,
     flexGrow: 0,
     paddingBlock: 6,
@@ -381,8 +386,9 @@ const styles = css.create({
   },
   calendarDay: {
     // Same percentage width as calendarWeekday — guarantees headers
-    // and cells share the same column geometry.
+    // and cells share the same column geometry. box-sizing as above.
     width: "14.2857%",
+    boxSizing: "border-box",
     flexShrink: 0,
     flexGrow: 0,
     display: "flex",
