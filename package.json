@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
+    "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
