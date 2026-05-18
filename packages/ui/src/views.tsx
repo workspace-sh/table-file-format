@@ -357,6 +357,12 @@ const styles = css.create({
     },
   },
   calendarWeekday: {
+    // Container-relative width (not viewport-relative) so weekday
+    // headers and day cells share the same column geometry regardless
+    // of how wide the calendar's parent is. 100/7 = 14.2857%.
+    width: "14.2857%",
+    flexShrink: 0,
+    flexGrow: 0,
     paddingBlock: 6,
     fontSize: 10,
     fontWeight: "600",
@@ -374,6 +380,11 @@ const styles = css.create({
     flexWrap: "wrap",
   },
   calendarDay: {
+    // Same percentage width as calendarWeekday — guarantees headers
+    // and cells share the same column geometry.
+    width: "14.2857%",
+    flexShrink: 0,
+    flexGrow: 0,
     display: "flex",
     flexDirection: "column",
     minHeight: 80,
@@ -1376,8 +1387,6 @@ export function CalendarView({
   onOpenBody,
 }: ViewProps) {
   const calField = view.calendar_field;
-  const viewportWidth = useViewportWidth();
-  const dayCellWidth = Math.floor(viewportWidth / 7);
 
   // Anchor the cursor on the earliest date in the data so the calendar
   // doesn't render an empty month when fixture dates are in the past
@@ -1483,7 +1492,7 @@ export function CalendarView({
             // duplicate across exotic locales / ICU configurations, and we
             // always render exactly 7 in stable order.
             key={i}
-            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
+            style={styles.calendarWeekday}
           >
             {d}
           </html.span>
@@ -1498,7 +1507,6 @@ export function CalendarView({
               key={i}
               style={[
                 styles.calendarDay,
-                styles.cellWidth(dayCellWidth),
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >

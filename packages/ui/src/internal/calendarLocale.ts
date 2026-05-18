@@ -12,8 +12,16 @@
  * English / Sunday-first defaults.
  */
 
-/** A Sunday in 2024 (Jan 7), used as a reference week for naming. */
-const REFERENCE_SUNDAY = new Date(2024, 0, 7);
+/**
+ * Reference Sunday for asking `Intl.DateTimeFormat` to format weekday
+ * names. Any Sunday works — we use the first Sunday after the Unix
+ * epoch (1970-01-04, since 1970-01-01 was a Thursday) because it's
+ * semantically meaningful (well-known epoch anchor) and locked to UTC,
+ * so timezone shifts don't accidentally drift us into a Saturday or
+ * Monday. We iterate seven days from here to get a full week.
+ */
+const EPOCH_FIRST_SUNDAY = Date.UTC(1970, 0, 4);
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Short weekday names in the locale's order, starting from Sunday.
@@ -22,12 +30,13 @@ const REFERENCE_SUNDAY = new Date(2024, 0, 7);
  */
 export function weekdayNamesShort(locale?: string): string[] {
   try {
-    const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(REFERENCE_SUNDAY);
-      d.setDate(REFERENCE_SUNDAY.getDate() + i);
-      return fmt.format(d);
+    const fmt = new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      timeZone: "UTC",
     });
+    return Array.from({ length: 7 }, (_, i) =>
+      fmt.format(new Date(EPOCH_FIRST_SUNDAY + i * ONE_DAY_MS)),
+    );
   } catch {
     return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   }
