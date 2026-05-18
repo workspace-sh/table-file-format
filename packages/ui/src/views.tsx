@@ -12,6 +12,12 @@ import type {
 } from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import {
+  firstDayOfWeek,
+  monthNameLong,
+  rotateWeekdays,
+  weekdayNamesShort,
+} from "./internal/calendarLocale";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -1404,16 +1410,24 @@ export function CalendarView({
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
-  const monthName = cursor.toLocaleString("default", { month: "long" });
-  const firstWeekday = new Date(year, month, 1).getDay();
+  const monthName = monthNameLong(cursor);
+  // Locale-aware: weekday labels + first-day-of-week. Sunday-first in
+  // US/CA/JP/etc., Monday-first across most of Europe + ISO, Saturday-
+  // first in parts of the Middle East. `Intl.Locale.getWeekInfo()`
+  // figures this out from the runtime's locale; falls back to Sunday.
+  const weekStart = firstDayOfWeek();
+  const orderedWeekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
+  const dayOfMonth1 = new Date(year, month, 1).getDay();
+  const leadingBlanks = (dayOfMonth1 - weekStart + 7) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
 
   // 6 weeks × 7 days = 42 cells. Fill leading + trailing with adjacent
   // months so the grid is always rectangular regardless of which day
-  // of the week the 1st falls on.
+  // of the week the 1st falls on (and regardless of the locale's first
+  // day of the week).
   const cells: Array<{ date: Date; inMonth: boolean }> = [];
-  for (let i = firstWeekday - 1; i >= 0; i--) {
+  for (let i = leadingBlanks - 1; i >= 0; i--) {
     cells.push({
       date: new Date(year, month - 1, daysInPrevMonth - i),
       inMonth: false,
@@ -1463,9 +1477,12 @@ export function CalendarView({
         </html.button>
       </html.div>
       <html.div style={styles.calendarWeekdays}>
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+        {orderedWeekdayNames.map((d, i) => (
           <html.span
-            key={d}
+            // Use index as key — `d` (the localized name) can theoretically
+            // duplicate across exotic locales / ICU configurations, and we
+            // always render exactly 7 in stable order.
+            key={i}
             style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
           >
             {d}

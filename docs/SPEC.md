@@ -140,7 +140,14 @@ storage outside the `.table/` directory.
 
 ### Layouts
 
-`table`, `board`, `gallery`, `list`, `calendar`.
+`table`, `board`, `gallery`, `list`, `calendar`. The `layout` field is a
+fixed enum — apps render based on this value.
+
+The `name` field is **free-form** and user-facing — it's what shows up
+in view switchers and lists. Apps must not parse it; it can be in any
+language and contain any Unicode text. The pair `(layout, name)` lets
+the same layout type appear multiple times with different names (e.g.
+two `"table"` views named "Active" and "Done").
 
 ### Filter operators
 
