@@ -12,7 +12,6 @@ import type {
 } from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 import { useContainerWidth } from "./internal/useContainerWidth";
-import { useViewportWidth } from "./internal/useViewportWidth";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -243,9 +242,14 @@ const styles = css.create({
     gap: 12,
   },
   galleryCard: {
-    minWidth: 240,
-    maxWidth: 320,
-    flex: 1,
+    // Width applied at use-site via `cellWidth(cardWidth)` — uniform
+    // across the grid regardless of how many cards land on the last
+    // row. The flex:1 + min/maxWidth pattern (Notion / Airtable
+    // default) lets last-row cards stretch wider than the rows above;
+    // explicit container-relative widths avoid that.
+    flexShrink: 0,
+    flexGrow: 0,
+    boxSizing: "border-box",
   },
   galleryCardHero: {
     fontSize: 12,
@@ -932,18 +936,23 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
-  // Responsive cell width: cells fill the viewport when there's room
-  // (macOS / web wide windows) and snap to MIN_CELL_WIDTH on narrow
+  // Responsive cell width: cells fill the table's CONTAINER when
+  // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
   // viewports (mobile portrait), triggering horizontal scroll via the
-  // consumer's ScrollView wrapper. Reactive to resize / orientation
-  // change via `useViewportWidth` (web: window resize listener; native:
-  // RN's useWindowDimensions).
-  const viewportWidth = useViewportWidth();
+  // consumer's ScrollView wrapper. Reactive via `useContainerWidth`
+  // (web: ResizeObserver on the outer table div; native: RN onLayout).
+  // Container-measured (not viewport-measured) so a sidebar-narrowed
+  // main pane on web gets the right cell sizes, and an embedded
+  // table inside a constrained panel does the right thing too.
+  const { measureProps, width: containerWidth } = useContainerWidth();
   const totalCols = fields.length + (canAddField ? 1 : 0);
-  const cellWidth = Math.max(MIN_CELL_WIDTH, Math.floor(viewportWidth / totalCols));
+  const cellWidth =
+    containerWidth > 0
+      ? Math.max(MIN_CELL_WIDTH, Math.floor(containerWidth / totalCols))
+      : MIN_CELL_WIDTH;
 
   return (
-    <html.div style={styles.table}>
+    <html.div {...measureProps} style={styles.table}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
         {fields.map((name, idx) => {
           const field = fieldMap.get(name);
@@ -1202,18 +1211,53 @@ export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
   );
 }
 
+/** Minimum readable gallery-card width before we wrap to the next row. */
+const MIN_GALLERY_CARD_WIDTH = 240;
+/** Gap between gallery cards. Must match `styles.gallery.gap`. */
+const GALLERY_GAP = 12;
+
 export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
   const galleryField = view.gallery_field;
   const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
   const fieldMap = fieldsByName(schema);
 
+  // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
+  // grid (Notion / Airtable default) lets last-row cards stretch wider
+  // than the rows above them; explicit calc avoids that.
+  //
+  //   cardsPerRow = floor((container + gap) / (minCard + gap))
+  //   cardWidth   = (container - (cardsPerRow - 1) * gap) / cardsPerRow
+  //
+  // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
+  // cards (not trailing the last one in a row).
+  const { measureProps, width: containerWidth } = useContainerWidth();
+  const cardsPerRow =
+    containerWidth > 0
+      ? Math.max(
+          1,
+          Math.floor(
+            (containerWidth + GALLERY_GAP) /
+              (MIN_GALLERY_CARD_WIDTH + GALLERY_GAP),
+          ),
+        )
+      : 1;
+  const cardWidth =
+    containerWidth > 0
+      ? Math.floor(
+          (containerWidth - (cardsPerRow - 1) * GALLERY_GAP) / cardsPerRow,
+        )
+      : MIN_GALLERY_CARD_WIDTH;
+
   return (
-    <html.div style={styles.gallery}>
+    <html.div {...measureProps} style={styles.gallery}>
       {rows.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         return (
-          <html.div key={row.id} style={[styles.card, styles.galleryCard]}>
+          <html.div
+            key={row.id}
+            style={[styles.card, styles.galleryCard, styles.cellWidth(cardWidth)]}
+          >
             {galleryField && (
               <html.span style={styles.galleryCardHero}>
                 {formatValue(row[galleryField])}
