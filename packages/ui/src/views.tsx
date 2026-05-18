@@ -11,6 +11,7 @@ import type {
   View,
 } from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { useContainerWidth } from "./internal/useContainerWidth";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import {
   firstDayOfWeek,
@@ -361,17 +362,13 @@ const styles = css.create({
     },
   },
   calendarWeekday: {
-    // Container-relative width (not viewport-relative) so weekday
-    // headers and day cells share the same column geometry regardless
-    // of how wide the calendar's parent is. 100/7 = 14.2857%.
-    // box-sizing: border-box is critical on web — without it, the
-    // default content-box makes padding sit *outside* the percentage,
-    // so 7 cells overflow the container and only 6 fit per row. RN is
-    // border-box natively, so this just unifies the two platforms.
-    width: "14.2857%",
-    boxSizing: "border-box",
+    // Width applied at use-site via the `dayCellWidth` function-style.
+    // Container-measured (not viewport-derived) so columns track the
+    // calendar's actual parent — handles sidebar layouts, narrow
+    // panels, orientation changes, browser resize.
     flexShrink: 0,
     flexGrow: 0,
+    boxSizing: "border-box",
     paddingBlock: 6,
     fontSize: 10,
     fontWeight: "600",
@@ -389,12 +386,11 @@ const styles = css.create({
     flexWrap: "wrap",
   },
   calendarDay: {
-    // Same percentage width as calendarWeekday — guarantees headers
-    // and cells share the same column geometry. box-sizing as above.
-    width: "14.2857%",
-    boxSizing: "border-box",
+    // Same `dayCellWidth(n)` applied at use-site as the header cells,
+    // so headers and grid share identical column geometry.
     flexShrink: 0,
     flexGrow: 0,
+    boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
     minHeight: 80,
@@ -1399,6 +1395,16 @@ export function CalendarView({
   const calField = view.calendar_field;
   const range = view.calendar_range;
 
+  // Measure the calendar's own container — viewport width would be
+  // wrong on web layouts with a sidebar (calendar's parent is the
+  // main pane, narrower than the window). 7 columns means every cell
+  // is `floor(containerWidth / 7)`; until the first layout pass
+  // completes width is 0, so we guard with a tiny fallback that
+  // doesn't visibly flash.
+  const { measureProps, width: containerWidth } = useContainerWidth();
+  const dayCellWidth =
+    containerWidth > 0 ? Math.floor(containerWidth / 7) : 0;
+
   // Range bounds, normalised to first-of-month so we compare cursors
   // at the same granularity as `cursor` (which is always first-of-month).
   // Invalid dates in the range silently degrade to "no bound".
@@ -1508,7 +1514,7 @@ export function CalendarView({
   const canGoNext = !rangeEnd || cursor < rangeEnd;
 
   return (
-    <html.div style={styles.calendar}>
+    <html.div {...measureProps} style={styles.calendar}>
       <html.div style={styles.calendarHeader}>
         <html.button
           onClick={
@@ -1543,7 +1549,7 @@ export function CalendarView({
             // duplicate across exotic locales / ICU configurations, and we
             // always render exactly 7 in stable order.
             key={i}
-            style={styles.calendarWeekday}
+            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
           >
             {d}
           </html.span>
@@ -1558,6 +1564,7 @@ export function CalendarView({
               key={i}
               style={[
                 styles.calendarDay,
+                styles.cellWidth(dayCellWidth),
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >
