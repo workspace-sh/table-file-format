@@ -22,6 +22,13 @@ const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "../..");
 const baseConfig = getDefaultConfig(projectRoot);
 
+// Block any node_modules/react copy outside this app's own node_modules.
+// Workspace packages (packages/ui, packages/core) may install their own
+// react via devDeps; if Metro resolves to those copies, we end up with
+// dual React instances and "Cannot read property 'useState' of null".
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const blockExact = (p) => new RegExp(`^${escapeRe(p)}(\\/|$)`);
+
 const config = {
   watchFolders: [workspaceRoot],
   resolver: {
@@ -31,18 +38,15 @@ const config = {
     ],
     blockList: [
       ...Array.from(baseConfig.resolver.blockList ?? []),
-      // Anchored regexes — bare `node_modules/react` prefix would otherwise
-      // match `react-strict-dom`, `react-native-safe-area-context`, etc.
-      new RegExp(
-        `^${path
-          .resolve(workspaceRoot, "node_modules", "react")
-          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\/|$)`,
-      ),
-      new RegExp(
-        `^${path
-          .resolve(workspaceRoot, "node_modules", "react-native")
-          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\/|$)`,
-      ),
+      // Root hoisted copies — bare `node_modules/react` prefix would
+      // otherwise match `react-strict-dom`, `react-native-safe-area-context`, etc.
+      blockExact(path.resolve(workspaceRoot, "node_modules", "react")),
+      blockExact(path.resolve(workspaceRoot, "node_modules", "react-native")),
+      // Per-package node_modules — workspace packages install react as a
+      // devDep for typecheck. Block them so Metro walks past and lands on
+      // THIS app's copy.
+      blockExact(path.resolve(workspaceRoot, "packages/ui/node_modules", "react")),
+      blockExact(path.resolve(workspaceRoot, "packages/core/node_modules", "react")),
     ],
     platforms: ["macos", "ios", "native"],
     unstable_enablePackageExports: true,

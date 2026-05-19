@@ -4,19 +4,27 @@ dist-web/
 index.sqlite
 *.sqlite
 
-# Expo / RN-macos generated artefacts — bootstrap locally per each app's README.
+# Expo CNG generated artefacts — regenerate via `npm run mobile:prebuild`.
 apps/mobile/ios/
 apps/mobile/android/
 apps/mobile/.expo/
 apps/mobile/.expo-shared/
-apps/desktop/macos/
+
+# Desktop: the macos/ Xcode project IS committed (bare RN, not CNG).
+# Only generated artefacts inside it are ignored.
 apps/desktop/ios/
 apps/desktop/android/
+apps/desktop/macos/Pods/
+apps/desktop/macos/build/
+apps/desktop/macos/Podfile.lock
+apps/desktop/macos/.xcode.env.local
+apps/desktop/macos/.spm.pods/
+apps/desktop/macos/**/xcuserdata/
+apps/desktop/macos/**/*.xcuserstate
 
-# Native build outputs
+# Generic native build outputs (catch any stragglers)
 **/build/
 **/Pods/
-**/Podfile.lock
 
 # Editor / OS
 .DS_Store

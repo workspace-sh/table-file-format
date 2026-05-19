@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "*",
+    "@workspace/table-core": "file:../../packages/core",
+    "@workspace/table-fixtures": "file:../../packages/table-fixtures",
+    "@workspace/table-ui": "file:../../packages/ui",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-macos": "^0.81.7",

@@ -140,7 +140,14 @@ storage outside the `.table/` directory.
 
 ### Layouts
 
-`table`, `kanban`, `gallery`, `list`, `calendar`.
+`table`, `board`, `gallery`, `list`, `calendar`. The `layout` field is a
+fixed enum — apps render based on this value.
+
+The `name` field is **free-form** and user-facing — it's what shows up
+in view switchers and lists. Apps must not parse it; it can be in any
+language and contain any Unicode text. The pair `(layout, name)` lets
+the same layout type appear multiple times with different names (e.g.
+two `"table"` views named "Active" and "Done").
 
 ### Filter operators
 
@@ -164,9 +171,16 @@ storage outside the `.table/` directory.
 
 ### Layout-specific fields
 
-- `kanban_field` — column field for kanban layouts.
+- `board_field` — column field for board layouts.
 - `gallery_field` — hero/lead field for gallery cards.
 - `calendar_field` — date field for calendar layouts.
+- `calendar_range` — optional `{start, end}` (YYYY-MM-DD) bound for
+  `layout: "calendar"` views. When present, calendar navigation is
+  locked to this window: prev / next disable at the bounds and the
+  initial cursor snaps inside the range. Useful for project calendars
+  (locked to project duration), sprint cycles, event-specific
+  calendars. Apps that don't recognise the field should still render
+  the calendar correctly — they'll just allow free navigation.
 
 ## 5. `meta.json`
 

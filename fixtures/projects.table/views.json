@@ -27,9 +27,9 @@
   },
   {
     "id": "v5",
-    "name": "Kanban by status",
-    "layout": "kanban",
-    "kanban_field": "status",
+    "name": "Board by status",
+    "layout": "board",
+    "board_field": "status",
     "fields": ["title", "owner", "budget"]
   },
   {
@@ -44,5 +44,18 @@
     "name": "Quick list",
     "layout": "list",
     "fields": ["title", "owner"]
+  },
+  {
+    "id": "v8",
+    "name": "Calendar",
+    "layout": "calendar",
+    "calendar_field": "launched"
+  },
+  {
+    "id": "v9",
+    "name": "Q1 2026",
+    "layout": "calendar",
+    "calendar_field": "launched",
+    "calendar_range": { "start": "2026-01-01", "end": "2026-03-31" }
   }
 ]
