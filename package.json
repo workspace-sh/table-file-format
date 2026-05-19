@@ -2,16 +2,17 @@
   "name": "table-file-format",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Spike for the open .table/ data-matrix file format — workspace root.",
   "workspaces": [
     "packages/*",
     "apps/web",
-    "apps/mobile",
-    "apps/desktop"
+    "apps/mobile"
   ],
+  "//workspaces": "apps/desktop is intentionally NOT a workspace member — bare RN doesn't compose with npm hoisting. See apps/desktop/README.md.",
   "scripts": {
     "dev": "npm run web:dev",
-    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace/table-core",
     "core:test": "npm run test -w @workspace/table-core",
@@ -19,6 +20,8 @@
     "core:typecheck": "npm run typecheck -w @workspace/table-core",
 
     "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
+
+    "fixtures:typecheck": "npm run typecheck -w @workspace/table-fixtures",
 
     "web:dev": "npm run dev -w @workspace/table-web",
     "web:build": "npm run build -w @workspace/table-web",
@@ -35,18 +38,21 @@
     "mobile:android:device": "cd apps/mobile && npx expo run:android --device --port 8082",
     "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
 
-    "desktop:start": "npm run start --workspace=apps/desktop -- --reset-cache",
-    "desktop:start:clean": "watchman watch-del-all && npm run start --workspace=apps/desktop -- --reset-cache",
-    "desktop:macos": "npx --workspace=apps/desktop react-native run-macos --port 8083",
+    "desktop:install": "cd apps/desktop && npm install --legacy-peer-deps",
+    "desktop:start": "cd apps/desktop && npx react-native start --port 8083 --reset-cache",
+    "desktop:start:clean": "watchman watch-del-all && cd apps/desktop && npx react-native start --port 8083 --reset-cache",
+    "desktop:macos": "cd apps/desktop && npx react-native run-macos --port 8083",
     "desktop:dev": "concurrently \"npm run desktop:start:clean\" \"npm run desktop:macos\"",
-    "desktop:pods": "cd apps/desktop/macos && pod install",
-    "desktop:typecheck": "npm run typecheck -w @workspace/table-desktop"
+    "desktop:pods": "cd apps/desktop/macos && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install",
+    "desktop:typecheck": "cd apps/desktop && npm run typecheck"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }

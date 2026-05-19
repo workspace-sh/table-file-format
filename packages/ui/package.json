@@ -19,15 +19,28 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "*"
+    "@workspace/table-core": "file:../core"
   },
   "peerDependencies": {
     "react": ">=19.0.0",
+    "react-dom": ">=19.0.0",
+    "react-native": ">=0.81.0",
     "react-strict-dom": ">=0.0.55"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true,
+      "comment": "Only needed by web consumers — used by createPortal in SchemaEditor + DragGhost. Native consumers (Expo, RN-macOS) don't install it. Drop once the Portal abstraction lands and these imports become conditional."
+    },
+    "react-native": {
+      "optional": true,
+      "comment": "Only needed by native consumers — used by useViewportWidth on iOS/Android/macOS. Web consumers use the `.web.ts` variant which uses window.innerWidth. Vite's resolve.extensions resolves `.web.ts` ahead of `.ts` so RN is never reached on web."
+    }
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
     "react": "^19.2.0",
+    "react-native": "0.81.5",
     "react-strict-dom": "0.0.55",
     "typescript": "^5.4.0"
   }

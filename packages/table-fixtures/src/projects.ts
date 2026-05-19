@@ -1,17 +1,17 @@
 /**
- * Inline fixture for the mobile app.
+ * Inline copy of the canonical `fixtures/projects.table/` for consumers
+ * that can't load arbitrary non-JS files from outside their package.
  *
- * Unlike `apps/web/src/loadFixture.ts` (which uses Vite's import.meta.glob
- * to load the on-disk `fixtures/projects.table/` directory at build time),
- * the mobile app has no equivalent Metro primitive for loading arbitrary
- * non-JS files from outside the package. For the spike we inline the
- * canonical fixture rows here. A future iteration could:
- *   - bundle the fixture via metro-config asset extensions, OR
- *   - generate a TS file from the on-disk fixture at build time
+ * Web (`apps/web`) loads the on-disk fixture directly via Vite's
+ * `import.meta.glob`. Metro (mobile + desktop) has no equivalent
+ * primitive, so they import THIS module instead. A future iteration
+ * could codegen this file from the on-disk fixture at build time so
+ * there's a single source of truth; for the spike, sync manually when
+ * the on-disk version changes.
  */
 import type { ParsedTable } from "@workspace/table-core";
 
-export const fixture: ParsedTable = {
+export const projectsTable: ParsedTable = {
   path: "fixtures/projects.table",
   schema: {
     fields: [
@@ -98,7 +98,63 @@ export const fixture: ParsedTable = {
       layout: "table",
       fields: ["title", "status", "owner", "launched"],
     },
+    {
+      id: "v2",
+      name: "Active by owner",
+      layout: "table",
+      filter: [{ field: "status", operator: "eq", value: "active" }],
+      sort: [{ field: "owner", direction: "asc" }],
+    },
+    {
+      id: "v3",
+      name: "Roadmap",
+      layout: "table",
+      fields: ["title", "status", "launched"],
+      sort: [{ field: "launched", direction: "asc" }],
+    },
+    {
+      id: "v4",
+      name: "By owner",
+      layout: "table",
+      group: { field: "owner" },
+    },
+    {
+      id: "v5",
+      name: "Board by status",
+      layout: "board",
+      board_field: "status",
+      fields: ["title", "owner", "budget"],
+    },
+    {
+      id: "v6",
+      name: "Gallery",
+      layout: "gallery",
+      gallery_field: "summary",
+      fields: ["title", "owner", "status"],
+    },
+    {
+      id: "v7",
+      name: "Quick list",
+      layout: "list",
+      fields: ["title", "owner"],
+    },
+    {
+      id: "v8",
+      name: "Calendar",
+      layout: "calendar",
+      calendar_field: "launched",
+    },
+    {
+      id: "v9",
+      name: "Q1 2026",
+      layout: "calendar",
+      calendar_field: "launched",
+      calendar_range: { start: "2026-01-01", end: "2026-03-31" },
+    },
   ],
+  bodies: {
+    p2: "# Table file format spike\n\nOpen, app-agnostic data-matrix file format. Sits in the same niche as Airtable, Google Tables, and Obsidian Bases — a portable database that also reads as a spreadsheet for information workers.\n\n## Architecture\n\nA `.table/` is a directory: schema.json, rows.ndjson, views.json, meta.json, attachments/, bodies/{id}.md, index.sqlite.",
+  },
   meta: {
     format: "table",
     formatVersion: 1,

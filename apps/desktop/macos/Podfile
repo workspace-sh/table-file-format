@@ -1,0 +1,52 @@
+require 'pathname'
+
+# Walk up from this Podfile to find the monorepo root's node_modules/.
+# In an npm-workspaces monorepo, react-native-macos hoists to the root.
+ws_dir = Pathname.new(__dir__)
+ws_dir = ws_dir.parent until
+  File.exist?("#{ws_dir}/node_modules/react-native-macos/scripts/react_native_pods.rb") ||
+  ws_dir.expand_path.to_s == '/'
+require "#{ws_dir}/node_modules/react-native-macos/scripts/react_native_pods.rb"
+
+# `use_react_native!`'s `:path` is treated as relative to the Podfile dir.
+# Compute the relative walk-up dynamically rather than hardcoding `../../..`
+# so this keeps working if apps/desktop/macos/ ever moves.
+rn_macos_rel_path = Pathname.new("#{ws_dir}/node_modules/react-native-macos").relative_path_from(Pathname.new(__dir__)).to_s
+
+prepare_react_native_project!
+
+target 'TableDesktop-macOS' do
+  platform :macos, '14.0'
+  use_native_modules!
+
+  use_react_native!(
+    :path => rn_macos_rel_path,
+    :fabric_enabled => true,
+    # The JS app root — one level up from this macos/ directory.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(installer)
+
+    # Xcode 26 / Apple Clang 17 has a broken consteval implementation that
+    # fails inside fmt. Insert a targeted #elif into base.h scoping
+    # FMT_USE_CONSTEVAL=0 to that compiler version specifically.
+    # (Mirrored from react-native-source-editor; remove once fmt or
+    # Apple clang ships a fix.)
+    fmt_base = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
+    if File.exist?(fmt_base)
+      content = File.read(fmt_base)
+      unless content.include?('__apple_build_version__ >= 17000000')
+        content.sub!(
+          '#elif defined(__cpp_consteval)',
+          "#elif defined(__apple_build_version__) && __apple_build_version__ >= 17000000L\n" \
+          "#  define FMT_USE_CONSTEVAL 0  // consteval is broken in Apple clang 17+ (Xcode 26).\n" \
+          '#elif defined(__cpp_consteval)'
+        )
+        File.chmod(0644, fmt_base)
+        File.write(fmt_base, content)
+      end
+    end
+  end
+end

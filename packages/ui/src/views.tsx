@@ -11,6 +11,22 @@ import type {
   View,
 } from "@workspace/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { useContainerWidth } from "./internal/useContainerWidth";
+import {
+  firstDayOfWeek,
+  monthNameLong,
+  rotateWeekdays,
+  weekdayNamesShort,
+} from "./internal/calendarLocale";
+
+/**
+ * Minimum readable column width. On narrow viewports (mobile portrait)
+ * every cell renders at this exact width and the table extends past the
+ * viewport → horizontal scroll. On wide viewports (macOS / web) we
+ * compute `Math.max(MIN_CELL_WIDTH, viewport / ncols)` so columns fill
+ * the available width Airtable-style instead of leaving empty space.
+ */
+const MIN_CELL_WIDTH = 180;
 
 const styles = css.create({
   // Table
@@ -26,6 +42,11 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
+  // Dynamic cell width — computed per-render from viewport width / ncols.
+  // Applied at use-site to both header and body cells so columns align.
+  cellWidth: (w: number) => ({
+    width: w,
+  }),
   tableRow: {
     display: "flex",
     flexDirection: "row",
@@ -46,12 +67,19 @@ const styles = css.create({
     },
   },
   tableCell: {
-    flex: 1,
+    // Width comes from `cellWidth()` function-style — dynamic per render
+    // so cells fill wide viewports (macOS / web) and snap to
+    // MIN_CELL_WIDTH on mobile (triggering horizontal scroll). Static
+    // structural styles only here; width applied at use-site.
+    flexShrink: 0,
+    flexGrow: 0,
+    overflow: "hidden",
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
-    paddingInline: 14,
-    minHeight: 38,
+    paddingInline: 16,
+    paddingBlock: 10,
+    minHeight: 40,
     fontSize: 13,
     boxSizing: "border-box",
     // Subtle inset when the cell contains a focused descendant (i.e. the
@@ -93,15 +121,15 @@ const styles = css.create({
     },
   },
 
-  // Kanban
-  kanban: {
+  // Board
+  board: {
     display: "flex",
     flexDirection: "row",
     gap: 12,
     overflowX: "auto",
     paddingBottom: 8,
   },
-  kanbanColumn: {
+  boardColumn: {
     display: "flex",
     flexDirection: "column",
     minWidth: 240,
@@ -117,13 +145,13 @@ const styles = css.create({
     borderColor: "transparent",
     gap: 8,
   },
-  kanbanColumnDropTarget: {
+  boardColumnDropTarget: {
     borderColor: {
       default: "#3478f6",
       "@media (prefers-color-scheme: dark)": "#0a84ff",
     },
   },
-  kanbanCardWrapper: {
+  boardCardWrapper: {
     display: "flex",
     flexDirection: "column",
   },
@@ -185,7 +213,7 @@ const styles = css.create({
     fontSize: 13,
     fontWeight: "500",
   },
-  kanbanColumnHeader: {
+  boardColumnHeader: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
@@ -200,7 +228,7 @@ const styles = css.create({
     paddingInline: 4,
     marginBottom: 4,
   },
-  kanbanCount: {
+  boardCount: {
     marginLeft: 6,
     fontSize: 11,
     fontWeight: "400",
@@ -214,9 +242,14 @@ const styles = css.create({
     gap: 12,
   },
   galleryCard: {
-    minWidth: 240,
-    maxWidth: 320,
-    flex: 1,
+    // Width applied at use-site via `cellWidth(cardWidth)` — uniform
+    // across the grid regardless of how many cards land on the last
+    // row. The flex:1 + min/maxWidth pattern (Notion / Airtable
+    // default) lets last-row cards stretch wider than the rows above;
+    // explicit container-relative widths avoid that.
+    flexShrink: 0,
+    flexGrow: 0,
+    boxSizing: "border-box",
   },
   galleryCardHero: {
     fontSize: 12,
@@ -265,7 +298,164 @@ const styles = css.create({
     },
   },
 
-  // Card (shared by kanban + gallery)
+  // Calendar — month grid (7 cols × 6 rows = 42 cells).
+  calendar: {
+    display: "flex",
+    flexDirection: "column",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  calendarHeader: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingInline: 12,
+    paddingBlock: 10,
+    backgroundColor: {
+      default: "#f5f5f7",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  calendarTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarNav: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    fontSize: 16,
+    fontWeight: "600",
+    cursor: "pointer",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarNavDisabled: {
+    opacity: 0.3,
+    cursor: "default",
+  },
+  calendarWeekdays: {
+    display: "flex",
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  calendarWeekday: {
+    // Width applied at use-site via the `dayCellWidth` function-style.
+    // Container-measured (not viewport-derived) so columns track the
+    // calendar's actual parent — handles sidebar layouts, narrow
+    // panels, orientation changes, browser resize.
+    flexShrink: 0,
+    flexGrow: 0,
+    boxSizing: "border-box",
+    paddingBlock: 6,
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    textAlign: "center",
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  calendarGrid: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  calendarDay: {
+    // Same `dayCellWidth(n)` applied at use-site as the header cells,
+    // so headers and grid share identical column geometry.
+    flexShrink: 0,
+    flexGrow: 0,
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 80,
+    paddingInline: 4,
+    paddingBlock: 4,
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    gap: 2,
+    overflow: "hidden",
+  },
+  calendarDayOther: {
+    opacity: 0.4,
+  },
+  calendarDayNum: {
+    fontSize: 11,
+    fontWeight: "500",
+    paddingInline: 2,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  calendarRowChip: {
+    fontSize: 10,
+    paddingInline: 4,
+    paddingBlock: 2,
+    borderRadius: 3,
+    borderWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#dbeafe",
+      "@media (prefers-color-scheme: dark)": "#1e293b",
+    },
+    color: {
+      default: "#1e40af",
+      "@media (prefers-color-scheme: dark)": "#93c5fd",
+    },
+  },
+  calendarEmpty: {
+    padding: 24,
+    textAlign: "center",
+    fontSize: 13,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+
+  // Card (shared by board + gallery)
   card: {
     display: "flex",
     flexDirection: "column",
@@ -310,8 +500,8 @@ const styles = css.create({
 
   // Pill (for enum values)
   pill: {
-    paddingInline: 8,
-    paddingBlock: 2,
+    paddingInline: 10,
+    paddingBlock: 3,
     borderRadius: 999,
     fontSize: 11,
     fontWeight: "500",
@@ -325,16 +515,19 @@ const styles = css.create({
     },
   },
 
-  // Clickable header cell wrapper
+  // Clickable header cell wrapper — width applied at use-site via the
+  // same cellWidth function-style so headers align with body cells.
   headerCellWrapper: {
     position: "relative",
     display: "flex",
-    flex: 1,
+    flexShrink: 0,
+    flexGrow: 0,
+    overflow: "hidden",
   },
   headerCellButton: {
     flex: 1,
     paddingBlock: 10,
-    paddingInline: 14,
+    paddingInline: 16,
     backgroundColor: "transparent",
     borderWidth: 0,
     textAlign: "left",
@@ -557,7 +750,8 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
     }
     return (
       <html.select
-        ref={inputRef as React.Ref<HTMLSelectElement>}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
         onChange={(e: { target: { value: string } }) => commit(e.target.value)}
         onBlur={cancel}
@@ -598,7 +792,8 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
             : "text";
   return (
     <html.input
-      ref={inputRef as React.Ref<HTMLInputElement>}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={inputRef as any}
       type={inputType}
       value={draft}
       onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
@@ -741,8 +936,23 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
+  // Responsive cell width: cells fill the table's CONTAINER when
+  // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
+  // viewports (mobile portrait), triggering horizontal scroll via the
+  // consumer's ScrollView wrapper. Reactive via `useContainerWidth`
+  // (web: ResizeObserver on the outer table div; native: RN onLayout).
+  // Container-measured (not viewport-measured) so a sidebar-narrowed
+  // main pane on web gets the right cell sizes, and an embedded
+  // table inside a constrained panel does the right thing too.
+  const { measureProps, width: containerWidth } = useContainerWidth();
+  const totalCols = fields.length + (canAddField ? 1 : 0);
+  const cellWidth =
+    containerWidth > 0
+      ? Math.max(MIN_CELL_WIDTH, Math.floor(containerWidth / totalCols))
+      : MIN_CELL_WIDTH;
+
   return (
-    <html.div style={styles.table}>
+    <html.div {...measureProps} style={styles.table}>
       <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
         {fields.map((name, idx) => {
           const field = fieldMap.get(name);
@@ -756,6 +966,7 @@ export function TableView({
                 key={name}
                 style={[
                   styles.tableCell,
+                  styles.cellWidth(cellWidth),
                   styles.tableHeaderCell,
                   cellAlignStyle(align),
                   !isLast && styles.tableCellSeparator,
@@ -768,7 +979,11 @@ export function TableView({
           return (
             <html.span
               key={name}
-              style={[styles.headerCellWrapper, !isLast && styles.tableCellSeparator]}
+              style={[
+                styles.headerCellWrapper,
+                styles.cellWidth(cellWidth),
+                !isLast && styles.tableCellSeparator,
+              ]}
             >
               <html.button
                 ref={(el: HTMLButtonElement | null) => {
@@ -831,6 +1046,7 @@ export function TableView({
                 key={name}
                 style={[
                   styles.tableCell,
+                  styles.cellWidth(cellWidth),
                   cellAlignStyle(align),
                   !isLast && styles.tableCellSeparator,
                 ]}
@@ -857,8 +1073,8 @@ export function TableView({
   );
 }
 
-export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
-  const groupField = view.kanban_field ?? "status";
+export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
+  const groupField = view.board_field ?? "status";
   const groupFieldDef = schema.fields.find((f) => f.name === groupField);
   const enumValues = groupFieldDef?.constraints?.enum;
   const fields = visibleFields(view, schema).filter((f) => f !== groupField);
@@ -924,15 +1140,15 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   };
 
   return (
-    <html.div style={styles.kanban}>
+    <html.div style={styles.board}>
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
         return (
           <html.div
             key={key}
             style={[
-              styles.kanbanColumn,
-              hoveredColumn === key && draggedRowId !== null && styles.kanbanColumnDropTarget,
+              styles.boardColumn,
+              hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
             ]}
             onPointerEnter={
               canDrag
@@ -954,9 +1170,9 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
                 : undefined
             }
           >
-            <html.div style={styles.kanbanColumnHeader}>
+            <html.div style={styles.boardColumnHeader}>
               <html.span>{key}</html.span>
-              <html.span style={styles.kanbanCount}>{groupRows.length}</html.span>
+              <html.span style={styles.boardCount}>{groupRows.length}</html.span>
             </html.div>
             {groupRows.map((row) => (
               <html.div
@@ -970,7 +1186,7 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
                     : undefined
                 }
                 style={[
-                  styles.kanbanCardWrapper,
+                  styles.boardCardWrapper,
                   canDrag && styles.draggableHandle,
                   draggedRowId === row.id && styles.cardDragging,
                 ]}
@@ -995,18 +1211,53 @@ export function KanbanView({ view, rows, schema, onUpdateRow }: ViewProps) {
   );
 }
 
+/** Minimum readable gallery-card width before we wrap to the next row. */
+const MIN_GALLERY_CARD_WIDTH = 240;
+/** Gap between gallery cards. Must match `styles.gallery.gap`. */
+const GALLERY_GAP = 12;
+
 export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
   const galleryField = view.gallery_field;
   const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
   const fieldMap = fieldsByName(schema);
 
+  // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
+  // grid (Notion / Airtable default) lets last-row cards stretch wider
+  // than the rows above them; explicit calc avoids that.
+  //
+  //   cardsPerRow = floor((container + gap) / (minCard + gap))
+  //   cardWidth   = (container - (cardsPerRow - 1) * gap) / cardsPerRow
+  //
+  // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
+  // cards (not trailing the last one in a row).
+  const { measureProps, width: containerWidth } = useContainerWidth();
+  const cardsPerRow =
+    containerWidth > 0
+      ? Math.max(
+          1,
+          Math.floor(
+            (containerWidth + GALLERY_GAP) /
+              (MIN_GALLERY_CARD_WIDTH + GALLERY_GAP),
+          ),
+        )
+      : 1;
+  const cardWidth =
+    containerWidth > 0
+      ? Math.floor(
+          (containerWidth - (cardsPerRow - 1) * GALLERY_GAP) / cardsPerRow,
+        )
+      : MIN_GALLERY_CARD_WIDTH;
+
   return (
-    <html.div style={styles.gallery}>
+    <html.div {...measureProps} style={styles.gallery}>
       {rows.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         return (
-          <html.div key={row.id} style={[styles.card, styles.galleryCard]}>
+          <html.div
+            key={row.id}
+            style={[styles.card, styles.galleryCard, styles.cellWidth(cardWidth)]}
+          >
             {galleryField && (
               <html.span style={styles.galleryCardHero}>
                 {formatValue(row[galleryField])}
@@ -1160,6 +1411,235 @@ export function ListView({
             </DragGhost>
           );
         })()}
+    </html.div>
+  );
+}
+
+/**
+ * Minimal calendar view — month grid. Anchors rows on their
+ * `view.calendar_field` (date string). Days outside the current month
+ * render dimmed. Prev / next month navigation; "today" highlight is
+ * deferred for now.
+ *
+ * Date parsing: tolerant of `YYYY-MM-DD` strings (the .table format's
+ * `date` type) and full ISO datetime strings (extracts the date
+ * portion). Non-string / invalid values are skipped silently.
+ *
+ * Layout: 7 columns × 6 rows. Day cells use the same viewport-aware
+ * `cellWidth` function-style as TableView, sized to `viewport / 7`
+ * so the grid fills the available width.
+ */
+export function CalendarView({
+  view,
+  rows,
+  schema,
+  bodies,
+  onOpenBody,
+}: ViewProps) {
+  const calField = view.calendar_field;
+  const range = view.calendar_range;
+
+  // Measure the calendar's own container — viewport width would be
+  // wrong on web layouts with a sidebar (calendar's parent is the
+  // main pane, narrower than the window). 7 columns means every cell
+  // is `floor(containerWidth / 7)`; until the first layout pass
+  // completes width is 0, so we guard with a tiny fallback that
+  // doesn't visibly flash.
+  const { measureProps, width: containerWidth } = useContainerWidth();
+  const dayCellWidth =
+    containerWidth > 0 ? Math.floor(containerWidth / 7) : 0;
+
+  // Range bounds, normalised to first-of-month so we compare cursors
+  // at the same granularity as `cursor` (which is always first-of-month).
+  // Invalid dates in the range silently degrade to "no bound".
+  const rangeStart = (() => {
+    if (!range?.start) return null;
+    const d = new Date(range.start.slice(0, 10));
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  })();
+  const rangeEnd = (() => {
+    if (!range?.end) return null;
+    const d = new Date(range.end.slice(0, 10));
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  })();
+
+  // Anchor the cursor on the earliest date in the data so the calendar
+  // doesn't render an empty month when fixture dates are in the past
+  // relative to "today". Then clamp into the range if set.
+  const [cursor, setCursor] = useState(() => {
+    let initial: Date;
+    if (calField) {
+      const earliest = rows
+        .map((r) => r[calField])
+        .filter((v): v is string => typeof v === "string" && v.length >= 10)
+        .map((s) => new Date(s.slice(0, 10)))
+        .filter((d) => !Number.isNaN(d.getTime()))
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+      if (earliest) {
+        initial = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+      } else {
+        const now = new Date();
+        initial = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
+    } else {
+      const now = new Date();
+      initial = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    // Clamp to range bounds.
+    if (rangeStart && initial < rangeStart) initial = rangeStart;
+    if (rangeEnd && initial > rangeEnd) initial = rangeEnd;
+    return initial;
+  });
+
+  if (!calField) {
+    return (
+      <html.div style={styles.calendarEmpty}>
+        <html.span>
+          No `calendar_field` configured on this view.
+        </html.span>
+      </html.div>
+    );
+  }
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const monthName = monthNameLong(cursor);
+  // Locale-aware: weekday labels + first-day-of-week. Sunday-first in
+  // US/CA/JP/etc., Monday-first across most of Europe + ISO, Saturday-
+  // first in parts of the Middle East. `Intl.Locale.getWeekInfo()`
+  // figures this out from the runtime's locale; falls back to Sunday.
+  const weekStart = firstDayOfWeek();
+  const orderedWeekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
+  const dayOfMonth1 = new Date(year, month, 1).getDay();
+  const leadingBlanks = (dayOfMonth1 - weekStart + 7) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  // 6 weeks × 7 days = 42 cells. Fill leading + trailing with adjacent
+  // months so the grid is always rectangular regardless of which day
+  // of the week the 1st falls on (and regardless of the locale's first
+  // day of the week).
+  const cells: Array<{ date: Date; inMonth: boolean }> = [];
+  for (let i = leadingBlanks - 1; i >= 0; i--) {
+    cells.push({
+      date: new Date(year, month - 1, daysInPrevMonth - i),
+      inMonth: false,
+    });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ date: new Date(year, month, d), inMonth: true });
+  }
+  let tail = 1;
+  while (cells.length < 42) {
+    cells.push({ date: new Date(year, month + 1, tail++), inMonth: false });
+  }
+
+  // Bucket rows by YYYY-MM-DD.
+  const rowsByDate = new Map<string, Row[]>();
+  for (const row of rows) {
+    const value = row[calField];
+    if (typeof value !== "string" || value.length < 10) continue;
+    const key = value.slice(0, 10);
+    if (!rowsByDate.has(key)) rowsByDate.set(key, []);
+    rowsByDate.get(key)!.push(row);
+  }
+
+  const titleField = schema.fields[0]?.name;
+  const dateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+
+  // Range-aware navigation. When prev/next would step outside the
+  // bounds (if any), the button disables visually + functionally.
+  const canGoPrev = !rangeStart || cursor > rangeStart;
+  const canGoNext = !rangeEnd || cursor < rangeEnd;
+
+  return (
+    <html.div {...measureProps} style={styles.calendar}>
+      <html.div style={styles.calendarHeader}>
+        <html.button
+          onClick={
+            canGoPrev
+              ? () => setCursor(new Date(year, month - 1, 1))
+              : undefined
+          }
+          disabled={!canGoPrev}
+          style={[styles.calendarNav, !canGoPrev && styles.calendarNavDisabled]}
+        >
+          ‹
+        </html.button>
+        <html.span style={styles.calendarTitle}>
+          {monthName} {year}
+        </html.span>
+        <html.button
+          onClick={
+            canGoNext
+              ? () => setCursor(new Date(year, month + 1, 1))
+              : undefined
+          }
+          disabled={!canGoNext}
+          style={[styles.calendarNav, !canGoNext && styles.calendarNavDisabled]}
+        >
+          ›
+        </html.button>
+      </html.div>
+      <html.div style={styles.calendarWeekdays}>
+        {orderedWeekdayNames.map((d, i) => (
+          <html.span
+            // Use index as key — `d` (the localized name) can theoretically
+            // duplicate across exotic locales / ICU configurations, and we
+            // always render exactly 7 in stable order.
+            key={i}
+            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
+          >
+            {d}
+          </html.span>
+        ))}
+      </html.div>
+      <html.div style={styles.calendarGrid}>
+        {cells.map((cell, i) => {
+          const key = dateKey(cell.date);
+          const dayRows = rowsByDate.get(key) ?? [];
+          return (
+            <html.div
+              key={i}
+              style={[
+                styles.calendarDay,
+                styles.cellWidth(dayCellWidth),
+                !cell.inMonth && styles.calendarDayOther,
+              ]}
+            >
+              <html.span style={styles.calendarDayNum}>
+                {cell.date.getDate()}
+              </html.span>
+              {dayRows.map((row) => {
+                const label = titleField
+                  ? formatValue(row[titleField])
+                  : row.id;
+                if (onOpenBody && bodies?.[row.id]) {
+                  return (
+                    <html.button
+                      key={row.id}
+                      onClick={() => onOpenBody(row.id)}
+                      style={styles.calendarRowChip}
+                    >
+                      {label}
+                    </html.button>
+                  );
+                }
+                return (
+                  <html.span key={row.id} style={styles.calendarRowChip}>
+                    {label}
+                  </html.span>
+                );
+              })}
+            </html.div>
+          );
+        })}
+      </html.div>
     </html.div>
   );
 }

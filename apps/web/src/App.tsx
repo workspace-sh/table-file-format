@@ -10,8 +10,9 @@ import type {
 } from "@workspace/table-core";
 import {
   BodyEditor,
+  BoardView,
+  CalendarView,
   GalleryView,
-  KanbanView,
   ListView,
   TableView,
 } from "@workspace/table-ui";
@@ -319,9 +320,9 @@ function renderView(
   cb: ViewCallbacks,
 ) {
   switch (view.layout) {
-    case "kanban":
+    case "board":
       return (
-        <KanbanView
+        <BoardView
           view={view}
           rows={rows}
           schema={schema}
@@ -352,6 +353,15 @@ function renderView(
         />
       );
     case "calendar":
+      return (
+        <CalendarView
+          view={view}
+          rows={rows}
+          schema={schema}
+          bodies={bodies}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
     case "table":
     default:
       return (

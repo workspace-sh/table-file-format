@@ -1,8 +1,26 @@
+import { useState } from "react";
+import type { ComponentType, ReactNode } from "react";
+import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { applyView, validate } from "@workspace/table-core";
+import { applyView, searchRows, validate } from "@workspace/table-core";
 import type { ParsedTable, View } from "@workspace/table-core";
-import { fixture } from "./src/fixture";
+import { projectsTable } from "@workspace/table-fixtures";
+import {
+  BoardView,
+  CalendarView,
+  GalleryView,
+  ListView,
+  TableView,
+} from "@workspace/table-ui";
+
+// Horizontal page padding. Used as positive padding on the scroll
+// container AND as negative margin on horizontally-scrolling sections
+// (table, board) so their scroll viewport extends to the screen edges
+// — iOS edge-to-edge pattern. Content starts at the same x as the
+// title/tabs/search above, but scrolls past the right padding instead
+// of being clipped by it.
+const MOBILE_H_PADDING = 16;
 
 const styles = css.create({
   root: {
@@ -19,7 +37,7 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    paddingInline: 16,
+    paddingInline: MOBILE_H_PADDING,
     paddingBlock: 16,
   },
   title: {
@@ -33,74 +51,181 @@ const styles = css.create({
   },
   subtitle: {
     fontSize: 12,
-    marginBottom: 16,
+    marginBottom: 12,
     color: {
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
-  row: {
+  viewTabs: {
     display: "flex",
-    flexDirection: "column",
-    paddingBlock: 12,
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginBottom: 10,
   },
-  rowTitle: {
-    fontSize: 15,
+  viewTab: {
+    paddingInline: 10,
+    paddingBlock: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: "transparent",
+    fontSize: 11,
     fontWeight: "500",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
+    cursor: "pointer",
   },
-  rowMeta: {
-    fontSize: 12,
-    marginTop: 2,
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
+  viewTabActive: {
+    backgroundColor: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
+    color: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1e",
+    },
+    borderColor: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  searchInput: {
+    paddingInline: 10,
+    paddingBlock: 6,
+    marginBottom: 14,
+    fontSize: 13,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    borderRadius: 6,
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1e",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+    outlineStyle: "none",
   },
 });
 
+function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["rows"]) {
+  const common = {
+    view,
+    rows: visibleRows,
+    schema: table.schema,
+    bodies: table.bodies,
+  };
+  // Table + board scroll horizontally (Airtable/Notion/Trello pattern).
+  // Cells now use fixed `width: 180` in the UI package so columns line
+  // up across rows regardless of content. Gallery wraps naturally; List
+  // is vertical-only — neither needs horizontal scroll.
+  switch (view.layout) {
+    case "board":
+      return (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -MOBILE_H_PADDING }}
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
+        >
+          <BoardView {...common} />
+        </ScrollView>
+      );
+    case "gallery":
+      return <GalleryView {...common} />;
+    case "list":
+      return <ListView {...common} />;
+    case "calendar":
+      return <CalendarView {...common} />;
+    default:
+      return (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: -MOBILE_H_PADDING }}
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
+        >
+          <TableView {...common} />
+        </ScrollView>
+      );
+  }
+}
+
+// SafeAreaView's TS types under react-native-safe-area-context 5.6.2 +
+// React 19.2 don't expose `style` on its props bag (likely upstream type
+// bug). Pre-built JSX element bypasses the prop-type check; runtime
+// behavior is correct. Drop the cast when the package types are fixed.
+const Safe = SafeAreaView as unknown as ComponentType<{
+  style?: { flex?: number };
+  children?: ReactNode;
+}>;
+
 export default function App() {
-  const table: ParsedTable = fixture;
-  const view: View = table.views[0]!;
-  const rows = applyView(table, view);
+  const table: ParsedTable = projectsTable;
+  const [activeViewId, setActiveViewId] = useState<string>(table.views[0]!.id);
+  const [query, setQuery] = useState<string>("");
+
+  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
+  const viewRows = applyView(table, view);
+  const visibleRows = searchRows(viewRows, query, {
+    schema: table.schema,
+    bodies: table.bodies,
+  });
   const errors = validate(table.schema, table.rows);
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1 }}>
-        <html.div style={styles.root}>
+      <html.div style={styles.root}>
+        <Safe style={{ flex: 1 }}>
           <html.div style={styles.scroll}>
             <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
             <html.span style={styles.subtitle}>
-              {rows.length} of {table.rows.length} rows · {errors.length === 0
+              {visibleRows.length} of {table.rows.length} rows ·{" "}
+              {errors.length === 0
                 ? "schema valid"
                 : `${errors.length} validation issues`}
             </html.span>
-            {rows.map((row) => (
-              <html.div key={row.id} style={styles.row}>
-                <html.span style={styles.rowTitle}>
-                  {String(row[table.schema.fields[0]!.name] ?? row.id)}
-                </html.span>
-                <html.span style={styles.rowMeta}>
-                  {table.schema.fields
-                    .slice(1, 3)
-                    .map((f) => `${f.name}: ${row[f.name] ?? "—"}`)
-                    .join(" · ")}
-                </html.span>
-              </html.div>
-            ))}
+            <html.div style={styles.viewTabs}>
+              {table.views.map((v) => (
+                <html.button
+                  key={v.id}
+                  onClick={() => setActiveViewId(v.id)}
+                  style={[styles.viewTab, v.id === activeViewId && styles.viewTabActive]}
+                >
+                  {v.name}
+                </html.button>
+              ))}
+            </html.div>
+            <html.input
+              type="text"
+              placeholder="Search..."
+              value={query}
+              onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
+              style={styles.searchInput}
+            />
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {renderView(view, table, visibleRows)}
+            </ScrollView>
           </html.div>
-        </html.div>
-      </SafeAreaView>
+        </Safe>
+      </html.div>
     </SafeAreaProvider>
   );
 }
