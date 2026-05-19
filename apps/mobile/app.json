@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "table-mobile",
+    "slug": "table-mobile",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "sh.workspace.table.mobile"
+    },
+    "android": {
+      "package": "sh.workspace.table.mobile"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.0",
+            "useFrameworks": "static"
+          },
+          "android": {
+            "minSdkVersion": 24,
+            "newArchEnabled": true
+          }
+        }
+      ]
+    ]
+  }
+}

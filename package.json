@@ -1,32 +1,53 @@
 {
-  "name": "@workspace/table-core",
+  "name": "table-file-format",
   "version": "0.1.0",
-  "type": "module",
-  "main": "dist/core/index.js",
-  "types": "dist/core/index.d.ts",
+  "private": true,
+  "description": "Spike for the open .table/ data-matrix file format — workspace root.",
+  "workspaces": [
+    "packages/*",
+    "apps/web",
+    "apps/mobile",
+    "apps/desktop"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "node --import tsx --test src/**/*.test.ts",
-    "test:watch": "node --import tsx --test --watch src/**/*.test.ts",
-    "dev": "vite",
-    "build:web": "vite build",
-    "preview": "vite preview"
+    "dev": "npm run web:dev",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
+
+    "core:build": "npm run build -w @workspace/table-core",
+    "core:test": "npm run test -w @workspace/table-core",
+    "core:test:watch": "npm run test:watch -w @workspace/table-core",
+    "core:typecheck": "npm run typecheck -w @workspace/table-core",
+
+    "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
+
+    "web:dev": "npm run dev -w @workspace/table-web",
+    "web:build": "npm run build -w @workspace/table-web",
+    "web:preview": "npm run preview -w @workspace/table-web",
+    "web:typecheck": "npm run typecheck -w @workspace/table-web",
+
+    "mobile:start": "cd apps/mobile && npx expo start --dev-client --port 8082",
+    "mobile:clear": "cd apps/mobile && watchman watch-del-all && npx expo start --clear",
+    "mobile:prebuild": "cd apps/mobile && npx expo prebuild",
+    "mobile:ios": "cd apps/mobile && npx expo run:ios --port 8082",
+    "mobile:ios:device": "cd apps/mobile && npx expo run:ios --device --port 8082",
+    "mobile:ios:device:release": "cd apps/mobile && npx expo run:ios --device --configuration Release",
+    "mobile:android": "cd apps/mobile && npx expo run:android --port 8082",
+    "mobile:android:device": "cd apps/mobile && npx expo run:android --device --port 8082",
+    "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
+
+    "desktop:start": "npm run start --workspace=apps/desktop -- --reset-cache",
+    "desktop:start:clean": "watchman watch-del-all && npm run start --workspace=apps/desktop -- --reset-cache",
+    "desktop:macos": "npx --workspace=apps/desktop react-native run-macos --port 8083",
+    "desktop:dev": "concurrently \"npm run desktop:start:clean\" \"npm run desktop:macos\"",
+    "desktop:pods": "cd apps/desktop/macos && pod install",
+    "desktop:typecheck": "npm run typecheck -w @workspace/table-desktop"
   },
-  "dependencies": {
-    "nanoid": "^5.0.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-strict-dom": "0.0.55",
-    "vite-plugin-babel": "^1.3.2"
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.1.1",
-    "autoprefixer": "^10.4.22",
+    "concurrently": "^9.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.4.0",
-    "vite": "^7.2.4"
+    "typescript": "^5.4.0"
   }
 }

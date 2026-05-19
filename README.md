@@ -59,30 +59,98 @@ const visibleRows = applyView(projects, view);
 const body = projects.bodies?.[visibleRows[0]!.id];
 ```
 
-## Repo layout
+## Repo layout — NPM workspace monorepo
 
 ```
 .
-├── src/
-│   ├── core/        format library (parser, writer, validator, query, indexer stubs)
-│   └── demo/        Vite + react-strict-dom + StyleX viewer
+├── packages/
+│   ├── core/             @workspace/table-core
+│   │                     pure-TS format library — parser/writer/validator/query/
+│   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
+│   └── ui/               @workspace/table-ui
+│                         RSD/StyleX view components — TableView, KanbanView,
+│                         GalleryView, ListView, SchemaEditor, BodyEditor.
+│                         Currently web-targeted; cross-platform lifting tracked.
+├── apps/
+│   ├── web/              @workspace/table-web
+│   │                     Vite 7 + React 19 + RSD 0.0.55 + StyleX (PostCSS).
+│   │                     Full demo with editing, drag-and-drop, search, etc.
+│   ├── mobile/           @workspace/table-mobile
+│   │                     Expo 55 — iOS + Android. Minimal list viewer.
+│   │                     `npm run mobile:prebuild` to generate native projects.
+│   └── desktop/          @workspace/table-desktop
+│                         Bare RN + react-native-macos 0.81. Minimal viewer.
+│                         `macos/` Xcode project inside (gitignored,
+│                         bootstrap per README).
 ├── fixtures/
 │   ├── projects.table/   7 rows, 7 views, one body
 │   └── tasks.table/      8 rows, cross-table relation to projects
 └── docs/
-    ├── SPEC.md      format specification
-    ├── ARCHITECTURE.md   code organisation, build pipeline, design choices
-    └── DECISIONS.md      log of non-obvious design decisions and their reasoning
+    ├── SPEC.md
+    ├── ARCHITECTURE.md
+    └── DECISIONS.md
 ```
+
+Apps consume packages via the workspace alias (`"@workspace/table-core": "*"`);
+NPM resolves locally. No publishing required for local development.
 
 ## Running
 
+Pinned to Node 22.20.0 via `.nvmrc` (matches the rest of the
+workspace-sh org). If your nvm/fnm auto-switches on cd, you don't have
+to think about it.
+
+All commands run from the monorepo root. Namespaced consistently so the
+syntax is the same across every surface.
+
 ```sh
-npm install
-npm run dev          # starts the demo viewer at http://localhost:5173
-npm test             # node:test suite (33 tests, format library only)
-npx tsc --noEmit     # typecheck without emit
+npm install                       # installs everything; symlinks workspace packages
+
+# Format library
+npm run core:build                # tsc → packages/core/dist/
+npm run core:test                 # node:test suite (48 tests)
+npm run core:test:watch           # watch mode
+npm run core:typecheck
+
+# Web (full demo)
+npm run web:dev                   # vite at http://localhost:5173
+npm run web:build                 # production bundle
+npm run web:preview               # preview the built bundle
+npm run web:typecheck
+npm run dev                       # alias for `web:dev`
+
+# Mobile (Expo 55, iOS + Android — Metro on port 8082)
+# Expo's `run:ios` / `run:android` start Metro themselves; no concurrency needed.
+npm run mobile:prebuild           # generate ios/ + android/ via CNG
+npm run mobile:start              # expo start --dev-client --port 8082
+npm run mobile:clear              # watchman watch-del-all + expo start --clear
+npm run mobile:ios                # expo run:ios on simulator (starts Metro)
+npm run mobile:ios:device         # expo run:ios --device
+npm run mobile:ios:device:release # expo run:ios --device --configuration Release
+npm run mobile:android            # expo run:android on emulator (starts Metro)
+npm run mobile:android:device     # expo run:android --device
+npm run mobile:typecheck
+
+# Desktop (bare RN + react-native-macos, Metro on port 8083)
+# Bare RN needs Metro + run-macos as separate processes — :dev handles both.
+# First time: bootstrap the native macos/ Xcode project — see
+# apps/desktop/README.md (mirror react-native-source-editor's setup).
+npm run desktop:pods              # cd macos && pod install
+npm run desktop:start             # start --reset-cache (port 8083)
+npm run desktop:start:clean       # watchman clear + start --reset-cache
+npm run desktop:macos             # react-native run-macos --port 8083
+npm run desktop:dev               # concurrently: start:clean + macos
+npm run desktop:typecheck
+
+# UI package — typecheck only (no runtime; it's a library of components)
+npm run ui:typecheck
 ```
+
+> **Heads-up on npm 11 + workspaces:** lifecycle script names (`test`,
+> `build`, `start`) propagate to every workspace by default, which fails
+> on workspaces that don't define them. That's why root scripts are
+> namespaced (`core:test`, not `test`). Avoid running bare `npm test` /
+> `npm build` / `npm start` at the root — use the namespaced commands.
 
 ## Status
 
@@ -100,10 +168,14 @@ npx tsc --noEmit     # typecheck without emit
 - `index.sqlite` cache: `buildIndex` / `queryIndex` / `isIndexStale` / `dropIndex`
 
 **Open** (tracked as issues):
-- Inline cell editing in the demo viewer
-- Cross-table relation drilldown
-- Markdown ↔ `.table/` cross-reference addressing
-- CSV converter (`fromCSV` / `toCSV`)
+- Cross-table relation drilldown (#3)
+- Markdown ↔ `.table/` cross-reference addressing (#4)
+- CSV converter (`fromCSV` / `toCSV`) (#5)
+- `index.sqlite` cache implementation (#6)
+- Granular parser/writer/validator named exports (#7)
+- Lift `@workspace/table-ui` from web-only to cross-platform
+  (replace `react-dom/createPortal`, abstract `document.pointermove`,
+  pseudo-state styles → `useFocused`-style hooks)
 
 **Deliberately deferred** (no spec, no plan):
 - Data versioning — undo/redo, edit history, real-time collaboration,

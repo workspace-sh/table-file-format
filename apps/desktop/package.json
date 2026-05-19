@@ -1,0 +1,33 @@
+{
+  "name": "@workspace/table-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "react-native start --port 8083",
+    "macos": "react-native run-macos --port 8083",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/table-core": "*",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-macos": "^0.81.7",
+    "react-strict-dom": "0.0.55"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.0.0",
+    "@react-native-community/cli-platform-ios": "20.0.0",
+    "@react-native/babel-preset": "0.81.2",
+    "@react-native/metro-config": "0.81.2",
+    "@react-native/typescript-config": "0.81.2",
+    "@types/react": "^19.1.0",
+    "react-dom": "19.1.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
