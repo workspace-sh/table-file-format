@@ -3,3 +3,21 @@ dist/
 dist-web/
 index.sqlite
 *.sqlite
+
+# Expo / RN-macos generated artefacts — bootstrap locally per each app's README.
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/.expo/
+apps/mobile/.expo-shared/
+apps/desktop/macos/
+apps/desktop/ios/
+apps/desktop/android/
+
+# Native build outputs
+**/build/
+**/Pods/
+**/Podfile.lock
+
+# Editor / OS
+.DS_Store
+*.log
