@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
 import { defaultAlignFor } from "@workspace.sh/table-core";
+import { Portal } from "./internal/Portal";
+import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
+import { useViewportWidth } from "./internal/useViewportWidth";
 
 /**
  * Fixed width for the "+ Field" trailing column slot. Body rows in
@@ -44,6 +46,25 @@ function friendlyType(type: FieldType): string {
 }
 
 const styles = css.create({
+  /**
+   * Fullscreen transparent backdrop captures outside-tap dismiss. Inside
+   * a `<Portal>` (web: detached from the table; native: inside an RN
+   * Modal). Standard "press anywhere outside the popover to close"
+   * pattern — replaces the web-only `document.addEventListener
+   * ('mousedown')` approach the previous implementation used.
+   */
+  backdrop: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 49,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    padding: 0,
+    cursor: "default",
+  },
   popover: {
     position: "fixed",
     zIndex: 50,
@@ -292,33 +313,17 @@ const styles = css.create({
   },
 });
 
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
-}
-
 interface SchemaFieldEditorProps {
   field: Field;
   fieldIndex: number;
   totalFields: number;
   align?: "left" | "right";
-  /** Trigger element's viewport rect (from getBoundingClientRect). */
-  anchorRect: { top: number; left: number; right: number; bottom: number };
+  /**
+   * Trigger element's viewport-relative rect — produced by
+   * `measureAnchor()`. `{ top, left, width, height }` rather than the
+   * web-only DOMRect shape so the same prop works on native.
+   */
+  anchorRect: AnchorRect;
   onUpdate: (patch: Partial<Field>) => void;
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
@@ -339,15 +344,19 @@ export function SchemaFieldEditor({
   onMove,
   onClose,
 }: SchemaFieldEditorProps) {
-  const ref = useDismiss(true, onClose);
   const [enumDraft, setEnumDraft] = useState("");
+  const viewportWidth = useViewportWidth();
 
-  // Compute viewport-coordinate position from the anchor's rect.
-  const popoverTop = anchorRect.bottom + POPOVER_GAP;
+  // Position the popover under the trigger's bottom edge. AnchorRect
+  // gives us {top, left, width, height} in viewport coords — derive
+  // bottom + right from there.
+  const anchorBottom = anchorRect.top + anchorRect.height;
+  const anchorRight = anchorRect.left + anchorRect.width;
+  const popoverTop = anchorBottom + POPOVER_GAP;
   const popoverLeft =
     align === "right"
-      ? Math.max(8, anchorRect.right - POPOVER_WIDTH)
-      : Math.min(window.innerWidth - POPOVER_WIDTH - 8, anchorRect.left);
+      ? Math.max(8, anchorRight - POPOVER_WIDTH)
+      : Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left);
 
   const hasEnum = Array.isArray(field.constraints?.enum);
 
@@ -366,127 +375,131 @@ export function SchemaFieldEditor({
     setEnumDraft("");
   };
 
-  return createPortal(
-    <html.div
-      ref={ref}
-      style={[styles.popover, styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH)]}
-    >
-      <html.div style={styles.identity}>
-        <html.span>{field.name}</html.span>
-        <html.span style={styles.typeBadge}>
-          <html.span>{friendlyType(field.type)}</html.span>
-          <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
-        </html.span>
-      </html.div>
+  return (
+    <Portal>
+      {/* Fullscreen backdrop — tap anywhere outside the popover closes it.
+          html.button maps to <button> on web and Pressable on native, so
+          the same onClick handler wires up correctly. */}
+      <html.button onClick={onClose} style={styles.backdrop} />
+      <html.div
+        style={[styles.popover, styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH)]}
+      >
+        <html.div style={styles.identity}>
+          <html.span>{field.name}</html.span>
+          <html.span style={styles.typeBadge}>
+            <html.span>{friendlyType(field.type)}</html.span>
+            <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
+          </html.span>
+        </html.div>
 
-      <html.span style={styles.label}>Display title</html.span>
-      <html.input
-        type="text"
-        value={field.title ?? ""}
-        placeholder={field.name}
-        onChange={(e: { target: { value: string } }) =>
-          onUpdate({ title: e.target.value || undefined })
-        }
-        style={styles.input}
-      />
-
-      <html.span style={styles.label}>Description</html.span>
-      <html.input
-        type="text"
-        value={field.description ?? ""}
-        onChange={(e: { target: { value: string } }) =>
-          onUpdate({ description: e.target.value || undefined })
-        }
-        style={styles.input}
-      />
-
-      <html.div style={styles.checkRow}>
+        <html.span style={styles.label}>Display title</html.span>
         <html.input
-          type="checkbox"
-          checked={field.constraints?.required === true}
-          onChange={(e: { target: { checked: boolean } }) => setRequired(e.target.checked)}
-        />
-        <html.span>Required</html.span>
-      </html.div>
-
-      <html.div style={styles.checkRow}>
-        <html.input
-          type="checkbox"
-          checked={field.deprecated === true}
-          onChange={(e: { target: { checked: boolean } }) =>
-            onUpdate({ deprecated: e.target.checked || undefined })
+          type="text"
+          value={field.title ?? ""}
+          placeholder={field.name}
+          onChange={(e: { target: { value: string } }) =>
+            onUpdate({ title: e.target.value || undefined })
           }
+          style={styles.input}
         />
-        <html.span>Deprecated</html.span>
-      </html.div>
 
-      {hasEnum && (
-        <>
-          <html.span style={styles.label}>Enum values</html.span>
-          <html.div style={styles.enumRow}>
-            {field.constraints!.enum!.map((v) => (
-              <html.span key={v} style={styles.enumPill}>
-                {v}
-              </html.span>
-            ))}
-          </html.div>
+        <html.span style={styles.label}>Description</html.span>
+        <html.input
+          type="text"
+          value={field.description ?? ""}
+          onChange={(e: { target: { value: string } }) =>
+            onUpdate({ description: e.target.value || undefined })
+          }
+          style={styles.input}
+        />
+
+        <html.div style={styles.checkRow}>
           <html.input
-            type="text"
-            value={enumDraft}
-            placeholder="Add value, press Enter"
-            onChange={(e: { target: { value: string } }) => setEnumDraft(e.target.value)}
-            onKeyDown={(e: { key: string }) => {
-              if (e.key === "Enter") submitEnumValue();
-            }}
-            style={styles.input}
+            type="checkbox"
+            checked={field.constraints?.required === true}
+            onChange={(e: { target: { checked: boolean } }) => setRequired(e.target.checked)}
           />
-        </>
-      )}
+          <html.span>Required</html.span>
+        </html.div>
 
-      <html.span style={styles.label}>
-        Alignment <html.span style={styles.typeBadgeTechnical}>
-          · auto = {defaultAlignFor(field.type)}
+        <html.div style={styles.checkRow}>
+          <html.input
+            type="checkbox"
+            checked={field.deprecated === true}
+            onChange={(e: { target: { checked: boolean } }) =>
+              onUpdate({ deprecated: e.target.checked || undefined })
+            }
+          />
+          <html.span>Deprecated</html.span>
+        </html.div>
+
+        {hasEnum && (
+          <>
+            <html.span style={styles.label}>Enum values</html.span>
+            <html.div style={styles.enumRow}>
+              {field.constraints!.enum!.map((v) => (
+                <html.span key={v} style={styles.enumPill}>
+                  {v}
+                </html.span>
+              ))}
+            </html.div>
+            <html.input
+              type="text"
+              value={enumDraft}
+              placeholder="Add value, press Enter"
+              onChange={(e: { target: { value: string } }) => setEnumDraft(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") submitEnumValue();
+              }}
+              style={styles.input}
+            />
+          </>
+        )}
+
+        <html.span style={styles.label}>
+          Alignment <html.span style={styles.typeBadgeTechnical}>
+            · auto = {defaultAlignFor(field.type)}
+          </html.span>
         </html.span>
-      </html.span>
-      <html.div style={styles.alignmentRow}>
-        {(["auto", "left", "center", "right"] as const).map((opt) => {
-          const isAuto = opt === "auto";
-          const isActive = isAuto ? field.align === undefined : field.align === opt;
-          return (
-            <html.button
-              key={opt}
-              onClick={() =>
-                onUpdate({ align: isAuto ? undefined : (opt as FieldAlignment) })
-              }
-              style={[
-                styles.alignmentButton,
-                isActive && styles.alignmentButtonActive,
-              ]}
-            >
-              {isAuto ? "Auto" : opt[0]!.toUpperCase() + opt.slice(1)}
-            </html.button>
-          );
-        })}
-      </html.div>
+        <html.div style={styles.alignmentRow}>
+          {(["auto", "left", "center", "right"] as const).map((opt) => {
+            const isAuto = opt === "auto";
+            const isActive = isAuto ? field.align === undefined : field.align === opt;
+            return (
+              <html.button
+                key={opt}
+                onClick={() =>
+                  onUpdate({ align: isAuto ? undefined : (opt as FieldAlignment) })
+                }
+                style={[
+                  styles.alignmentButton,
+                  isActive && styles.alignmentButtonActive,
+                ]}
+              >
+                {isAuto ? "Auto" : opt[0]!.toUpperCase() + opt.slice(1)}
+              </html.button>
+            );
+          })}
+        </html.div>
 
-      <html.div style={styles.actionRow}>
-        <html.button
-          disabled={fieldIndex === 0}
-          onClick={() => onMove(-1)}
-          style={styles.button}
-        >
-          ↑ Move up
-        </html.button>
-        <html.button
-          disabled={fieldIndex >= totalFields - 1}
-          onClick={() => onMove(1)}
-          style={styles.button}
-        >
-          ↓ Move down
-        </html.button>
+        <html.div style={styles.actionRow}>
+          <html.button
+            disabled={fieldIndex === 0}
+            onClick={() => onMove(-1)}
+            style={styles.button}
+          >
+            ↑ Move up
+          </html.button>
+          <html.button
+            disabled={fieldIndex >= totalFields - 1}
+            onClick={() => onMove(1)}
+            style={styles.button}
+          >
+            ↓ Move down
+          </html.button>
+        </html.div>
       </html.div>
-    </html.div>,
-    document.body,
+    </Portal>
   );
 }
 
@@ -508,9 +521,13 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<FieldType>("string");
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const ref = useDismiss(open, () => setOpen(false));
+  const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
+  // Ref typed as `unknown` because the underlying instance differs per
+  // platform (HTMLButtonElement on web, Pressable view ref on native).
+  // measureAnchor() handles the platform-specific measurement internally.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const triggerRef = useRef<any>(null);
+  const viewportWidth = useViewportWidth();
 
   const trimmed = name.trim();
   const duplicate = trimmed.length > 0 && existingNames.has(trimmed);
@@ -524,79 +541,84 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
     setOpen(false);
   };
 
-  const popoverTop = anchorRect ? anchorRect.bottom + POPOVER_GAP : 0;
+  // Derive popover position from the anchor rect when open. AnchorRect
+  // is {top, left, width, height} — derive right from left+width.
+  const anchorRight = anchorRect ? anchorRect.left + anchorRect.width : 0;
+  const anchorBottom = anchorRect ? anchorRect.top + anchorRect.height : 0;
+  const popoverTop = anchorRect ? anchorBottom + POPOVER_GAP : 0;
+  // Use viewport width to clamp the left edge so the popover doesn't
+  // overflow the right edge of the screen.
+  const desiredLeft = Math.max(8, anchorRight - POPOVER_WIDTH);
   const popoverLeft = anchorRect
-    ? Math.max(8, anchorRect.right - POPOVER_WIDTH)
+    ? Math.min(viewportWidth - POPOVER_WIDTH - 8, desiredLeft)
     : 0;
 
   return (
     <html.div style={styles.addFieldWrapper}>
-      {!open ? (
-        <html.button
-          ref={(el: HTMLButtonElement | null) => {
-            triggerRef.current = el;
-          }}
-          onClick={() => {
-            if (triggerRef.current) {
-              setAnchorRect(triggerRef.current.getBoundingClientRect());
-            }
-            setOpen(true);
-          }}
-          style={styles.addFieldButton}
-        >
-          + Field
-        </html.button>
-      ) : (
-        createPortal(
+      <html.button
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={(el: any) => {
+          triggerRef.current = el;
+        }}
+        onClick={async () => {
+          const rect = await measureAnchor(triggerRef.current);
+          if (rect) setAnchorRect(rect);
+          setOpen(true);
+        }}
+        style={styles.addFieldButton}
+      >
+        + Field
+      </html.button>
+      {open && anchorRect && (
+        <Portal>
+          <html.button onClick={() => setOpen(false)} style={styles.backdrop} />
           <html.div
-            ref={ref}
             style={[
               styles.popover,
               styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH),
             ]}
           >
-          <html.span style={styles.label}>Name</html.span>
-          <html.input
-            type="text"
-            value={name}
-            placeholder="e.g. priority"
-            onChange={(e: { target: { value: string } }) => setName(e.target.value)}
-            onKeyDown={(e: { key: string }) => {
-              if (e.key === "Enter") submit();
-            }}
-            style={styles.input}
-          />
+            <html.span style={styles.label}>Name</html.span>
+            <html.input
+              type="text"
+              value={name}
+              placeholder="e.g. priority"
+              onChange={(e: { target: { value: string } }) => setName(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") submit();
+              }}
+              style={styles.input}
+            />
 
-          <html.span style={styles.label}>Type</html.span>
-          <html.select
-            value={type}
-            onChange={(e: { target: { value: string } }) => setType(e.target.value as FieldType)}
-            style={styles.input}
-          >
-            {ADDABLE_TYPES.map((t) => (
-              <html.option key={t} value={t}>
-                {friendlyType(t)} · {t}
-              </html.option>
-            ))}
-          </html.select>
-
-          {duplicate && <html.span style={styles.errorText}>Name already in use</html.span>}
-
-          <html.div style={styles.actionRow}>
-            <html.button
-              disabled={!valid}
-              onClick={submit}
-              style={[styles.button, valid && styles.primaryButton]}
+            <html.span style={styles.label}>Type</html.span>
+            <html.select
+              value={type}
+              onChange={(e: { target: { value: string } }) => setType(e.target.value as FieldType)}
+              style={styles.input}
             >
-              Add field
-            </html.button>
-            <html.button onClick={() => setOpen(false)} style={styles.button}>
-              Cancel
-            </html.button>
+              {ADDABLE_TYPES.map((t) => (
+                <html.option key={t} value={t}>
+                  {friendlyType(t)} · {t}
+                </html.option>
+              ))}
+            </html.select>
+
+            {duplicate && <html.span style={styles.errorText}>Name already in use</html.span>}
+
+            <html.div style={styles.actionRow}>
+              <html.button
+                disabled={!valid}
+                onClick={submit}
+                style={[styles.button, valid && styles.primaryButton]}
+              >
+                Add field
+              </html.button>
+              <html.button onClick={() => setOpen(false)} style={styles.button}>
+                Cancel
+              </html.button>
+            </html.div>
           </html.div>
-          </html.div>,
-          document.body,
-        )
+        </Portal>
       )}
     </html.div>
   );

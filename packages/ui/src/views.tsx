@@ -11,6 +11,7 @@ import type {
   View,
 } from "@workspace.sh/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import {
   firstDayOfWeek,
@@ -930,8 +931,12 @@ export function TableView({
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const headerButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
+  // Ref typed loosely (`unknown`) because the underlying instance differs
+  // per platform — HTMLButtonElement on web, a Pressable view ref on
+  // native. measureAnchor() handles the platform-specific measurement.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const headerButtonRefs = useRef<Record<string, any>>({});
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
@@ -986,15 +991,16 @@ export function TableView({
               ]}
             >
               <html.button
-                ref={(el: HTMLButtonElement | null) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ref={(el: any) => {
                   headerButtonRefs.current[name] = el;
                 }}
-                onClick={() => {
+                onClick={async () => {
                   if (isEditing) {
                     setEditingFieldName(null);
                   } else {
-                    const el = headerButtonRefs.current[name];
-                    if (el) setAnchorRect(el.getBoundingClientRect());
+                    const rect = await measureAnchor(headerButtonRefs.current[name]);
+                    if (rect) setAnchorRect(rect);
                     setEditingFieldName(name);
                   }
                 }}
