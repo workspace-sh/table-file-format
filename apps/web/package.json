@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/table-web",
+  "name": "@workspace.sh/table-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "*",
-    "@workspace/table-ui": "*",
+    "@workspace.sh/table-core": "*",
+    "@workspace.sh/table-ui": "*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-strict-dom": "0.0.55",

@@ -294,8 +294,8 @@ None of these block validity.
 formats (CSVW, Frictionless Data, Obsidian Bases, etc.) — none gets
 top billing. Direct converters in core: CSV (lossy export, lossless
 import with schema). Format-specific exporters belong in separate
-optional packages (`@workspace/table-frictionless`,
-`@workspace/table-csvw`, etc.) if and when there's demand.
+optional packages (`@workspace.sh/table-frictionless`,
+`@workspace.sh/table-csvw`, etc.) if and when there's demand.
 
 ## 11. Versioning
 
