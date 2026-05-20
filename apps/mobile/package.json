@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/table-mobile",
+  "name": "@workspace.sh/table-mobile",
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
@@ -10,9 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "*",
-    "@workspace/table-fixtures": "*",
-    "@workspace/table-ui": "*",
+    "@workspace.sh/table-core": "*",
+    "@workspace.sh/table-fixtures": "*",
+    "@workspace.sh/table-ui": "*",
     "expo": "~55.0.19",
     "expo-build-properties": "~55.0.5",
     "expo-dev-client": "~55.0.34",

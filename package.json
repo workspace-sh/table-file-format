@@ -14,19 +14,19 @@
     "dev": "npm run web:dev",
     "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
-    "core:build": "npm run build -w @workspace/table-core",
-    "core:test": "npm run test -w @workspace/table-core",
-    "core:test:watch": "npm run test:watch -w @workspace/table-core",
-    "core:typecheck": "npm run typecheck -w @workspace/table-core",
+    "core:build": "npm run build -w @workspace.sh/table-core",
+    "core:test": "npm run test -w @workspace.sh/table-core",
+    "core:test:watch": "npm run test:watch -w @workspace.sh/table-core",
+    "core:typecheck": "npm run typecheck -w @workspace.sh/table-core",
 
-    "ui:typecheck": "npm run typecheck -w @workspace/table-ui",
+    "ui:typecheck": "npm run typecheck -w @workspace.sh/table-ui",
 
-    "fixtures:typecheck": "npm run typecheck -w @workspace/table-fixtures",
+    "fixtures:typecheck": "npm run typecheck -w @workspace.sh/table-fixtures",
 
-    "web:dev": "npm run dev -w @workspace/table-web",
-    "web:build": "npm run build -w @workspace/table-web",
-    "web:preview": "npm run preview -w @workspace/table-web",
-    "web:typecheck": "npm run typecheck -w @workspace/table-web",
+    "web:dev": "npm run dev -w @workspace.sh/table-web",
+    "web:build": "npm run build -w @workspace.sh/table-web",
+    "web:preview": "npm run preview -w @workspace.sh/table-web",
+    "web:typecheck": "npm run typecheck -w @workspace.sh/table-web",
 
     "mobile:start": "cd apps/mobile && npx expo start --dev-client --port 8082",
     "mobile:clear": "cd apps/mobile && watchman watch-del-all && npx expo start --clear",
@@ -36,7 +36,7 @@
     "mobile:ios:device:release": "cd apps/mobile && npx expo run:ios --device --configuration Release",
     "mobile:android": "cd apps/mobile && npx expo run:android --port 8082",
     "mobile:android:device": "cd apps/mobile && npx expo run:android --device --port 8082",
-    "mobile:typecheck": "npm run typecheck -w @workspace/table-mobile",
+    "mobile:typecheck": "npm run typecheck -w @workspace.sh/table-mobile",
 
     "desktop:install": "cd apps/desktop && npm install --legacy-peer-deps",
     "desktop:start": "cd apps/desktop && npx react-native start --port 8083 --reset-cache",

@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
-import { applyGroup, effectiveAlign } from "@workspace/table-core";
+import { applyGroup, effectiveAlign } from "@workspace.sh/table-core";
 import type {
   Field,
   FieldAlignment,
   Row,
   TableSchema,
   View,
-} from "@workspace/table-core";
+} from "@workspace.sh/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import {

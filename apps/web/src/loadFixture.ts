@@ -8,7 +8,7 @@ import type {
   TableMeta,
   TableSchema,
   View,
-} from "@workspace/table-core";
+} from "@workspace.sh/table-core";
 
 const projectsBodyFiles = import.meta.glob<string>(
   "../../../fixtures/projects.table/bodies/*.md",

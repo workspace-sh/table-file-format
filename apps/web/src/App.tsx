@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { applyView, searchRows, validate } from "@workspace/table-core";
+import { applyView, searchRows, validate } from "@workspace.sh/table-core";
 import type {
   Field,
   ParsedTable,
   Row,
   TableSchema,
   View,
-} from "@workspace/table-core";
+} from "@workspace.sh/table-core";
 import {
   BodyEditor,
   BoardView,
@@ -15,7 +15,7 @@ import {
   GalleryView,
   ListView,
   TableView,
-} from "@workspace/table-ui";
+} from "@workspace.sh/table-ui";
 import { projectsTable } from "./loadFixture";
 import { Sidebar } from "./Sidebar";
 

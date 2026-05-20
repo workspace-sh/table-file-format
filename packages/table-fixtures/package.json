@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/table-fixtures",
+  "name": "@workspace.sh/table-fixtures",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "file:../core"
+    "@workspace.sh/table-core": "file:../core"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

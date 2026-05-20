@@ -1,5 +1,5 @@
 import { html, css } from "react-strict-dom";
-import type { ParsedTable } from "@workspace/table-core";
+import type { ParsedTable } from "@workspace.sh/table-core";
 
 const styles = css.create({
   root: {
