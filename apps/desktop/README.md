@@ -1,6 +1,6 @@
-# `@workspace/table-desktop`
+# `@workspace.sh/table-desktop`
 
-Bare RN + `react-native-macos` example consumer of `@workspace/table-core`.
+Bare RN + `react-native-macos` example consumer of `@workspace.sh/table-core`.
 Currently macOS-only; folder named `desktop` so future Windows/Linux
 targets can sit alongside `macos/` inside.
 
@@ -10,10 +10,10 @@ project) and `react-native-source-editor`'s `example/macos-app`.
 
 ## Status
 
-`App.tsx` imports `@workspace/table-core` and renders a minimal table
+`App.tsx` imports `@workspace.sh/table-core` and renders a minimal table
 viewer over an inline fixture. The Xcode project under `macos/` is
 committed (bare RN — not CNG). It does not yet use
-`@workspace/table-ui` (web-only APIs). Cross-platform UI lifting is a
+`@workspace.sh/table-ui` (web-only APIs). Cross-platform UI lifting is a
 follow-up.
 
 ## Standalone install, not a workspace member
@@ -26,7 +26,7 @@ build phases hardcode `${PODS_ROOT}/../../node_modules/X` paths
 workspaces monorepo those packages hoist to the repo root and the
 hardcoded paths break.
 
-`@workspace/table-core` is linked locally via `file:../../packages/core`
+`@workspace.sh/table-core` is linked locally via `file:../../packages/core`
 — npm 9+ symlinks `file:` deps by default, so live edits in
 `packages/core/src/` propagate to desktop without a rebuild step.
 

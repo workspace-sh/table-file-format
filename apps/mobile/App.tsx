@@ -3,16 +3,16 @@ import type { ComponentType, ReactNode } from "react";
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { applyView, searchRows, validate } from "@workspace/table-core";
-import type { ParsedTable, View } from "@workspace/table-core";
-import { projectsTable } from "@workspace/table-fixtures";
+import { applyView, searchRows, validate } from "@workspace.sh/table-core";
+import type { ParsedTable, View } from "@workspace.sh/table-core";
+import { projectsTable } from "@workspace.sh/table-fixtures";
 import {
   BoardView,
   CalendarView,
   GalleryView,
   ListView,
   TableView,
-} from "@workspace/table-ui";
+} from "@workspace.sh/table-ui";
 
 // Horizontal page padding. Used as positive padding on the scroll
 // container AND as negative margin on horizontally-scrolling sections

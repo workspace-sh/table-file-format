@@ -49,8 +49,8 @@ barrel**. They import `node:fs` and would break in the browser. Node
 consumers import them directly:
 
 ```ts
-import { parseTable } from "@workspace/table-core/parser.js";
-import { writeTable } from "@workspace/table-core/writer.js";
+import { parseTable } from "@workspace.sh/table-core/parser.js";
+import { writeTable } from "@workspace.sh/table-core/writer.js";
 ```
 
 The demo never imports them — it loads fixtures via Vite static

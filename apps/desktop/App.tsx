@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { html, css } from "react-strict-dom";
-import { applyView, searchRows, validate } from "@workspace/table-core";
-import type { ParsedTable, View } from "@workspace/table-core";
-import { projectsTable } from "@workspace/table-fixtures";
+import { applyView, searchRows, validate } from "@workspace.sh/table-core";
+import type { ParsedTable, View } from "@workspace.sh/table-core";
+import { projectsTable } from "@workspace.sh/table-fixtures";
 import {
   BoardView,
   CalendarView,
   GalleryView,
   ListView,
   TableView,
-} from "@workspace/table-ui";
+} from "@workspace.sh/table-ui";
 
 const styles = css.create({
   root: {

@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/table-ui",
+  "name": "@workspace.sh/table-ui",
   "version": "0.1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/table-core": "file:../core"
+    "@workspace.sh/table-core": "file:../core"
   },
   "peerDependencies": {
     "react": ">=19.0.0",

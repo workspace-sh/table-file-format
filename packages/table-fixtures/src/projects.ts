@@ -9,7 +9,7 @@
  * there's a single source of truth; for the spike, sync manually when
  * the on-disk version changes.
  */
-import type { ParsedTable } from "@workspace/table-core";
+import type { ParsedTable } from "@workspace.sh/table-core";
 
 export const projectsTable: ParsedTable = {
   path: "fixtures/projects.table",

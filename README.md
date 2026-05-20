@@ -43,7 +43,7 @@ long-form markdown bodies per row.
 ## Quick example
 
 ```ts
-import { parseTable, applyView, validate } from "@workspace/table-core";
+import { parseTable, applyView, validate } from "@workspace.sh/table-core";
 
 const projects = await parseTable("./projects.table");
 
@@ -64,22 +64,22 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 ```
 .
 ├── packages/
-│   ├── core/             @workspace/table-core
+│   ├── core/             @workspace.sh/table-core
 │   │                     pure-TS format library — parser/writer/validator/query/
 │   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
-│   └── ui/               @workspace/table-ui
+│   └── ui/               @workspace.sh/table-ui
 │                         RSD/StyleX view components — TableView, BoardView,
 │                         GalleryView, ListView, CalendarView, SchemaEditor,
 │                         BodyEditor.
 │                         Currently web-targeted; cross-platform lifting tracked.
 ├── apps/
-│   ├── web/              @workspace/table-web
+│   ├── web/              @workspace.sh/table-web
 │   │                     Vite 7 + React 19 + RSD 0.0.55 + StyleX (PostCSS).
 │   │                     Full demo with editing, drag-and-drop, search, etc.
-│   ├── mobile/           @workspace/table-mobile
+│   ├── mobile/           @workspace.sh/table-mobile
 │   │                     Expo 55 — iOS + Android. Minimal list viewer.
 │   │                     `npm run mobile:prebuild` to generate native projects.
-│   └── desktop/          @workspace/table-desktop
+│   └── desktop/          @workspace.sh/table-desktop
 │                         Bare RN + react-native-macos 0.81. Minimal viewer.
 │                         `macos/` Xcode project inside (gitignored,
 │                         bootstrap per README).
@@ -92,7 +92,7 @@ const body = projects.bodies?.[visibleRows[0]!.id];
     └── DECISIONS.md
 ```
 
-Apps consume packages via the workspace alias (`"@workspace/table-core": "*"`);
+Apps consume packages via the workspace alias (`"@workspace.sh/table-core": "*"`);
 NPM resolves locally. No publishing required for local development.
 
 ## Running
@@ -174,7 +174,7 @@ npm run ui:typecheck
 - CSV converter (`fromCSV` / `toCSV`) (#5)
 - `index.sqlite` cache implementation (#6)
 - Granular parser/writer/validator named exports (#7)
-- Lift `@workspace/table-ui` from web-only to cross-platform
+- Lift `@workspace.sh/table-ui` from web-only to cross-platform
   (replace `react-dom/createPortal`, abstract `document.pointermove`,
   pseudo-state styles → `useFocused`-style hooks)
 

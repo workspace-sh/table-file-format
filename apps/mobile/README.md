@@ -1,6 +1,6 @@
-# `@workspace/table-mobile`
+# `@workspace.sh/table-mobile`
 
-Expo **56 preview** consumer of `@workspace/table-core` for iOS and Android.
+Expo **56 preview** consumer of `@workspace.sh/table-core` for iOS and Android.
 
 (Originally planned to target Expo 57 beta — that doesn't exist yet,
 newest published is `expo@next` = `56.0.0-preview.11`. Falling back to
@@ -19,13 +19,13 @@ Not yet attempted on a real device or simulator. Once you have a
 simulator handy:
 
 ```sh
-npm run prebuild -w @workspace/table-mobile      # generates ios/ and android/
-npm run ios -w @workspace/table-mobile           # or `android` / `start`
+npm run prebuild -w @workspace.sh/table-mobile      # generates ios/ and android/
+npm run ios -w @workspace.sh/table-mobile           # or `android` / `start`
 ```
 
 The current `App.tsx` is a minimal list viewer that imports
-`@workspace/table-core` and renders rows from an inline fixture. It does
-not yet use `@workspace/table-ui` because that package currently uses
+`@workspace.sh/table-core` and renders rows from an inline fixture. It does
+not yet use `@workspace.sh/table-ui` because that package currently uses
 web-only APIs (`react-dom/createPortal`, web-only `:focus-within`,
 `document.pointermove`). Lifting those to be cross-platform is the next
 iteration.
