@@ -23,6 +23,7 @@ import {
 } from "@workspace.sh/table-ui";
 import { tables as initialTables } from "./loadFixture";
 import { Sidebar } from "./Sidebar";
+import { useHashAddress } from "./useHashAddress";
 
 const DEFAULT_TABLE_PATH = "projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
@@ -154,12 +155,10 @@ export function App() {
     [activeTablePath],
   );
 
-  // Relation click → switch active table + (if a body exists) open the
-  // body editor on the target row. Address grammar per spec §10.
-  const openRelation = useCallback(
-    (address: string) => {
-      const addr = parseAddress(address);
-      if (!addr) return;
+  // Apply an Address to app state — shared between relation clicks
+  // and URL-hash rehydration so both paths behave identically.
+  const applyAddress = useCallback(
+    (addr: { tablePath: string; rowId?: string; viewId?: string }) => {
       // Only switch if we actually have the target table loaded.
       if (!tables[addr.tablePath]) {
         // Visible-broken at the cell level already; nothing more to do.
@@ -179,10 +178,35 @@ export function App() {
         } else {
           setActiveBodyRowId(null);
         }
+      } else {
+        setActiveBodyRowId(null);
       }
     },
     [tables],
   );
+
+  // Relation click → parse + apply. Spec §10 address grammar.
+  const openRelation = useCallback(
+    (address: string) => {
+      const addr = parseAddress(address);
+      if (!addr) return;
+      applyAddress(addr);
+    },
+    [applyAddress],
+  );
+
+  // Two-way URL-hash sync. Writes the current address on every nav
+  // change; on browser back/forward (or a typed-in URL) parses the hash
+  // and rehydrates state via the same path that handles in-app
+  // relation clicks.
+  useHashAddress({
+    state: {
+      tablePath: activeTablePath,
+      viewId: activeViewId,
+      rowId: activeBodyRowId ?? undefined,
+    },
+    onExternalChange: applyAddress,
+  });
 
   const updateRow = useCallback(
     (rowId: string, fieldName: string, value: unknown) => {
