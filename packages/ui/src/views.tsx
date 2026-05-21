@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { html, css } from "react-strict-dom";
+import { Portal } from "./internal/Portal";
 import { applyGroup, effectiveAlign } from "@workspace.sh/table-core";
 import type {
   Field,
@@ -11,6 +11,7 @@ import type {
   View,
 } from "@workspace.sh/table-core";
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import {
   firstDayOfWeek,
@@ -832,30 +833,38 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
 }
 
 /**
- * Drag session: tracks pointer viewport coords AND disables text
- * selection globally while a drag is active. Both concerns are about
- * "we're in the middle of a drag gesture" so they live in the same hook.
+ * Drag session — tracks pointer viewport coords while a drag is active.
  *
- * On web (this implementation): document.pointermove + body.style.userSelect.
- * On RN (Workspace UI kit substitution): react-native-gesture-handler
- * driving the same return shape — no body-level userSelect concept on
- * native, so that part becomes a no-op.
+ * Cross-platform via RSD's whitelisted pointer events (`onPointerMove`
+ * works on both web and RN). Returns `{ pos, dragProps }`:
+ *   - `pos` — `{x, y}` viewport-relative pointer position, or `null`
+ *     when not dragging
+ *   - `dragProps` — props to spread onto the consumer's root container
+ *     (a `<html.div>` wrapping the draggable area). Pointer-move events
+ *     bubble up from children, so attaching the handler at the root
+ *     captures all in-area movement without an overlay above the cells
+ *     — which means per-cell `onPointerEnter` / `onPointerLeave` /
+ *     `onPointerUp` handlers still fire for column-drop detection and
+ *     hover styling.
+ *
+ * Document-level `userSelect: none` and `getSelection().removeAllRanges()`
+ * are kept but guarded so they're no-ops on RN (where `document` doesn't
+ * exist and text selection isn't a concern during drag anyway).
  */
 function useDragPointer(active: boolean) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    if (!active) {
-      setPos(null);
-      return;
-    }
-    const onMove = (e: PointerEvent) => {
-      setPos({ x: e.clientX, y: e.clientY });
-    };
-    document.addEventListener("pointermove", onMove);
 
-    // Prevent text/UI highlight when the pointer drags across cell
-    // content. Restore the previous value on cleanup so we don't leak
-    // a permanent change to body styles.
+  // Reset position when drag deactivates.
+  useEffect(() => {
+    if (!active) setPos(null);
+  }, [active]);
+
+  // Web-only: disable text selection so dragging across cells doesn't
+  // highlight cell content. Guarded by `typeof document` so RN runtime
+  // (no `document.body.style`) silently no-ops.
+  useEffect(() => {
+    if (!active) return;
+    if (typeof document === "undefined") return;
     const prevUserSelect = document.body.style.userSelect;
     const prevWebkitUserSelect = (document.body.style as unknown as {
       webkitUserSelect: string;
@@ -863,23 +872,43 @@ function useDragPointer(active: boolean) {
     document.body.style.userSelect = "none";
     (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
       "none";
-    // Clear any selection already in place so it doesn't visually persist
-    // while we drag.
-    window.getSelection()?.removeAllRanges();
-
+    if (typeof window !== "undefined") {
+      window.getSelection()?.removeAllRanges();
+    }
     return () => {
-      document.removeEventListener("pointermove", onMove);
       document.body.style.userSelect = prevUserSelect;
       (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
         prevWebkitUserSelect;
     };
   }, [active]);
-  return pos;
+
+  const dragProps = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onPointerMove: (e: any) => {
+      if (!active) return;
+      // RSD's pointer events expose clientX/clientY on web; on RN the
+      // same property names are normalised by RSD's event wrapper. Fall
+      // back to nativeEvent.pageX/pageY for RN environments that don't
+      // normalise.
+      const x =
+        typeof e.clientX === "number"
+          ? e.clientX
+          : (e.nativeEvent?.pageX ?? 0);
+      const y =
+        typeof e.clientY === "number"
+          ? e.clientY
+          : (e.nativeEvent?.pageY ?? 0);
+      setPos({ x, y });
+    },
+  };
+
+  return { pos, dragProps };
 }
 
 /**
- * Floating ghost that follows the pointer during drag. Rendered via
- * createPortal to document.body so no parent overflow clips it.
+ * Floating ghost that follows the pointer during drag. Rendered via the
+ * cross-platform `Portal` so it escapes any clipping ancestor (e.g. the
+ * table's rounded `overflow: hidden`).
  */
 function DragGhost({
   pointerPos,
@@ -889,13 +918,14 @@ function DragGhost({
   children: ReactNode;
 }) {
   if (!pointerPos) return null;
-  return createPortal(
-    <html.div
-      style={[styles.ghost, styles.ghostPosition(pointerPos.x + 14, pointerPos.y + 14)]}
-    >
-      {children}
-    </html.div>,
-    document.body,
+  return (
+    <Portal>
+      <html.div
+        style={[styles.ghost, styles.ghostPosition(pointerPos.x + 14, pointerPos.y + 14)]}
+      >
+        {children}
+      </html.div>
+    </Portal>
   );
 }
 
@@ -930,8 +960,12 @@ export function TableView({
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const headerButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
+  // Ref typed loosely (`unknown`) because the underlying instance differs
+  // per platform — HTMLButtonElement on web, a Pressable view ref on
+  // native. measureAnchor() handles the platform-specific measurement.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const headerButtonRefs = useRef<Record<string, any>>({});
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
@@ -986,15 +1020,16 @@ export function TableView({
               ]}
             >
               <html.button
-                ref={(el: HTMLButtonElement | null) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ref={(el: any) => {
                   headerButtonRefs.current[name] = el;
                 }}
-                onClick={() => {
+                onClick={async () => {
                   if (isEditing) {
                     setEditingFieldName(null);
                   } else {
-                    const el = headerButtonRefs.current[name];
-                    if (el) setAnchorRect(el.getBoundingClientRect());
+                    const rect = await measureAnchor(headerButtonRefs.current[name]);
+                    if (rect) setAnchorRect(rect);
                     setEditingFieldName(name);
                   }
                 }}
@@ -1082,7 +1117,7 @@ export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
-  const pointerPos = useDragPointer(!!draggedRowId);
+  const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
 
   // Live preview: while dragging, render groups as if the dragged row
   // were already in the hovered column. The actual mutation only commits
@@ -1110,16 +1145,15 @@ export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
       })()
     : Object.keys(groups);
 
-  // Fallback: clear drag state on document-level pointerup.
-  useEffect(() => {
-    if (!draggedRowId) return;
-    const onUp = () => {
-      setDraggedRowId(null);
-      setHoveredColumn(null);
-    };
-    document.addEventListener("pointerup", onUp);
-    return () => document.removeEventListener("pointerup", onUp);
-  }, [draggedRowId]);
+  // Cancel drag if the pointer is released anywhere over the board root
+  // (a column / card / gap between columns — all bubble up here). Pre-
+  // viously this was a document-level pointerup listener; that doesn't
+  // exist on RN. Per-column onPointerUp still fires for actual drops
+  // (event hits the column first, runs `drop(key)`).
+  const cancelDrag = () => {
+    setDraggedRowId(null);
+    setHoveredColumn(null);
+  };
 
   const drop = (columnKey: string) => {
     if (!draggedRowId || !onUpdateRow) {
@@ -1140,7 +1174,11 @@ export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
   };
 
   return (
-    <html.div style={styles.board}>
+    <html.div
+      style={styles.board}
+      {...dragProps}
+      onPointerUp={canDrag ? cancelDrag : undefined}
+    >
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
         return (
@@ -1298,7 +1336,7 @@ export function ListView({
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
   const canDrag = !!onUpdateView;
-  const pointerPos = useDragPointer(!!draggedRowId);
+  const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
 
   // Live reorder preview: while dragging, rebuild the visible order so
   // the dragged row physically appears in its hover-target position. The
@@ -1320,18 +1358,15 @@ export function ListView({
       })()
     : rows;
 
-  // Fallback: clear drag state on document-level pointerup. Drop is
-  // committed by the row's own onPointerUp; this only fires when the
-  // pointer releases outside any row.
-  useEffect(() => {
-    if (!draggedRowId) return;
-    const onUp = () => {
-      setDraggedRowId(null);
-      setPreviewOrder(null);
-    };
-    document.addEventListener("pointerup", onUp);
-    return () => document.removeEventListener("pointerup", onUp);
-  }, [draggedRowId]);
+  // Cancel drag if the pointer is released anywhere over the list root
+  // (gaps between rows, etc). Per-row onPointerUp still fires the
+  // commit (`commitDrop`) because the event hits the row first.
+  // Replaces a previous document-level pointerup listener that didn't
+  // exist on RN.
+  const cancelDrag = () => {
+    setDraggedRowId(null);
+    setPreviewOrder(null);
+  };
 
   const computePreviewOrder = (targetRowId: string): string[] => {
     if (!draggedRowId) return rows.map((r) => r.id);
@@ -1357,7 +1392,11 @@ export function ListView({
   };
 
   return (
-    <html.div style={styles.list}>
+    <html.div
+      style={styles.list}
+      {...dragProps}
+      onPointerUp={canDrag ? cancelDrag : undefined}
+    >
       {displayRows.map((row, i) => (
         <html.div
           key={row.id}

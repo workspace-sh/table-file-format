@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { applyView, searchRows, validate } from "@workspace.sh/table-core";
-import type { ParsedTable, View } from "@workspace.sh/table-core";
+import type {
+  Field,
+  ParsedTable,
+  TableSchema,
+  View,
+} from "@workspace.sh/table-core";
 import { projectsTable } from "@workspace.sh/table-fixtures";
 import {
+  BodyEditor,
   BoardView,
   CalendarView,
   GalleryView,
@@ -110,7 +116,34 @@ const styles = css.create({
   },
 });
 
-function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["rows"]) {
+/**
+ * Cosmetic field edits (title, description, align) do NOT bump
+ * schema-version. Structural edits (constraints, deprecated, relation,
+ * enum-add, add-field, reorder) DO. Matches the web App's policy so
+ * `.table/` writes have consistent schema-version semantics across
+ * platforms.
+ */
+function bumpSchemaVersion(schema: TableSchema): TableSchema {
+  const current = (schema["schema-version"] as number | undefined) ?? 1;
+  return { ...schema, "schema-version": current + 1 };
+}
+
+interface ViewCallbacks {
+  onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
+  onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
+  onAddEnumValue: (fieldName: string, value: string) => void;
+  onMoveField: (fieldName: string, delta: -1 | 1) => void;
+  onAddField: (field: Field) => void;
+  onOpenBody: (rowId: string) => void;
+  onUpdateView: (patch: Partial<View>) => void;
+}
+
+function renderView(
+  view: View,
+  table: ParsedTable,
+  visibleRows: ParsedTable["rows"],
+  cb: ViewCallbacks,
+) {
   const common = {
     view,
     rows: visibleRows,
@@ -119,22 +152,138 @@ function renderView(view: View, table: ParsedTable, visibleRows: ParsedTable["ro
   };
   switch (view.layout) {
     case "board":
-      return <BoardView {...common} />;
+      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} />;
     case "gallery":
-      return <GalleryView {...common} />;
+      return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":
-      return <ListView {...common} />;
+      return (
+        <ListView
+          {...common}
+          onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
+        />
+      );
     case "calendar":
-      return <CalendarView {...common} />;
+      return <CalendarView {...common} onOpenBody={cb.onOpenBody} />;
     default:
-      return <TableView {...common} />;
+      return (
+        <TableView
+          {...common}
+          onUpdateRow={cb.onUpdateRow}
+          onUpdateField={cb.onUpdateField}
+          onAddEnumValue={cb.onAddEnumValue}
+          onMoveField={cb.onMoveField}
+          onAddField={cb.onAddField}
+          onOpenBody={cb.onOpenBody}
+        />
+      );
   }
 }
 
+function rowTitleFor(table: ParsedTable, rowId: string): string {
+  const row = table.rows.find((r) => r.id === rowId);
+  if (!row) return rowId;
+  const titleField = table.schema.fields[0]?.name;
+  const title = titleField ? row[titleField] : undefined;
+  return typeof title === "string" ? title : rowId;
+}
+
 export default function App() {
-  const table: ParsedTable = projectsTable;
+  const [table, setTable] = useState<ParsedTable>(projectsTable);
   const [activeViewId, setActiveViewId] = useState<string>(table.views[0]!.id);
   const [query, setQuery] = useState<string>("");
+  const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
+
+  const updateRow = useCallback(
+    (rowId: string, fieldName: string, value: unknown) => {
+      setTable((t) => ({
+        ...t,
+        rows: t.rows.map((r) =>
+          r.id === rowId ? { ...r, [fieldName]: value } : r,
+        ),
+      }));
+    },
+    [],
+  );
+
+  const updateField = useCallback(
+    (fieldName: string, patch: Partial<Field>) => {
+      setTable((t) => {
+        const fields = t.schema.fields.map((f) =>
+          f.name === fieldName ? { ...f, ...patch } : f,
+        );
+        const isStructural =
+          "constraints" in patch ||
+          "deprecated" in patch ||
+          "relation" in patch;
+        const nextSchema: TableSchema = isStructural
+          ? bumpSchemaVersion({ ...t.schema, fields })
+          : { ...t.schema, fields };
+        return { ...t, schema: nextSchema };
+      });
+    },
+    [],
+  );
+
+  const addEnumValue = useCallback((fieldName: string, value: string) => {
+    setTable((t) => {
+      const fields = t.schema.fields.map((f) => {
+        if (f.name !== fieldName) return f;
+        const existing = f.constraints?.enum ?? [];
+        if (existing.includes(value)) return f;
+        return {
+          ...f,
+          constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
+        };
+      });
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const moveField = useCallback((fieldName: string, delta: -1 | 1) => {
+    setTable((t) => {
+      const from = t.schema.fields.findIndex((f) => f.name === fieldName);
+      if (from === -1) return t;
+      const to = from + delta;
+      if (to < 0 || to >= t.schema.fields.length) return t;
+      const fields = t.schema.fields.slice();
+      const [moved] = fields.splice(from, 1);
+      fields.splice(to, 0, moved!);
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const addField = useCallback((field: Field) => {
+    setTable((t) => {
+      if (t.schema.fields.some((f) => f.name === field.name)) return t;
+      const fields = [...t.schema.fields, field];
+      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
+    });
+  }, []);
+
+  const updateBody = useCallback((rowId: string, content: string) => {
+    setTable((t) => {
+      const bodies = { ...(t.bodies ?? {}) };
+      if (content.length === 0) delete bodies[rowId];
+      else bodies[rowId] = content;
+      return { ...t, bodies };
+    });
+  }, []);
+
+  const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
+  const closeBody = useCallback(() => setActiveBodyRowId(null), []);
+
+  const updateActiveView = useCallback(
+    (patch: Partial<View>) => {
+      setTable((t) => ({
+        ...t,
+        views: t.views.map((v) =>
+          v.id === activeViewId ? { ...v, ...patch } : v,
+        ),
+      }));
+    },
+    [activeViewId],
+  );
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   const viewRows = applyView(table, view);
@@ -172,8 +321,25 @@ export default function App() {
           onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
           style={styles.searchInput}
         />
-        {renderView(view, table, visibleRows)}
+        {renderView(view, table, visibleRows, {
+          onUpdateRow: updateRow,
+          onUpdateField: updateField,
+          onAddEnumValue: addEnumValue,
+          onMoveField: moveField,
+          onAddField: addField,
+          onOpenBody: openBody,
+          onUpdateView: updateActiveView,
+        })}
       </html.div>
+      {activeBodyRowId && (
+        <BodyEditor
+          rowId={activeBodyRowId}
+          rowTitle={rowTitleFor(table, activeBodyRowId)}
+          content={table.bodies?.[activeBodyRowId] ?? ""}
+          onSave={(content) => updateBody(activeBodyRowId, content)}
+          onClose={closeBody}
+        />
+      )}
     </html.div>
   );
 }

@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { html, css } from "react-strict-dom";
+import { Portal } from "./internal/Portal";
 
 const styles = css.create({
+  /**
+   * Dim backdrop covering the viewport. html.button so the press
+   * handler works on both web and native (RSD maps html.button →
+   * Pressable on RN). Rendered as a SIBLING of the modal inside the
+   * Portal, not a parent — that way modal clicks hit the modal
+   * directly and never reach the backdrop, no `stopPropagation`
+   * dance needed (which doesn't behave identically on RN anyway).
+   */
   backdrop: {
     position: "fixed",
     top: 0,
@@ -9,10 +18,25 @@ const styles = css.create({
     right: 0,
     bottom: 0,
     backgroundColor: "rgba(0, 0, 0, 0.45)",
+    zIndex: 99,
+    borderWidth: 0,
+    padding: 0,
+    cursor: "default",
+  },
+  modalWrapper: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 100,
+    // Pointer-events: none so the wrapper passes clicks through to the
+    // backdrop underneath; the modal child re-enables them via
+    // `pointer-events: auto`.
+    pointerEvents: "none",
   },
   modal: {
     width: "90%",
@@ -22,6 +46,7 @@ const styles = css.create({
     flexDirection: "column",
     borderRadius: 10,
     overflow: "hidden",
+    pointerEvents: "auto",
     backgroundColor: {
       default: "#ffffff",
       "@media (prefers-color-scheme: dark)": "#1c1c1e",
@@ -173,7 +198,12 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
   const dirty = draft !== content;
   const isNew = content.length === 0;
 
+  // Web-only: escape key dismisses when not dirty. Guarded by document
+  // check so the same code is a no-op on RN (where there's no keyboard
+  // escape key in the same sense — a hardware back button handler
+  // would be platform-specific work for native, deferred).
   useEffect(() => {
+    if (typeof document === "undefined") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !dirty) onClose();
     };
@@ -187,51 +217,56 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
   };
 
   return (
-    <html.div
-      style={styles.backdrop}
-      onClick={() => {
-        if (!dirty) onClose();
-      }}
-    >
-      <html.div
-        style={styles.modal}
-        onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-      >
-        <html.div style={styles.header}>
-          <html.div style={styles.headerLeft}>
-            <html.span style={styles.title}>{rowTitle || rowId}</html.span>
-            <html.span style={styles.subtitle}>
-              bodies/{rowId}.md{isNew ? " · new" : ""}
-            </html.span>
+    <Portal>
+      {/* Backdrop sibling — tap outside the modal closes it (only when
+          clean; dirty edits stay safe). */}
+      <html.button
+        onClick={() => {
+          if (!dirty) onClose();
+        }}
+        style={styles.backdrop}
+      />
+      {/* Modal wrapper centers the modal and is itself
+          pointer-events: none so clicks pass through to the backdrop
+          on the empty area around the modal. */}
+      <html.div style={styles.modalWrapper}>
+        <html.div style={styles.modal}>
+          <html.div style={styles.header}>
+            <html.div style={styles.headerLeft}>
+              <html.span style={styles.title}>{rowTitle || rowId}</html.span>
+              <html.span style={styles.subtitle}>
+                bodies/{rowId}.md{isNew ? " · new" : ""}
+              </html.span>
+            </html.div>
+            <html.button style={styles.closeButton} onClick={onClose}>
+              ✕
+            </html.button>
           </html.div>
-          <html.button style={styles.closeButton} onClick={onClose}>
-            ✕
-          </html.button>
-        </html.div>
-        <html.textarea
-          value={draft}
-          onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
-          placeholder="Long-form markdown body…"
-          style={styles.textarea}
-        />
-        <html.div style={styles.footer}>
-          <html.span style={styles.footerHint}>
-            {dirty ? "Unsaved changes" : "No changes"}
-          </html.span>
-          <html.div style={styles.buttonRow}>
-            <html.button style={styles.button} onClick={onClose}>
-              {dirty ? "Discard" : "Close"}
-            </html.button>
-            <html.button
-              disabled={!dirty}
-              style={[styles.button, dirty && styles.primary]}
-              onClick={save}
-            >
-              Save
-            </html.button>
+          <html.textarea
+            value={draft}
+            onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
+            placeholder="Long-form markdown body…"
+            style={styles.textarea}
+          />
+          <html.div style={styles.footer}>
+            <html.span style={styles.footerHint}>
+              {dirty ? "Unsaved changes" : "No changes"}
+            </html.span>
+            <html.div style={styles.buttonRow}>
+              <html.button style={styles.button} onClick={onClose}>
+                {dirty ? "Discard" : "Close"}
+              </html.button>
+              <html.button
+                disabled={!dirty}
+                style={[styles.button, dirty && styles.primary]}
+                onClick={save}
+              >
+                Save
+              </html.button>
+            </html.div>
           </html.div>
         </html.div>
       </html.div>
-    </html.div>
+    </Portal>
   );
 }
