@@ -185,7 +185,7 @@ export function App() {
     [tables],
   );
 
-  // Relation click → parse + apply. Spec §10 address grammar.
+  // Relation click → parse + apply.
   const openRelation = useCallback(
     (address: string) => {
       const addr = parseAddress(address);

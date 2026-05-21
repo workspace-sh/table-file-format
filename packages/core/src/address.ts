@@ -1,6 +1,6 @@
 /**
  * Address parsing / formatting / resolution for the `.table/` fragment
- * grammar defined in `docs/SPEC.md` §10.
+ * grammar (see docs/SPEC.md, "Addressing").
  *
  *   <path>[#<key>=<value>[&<key>=<value>]*]
  *
@@ -121,7 +121,7 @@ export type TableLookup = (
  *   - the table is loaded but no row matches the id (dangling)
  *
  * Apps SHOULD surface the dangling case visibly rather than silently
- * rendering nothing (spec §10).
+ * rendering nothing.
  */
 export async function resolveRow(
   address: string | Address,

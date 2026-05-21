@@ -1,5 +1,5 @@
 /**
- * Sync app navigation state with `location.hash` using the spec §10
+ * Sync app navigation state with `location.hash` using the
  * row-address grammar (`<path>#<key>=<value>&...`). Result:
  *
  *   https://demo/#projects#row=p1&view=v5

@@ -539,8 +539,8 @@ const styles = css.create({
   },
   /**
    * Dangling relation — the row id has no matching row in the related
-   * table (or the table isn't loaded). Surface visibly per spec §10
-   * rather than silently rendering nothing.
+   * table (or the table isn't loaded). Surface visibly rather than
+   * silently rendering nothing.
    */
   relationBroken: {
     fontStyle: "italic",
@@ -712,13 +712,13 @@ interface CellValueProps {
   value: unknown;
   /** Loaded sibling tables, for resolving relation cells. */
   relatedTables?: Record<string, ParsedTable>;
-  /** Called with an address (§10) when a relation cell is clicked. */
+  /** Called with a row address when a relation cell is clicked. */
   onOpenRelation?: (address: string) => void;
 }
 
 function CellValue({ field, value, relatedTables, onOpenRelation }: CellValueProps) {
   // Relation field → resolve to related row, render as link (or
-  // broken-state when dangling per spec §10).
+  // broken-state when dangling).
   if (field?.relation && typeof value === "string" && value.length > 0) {
     return (
       <RelationCellValue
@@ -761,7 +761,7 @@ function RelationCellValue({
 
   if (!resolvedLabel) {
     // Dangling — no related table loaded, OR table loaded but row not
-    // in it. Visible-broken per spec §10.
+    // in it. Render visibly rather than silently.
     return (
       <html.span
         style={styles.relationBroken}
@@ -778,7 +778,7 @@ function RelationCellValue({
     return <html.span>{resolvedLabel}</html.span>;
   }
 
-  // Compose the address per §10: <table-path>#row=<id>. The table-path
+  // Compose the row address: <table-path>#row=<id>. The table-path
   // here is the relation's declared `table` name; apps that need full
   // paths resolve in their lookup. The format library's relation
   // declaration is the structured form; this string is the
@@ -962,9 +962,9 @@ interface ViewProps {
   onOpenBody?: (rowId: string) => void;
   onUpdateView?: (patch: Partial<View>) => void;
   /**
-   * Called when a relation cell is clicked. Address follows
-   * `docs/SPEC.md §10` — `<table-path>#row=<id>`. Apps implement to
-   * navigate to the target row.
+   * Called when a relation cell is clicked. Address takes the form
+   * `<table-path>#row=<id>` (see docs/SPEC.md, "Addressing"). Apps
+   * implement to navigate to the target row.
    */
   onOpenRelation?: (address: string) => void;
 }
