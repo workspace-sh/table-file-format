@@ -85,12 +85,24 @@ const styles = css.create({
 });
 
 interface SidebarProps {
+  tables: Record<string, ParsedTable>;
+  activeTablePath: string;
+  onSelectTable: (path: string) => void;
   table: ParsedTable;
   activeViewId: string;
   onSelect: (viewId: string) => void;
 }
 
-export function Sidebar({ table, activeViewId, onSelect }: SidebarProps) {
+export function Sidebar({
+  tables,
+  activeTablePath,
+  onSelectTable,
+  table,
+  activeViewId,
+  onSelect,
+}: SidebarProps) {
+  const tablePaths = Object.keys(tables);
+  const showTablePicker = tablePaths.length > 1;
   return (
     <html.div style={styles.root}>
       <html.div style={styles.header}>
@@ -99,6 +111,26 @@ export function Sidebar({ table, activeViewId, onSelect }: SidebarProps) {
           {table.rows.length} {table.rows.length === 1 ? "row" : "rows"} · {table.schema.fields.length} fields
         </html.span>
       </html.div>
+      {showTablePicker && (
+        <>
+          <html.span style={styles.sectionLabel}>Tables</html.span>
+          <html.div style={styles.list}>
+            {tablePaths.map((path) => {
+              const t = tables[path]!;
+              return (
+                <html.div
+                  key={path}
+                  style={[styles.item, path === activeTablePath && styles.itemActive]}
+                  onClick={() => onSelectTable(path)}
+                >
+                  <html.span style={styles.itemName}>{t.meta.title ?? path}</html.span>
+                  <html.span style={styles.itemLayout}>{path}</html.span>
+                </html.div>
+              );
+            })}
+          </html.div>
+        </>
+      )}
       <html.span style={styles.sectionLabel}>Views</html.span>
       <html.div style={styles.list}>
         {table.views.map((view) => (
