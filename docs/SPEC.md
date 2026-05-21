@@ -288,7 +288,90 @@ Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
 None of these block validity.
 
-## 10. Interop
+## 10. Addressing
+
+Stable addressing for rows, views, and tables — used by:
+
+- Cross-table relations (per-field `relation` references one row in
+  another `.table/`)
+- Cross-format references (a markdown body inside `bodies/{id}.md`
+  linking to a row elsewhere, an external markdown file linking into
+  a `.table/`, etc.)
+- Application-level deep links (URL hashes, share links)
+
+### Address grammar
+
+An address is a path to a `.table/` followed by an optional URL
+fragment:
+
+```
+<path>[#<key>=<value>[&<key>=<value>]*]
+```
+
+- `<path>` — a file-system path to a `.table/` directory. Relative
+  or absolute, app-resolved. Format files SHOULD use relative paths
+  (typically against the containing workspace root) so the address
+  survives directory moves.
+- `<key>=<value>` — a key-value pair. Keys defined by this spec:
+  - `row=<id>` — the row with this system `id`
+  - `view=<id>` — the view with this id
+  - `field=<name>` — a specific field on the row (cell-level
+    addressing for future affordances; reserved)
+
+Multiple pairs join with `&` (the same convention as URL query
+strings). Order is not significant. Unknown keys MUST be tolerated
+by readers — apps MAY define additional keys (e.g. `query=`,
+`highlight=`) but consumers that don't recognise them should
+silently ignore.
+
+### Examples
+
+```
+docs/projects.table                              # whole table
+docs/projects.table#row=p1                       # specific row
+docs/projects.table#view=v3                      # specific view
+docs/projects.table#row=p1&view=v3               # row pinned to view
+../suppliers.table#row=ACME_CORP                 # cross-directory
+```
+
+### Resolution
+
+Resolution is the app's concern. The format does not prescribe how a
+path resolves to a `.table/` directory — apps choose (filesystem
+scan, in-memory map, fetch over HTTP, etc.). Reference helpers in
+`@workspace.sh/table-core` (`parseAddress`, `formatAddress`,
+`resolveRow`) implement the grammar but accept a caller-supplied
+lookup function.
+
+`row=` MUST resolve against the system `id` field. If a target row's
+`id` is not found, the address is **dangling** — apps SHOULD surface
+this visibly rather than silently rendering nothing.
+
+### Relation interop
+
+Per-field `relation` (§2) references a row by `id` but does NOT use
+the address grammar literally — relations are structured as
+`{table, field}` on the field declaration plus the bare `id` value
+on the row, so apps can resolve them efficiently without parsing a
+string. Conceptually, a relation `{table: "tasks", field: "id"}` with
+row value `"t_42"` corresponds to the address
+`<path-to-tasks.table>#row=t_42` — the grammar is the
+serialisation; the relation declaration is the structured form.
+
+### Reverse direction (markdown → row)
+
+A markdown body inside `bodies/{id}.md` MAY contain links that use
+the address grammar:
+
+```markdown
+See [the active sprint](../sprints.table#row=sp_current) for the
+plan.
+```
+
+How those links are rendered, opened, or scrolled is the consuming
+app's concern. The format only standardises the grammar.
+
+## 11. Interop
 
 `.table/` belongs to an open coalition of text-first data interchange
 formats (CSVW, Frictionless Data, Obsidian Bases, etc.) — none gets
@@ -297,7 +380,7 @@ import with schema). Format-specific exporters belong in separate
 optional packages (`@workspace.sh/table-frictionless`,
 `@workspace.sh/table-csvw`, etc.) if and when there's demand.
 
-## 11. Versioning
+## 12. Versioning
 
 The spec covers two version axes only — the spec itself, and the
 schema. Data versioning (edit history, undo, audit, real-time
