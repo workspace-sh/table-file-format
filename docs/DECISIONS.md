@@ -73,16 +73,14 @@ moves/renames of the table don't cascade through every row.
 
 ## D8: Format extension is `.table`
 
-Final. Not changing.
+Final.
 
-**Why:** picked early; a previous session wandered into a long naming
-debate (`.records`, `.binder`, `.matrix`) which a parallel chat
-correctly identified as bikeshedding. `.table` is unclaimed in
-practice (SQL keywords and HTML elements aren't file extensions),
-reads correctly in conversation (*"send me your suppliers.table"*),
-and follows the same naming pattern as Airtable / Google Tables / Notion
-(category-format named after the most recognisable presentation, even
-when the format supports many).
+**Why:** `.table` is unclaimed in practice (SQL keywords and HTML
+elements aren't file extensions), reads correctly in conversation
+(*"send me your suppliers.table"*), and follows the same naming
+pattern as Airtable / Google Tables / Notion — category-format named
+after the most recognisable presentation, even when the format
+supports many other layouts (board, gallery, list, calendar).
 
 ## D9: Frictionless framing dropped
 
@@ -147,13 +145,13 @@ returns clean markdown).
 ## D13: Spike workflow
 
 Default branch is **`develop`**. Work lands via PR from feature
-branches. Open spec questions get filed as GitHub issues, not parked
-in chat or memory only.
+branches. Open spec questions get filed as GitHub issues so they're
+discoverable.
 
-**Why:** the auto-generated branch from the bootstrap session
-(`claude/gather-context-files-zx3sm`) had become the de-facto trunk.
-Switching to `develop` + PR-driven workflow gives the spike a clean
-review surface and makes the work auditable.
+**Why:** PR-driven workflow gives the spike a clean review surface
+and makes the rationale for each change auditable in the commit log.
+Topic-branch naming follows the standard `feat/<slug>` / `fix/<slug>`
+/ `docs/<slug>` / `chore/<slug>` convention.
 
 ## D14: Data versioning is the consuming app's concern (parked)
 
@@ -211,27 +209,8 @@ Properties (intended):
 This shape is **not normative until specced**. Don't write tooling
 against it yet.
 
-### Workspace-specific guidance
-
-For the parent Workspace product (the primary consumer):
-- **Editing sessions** should maintain an in-memory undo stack —
-  pure React state, no format involvement. The current demo will get
-  this in a follow-up; format stays untouched.
-- **Per-file edit history** for Workspace's UX (e.g., a sidebar
-  showing "5 minutes ago: leslie changed status of p1") will likely
-  motivate the `history.ndjson` extension above. Defer the design
-  until Workspace actually starts building that UX.
-- **Real-time collaboration** between Workspace users on the same
-  `.table/` is a separate undertaking with its own data-model
-  decisions (Y.js / Automerge / custom CRDT). Out of scope for the
-  format spec.
-- **Cross-user sharing without real-time collab** is what git does
-  well — and the format already supports this perfectly. Workspace
-  can expose this with or without exposing git semantics to the user
-  (commits-on-save, optimistic-merge-on-open, etc.).
-
 **Why park rather than spec now:** specifying a versioning model
-before a consumer has actually built against it bakes assumptions we
-don't have signal for. Better to keep the format lean and let
-Workspace's first real history UX drive what the extension needs to
-look like.
+before a real consumer has built against it bakes assumptions we
+don't have signal for. The format stays lean; the first concrete
+history UX in a consuming app gets to drive what the extension needs
+to look like.
