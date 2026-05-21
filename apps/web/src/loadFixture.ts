@@ -2,6 +2,10 @@ import projectsSchema from "../../../fixtures/projects.table/schema.json" with {
 import projectsViews from "../../../fixtures/projects.table/views.json" with { type: "json" };
 import projectsMeta from "../../../fixtures/projects.table/meta.json" with { type: "json" };
 import projectsRowsRaw from "../../../fixtures/projects.table/rows.ndjson?raw";
+import tasksSchema from "../../../fixtures/tasks.table/schema.json" with { type: "json" };
+import tasksViews from "../../../fixtures/tasks.table/views.json" with { type: "json" };
+import tasksMeta from "../../../fixtures/tasks.table/meta.json" with { type: "json" };
+import tasksRowsRaw from "../../../fixtures/tasks.table/rows.ndjson?raw";
 import type {
   ParsedTable,
   Row,
@@ -39,4 +43,25 @@ export const projectsTable: ParsedTable = {
   views: projectsViews as View[],
   meta: projectsMeta as TableMeta,
   bodies: bodiesByRowId(projectsBodyFiles),
+};
+
+export const tasksTable: ParsedTable = {
+  path: "fixtures/tasks.table",
+  schema: tasksSchema as TableSchema,
+  rows: parseNdjson(tasksRowsRaw),
+  views: tasksViews as View[],
+  meta: tasksMeta as TableMeta,
+};
+
+/**
+ * Workspace of available tables, keyed by the same string a relation
+ * uses in its `table` declaration. Tasks reference projects via
+ * `"relation": { "table": "projects", "field": "id" }`, so the key
+ * here is the bare `projects` (NOT `fixtures/projects.table`). Apps
+ * with a real filesystem would key by the resolved path; the web
+ * demo keeps it short.
+ */
+export const tables: Record<string, ParsedTable> = {
+  projects: projectsTable,
+  tasks: tasksTable,
 };
