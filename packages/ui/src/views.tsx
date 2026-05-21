@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
-import { applyGroup, effectiveAlign } from "@workspace.sh/table-core";
+import { applyGroup, effectiveAlign, formatAddress } from "@workspace.sh/table-core";
 import type {
   Field,
   FieldAlignment,
+  ParsedTable,
   Row,
   TableSchema,
   View,
@@ -516,6 +517,42 @@ const styles = css.create({
     },
   },
 
+  /**
+   * Relation cell — looks like a link, opens the target row on click.
+   * `html.button` rather than `html.a` so we get cross-platform press
+   * handling (RSD maps html.button to Pressable on RN).
+   */
+  relationLink: {
+    paddingInline: 0,
+    paddingBlock: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    textAlign: "left",
+    fontSize: 13,
+    color: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+    textDecorationLine: "underline",
+    textDecorationStyle: "solid",
+  },
+  /**
+   * Dangling relation — the row id has no matching row in the related
+   * table (or the table isn't loaded). Surface visibly per spec §10
+   * rather than silently rendering nothing.
+   */
+  relationBroken: {
+    fontStyle: "italic",
+    opacity: 0.55,
+    color: {
+      default: "#c00",
+      "@media (prefers-color-scheme: dark)": "#ff6b6b",
+    },
+    textDecorationLine: "line-through",
+    textDecorationStyle: "solid",
+  },
+
   // Clickable header cell wrapper — width applied at use-site via the
   // same cellWidth function-style so headers align with body cells.
   headerCellWrapper: {
@@ -670,12 +707,94 @@ function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function CellValue({ field, value }: { field: Field | undefined; value: unknown }) {
+interface CellValueProps {
+  field: Field | undefined;
+  value: unknown;
+  /** Loaded sibling tables, for resolving relation cells. */
+  relatedTables?: Record<string, ParsedTable>;
+  /** Called with an address (§10) when a relation cell is clicked. */
+  onOpenRelation?: (address: string) => void;
+}
+
+function CellValue({ field, value, relatedTables, onOpenRelation }: CellValueProps) {
+  // Relation field → resolve to related row, render as link (or
+  // broken-state when dangling per spec §10).
+  if (field?.relation && typeof value === "string" && value.length > 0) {
+    return (
+      <RelationCellValue
+        relation={field.relation}
+        targetId={value}
+        relatedTables={relatedTables}
+        onOpenRelation={onOpenRelation}
+      />
+    );
+  }
+
   const isEnum = field?.constraints?.enum != null;
   if (isEnum && value !== undefined && value !== null && value !== "") {
     return <html.span style={styles.pill}>{String(value)}</html.span>;
   }
   return <html.span>{formatValue(value)}</html.span>;
+}
+
+function RelationCellValue({
+  relation,
+  targetId,
+  relatedTables,
+  onOpenRelation,
+}: {
+  relation: { table: string; field: string };
+  targetId: string;
+  relatedTables?: Record<string, ParsedTable>;
+  onOpenRelation?: (address: string) => void;
+}) {
+  const target = relatedTables?.[relation.table];
+  const targetRow = target?.rows.find((r) => r.id === targetId);
+
+  // Display value: the related row's primary-key value when resolvable;
+  // otherwise the raw id (broken state).
+  const primaryKeyField = target?.schema.primaryKey?.[0];
+  const resolvedLabel =
+    targetRow && primaryKeyField
+      ? String(targetRow[primaryKeyField] ?? targetId)
+      : null;
+
+  if (!resolvedLabel) {
+    // Dangling — no related table loaded, OR table loaded but row not
+    // in it. Visible-broken per spec §10.
+    return (
+      <html.span
+        style={styles.relationBroken}
+        aria-label={`Dangling: ${relation.table}#row=${targetId}`}
+      >
+        {targetId}
+      </html.span>
+    );
+  }
+
+  if (!onOpenRelation) {
+    // Resolvable but no navigation callback wired up — render the label
+    // as plain text (read-only consumer).
+    return <html.span>{resolvedLabel}</html.span>;
+  }
+
+  // Compose the address per §10: <table-path>#row=<id>. The table-path
+  // here is the relation's declared `table` name; apps that need full
+  // paths resolve in their lookup. The format library's relation
+  // declaration is the structured form; this string is the
+  // serialisation.
+  const address = formatAddress({ tablePath: relation.table, rowId: targetId });
+  return (
+    <html.button
+      style={styles.relationLink}
+      onClick={(e: { stopPropagation: () => void }) => {
+        e.stopPropagation();
+        onOpenRelation(address);
+      }}
+    >
+      {resolvedLabel}
+    </html.button>
+  );
 }
 
 function coerceValue(field: Field | undefined, raw: string): unknown {
@@ -700,9 +819,18 @@ interface EditableCellProps {
   field: Field | undefined;
   value: unknown;
   onCommit: (next: unknown) => void;
+  /** Forwarded to CellValue for relation-cell rendering in idle state. */
+  relatedTables?: Record<string, ParsedTable>;
+  onOpenRelation?: (address: string) => void;
 }
 
-function EditableCell({ field, value, onCommit }: EditableCellProps) {
+function EditableCell({
+  field,
+  value,
+  onCommit,
+  relatedTables,
+  onOpenRelation,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
@@ -745,7 +873,12 @@ function EditableCell({ field, value, onCommit }: EditableCellProps) {
     if (!editing) {
       return (
         <html.span onClick={startEdit} style={styles.cellEditableIdle}>
-          <CellValue field={field} value={value} />
+          <CellValue
+            field={field}
+            value={value}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
         </html.span>
       );
     }
@@ -813,6 +946,14 @@ interface ViewProps {
   rows: Row[];
   schema: TableSchema;
   bodies?: Record<string, string>;
+  /**
+   * Sibling `.table/` directories indexed by their path (the value
+   * stored in a field's `relation.table` declaration). Provided by
+   * the consuming app so relation cells can resolve the target row's
+   * display value. Cells with no resolvable target render the raw id
+   * with a "broken" visual state.
+   */
+  relatedTables?: Record<string, ParsedTable>;
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
@@ -820,6 +961,12 @@ interface ViewProps {
   onAddField?: (field: Field) => void;
   onOpenBody?: (rowId: string) => void;
   onUpdateView?: (patch: Partial<View>) => void;
+  /**
+   * Called when a relation cell is clicked. Address follows
+   * `docs/SPEC.md §10` — `<table-path>#row=<id>`. Apps implement to
+   * navigate to the target row.
+   */
+  onOpenRelation?: (address: string) => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -949,12 +1096,14 @@ export function TableView({
   rows,
   schema,
   bodies,
+  relatedTables,
   onUpdateRow,
   onUpdateField,
   onAddEnumValue,
   onMoveField,
   onAddField,
   onOpenBody,
+  onOpenRelation,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
@@ -1091,9 +1240,16 @@ export function TableView({
                     field={field}
                     value={row[name]}
                     onCommit={(next) => onUpdateRow(row.id, name, next)}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
                   />
                 ) : (
-                  <CellValue field={field} value={row[name]} />
+                  <CellValue
+                    field={field}
+                    value={row[name]}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                  />
                 )}
                 {name === titleField && bodies?.[row.id] ? (
                   <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
@@ -1108,7 +1264,14 @@ export function TableView({
   );
 }
 
-export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
+export function BoardView({
+  view,
+  rows,
+  schema,
+  onUpdateRow,
+  relatedTables,
+  onOpenRelation,
+}: ViewProps) {
   const groupField = view.board_field ?? "status";
   const groupFieldDef = schema.fields.find((f) => f.name === groupField);
   const enumValues = groupFieldDef?.constraints?.enum;
@@ -1229,7 +1392,13 @@ export function BoardView({ view, rows, schema, onUpdateRow }: ViewProps) {
                   draggedRowId === row.id && styles.cardDragging,
                 ]}
               >
-                <Card row={row} fields={fields} fieldMap={fieldMap} />
+                <Card
+                  row={row}
+                  fields={fields}
+                  fieldMap={fieldMap}
+                  relatedTables={relatedTables}
+                  onOpenRelation={onOpenRelation}
+                />
               </html.div>
             ))}
           </html.div>
@@ -1254,7 +1423,15 @@ const MIN_GALLERY_CARD_WIDTH = 240;
 /** Gap between gallery cards. Must match `styles.gallery.gap`. */
 const GALLERY_GAP = 12;
 
-export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
+export function GalleryView({
+  view,
+  rows,
+  schema,
+  bodies,
+  onOpenBody,
+  relatedTables,
+  onOpenRelation,
+}: ViewProps) {
   const galleryField = view.gallery_field;
   const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
   const fieldMap = fieldsByName(schema);
@@ -1301,7 +1478,14 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody }: ViewProp
                 {formatValue(row[galleryField])}
               </html.span>
             )}
-            <CardBody row={row} fields={fields} fieldMap={fieldMap} hideTitle={!!galleryField} />
+            <CardBody
+              row={row}
+              fields={fields}
+              fieldMap={fieldMap}
+              relatedTables={relatedTables}
+              onOpenRelation={onOpenRelation}
+              hideTitle={!!galleryField}
+            />
             {excerpt && (
               hasBody && onOpenBody ? (
                 <html.button
@@ -1328,6 +1512,8 @@ export function ListView({
   bodies,
   onOpenBody,
   onUpdateView,
+  relatedTables,
+  onOpenRelation,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
@@ -1433,7 +1619,12 @@ export function ListView({
           </html.span>
           {secondaryFields.map((name) => (
             <html.span key={name} style={styles.listItemSecondary}>
-              <CellValue field={fieldMap.get(name)} value={row[name]} />
+              <CellValue
+                field={fieldMap.get(name)}
+                value={row[name]}
+                relatedTables={relatedTables}
+                onOpenRelation={onOpenRelation}
+              />
             </html.span>
           ))}
         </html.div>
@@ -1687,9 +1878,11 @@ interface CardProps {
   row: Row;
   fields: string[];
   fieldMap: Map<string, Field>;
+  relatedTables?: Record<string, ParsedTable>;
+  onOpenRelation?: (address: string) => void;
 }
 
-function Card({ row, fields, fieldMap }: CardProps) {
+function Card({ row, fields, fieldMap, relatedTables, onOpenRelation }: CardProps) {
   const titleField = fields[0];
   const restFields = fields.slice(1);
   return (
@@ -1697,7 +1890,14 @@ function Card({ row, fields, fieldMap }: CardProps) {
       {titleField && (
         <html.span style={styles.cardTitle}>{formatValue(row[titleField])}</html.span>
       )}
-      <CardBody row={row} fields={restFields} fieldMap={fieldMap} hideTitle />
+      <CardBody
+        row={row}
+        fields={restFields}
+        fieldMap={fieldMap}
+        relatedTables={relatedTables}
+        onOpenRelation={onOpenRelation}
+        hideTitle
+      />
     </html.div>
   );
 }
@@ -1706,6 +1906,8 @@ function CardBody({
   row,
   fields,
   fieldMap,
+  relatedTables,
+  onOpenRelation,
 }: CardProps & { hideTitle?: boolean }) {
   return (
     <>
@@ -1713,7 +1915,12 @@ function CardBody({
         <html.div key={name} style={styles.cardField}>
           <html.span style={styles.cardFieldLabel}>{name}</html.span>
           <html.span style={styles.cardFieldValue}>
-            <CellValue field={fieldMap.get(name)} value={row[name]} />
+            <CellValue
+              field={fieldMap.get(name)}
+              value={row[name]}
+              relatedTables={relatedTables}
+              onOpenRelation={onOpenRelation}
+            />
           </html.span>
         </html.div>
       ))}
