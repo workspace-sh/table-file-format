@@ -1454,6 +1454,17 @@ export function BoardView({
                       }
                     : undefined
                 }
+                // Belt-and-suspenders release: RN-macOS dispatches
+                // mouseUp / pointerUp to the View that received the
+                // press-down (mouse capture), and apparently doesn't
+                // bubble synthetic events up through deep nesting
+                // (root → column → card-wrapper) to our root handler.
+                // List rows are direct root children so the bubble
+                // works there; cards aren't, so we catch the release
+                // on the press-target itself.
+                onMouseUp={canDrag ? endDrag : undefined}
+                onPointerUp={canDrag ? endDrag : undefined}
+                onPointerCancel={canDrag ? endDrag : undefined}
                 style={[
                   styles.boardCardWrapper,
                   canDrag && styles.draggableHandle,
