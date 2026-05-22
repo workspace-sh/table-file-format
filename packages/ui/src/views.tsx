@@ -1069,9 +1069,15 @@ function useDragPointer(active: boolean) {
     if (c) setPos(c);
   };
 
+  // Bind every event flavor we can — RSD drops onMouseMove on native
+  // and RN-macOS appears to swallow mouseUp at the end of a press-drag.
+  // Pointer events on RSD ARE wired through and may fire on macOS now
+  // that the unrelated Modal crash is fixed. State updates are
+  // idempotent so duplicate firing on web is harmless.
   const dragProps = {
     onMouseMove: handleMove,
     onTouchMove: handleMove,
+    onPointerMove: handleMove,
   };
 
   return { pos, dragProps };
@@ -1382,6 +1388,12 @@ export function BoardView({
       {...boardDragProps}
       onMouseUp={canDrag ? endDrag : undefined}
       onTouchEnd={canDrag ? endDrag : undefined}
+      // RN-macOS appears to swallow onMouseUp at the end of a press-
+      // drag (it fires for fresh clicks but not for release after a
+      // drag). Pointer events seem to fire reliably on release; cancel
+      // covers the gesture-system-canceled case.
+      onPointerUp={canDrag ? endDrag : undefined}
+      onPointerCancel={canDrag ? endDrag : undefined}
     >
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
@@ -1389,13 +1401,21 @@ export function BoardView({
           <html.div
             key={key}
             {...(canDrag ? registerColumn(key) : {})}
-            // onMouseEnter is the reliable hover-detect path on macOS
-            // (mouse) and on web (mouse). RSD doesn't wire onMouseMove
-            // through to the native View, so root-level pointer
-            // tracking doesn't fire on macOS during a drag — but
-            // per-element enter events do. Touch drags on iOS still
-            // route through the root onTouchMove + hitTest path.
+            // Per-element enter handlers — RSD drops onMouseMove on
+            // native, so root-level pointer tracking is dead on
+            // macOS. Enter events DO fire on element boundaries
+            // during a press-drag. Bind both flavors: pointerEnter
+            // works on web for mouse+touch and (we hope) on RN-macOS;
+            // mouseEnter is the proven macOS fallback. Touch on iOS
+            // still goes through the root onTouchMove + hitTest path.
             onMouseEnter={
+              canDrag
+                ? () => {
+                    if (draggedRowId) setHoveredColumn(key);
+                  }
+                : undefined
+            }
+            onPointerEnter={
               canDrag
                 ? () => {
                     if (draggedRowId) setHoveredColumn(key);
@@ -1659,6 +1679,8 @@ export function ListView({
       {...listDragProps}
       onMouseUp={canDrag ? endDrag : undefined}
       onTouchEnd={canDrag ? endDrag : undefined}
+      onPointerUp={canDrag ? endDrag : undefined}
+      onPointerCancel={canDrag ? endDrag : undefined}
     >
       {displayRows.map((row, i) => (
         <html.div
@@ -1680,11 +1702,17 @@ export function ListView({
                 }
               : undefined
           }
-          // Per-row enter handler — see Board's column comment. macOS
-          // mouse drags rely on this because RSD doesn't pass
-          // onMouseMove through to the native View, so the root-level
-          // move + hit-test path is dead on macOS.
+          // Per-row enter handler — see Board's column comment.
           onMouseEnter={
+            canDrag
+              ? () => {
+                  if (draggedRowId && draggedRowId !== row.id) {
+                    setPreviewOrder(computePreviewOrder(row.id));
+                  }
+                }
+              : undefined
+          }
+          onPointerEnter={
             canDrag
               ? () => {
                   if (draggedRowId && draggedRowId !== row.id) {
