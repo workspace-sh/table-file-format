@@ -14,6 +14,7 @@ import type {
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
+import { useDropTargets } from "./internal/useDropTargets";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -1281,6 +1282,22 @@ export function BoardView({
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
   const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
+  const { register: registerColumn, hitTest } = useDropTargets<string>();
+
+  // Wrap useDragPointer's pointermove with hit-testing. Replaces the
+  // per-column onPointerEnter/onPointerLeave handlers, which RN
+  // doesn't fire during a touch drag (those are hover events). Same
+  // code now drives column highlighting on web and native.
+  const boardDragProps = {
+    onPointerMove: (e: { clientX?: number; clientY?: number; nativeEvent?: { pageX?: number; pageY?: number } }) => {
+      dragProps.onPointerMove(e);
+      if (!draggedRowId) return;
+      const x = typeof e.clientX === "number" ? e.clientX : (e.nativeEvent?.pageX ?? 0);
+      const y = typeof e.clientY === "number" ? e.clientY : (e.nativeEvent?.pageY ?? 0);
+      const next = hitTest(x, y);
+      setHoveredColumn((prev) => (prev === next ? prev : next));
+    },
+  };
 
   // Live preview: while dragging, render groups as if the dragged row
   // were already in the hovered column. The actual mutation only commits
@@ -1308,29 +1325,20 @@ export function BoardView({
       })()
     : Object.keys(groups);
 
-  // Cancel drag if the pointer is released anywhere over the board root
-  // (a column / card / gap between columns — all bubble up here). Pre-
-  // viously this was a document-level pointerup listener; that doesn't
-  // exist on RN. Per-column onPointerUp still fires for actual drops
-  // (event hits the column first, runs `drop(key)`).
-  const cancelDrag = () => {
-    setDraggedRowId(null);
-    setHoveredColumn(null);
-  };
-
-  const drop = (columnKey: string) => {
-    if (!draggedRowId || !onUpdateRow) {
-      setDraggedRowId(null);
-      setHoveredColumn(null);
-      return;
-    }
-    const row = rows.find((r) => r.id === draggedRowId);
-    if (row && row[groupField] !== columnKey) {
-      onUpdateRow(
-        draggedRowId,
-        groupField,
-        columnKey === "(empty)" ? null : columnKey,
-      );
+  // Single drop-commit path. Fires from the root onPointerUp using the
+  // last-known hoveredColumn (computed via hit-testing in onPointerMove).
+  // Previously per-column onPointerUp was responsible — fine on web but
+  // unreliable on touch when the finger lifts in a gap between columns.
+  const endDrag = () => {
+    if (draggedRowId && hoveredColumn && onUpdateRow) {
+      const row = rows.find((r) => r.id === draggedRowId);
+      if (row && row[groupField] !== hoveredColumn) {
+        onUpdateRow(
+          draggedRowId,
+          groupField,
+          hoveredColumn === "(empty)" ? null : hoveredColumn,
+        );
+      }
     }
     setDraggedRowId(null);
     setHoveredColumn(null);
@@ -1339,37 +1347,19 @@ export function BoardView({
   return (
     <html.div
       style={styles.board}
-      {...dragProps}
-      onPointerUp={canDrag ? cancelDrag : undefined}
+      {...boardDragProps}
+      onPointerUp={canDrag ? endDrag : undefined}
     >
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
         return (
           <html.div
             key={key}
+            {...(canDrag ? registerColumn(key) : {})}
             style={[
               styles.boardColumn,
               hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
             ]}
-            onPointerEnter={
-              canDrag
-                ? () => {
-                    if (draggedRowId) setHoveredColumn(key);
-                  }
-                : undefined
-            }
-            onPointerLeave={
-              canDrag
-                ? () => setHoveredColumn((prev) => (prev === key ? null : prev))
-                : undefined
-            }
-            onPointerUp={
-              canDrag
-                ? () => {
-                    if (draggedRowId) drop(key);
-                  }
-                : undefined
-            }
           >
             <html.div style={styles.boardColumnHeader}>
               <html.span>{key}</html.span>
@@ -1523,6 +1513,7 @@ export function ListView({
   const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
   const canDrag = !!onUpdateView;
   const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
+  const { register: registerRow, hitTest } = useDropTargets<string>();
 
   // Live reorder preview: while dragging, rebuild the visible order so
   // the dragged row physically appears in its hover-target position. The
@@ -1544,16 +1535,6 @@ export function ListView({
       })()
     : rows;
 
-  // Cancel drag if the pointer is released anywhere over the list root
-  // (gaps between rows, etc). Per-row onPointerUp still fires the
-  // commit (`commitDrop`) because the event hits the row first.
-  // Replaces a previous document-level pointerup listener that didn't
-  // exist on RN.
-  const cancelDrag = () => {
-    setDraggedRowId(null);
-    setPreviewOrder(null);
-  };
-
   const computePreviewOrder = (targetRowId: string): string[] => {
     if (!draggedRowId) return rows.map((r) => r.id);
     const ids = rows.map((r) => r.id);
@@ -1566,13 +1547,41 @@ export function ListView({
     return next;
   };
 
-  const commitDrop = () => {
-    if (!draggedRowId || !onUpdateView || !previewOrder) {
-      setDraggedRowId(null);
-      setPreviewOrder(null);
-      return;
+  // Wrap useDragPointer's pointermove with hit-testing — replaces the
+  // per-row onPointerEnter that RN doesn't fire during a touch drag.
+  // Stale-rect risk: rows reorder mid-drag (previewOrder changes), so
+  // the cached rects must refresh. The native variant of useDropTargets
+  // listens for onLayout, which RN fires automatically after each
+  // reorder; the web variant reads rects synchronously at hit-test
+  // time, so it's always current. No manual invalidation needed.
+  const listDragProps = {
+    onPointerMove: (e: { clientX?: number; clientY?: number; nativeEvent?: { pageX?: number; pageY?: number } }) => {
+      dragProps.onPointerMove(e);
+      if (!draggedRowId) return;
+      const x = typeof e.clientX === "number" ? e.clientX : (e.nativeEvent?.pageX ?? 0);
+      const y = typeof e.clientY === "number" ? e.clientY : (e.nativeEvent?.pageY ?? 0);
+      const target = hitTest(x, y);
+      if (target && target !== draggedRowId) {
+        setPreviewOrder((prev) => {
+          const next = computePreviewOrder(target);
+          // Bail on no-op updates to avoid re-renders that churn the
+          // rect cache on native via onLayout cascades.
+          if (prev && prev.length === next.length && prev.every((id, i) => id === next[i])) {
+            return prev;
+          }
+          return next;
+        });
+      }
+    },
+  };
+
+  // Root-level commit. Drops the dragged row at the last previewed
+  // position. Previously per-row onPointerUp committed; that's fine on
+  // web but unreliable on touch when the finger lifts in row-gap space.
+  const endDrag = () => {
+    if (draggedRowId && onUpdateView && previewOrder) {
+      onUpdateView({ order: previewOrder });
     }
-    onUpdateView({ order: previewOrder });
     setDraggedRowId(null);
     setPreviewOrder(null);
   };
@@ -1580,12 +1589,13 @@ export function ListView({
   return (
     <html.div
       style={styles.list}
-      {...dragProps}
-      onPointerUp={canDrag ? cancelDrag : undefined}
+      {...listDragProps}
+      onPointerUp={canDrag ? endDrag : undefined}
     >
       {displayRows.map((row, i) => (
         <html.div
           key={row.id}
+          {...(canDrag ? registerRow(row.id) : {})}
           onPointerDown={
             canDrag
               ? () => {
@@ -1594,16 +1604,6 @@ export function ListView({
                 }
               : undefined
           }
-          onPointerEnter={
-            canDrag
-              ? () => {
-                  if (draggedRowId && draggedRowId !== row.id) {
-                    setPreviewOrder(computePreviewOrder(row.id));
-                  }
-                }
-              : undefined
-          }
-          onPointerUp={canDrag ? () => commitDrop() : undefined}
           style={[
             styles.listItem,
             i === displayRows.length - 1 && styles.listItemLast,
