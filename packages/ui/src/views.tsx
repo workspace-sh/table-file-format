@@ -1282,7 +1282,11 @@ export function BoardView({
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const canDrag = !!onUpdateRow;
   const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
-  const { register: registerColumn, hitTest } = useDropTargets<string>();
+  const {
+    register: registerColumn,
+    hitTest,
+    remeasure: remeasureColumns,
+  } = useDropTargets<string>();
 
   // Wrap useDragPointer's pointermove with hit-testing. Replaces the
   // per-column onPointerEnter/onPointerLeave handlers, which RN
@@ -1373,6 +1377,9 @@ export function BoardView({
                     ? () => {
                         setDraggedRowId(row.id);
                         setHoveredColumn(key);
+                        // Populate the rect cache before the first
+                        // pointermove fires (no-op on web).
+                        remeasureColumns();
                       }
                     : undefined
                 }
@@ -1513,7 +1520,18 @@ export function ListView({
   const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
   const canDrag = !!onUpdateView;
   const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
-  const { register: registerRow, hitTest } = useDropTargets<string>();
+  const {
+    register: registerRow,
+    hitTest,
+    remeasure: remeasureRows,
+  } = useDropTargets<string>();
+
+  // After each previewOrder change, rows have shifted in layout and
+  // their cached rects are stale on native. Re-measure on next tick
+  // (post-layout). No-op on web.
+  useEffect(() => {
+    if (previewOrder) remeasureRows();
+  }, [previewOrder, remeasureRows]);
 
   // Live reorder preview: while dragging, rebuild the visible order so
   // the dragged row physically appears in its hover-target position. The

@@ -27,6 +27,12 @@ export interface DropTargetRegistration {
 export interface DropTargets<K> {
   register: (key: K) => DropTargetRegistration;
   hitTest: (x: number, y: number) => K | null;
+  /**
+   * No-op on web — `hitTest` reads `getBoundingClientRect()` lazily,
+   * so rects are always current. Exists for API parity with the
+   * native variant, which has to explicitly re-measure.
+   */
+  remeasure: (key?: K) => void;
 }
 
 export function useDropTargets<K>(): DropTargets<K> {
@@ -57,5 +63,9 @@ export function useDropTargets<K>(): DropTargets<K> {
     return null;
   }, []);
 
-  return { register, hitTest };
+  // No-op on web — see interface doc. Reading rects lazily means
+  // they're always fresh, so there's nothing to invalidate.
+  const remeasure = useCallback((_key?: K) => {}, []);
+
+  return { register, hitTest, remeasure };
 }
