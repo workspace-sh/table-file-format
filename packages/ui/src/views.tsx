@@ -1184,7 +1184,13 @@ export function TableView({
                 }}
                 style={[
                   styles.headerCellButton,
-                  field?.deprecated && styles.headerCellDeprecated,
+                  // `field?.deprecated` is `undefined` when field is
+                  // unknown OR deprecated isn't set — and `undefined`
+                  // inside an RSD style array crashes the native
+                  // flattener with "length of undefined". Coerce to
+                  // boolean so the array only ever contains styles or
+                  // `false`, which RSD handles fine.
+                  !!field?.deprecated && styles.headerCellDeprecated,
                   headerAlignStyle(align),
                 ]}
               >
