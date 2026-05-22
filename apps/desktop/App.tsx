@@ -14,6 +14,7 @@ import {
   CalendarView,
   GalleryView,
   ListView,
+  PortalHost,
   TableView,
 } from "@workspace.sh/table-ui";
 
@@ -294,8 +295,9 @@ export default function App() {
   const errors = validate(table.schema, table.rows);
 
   return (
-    <html.div style={styles.root}>
-      <html.div style={styles.content}>
+    <PortalHost>
+      <html.div style={styles.root}>
+        <html.div style={styles.content}>
         <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
         <html.span style={styles.subtitle}>
           {visibleRows.length} of {table.rows.length} rows ·{" "}
@@ -331,15 +333,16 @@ export default function App() {
           onUpdateView: updateActiveView,
         })}
       </html.div>
-      {activeBodyRowId && (
-        <BodyEditor
-          rowId={activeBodyRowId}
-          rowTitle={rowTitleFor(table, activeBodyRowId)}
-          content={table.bodies?.[activeBodyRowId] ?? ""}
-          onSave={(content) => updateBody(activeBodyRowId, content)}
-          onClose={closeBody}
-        />
-      )}
-    </html.div>
+        {activeBodyRowId && (
+          <BodyEditor
+            rowId={activeBodyRowId}
+            rowTitle={rowTitleFor(table, activeBodyRowId)}
+            content={table.bodies?.[activeBodyRowId] ?? ""}
+            onSave={(content) => updateBody(activeBodyRowId, content)}
+            onClose={closeBody}
+          />
+        )}
+      </html.div>
+    </PortalHost>
   );
 }
