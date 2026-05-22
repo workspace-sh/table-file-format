@@ -1389,6 +1389,19 @@ export function BoardView({
           <html.div
             key={key}
             {...(canDrag ? registerColumn(key) : {})}
+            // onMouseEnter is the reliable hover-detect path on macOS
+            // (mouse) and on web (mouse). RSD doesn't wire onMouseMove
+            // through to the native View, so root-level pointer
+            // tracking doesn't fire on macOS during a drag — but
+            // per-element enter events do. Touch drags on iOS still
+            // route through the root onTouchMove + hitTest path.
+            onMouseEnter={
+              canDrag
+                ? () => {
+                    if (draggedRowId) setHoveredColumn(key);
+                  }
+                : undefined
+            }
             style={[
               styles.boardColumn,
               hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
@@ -1664,6 +1677,19 @@ export function ListView({
               ? () => {
                   setDraggedRowId(row.id);
                   setPreviewOrder(rows.map((r) => r.id));
+                }
+              : undefined
+          }
+          // Per-row enter handler — see Board's column comment. macOS
+          // mouse drags rely on this because RSD doesn't pass
+          // onMouseMove through to the native View, so the root-level
+          // move + hit-test path is dead on macOS.
+          onMouseEnter={
+            canDrag
+              ? () => {
+                  if (draggedRowId && draggedRowId !== row.id) {
+                    setPreviewOrder(computePreviewOrder(row.id));
+                  }
                 }
               : undefined
           }
