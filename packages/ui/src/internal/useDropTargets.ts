@@ -68,10 +68,18 @@ export function useDropTargets<K>(): DropTargets<K> {
 
   const measureOne = useCallback((key: K) => {
     const node = nodes.current.get(key);
-    if (!node?.measureInWindow) return;
+    if (!node?.measureInWindow) {
+      // eslint-disable-next-line no-console
+      console.error(`[drag] measureOne ${String(key)} — no node or no measureInWindow`);
+      return;
+    }
     node.measureInWindow((x, y, width, height) => {
-      if (!nodes.current.has(key)) return; // unregistered while measuring
+      if (!nodes.current.has(key)) return;
       rects.current.set(key, { x, y, width, height });
+      // eslint-disable-next-line no-console
+      console.error(
+        `[drag] rect ${String(key)} = ${x},${y} ${width}x${height}`,
+      );
     });
   }, []);
 
