@@ -1451,6 +1451,8 @@ export function BoardView({
                 onPressIn={
                   canDrag
                     ? () => {
+                        // eslint-disable-next-line no-console
+                        console.error(`[drag] onPressIn row=${row.id} col=${key}`);
                         setDraggedRowId(row.id);
                         setHoveredColumn(key);
                         remeasureColumns();
@@ -1460,21 +1462,31 @@ export function BoardView({
                 onPressOut={
                   canDrag
                     ? (e: DragPressEvent) => {
-                        // Bypass the hoveredColumn-state path entirely
-                        // here — on native it doesn't update during
-                        // the press, so it'd be stale at release.
-                        // Use the release-position hit-test directly.
-                        const target = hitTest(
-                          e.nativeEvent.pageX,
-                          e.nativeEvent.pageY,
+                        const x = e?.nativeEvent?.pageX;
+                        const y = e?.nativeEvent?.pageY;
+                        // eslint-disable-next-line no-console
+                        console.error(
+                          `[drag] onPressOut row=${row.id} x=${x} y=${y}`,
                         );
+                        const target = hitTest(x, y);
+                        // eslint-disable-next-line no-console
+                        console.error(`[drag] hitTest=${target ?? "null"}`);
                         if (target && onUpdateRow) {
                           const source = rows.find((r) => r.id === row.id);
                           if (source && source[groupField] !== target) {
+                            // eslint-disable-next-line no-console
+                            console.error(
+                              `[drag] commit ${row.id}: ${String(source[groupField])} → ${target}`,
+                            );
                             onUpdateRow(
                               row.id,
                               groupField,
                               target === "(empty)" ? null : target,
+                            );
+                          } else {
+                            // eslint-disable-next-line no-console
+                            console.error(
+                              `[drag] no-op: source col=${String(source?.[groupField])} target=${target}`,
                             );
                           }
                         }
