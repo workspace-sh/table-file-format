@@ -8,42 +8,67 @@
  * table inside a sidebar layout where the container is narrower than
  * the viewport.
  *
- * Cost: one component re-render per resize / orientation change. The
- * width math at the call site is O(1) (e.g. `viewport / ncols`); this
- * just supplies the reactive input. Negligible at the row counts a
- * spike viewer ever shows.
- *
- * Returns `{ measureProps, width }`. Spread `measureProps` onto the
- * target element (e.g. `<html.div {...measureProps}>`); read `width`
- * for layout math. On native `measureProps` contains `onLayout` (RN's
- * standard primitive); on web it contains `ref` (ResizeObserver
- * driven). The consumer doesn't care which — it just spreads.
- *
- * Width is `0` until the first layout pass completes; consumers
- * should either guard (`width > 0 ? compute(width) : fallback`) or
- * render with a placeholder until measured.
+ * RSD's strict prop whitelist on native rejects `onLayout` (it's not
+ * one of the spec'd "web" event names), so we can't go through the
+ * usual RN layout-event channel. Instead: attach a ref to the html.div,
+ * call `measureInWindow` on attach to seed the first paint, then
+ * subscribe to `Dimensions` change events to catch window resizes /
+ * orientation changes. That covers the macOS-desktop case (the only
+ * way the container resizes is when the window does); finer-grained
+ * resize tracking (sidebar drag, etc) is deferred until we need it.
  */
-import { useCallback, useState } from "react";
-import type { LayoutChangeEvent } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Dimensions } from "react-native";
 
 export interface ContainerMeasurement {
   measureProps: {
-    ref?: (el: HTMLElement | null) => void;
-    onLayout?: (e: LayoutChangeEvent) => void;
+    ref?: (el: unknown) => void;
+    /** Unused on native; type parity with the web variant. */
+    onLayout?: (e: never) => void;
   };
   width: number;
 }
 
+interface MeasurableNode {
+  measureInWindow?: (
+    callback: (x: number, y: number, w: number, h: number) => void,
+  ) => void;
+}
+
 export function useContainerWidth(): ContainerMeasurement {
   const [width, setWidth] = useState(0);
-  const onLayout = useCallback((e: LayoutChangeEvent) => {
-    const w = e.nativeEvent.layout.width;
-    // Bail on idempotent updates so we don't trigger a React re-render
-    // every layout pass when the container hasn't actually resized.
-    setWidth((prev) => (prev === w ? prev : w));
+  const nodeRef = useRef<MeasurableNode | null>(null);
+
+  const measure = useCallback(() => {
+    const node = nodeRef.current;
+    if (!node?.measureInWindow) return;
+    node.measureInWindow((_x, _y, w) => {
+      if (typeof w !== "number") return;
+      setWidth((prev) => (prev === w ? prev : w));
+    });
   }, []);
-  return {
-    measureProps: { onLayout },
-    width,
-  };
+
+  const ref = useCallback(
+    (el: unknown) => {
+      nodeRef.current = (el ?? null) as MeasurableNode | null;
+      // `measureInWindow` returns 0×0 if called before layout commits.
+      // A short timeout pushes us past the first layout pass without
+      // requiring an onLayout subscription (which RSD won't pass
+      // through).
+      if (el) setTimeout(measure, 0);
+    },
+    [measure],
+  );
+
+  // Re-measure on window resize. Covers macOS-desktop window drag and
+  // mobile orientation change. The listener fires before layout, so we
+  // bounce via a microtask to read post-layout dimensions.
+  useEffect(() => {
+    const sub = Dimensions.addEventListener("change", () => {
+      setTimeout(measure, 0);
+    });
+    return () => sub.remove();
+  }, [measure]);
+
+  return { measureProps: { ref }, width };
 }

@@ -2,31 +2,28 @@
  * Native default — Metro resolves to this when no `.native.ts` exists.
  * Vite picks the `.web.ts` variant.
  *
- * Drag-and-drop drop-target registry for touch-driven drags. RN
- * doesn't fire `onPointerEnter` / `onPointerLeave` for a finger
- * sliding across views (those are hover events, mouse-only), so the
- * board / list views can't use per-target enter handlers to detect
- * which column / row the finger is currently over. This hook routes
- * detection through a single root-level `onPointerMove` instead:
+ * Drag-and-drop drop-target registry. The consuming view (Board, List)
+ * registers each candidate drop zone, then on pointer-move calls
+ * `hitTest(x, y)` to find which one the finger / mouse is over.
  *
- *   const { register, hitTest } = useDropTargets<string>();
- *   // root container's onPointerMove handler:
- *   const key = hitTest(x, y);
- *   // each drop target:
- *   <html.div {...register('column-1')}>
+ * Why this exists: per-target `onPointerEnter` / `onPointerLeave`
+ * works for mouse drags (web, macOS desktop) but not for touch drags
+ * on RN — those events are hover-only, mouse-only. Root-level
+ * pointermove + rect hit-test bridges both cases with one code path.
  *
- * On native we cache each target's screen-space rect via
- * `measureInWindow` triggered by `onLayout`. RN re-fires `onLayout`
- * whenever the layout engine repositions a view, so the cache stays
- * fresh through list reorders / column resizes without any manual
- * invalidation. `hitTest` reads the cached rects synchronously.
+ * RSD's strict prop whitelist rejects `onLayout`, so we can't observe
+ * layout passively. Instead the consumer calls `remeasure()` at the
+ * moments layout could have changed:
+ *   - on drag-start (initial population of the rect cache)
+ *   - after any state change that reorders targets (list reorder,
+ *     board column add)
  *
- * RN's pointer events expose screen-space coords via
- * `nativeEvent.pageX/pageY`, so callers compute the same coordinate
- * space we cache against.
+ * `measureInWindow` is callback-based but fast on macOS-desktop where
+ * native runs on the same thread. iOS routes through the bridge but
+ * the bursts here are small (≤ a few dozen targets) and only fire
+ * around layout commits.
  */
 import { useCallback, useRef } from "react";
-import type { LayoutChangeEvent } from "react-native";
 
 export interface DropTargetRect {
   x: number;
@@ -37,7 +34,8 @@ export interface DropTargetRect {
 
 export interface DropTargetRegistration {
   ref: (el: unknown) => void;
-  onLayout: (e: LayoutChangeEvent) => void;
+  /** Unused on native; shape parity with the web variant. */
+  onLayout?: (e: never) => void;
 }
 
 export interface DropTargets<K> {
@@ -45,6 +43,11 @@ export interface DropTargets<K> {
   register: (key: K) => DropTargetRegistration;
   /** Returns the key of the target containing (x, y), or null. */
   hitTest: (x: number, y: number) => K | null;
+  /**
+   * Re-measure all (or one) registered target. Call on drag-start and
+   * after layout-changing state updates.
+   */
+  remeasure: (key?: K) => void;
 }
 
 type MeasureCallback = (
@@ -59,25 +62,29 @@ interface MeasurableNode {
 }
 
 export function useDropTargets<K>(): DropTargets<K> {
-  // refs keep stable identity across renders; the consumer's
-  // `register('foo')` must return the SAME ref callback shape on
-  // every render or React would detach + re-attach the ref every
-  // render. We index by key into refs that are themselves stable
-  // closures (created lazily and memoised in `registrations`).
   const rects = useRef<Map<K, DropTargetRect>>(new Map());
   const nodes = useRef<Map<K, MeasurableNode>>(new Map());
   const registrations = useRef<Map<K, DropTargetRegistration>>(new Map());
 
-  const measure = useCallback((key: K) => {
+  const measureOne = useCallback((key: K) => {
     const node = nodes.current.get(key);
     if (!node?.measureInWindow) return;
     node.measureInWindow((x, y, width, height) => {
-      // `measureInWindow` fires async; bail if the node was unregistered
-      // before the callback ran.
-      if (!nodes.current.has(key)) return;
+      if (!nodes.current.has(key)) return; // unregistered while measuring
       rects.current.set(key, { x, y, width, height });
     });
   }, []);
+
+  const remeasure = useCallback(
+    (key?: K) => {
+      if (key !== undefined) {
+        measureOne(key);
+        return;
+      }
+      for (const k of nodes.current.keys()) measureOne(k);
+    },
+    [measureOne],
+  );
 
   const register = useCallback(
     (key: K): DropTargetRegistration => {
@@ -88,24 +95,20 @@ export function useDropTargets<K>(): DropTargets<K> {
         ref: (el) => {
           if (el) {
             nodes.current.set(key, el as MeasurableNode);
-            // Measure right after mount — onLayout fires too late on
-            // some platforms to seed the rect before the first drag.
-            measure(key);
+            // Initial measurement so first-hit-after-mount works even
+            // without an explicit remeasure call. Defer to next tick
+            // so layout has committed.
+            setTimeout(() => measureOne(key), 0);
           } else {
             nodes.current.delete(key);
             rects.current.delete(key);
           }
         },
-        onLayout: () => {
-          // `onLayout` gives parent-relative coords; we need
-          // screen-space. Re-measure via the node.
-          measure(key);
-        },
       };
       registrations.current.set(key, reg);
       return reg;
     },
-    [measure],
+    [measureOne],
   );
 
   const hitTest = useCallback((x: number, y: number): K | null => {
@@ -122,5 +125,5 @@ export function useDropTargets<K>(): DropTargets<K> {
     return null;
   }, []);
 
-  return { register, hitTest };
+  return { register, hitTest, remeasure };
 }
