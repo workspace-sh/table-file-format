@@ -31,6 +31,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useState,
 } from "react";
 import type { ReactNode } from "react";
@@ -76,8 +77,15 @@ export function PortalHost({ children }: { children: ReactNode }) {
     setSlots((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  // Stable context value — the inline `{ add, remove }` object was a
+  // new reference each host render, which made EVERY Portal consumer
+  // re-render on every host state update. That re-fired their effects,
+  // which called add() again, which set state, which re-rendered...
+  // useMemo with stable deps breaks the loop.
+  const api = useMemo(() => ({ add, remove }), [add, remove]);
+
   return (
-    <PortalHostContext.Provider value={{ add, remove }}>
+    <PortalHostContext.Provider value={api}>
       <html.div style={styles.host}>
         {children}
         {/* Slots render after the main tree so they paint on top in
