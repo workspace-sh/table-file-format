@@ -981,35 +981,67 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
 }
 
 /**
- * Drag session — tracks pointer viewport coords while a drag is active.
+ * Extract screen-space pointer coords from a mouse / touch / pointer
+ * event. Returns `null` for events with no usable coords.
  *
- * Cross-platform via RSD's whitelisted pointer events (`onPointerMove`
- * works on both web and RN). Returns `{ pos, dragProps }`:
- *   - `pos` — `{x, y}` viewport-relative pointer position, or `null`
- *     when not dragging
- *   - `dragProps` — props to spread onto the consumer's root container
- *     (a `<html.div>` wrapping the draggable area). Pointer-move events
- *     bubble up from children, so attaching the handler at the root
- *     captures all in-area movement without an overlay above the cells
- *     — which means per-cell `onPointerEnter` / `onPointerLeave` /
- *     `onPointerUp` handlers still fire for column-drop detection and
- *     hover styling.
+ * - Web mouse / pointer events: `clientX` / `clientY` are the viewport
+ *   coords we want.
+ * - Web touch events: nested under `touches[0].clientX/Y`.
+ * - RN mouse events: `nativeEvent.pageX/pageY` is screen-space.
+ * - RN touch events: `nativeEvent.touches[0].pageX/pageY`.
  *
- * Document-level `userSelect: none` and `getSelection().removeAllRanges()`
- * are kept but guarded so they're no-ops on RN (where `document` doesn't
- * exist and text selection isn't a concern during drag anyway).
+ * We try in that order. The `any` is acceptable because the event
+ * shape genuinely varies across platforms — typing it tightly would
+ * require N typed handlers per element, which would be loud.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pointerCoords(e: any): { x: number; y: number } | null {
+  if (typeof e?.clientX === "number" && typeof e?.clientY === "number") {
+    return { x: e.clientX, y: e.clientY };
+  }
+  if (e?.touches?.length > 0) {
+    const t = e.touches[0];
+    if (typeof t.clientX === "number" && typeof t.clientY === "number") {
+      return { x: t.clientX, y: t.clientY };
+    }
+  }
+  const ne = e?.nativeEvent;
+  if (typeof ne?.pageX === "number" && typeof ne?.pageY === "number") {
+    return { x: ne.pageX, y: ne.pageY };
+  }
+  if (ne?.touches?.length > 0) {
+    const t = ne.touches[0];
+    if (typeof t.pageX === "number" && typeof t.pageY === "number") {
+      return { x: t.pageX, y: t.pageY };
+    }
+  }
+  return null;
+}
+
+/**
+ * Drag session — tracks viewport coords while a drag is active.
+ *
+ * Why not pointer events? RSD whitelists them on native, but RN-macOS
+ * (and arguably other platforms) doesn't emit them for mouse input.
+ * Mouse events DO fire on macOS native and on web. Touch events fire
+ * on iOS / Android native and on web touch devices. So we listen for
+ * `onMouseMove` + `onTouchMove` together — guaranteed coverage across
+ * web + macOS + iOS + Android with no W3C-pointer-events dependency.
+ *
+ * On web both fire (mousemove for mouse, touchmove for touch). We
+ * don't bother de-duping — `setPos` is idempotent on the same coords
+ * and React bails on identical state.
+ *
+ * Document-level `userSelect: none` is web-only and guarded by
+ * `typeof document` so RN silently no-ops.
  */
 function useDragPointer(active: boolean) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
-  // Reset position when drag deactivates.
   useEffect(() => {
     if (!active) setPos(null);
   }, [active]);
 
-  // Web-only: disable text selection so dragging across cells doesn't
-  // highlight cell content. Guarded by `typeof document` so RN runtime
-  // (no `document.body.style`) silently no-ops.
   useEffect(() => {
     if (!active) return;
     if (typeof document === "undefined") return;
@@ -1030,24 +1062,16 @@ function useDragPointer(active: boolean) {
     };
   }, [active]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleMove = (e: any) => {
+    if (!active) return;
+    const c = pointerCoords(e);
+    if (c) setPos(c);
+  };
+
   const dragProps = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onPointerMove: (e: any) => {
-      if (!active) return;
-      // RSD's pointer events expose clientX/clientY on web; on RN the
-      // same property names are normalised by RSD's event wrapper. Fall
-      // back to nativeEvent.pageX/pageY for RN environments that don't
-      // normalise.
-      const x =
-        typeof e.clientX === "number"
-          ? e.clientX
-          : (e.nativeEvent?.pageX ?? 0);
-      const y =
-        typeof e.clientY === "number"
-          ? e.clientY
-          : (e.nativeEvent?.pageY ?? 0);
-      setPos({ x, y });
-    },
+    onMouseMove: handleMove,
+    onTouchMove: handleMove,
   };
 
   return { pos, dragProps };
@@ -1288,19 +1312,23 @@ export function BoardView({
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
 
-  // Wrap useDragPointer's pointermove with hit-testing. Replaces the
-  // per-column onPointerEnter/onPointerLeave handlers, which RN
-  // doesn't fire during a touch drag (those are hover events). Same
-  // code now drives column highlighting on web and native.
+  // Wrap useDragPointer's move handlers with hit-testing. Replaces the
+  // per-column onPointerEnter/onPointerLeave — those are hover events
+  // and don't fire during a touch drag on RN. Also: pointer events
+  // themselves don't fire on RN-macOS for mouse input, so we use
+  // mouse + touch events throughout (covers web + macOS + iOS).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleBoardMove = (e: any) => {
+    dragProps.onMouseMove(e);
+    if (!draggedRowId) return;
+    const c = pointerCoords(e);
+    if (!c) return;
+    const next = hitTest(c.x, c.y);
+    setHoveredColumn((prev) => (prev === next ? prev : next));
+  };
   const boardDragProps = {
-    onPointerMove: (e: { clientX?: number; clientY?: number; nativeEvent?: { pageX?: number; pageY?: number } }) => {
-      dragProps.onPointerMove(e);
-      if (!draggedRowId) return;
-      const x = typeof e.clientX === "number" ? e.clientX : (e.nativeEvent?.pageX ?? 0);
-      const y = typeof e.clientY === "number" ? e.clientY : (e.nativeEvent?.pageY ?? 0);
-      const next = hitTest(x, y);
-      setHoveredColumn((prev) => (prev === next ? prev : next));
-    },
+    onMouseMove: handleBoardMove,
+    onTouchMove: handleBoardMove,
   };
 
   // Live preview: while dragging, render groups as if the dragged row
@@ -1352,7 +1380,8 @@ export function BoardView({
     <html.div
       style={styles.board}
       {...boardDragProps}
-      onPointerUp={canDrag ? endDrag : undefined}
+      onMouseUp={canDrag ? endDrag : undefined}
+      onTouchEnd={canDrag ? endDrag : undefined}
     >
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
@@ -1372,13 +1401,22 @@ export function BoardView({
             {groupRows.map((row) => (
               <html.div
                 key={row.id}
-                onPointerDown={
+                onMouseDown={
                   canDrag
                     ? () => {
                         setDraggedRowId(row.id);
                         setHoveredColumn(key);
                         // Populate the rect cache before the first
-                        // pointermove fires (no-op on web).
+                        // move fires (no-op on web).
+                        remeasureColumns();
+                      }
+                    : undefined
+                }
+                onTouchStart={
+                  canDrag
+                    ? () => {
+                        setDraggedRowId(row.id);
+                        setHoveredColumn(key);
                         remeasureColumns();
                       }
                     : undefined
@@ -1565,32 +1603,30 @@ export function ListView({
     return next;
   };
 
-  // Wrap useDragPointer's pointermove with hit-testing — replaces the
-  // per-row onPointerEnter that RN doesn't fire during a touch drag.
-  // Stale-rect risk: rows reorder mid-drag (previewOrder changes), so
-  // the cached rects must refresh. The native variant of useDropTargets
-  // listens for onLayout, which RN fires automatically after each
-  // reorder; the web variant reads rects synchronously at hit-test
-  // time, so it's always current. No manual invalidation needed.
+  // Move handler: tracks pointer and re-runs hit-test against the row
+  // registry. Same mouse + touch coverage rationale as BoardView.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleListMove = (e: any) => {
+    dragProps.onMouseMove(e);
+    if (!draggedRowId) return;
+    const c = pointerCoords(e);
+    if (!c) return;
+    const target = hitTest(c.x, c.y);
+    if (target && target !== draggedRowId) {
+      setPreviewOrder((prev) => {
+        const next = computePreviewOrder(target);
+        // Bail on no-op updates to avoid re-renders that churn the
+        // rect cache via the remeasure useEffect.
+        if (prev && prev.length === next.length && prev.every((id, i) => id === next[i])) {
+          return prev;
+        }
+        return next;
+      });
+    }
+  };
   const listDragProps = {
-    onPointerMove: (e: { clientX?: number; clientY?: number; nativeEvent?: { pageX?: number; pageY?: number } }) => {
-      dragProps.onPointerMove(e);
-      if (!draggedRowId) return;
-      const x = typeof e.clientX === "number" ? e.clientX : (e.nativeEvent?.pageX ?? 0);
-      const y = typeof e.clientY === "number" ? e.clientY : (e.nativeEvent?.pageY ?? 0);
-      const target = hitTest(x, y);
-      if (target && target !== draggedRowId) {
-        setPreviewOrder((prev) => {
-          const next = computePreviewOrder(target);
-          // Bail on no-op updates to avoid re-renders that churn the
-          // rect cache on native via onLayout cascades.
-          if (prev && prev.length === next.length && prev.every((id, i) => id === next[i])) {
-            return prev;
-          }
-          return next;
-        });
-      }
-    },
+    onMouseMove: handleListMove,
+    onTouchMove: handleListMove,
   };
 
   // Root-level commit. Drops the dragged row at the last previewed
@@ -1608,13 +1644,22 @@ export function ListView({
     <html.div
       style={styles.list}
       {...listDragProps}
-      onPointerUp={canDrag ? endDrag : undefined}
+      onMouseUp={canDrag ? endDrag : undefined}
+      onTouchEnd={canDrag ? endDrag : undefined}
     >
       {displayRows.map((row, i) => (
         <html.div
           key={row.id}
           {...(canDrag ? registerRow(row.id) : {})}
-          onPointerDown={
+          onMouseDown={
+            canDrag
+              ? () => {
+                  setDraggedRowId(row.id);
+                  setPreviewOrder(rows.map((r) => r.id));
+                }
+              : undefined
+          }
+          onTouchStart={
             canDrag
               ? () => {
                   setDraggedRowId(row.id);
