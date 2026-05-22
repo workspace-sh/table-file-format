@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
+import { DragPressable, type DragPressEvent } from "./internal/DragPressable";
 import { Portal } from "./internal/Portal";
 import { applyGroup, effectiveAlign, formatAddress } from "@workspace.sh/table-core";
 import type {
@@ -1432,20 +1433,22 @@ export function BoardView({
               <html.span style={styles.boardCount}>{groupRows.length}</html.span>
             </html.div>
             {groupRows.map((row) => (
-              <html.div
+              // DragPressable wraps the card. On native this routes
+              // press start / end through RN's responder system —
+              // critical on RN-macOS where synthetic mouseUp doesn't
+              // fire at the end of a press-drag. On web the wrapper
+              // is an html.div with mouseDown/Up + touchStart/End.
+              //
+              // Hit-test on release: during a press-drag on macOS,
+              // synthetic events (mouseMove, mouseEnter) don't fire,
+              // so we can't track hover live. Instead we read the
+              // cursor's position from onPressOut and look up which
+              // column it's over. No live preview on macOS, but the
+              // drop lands correctly. Web still gets live preview via
+              // the column's onMouseEnter handler (fires normally).
+              <DragPressable
                 key={row.id}
-                onMouseDown={
-                  canDrag
-                    ? () => {
-                        setDraggedRowId(row.id);
-                        setHoveredColumn(key);
-                        // Populate the rect cache before the first
-                        // move fires (no-op on web).
-                        remeasureColumns();
-                      }
-                    : undefined
-                }
-                onTouchStart={
+                onPressIn={
                   canDrag
                     ? () => {
                         setDraggedRowId(row.id);
@@ -1454,31 +1457,51 @@ export function BoardView({
                       }
                     : undefined
                 }
-                // Belt-and-suspenders release: RN-macOS dispatches
-                // mouseUp / pointerUp to the View that received the
-                // press-down (mouse capture), and apparently doesn't
-                // bubble synthetic events up through deep nesting
-                // (root → column → card-wrapper) to our root handler.
-                // List rows are direct root children so the bubble
-                // works there; cards aren't, so we catch the release
-                // on the press-target itself.
-                onMouseUp={canDrag ? endDrag : undefined}
-                onPointerUp={canDrag ? endDrag : undefined}
-                onPointerCancel={canDrag ? endDrag : undefined}
-                style={[
-                  styles.boardCardWrapper,
-                  canDrag && styles.draggableHandle,
-                  draggedRowId === row.id && styles.cardDragging,
-                ]}
+                onPressOut={
+                  canDrag
+                    ? (e: DragPressEvent) => {
+                        // Bypass the hoveredColumn-state path entirely
+                        // here — on native it doesn't update during
+                        // the press, so it'd be stale at release.
+                        // Use the release-position hit-test directly.
+                        const target = hitTest(
+                          e.nativeEvent.pageX,
+                          e.nativeEvent.pageY,
+                        );
+                        if (target && onUpdateRow) {
+                          const source = rows.find((r) => r.id === row.id);
+                          if (source && source[groupField] !== target) {
+                            onUpdateRow(
+                              row.id,
+                              groupField,
+                              target === "(empty)" ? null : target,
+                            );
+                          }
+                        }
+                        setDraggedRowId(null);
+                        setHoveredColumn(null);
+                      }
+                    : undefined
+                }
               >
-                <Card
-                  row={row}
-                  fields={fields}
-                  fieldMap={fieldMap}
-                  relatedTables={relatedTables}
-                  onOpenRelation={onOpenRelation}
-                />
-              </html.div>
+                {/* Styles live on this inner div, not on the Pressable —
+                    RN's Pressable types stylex output as incompatible. */}
+                <html.div
+                  style={[
+                    styles.boardCardWrapper,
+                    canDrag && styles.draggableHandle,
+                    draggedRowId === row.id && styles.cardDragging,
+                  ]}
+                >
+                  <Card
+                    row={row}
+                    fields={fields}
+                    fieldMap={fieldMap}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                  />
+                </html.div>
+              </DragPressable>
             ))}
           </html.div>
         );
