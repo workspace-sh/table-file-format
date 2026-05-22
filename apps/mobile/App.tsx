@@ -13,6 +13,7 @@ import type {
 import { projectsTable } from "@workspace.sh/table-fixtures";
 import {
   BodyEditor,
+  PortalHost,
   BoardView,
   CalendarView,
   GalleryView,
@@ -325,6 +326,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <PortalHost>
       <html.div style={styles.root}>
         <Safe style={{ flex: 1 }}>
           <html.div style={styles.scroll}>
@@ -380,6 +382,7 @@ export default function App() {
           />
         )}
       </html.div>
+      </PortalHost>
     </SafeAreaProvider>
   );
 }
