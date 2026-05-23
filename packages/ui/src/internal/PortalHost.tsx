@@ -39,11 +39,17 @@ const PortalHostContext = createContext<PortalHostApi | null>(null);
 const styles = css.create({
   host: {
     display: "flex",
-    flex: 1,
-    // Establishes a containing block so portaled children using
-    // `position: absolute` size themselves against the host bounds
-    // (i.e. the whole app window).
-    position: "relative",
+    flexDirection: "column",
+    // Fill the parent without depending on the parent declaring
+    // `display: flex` (RSD warns when flex:1 lacks a flex parent).
+    // GestureHandlerRootView (native) has `flex: 1` but doesn't
+    // declare display:flex explicitly, which RSD doesn't accept;
+    // absolute-fill sidesteps that.
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
 

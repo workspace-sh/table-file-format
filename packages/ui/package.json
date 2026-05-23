@@ -19,13 +19,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace.sh/table-core": "file:../core",
-    "react-native-gesture-handler": "^2.31.2"
+    "@workspace.sh/table-core": "file:../core"
   },
   "peerDependencies": {
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0",
     "react-native": ">=0.81.0",
+    "react-native-gesture-handler": ">=2.0.0",
     "react-strict-dom": ">=0.0.55"
   },
   "peerDependenciesMeta": {
@@ -36,12 +36,17 @@
     "react-native": {
       "optional": true,
       "comment": "Only needed by native consumers — used by useViewportWidth on iOS/Android/macOS. Web consumers use the `.web.ts` variant which uses window.innerWidth. Vite's resolve.extensions resolves `.web.ts` ahead of `.ts` so RN is never reached on web."
+    },
+    "react-native-gesture-handler": {
+      "optional": true,
+      "comment": "Native-only — used by DragHandle.tsx for drag gesture recognition (PanResponder doesn't track motion continuously on RN-macOS). Web uses DragHandle.web.tsx with pointer events and doesn't need RNGH."
     }
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
     "react": "^19.2.0",
     "react-native": "0.81.5",
+    "react-native-gesture-handler": "^2.31.2",
     "react-strict-dom": "0.0.55",
     "typescript": "^5.4.0"
   }
