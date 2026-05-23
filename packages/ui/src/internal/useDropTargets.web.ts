@@ -43,14 +43,25 @@ export function useDropTargets<K>(): DropTargets<K> {
     return reg;
   }, []);
 
+  // Same nearest-with-tolerance logic as the native variant — keeps
+  // drops in the gap between drop zones (board's 12px column gap, list's
+  // border-bottom strip) from missing.
+  const HIT_SLOP = 16;
   const hitTest = useCallback((x: number, y: number): K | null => {
+    let nearestKey: K | null = null;
+    let nearestDist = HIT_SLOP;
     for (const [key, el] of elements.current) {
       const r = el.getBoundingClientRect();
-      if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
-        return key;
+      const dx = Math.max(r.left - x, 0, x - r.right);
+      const dy = Math.max(r.top - y, 0, y - r.bottom);
+      if (dx === 0 && dy === 0) return key;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= nearestDist) {
+        nearestDist = dist;
+        nearestKey = key;
       }
     }
-    return null;
+    return nearestKey;
   }, []);
 
   // No-op — reads are lazy, rects always current.
