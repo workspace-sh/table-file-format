@@ -14,6 +14,8 @@ import type {
 import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
+import { useDropTargets } from "./internal/useDropTargets";
+import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -980,79 +982,6 @@ function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
 }
 
 /**
- * Drag session — tracks pointer viewport coords while a drag is active.
- *
- * Cross-platform via RSD's whitelisted pointer events (`onPointerMove`
- * works on both web and RN). Returns `{ pos, dragProps }`:
- *   - `pos` — `{x, y}` viewport-relative pointer position, or `null`
- *     when not dragging
- *   - `dragProps` — props to spread onto the consumer's root container
- *     (a `<html.div>` wrapping the draggable area). Pointer-move events
- *     bubble up from children, so attaching the handler at the root
- *     captures all in-area movement without an overlay above the cells
- *     — which means per-cell `onPointerEnter` / `onPointerLeave` /
- *     `onPointerUp` handlers still fire for column-drop detection and
- *     hover styling.
- *
- * Document-level `userSelect: none` and `getSelection().removeAllRanges()`
- * are kept but guarded so they're no-ops on RN (where `document` doesn't
- * exist and text selection isn't a concern during drag anyway).
- */
-function useDragPointer(active: boolean) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-
-  // Reset position when drag deactivates.
-  useEffect(() => {
-    if (!active) setPos(null);
-  }, [active]);
-
-  // Web-only: disable text selection so dragging across cells doesn't
-  // highlight cell content. Guarded by `typeof document` so RN runtime
-  // (no `document.body.style`) silently no-ops.
-  useEffect(() => {
-    if (!active) return;
-    if (typeof document === "undefined") return;
-    const prevUserSelect = document.body.style.userSelect;
-    const prevWebkitUserSelect = (document.body.style as unknown as {
-      webkitUserSelect: string;
-    }).webkitUserSelect;
-    document.body.style.userSelect = "none";
-    (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
-      "none";
-    if (typeof window !== "undefined") {
-      window.getSelection()?.removeAllRanges();
-    }
-    return () => {
-      document.body.style.userSelect = prevUserSelect;
-      (document.body.style as unknown as { webkitUserSelect: string }).webkitUserSelect =
-        prevWebkitUserSelect;
-    };
-  }, [active]);
-
-  const dragProps = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onPointerMove: (e: any) => {
-      if (!active) return;
-      // RSD's pointer events expose clientX/clientY on web; on RN the
-      // same property names are normalised by RSD's event wrapper. Fall
-      // back to nativeEvent.pageX/pageY for RN environments that don't
-      // normalise.
-      const x =
-        typeof e.clientX === "number"
-          ? e.clientX
-          : (e.nativeEvent?.pageX ?? 0);
-      const y =
-        typeof e.clientY === "number"
-          ? e.clientY
-          : (e.nativeEvent?.pageY ?? 0);
-      setPos({ x, y });
-    },
-  };
-
-  return { pos, dragProps };
-}
-
-/**
  * Floating ghost that follows the pointer during drag. Rendered via the
  * cross-platform `Portal` so it escapes any clipping ancestor (e.g. the
  * table's rounded `overflow: hidden`).
@@ -1285,12 +1214,16 @@ export function BoardView({
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+  const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateRow;
-  const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
+  const {
+    register: registerColumn,
+    hitTest,
+    remeasure: remeasureColumns,
+  } = useDropTargets<string>();
 
-  // Live preview: while dragging, render groups as if the dragged row
-  // were already in the hovered column. The actual mutation only commits
-  // on pointerup via onUpdateRow.
+  // Live preview while dragging — show the dragged row in its hover
+  // column. Commit only fires on drop via onUpdateRow.
   const displayRows =
     draggedRowId && hoveredColumn
       ? rows.map((r) =>
@@ -1301,9 +1234,9 @@ export function BoardView({
       : rows;
   const groups = applyGroup(displayRows, groupField, schema);
 
-  // Persistent columns: when the group field has an enum constraint,
-  // show ALL enum values as columns (even when empty) so the user can
-  // drop cards into a column that currently has no rows.
+  // Persistent columns: when the group field has an enum, show ALL
+  // enum values (even empty ones) so the user can drop into a column
+  // with no rows.
   const columnKeys: string[] = enumValues
     ? (() => {
         const keys = [...enumValues];
@@ -1314,98 +1247,90 @@ export function BoardView({
       })()
     : Object.keys(groups);
 
-  // Cancel drag if the pointer is released anywhere over the board root
-  // (a column / card / gap between columns — all bubble up here). Pre-
-  // viously this was a document-level pointerup listener; that doesn't
-  // exist on RN. Per-column onPointerUp still fires for actual drops
-  // (event hits the column first, runs `drop(key)`).
-  const cancelDrag = () => {
-    setDraggedRowId(null);
-    setHoveredColumn(null);
-  };
-
-  const drop = (columnKey: string) => {
-    if (!draggedRowId || !onUpdateRow) {
-      setDraggedRowId(null);
-      setHoveredColumn(null);
-      return;
-    }
-    const row = rows.find((r) => r.id === draggedRowId);
-    if (row && row[groupField] !== columnKey) {
-      onUpdateRow(
-        draggedRowId,
-        groupField,
-        columnKey === "(empty)" ? null : columnKey,
-      );
-    }
-    setDraggedRowId(null);
-    setHoveredColumn(null);
-  };
-
   return (
-    <html.div
-      style={styles.board}
-      {...dragProps}
-      onPointerUp={canDrag ? cancelDrag : undefined}
-    >
+    <html.div style={styles.board}>
       {columnKeys.map((key) => {
         const groupRows = groups[key] ?? [];
+        // Register each column as a drop zone. The hook returns a ref
+        // callback that captures the underlying RN View / DOM element
+        // for hit-testing during drag.
+        const dropReg = canDrag ? registerColumn(key) : undefined;
         return (
           <html.div
             key={key}
+            ref={dropReg?.ref}
             style={[
               styles.boardColumn,
               hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
             ]}
-            onPointerEnter={
-              canDrag
-                ? () => {
-                    if (draggedRowId) setHoveredColumn(key);
-                  }
-                : undefined
-            }
-            onPointerLeave={
-              canDrag
-                ? () => setHoveredColumn((prev) => (prev === key ? null : prev))
-                : undefined
-            }
-            onPointerUp={
-              canDrag
-                ? () => {
-                    if (draggedRowId) drop(key);
-                  }
-                : undefined
-            }
           >
             <html.div style={styles.boardColumnHeader}>
               <html.span>{key}</html.span>
               <html.span style={styles.boardCount}>{groupRows.length}</html.span>
             </html.div>
             {groupRows.map((row) => (
-              <html.div
+              <DragHandle
                 key={row.id}
-                onPointerDown={
+                onDragStart={
                   canDrag
-                    ? () => {
+                    ? (e: DragEvent) => {
                         setDraggedRowId(row.id);
                         setHoveredColumn(key);
+                        setPointerPos({ x: e.pageX, y: e.pageY });
+                        // Refresh rect cache so the first hitTest
+                        // call has current column geometry.
+                        remeasureColumns();
                       }
                     : undefined
                 }
-                style={[
-                  styles.boardCardWrapper,
-                  canDrag && styles.draggableHandle,
-                  draggedRowId === row.id && styles.cardDragging,
-                ]}
+                onDragMove={
+                  canDrag
+                    ? (e: DragEvent) => {
+                        setPointerPos({ x: e.pageX, y: e.pageY });
+                        const hit = hitTest(e.pageX, e.pageY);
+                        setHoveredColumn((prev) => (prev === hit ? prev : hit));
+                      }
+                    : undefined
+                }
+                onDragEnd={
+                  canDrag
+                    ? (e: DragEvent) => {
+                        const target = hitTest(e.pageX, e.pageY);
+                        if (target && onUpdateRow) {
+                          const source = rows.find((r) => r.id === row.id);
+                          if (source && source[groupField] !== target) {
+                            onUpdateRow(
+                              row.id,
+                              groupField,
+                              target === "(empty)" ? null : target,
+                            );
+                          }
+                        }
+                        setDraggedRowId(null);
+                        setHoveredColumn(null);
+                        setPointerPos(null);
+                      }
+                    : undefined
+                }
               >
-                <Card
-                  row={row}
-                  fields={fields}
-                  fieldMap={fieldMap}
-                  relatedTables={relatedTables}
-                  onOpenRelation={onOpenRelation}
-                />
-              </html.div>
+                {/* Styles on inner html.div — DragHandle on native is
+                    an RN View that doesn't take stylex output. */}
+                <html.div
+                  style={[
+                    styles.boardCardWrapper,
+                    canDrag && styles.draggableHandle,
+                    draggedRowId === row.id && styles.cardDragging,
+                  ]}
+                >
+                  <Card
+                    row={row}
+                    fields={fields}
+                    fieldMap={fieldMap}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                  />
+                </html.div>
+              </DragHandle>
             ))}
           </html.div>
         );
@@ -1527,13 +1452,18 @@ export function ListView({
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
+  const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
-  const { pos: pointerPos, dragProps } = useDragPointer(!!draggedRowId);
+  const {
+    register: registerRow,
+    hitTest,
+    remeasure: remeasureRows,
+  } = useDropTargets<string>();
 
-  // Live reorder preview: while dragging, rebuild the visible order so
-  // the dragged row physically appears in its hover-target position. The
-  // preview is computed from the BASE rows (not the previous preview),
-  // so hovering A then B gives the same result as hovering B directly.
+  // Live reorder preview: rebuild visible order so the dragged row
+  // appears in its hover-target position. Computed from the BASE
+  // `rows` (not the previous preview) so hovering A then B gives the
+  // same result as hovering B directly.
   const displayRows: Row[] = previewOrder
     ? (() => {
         const byId = new Map(rows.map((r) => [r.id, r]));
@@ -1542,28 +1472,17 @@ export function ListView({
           const r = byId.get(id);
           if (r) ordered.push(r);
         }
-        // Any base rows not in previewOrder go at the end (shouldn't
-        // happen since preview is computed from all current ids, but
-        // safe).
         for (const r of rows) if (!previewOrder.includes(r.id)) ordered.push(r);
         return ordered;
       })()
     : rows;
 
-  // Cancel drag if the pointer is released anywhere over the list root
-  // (gaps between rows, etc). Per-row onPointerUp still fires the
-  // commit (`commitDrop`) because the event hits the row first.
-  // Replaces a previous document-level pointerup listener that didn't
-  // exist on RN.
-  const cancelDrag = () => {
-    setDraggedRowId(null);
-    setPreviewOrder(null);
-  };
-
-  const computePreviewOrder = (targetRowId: string): string[] => {
-    if (!draggedRowId) return rows.map((r) => r.id);
+  const computePreviewOrder = (
+    draggedId: string,
+    targetRowId: string,
+  ): string[] => {
     const ids = rows.map((r) => r.id);
-    const from = ids.indexOf(draggedRowId);
+    const from = ids.indexOf(draggedId);
     const to = ids.indexOf(targetRowId);
     if (from === -1 || to === -1) return ids;
     const next = [...ids];
@@ -1572,69 +1491,93 @@ export function ListView({
     return next;
   };
 
-  const commitDrop = () => {
-    if (!draggedRowId || !onUpdateView || !previewOrder) {
-      setDraggedRowId(null);
-      setPreviewOrder(null);
-      return;
-    }
-    onUpdateView({ order: previewOrder });
-    setDraggedRowId(null);
-    setPreviewOrder(null);
-  };
+  // After previewOrder changes, row rects shift; re-measure so the
+  // next hitTest reflects the new layout. RN doesn't fire layout
+  // events through RSD so we trigger this from the consumer side.
+  useEffect(() => {
+    if (previewOrder) remeasureRows();
+  }, [previewOrder, remeasureRows]);
 
   return (
-    <html.div
-      style={styles.list}
-      {...dragProps}
-      onPointerUp={canDrag ? cancelDrag : undefined}
-    >
-      {displayRows.map((row, i) => (
-        <html.div
-          key={row.id}
-          onPointerDown={
-            canDrag
-              ? () => {
-                  setDraggedRowId(row.id);
-                  setPreviewOrder(rows.map((r) => r.id));
-                }
-              : undefined
-          }
-          onPointerEnter={
-            canDrag
-              ? () => {
-                  if (draggedRowId && draggedRowId !== row.id) {
-                    setPreviewOrder(computePreviewOrder(row.id));
+    <html.div style={styles.list}>
+      {displayRows.map((row, i) => {
+        const dropReg = canDrag ? registerRow(row.id) : undefined;
+        return (
+          <DragHandle
+            key={row.id}
+            onDragStart={
+              canDrag
+                ? (e: DragEvent) => {
+                    setDraggedRowId(row.id);
+                    setPreviewOrder(rows.map((r) => r.id));
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    remeasureRows();
                   }
-                }
-              : undefined
-          }
-          onPointerUp={canDrag ? () => commitDrop() : undefined}
-          style={[
-            styles.listItem,
-            i === displayRows.length - 1 && styles.listItemLast,
-            canDrag && styles.draggableHandle,
-            draggedRowId === row.id && styles.listItemDragging,
-          ]}
-        >
-          <html.span style={styles.listItemTitle}>
-            {titleField ? formatValue(row[titleField]) : ""}
-            {bodies?.[row.id] ? (
-              <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-            ) : null}
-          </html.span>
-          {secondaryFields.map((name) => (
-            <html.span key={name} style={styles.listItemSecondary}>
-              <CellValue
-                field={fieldMap.get(name)}
-                value={row[name]}
-                relatedTables={relatedTables}
-                onOpenRelation={onOpenRelation}
-              />
-            </html.span>
-          ))}
-        </html.div>
-      ))}
+                : undefined
+            }
+            onDragMove={
+              canDrag
+                ? (e: DragEvent) => {
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    const target = hitTest(e.pageX, e.pageY);
+                    if (target && target !== row.id) {
+                      const next = computePreviewOrder(row.id, target);
+                      setPreviewOrder((prev) => {
+                        if (
+                          prev &&
+                          prev.length === next.length &&
+                          prev.every((id, j) => id === next[j])
+                        ) {
+                          return prev;
+                        }
+                        return next;
+                      });
+                    }
+                  }
+                : undefined
+            }
+            onDragEnd={
+              canDrag
+                ? () => {
+                    if (onUpdateView && previewOrder) {
+                      onUpdateView({ order: previewOrder });
+                    }
+                    setDraggedRowId(null);
+                    setPreviewOrder(null);
+                    setPointerPos(null);
+                  }
+                : undefined
+            }
+          >
+            <html.div
+              ref={dropReg?.ref}
+              style={[
+                styles.listItem,
+                i === displayRows.length - 1 && styles.listItemLast,
+                canDrag && styles.draggableHandle,
+                draggedRowId === row.id && styles.listItemDragging,
+              ]}
+            >
+              <html.span style={styles.listItemTitle}>
+                {titleField ? formatValue(row[titleField]) : ""}
+                {bodies?.[row.id] ? (
+                  <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+                ) : null}
+              </html.span>
+              {secondaryFields.map((name) => (
+                <html.span key={name} style={styles.listItemSecondary}>
+                  <CellValue
+                    field={fieldMap.get(name)}
+                    value={row[name]}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                  />
+                </html.span>
+              ))}
+            </html.div>
+          </DragHandle>
+        );
+      })}
       {draggedRowId &&
         (() => {
           const row = rows.find((r) => r.id === draggedRowId);

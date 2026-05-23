@@ -17,6 +17,7 @@ import {
   CalendarView,
   GalleryView,
   ListView,
+  PortalHost,
   TableView,
 } from "@workspace.sh/table-ui";
 
@@ -325,6 +326,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <PortalHost>
       <html.div style={styles.root}>
         <Safe style={{ flex: 1 }}>
           <html.div style={styles.scroll}>
@@ -380,6 +382,7 @@ export default function App() {
           />
         )}
       </html.div>
+      </PortalHost>
     </SafeAreaProvider>
   );
 }
