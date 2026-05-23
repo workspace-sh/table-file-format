@@ -54,10 +54,18 @@ export function useDropTargets<K>(): DropTargets<K> {
 
   const measureOne = useCallback((key: K) => {
     const node = nodes.current.get(key);
-    if (!node?.measureInWindow) return;
+    if (!node?.measureInWindow) {
+      // eslint-disable-next-line no-console
+      console.error(`[drop] ${String(key)}: no node or no measureInWindow`);
+      return;
+    }
     node.measureInWindow((x, y, width, height) => {
       if (!nodes.current.has(key)) return;
       rects.current.set(key, { x, y, width, height });
+      // eslint-disable-next-line no-console
+      console.error(
+        `[drop] rect ${String(key)} = ${x.toFixed(0)},${y.toFixed(0)} ${width.toFixed(0)}x${height.toFixed(0)}`,
+      );
     });
   }, []);
 
@@ -95,6 +103,7 @@ export function useDropTargets<K>(): DropTargets<K> {
     [measureOne],
   );
 
+  const hitTestCountRef = useRef(0);
   const hitTest = useCallback((x: number, y: number): K | null => {
     for (const [key, r] of rects.current) {
       if (
@@ -105,6 +114,13 @@ export function useDropTargets<K>(): DropTargets<K> {
       ) {
         return key;
       }
+    }
+    hitTestCountRef.current++;
+    if (hitTestCountRef.current === 1 || hitTestCountRef.current % 30 === 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[drop] hitTest miss #${hitTestCountRef.current} at ${x.toFixed(0)},${y.toFixed(0)} (rects: ${rects.current.size})`,
+      );
     }
     return null;
   }, []);
