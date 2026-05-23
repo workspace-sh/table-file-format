@@ -22,7 +22,7 @@
  * coords for hit-testing against drop-target rects (which also live
  * in screen-space via `measureInWindow`).
  */
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { PanResponder, View } from "react-native";
 
@@ -44,17 +44,21 @@ export function DragHandle({
   onDragMove,
   onDragEnd,
 }: DragHandleProps) {
+  const moveCountRef = useRef(0);
   const responder = useMemo(
     () =>
       PanResponder.create({
-        // Claim the gesture on press-down. `onStartShould...` runs
-        // when the user first touches; returning true makes this
-        // View the active responder, suppressing parent scroll
-        // interception for the duration of the press.
         onStartShouldSetPanResponder: () => true,
         onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
 
         onPanResponderGrant: (e) => {
+          moveCountRef.current = 0;
+          // eslint-disable-next-line no-console
+          console.error(
+            `[drag] Grant x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
+          );
           onDragStart?.({
             pageX: e.nativeEvent.pageX,
             pageY: e.nativeEvent.pageY,
@@ -62,32 +66,41 @@ export function DragHandle({
         },
 
         onPanResponderMove: (e) => {
+          moveCountRef.current++;
+          // Log first move + every 10th to avoid log flood.
+          if (moveCountRef.current === 1 || moveCountRef.current % 10 === 0) {
+            // eslint-disable-next-line no-console
+            console.error(
+              `[drag] Move #${moveCountRef.current} x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
+            );
+          }
           onDragMove?.({
             pageX: e.nativeEvent.pageX,
             pageY: e.nativeEvent.pageY,
           });
         },
 
-        // Both fire at gesture end. `Release` is the normal "user
-        // lifted finger / mouse"; `Terminate` is when something else
-        // claims the gesture (parent scroll, system interrupt). Treat
-        // both as end-of-drag — the consumer's onDragEnd is
-        // responsible for commit-or-cancel logic.
         onPanResponderRelease: (e) => {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[drag] Release (moves=${moveCountRef.current}) x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
+          );
           onDragEnd?.({
             pageX: e.nativeEvent.pageX,
             pageY: e.nativeEvent.pageY,
           });
         },
         onPanResponderTerminate: (e) => {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[drag] Terminate (moves=${moveCountRef.current}) x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
+          );
           onDragEnd?.({
             pageX: e.nativeEvent.pageX,
             pageY: e.nativeEvent.pageY,
           });
         },
 
-        // Don't surrender the gesture once granted — keeps the drag
-        // alive even if the user's finger crosses a scrollable parent.
         onPanResponderTerminationRequest: () => false,
       }),
     [onDragStart, onDragMove, onDragEnd],
