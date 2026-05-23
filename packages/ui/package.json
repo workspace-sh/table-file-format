@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace.sh/table-core": "file:../core"
+    "@workspace.sh/table-core": "file:../core",
+    "react-native-gesture-handler": "^2.31.2"
   },
   "peerDependencies": {
     "react": ">=19.0.0",

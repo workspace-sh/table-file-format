@@ -1,5 +1,9 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
+// Gesture handler root view enables RNGH's native gesture recognizers
+// for the entire subtree. Required once per app at the root.
+import "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { applyView, searchRows, validate } from "@workspace.sh/table-core";
 import type {
   Field,
@@ -295,9 +299,10 @@ export default function App() {
   const errors = validate(table.schema, table.rows);
 
   return (
-    <PortalHost>
-      <html.div style={styles.root}>
-        <html.div style={styles.content}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PortalHost>
+        <html.div style={styles.root}>
+          <html.div style={styles.content}>
         <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
         <html.span style={styles.subtitle}>
           {visibleRows.length} of {table.rows.length} rows ·{" "}
@@ -333,16 +338,17 @@ export default function App() {
           onUpdateView: updateActiveView,
         })}
       </html.div>
-        {activeBodyRowId && (
-          <BodyEditor
-            rowId={activeBodyRowId}
-            rowTitle={rowTitleFor(table, activeBodyRowId)}
-            content={table.bodies?.[activeBodyRowId] ?? ""}
-            onSave={(content) => updateBody(activeBodyRowId, content)}
-            onClose={closeBody}
-          />
-        )}
-      </html.div>
-    </PortalHost>
+          {activeBodyRowId && (
+            <BodyEditor
+              rowId={activeBodyRowId}
+              rowTitle={rowTitleFor(table, activeBodyRowId)}
+              content={table.bodies?.[activeBodyRowId] ?? ""}
+              onSave={(content) => updateBody(activeBodyRowId, content)}
+              onClose={closeBody}
+            />
+          )}
+        </html.div>
+      </PortalHost>
+    </GestureHandlerRootView>
   );
 }

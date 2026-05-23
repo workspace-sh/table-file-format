@@ -1,30 +1,31 @@
 /**
- * Native default — Metro resolves to this on iOS/Android/macOS.
+ * Native default — Metro on iOS / Android / macOS resolves to this.
  * Vite picks `.web.tsx`.
  *
- * Drag-source wrapper. We need a gesture mechanism that fires
- * onStart / onMove / onEnd reliably during a press-and-drag — and on
- * RN-macOS that rules out React's synthetic event tree (mouseUp /
- * pointerUp don't fire on drag-release, mouseMove isn't even wired
- * through by RSD, mouseEnter is hover-only). RN's responder system
- * (the native gesture coordinator) does fire those events reliably.
+ * Backed by `react-native-gesture-handler` instead of RN's built-in
+ * `PanResponder`. PanResponder uses the RN responder system which
+ * was designed for touch — its RN-macOS port only dispatches
+ * `onResponderMove` once per gesture (empirically confirmed via
+ * extensive logging), making continuous drag tracking impossible.
  *
- * `PanResponder` is the built-in entry point to the responder system.
- * No native module to link, no pod-install step. Works on iOS,
- * Android, macOS, and Windows.
+ * Gesture Handler has its own native gesture recognizers (UIKit on
+ * iOS, NSGestureRecognizer on macOS, GestureDetector on Android),
+ * dispatching continuous updates throughout the press-drag — which
+ * is exactly what we need for live drop-target hit-testing.
  *
- * The wrapper renders a plain RN `View` (not an RSD html.div) because
- * RSD doesn't expose responder-system event handlers in its strict
- * prop whitelist. Layout-wise a View is interchangeable with the
- * html.div it replaces (both render to RN-View on native).
+ * Setup requirement (one-time per app):
+ *   1. App roots are wrapped in `<GestureHandlerRootView>` (done in
+ *      apps/desktop/App.tsx and apps/mobile/App.tsx).
+ *   2. On iOS / macOS, `pod install` must be run after npm install
+ *      so the native module links into the build.
  *
- * Event payload normalised to `{ pageX, pageY }` — screen-space
- * coords for hit-testing against drop-target rects (which also live
- * in screen-space via `measureInWindow`).
+ * Event payload normalised to `{ pageX, pageY }` (screen-space) for
+ * parity with the web variant. RNGH calls these `absoluteX` /
+ * `absoluteY`.
  */
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
-import { PanResponder, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 export interface DragEvent {
   pageX: number;
@@ -44,67 +45,36 @@ export function DragHandle({
   onDragMove,
   onDragEnd,
 }: DragHandleProps) {
-  const moveCountRef = useRef(0);
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponderCapture: () => true,
-
-        onPanResponderGrant: (e) => {
-          moveCountRef.current = 0;
-          // eslint-disable-next-line no-console
-          console.error(
-            `[drag] Grant x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
-          );
-          onDragStart?.({
-            pageX: e.nativeEvent.pageX,
-            pageY: e.nativeEvent.pageY,
-          });
-        },
-
-        onPanResponderMove: (e) => {
-          moveCountRef.current++;
-          // Log first move + every 10th to avoid log flood.
-          if (moveCountRef.current === 1 || moveCountRef.current % 10 === 0) {
-            // eslint-disable-next-line no-console
-            console.error(
-              `[drag] Move #${moveCountRef.current} x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
-            );
+  const gesture = useMemo(() => {
+    return (
+      Gesture.Pan()
+        // Run callbacks on the JS thread, not as Reanimated worklets.
+        // State updates flow through React; no Reanimated dependency.
+        .runOnJS(true)
+        // Activate immediately on press, without a motion threshold.
+        // Default is ~10pt which would delay the visual lift.
+        .minDistance(0)
+        .onStart((e) => {
+          onDragStart?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        })
+        .onUpdate((e) => {
+          onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        })
+        .onEnd((e) => {
+          onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        })
+        // Fires for system-cancelled gestures (another recognizer
+        // wins). Treat as release so we don't leak drag state.
+        .onFinalize((e, success) => {
+          if (!success) {
+            onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
           }
-          onDragMove?.({
-            pageX: e.nativeEvent.pageX,
-            pageY: e.nativeEvent.pageY,
-          });
-        },
+        })
+    );
+  }, [onDragStart, onDragMove, onDragEnd]);
 
-        onPanResponderRelease: (e) => {
-          // eslint-disable-next-line no-console
-          console.error(
-            `[drag] Release (moves=${moveCountRef.current}) x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
-          );
-          onDragEnd?.({
-            pageX: e.nativeEvent.pageX,
-            pageY: e.nativeEvent.pageY,
-          });
-        },
-        onPanResponderTerminate: (e) => {
-          // eslint-disable-next-line no-console
-          console.error(
-            `[drag] Terminate (moves=${moveCountRef.current}) x=${e.nativeEvent.pageX} y=${e.nativeEvent.pageY}`,
-          );
-          onDragEnd?.({
-            pageX: e.nativeEvent.pageX,
-            pageY: e.nativeEvent.pageY,
-          });
-        },
-
-        onPanResponderTerminationRequest: () => false,
-      }),
-    [onDragStart, onDragMove, onDragEnd],
+  return (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <GestureDetector gesture={gesture}>{children as any}</GestureDetector>
   );
-
-  return <View {...responder.panHandlers}>{children}</View>;
 }

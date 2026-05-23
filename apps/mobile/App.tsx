@@ -3,6 +3,8 @@ import type { ComponentType, ReactNode } from "react";
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { applyView, searchRows, validate } from "@workspace.sh/table-core";
 import type {
   Field,
@@ -325,9 +327,10 @@ export default function App() {
   const errors = validate(table.schema, table.rows);
 
   return (
-    <SafeAreaProvider>
-      <PortalHost>
-      <html.div style={styles.root}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <PortalHost>
+          <html.div style={styles.root}>
         <Safe style={{ flex: 1 }}>
           <html.div style={styles.scroll}>
             <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
@@ -381,8 +384,9 @@ export default function App() {
             onClose={closeBody}
           />
         )}
-      </html.div>
-      </PortalHost>
-    </SafeAreaProvider>
+          </html.div>
+        </PortalHost>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

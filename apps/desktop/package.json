@@ -13,6 +13,7 @@
     "@workspace.sh/table-ui": "file:../../packages/ui",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-gesture-handler": "^2.31.2",
     "react-native-macos": "^0.81.7",
     "react-strict-dom": "0.0.55"
   },
