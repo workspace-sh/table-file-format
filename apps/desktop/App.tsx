@@ -1,5 +1,10 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
+import { ScrollView } from "react-native";
+// Gesture handler root view enables RNGH's native gesture recognizers
+// for the entire subtree. Required once per app at the root.
+import "react-native-gesture-handler";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { applyView, searchRows, validate } from "@workspace.sh/table-core";
 import type {
   Field,
@@ -14,6 +19,7 @@ import {
   CalendarView,
   GalleryView,
   ListView,
+  PortalHost,
   TableView,
 } from "@workspace.sh/table-ui";
 
@@ -294,8 +300,10 @@ export default function App() {
   const errors = validate(table.schema, table.rows);
 
   return (
-    <html.div style={styles.root}>
-      <html.div style={styles.content}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PortalHost>
+        <html.div style={styles.root}>
+          <html.div style={styles.content}>
         <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
         <html.span style={styles.subtitle}>
           {visibleRows.length} of {table.rows.length} rows ·{" "}
@@ -321,25 +329,33 @@ export default function App() {
           onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
           style={styles.searchInput}
         />
-        {renderView(view, table, visibleRows, {
-          onUpdateRow: updateRow,
-          onUpdateField: updateField,
-          onAddEnumValue: addEnumValue,
-          onMoveField: moveField,
-          onAddField: addField,
-          onOpenBody: openBody,
-          onUpdateView: updateActiveView,
-        })}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          showsVerticalScrollIndicator
+        >
+          {renderView(view, table, visibleRows, {
+            onUpdateRow: updateRow,
+            onUpdateField: updateField,
+            onAddEnumValue: addEnumValue,
+            onMoveField: moveField,
+            onAddField: addField,
+            onOpenBody: openBody,
+            onUpdateView: updateActiveView,
+          })}
+        </ScrollView>
       </html.div>
-      {activeBodyRowId && (
-        <BodyEditor
-          rowId={activeBodyRowId}
-          rowTitle={rowTitleFor(table, activeBodyRowId)}
-          content={table.bodies?.[activeBodyRowId] ?? ""}
-          onSave={(content) => updateBody(activeBodyRowId, content)}
-          onClose={closeBody}
-        />
-      )}
-    </html.div>
+          {activeBodyRowId && (
+            <BodyEditor
+              rowId={activeBodyRowId}
+              rowTitle={rowTitleFor(table, activeBodyRowId)}
+              content={table.bodies?.[activeBodyRowId] ?? ""}
+              onSave={(content) => updateBody(activeBodyRowId, content)}
+              onClose={closeBody}
+            />
+          )}
+        </html.div>
+      </PortalHost>
+    </GestureHandlerRootView>
   );
 }

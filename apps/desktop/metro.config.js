@@ -42,11 +42,25 @@ const config = {
       // otherwise match `react-strict-dom`, `react-native-safe-area-context`, etc.
       blockExact(path.resolve(workspaceRoot, "node_modules", "react")),
       blockExact(path.resolve(workspaceRoot, "node_modules", "react-native")),
+      // RNGH registers native view components at module-load time; a
+      // second copy of the JS module re-registers the same names and
+      // throws "Tried to register two views with the same name
+      // RNGestureHandlerButton". Force Metro to THIS app's copy.
+      blockExact(
+        path.resolve(workspaceRoot, "node_modules", "react-native-gesture-handler"),
+      ),
       // Per-package node_modules — workspace packages install react as a
       // devDep for typecheck. Block them so Metro walks past and lands on
       // THIS app's copy.
       blockExact(path.resolve(workspaceRoot, "packages/ui/node_modules", "react")),
       blockExact(path.resolve(workspaceRoot, "packages/core/node_modules", "react")),
+      blockExact(
+        path.resolve(
+          workspaceRoot,
+          "packages/ui/node_modules",
+          "react-native-gesture-handler",
+        ),
+      ),
     ],
     platforms: ["macos", "ios", "native"],
     unstable_enablePackageExports: true,

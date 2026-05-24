@@ -11,3 +11,4 @@ export {
   ADD_FIELD_COLUMN_WIDTH,
 } from "./SchemaEditor";
 export { BodyEditor } from "./BodyEditor";
+export { PortalHost } from "./internal/PortalHost";
