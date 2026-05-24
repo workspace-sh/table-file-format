@@ -25,6 +25,7 @@
  */
 import { useMemo } from "react";
 import type { ReactNode } from "react";
+import { View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 export interface DragEvent {
@@ -73,8 +74,18 @@ export function DragHandle({
     );
   }, [onDragStart, onDragMove, onDragEnd]);
 
+  // Real RN View between GestureDetector and the (likely RSD) child.
+  // RNGH injects `collapsable={false}` into its immediate child so RN's
+  // view-flattening optimization doesn't strip the measurement View it
+  // attaches gestures to. RSD's strict prop whitelist rejects
+  // `collapsable` ("invalid prop") and the inconsistent View hierarchy
+  // that results makes gestures fire on the wrong native node — wrong
+  // coords, dropped events, "stuck" board / "inconsistent" list.
+  // Buffering with a plain View accepts the prop and stabilises the
+  // hierarchy.
   return (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    <GestureDetector gesture={gesture}>{children as any}</GestureDetector>
+    <GestureDetector gesture={gesture}>
+      <View collapsable={false}>{children}</View>
+    </GestureDetector>
   );
 }
