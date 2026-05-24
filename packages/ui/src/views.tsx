@@ -16,6 +16,7 @@ import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
+import { HScroll } from "./internal/HScroll";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -45,6 +46,34 @@ const styles = css.create({
     },
     borderRadius: 8,
     overflow: "hidden",
+  },
+  // Two-pane layout: frozen primary column on the left, horizontally
+  // scrollable rest on the right. Lets phones (and wide tables on
+  // desktop) keep the primary field visible while panning through
+  // other columns — Airtable / Numbers / Sheets pattern.
+  tablePanes: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  tableFrozenColumn: {
+    display: "flex",
+    flexDirection: "column",
+    // Right border distinguishes the frozen column from the
+    // scrollable pane; a subtle shadow would be nicer but needs
+    // careful cross-platform handling — defer.
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  tableScrollPane: {
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    // The HScroll wrapper handles the actual horizontal scroll;
+    // this is the column-of-rows it contains.
   },
   // Dynamic cell width — computed per-render from viewport width / ncols.
   // Applied at use-site to both header and body cells so columns align.
@@ -1063,138 +1092,189 @@ export function TableView({
       ? Math.max(MIN_CELL_WIDTH, Math.floor(containerWidth / totalCols))
       : MIN_CELL_WIDTH;
 
-  return (
-    <html.div {...measureProps} style={styles.table}>
-      <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-        {fields.map((name, idx) => {
-          const field = fieldMap.get(name);
-          const isEditing = editingFieldName === name;
-          const fieldIndex = schema.fields.findIndex((f) => f.name === name);
-          const align = effectiveAlign(field);
-          const isLast = idx === fields.length - 1 && !canAddField;
-          if (!schemaEditable) {
-            return (
-              <html.span
-                key={name}
-                style={[
-                  styles.tableCell,
-                  styles.cellWidth(cellWidth),
-                  styles.tableHeaderCell,
-                  cellAlignStyle(align),
-                  !isLast && styles.tableCellSeparator,
-                ]}
-              >
-                {field?.title ?? name}
-              </html.span>
-            );
-          }
-          return (
-            <html.span
-              key={name}
-              style={[
-                styles.headerCellWrapper,
-                styles.cellWidth(cellWidth),
-                !isLast && styles.tableCellSeparator,
-              ]}
-            >
-              <html.button
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ref={(el: any) => {
-                  headerButtonRefs.current[name] = el;
-                }}
-                onClick={async () => {
-                  if (isEditing) {
-                    setEditingFieldName(null);
-                  } else {
-                    const rect = await measureAnchor(headerButtonRefs.current[name]);
-                    if (rect) setAnchorRect(rect);
-                    setEditingFieldName(name);
-                  }
-                }}
-                style={[
-                  styles.headerCellButton,
-                  // `field?.deprecated` is `undefined` when field is
-                  // unknown OR deprecated isn't set — and `undefined`
-                  // inside an RSD style array crashes the native
-                  // flattener with "length of undefined". Coerce to
-                  // boolean so the array only ever contains styles or
-                  // `false`, which RSD handles fine.
-                  !!field?.deprecated && styles.headerCellDeprecated,
-                  headerAlignStyle(align),
-                ]}
-              >
-                {field?.title ?? name}
-              </html.button>
-              {isEditing && field && anchorRect && (
-                <SchemaFieldEditor
-                  field={field}
-                  fieldIndex={fieldIndex}
-                  totalFields={schema.fields.length}
-                  align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
-                  anchorRect={anchorRect}
-                  onUpdate={(patch) => onUpdateField!(name, patch)}
-                  onAddEnumValue={(value) => onAddEnumValue!(name, value)}
-                  onMove={(delta) => onMoveField!(name, delta)}
-                  onClose={() => {
-                    setEditingFieldName(null);
-                    setAnchorRect(null);
-                  }}
-                />
-              )}
-            </html.span>
-          );
-        })}
-        {canAddField && (
-          <AddFieldButton
-            existingNames={new Set(schema.fields.map((f) => f.name))}
-            onAdd={onAddField!}
+  // Split fields into primary (frozen, leftmost) + rest (scrollable).
+  // Primary is the title field — first in the visible order. Empty
+  // tables (no fields) still render a placeholder header.
+  const primaryName = fields[0];
+  const restNames = fields.slice(1);
+
+  // Cell renderers — extracted because both panes share them.
+  const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
+    const field = fieldMap.get(name);
+    const isEditing = editingFieldName === name;
+    const fieldIndex = schema.fields.findIndex((f) => f.name === name);
+    const align = effectiveAlign(field);
+    // `isLast` controls whether the right-border separator shows. The
+    // primary pane never has a right-edge separator (the column's own
+    // right border does it); rest-pane cells separate themselves
+    // except the last one, where the `+ Field` button takes over.
+    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    if (!schemaEditable) {
+      return (
+        <html.span
+          key={name}
+          style={[
+            styles.tableCell,
+            styles.cellWidth(cellWidth),
+            styles.tableHeaderCell,
+            cellAlignStyle(align),
+            !isLast && styles.tableCellSeparator,
+          ]}
+        >
+          {field?.title ?? name}
+        </html.span>
+      );
+    }
+    return (
+      <html.span
+        key={name}
+        style={[
+          styles.headerCellWrapper,
+          styles.cellWidth(cellWidth),
+          !isLast && styles.tableCellSeparator,
+        ]}
+      >
+        <html.button
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ref={(el: any) => {
+            headerButtonRefs.current[name] = el;
+          }}
+          onClick={async () => {
+            if (isEditing) {
+              setEditingFieldName(null);
+            } else {
+              const rect = await measureAnchor(headerButtonRefs.current[name]);
+              if (rect) setAnchorRect(rect);
+              setEditingFieldName(name);
+            }
+          }}
+          style={[
+            styles.headerCellButton,
+            !!field?.deprecated && styles.headerCellDeprecated,
+            headerAlignStyle(align),
+          ]}
+        >
+          {field?.title ?? name}
+        </html.button>
+        {isEditing && field && anchorRect && (
+          <SchemaFieldEditor
+            field={field}
+            fieldIndex={fieldIndex}
+            totalFields={schema.fields.length}
+            align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
+            anchorRect={anchorRect}
+            onUpdate={(patch) => onUpdateField!(name, patch)}
+            onAddEnumValue={(value) => onAddEnumValue!(name, value)}
+            onMove={(delta) => onMoveField!(name, delta)}
+            onClose={() => {
+              setEditingFieldName(null);
+              setAnchorRect(null);
+            }}
           />
         )}
-      </html.div>
-      {rows.map((row, i) => (
-        <html.div
-          key={row.id}
-          style={[styles.tableRow, i === rows.length - 1 && styles.tableRowLast]}
-        >
-          {fields.map((name, idx) => {
-            const field = fieldMap.get(name);
-            const align = effectiveAlign(field);
-            const isLast = idx === fields.length - 1 && !canAddField;
-            return (
-              <html.span
-                key={name}
-                style={[
-                  styles.tableCell,
-                  styles.cellWidth(cellWidth),
-                  cellAlignStyle(align),
-                  !isLast && styles.tableCellSeparator,
-                ]}
-              >
-                {onUpdateRow ? (
-                  <EditableCell
-                    field={field}
-                    value={row[name]}
-                    onCommit={(next) => onUpdateRow(row.id, name, next)}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
-                  />
-                ) : (
-                  <CellValue
-                    field={field}
-                    value={row[name]}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
+      </html.span>
+    );
+  };
+
+  const renderBodyCell = (
+    row: Row,
+    name: string,
+    idxInPane: number,
+    paneLen: number,
+  ) => {
+    const field = fieldMap.get(name);
+    const align = effectiveAlign(field);
+    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    return (
+      <html.span
+        key={name}
+        style={[
+          styles.tableCell,
+          styles.cellWidth(cellWidth),
+          cellAlignStyle(align),
+          !isLast && styles.tableCellSeparator,
+        ]}
+      >
+        {onUpdateRow ? (
+          <EditableCell
+            field={field}
+            value={row[name]}
+            onCommit={(next) => onUpdateRow(row.id, name, next)}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
+        ) : (
+          <CellValue
+            field={field}
+            value={row[name]}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
+        )}
+        {name === titleField && bodies?.[row.id] ? (
+          <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+        ) : null}
+      </html.span>
+    );
+  };
+
+  return (
+    <html.div {...measureProps} style={styles.table}>
+      <html.div style={styles.tablePanes}>
+        {/* Frozen pane: primary (title) field — header + one cell per row,
+            stacked vertically. The primary stays put while the user pans
+            the rest pane horizontally. */}
+        <html.div style={styles.tableFrozenColumn}>
+          <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+            {primaryName && renderHeaderCell(primaryName, 0, 1)}
+          </html.div>
+          {rows.map((row, i) => (
+            <html.div
+              key={row.id}
+              style={[
+                styles.tableRow,
+                i === rows.length - 1 && styles.tableRowLast,
+              ]}
+            >
+              {primaryName && renderBodyCell(row, primaryName, 0, 1)}
+            </html.div>
+          ))}
+        </html.div>
+        {/* Scrollable pane: everything past the primary field, plus the
+            `+ Field` affordance. Renders inside HScroll which delivers a
+            horizontal scrollbar on web and an RN ScrollView on native. */}
+        <html.div style={styles.tableScrollPane}>
+          <HScroll>
+            <html.div style={styles.tableScrollPane}>
+              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+                {restNames.map((name, idx) =>
+                  renderHeaderCell(name, idx, restNames.length),
+                )}
+                {canAddField && (
+                  <AddFieldButton
+                    existingNames={new Set(schema.fields.map((f) => f.name))}
+                    onAdd={onAddField!}
                   />
                 )}
-                {name === titleField && bodies?.[row.id] ? (
-                  <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-                ) : null}
-              </html.span>
-            );
-          })}
-          {canAddField && <html.div style={styles.addFieldSpacer} />}
+              </html.div>
+              {rows.map((row, i) => (
+                <html.div
+                  key={row.id}
+                  style={[
+                    styles.tableRow,
+                    i === rows.length - 1 && styles.tableRowLast,
+                  ]}
+                >
+                  {restNames.map((name, idx) =>
+                    renderBodyCell(row, name, idx, restNames.length),
+                  )}
+                  {canAddField && <html.div style={styles.addFieldSpacer} />}
+                </html.div>
+              ))}
+            </html.div>
+          </HScroll>
         </html.div>
-      ))}
+      </html.div>
     </html.div>
   );
 }

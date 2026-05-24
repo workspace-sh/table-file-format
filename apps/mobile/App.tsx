@@ -183,23 +183,18 @@ function renderView(
     case "calendar":
       return <CalendarView {...common} onOpenBody={cb.onOpenBody} />;
     default:
+      // TableView manages its own horizontal scroll internally now (the
+      // scrollable pane to the right of the frozen primary column).
       return (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginHorizontal: -MOBILE_H_PADDING }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
-        >
-          <TableView
-            {...common}
-            onUpdateRow={cb.onUpdateRow}
-            onUpdateField={cb.onUpdateField}
-            onAddEnumValue={cb.onAddEnumValue}
-            onMoveField={cb.onMoveField}
-            onAddField={cb.onAddField}
-            onOpenBody={cb.onOpenBody}
-          />
-        </ScrollView>
+        <TableView
+          {...common}
+          onUpdateRow={cb.onUpdateRow}
+          onUpdateField={cb.onUpdateField}
+          onAddEnumValue={cb.onAddEnumValue}
+          onMoveField={cb.onMoveField}
+          onAddField={cb.onAddField}
+          onOpenBody={cb.onOpenBody}
+        />
       );
   }
 }
