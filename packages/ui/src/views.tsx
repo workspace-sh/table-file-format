@@ -1222,17 +1222,14 @@ export function BoardView({
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
 
-  // Live preview while dragging — show the dragged row in its hover
-  // column. Commit only fires on drop via onUpdateRow.
-  const displayRows =
-    draggedRowId && hoveredColumn
-      ? rows.map((r) =>
-          r.id === draggedRowId
-            ? { ...r, [groupField]: hoveredColumn === "(empty)" ? null : hoveredColumn }
-            : r,
-        )
-      : rows;
-  const groups = applyGroup(displayRows, groupField, schema);
+  // Render rows as-is — the dragged card stays in its source column
+  // with a "lifted" visual style; only `hoveredColumn` highlights the
+  // destination. Mutating displayRows to physically move the dragged
+  // card during a drag caused it to obscure subsequent hit-tests on
+  // macOS (the moving card sat under the cursor and intercepted every
+  // hover detection). Commit on release uses the cursor's final coords
+  // via the release-position hit-test in onDragEnd.
+  const groups = applyGroup(rows, groupField, schema);
 
   // Persistent columns: when the group field has an enum, show ALL
   // enum values (even empty ones) so the user can drop into a column
@@ -1451,7 +1448,10 @@ export function ListView({
   const secondaryFields = fields.slice(1);
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
-  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
+  // Just track which row the cursor is over — no reorder preview.
+  // Rendering rows in their original order keeps the drop targets
+  // stationary so hit-tests stay consistent throughout the drag.
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
   const {
@@ -1460,24 +1460,7 @@ export function ListView({
     remeasure: remeasureRows,
   } = useDropTargets<string>();
 
-  // Live reorder preview: rebuild visible order so the dragged row
-  // appears in its hover-target position. Computed from the BASE
-  // `rows` (not the previous preview) so hovering A then B gives the
-  // same result as hovering B directly.
-  const displayRows: Row[] = previewOrder
-    ? (() => {
-        const byId = new Map(rows.map((r) => [r.id, r]));
-        const ordered: Row[] = [];
-        for (const id of previewOrder) {
-          const r = byId.get(id);
-          if (r) ordered.push(r);
-        }
-        for (const r of rows) if (!previewOrder.includes(r.id)) ordered.push(r);
-        return ordered;
-      })()
-    : rows;
-
-  const computePreviewOrder = (
+  const computeOrder = (
     draggedId: string,
     targetRowId: string,
   ): string[] => {
@@ -1491,17 +1474,14 @@ export function ListView({
     return next;
   };
 
-  // After previewOrder changes, row rects shift; re-measure so the
-  // next hitTest reflects the new layout. RN doesn't fire layout
-  // events through RSD so we trigger this from the consumer side.
-  useEffect(() => {
-    if (previewOrder) remeasureRows();
-  }, [previewOrder, remeasureRows]);
-
   return (
     <html.div style={styles.list}>
-      {displayRows.map((row, i) => {
+      {rows.map((row, i) => {
         const dropReg = canDrag ? registerRow(row.id) : undefined;
+        const isDropTarget =
+          draggedRowId !== null &&
+          hoveredRowId === row.id &&
+          hoveredRowId !== draggedRowId;
         return (
           <DragHandle
             key={row.id}
@@ -1509,7 +1489,7 @@ export function ListView({
               canDrag
                 ? (e: DragEvent) => {
                     setDraggedRowId(row.id);
-                    setPreviewOrder(rows.map((r) => r.id));
+                    setHoveredRowId(null);
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     remeasureRows();
                   }
@@ -1520,30 +1500,21 @@ export function ListView({
                 ? (e: DragEvent) => {
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     const target = hitTest(e.pageX, e.pageY);
-                    if (target && target !== row.id) {
-                      const next = computePreviewOrder(row.id, target);
-                      setPreviewOrder((prev) => {
-                        if (
-                          prev &&
-                          prev.length === next.length &&
-                          prev.every((id, j) => id === next[j])
-                        ) {
-                          return prev;
-                        }
-                        return next;
-                      });
-                    }
+                    setHoveredRowId((prev) =>
+                      prev === target ? prev : target,
+                    );
                   }
                 : undefined
             }
             onDragEnd={
               canDrag
-                ? () => {
-                    if (onUpdateView && previewOrder) {
-                      onUpdateView({ order: previewOrder });
+                ? (e: DragEvent) => {
+                    const target = hitTest(e.pageX, e.pageY);
+                    if (target && target !== row.id && onUpdateView) {
+                      onUpdateView({ order: computeOrder(row.id, target) });
                     }
                     setDraggedRowId(null);
-                    setPreviewOrder(null);
+                    setHoveredRowId(null);
                     setPointerPos(null);
                   }
                 : undefined
@@ -1553,9 +1524,10 @@ export function ListView({
               ref={dropReg?.ref}
               style={[
                 styles.listItem,
-                i === displayRows.length - 1 && styles.listItemLast,
+                i === rows.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
+                isDropTarget && styles.listItemDropTarget,
               ]}
             >
               <html.span style={styles.listItemTitle}>
