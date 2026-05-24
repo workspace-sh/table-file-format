@@ -19,6 +19,7 @@ import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -499,6 +500,88 @@ const styles = css.create({
     color: {
       default: "#1e40af",
       "@media (prefers-color-scheme: dark)": "#93c5fd",
+    },
+  },
+  // Apple / Google Calendar mobile pattern — day cell shows just a
+  // row of small dots indicating event density. Tap the day to open
+  // a sheet with the full event list. Less informative at a glance
+  // but legible at any cell size.
+  calendarDayDots: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 2,
+  },
+  calendarDayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+  },
+  calendarDayMore: {
+    fontSize: 9,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  // Make the day cell tappable — full-bleed pressable area, no extra
+  // affordances; the dots inside hint at content.
+  calendarDayButton: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    paddingInline: 6,
+    paddingBlock: 4,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  // Bottom-sheet event list — one tappable row per event for the
+  // selected day.
+  daySheetTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  daySheetItem: {
+    paddingInline: 8,
+    paddingBlock: 12,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    fontSize: 14,
+    backgroundColor: "transparent",
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  daySheetEmpty: {
+    paddingInline: 8,
+    paddingBlock: 24,
+    fontSize: 13,
+    textAlign: "center",
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
     },
   },
   calendarEmpty: {
@@ -1726,6 +1809,10 @@ export function CalendarView({
   const calField = view.calendar_field;
   const range = view.calendar_range;
 
+  // Day cell tap opens a sheet listing that day's rows — Apple /
+  // Google Calendar pattern. Cells themselves render just dots.
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+
   // Measure the calendar's own container — viewport width would be
   // wrong on web layouts with a sidebar (calendar's parent is the
   // main pane, narrower than the window). 7 columns means every cell
@@ -1890,11 +1977,15 @@ export function CalendarView({
         {cells.map((cell, i) => {
           const key = dateKey(cell.date);
           const dayRows = rowsByDate.get(key) ?? [];
+          const dotsToShow = Math.min(dayRows.length, 3);
+          const overflowCount = dayRows.length - dotsToShow;
           return (
-            <html.div
+            <html.button
               key={i}
+              onClick={() => setSelectedDateKey(key)}
               style={[
                 styles.calendarDay,
+                styles.calendarDayButton,
                 styles.cellWidth(dayCellWidth),
                 !cell.inMonth && styles.calendarDayOther,
               ]}
@@ -1902,31 +1993,70 @@ export function CalendarView({
               <html.span style={styles.calendarDayNum}>
                 {cell.date.getDate()}
               </html.span>
-              {dayRows.map((row) => {
-                const label = titleField
-                  ? formatValue(row[titleField])
-                  : row.id;
-                if (onOpenBody && bodies?.[row.id]) {
-                  return (
-                    <html.button
-                      key={row.id}
-                      onClick={() => onOpenBody(row.id)}
-                      style={styles.calendarRowChip}
-                    >
-                      {label}
-                    </html.button>
-                  );
-                }
-                return (
-                  <html.span key={row.id} style={styles.calendarRowChip}>
-                    {label}
-                  </html.span>
-                );
-              })}
-            </html.div>
+              {dayRows.length > 0 && (
+                <html.div style={styles.calendarDayDots}>
+                  {Array.from({ length: dotsToShow }).map((_, j) => (
+                    <html.span key={j} style={styles.calendarDayDot} />
+                  ))}
+                  {overflowCount > 0 && (
+                    <html.span style={styles.calendarDayMore}>
+                      +{overflowCount}
+                    </html.span>
+                  )}
+                </html.div>
+              )}
+            </html.button>
           );
         })}
       </html.div>
+      {(() => {
+        // Day-detail sheet — renders the selected day's rows as a
+        // tappable list. Tap-through opens the row's body if it has
+        // one (same affordance as the calendar row chips had).
+        const dayRows = selectedDateKey
+          ? rowsByDate.get(selectedDateKey) ?? []
+          : [];
+        const sheetTitle = selectedDateKey
+          ? new Date(selectedDateKey).toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })
+          : "";
+        return (
+          <BottomSheet
+            visible={selectedDateKey !== null}
+            onDismiss={() => setSelectedDateKey(null)}
+            title={sheetTitle}
+          >
+            {dayRows.length === 0 ? (
+              <html.span style={styles.daySheetEmpty}>
+                No items on this day.
+              </html.span>
+            ) : (
+              dayRows.map((row) => {
+                const label = titleField
+                  ? formatValue(row[titleField])
+                  : row.id;
+                const hasBody = !!bodies?.[row.id];
+                return (
+                  <html.button
+                    key={row.id}
+                    onClick={() => {
+                      setSelectedDateKey(null);
+                      if (hasBody && onOpenBody) onOpenBody(row.id);
+                    }}
+                    style={styles.daySheetItem}
+                  >
+                    {label}
+                  </html.button>
+                );
+              })
+            )}
+          </BottomSheet>
+        );
+      })()}
     </html.div>
   );
 }
