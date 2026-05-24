@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
+import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
 // for the entire subtree. Required once per app at the root.
 import "react-native-gesture-handler";
@@ -328,15 +329,21 @@ export default function App() {
           onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
           style={styles.searchInput}
         />
-        {renderView(view, table, visibleRows, {
-          onUpdateRow: updateRow,
-          onUpdateField: updateField,
-          onAddEnumValue: addEnumValue,
-          onMoveField: moveField,
-          onAddField: addField,
-          onOpenBody: openBody,
-          onUpdateView: updateActiveView,
-        })}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          showsVerticalScrollIndicator
+        >
+          {renderView(view, table, visibleRows, {
+            onUpdateRow: updateRow,
+            onUpdateField: updateField,
+            onAddEnumValue: addEnumValue,
+            onMoveField: moveField,
+            onAddField: addField,
+            onOpenBody: openBody,
+            onUpdateView: updateActiveView,
+          })}
+        </ScrollView>
       </html.div>
           {activeBodyRowId && (
             <BodyEditor
