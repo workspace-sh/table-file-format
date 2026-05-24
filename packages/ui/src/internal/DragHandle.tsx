@@ -38,6 +38,14 @@ export interface DragHandleProps {
   onDragStart?: (e: DragEvent) => void;
   onDragMove?: (e: DragEvent) => void;
   onDragEnd?: (e: DragEvent) => void;
+  /**
+   * When set, the gesture only activates after a press of this many
+   * milliseconds. Use on touch surfaces where a quick swipe means
+   * "scroll" and a held press means "drag" — the standard mobile
+   * idiom (Trello, Notion, iOS home screen). Omit on desktop / web
+   * where immediate-activation feels right with mouse input.
+   */
+  longPressMs?: number;
 }
 
 export function DragHandle({
@@ -45,34 +53,37 @@ export function DragHandle({
   onDragStart,
   onDragMove,
   onDragEnd,
+  longPressMs,
 }: DragHandleProps) {
   const gesture = useMemo(() => {
-    return (
-      Gesture.Pan()
-        // Run callbacks on the JS thread, not as Reanimated worklets.
-        // State updates flow through React; no Reanimated dependency.
-        .runOnJS(true)
-        // Activate immediately on press, without a motion threshold.
-        // Default is ~10pt which would delay the visual lift.
-        .minDistance(0)
-        .onStart((e) => {
-          onDragStart?.({ pageX: e.absoluteX, pageY: e.absoluteY });
-        })
-        .onUpdate((e) => {
-          onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
-        })
-        .onEnd((e) => {
+    let pan = Gesture.Pan()
+      // Run callbacks on the JS thread, not as Reanimated worklets.
+      // State updates flow through React; no Reanimated dependency.
+      .runOnJS(true)
+      // Activate immediately on press once the long-press gate (if
+      // any) clears — no additional movement threshold.
+      .minDistance(0);
+    if (longPressMs && longPressMs > 0) {
+      pan = pan.activateAfterLongPress(longPressMs);
+    }
+    return pan
+      .onStart((e) => {
+        onDragStart?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+      })
+      .onUpdate((e) => {
+        onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+      })
+      .onEnd((e) => {
+        onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+      })
+      // Fires for system-cancelled gestures (another recognizer
+      // wins). Treat as release so we don't leak drag state.
+      .onFinalize((e, success) => {
+        if (!success) {
           onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
-        })
-        // Fires for system-cancelled gestures (another recognizer
-        // wins). Treat as release so we don't leak drag state.
-        .onFinalize((e, success) => {
-          if (!success) {
-            onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
-          }
-        })
-    );
-  }, [onDragStart, onDragMove, onDragEnd]);
+        }
+      });
+  }, [onDragStart, onDragMove, onDragEnd, longPressMs]);
 
   // Real RN View between GestureDetector and the (likely RSD) child.
   // RNGH injects `collapsable={false}` into its immediate child so RN's

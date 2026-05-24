@@ -17,6 +17,8 @@ import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
+import { SnapHScroll } from "./internal/SnapHScroll";
+import { useViewportWidth } from "./internal/useViewportWidth";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -32,6 +34,18 @@ import {
  * the available width Airtable-style instead of leaving empty space.
  */
 const MIN_CELL_WIDTH = 180;
+
+/**
+ * Viewport breakpoint for touch-first UX. Below this width:
+ *   - Board view becomes a column carousel (one column per viewport
+ *     with a peek of the next).
+ *   - DragHandle requires a long-press to activate (so a casual swipe
+ *     navigates columns instead of triggering a drag).
+ * Picked at 720pt to capture phone-portrait + phone-landscape and
+ * tablet-portrait. Above this, the mouse / wide-screen UX takes over.
+ */
+const TOUCH_VIEWPORT_MAX = 720;
+const TOUCH_DRAG_LONGPRESS_MS = 300;
 
 const styles = css.create({
   // Table
@@ -178,6 +192,15 @@ const styles = css.create({
     borderColor: "transparent",
     gap: 8,
   },
+  // Used when the board renders as a column carousel on narrow
+  // viewports — the column takes a fixed width sized to ~84% of the
+  // viewport so the next column peeks. min/max from `boardColumn`
+  // would clamp this to 240-280 which defeats the purpose; override.
+  boardColumnCarouselWidth: (w: number) => ({
+    minWidth: w,
+    maxWidth: w,
+    width: w,
+  }),
   boardColumnDropTarget: {
     borderColor: {
       default: "#3478f6",
@@ -1302,6 +1325,21 @@ export function BoardView({
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
 
+  // Phone-shaped viewport → column carousel: each column is sized to
+  // ~84% of the viewport so the next one peeks at the right edge, and
+  // dragging a card requires a long-press so casual horizontal swipes
+  // navigate columns instead of starting a drag. Above the breakpoint
+  // we fall back to free horizontal scroll with the default 240-280pt
+  // columns and immediate drag activation (desktop / wide tablet).
+  const viewportWidth = useViewportWidth();
+  const isTouchViewport = viewportWidth <= TOUCH_VIEWPORT_MAX;
+  // Carousel column width: viewport minus side padding minus peek.
+  // 16pt side padding, ~52pt peek of the next column on the right.
+  const carouselColumnWidth = Math.max(240, viewportWidth - 16 - 52);
+  // Snap interval: column width + the gap between columns (`styles.board.gap`).
+  const carouselSnapInterval = carouselColumnWidth + 12;
+  const dragLongPressMs = isTouchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
+
   // Render rows as-is — the dragged card stays in its source column
   // with a "lifted" visual style; only `hoveredColumn` highlights the
   // destination. Mutating displayRows to physically move the dragged
@@ -1324,104 +1362,118 @@ export function BoardView({
       })()
     : Object.keys(groups);
 
+  const columnsContent = columnKeys.map((key) => {
+    const groupRows = groups[key] ?? [];
+    const dropReg = canDrag ? registerColumn(key) : undefined;
+    return (
+      <html.div
+        key={key}
+        ref={dropReg?.ref}
+        style={[
+          styles.boardColumn,
+          isTouchViewport && styles.boardColumnCarouselWidth(carouselColumnWidth),
+          hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
+        ]}
+      >
+        <html.div style={styles.boardColumnHeader}>
+          <html.span>{key}</html.span>
+          <html.span style={styles.boardCount}>{groupRows.length}</html.span>
+        </html.div>
+        {groupRows.map((row) => (
+          <DragHandle
+            key={row.id}
+            longPressMs={dragLongPressMs}
+            onDragStart={
+              canDrag
+                ? (e: DragEvent) => {
+                    setDraggedRowId(row.id);
+                    setHoveredColumn(key);
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    remeasureColumns();
+                  }
+                : undefined
+            }
+            onDragMove={
+              canDrag
+                ? (e: DragEvent) => {
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    const hit = hitTest(e.pageX, e.pageY);
+                    setHoveredColumn((prev) => (prev === hit ? prev : hit));
+                  }
+                : undefined
+            }
+            onDragEnd={
+              canDrag
+                ? (e: DragEvent) => {
+                    const target = hitTest(e.pageX, e.pageY);
+                    if (target && onUpdateRow) {
+                      const source = rows.find((r) => r.id === row.id);
+                      if (source && source[groupField] !== target) {
+                        onUpdateRow(
+                          row.id,
+                          groupField,
+                          target === "(empty)" ? null : target,
+                        );
+                      }
+                    }
+                    setDraggedRowId(null);
+                    setHoveredColumn(null);
+                    setPointerPos(null);
+                  }
+                : undefined
+            }
+          >
+            <html.div
+              style={[
+                styles.boardCardWrapper,
+                canDrag && styles.draggableHandle,
+                draggedRowId === row.id && styles.cardDragging,
+              ]}
+            >
+              <Card
+                row={row}
+                fields={fields}
+                fieldMap={fieldMap}
+                relatedTables={relatedTables}
+                onOpenRelation={onOpenRelation}
+              />
+            </html.div>
+          </DragHandle>
+        ))}
+      </html.div>
+    );
+  });
+
+  const ghost =
+    draggedRowId &&
+    (() => {
+      const row = rows.find((r) => r.id === draggedRowId);
+      if (!row) return null;
+      return (
+        <DragGhost pointerPos={pointerPos}>
+          <Card row={row} fields={fields} fieldMap={fieldMap} />
+        </DragGhost>
+      );
+    })();
+
+  // Phone: snap-paging carousel — one column dominates the viewport,
+  // peek of next at the right edge, swipe horizontally to advance.
+  // Above the touch breakpoint: keep the free-scrolling multi-column
+  // layout from the original desktop design.
+  if (isTouchViewport) {
+    return (
+      <>
+        <SnapHScroll snapInterval={carouselSnapInterval}>
+          <html.div style={styles.board}>{columnsContent}</html.div>
+        </SnapHScroll>
+        {ghost}
+      </>
+    );
+  }
   return (
     <html.div style={styles.board}>
-      {columnKeys.map((key) => {
-        const groupRows = groups[key] ?? [];
-        // Register each column as a drop zone. The hook returns a ref
-        // callback that captures the underlying RN View / DOM element
-        // for hit-testing during drag.
-        const dropReg = canDrag ? registerColumn(key) : undefined;
-        return (
-          <html.div
-            key={key}
-            ref={dropReg?.ref}
-            style={[
-              styles.boardColumn,
-              hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
-            ]}
-          >
-            <html.div style={styles.boardColumnHeader}>
-              <html.span>{key}</html.span>
-              <html.span style={styles.boardCount}>{groupRows.length}</html.span>
-            </html.div>
-            {groupRows.map((row) => (
-              <DragHandle
-                key={row.id}
-                onDragStart={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        setDraggedRowId(row.id);
-                        setHoveredColumn(key);
-                        setPointerPos({ x: e.pageX, y: e.pageY });
-                        // Refresh rect cache so the first hitTest
-                        // call has current column geometry.
-                        remeasureColumns();
-                      }
-                    : undefined
-                }
-                onDragMove={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        setPointerPos({ x: e.pageX, y: e.pageY });
-                        const hit = hitTest(e.pageX, e.pageY);
-                        setHoveredColumn((prev) => (prev === hit ? prev : hit));
-                      }
-                    : undefined
-                }
-                onDragEnd={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        const target = hitTest(e.pageX, e.pageY);
-                        if (target && onUpdateRow) {
-                          const source = rows.find((r) => r.id === row.id);
-                          if (source && source[groupField] !== target) {
-                            onUpdateRow(
-                              row.id,
-                              groupField,
-                              target === "(empty)" ? null : target,
-                            );
-                          }
-                        }
-                        setDraggedRowId(null);
-                        setHoveredColumn(null);
-                        setPointerPos(null);
-                      }
-                    : undefined
-                }
-              >
-                {/* Styles on inner html.div — DragHandle on native is
-                    an RN View that doesn't take stylex output. */}
-                <html.div
-                  style={[
-                    styles.boardCardWrapper,
-                    canDrag && styles.draggableHandle,
-                    draggedRowId === row.id && styles.cardDragging,
-                  ]}
-                >
-                  <Card
-                    row={row}
-                    fields={fields}
-                    fieldMap={fieldMap}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
-                  />
-                </html.div>
-              </DragHandle>
-            ))}
-          </html.div>
-        );
-      })}
-      {draggedRowId &&
-        (() => {
-          const row = rows.find((r) => r.id === draggedRowId);
-          if (!row) return null;
-          return (
-            <DragGhost pointerPos={pointerPos}>
-              <Card row={row} fields={fields} fieldMap={fieldMap} />
-            </DragGhost>
-          );
-        })()}
+      {columnsContent}
+      {ghost}
     </html.div>
   );
 }
@@ -1534,6 +1586,9 @@ export function ListView({
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
+  const viewportWidth = useViewportWidth();
+  const dragLongPressMs =
+    viewportWidth <= TOUCH_VIEWPORT_MAX ? TOUCH_DRAG_LONGPRESS_MS : undefined;
   const {
     register: registerRow,
     hitTest,
@@ -1565,6 +1620,7 @@ export function ListView({
         return (
           <DragHandle
             key={row.id}
+            longPressMs={dragLongPressMs}
             onDragStart={
               canDrag
                 ? (e: DragEvent) => {

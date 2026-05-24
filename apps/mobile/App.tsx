@@ -160,16 +160,9 @@ function renderView(
   };
   switch (view.layout) {
     case "board":
-      return (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginHorizontal: -MOBILE_H_PADDING }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
-        >
-          <BoardView {...common} onUpdateRow={cb.onUpdateRow} />
-        </ScrollView>
-      );
+      // BoardView handles its own horizontal scroll — snap-paging
+      // carousel on touch viewports, free scroll on wide ones.
+      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} />;
     case "gallery":
       return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":

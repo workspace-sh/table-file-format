@@ -25,6 +25,12 @@ export interface DragHandleProps {
   onDragStart?: (e: DragEvent) => void;
   onDragMove?: (e: DragEvent) => void;
   onDragEnd?: (e: DragEvent) => void;
+  /**
+   * Accepted for API parity with the native variant. On web with mouse
+   * input there's no scroll-vs-drag ambiguity to resolve, so it's a
+   * no-op here. Touch-web users may want this eventually — defer.
+   */
+  longPressMs?: number;
 }
 
 interface PointerEventLike {
