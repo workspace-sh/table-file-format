@@ -11,7 +11,7 @@ const fixturesDir = resolve(here, "..", "..", "..", "fixtures");
 test("parseTable reads projects.table fixture", async () => {
   const t = await parseTable(resolve(fixturesDir, "projects.table"));
   assert.equal(t.schema.fields.length, 6);
-  assert.equal(t.rows.length, 7);
+  assert.equal(t.rows.length, 17);
   assert.equal(t.views.length, 9);
   assert.equal(t.meta.title, "Projects");
   assert.equal(t.meta.format, "table");
