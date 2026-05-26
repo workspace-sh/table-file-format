@@ -64,7 +64,17 @@ export function DragHandle({
       // any) clears — no additional movement threshold.
       .minDistance(0);
     if (longPressMs && longPressMs > 0) {
-      pan = pan.activateAfterLongPress(longPressMs);
+      pan = pan
+        .activateAfterLongPress(longPressMs)
+        // Yield the gesture to a parent ScrollView when the user
+        // pans before the long-press timer fires. Without this, the
+        // pan sits in BEGAN state blocking the parent — list rows
+        // can't scroll vertically, board cards can't swipe between
+        // columns. ±15pt is loose enough not to fight micro-jitter
+        // during a deliberate hold but tight enough that any real
+        // scrolling intent immediately wins.
+        .failOffsetX([-15, 15])
+        .failOffsetY([-15, 15]);
     }
     return pan
       .onStart((e) => {

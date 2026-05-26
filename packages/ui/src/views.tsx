@@ -339,6 +339,13 @@ const styles = css.create({
     },
     gap: 12,
   },
+  // Touch-viewport variant — Apple HIG minimum tap target is 44pt
+  // (Android Material is 48dp; 44 covers both). Spread alongside
+  // `listItem` on narrow viewports.
+  listItemTouch: {
+    minHeight: 44,
+    paddingBlock: 12,
+  },
   listItemLast: {
     borderBottomWidth: 0,
   },
@@ -1743,6 +1750,7 @@ export function ListView({
               ref={dropReg?.ref}
               style={[
                 styles.listItem,
+                viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
                 i === rows.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
