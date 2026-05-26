@@ -13,12 +13,17 @@ priority order is:
    round-trip
 2. **Portability** — line-oriented files, no proprietary blob,
    implementable in an afternoon
-3. **Presentation** — views are first-class, but visual styling is the
-   consuming app's job, not the format's
+3. **Author intent that round-trips** — views, enum colors, number /
+   date format hints, and similar *schema-level* display semantics
+   travel with the data. Pixel-level decoration (per-cell colors,
+   conditional formatting rules, custom fonts) does not.
 
-Everything below comes back to that priority order: where another
-format wins on "data integrity + portability" we examine why; where
-another format wins on presentation we usually decline to follow.
+The dividing line is Notion's: visual meaning gets encoded as schema,
+not painted on cells. Two consumers reading the same `.table/` agree
+on "active = green" because the schema says so, not because someone
+manually colored those cells.
+
+Everything below comes back to this priority order.
 
 ## Formats we compared against
 
@@ -167,21 +172,145 @@ the export). Excel has "track changes" inside one file.
 already exists (#10, parked). The format is spec'd; nothing's blocking
 implementing it once we have a consumer that needs it.
 
-### Cell-level styling / conditional formatting
+### Cell-level decoration (Excel-style)
 
-**Other formats**: Excel. Heavy.
+**Other formats**: Excel — conditional formatting rules, heatmaps, data
+bars, manual per-cell highlighting, custom fonts and borders.
 
-**`.table/` today**: Not modelled. Intentional.
+**`.table/` today**: Not modelled. Stays that way.
 
-**Closing the gap**: We don't. Styling is a presentation concern, not a
-data-format concern. If two apps need to agree on "active = green
-pill", they encode it at the field level (enum constraint + a separate
-field-level theme manifest at the app layer) — not by writing colour
-codes into the row.
+**Closing the gap**: We don't. Per-cell decoration is presentation, not
+data — it doesn't round-trip, it doesn't survive a different consumer
+re-rendering the data, and it's used as a private annotation system
+("I'll mark this yellow because reasons"). That belongs in a comments
+field or a user-defined property, not a styling layer baked into rows.
 
-If we ever needed to ship a "theme" alongside the data, the right
-spot would be a `presentation.json` sibling file, optional and ignored
-by formal consumers. Not a near-term need.
+This is `.table/`'s deliberate Notion-side bet: visual meaning gets
+encoded as **schema**, not painted on cells. See the next section.
+
+### Schema-encoded display semantics (Notion / Airtable-style)
+
+**Other formats**: Notion has per-option colors on Select / Multi-Select
+properties, per-property type formatting (currency, percent, date
+formats), and per-property icons. Airtable has the same surface plus
+view-level conditional record coloring driven by formulas.
+
+**`.table/` today**: Partially there but not declarative:
+
+- The UI assigns enum colors algorithmically from value strings
+  (`active` happens to be green, `done` happens to be blue) — author
+  intent isn't captured in the schema, so two consumers can disagree.
+- `format: "markdown"` exists on string fields and is honoured by the
+  body editor; nothing similar on numbers or dates.
+- Field display name comes from `field.title`; no description / hover
+  hint / icon.
+
+**Closing the gap**: This is the right place to invest, and it stays
+true to "data carries meaning, presentation respects intent." Concrete
+schema additions:
+
+#### Per-enum-value display config
+
+Allow enum entries to be either strings (current shape, preserved) or
+objects with display metadata:
+
+```json
+{
+  "name": "status",
+  "type": "string",
+  "constraints": {
+    "enum": [
+      { "value": "planning", "color": "gray",   "label": "Planning" },
+      { "value": "active",   "color": "green",  "label": "Active"   },
+      { "value": "on-hold",  "color": "yellow", "label": "On hold"  },
+      { "value": "done",     "color": "blue",   "label": "Done"     }
+    ]
+  }
+}
+```
+
+Colors stay **symbolic** (`green`, not `#22c55e`) so consumers can map
+them to their own theme / dark mode / accessibility-adjusted palette.
+The 8-color Notion / Linear palette (`gray`, `red`, `orange`, `yellow`,
+`green`, `blue`, `purple`, `pink`) covers most cases. Labels are
+display-only; the underlying value is what gets stored in rows.
+
+Parsers MUST accept the legacy string form (`enum: ["active", ...]`)
+and coerce to `{ value }` with no color. Forwards-compatible.
+
+#### Number format
+
+A `format` string on number fields tells consumers how to display the
+value. The set is closed (portable enum), not arbitrary printf:
+
+| `format` | Example input → output |
+|---|---|
+| `"integer"` | `1234.5` → `1,235` |
+| `"decimal:2"` | `1.5` → `1.50` |
+| `"percent"` | `0.5` → `50%` |
+| `"currency:USD"` | `1234.5` → `$1,234.50` |
+| `"currency:EUR"` | `1234.5` → `€1,234.50` |
+| `"duration:seconds"` | `90` → `1m 30s` |
+
+Locale-aware separators / symbols are the consumer's responsibility
+(`Intl.NumberFormat` does the right thing for free); the format value
+declares the *semantic*, not the rendered string.
+
+#### Date format
+
+Similar closed set on date / datetime fields:
+
+| `format` | Example output |
+|---|---|
+| `"iso"` (default) | `2026-04-15` (raw round-trip) |
+| `"short"` | `4/15/26` (locale-aware) |
+| `"long"` | `April 15, 2026` |
+| `"relative"` | `2 days ago` |
+| `"weekday"` | `Wednesday` |
+
+Underlying value stays ISO-8601; the format hints display intent.
+
+#### String format extensions
+
+Currently `format: "markdown"` is the only honoured value. Extend to
+the small set consumers can render specially:
+
+- `"plain"` (default) — text
+- `"markdown"` — render as markdown
+- `"url"` — render as link
+- `"email"` — render as `mailto:`
+- `"phone"` — render as `tel:`
+
+#### Field description / icon
+
+```json
+{
+  "name": "budget",
+  "type": "number",
+  "format": "currency:USD",
+  "title": "Budget",
+  "description": "Approved Q1 budget, USD",
+  "icon": "💰"
+}
+```
+
+`description` surfaces as hover-help / accessibility text; `icon` is
+optional and consumers can ignore it. Both are author-intent, round-trip
+clean.
+
+#### What we won't add (line in the sand)
+
+- **Conditional formatting rules** ("color red if value < 0"). That's a
+  programmable rule engine, way too much surface area, and the same
+  outcome can be encoded as a derived enum or a status field. If
+  someone needs heatmaps they reach for a different tool.
+- **Per-row coloring overrides**. Encode the reason as a field.
+- **Custom RGB color codes**. Symbolic colors only — the consumer owns
+  the palette.
+
+This is the most substantive proposed schema extension in this file.
+Worth doing as its own PR after we agree on the color palette and the
+format-string vocabulary.
 
 ### Multiple tables in one container
 
