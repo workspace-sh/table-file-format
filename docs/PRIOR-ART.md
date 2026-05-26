@@ -15,15 +15,23 @@ priority order is:
    implementable in an afternoon
 3. **Author intent that round-trips** — views, enum colors, number /
    date format hints, and similar *schema-level* display semantics
-   travel with the data. Pixel-level decoration (per-cell colors,
-   conditional formatting rules, custom fonts) does not.
+   travel with the data, identically for every consumer.
 
-The dividing line is Notion's: visual meaning gets encoded as schema,
-not painted on cells. Two consumers reading the same `.table/` agree
-on "active = green" because the schema says so, not because someone
-manually colored those cells.
+`.table/` has **no private layer**. Anything written into it is visible
+to every consumer authorized to read it; there's no per-user state
+hidden alongside the rows. User-local preferences (column widths
+adjusted in one client, dark mode, which views are pinned to the
+sidebar) live OUTSIDE the `.table/` — they're the consuming app's
+problem, not the data format's.
 
-Everything below comes back to this priority order.
+The dividing line `.table/` draws on display semantics is Notion's:
+visual meaning gets encoded as **schema**, not as marks scattered
+across cells. "Active = green" is declared once on the field; every
+consumer agrees. The format steers authors toward "if it's worth
+tracking per row, make it a field" rather than "scribble a color on
+it."
+
+Everything below comes back to these positions.
 
 ## Formats we compared against
 
@@ -179,14 +187,17 @@ bars, manual per-cell highlighting, custom fonts and borders.
 
 **`.table/` today**: Not modelled. Stays that way.
 
-**Closing the gap**: We don't. Per-cell decoration is presentation, not
-data — it doesn't round-trip, it doesn't survive a different consumer
-re-rendering the data, and it's used as a private annotation system
-("I'll mark this yellow because reasons"). That belongs in a comments
-field or a user-defined property, not a styling layer baked into rows.
+**Closing the gap**: We don't. If you find yourself wanting to mark a
+specific cell with a color or flag, the format steers you to add a
+field instead — a `flagged` boolean, a `priority` enum, a `reviewer`
+relation. That value is then **typed, named, queryable, and filterable**
+(other views can show "flagged rows", schema validation catches
+typos), where a free-floating color mark is none of those things.
 
-This is `.table/`'s deliberate Notion-side bet: visual meaning gets
-encoded as **schema**, not painted on cells. See the next section.
+The Notion / Airtable side of this debate has it right: structured
+data beats scattered annotation. The format's job is to make the
+structured path easier than the scattered path. See the next section
+for what `.table/` does model in the display-semantics space.
 
 ### Schema-encoded display semantics (Notion / Airtable-style)
 
@@ -361,6 +372,33 @@ Ecosystem is a slow grind. The format being implementable in an
 afternoon is the lever — `.table/` doesn't win against Excel on
 features; it wins against Excel on "how long does it take a new tool
 to add support".
+
+## What lives OUTSIDE a `.table/`
+
+Spelling out the negative space, because it informs several of the
+"closing the gap" decisions above:
+
+- **Per-user UI preferences** — which views are pinned to a sidebar,
+  column-width adjustments made in one client, dark / light mode,
+  hidden columns per-user. The consuming app stores these in its own
+  local settings; they don't write back to the `.table/`. A user
+  shrinking a column in their copy of the app doesn't change what
+  every other authorized consumer sees.
+- **Selection / cursor state** — what cell the user is currently
+  editing, scroll position, the row they tapped open. Transient,
+  per-session, never persisted.
+- **Authentication / permissions** — who's allowed to read or write
+  this `.table/`. Out of band — handled by the surrounding workspace,
+  filesystem permissions, or sync-engine ACLs. The file format itself
+  doesn't carry an ACL.
+- **Computed view results** — if a view filters down to N rows or
+  groups them by status, the *result* of that computation isn't stored;
+  the view *definition* is stored in `views.json` and re-applied on
+  read.
+
+The rule of thumb: if it's shared truth about the data, it lives in
+the `.table/`. If it's about how one consumer chose to look at it
+this morning, it doesn't.
 
 ## What this file is not
 
