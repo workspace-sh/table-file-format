@@ -130,6 +130,15 @@ const styles = css.create({
     minHeight: 40,
     fontSize: 13,
     boxSizing: "border-box",
+    // Base text color for cell content. RN's Text inherits color from
+    // a parent Text (which `html.span` renders to on native), so the
+    // unstyled value span inside CellValue picks this up. Without it,
+    // RSD falls back to a static "black" default that doesn't adapt to
+    // appearance and renders invisibly on dark backgrounds.
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
     // Subtle inset when the cell contains a focused descendant (i.e. the
     // input is open). Indicator lives on the cell, not on the input, so
     // the input itself can stay layout-neutral and the text doesn't shift
@@ -353,6 +362,10 @@ const styles = css.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "500",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   listItemSecondary: {
     fontSize: 12,
@@ -622,6 +635,10 @@ const styles = css.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   cardField: {
     display: "flex",
@@ -642,6 +659,10 @@ const styles = css.create({
   cardFieldValue: {
     flex: 1,
     fontSize: 12,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
 
   // Pill (for enum values)
