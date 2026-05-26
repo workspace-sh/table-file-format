@@ -1190,6 +1190,14 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
+  // Frozen primary column on the left, scrollable rest on the right —
+  // useful on wide viewports for tables with many columns. On narrow
+  // portrait viewports it ate too much real estate (the title column
+  // is the widest), so default it off there: the table falls back to
+  // a single horizontal scroll over all fields, primary included.
+  const viewportWidth = useViewportWidth();
+  const freezePrimary = viewportWidth > TOUCH_VIEWPORT_MAX;
+
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
   // viewports (mobile portrait), triggering horizontal scroll via the
@@ -1208,8 +1216,11 @@ export function TableView({
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
   // Primary is the title field — first in the visible order. Empty
   // tables (no fields) still render a placeholder header.
-  const primaryName = fields[0];
-  const restNames = fields.slice(1);
+  // When the primary is frozen, the left pane gets it and the right
+  // pane gets the rest. When not frozen, the right pane gets all
+  // fields and the left pane is unused.
+  const primaryName = freezePrimary ? fields[0] : undefined;
+  const restNames = freezePrimary ? fields.slice(1) : fields;
 
   // Cell renderers — extracted because both panes share them.
   const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
@@ -1336,23 +1347,26 @@ export function TableView({
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
-            the rest pane horizontally. */}
-        <html.div style={styles.tableFrozenColumn}>
-          <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-            {primaryName && renderHeaderCell(primaryName, 0, 1)}
-          </html.div>
-          {rows.map((row, i) => (
-            <html.div
-              key={row.id}
-              style={[
-                styles.tableRow,
-                i === rows.length - 1 && styles.tableRowLast,
-              ]}
-            >
-              {primaryName && renderBodyCell(row, primaryName, 0, 1)}
+            the rest pane horizontally. Omitted entirely on narrow
+            viewports — the right pane then carries all fields. */}
+        {primaryName && (
+          <html.div style={styles.tableFrozenColumn}>
+            <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+              {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
-          ))}
-        </html.div>
+            {rows.map((row, i) => (
+              <html.div
+                key={row.id}
+                style={[
+                  styles.tableRow,
+                  i === rows.length - 1 && styles.tableRowLast,
+                ]}
+              >
+                {renderBodyCell(row, primaryName, 0, 1)}
+              </html.div>
+            ))}
+          </html.div>
+        )}
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
