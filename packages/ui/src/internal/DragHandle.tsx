@@ -23,7 +23,7 @@
  * parity with the web variant. RNGH calls these `absoluteX` /
  * `absoluteY`.
  */
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -55,6 +55,18 @@ export function DragHandle({
   onDragEnd,
   longPressMs,
 }: DragHandleProps) {
+  // Read callbacks through refs so the gesture object stays stable
+  // across renders. Without this, consumers passing inline lambdas
+  // (the common case) caused `useMemo` to recompute the gesture on
+  // every render. GestureDetector then tore down + re-attached the
+  // RNGH handler mid-gesture; RNGH re-fired `onUpdate` against the
+  // new handler with the live cursor position; the callback called
+  // `setPointerPos`; React re-rendered; loop ("Maximum update depth
+  // exceeded"). Refs let the gesture point at a stable indirection
+  // while still calling the latest consumer callback every fire.
+  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd });
+  callbacksRef.current = { onDragStart, onDragMove, onDragEnd };
+
   const gesture = useMemo(() => {
     let pan = Gesture.Pan()
       // Run callbacks on the JS thread, not as Reanimated worklets.
@@ -78,22 +90,37 @@ export function DragHandle({
     }
     return pan
       .onStart((e) => {
-        onDragStart?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        callbacksRef.current.onDragStart?.({
+          pageX: e.absoluteX,
+          pageY: e.absoluteY,
+        });
       })
       .onUpdate((e) => {
-        onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        callbacksRef.current.onDragMove?.({
+          pageX: e.absoluteX,
+          pageY: e.absoluteY,
+        });
       })
       .onEnd((e) => {
-        onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        callbacksRef.current.onDragEnd?.({
+          pageX: e.absoluteX,
+          pageY: e.absoluteY,
+        });
       })
       // Fires for system-cancelled gestures (another recognizer
       // wins). Treat as release so we don't leak drag state.
       .onFinalize((e, success) => {
         if (!success) {
-          onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+          callbacksRef.current.onDragEnd?.({
+            pageX: e.absoluteX,
+            pageY: e.absoluteY,
+          });
         }
       });
-  }, [onDragStart, onDragMove, onDragEnd, longPressMs]);
+    // Only `longPressMs` participates in the gesture's structure;
+    // callbacks read through `callbacksRef` so they don't need to
+    // invalidate the memo.
+  }, [longPressMs]);
 
   // Real RN View between GestureDetector and the (likely RSD) child.
   // RNGH injects `collapsable={false}` into its immediate child so RN's
