@@ -1450,6 +1450,14 @@ export function BoardView({
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
 
+  // After a row's group field changes (card moved between columns),
+  // the columns can resize / shift — refresh the rect cache so the
+  // next drag's hit-test reflects the new layout. Same pattern as
+  // ListView; see the comment there for the bug it fixes.
+  useEffect(() => {
+    remeasureColumns();
+  }, [rows, remeasureColumns]);
+
   // Phone-shaped viewport → column carousel: each column is sized to
   // ~84% of the viewport so the next one peeks at the right edge, and
   // dragging a card requires a long-press so casual horizontal swipes
@@ -1719,6 +1727,16 @@ export function ListView({
     hitTest,
     remeasure: remeasureRows,
   } = useDropTargets<string>();
+
+  // After a reorder, rows shift to new screen positions but the same
+  // React elements are reused (keyed by row.id). Refs don't re-fire,
+  // so the rect cache holds the previous-frame positions — a tap on
+  // a just-moved row hit-tests against the row that's NOW where it
+  // used to be, committing another one-slot reorder. Trigger an
+  // explicit remeasure whenever the `rows` array identity changes.
+  useEffect(() => {
+    remeasureRows();
+  }, [rows, remeasureRows]);
 
   const computeOrder = (
     draggedId: string,
