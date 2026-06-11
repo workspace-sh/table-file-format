@@ -54,7 +54,9 @@ explains the implementation that consumes it.
 ├── docs/
 │   ├── SPEC.md              Format specification (the contract)
 │   ├── ARCHITECTURE.md      This file
-│   └── DECISIONS.md         Settled design choices + their rationale
+│   ├── DECISIONS.md         Settled design choices + their rationale
+│   └── STORAGE-AND-SYNC.md  Consumer guidance — SQLite cache, sync
+│                            model, the Postgres question
 │
 └── package.json             Root: workspaces + namespaced scripts
 ```

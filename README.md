@@ -183,7 +183,7 @@ npm run ui:typecheck
   audit trails. Git is the format's version-control substrate by
   design; everything else is the consuming app's concern. A future
   optional `history.ndjson` extension is reserved but not specified.
-  See [docs/DECISIONS.md §D14](docs/DECISIONS.md) for the full
+  See [docs/DECISIONS.md D14](docs/DECISIONS.md) for the full
   rationale and Workspace-specific guidance.
 
 ## Spike, not product
