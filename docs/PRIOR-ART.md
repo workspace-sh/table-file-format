@@ -173,7 +173,7 @@ already render full markdown; cells should stay simple.
 the export). Excel has "track changes" inside one file.
 
 **`.table/` today**: Versioning is delegated to git (DECISIONS.md
-§D14). Diff-friendly NDJSON makes this work well.
+D14). Diff-friendly NDJSON makes this work well.
 
 **Closing the gap**: If a non-git audience needs it, we'd ship a
 `history.ndjson` extension that logs row-id → before/after diffs. Issue
