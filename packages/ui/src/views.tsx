@@ -11,7 +11,11 @@ import type {
   TableSchema,
   View,
 } from "@workspace.sh/table-core";
-import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import {
+  ADD_FIELD_COLUMN_WIDTH,
+  AddFieldButton,
+  SchemaFieldEditor,
+} from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
@@ -443,7 +447,7 @@ const styles = css.create({
     },
   },
   calendarWeekday: {
-    // Width applied at use-site via the `dayCellWidth` function-style.
+    // Width applied at use-site via the `dayColWidth(colIndex)` helper.
     // Container-measured (not viewport-derived) so columns track the
     // calendar's actual parent — handles sidebar layouts, narrow
     // panels, orientation changes, browser resize.
@@ -467,7 +471,7 @@ const styles = css.create({
     flexWrap: "wrap",
   },
   calendarDay: {
-    // Same `dayCellWidth(n)` applied at use-site as the header cells,
+    // Same `dayColWidth(n)` applied at use-site as the header cells,
     // so headers and grid share identical column geometry.
     flexShrink: 0,
     flexGrow: 0,
@@ -1228,11 +1232,45 @@ export function TableView({
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const totalCols = fields.length + (canAddField ? 1 : 0);
-  const cellWidth =
-    containerWidth > 0
-      ? Math.max(MIN_CELL_WIDTH, Math.floor(containerWidth / totalCols))
+
+  // Column-width model. The earlier version divided the container by
+  // `fields + 1` (counting the "+ Field" slot) but then rendered that
+  // slot at a FIXED width — so every row fell short of the container
+  // by `cellWidth − ADD_FIELD_COLUMN_WIDTH`, leaving a dead strip on
+  // the right (the "misaligned" look). Three corrections:
+  //
+  //   1. Divide by the DATA columns only (`fields.length`); the
+  //      "+ Field" slot is a fixed-width reservation, not a 1/N share.
+  //   2. Subtract that reservation (and the table's own 1px borders, +
+  //      the frozen column's 1px divider) up front so the summed
+  //      columns never exceed the content box and spawn a spurious
+  //      horizontal scrollbar.
+  //   3. Hand the `floor()` remainder out one pixel at a time to the
+  //      leftmost columns so the columns sum EXACTLY to the available
+  //      width — no hairline gap between the last cell and the border.
+  //
+  // The frozen-pane case needs no special math: the frozen column and
+  // the scroll pane share the same global column order, so the per-
+  // column widths still sum to the same total whether a column lives
+  // left of the freeze line or right of it.
+  const chrome = freezePrimary ? 3 : 2;
+  const addFieldW = canAddField ? ADD_FIELD_COLUMN_WIDTH : 0;
+  const dataCols = fields.length;
+  const available = Math.max(0, containerWidth - chrome - addFieldW);
+  const rawWidth =
+    dataCols > 0 && containerWidth > 0
+      ? Math.floor(available / dataCols)
       : MIN_CELL_WIDTH;
+  // Below MIN_CELL_WIDTH the table overflows and the pane scrolls —
+  // uniform columns, nothing to distribute. At or above it the table
+  // fills the container and the remainder gets spread.
+  const fills = rawWidth >= MIN_CELL_WIDTH;
+  const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
+  const remainder = fills ? available - cellW * dataCols : 0;
+  const colWidth = (name: string) => {
+    const i = fields.indexOf(name);
+    return cellW + (i >= 0 && i < remainder ? 1 : 0);
+  };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
   // Primary is the title field — first in the visible order. Empty
@@ -1260,7 +1298,7 @@ export function TableView({
           key={name}
           style={[
             styles.tableCell,
-            styles.cellWidth(cellWidth),
+            styles.cellWidth(colWidth(name)),
             styles.tableHeaderCell,
             cellAlignStyle(align),
             !isLast && styles.tableCellSeparator,
@@ -1275,7 +1313,7 @@ export function TableView({
         key={name}
         style={[
           styles.headerCellWrapper,
-          styles.cellWidth(cellWidth),
+          styles.cellWidth(colWidth(name)),
           !isLast && styles.tableCellSeparator,
         ]}
       >
@@ -1335,7 +1373,7 @@ export function TableView({
         key={name}
         style={[
           styles.tableCell,
-          styles.cellWidth(cellWidth),
+          styles.cellWidth(colWidth(name)),
           cellAlignStyle(align),
           !isLast && styles.tableCellSeparator,
         ]}
@@ -1856,9 +1894,10 @@ export function ListView({
  * `date` type) and full ISO datetime strings (extracts the date
  * portion). Non-string / invalid values are skipped silently.
  *
- * Layout: 7 columns × 6 rows. Day cells use the same viewport-aware
- * `cellWidth` function-style as TableView, sized to `viewport / 7`
- * so the grid fills the available width.
+ * Layout: 7 columns × 6 rows. Day cells size via `dayColWidth(colIndex)`,
+ * which divides the measured container by 7 and distributes the
+ * remainder pixel-by-pixel across the leftmost columns so the grid
+ * fills the available width exactly with no right-edge gap.
  */
 export function CalendarView({
   view,
@@ -1881,8 +1920,17 @@ export function CalendarView({
   // completes width is 0, so we guard with a tiny fallback that
   // doesn't visibly flash.
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const dayCellWidth =
-    containerWidth > 0 ? Math.floor(containerWidth / 7) : 0;
+  // 7 columns. `floor(width / 7)` alone leaves up to 6px of dead space
+  // on the right (the grid's border floating away from the cells); the
+  // remainder is spread one pixel at a time across the leftmost
+  // columns so weekdays + day cells fill the width exactly and line up
+  // vertically (each row keys its width on `colIndex`, not position).
+  // `− 2` accounts for the calendar's own 1px left/right border.
+  const calAvailable = Math.max(0, containerWidth - 2);
+  const baseDayWidth = containerWidth > 0 ? Math.floor(calAvailable / 7) : 0;
+  const dayRemainder = containerWidth > 0 ? calAvailable - baseDayWidth * 7 : 0;
+  const dayColWidth = (colIndex: number) =>
+    baseDayWidth + (colIndex < dayRemainder ? 1 : 0);
 
   // Range bounds, normalised to first-of-month so we compare cursors
   // at the same granularity as `cursor` (which is always first-of-month).
@@ -2028,7 +2076,7 @@ export function CalendarView({
             // duplicate across exotic locales / ICU configurations, and we
             // always render exactly 7 in stable order.
             key={i}
-            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
+            style={[styles.calendarWeekday, styles.cellWidth(dayColWidth(i))]}
           >
             {d}
           </html.span>
@@ -2047,7 +2095,7 @@ export function CalendarView({
               style={[
                 styles.calendarDay,
                 styles.calendarDayButton,
-                styles.cellWidth(dayCellWidth),
+                styles.cellWidth(dayColWidth(i % 7)),
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >
