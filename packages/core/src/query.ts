@@ -7,6 +7,7 @@ import type {
   ViewFilter,
   ViewSort,
 } from "./types";
+import { enumValues } from "./types";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
@@ -88,11 +89,11 @@ export function applyGroup(
   }
 
   const fieldDef = schema?.fields.find((f) => f.name === field);
-  const enumValues = fieldDef?.constraints?.enum;
+  const order = enumValues(fieldDef);
   const result: Record<string, Row[]> = {};
 
-  if (enumValues) {
-    for (const e of enumValues) {
+  if (order.length > 0) {
+    for (const e of order) {
       if (buckets.has(e)) {
         result[e] = buckets.get(e)!;
         buckets.delete(e);
@@ -162,10 +163,10 @@ function matchesFilter(row: Row, f: ViewFilter): boolean {
 }
 
 function compare(a: unknown, b: unknown, field: Field | undefined): number {
-  const enumValues = field?.constraints?.enum;
-  if (enumValues && typeof a === "string" && typeof b === "string") {
-    const ai = enumValues.indexOf(a);
-    const bi = enumValues.indexOf(b);
+  const order = enumValues(field);
+  if (order.length > 0 && typeof a === "string" && typeof b === "string") {
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
     if (ai !== -1 && bi !== -1) return ai - bi;
     if (ai !== -1) return -1;
     if (bi !== -1) return 1;
