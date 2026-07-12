@@ -67,16 +67,100 @@ borrowing the names is for readability, not compatibility.
 `required`, `unique`, `enum`, `minimum`, `maximum`, `minLength`,
 `maxLength`, `pattern`.
 
+#### Enum entries — string or object
+
+Each `enum` entry is **either** a bare string **or** an object
+carrying display metadata:
+
+```json
+{
+  "constraints": {
+    "enum": [
+      { "value": "planning", "color": "gray",   "label": "Planning" },
+      { "value": "active",   "color": "green",  "label": "Active"   },
+      "done"
+    ]
+  }
+}
+```
+
+- `value` (required) — the stored data value. This is the only part
+  that participates in validation and enum-ordered sort/group.
+- `color` (optional) — symbolic, one of the 8-color Notion / Linear
+  palette: `gray`, `red`, `orange`, `yellow`, `green`, `blue`,
+  `purple`, `pink`. Consumers map the symbolic name onto their own
+  light/dark theme; the format never stores hex.
+- `label` (optional) — display-only text; defaults to `value`.
+
+Bare strings and objects may be mixed in one array. Readers MUST
+coerce a bare string `"x"` into `{ "value": "x" }` (reference:
+`enumOptions()` in `@workspace.sh/table-core`). Writers MAY emit
+either form — objects when color/label is set, strings otherwise.
+
 ### Field annotations
 
-- `format: "markdown"` — the value is markdown content. Renderer hint;
-  no validator effect.
+- `format: "<token>"` — display-semantic hint from a closed
+  vocabulary (see "Field format" below). Renderer hint; no validator
+  effect. Stored values stay raw.
+- `icon: "<emoji-or-name>"` — an emoji (`"💰"`) or symbolic name
+  (`"calendar"`) shown beside the field title. Display-only;
+  consumers MAY ignore.
+- `description: "<text>"` — hover-help / accessibility text.
+  Display-only, round-trips.
 - `attachment: true` — the value is a filename inside `attachments/`.
-- `relation: { table: "<name>", field: "id" }` — the value points at a
-  row in a sibling `.table/` directory by that table's system `id`.
-  Resolution is the app's concern (scan workspace, walk parent, etc.).
+- `relation: { table: "<name>", field: "id", cardinality?: "one" | "many" }`
+  — the value points at a row (or, for `"many"`, an array of rows) in
+  a sibling `.table/` directory by that table's system `id`.
+  `cardinality` defaults to `"one"`; `"many"` means the row value is
+  an array of ids. Resolution is the app's concern (scan workspace,
+  walk parent, etc.).
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
+- `computed: { … }` — RESERVED; see "Computed fields (reserved)".
+
+### Field format
+
+`format` declares a display *semantic* from a closed vocabulary — a
+portable enum, not an arbitrary printf string. Stored values remain
+raw (ISO dates, decimal numbers, plain text); locale-aware rendering
+is the consumer's job (`Intl.NumberFormat` / `Intl.DateTimeFormat`).
+Reference renderer: `formatValue()` in `@workspace.sh/table-core`.
+Unknown tokens fall back to plain text.
+
+**Number** (`number`, `integer`, `year`): `integer`, `decimal:N`
+(N fraction digits), `percent`, `currency:<ISO-4217>` (e.g.
+`currency:USD`), `duration:seconds`.
+
+**Date** (`date`, `datetime`): `iso` (default), `short`, `long`,
+`weekday`, `relative`.
+
+**String** (`string`): `plain` (default), `markdown` (already
+honoured by the body editor), `url`, `email`, `phone`. The last three
+are link-rendering hints; the stored value is the raw target.
+
+### Computed fields (reserved)
+
+RESERVED — not yet implemented. A field MAY carry a `computed`
+declaration for a formula whose result is derived, never stored:
+
+```json
+{
+  "name": "total",
+  "type": "number",
+  "computed": { "expr": "price * quantity", "dialect": "table-expr-v1" }
+}
+```
+
+The expression lives in the schema (one definition for every row);
+the result is **never persisted** — recomputed on read, so there is
+no "stored 100 but recomputes to 110" staleness class. The optional
+`index.sqlite` cache MAY materialise results for query speed.
+
+Until an evaluator ships, readers MUST tolerate a `computed` field's
+presence — it simply renders empty. The expression dialect, the
+standard library, and whether cross-row aggregation is ever in scope
+are open; the shape here is provisional (see DECISIONS D21). Do not
+write tooling against it yet.
 
 ### Schema evolution
 

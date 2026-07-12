@@ -277,3 +277,66 @@ Three knock-on rules recorded here because they constrain the
 The reserved `history.ndjson` (D14) and the sync op log are one
 design: if the extension lands, it is the at-rest serialisation of
 the same event vocabulary, not a parallel format.
+
+## D18: Enum entries are string-or-object
+
+An `enum` entry is either a bare string or an object
+`{ value, color?, label? }`. Only `value` participates in validation
+and enum-ordered sort/group; `color` (symbolic 8-color palette) and
+`label` are display-only. Readers coerce strings to `{ value }` via
+`enumOptions()`; both forms may mix in one array.
+
+**Why:** the flat string array couldn't capture author intent
+("active = green"), so every consumer picked chip colors
+algorithmically and two consumers disagreed. Putting the intent in
+the schema makes it round-trip. Object-or-string (rather than a
+parallel `enumConfig` map keyed by value) keeps the common minimal
+case a plain string and the declaration in one place. Colors are
+symbolic, not hex, so each consumer themes them for light/dark.
+
+## D19: `format` is a closed vocabulary, not printf
+
+Field `format` tokens come from a fixed per-type set (number:
+`decimal:N` / `percent` / `currency:<ISO>` / …; date: `short` /
+`long` / `relative` / …; string: `markdown` / `url` / `email` / …).
+Stored values stay raw; `formatValue()` renders locale-aware via
+`Intl`. Unknown tokens fall back to plain.
+
+**Why:** arbitrary format strings (Excel's `#,##0.00;[Red]`) are a
+mini-language every reader must reimplement identically or diverge —
+and they bake locale assumptions into the data file. A closed enum of
+*semantics* ("this is USD", "show this date short") lets each
+consumer render correctly for its own locale. Reuses the existing
+`format` key (already `"markdown"` on strings) rather than adding a
+second display-hint field.
+
+## D20: Multi-target relations via `cardinality`, not a new type
+
+Relations stay a single primitive (see D10). Multi-target is a
+`cardinality: "one" | "many"` flag on the existing `relation`
+declaration; `"many"` means the row value is an array of ids.
+Defaults to `"one"` — backwards compatible.
+
+**Why:** "one project" and "many tags" are the same relation concept
+at different arity, not two different field types. A flag keeps the
+one relation primitive intact and the address grammar unchanged (each
+id still resolves to `<path>#row=<id>`), so navigation works for both
+shapes with no new machinery.
+
+## D21: Computed fields — reserved shape, deferred evaluator
+
+A `computed: { expr, dialect }` field declaration is reserved in the
+spec and the `Field` type, but no evaluator ships. Results are
+defined as **never persisted** (recomputed on read); readers tolerate
+the field's presence and render it empty until an evaluator exists.
+
+**Why:** the *storage* decision (computed = derived, never written)
+is safe to lock now and prevents a "stored value disagrees with
+recomputation" staleness class. The *evaluation* decisions — which
+expression dialect (CEL / JSONata / bespoke), the standard library,
+whether cross-row aggregation is ever in scope — need a real consumer
+to drive them; committing early bakes a language we can't yet
+justify. Same park-with-reserved-shape posture as D14's
+`history.ndjson`. Explicitly out of scope even when built:
+spreadsheet-style range references (`A1:A10`) — position-based
+addressing is wrong for an id-keyed row model.
