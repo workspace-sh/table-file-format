@@ -540,9 +540,24 @@ app's concern. The format only standardises the grammar.
 
 `.table/` belongs to an open coalition of text-first data interchange
 formats (CSVW, Frictionless Data, Obsidian Bases, etc.) — none gets
-top billing. Direct converters in core: CSV (lossy export, lossless
-import with schema). Format-specific exporters belong in separate
-optional packages (`@workspace.sh/table-frictionless`,
+top billing.
+
+CSV is the **only** format-specific converter that lives in core, via
+`fromCSV` / `toCSV` in `@workspace.sh/table-core`:
+
+- `fromCSV(csv, schema?)` — parses RFC 4180 (quoted fields, embedded
+  commas / newlines / escaped `""`, optional BOM, LF or CRLF). With a
+  schema, cells are coerced to declared types (the lossless-with-schema
+  path); without one, per-column types are inferred. Rows lacking an
+  `id` column get a freshly minted nanoid.
+- `toCSV(table, { fields? })` — RFC 4180-correct quoting. **Lossy by
+  definition**: relations serialise to raw id(s), attachments to their
+  filename, bodies aren't represented. `csvExportWarnings(table)`
+  returns the human-readable list of what a given export will drop, so
+  the loss is surfaced rather than silent.
+
+Other format converters (Frictionless, CSVW, Grist, Obsidian Bases)
+belong in separate optional packages (`@workspace.sh/table-frictionless`,
 `@workspace.sh/table-csvw`, etc.) if and when there's demand.
 
 ## 12. Versioning
