@@ -15,10 +15,43 @@ export type FieldType =
   | "geopoint"
   | "geojson";
 
+/**
+ * Symbolic enum-chip color — the 8-color Notion / Linear palette.
+ * Symbolic (not hex) so each consumer maps the name onto its own
+ * light/dark theme. See SPEC "Field constraints → enum".
+ */
+export type EnumColor =
+  | "gray"
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink";
+
+/**
+ * Rich enum entry. The on-disk `enum` array may hold bare strings
+ * (legacy / minimal form) or these objects; readers normalise both
+ * via `enumOptions()`. Only `value` participates in validation and
+ * sort/group order — `color` and `label` are display-only.
+ */
+export interface EnumOption {
+  value: string;
+  color?: EnumColor;
+  label?: string;
+}
+
 export interface FieldConstraints {
   required?: boolean;
   unique?: boolean;
-  enum?: string[];
+  /**
+   * Allowed values. Each entry is either a bare string or an
+   * `EnumOption` carrying display metadata (color, label). Mixed
+   * arrays are legal. Normalise with `enumOptions()` / `enumValues()`
+   * rather than reading this directly.
+   */
+  enum?: (string | EnumOption)[];
   minimum?: number;
   maximum?: number;
   minLength?: number;
@@ -32,8 +65,22 @@ export interface Field {
   name: string;
   type: FieldType;
   title?: string;
+  /** Hover-help / accessibility text. Display-only, passthrough. */
   description?: string;
+  /**
+   * Display-semantic hint from a closed vocabulary (SPEC "Field
+   * format"). Interpretation depends on `type`: number
+   * (`decimal:2`, `percent`, `currency:USD`, …), date (`short`,
+   * `long`, `relative`, …), string (`markdown`, `url`, `email`, …).
+   * Stored values stay raw; `format` only declares the semantic.
+   * Render with `formatValue()`; unknown formats fall back to plain.
+   */
   format?: string;
+  /**
+   * Emoji or symbolic name (`"calendar"`, `"money"`) shown beside the
+   * field title. Display-only; consumers MAY ignore.
+   */
+  icon?: string;
   /**
    * Display alignment for the field's values. Optional; when absent,
    * readers use the per-type default (numerics right, booleans center,
@@ -46,9 +93,45 @@ export interface Field {
   relation?: {
     table: string;
     field: string;
+    /**
+     * `"one"` (default) — the row value is a single target id.
+     * `"many"` — the row value is an array of target ids. Absent is
+     * equivalent to `"one"` (backwards compatible).
+     */
+    cardinality?: "one" | "many";
+  };
+  /**
+   * RESERVED — computed / formula field. Not yet implemented; readers
+   * MUST tolerate its presence (a computed field with no evaluator
+   * simply renders empty). See SPEC "Computed fields (reserved)" and
+   * DECISIONS D21. Shape is provisional until an evaluator lands.
+   */
+  computed?: {
+    expr: string;
+    dialect: string;
   };
   deprecated?: boolean;
   [key: string]: unknown;
+}
+
+/**
+ * Normalise a field's `enum` constraint to `EnumOption[]`, coercing
+ * bare strings to `{ value }`. Returns `[]` when the field has no enum.
+ * The single reader all consumers (validator, sort/group, UI chips)
+ * should go through so both on-disk forms behave identically.
+ */
+export function enumOptions(field: Field | undefined): EnumOption[] {
+  const raw = field?.constraints?.enum;
+  if (!raw) return [];
+  return raw.map((e) => (typeof e === "string" ? { value: e } : e));
+}
+
+/**
+ * Just the enum values, in declared order — for membership checks and
+ * enum-ordered sort/group. Strips the display metadata.
+ */
+export function enumValues(field: Field | undefined): string[] {
+  return enumOptions(field).map((o) => o.value);
 }
 
 /**
