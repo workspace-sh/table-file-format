@@ -40,10 +40,7 @@ export function csvExportWarnings(
   const warnings: string[] = [];
   for (const f of table.schema.fields) {
     if (f.relation) {
-      // `cardinality` lands with the schema-vocabulary work; read it
-      // forward-compatibly so this converter doesn't depend on that PR.
-      const many =
-        (f.relation as { cardinality?: string }).cardinality === "many";
+      const many = f.relation.cardinality === "many";
       warnings.push(
         `field "${f.name}" is a relation → exported as raw id${many ? "s (joined)" : ""}, not resolved`,
       );

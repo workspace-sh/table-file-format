@@ -99,15 +99,10 @@ test("csvExportWarnings flags relations, attachments, bodies", () => {
     schema: {
       fields: [
         { name: "project", type: "string", relation: { table: "projects", field: "id" } },
-        // `cardinality` lands with the schema-vocabulary PR; cast here so
-        // this converter's tests stay independent of that branch's types.
         {
           name: "tags",
           type: "string",
-          relation: { table: "tags", field: "id", cardinality: "many" } as {
-            table: string;
-            field: string;
-          },
+          relation: { table: "tags", field: "id", cardinality: "many" },
         },
         { name: "avatar", type: "string", attachment: true },
       ],
