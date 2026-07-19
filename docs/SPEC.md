@@ -119,6 +119,25 @@ order belongs in views (`sort` and `group`). Append-friendly:
 appending a new row to the end MUST be a valid edit, even
 mid-document.
 
+### Canonical write order
+
+Readers MUST NOT assign meaning to row order, but writers SHOULD
+produce a **canonical serialisation**: rows in stable insertion order
+(new rows appended, existing rows keep their line position), and
+within each row, keys in schema declaration order with `id` first.
+
+Why this matters: two independent writers materialising the same
+logical state should produce **byte-identical** files. Without a
+canonical form, equal states produce unequal bytes — git sees phantom
+diffs, content-addressed storage can't deduplicate, and a sync engine
+can't answer "have these replicas converged?" with a hash comparison.
+Deterministic output is what lets git and log-based replication (see
+docs/STORAGE-AND-SYNC.md) compose instead of compete.
+
+This is a SHOULD, not a MUST: a hand-edited `.table/` with shuffled
+keys is still valid. Canonical order is a property of well-behaved
+writers, not a validity rule.
+
 ## 4. `views.json`
 
 A list of saved views. Views are **shared/team views only** — personal
@@ -202,6 +221,13 @@ descriptive metadata.
 `format` and `formatVersion` are stamped on every write. Readers MAY
 use them to validate that a directory is a `.table/`.
 
+`modified_at` SHOULD be stamped only on **user-initiated** writes —
+not on mechanical re-materialisations (sync engines applying remote
+ops, cache rebuilds, format migrations). A sync engine that touches
+`modified_at` on every apply turns the field into a permanent
+conflict generator: every replica's materialisation differs by
+timestamp alone, defeating the canonical-write-order guarantee (section 3).
+
 ## 6. `attachments/`
 
 Files referenced by row values whose field declares
@@ -256,13 +282,68 @@ Never the source of truth.
 - Apps decide their own caching strategy; the format prescribes only
   the fallback rule.
 
-The interface (`buildIndex`, `queryIndex`, `isIndexStale`, `dropIndex`)
-is locked; the implementation is currently a stub.
+The interface (`buildIndex`, `queryIndex`, `isIndexStale`,
+`dropIndex`) lives in `@workspace.sh/table-core` as types; concrete
+implementations belong in optional per-platform packages (Node via
+`node:sqlite`, RN via op-sqlite / expo-sqlite, browser via
+wa-sqlite + OPFS — or no cache at all; the in-memory query path is
+always sufficient). The implementation is currently a stub.
+
+### Query interface — structured, not raw SQL
+
+`queryIndex` accepts the **view query AST** — the same
+`filter` / `sort` structures defined for `views.json` (section 4) plus an
+optional free-text `search` string — and compiles to SQL internally.
+
+Consumers MUST NOT be handed raw SQL access. Rationale:
+
+- The cache's internal layout (column naming, encodings, FTS
+  configuration) is an implementation detail; raw SQL would freeze it
+  into a public contract.
+- The indexed path and the in-memory fallback (`applyFilters` /
+  `applySort` / `searchRows`) share one query language by
+  construction, so results cannot diverge by accident.
+- User-supplied search text never reaches an SQL string.
+
+### Staleness contract
+
+The index stores `{schema_hash, rows_hash, format_version, built_at}`
+in a `_meta` table inside the database. `isIndexStale` re-hashes
+`schema.json` + `rows.ndjson` and compares.
+
+Hashing — not mtime comparison — because git does not preserve
+mtimes: checkouts and pulls rewrite them even when content is
+unchanged, which makes an mtime-based check rebuild after every git
+operation. Content hashing is correct across git, file copies, and
+clock skew, and costs ~50ms on a multi-MB NDJSON.
+
+### Rebuild contract
+
+Rebuilds are **whole-file**: parse `rows.ndjson`, insert in a single
+transaction. At this format's realistic size class (tens of
+thousands of rows — Airtable caps at 50k/base) a full rebuild is
+sub-second; incremental indexing is deliberately out of scope until
+a real consumer outgrows that. (The format is already
+incremental-friendly if needed: append-only edits can be detected by
+prefix hash + byte watermark.)
+
+Writers MUST build into a temporary file and atomically rename over
+`index.sqlite`, so a concurrent reader never observes a half-built
+index. WAL mode is recommended. Deleting `index.sqlite` at any
+moment MUST be safe (it is, by the fallback rule).
+
+### Full-text search includes bodies
+
+The cache indexes an FTS5 virtual table over all string-typed fields
+**and** the contents of `bodies/{id}.md`, keyed by row id. The
+in-memory `searchRows` already searches bodies; an index that omitted
+them would silently return fewer hits than the fallback — the worst
+kind of divergence, invisible until a missing result is noticed.
 
 ### Field-type → SQLite storage class mapping
 
-When implemented, the cache will materialise rows into a SQLite table
-typed per-column. Mapping:
+The cache materialises rows into a SQLite table typed per-column.
+Mapping:
 
 | Field type | SQLite class | Notes |
 | --- | --- | --- |
@@ -349,7 +430,7 @@ this visibly rather than silently rendering nothing.
 
 ### Relation interop
 
-Per-field `relation` (§2) references a row by `id` but does NOT use
+Per-field `relation` (section 2) references a row by `id` but does NOT use
 the address grammar literally — relations are structured as
 `{table, field}` on the field declaration plus the bare `id` value
 on the row, so apps can resolve them efficiently without parsing a
@@ -385,7 +466,7 @@ optional packages (`@workspace.sh/table-frictionless`,
 The spec covers two version axes only — the spec itself, and the
 schema. Data versioning (edit history, undo, audit, real-time
 collaboration) is **explicitly the consuming app's concern** (see
-docs/DECISIONS.md §D14).
+docs/DECISIONS.md D14).
 
 ### Spec version — `formatVersion`
 

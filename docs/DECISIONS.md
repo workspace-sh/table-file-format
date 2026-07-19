@@ -214,3 +214,66 @@ before a real consumer has built against it bakes assumptions we
 don't have signal for. The format stays lean; the first concrete
 history UX in a consuming app gets to drive what the extension needs
 to look like.
+
+## D15: SQLite cache — hash staleness, full rebuild, atomic swap
+
+The `index.sqlite` contract (SPEC section 8): staleness is detected by
+content hash (`schema_hash` + `rows_hash` stored in a `_meta` table
+inside the index), rebuilds are whole-file inside one transaction,
+and writers build into a temp file then atomically rename. FTS5
+indexes string fields **and** body contents.
+
+**Why hashes, not mtimes:** git rewrites mtimes on checkout/pull even
+when content is unchanged — an mtime check rebuilds after every git
+operation. Hashing a multi-MB NDJSON costs ~50ms, paid once per open.
+
+**Why full rebuild:** at this format's size class (Airtable caps at
+50k rows/base) a transactional rebuild is sub-second. Incremental
+indexing is deferred until a real consumer outgrows that — the
+format is already incremental-friendly (append-only edits detectable
+by prefix hash + byte watermark) if that day comes.
+
+**Why FTS over bodies:** `searchRows` already searches bodies; an
+index that omitted them would silently return fewer hits than the
+fallback it replaces.
+
+## D16: `queryIndex` takes the view AST, not raw SQL
+
+The original locked interface was `queryIndex(dirPath, sql)`. Changed
+(while still a stub, before any consumer existed) to a structured
+`IndexQuery` — the `filter` / `sort` shapes from views.json plus a
+`search` string — compiled to SQL internally.
+
+**Why:** raw SQL freezes the cache's internal layout (column naming,
+encodings, FTS config) into a public contract — the very thing
+"never the source of truth" exists to prevent. The AST keeps the
+indexed path and the in-memory fallback speaking one query language
+so results can't diverge, and user search text never reaches an SQL
+string.
+
+## D17: Sync posture — op-log transport, files as materialisation
+
+For multi-writer sync (Hypercore/Autobase per workspace-p2p-spike),
+the intended model is an op log per writer, Autobase linearisation,
+per-field last-writer-wins, and the `.table/` directory materialised
+from the log as a deterministic checkout. Within a synced workspace
+the log is canonical and files are derived — which D14 already
+permits, since the authority model belongs to the consuming app.
+Full reasoning in docs/STORAGE-AND-SYNC.md.
+
+Three knock-on rules recorded here because they constrain the
+*format*, not just consumers:
+
+- **Canonical write order** (SPEC section 3): identical state must produce
+  byte-identical files, or convergence can't be hash-checked and git
+  sees phantom diffs.
+- **Append-only schema evolution is load-bearing for sync**, not just
+  for compatibility: field *adds* commute between concurrent writers;
+  renames/removes would not. Don't relax it.
+- **`modified_at` is stamped on user-initiated writes only**
+  (SPEC section 5): a sync engine touching it on every apply makes every
+  replica differ by timestamp alone.
+
+The reserved `history.ndjson` (D14) and the sync op log are one
+design: if the extension lands, it is the at-rest serialisation of
+the same event vocabulary, not a parallel format.
