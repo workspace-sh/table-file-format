@@ -12,7 +12,8 @@ explains the implementation that consumes it.
 │   ├── core/                @workspace.sh/table-core
 │   │                        Pure-TS format library — parser, writer,
 │   │                        validator, query, manifest stamping,
-│   │                        nanoid generation, indexer stubs.
+│   │                        nanoid generation, CSV converter,
+│   │                        indexer stubs.
 │   │                        Cross-platform (Node + RN + browser).
 │   │
 │   ├── ui/                  @workspace.sh/table-ui
@@ -137,10 +138,10 @@ npm run core:test          # all tests
 npm run core:test:watch    # watch mode
 ```
 
-48 tests covering parser round-trip, validator behaviour, query
-semantics (filter / sort / group / view / search), nanoid uniqueness,
-and writer manifest stamping. No Jest, no Vitest. Tests live
-alongside source as `*.test.ts`.
+Tests cover parser round-trip, validator behaviour, query semantics
+(filter / sort / group / view / search), nanoid uniqueness, writer
+manifest stamping, and CSV round-trip + edge cases. No Jest, no
+Vitest. Tests live alongside source as `*.test.ts`.
 
 ## UI library — `@workspace.sh/table-ui`
 
