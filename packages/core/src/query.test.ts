@@ -7,8 +7,8 @@ import {
   applyView,
   applyOrder,
   searchRows,
-} from "./query";
-import type { ParsedTable, Row, TableSchema, View } from "./types";
+} from "./query.js";
+import type { ParsedTable, Row, TableSchema, View } from "./types.js";
 
 const schema: TableSchema = {
   fields: [

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toCSV, fromCSV, csvExportWarnings } from "./csv";
-import type { ParsedTable, Row, TableSchema } from "./types";
+import { toCSV, fromCSV, csvExportWarnings } from "./csv.js";
+import type { ParsedTable, Row, TableSchema } from "./types.js";
 
 const schema: TableSchema = {
   fields: [

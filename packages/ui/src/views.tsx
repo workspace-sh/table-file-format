@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
-import { applyGroup, effectiveAlign, formatAddress } from "@workspace.sh/table-core";
+import {
+  applyGroup,
+  effectiveAlign,
+  enumOptions,
+  enumValues,
+  formatAddress,
+} from "@workspace.sh/table-core";
 import type {
   Field,
   FieldAlignment,
@@ -1036,9 +1042,10 @@ function EditableCell({
     );
   }
 
-  // Enum: select dropdown
-  const enumValues = field?.constraints?.enum;
-  if (enumValues && enumValues.length > 0) {
+  // Enum: select dropdown. Normalised via enumOptions() so both the
+  // bare-string and { value, color, label } on-disk forms render.
+  const enumOpts = enumOptions(field);
+  if (enumOpts.length > 0) {
     if (!editing) {
       return (
         <html.span onClick={startEdit} style={styles.cellEditableIdle}>
@@ -1061,9 +1068,9 @@ function EditableCell({
         style={styles.cellInput}
       >
         <html.option value="">—</html.option>
-        {enumValues.map((opt) => (
-          <html.option key={opt} value={opt}>
-            {opt}
+        {enumOpts.map((opt) => (
+          <html.option key={opt.value} value={opt.value}>
+            {opt.label ?? opt.value}
           </html.option>
         ))}
       </html.select>
@@ -1475,7 +1482,10 @@ export function BoardView({
 }: ViewProps) {
   const groupField = view.board_field ?? "status";
   const groupFieldDef = schema.fields.find((f) => f.name === groupField);
-  const enumValues = groupFieldDef?.constraints?.enum;
+  // Values only — board columns key on the stored value; display
+  // metadata (color/label) from the object enum form is not needed
+  // for column identity.
+  const groupEnumValues = enumValues(groupFieldDef);
   const fields = visibleFields(view, schema).filter((f) => f !== groupField);
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
@@ -1523,9 +1533,9 @@ export function BoardView({
   // Persistent columns: when the group field has an enum, show ALL
   // enum values (even empty ones) so the user can drop into a column
   // with no rows.
-  const columnKeys: string[] = enumValues
+  const columnKeys: string[] = groupEnumValues.length > 0
     ? (() => {
-        const keys = [...enumValues];
+        const keys = [...groupEnumValues];
         for (const k of Object.keys(groups)) {
           if (!keys.includes(k)) keys.push(k);
         }

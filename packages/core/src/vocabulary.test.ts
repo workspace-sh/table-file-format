@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { enumOptions, enumValues } from "./types";
-import type { Field, Row, TableSchema } from "./types";
-import { validate } from "./validator";
-import { applyGroup, applySort } from "./query";
-import { formatValue, stringFormatKind } from "./format";
+import { enumOptions, enumValues } from "./types.js";
+import type { Field, Row, TableSchema } from "./types.js";
+import { validate } from "./validator.js";
+import { applyGroup, applySort } from "./query.js";
+import { formatValue, stringFormatKind } from "./format.js";
 
 // ---- Enum normalisation (#31) ----
 

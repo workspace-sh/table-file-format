@@ -1,4 +1,4 @@
-import type { Row, ViewFilter, ViewSort } from "./types";
+import type { Row, ViewFilter, ViewSort } from "./types.js";
 
 /**
  * Structured query for the `index.sqlite` cache — deliberately NOT raw

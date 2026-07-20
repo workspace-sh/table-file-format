@@ -4,8 +4,8 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseTable } from "./parser";
-import { writeTable } from "./writer";
+import { parseTable } from "./parser.js";
+import { writeTable } from "./writer.js";
 
 test("writeTable round-trips through parseTable", async () => {
   const dir = await mkdtemp(join(tmpdir(), "table-test-"));

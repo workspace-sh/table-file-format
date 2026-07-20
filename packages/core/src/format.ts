@@ -1,4 +1,4 @@
-import type { Field } from "./types";
+import type { Field } from "./types.js";
 
 /**
  * Display formatting for a field value from the closed `format`
