@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { parseTable } from "./parser";
+import { parseTable } from "./parser.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // packages/core/src/parser.test.ts → repo root → fixtures/

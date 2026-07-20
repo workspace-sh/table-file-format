@@ -1,8 +1,8 @@
 import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types";
-import { TABLE_FORMAT_VERSION } from "./types";
+import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
+import { TABLE_FORMAT_VERSION } from "./types.js";
 
 export interface WriteTableInput {
   schema: TableSchema;

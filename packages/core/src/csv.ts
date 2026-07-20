@@ -13,8 +13,8 @@
  * represented at all. Call `csvExportWarnings()` to surface what a
  * given table would lose before exporting.
  */
-import type { Field, ParsedTable, Row, TableSchema } from "./types";
-import { newId } from "./id";
+import type { Field, ParsedTable, Row, TableSchema } from "./types.js";
+import { newId } from "./id.js";
 
 export interface FromCSVResult {
   rows: Row[];
