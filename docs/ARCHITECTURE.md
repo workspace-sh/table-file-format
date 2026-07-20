@@ -276,7 +276,9 @@ platform caveats consumers should plan for rather than discover:
 - **Android**: Storage Access Framework hands out tree URIs, not
   paths — readers must be written against SAF documents, not `fs`.
 - **Transport**: email/upload flows flatten or reject directories;
-  the interchange convention is "zip it" (`projects.table.zip`).
+  the interchange convention is `projects.table.zip` — canonical
+  layout, security rules, and the reference reader/writer are in
+  SPEC section 13 (`@workspace.sh/table-core/archive`).
 - **Git on case-insensitive filesystems**: checkout behaviour for
   case-colliding paths feeds the row-id rules in SPEC section 3.
 

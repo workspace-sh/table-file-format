@@ -665,3 +665,66 @@ collaboration) implement it themselves. A future optional
 `history.ndjson` extension is reserved at the directory root for a
 portable append-only edit log, but it is **not yet specified** — its
 shape will be designed when a consumer's UX actually motivates it.
+
+## 13. Archive transport (`.table.zip`)
+
+A `.table/` travelling through a context that cannot carry a
+directory (email, upload, chat drag-and-drop) is zipped. This is a
+transport convention only — the on-disk format is unchanged and
+`formatVersion` is unaffected (additive, per DECISIONS D26/D27).
+
+### Canonical layout
+
+`<name>.table.zip` contains exactly **one** root-level directory,
+`<name>.table/`, holding the bundle's files:
+
+```
+projects.table.zip
+└── projects.table/
+    ├── schema.json
+    ├── rows.ndjson
+    ├── views.json
+    ├── meta.json
+    └── bodies/…
+```
+
+Nested — not files-at-root — because both Finder and CLI `unzip`
+then produce the `.table/` directory directly, nothing scatters
+loose files into the extraction directory, and the table keeps its
+name even if the archive file is renamed.
+
+Readers MUST ignore archiver junk (`__MACOSX/`, `.DS_Store`,
+`Thumbs.db`) and unknown entries (same tolerance as section 1).
+Writers SHOULD omit `index.sqlite` (rebuildable) and MAY omit
+`attachments/`.
+
+### Security — extraction rules
+
+An archive is untrusted input. Implementations MUST reject entries
+whose resolved path escapes the extraction root (zip-slip): any
+`..` segment, absolute path, backslash, or drive prefix. Readers
+SHOULD cap total declared uncompressed size (reference: 1 GiB) to
+bound decompression-bomb exposure, and SHOULD verify per-entry CRC
+and size declarations.
+
+### Reference implementation
+
+`@workspace.sh/table-core/archive` (Node-only, like parser/writer;
+zero dependencies — zip handling is ~200 lines over `node:zlib`):
+
+- `readTableArchive(source: string | Uint8Array): Promise<ParsedTable>`
+  — same shape and skip-and-collect diagnostics contract as
+  `parseTable` (section 3); missing/malformed `schema.json` is
+  fatal. Reads entirely **in memory** — nothing is extracted to
+  disk, so the zip-slip class cannot arise there (hostile names are
+  rejected anyway). Attachments are not materialised (section 6);
+  consumers needing attachment bytes extract the archive themselves
+  under the rules above.
+- `writeTableArchive(name, input): Promise<Uint8Array>` —
+  byte-deterministic for identical input (fixed timestamps, fixed
+  entry order, canonical serialisation shared with `writeTable`),
+  per section 3's canonical-write-order rule.
+
+Constraints: methods stored/deflate only; UTF-8 names; no
+encryption, no multi-volume, no zip64 (readers MAY reject archives
+beyond 4 GiB).

@@ -87,6 +87,21 @@ minted when absent) and `toCSV(table)` — call
 attachments, and bodies do not survive a CSV export, and the loss
 must be visible, not silent.
 
+## Archives (`.table.zip`)
+
+For transport contexts that can't carry a directory:
+
+```ts
+import { readTableArchive, writeTableArchive } from "@workspace.sh/table-core/archive"; // Node only
+
+const table = await readTableArchive(zipPathOrBytes); // same ParsedTable + diagnostics as parseTable
+const bytes = await writeTableArchive("projects", table); // canonical <name>.table/ layout, deterministic
+```
+
+Reading is fully in-memory (no extraction, no zip-slip exposure);
+hostile entry names and decompression bombs are rejected. Layout and
+security rules: SPEC section 13.
+
 ## What stays OUTSIDE the `.table/`
 
 Per-user state (open view, scroll position, column widths tweaked
