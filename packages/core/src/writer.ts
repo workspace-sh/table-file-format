@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
-import { TABLE_FORMAT_VERSION } from "./types.js";
+import { normaliseBody, pretty, serializeNdjson, stampMeta } from "./serialize.js";
 
 export interface WriteTableInput {
   schema: TableSchema;
@@ -47,11 +47,7 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, "attachments"), { recursive: true });
 
-  const meta: TableMeta = {
-    format: "table",
-    formatVersion: TABLE_FORMAT_VERSION,
-    ...(input.meta ?? {}),
-  };
+  const meta: TableMeta = stampMeta(input.meta);
 
   const bodiesDir = join(dir, "bodies");
   const bodies = input.bodies ?? {};
@@ -73,8 +69,7 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
     if (haveBodies) {
       await mkdir(bodiesDir, { recursive: true });
       for (const [id, content] of Object.entries(bodies)) {
-        const normalised = content.endsWith("\n") ? content : content + "\n";
-        await stage(join(bodiesDir, `${id}.md`), normalised);
+        await stage(join(bodiesDir, `${id}.md`), normaliseBody(content));
       }
     }
   } catch (err) {
@@ -104,13 +99,4 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
   } else if (existsSync(bodiesDir)) {
     await rm(bodiesDir, { recursive: true, force: true });
   }
-}
-
-function pretty(value: unknown): string {
-  return JSON.stringify(value, null, 2) + "\n";
-}
-
-function serializeNdjson(rows: Row[]): string {
-  if (rows.length === 0) return "";
-  return rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
 }

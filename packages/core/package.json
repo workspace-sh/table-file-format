@@ -21,6 +21,11 @@
       "types": "./dist/writer.d.ts",
       "default": "./dist/writer.js"
     },
+    "./archive": {
+      "source": "./src/archive.ts",
+      "types": "./dist/archive.d.ts",
+      "default": "./dist/archive.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

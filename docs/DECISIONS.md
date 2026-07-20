@@ -449,3 +449,25 @@ access-model reconciliation landed, and the first real consumer
 (the Workspace app) is waiting on a stable target. A frozen format
 with an evolving library is the correct boundary: consumers bet on
 bytes, not on npm semver.
+
+## D27: Archive transport — nested root, in-memory reader, zero deps
+
+`<name>.table.zip` contains exactly one root directory,
+`<name>.table/` (SPEC section 13). The reference reader parses the
+zip entirely in memory — never extracting to disk — and the writer
+emits byte-deterministic archives. Zip handling is ~200 lines over
+`node:zlib`; no archive dependency. (Resolves issue #56, requested
+by the Workspace integration.)
+
+**Why nested, not files-at-root:** Finder and CLI `unzip` both then
+produce the `.table/` directory directly, nothing scatters loose
+files into the extraction directory, and the table keeps its name
+when the archive file is renamed. **Why in-memory:** it makes the
+zip-slip vulnerability class structurally impossible in the
+reference path (entry names are still validated for extracting
+consumers), avoids temp-directory lifetime questions, and a
+`.table/` that fits an email fits memory. **Why zero-dep:** the
+format's pitch is implementable-in-an-afternoon; stored + deflate
+over a fixed layout doesn't justify an archive stack. Constraints
+accepted: no zip64, no encryption — readers MAY reject >4 GiB
+archives.
