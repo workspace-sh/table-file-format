@@ -316,8 +316,12 @@ timestamp alone, defeating the canonical-write-order guarantee (section 3).
 
 Files referenced by row values whose field declares
 `attachment: true`. The row stores the **filename only** (e.g.
-`"avatar": "headshot.png"`); the reader resolves under
-`attachments/`.
+`"avatar": "headshot.png"`); resolution against `attachments/` is the
+**consuming app's concern** (like relation resolution — see section 2).
+The reference core deliberately does not load attachment contents:
+`parseTable` reads `bodies/` into memory (small, text, per-row) but
+only ever treats `attachments/` as an opaque directory (arbitrary
+size, binary). The asymmetry is intentional.
 
 To avoid filename collisions across rows, the recommended write
 convention is `{nanoid}-{original-name}.ext`, but the format does
@@ -580,6 +584,16 @@ The schema is independently versioned via the `schema-version` field
 on `schema.json`, which the app increments when it changes the schema
 in ways the app considers significant (typically: reordering enums,
 changing constraints).
+
+**Single-writer scope.** `schema-version` is a monotonic counter and
+is meaningful only in the absence of concurrent writers (one device,
+or git with human-resolved merges). Under multi-writer sync, two
+offline peers can both bump 1 → 2 with *different* schemas — so there
+the counter is **advisory only**, and the sync layer's linearisation
+order (see docs/STORAGE-AND-SYNC.md) is authoritative for which schema
+state supersedes which. Consumers MUST NOT use `schema-version`
+equality as proof of schema equality across replicas; compare the
+field set itself. (DECISIONS D22.)
 
 ### Data versioning (NOT in the format)
 
