@@ -22,13 +22,15 @@ explains the implementation that consumes it.
 │   │                        GalleryView, ListView, CalendarView,
 │   │                        SchemaFieldEditor, BodyEditor.
 │   │                        Renders identically on web (via createPortal
-│   │                        + DOM) and native (via RN Modal).
+│   │                        + DOM) and native (via the context-based
+│   │                        PortalHost — RN's Modal crashes on macOS).
 │   │
 │   └── table-fixtures/      @workspace.sh/table-fixtures
-│                            Inline JS copy of fixtures/projects.table/
-│                            for consumers that can't load arbitrary
-│                            files from disk (Metro). Web loads the
-│                            on-disk fixture directly via Vite.
+│                            Inline JS copies of fixtures/*.table/
+│                            (projects + tasks) for consumers that
+│                            can't load arbitrary files from disk
+│                            (Metro). Web loads the on-disk fixtures
+│                            directly via Vite.
 │
 ├── apps/
 │   ├── web/                 @workspace.sh/table-web
@@ -49,7 +51,7 @@ explains the implementation that consumes it.
 │                            is standalone" below.
 │
 ├── fixtures/
-│   ├── projects.table/      7 rows, 9 views, one body
+│   ├── projects.table/      17 rows, 9 views, 4 bodies
 │   └── tasks.table/         8 rows, cross-table relation to projects
 │
 ├── docs/
@@ -169,7 +171,7 @@ implementations per platform:
 
 | File | Native impl | Web impl |
 |---|---|---|
-| `Portal.tsx` | RN `Modal` (transparent + visible) | `createPortal(children, document.body)` |
+| `Portal.tsx` | Context-based `PortalHost` slot (RN `Modal` throws `createNode` on macOS) | `createPortal(children, document.body)` |
 | `useViewportWidth.ts` | `useWindowDimensions` from RN | `window.innerWidth` + resize listener |
 | `useContainerWidth.ts` | `onLayout` measure | `ResizeObserver` |
 | `measureAnchor.ts` | `View.measure` (async callback) | `getBoundingClientRect` (sync, wrapped in `Promise.resolve`) |
@@ -193,10 +195,22 @@ ScrollView). Tested empirically with four different flex
 strategies — none worked.
 
 The answer is fixed pixel widths per cell, computed at render time
-from the container width: `cellWidth = max(MIN_CELL_WIDTH, floor(
-containerWidth / ncols))`. Same approach Airtable, Notion, and Linear
-use. Lives in `packages/ui/src/views.tsx` as the `cellWidth(n)`
-function-style applied per cell.
+from the container width. Same approach Airtable, Notion, and Linear
+use. The width model (in `packages/ui/src/views.tsx`, applied per
+cell via the `cellWidth(n)` function-style):
+
+1. Reserve fixed-width chrome up front — the "+ Field" trailing slot
+   (`ADD_FIELD_COLUMN_WIDTH`) and the table's own borders — then
+   divide the remainder by the DATA column count only.
+2. If the per-column share is below `MIN_CELL_WIDTH`, columns clamp
+   to the minimum and the pane scrolls horizontally.
+3. Otherwise the `floor()` remainder is handed out one pixel at a
+   time to the leftmost columns so columns sum EXACTLY to the
+   available width — no dead strip at the right edge, headers and
+   body rows always share identical geometry.
+
+CalendarView applies the same remainder-distribution to its 7-column
+grid (`dayColWidth(colIndex)`).
 
 ## Apps
 
