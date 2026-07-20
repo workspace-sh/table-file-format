@@ -13,7 +13,7 @@ explains the implementation that consumes it.
 │   │                        Pure-TS format library — parser, writer,
 │   │                        validator, query, manifest stamping,
 │   │                        nanoid generation, CSV converter,
-│   │                        indexer stubs.
+│   │                        zip archive transport, indexer stubs.
 │   │                        Cross-platform (Node + RN + browser).
 │   │
 │   ├── ui/                  @workspace.sh/table-ui
@@ -110,6 +110,11 @@ environment: types, `id` (nanoid generator), `validate`,
 `validateBodies`, `applyFilters`, `applySort`, `applyGroup`,
 `applyView`, `searchRows`, `effectiveAlign`, `defaultAlignFor`, and
 the `indexer` stubs.
+
+The archive transport (`readTableArchive` / `writeTableArchive`) is
+in the barrel too — it is deliberately platform-free (bytes in,
+bytes out; codec via `fflate`) so mailed/shared `.table.zip` files
+open on web and React Native, not just under Node.
 
 `parser.ts` and `writer.ts` are **deliberately omitted from the
 barrel**. They import `node:fs` and would break in the browser. Node

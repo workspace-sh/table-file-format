@@ -3,6 +3,7 @@ export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
 export { validate, validateBodies } from "./validator.js";
 export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query.js";
 export { formatValue, stringFormatKind } from "./format.js";
+export { readTableArchive, writeTableArchive } from "./archive.js";
 export {
   buildIndex,
   queryIndex,

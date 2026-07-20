@@ -91,16 +91,21 @@ must be visible, not silent.
 
 For transport contexts that can't carry a directory:
 
-```ts
-import { readTableArchive, writeTableArchive } from "@workspace.sh/table-core/archive"; // Node only
+Portable — works on Node, in browsers, and in React Native (Hermes),
+so mailed/shared archives open on every Workspace platform:
 
-const table = await readTableArchive(zipPathOrBytes); // same ParsedTable + diagnostics as parseTable
-const bytes = await writeTableArchive("projects", table); // canonical <name>.table/ layout, deterministic
+```ts
+import { readTableArchive, writeTableArchive } from "@workspace.sh/table-core"; // or the ./archive subpath
+
+const table = await readTableArchive(bytes);              // same ParsedTable + diagnostics as parseTable
+const out = await writeTableArchive("projects", table);   // canonical <name>.table/ layout, deterministic
 ```
 
-Reading is fully in-memory (no extraction, no zip-slip exposure);
-hostile entry names and decompression bombs are rejected. Layout and
-security rules: SPEC section 13.
+Callers supply bytes (`await readFile(p)` on Node, `File`/fetch on
+web, the document picker on RN). Reading is fully in-memory (no
+extraction, no zip-slip exposure); hostile entry names and
+decompression bombs are rejected. Layout and security rules: SPEC
+section 13.
 
 ## What stays OUTSIDE the `.table/`
 
