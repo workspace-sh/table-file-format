@@ -187,10 +187,25 @@ lines are skipped. The file ends with a trailing `\n` (POSIX-correct).
 
 ### System `id`
 
-Every row MUST have an `id` field at the top level — a stable nanoid,
-21 chars, URL-safe alphabet. The `id` is **system-level**: it is
-minted by the writer, never edited by the user, and never declared in
-`schema.json` (it is implicit on every row).
+Every row MUST have an `id` field at the top level. The `id` is
+**system-level**: it is minted by the writer, never edited by the
+user, and never declared in `schema.json` (it is implicit on every
+row).
+
+**Validity** is deliberately loose: any non-empty string, unique
+within the table. Hand-authored ids (`p1`, `budget-2026`) are legal —
+a `.table/` edited by a human or an agent outside a managed workspace
+should not need opaque identifiers.
+
+**Writer-minted ids** SHOULD be 25 characters from the lowercase
+base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
+`@workspace.sh/table-core`). The alphabet is deliberately
+**case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
+and on case-insensitive filesystems (default APFS, NTFS) two ids
+differing only in letter case would resolve to the same path and
+silently overwrite each other. For the same reason, all ids — minted
+or hand-authored — MUST be filename-safe and SHOULD avoid case-only
+distinctions from other ids in the table. (DECISIONS D23.)
 
 `id` is what cross-table `relation` references resolve against.
 `primaryKey` (if present) is a separate domain-level uniqueness

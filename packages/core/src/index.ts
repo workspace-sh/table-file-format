@@ -1,5 +1,5 @@
 export * from "./types";
-export { newId } from "./id";
+export { newId, ID_ALPHABET, ID_LENGTH } from "./id";
 export { validate, validateBodies, type ValidationError } from "./validator";
 export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query";
 export { formatValue, stringFormatKind } from "./format";
