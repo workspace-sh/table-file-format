@@ -11,11 +11,19 @@ import type {
   TableSchema,
   View,
 } from "@workspace.sh/table-core";
-import { AddFieldButton, SchemaFieldEditor } from "./SchemaEditor";
+import {
+  ADD_FIELD_COLUMN_WIDTH,
+  AddFieldButton,
+  SchemaFieldEditor,
+} from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
+import { HScroll } from "./internal/HScroll";
+import { SnapHScroll } from "./internal/SnapHScroll";
+import { useViewportWidth } from "./internal/useViewportWidth";
+import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
   monthNameLong,
@@ -32,6 +40,18 @@ import {
  */
 const MIN_CELL_WIDTH = 180;
 
+/**
+ * Viewport breakpoint for touch-first UX. Below this width:
+ *   - Board view becomes a column carousel (one column per viewport
+ *     with a peek of the next).
+ *   - DragHandle requires a long-press to activate (so a casual swipe
+ *     navigates columns instead of triggering a drag).
+ * Picked at 720pt to capture phone-portrait + phone-landscape and
+ * tablet-portrait. Above this, the mouse / wide-screen UX takes over.
+ */
+const TOUCH_VIEWPORT_MAX = 720;
+const TOUCH_DRAG_LONGPRESS_MS = 300;
+
 const styles = css.create({
   // Table
   table: {
@@ -45,6 +65,34 @@ const styles = css.create({
     },
     borderRadius: 8,
     overflow: "hidden",
+  },
+  // Two-pane layout: frozen primary column on the left, horizontally
+  // scrollable rest on the right. Lets phones (and wide tables on
+  // desktop) keep the primary field visible while panning through
+  // other columns — Airtable / Numbers / Sheets pattern.
+  tablePanes: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  tableFrozenColumn: {
+    display: "flex",
+    flexDirection: "column",
+    // Right border distinguishes the frozen column from the
+    // scrollable pane; a subtle shadow would be nicer but needs
+    // careful cross-platform handling — defer.
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  tableScrollPane: {
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    // The HScroll wrapper handles the actual horizontal scroll;
+    // this is the column-of-rows it contains.
   },
   // Dynamic cell width — computed per-render from viewport width / ncols.
   // Applied at use-site to both header and body cells so columns align.
@@ -86,6 +134,15 @@ const styles = css.create({
     minHeight: 40,
     fontSize: 13,
     boxSizing: "border-box",
+    // Base text color for cell content. RN's Text inherits color from
+    // a parent Text (which `html.span` renders to on native), so the
+    // unstyled value span inside CellValue picks this up. Without it,
+    // RSD falls back to a static "black" default that doesn't adapt to
+    // appearance and renders invisibly on dark backgrounds.
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
     // Subtle inset when the cell contains a focused descendant (i.e. the
     // input is open). Indicator lives on the cell, not on the input, so
     // the input itself can stay layout-neutral and the text doesn't shift
@@ -149,6 +206,15 @@ const styles = css.create({
     borderColor: "transparent",
     gap: 8,
   },
+  // Used when the board renders as a column carousel on narrow
+  // viewports — the column takes a fixed width sized to ~84% of the
+  // viewport so the next column peeks. min/max from `boardColumn`
+  // would clamp this to 240-280 which defeats the purpose; override.
+  boardColumnCarouselWidth: (w: number) => ({
+    minWidth: w,
+    maxWidth: w,
+    width: w,
+  }),
   boardColumnDropTarget: {
     borderColor: {
       default: "#3478f6",
@@ -286,6 +352,13 @@ const styles = css.create({
     },
     gap: 12,
   },
+  // Touch-viewport variant — Apple HIG minimum tap target is 44pt
+  // (Android Material is 48dp; 44 covers both). Spread alongside
+  // `listItem` on narrow viewports.
+  listItemTouch: {
+    minHeight: 44,
+    paddingBlock: 12,
+  },
   listItemLast: {
     borderBottomWidth: 0,
   },
@@ -293,6 +366,10 @@ const styles = css.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "500",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   listItemSecondary: {
     fontSize: 12,
@@ -370,7 +447,7 @@ const styles = css.create({
     },
   },
   calendarWeekday: {
-    // Width applied at use-site via the `dayCellWidth` function-style.
+    // Width applied at use-site via the `dayColWidth(colIndex)` helper.
     // Container-measured (not viewport-derived) so columns track the
     // calendar's actual parent — handles sidebar layouts, narrow
     // panels, orientation changes, browser resize.
@@ -394,7 +471,7 @@ const styles = css.create({
     flexWrap: "wrap",
   },
   calendarDay: {
-    // Same `dayCellWidth(n)` applied at use-site as the header cells,
+    // Same `dayColWidth(n)` applied at use-site as the header cells,
     // so headers and grid share identical column geometry.
     flexShrink: 0,
     flexGrow: 0,
@@ -449,6 +526,88 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#93c5fd",
     },
   },
+  // Apple / Google Calendar mobile pattern — day cell shows just a
+  // row of small dots indicating event density. Tap the day to open
+  // a sheet with the full event list. Less informative at a glance
+  // but legible at any cell size.
+  calendarDayDots: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 2,
+  },
+  calendarDayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+  },
+  calendarDayMore: {
+    fontSize: 9,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  // Make the day cell tappable — full-bleed pressable area, no extra
+  // affordances; the dots inside hint at content.
+  calendarDayButton: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    paddingInline: 6,
+    paddingBlock: 4,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  // Bottom-sheet event list — one tappable row per event for the
+  // selected day.
+  daySheetTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  daySheetItem: {
+    paddingInline: 8,
+    paddingBlock: 12,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    fontSize: 14,
+    backgroundColor: "transparent",
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    cursor: "pointer",
+    textAlign: "left",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  daySheetEmpty: {
+    paddingInline: 8,
+    paddingBlock: 24,
+    fontSize: 13,
+    textAlign: "center",
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
   calendarEmpty: {
     padding: 24,
     textAlign: "center",
@@ -480,6 +639,10 @@ const styles = css.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: "600",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   cardField: {
     display: "flex",
@@ -500,6 +663,10 @@ const styles = css.create({
   cardFieldValue: {
     flex: 1,
     fontSize: 12,
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
 
   // Pill (for enum values)
@@ -1048,6 +1215,14 @@ export function TableView({
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
+  // Frozen primary column on the left, scrollable rest on the right —
+  // useful on wide viewports for tables with many columns. On narrow
+  // portrait viewports it ate too much real estate (the title column
+  // is the widest), so default it off there: the table falls back to
+  // a single horizontal scroll over all fields, primary included.
+  const viewportWidth = useViewportWidth();
+  const freezePrimary = viewportWidth > TOUCH_VIEWPORT_MAX;
+
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
   // viewports (mobile portrait), triggering horizontal scroll via the
@@ -1057,144 +1232,235 @@ export function TableView({
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const totalCols = fields.length + (canAddField ? 1 : 0);
-  const cellWidth =
-    containerWidth > 0
-      ? Math.max(MIN_CELL_WIDTH, Math.floor(containerWidth / totalCols))
+
+  // Column-width model. The earlier version divided the container by
+  // `fields + 1` (counting the "+ Field" slot) but then rendered that
+  // slot at a FIXED width — so every row fell short of the container
+  // by `cellWidth − ADD_FIELD_COLUMN_WIDTH`, leaving a dead strip on
+  // the right (the "misaligned" look). Three corrections:
+  //
+  //   1. Divide by the DATA columns only (`fields.length`); the
+  //      "+ Field" slot is a fixed-width reservation, not a 1/N share.
+  //   2. Subtract that reservation (and the table's own 1px borders, +
+  //      the frozen column's 1px divider) up front so the summed
+  //      columns never exceed the content box and spawn a spurious
+  //      horizontal scrollbar.
+  //   3. Hand the `floor()` remainder out one pixel at a time to the
+  //      leftmost columns so the columns sum EXACTLY to the available
+  //      width — no hairline gap between the last cell and the border.
+  //
+  // The frozen-pane case needs no special math: the frozen column and
+  // the scroll pane share the same global column order, so the per-
+  // column widths still sum to the same total whether a column lives
+  // left of the freeze line or right of it.
+  const chrome = freezePrimary ? 3 : 2;
+  const addFieldW = canAddField ? ADD_FIELD_COLUMN_WIDTH : 0;
+  const dataCols = fields.length;
+  const available = Math.max(0, containerWidth - chrome - addFieldW);
+  const rawWidth =
+    dataCols > 0 && containerWidth > 0
+      ? Math.floor(available / dataCols)
       : MIN_CELL_WIDTH;
+  // Below MIN_CELL_WIDTH the table overflows and the pane scrolls —
+  // uniform columns, nothing to distribute. At or above it the table
+  // fills the container and the remainder gets spread.
+  const fills = rawWidth >= MIN_CELL_WIDTH;
+  const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
+  const remainder = fills ? available - cellW * dataCols : 0;
+  const colWidth = (name: string) => {
+    const i = fields.indexOf(name);
+    return cellW + (i >= 0 && i < remainder ? 1 : 0);
+  };
+
+  // Split fields into primary (frozen, leftmost) + rest (scrollable).
+  // Primary is the title field — first in the visible order. Empty
+  // tables (no fields) still render a placeholder header.
+  // When the primary is frozen, the left pane gets it and the right
+  // pane gets the rest. When not frozen, the right pane gets all
+  // fields and the left pane is unused.
+  const primaryName = freezePrimary ? fields[0] : undefined;
+  const restNames = freezePrimary ? fields.slice(1) : fields;
+
+  // Cell renderers — extracted because both panes share them.
+  const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
+    const field = fieldMap.get(name);
+    const isEditing = editingFieldName === name;
+    const fieldIndex = schema.fields.findIndex((f) => f.name === name);
+    const align = effectiveAlign(field);
+    // `isLast` controls whether the right-border separator shows. The
+    // primary pane never has a right-edge separator (the column's own
+    // right border does it); rest-pane cells separate themselves
+    // except the last one, where the `+ Field` button takes over.
+    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    if (!schemaEditable) {
+      return (
+        <html.span
+          key={name}
+          style={[
+            styles.tableCell,
+            styles.cellWidth(colWidth(name)),
+            styles.tableHeaderCell,
+            cellAlignStyle(align),
+            !isLast && styles.tableCellSeparator,
+          ]}
+        >
+          {field?.title ?? name}
+        </html.span>
+      );
+    }
+    return (
+      <html.span
+        key={name}
+        style={[
+          styles.headerCellWrapper,
+          styles.cellWidth(colWidth(name)),
+          !isLast && styles.tableCellSeparator,
+        ]}
+      >
+        <html.button
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ref={(el: any) => {
+            headerButtonRefs.current[name] = el;
+          }}
+          onClick={async () => {
+            if (isEditing) {
+              setEditingFieldName(null);
+            } else {
+              const rect = await measureAnchor(headerButtonRefs.current[name]);
+              if (rect) setAnchorRect(rect);
+              setEditingFieldName(name);
+            }
+          }}
+          style={[
+            styles.headerCellButton,
+            !!field?.deprecated && styles.headerCellDeprecated,
+            headerAlignStyle(align),
+          ]}
+        >
+          {field?.title ?? name}
+        </html.button>
+        {isEditing && field && anchorRect && (
+          <SchemaFieldEditor
+            field={field}
+            fieldIndex={fieldIndex}
+            totalFields={schema.fields.length}
+            align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
+            anchorRect={anchorRect}
+            onUpdate={(patch) => onUpdateField!(name, patch)}
+            onAddEnumValue={(value) => onAddEnumValue!(name, value)}
+            onMove={(delta) => onMoveField!(name, delta)}
+            onClose={() => {
+              setEditingFieldName(null);
+              setAnchorRect(null);
+            }}
+          />
+        )}
+      </html.span>
+    );
+  };
+
+  const renderBodyCell = (
+    row: Row,
+    name: string,
+    idxInPane: number,
+    paneLen: number,
+  ) => {
+    const field = fieldMap.get(name);
+    const align = effectiveAlign(field);
+    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    return (
+      <html.span
+        key={name}
+        style={[
+          styles.tableCell,
+          styles.cellWidth(colWidth(name)),
+          cellAlignStyle(align),
+          !isLast && styles.tableCellSeparator,
+        ]}
+      >
+        {onUpdateRow ? (
+          <EditableCell
+            field={field}
+            value={row[name]}
+            onCommit={(next) => onUpdateRow(row.id, name, next)}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
+        ) : (
+          <CellValue
+            field={field}
+            value={row[name]}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
+        )}
+        {name === titleField && bodies?.[row.id] ? (
+          <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+        ) : null}
+      </html.span>
+    );
+  };
 
   return (
     <html.div {...measureProps} style={styles.table}>
-      <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-        {fields.map((name, idx) => {
-          const field = fieldMap.get(name);
-          const isEditing = editingFieldName === name;
-          const fieldIndex = schema.fields.findIndex((f) => f.name === name);
-          const align = effectiveAlign(field);
-          const isLast = idx === fields.length - 1 && !canAddField;
-          if (!schemaEditable) {
-            return (
-              <html.span
-                key={name}
+      <html.div style={styles.tablePanes}>
+        {/* Frozen pane: primary (title) field — header + one cell per row,
+            stacked vertically. The primary stays put while the user pans
+            the rest pane horizontally. Omitted entirely on narrow
+            viewports — the right pane then carries all fields. */}
+        {primaryName && (
+          <html.div style={styles.tableFrozenColumn}>
+            <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+              {renderHeaderCell(primaryName, 0, 1)}
+            </html.div>
+            {rows.map((row, i) => (
+              <html.div
+                key={row.id}
                 style={[
-                  styles.tableCell,
-                  styles.cellWidth(cellWidth),
-                  styles.tableHeaderCell,
-                  cellAlignStyle(align),
-                  !isLast && styles.tableCellSeparator,
+                  styles.tableRow,
+                  i === rows.length - 1 && styles.tableRowLast,
                 ]}
               >
-                {field?.title ?? name}
-              </html.span>
-            );
-          }
-          return (
-            <html.span
-              key={name}
-              style={[
-                styles.headerCellWrapper,
-                styles.cellWidth(cellWidth),
-                !isLast && styles.tableCellSeparator,
-              ]}
-            >
-              <html.button
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ref={(el: any) => {
-                  headerButtonRefs.current[name] = el;
-                }}
-                onClick={async () => {
-                  if (isEditing) {
-                    setEditingFieldName(null);
-                  } else {
-                    const rect = await measureAnchor(headerButtonRefs.current[name]);
-                    if (rect) setAnchorRect(rect);
-                    setEditingFieldName(name);
-                  }
-                }}
-                style={[
-                  styles.headerCellButton,
-                  // `field?.deprecated` is `undefined` when field is
-                  // unknown OR deprecated isn't set — and `undefined`
-                  // inside an RSD style array crashes the native
-                  // flattener with "length of undefined". Coerce to
-                  // boolean so the array only ever contains styles or
-                  // `false`, which RSD handles fine.
-                  !!field?.deprecated && styles.headerCellDeprecated,
-                  headerAlignStyle(align),
-                ]}
-              >
-                {field?.title ?? name}
-              </html.button>
-              {isEditing && field && anchorRect && (
-                <SchemaFieldEditor
-                  field={field}
-                  fieldIndex={fieldIndex}
-                  totalFields={schema.fields.length}
-                  align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
-                  anchorRect={anchorRect}
-                  onUpdate={(patch) => onUpdateField!(name, patch)}
-                  onAddEnumValue={(value) => onAddEnumValue!(name, value)}
-                  onMove={(delta) => onMoveField!(name, delta)}
-                  onClose={() => {
-                    setEditingFieldName(null);
-                    setAnchorRect(null);
-                  }}
-                />
-              )}
-            </html.span>
-          );
-        })}
-        {canAddField && (
-          <AddFieldButton
-            existingNames={new Set(schema.fields.map((f) => f.name))}
-            onAdd={onAddField!}
-          />
+                {renderBodyCell(row, primaryName, 0, 1)}
+              </html.div>
+            ))}
+          </html.div>
         )}
-      </html.div>
-      {rows.map((row, i) => (
-        <html.div
-          key={row.id}
-          style={[styles.tableRow, i === rows.length - 1 && styles.tableRowLast]}
-        >
-          {fields.map((name, idx) => {
-            const field = fieldMap.get(name);
-            const align = effectiveAlign(field);
-            const isLast = idx === fields.length - 1 && !canAddField;
-            return (
-              <html.span
-                key={name}
-                style={[
-                  styles.tableCell,
-                  styles.cellWidth(cellWidth),
-                  cellAlignStyle(align),
-                  !isLast && styles.tableCellSeparator,
-                ]}
-              >
-                {onUpdateRow ? (
-                  <EditableCell
-                    field={field}
-                    value={row[name]}
-                    onCommit={(next) => onUpdateRow(row.id, name, next)}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
-                  />
-                ) : (
-                  <CellValue
-                    field={field}
-                    value={row[name]}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
+        {/* Scrollable pane: everything past the primary field, plus the
+            `+ Field` affordance. Renders inside HScroll which delivers a
+            horizontal scrollbar on web and an RN ScrollView on native. */}
+        <html.div style={styles.tableScrollPane}>
+          <HScroll>
+            <html.div style={styles.tableScrollPane}>
+              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+                {restNames.map((name, idx) =>
+                  renderHeaderCell(name, idx, restNames.length),
+                )}
+                {canAddField && (
+                  <AddFieldButton
+                    existingNames={new Set(schema.fields.map((f) => f.name))}
+                    onAdd={onAddField!}
                   />
                 )}
-                {name === titleField && bodies?.[row.id] ? (
-                  <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
-                ) : null}
-              </html.span>
-            );
-          })}
-          {canAddField && <html.div style={styles.addFieldSpacer} />}
+              </html.div>
+              {rows.map((row, i) => (
+                <html.div
+                  key={row.id}
+                  style={[
+                    styles.tableRow,
+                    i === rows.length - 1 && styles.tableRowLast,
+                  ]}
+                >
+                  {restNames.map((name, idx) =>
+                    renderBodyCell(row, name, idx, restNames.length),
+                  )}
+                  {canAddField && <html.div style={styles.addFieldSpacer} />}
+                </html.div>
+              ))}
+            </html.div>
+          </HScroll>
         </html.div>
-      ))}
+      </html.div>
     </html.div>
   );
 }
@@ -1222,6 +1488,29 @@ export function BoardView({
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
 
+  // After a row's group field changes (card moved between columns),
+  // the columns can resize / shift — refresh the rect cache so the
+  // next drag's hit-test reflects the new layout. Same pattern as
+  // ListView; see the comment there for the bug it fixes.
+  useEffect(() => {
+    remeasureColumns();
+  }, [rows, remeasureColumns]);
+
+  // Phone-shaped viewport → column carousel: each column is sized to
+  // ~84% of the viewport so the next one peeks at the right edge, and
+  // dragging a card requires a long-press so casual horizontal swipes
+  // navigate columns instead of starting a drag. Above the breakpoint
+  // we fall back to free horizontal scroll with the default 240-280pt
+  // columns and immediate drag activation (desktop / wide tablet).
+  const viewportWidth = useViewportWidth();
+  const isTouchViewport = viewportWidth <= TOUCH_VIEWPORT_MAX;
+  // Carousel column width: viewport minus side padding minus peek.
+  // 16pt side padding, ~52pt peek of the next column on the right.
+  const carouselColumnWidth = Math.max(240, viewportWidth - 16 - 52);
+  // Snap interval: column width + the gap between columns (`styles.board.gap`).
+  const carouselSnapInterval = carouselColumnWidth + 12;
+  const dragLongPressMs = isTouchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
+
   // Render rows as-is — the dragged card stays in its source column
   // with a "lifted" visual style; only `hoveredColumn` highlights the
   // destination. Mutating displayRows to physically move the dragged
@@ -1244,104 +1533,118 @@ export function BoardView({
       })()
     : Object.keys(groups);
 
+  const columnsContent = columnKeys.map((key) => {
+    const groupRows = groups[key] ?? [];
+    const dropReg = canDrag ? registerColumn(key) : undefined;
+    return (
+      <html.div
+        key={key}
+        ref={dropReg?.ref}
+        style={[
+          styles.boardColumn,
+          isTouchViewport && styles.boardColumnCarouselWidth(carouselColumnWidth),
+          hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
+        ]}
+      >
+        <html.div style={styles.boardColumnHeader}>
+          <html.span>{key}</html.span>
+          <html.span style={styles.boardCount}>{groupRows.length}</html.span>
+        </html.div>
+        {groupRows.map((row) => (
+          <DragHandle
+            key={row.id}
+            longPressMs={dragLongPressMs}
+            onDragStart={
+              canDrag
+                ? (e: DragEvent) => {
+                    setDraggedRowId(row.id);
+                    setHoveredColumn(key);
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    remeasureColumns();
+                  }
+                : undefined
+            }
+            onDragMove={
+              canDrag
+                ? (e: DragEvent) => {
+                    setPointerPos({ x: e.pageX, y: e.pageY });
+                    const hit = hitTest(e.pageX, e.pageY);
+                    setHoveredColumn((prev) => (prev === hit ? prev : hit));
+                  }
+                : undefined
+            }
+            onDragEnd={
+              canDrag
+                ? (e: DragEvent) => {
+                    const target = hitTest(e.pageX, e.pageY);
+                    if (target && onUpdateRow) {
+                      const source = rows.find((r) => r.id === row.id);
+                      if (source && source[groupField] !== target) {
+                        onUpdateRow(
+                          row.id,
+                          groupField,
+                          target === "(empty)" ? null : target,
+                        );
+                      }
+                    }
+                    setDraggedRowId(null);
+                    setHoveredColumn(null);
+                    setPointerPos(null);
+                  }
+                : undefined
+            }
+          >
+            <html.div
+              style={[
+                styles.boardCardWrapper,
+                canDrag && styles.draggableHandle,
+                draggedRowId === row.id && styles.cardDragging,
+              ]}
+            >
+              <Card
+                row={row}
+                fields={fields}
+                fieldMap={fieldMap}
+                relatedTables={relatedTables}
+                onOpenRelation={onOpenRelation}
+              />
+            </html.div>
+          </DragHandle>
+        ))}
+      </html.div>
+    );
+  });
+
+  const ghost =
+    draggedRowId &&
+    (() => {
+      const row = rows.find((r) => r.id === draggedRowId);
+      if (!row) return null;
+      return (
+        <DragGhost pointerPos={pointerPos}>
+          <Card row={row} fields={fields} fieldMap={fieldMap} />
+        </DragGhost>
+      );
+    })();
+
+  // Phone: snap-paging carousel — one column dominates the viewport,
+  // peek of next at the right edge, swipe horizontally to advance.
+  // Above the touch breakpoint: keep the free-scrolling multi-column
+  // layout from the original desktop design.
+  if (isTouchViewport) {
+    return (
+      <>
+        <SnapHScroll snapInterval={carouselSnapInterval}>
+          <html.div style={styles.board}>{columnsContent}</html.div>
+        </SnapHScroll>
+        {ghost}
+      </>
+    );
+  }
   return (
     <html.div style={styles.board}>
-      {columnKeys.map((key) => {
-        const groupRows = groups[key] ?? [];
-        // Register each column as a drop zone. The hook returns a ref
-        // callback that captures the underlying RN View / DOM element
-        // for hit-testing during drag.
-        const dropReg = canDrag ? registerColumn(key) : undefined;
-        return (
-          <html.div
-            key={key}
-            ref={dropReg?.ref}
-            style={[
-              styles.boardColumn,
-              hoveredColumn === key && draggedRowId !== null && styles.boardColumnDropTarget,
-            ]}
-          >
-            <html.div style={styles.boardColumnHeader}>
-              <html.span>{key}</html.span>
-              <html.span style={styles.boardCount}>{groupRows.length}</html.span>
-            </html.div>
-            {groupRows.map((row) => (
-              <DragHandle
-                key={row.id}
-                onDragStart={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        setDraggedRowId(row.id);
-                        setHoveredColumn(key);
-                        setPointerPos({ x: e.pageX, y: e.pageY });
-                        // Refresh rect cache so the first hitTest
-                        // call has current column geometry.
-                        remeasureColumns();
-                      }
-                    : undefined
-                }
-                onDragMove={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        setPointerPos({ x: e.pageX, y: e.pageY });
-                        const hit = hitTest(e.pageX, e.pageY);
-                        setHoveredColumn((prev) => (prev === hit ? prev : hit));
-                      }
-                    : undefined
-                }
-                onDragEnd={
-                  canDrag
-                    ? (e: DragEvent) => {
-                        const target = hitTest(e.pageX, e.pageY);
-                        if (target && onUpdateRow) {
-                          const source = rows.find((r) => r.id === row.id);
-                          if (source && source[groupField] !== target) {
-                            onUpdateRow(
-                              row.id,
-                              groupField,
-                              target === "(empty)" ? null : target,
-                            );
-                          }
-                        }
-                        setDraggedRowId(null);
-                        setHoveredColumn(null);
-                        setPointerPos(null);
-                      }
-                    : undefined
-                }
-              >
-                {/* Styles on inner html.div — DragHandle on native is
-                    an RN View that doesn't take stylex output. */}
-                <html.div
-                  style={[
-                    styles.boardCardWrapper,
-                    canDrag && styles.draggableHandle,
-                    draggedRowId === row.id && styles.cardDragging,
-                  ]}
-                >
-                  <Card
-                    row={row}
-                    fields={fields}
-                    fieldMap={fieldMap}
-                    relatedTables={relatedTables}
-                    onOpenRelation={onOpenRelation}
-                  />
-                </html.div>
-              </DragHandle>
-            ))}
-          </html.div>
-        );
-      })}
-      {draggedRowId &&
-        (() => {
-          const row = rows.find((r) => r.id === draggedRowId);
-          if (!row) return null;
-          return (
-            <DragGhost pointerPos={pointerPos}>
-              <Card row={row} fields={fields} fieldMap={fieldMap} />
-            </DragGhost>
-          );
-        })()}
+      {columnsContent}
+      {ghost}
     </html.div>
   );
 }
@@ -1454,11 +1757,24 @@ export function ListView({
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
+  const viewportWidth = useViewportWidth();
+  const dragLongPressMs =
+    viewportWidth <= TOUCH_VIEWPORT_MAX ? TOUCH_DRAG_LONGPRESS_MS : undefined;
   const {
     register: registerRow,
     hitTest,
     remeasure: remeasureRows,
   } = useDropTargets<string>();
+
+  // After a reorder, rows shift to new screen positions but the same
+  // React elements are reused (keyed by row.id). Refs don't re-fire,
+  // so the rect cache holds the previous-frame positions — a tap on
+  // a just-moved row hit-tests against the row that's NOW where it
+  // used to be, committing another one-slot reorder. Trigger an
+  // explicit remeasure whenever the `rows` array identity changes.
+  useEffect(() => {
+    remeasureRows();
+  }, [rows, remeasureRows]);
 
   const computeOrder = (
     draggedId: string,
@@ -1485,6 +1801,7 @@ export function ListView({
         return (
           <DragHandle
             key={row.id}
+            longPressMs={dragLongPressMs}
             onDragStart={
               canDrag
                 ? (e: DragEvent) => {
@@ -1524,6 +1841,7 @@ export function ListView({
               ref={dropReg?.ref}
               style={[
                 styles.listItem,
+                viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
                 i === rows.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
@@ -1576,9 +1894,10 @@ export function ListView({
  * `date` type) and full ISO datetime strings (extracts the date
  * portion). Non-string / invalid values are skipped silently.
  *
- * Layout: 7 columns × 6 rows. Day cells use the same viewport-aware
- * `cellWidth` function-style as TableView, sized to `viewport / 7`
- * so the grid fills the available width.
+ * Layout: 7 columns × 6 rows. Day cells size via `dayColWidth(colIndex)`,
+ * which divides the measured container by 7 and distributes the
+ * remainder pixel-by-pixel across the leftmost columns so the grid
+ * fills the available width exactly with no right-edge gap.
  */
 export function CalendarView({
   view,
@@ -1590,6 +1909,10 @@ export function CalendarView({
   const calField = view.calendar_field;
   const range = view.calendar_range;
 
+  // Day cell tap opens a sheet listing that day's rows — Apple /
+  // Google Calendar pattern. Cells themselves render just dots.
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+
   // Measure the calendar's own container — viewport width would be
   // wrong on web layouts with a sidebar (calendar's parent is the
   // main pane, narrower than the window). 7 columns means every cell
@@ -1597,8 +1920,17 @@ export function CalendarView({
   // completes width is 0, so we guard with a tiny fallback that
   // doesn't visibly flash.
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const dayCellWidth =
-    containerWidth > 0 ? Math.floor(containerWidth / 7) : 0;
+  // 7 columns. `floor(width / 7)` alone leaves up to 6px of dead space
+  // on the right (the grid's border floating away from the cells); the
+  // remainder is spread one pixel at a time across the leftmost
+  // columns so weekdays + day cells fill the width exactly and line up
+  // vertically (each row keys its width on `colIndex`, not position).
+  // `− 2` accounts for the calendar's own 1px left/right border.
+  const calAvailable = Math.max(0, containerWidth - 2);
+  const baseDayWidth = containerWidth > 0 ? Math.floor(calAvailable / 7) : 0;
+  const dayRemainder = containerWidth > 0 ? calAvailable - baseDayWidth * 7 : 0;
+  const dayColWidth = (colIndex: number) =>
+    baseDayWidth + (colIndex < dayRemainder ? 1 : 0);
 
   // Range bounds, normalised to first-of-month so we compare cursors
   // at the same granularity as `cursor` (which is always first-of-month).
@@ -1744,7 +2076,7 @@ export function CalendarView({
             // duplicate across exotic locales / ICU configurations, and we
             // always render exactly 7 in stable order.
             key={i}
-            style={[styles.calendarWeekday, styles.cellWidth(dayCellWidth)]}
+            style={[styles.calendarWeekday, styles.cellWidth(dayColWidth(i))]}
           >
             {d}
           </html.span>
@@ -1754,43 +2086,86 @@ export function CalendarView({
         {cells.map((cell, i) => {
           const key = dateKey(cell.date);
           const dayRows = rowsByDate.get(key) ?? [];
+          const dotsToShow = Math.min(dayRows.length, 3);
+          const overflowCount = dayRows.length - dotsToShow;
           return (
-            <html.div
+            <html.button
               key={i}
+              onClick={() => setSelectedDateKey(key)}
               style={[
                 styles.calendarDay,
-                styles.cellWidth(dayCellWidth),
+                styles.calendarDayButton,
+                styles.cellWidth(dayColWidth(i % 7)),
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >
               <html.span style={styles.calendarDayNum}>
                 {cell.date.getDate()}
               </html.span>
-              {dayRows.map((row) => {
-                const label = titleField
-                  ? formatValue(row[titleField])
-                  : row.id;
-                if (onOpenBody && bodies?.[row.id]) {
-                  return (
-                    <html.button
-                      key={row.id}
-                      onClick={() => onOpenBody(row.id)}
-                      style={styles.calendarRowChip}
-                    >
-                      {label}
-                    </html.button>
-                  );
-                }
-                return (
-                  <html.span key={row.id} style={styles.calendarRowChip}>
-                    {label}
-                  </html.span>
-                );
-              })}
-            </html.div>
+              {dayRows.length > 0 && (
+                <html.div style={styles.calendarDayDots}>
+                  {Array.from({ length: dotsToShow }).map((_, j) => (
+                    <html.span key={j} style={styles.calendarDayDot} />
+                  ))}
+                  {overflowCount > 0 && (
+                    <html.span style={styles.calendarDayMore}>
+                      +{overflowCount}
+                    </html.span>
+                  )}
+                </html.div>
+              )}
+            </html.button>
           );
         })}
       </html.div>
+      {(() => {
+        // Day-detail sheet — renders the selected day's rows as a
+        // tappable list. Tap-through opens the row's body if it has
+        // one (same affordance as the calendar row chips had).
+        const dayRows = selectedDateKey
+          ? rowsByDate.get(selectedDateKey) ?? []
+          : [];
+        const sheetTitle = selectedDateKey
+          ? new Date(selectedDateKey).toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })
+          : "";
+        return (
+          <BottomSheet
+            visible={selectedDateKey !== null}
+            onDismiss={() => setSelectedDateKey(null)}
+            title={sheetTitle}
+          >
+            {dayRows.length === 0 ? (
+              <html.span style={styles.daySheetEmpty}>
+                No items on this day.
+              </html.span>
+            ) : (
+              dayRows.map((row) => {
+                const label = titleField
+                  ? formatValue(row[titleField])
+                  : row.id;
+                const hasBody = !!bodies?.[row.id];
+                return (
+                  <html.button
+                    key={row.id}
+                    onClick={() => {
+                      setSelectedDateKey(null);
+                      if (hasBody && onOpenBody) onOpenBody(row.id);
+                    }}
+                    style={styles.daySheetItem}
+                  >
+                    {label}
+                  </html.button>
+                );
+              })
+            )}
+          </BottomSheet>
+        );
+      })()}
     </html.div>
   );
 }

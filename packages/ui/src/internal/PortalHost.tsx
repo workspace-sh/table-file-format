@@ -19,6 +19,7 @@
 import {
   createContext,
   Fragment,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -58,6 +59,26 @@ interface Slot {
   children: ReactNode;
 }
 
+/**
+ * Memoised passthrough for `<PortalHost>`'s main subtree. React doesn't
+ * memoise components by default — when PortalHost re-renders for an
+ * unrelated reason (a slot was added or removed), every descendant
+ * re-renders too. Without this wrapper, that cascade hits any active
+ * `<HostedPortal>` consumer (e.g. an open BottomSheet), whose effect
+ * fires again, which calls `host.add` again, which causes another
+ * PortalHost re-render — "Maximum update depth exceeded."
+ *
+ * Memo'ing here breaks the feedback. The host can re-render to update
+ * its slot rendering without dragging the app tree along.
+ */
+const PortalHostChildren = memo(function PortalHostChildren({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return <>{children}</>;
+});
+
 export function PortalHost({ children }: { children: ReactNode }) {
   const [slots, setSlots] = useState<Slot[]>([]);
 
@@ -78,7 +99,7 @@ export function PortalHost({ children }: { children: ReactNode }) {
   return (
     <PortalHostContext.Provider value={api}>
       <html.div style={styles.host}>
-        {children}
+        <PortalHostChildren>{children}</PortalHostChildren>
         {slots.map((s) => (
           <Fragment key={s.id}>{s.children}</Fragment>
         ))}
@@ -100,6 +121,11 @@ export function usePortalHost(): PortalHostApi | null {
 /**
  * Render `children` into the nearest `<PortalHost>`. Subscribes via
  * effect so the host re-renders whenever children change.
+ *
+ * Safe to put `children` in the deps array because PortalHost memoises
+ * its main subtree (see `PortalHostChildren`) — the host's state-driven
+ * re-renders no longer cascade down here, so the effect only fires when
+ * the consumer's OWN state changes produce new children. No loop.
  */
 export function HostedPortal({ children }: { children: ReactNode }) {
   const host = usePortalHost();

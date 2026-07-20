@@ -5,14 +5,19 @@ import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { applyView, searchRows, validate } from "@workspace.sh/table-core";
+import {
+  applyView,
+  parseAddress,
+  searchRows,
+  validate,
+} from "@workspace.sh/table-core";
 import type {
   Field,
   ParsedTable,
   TableSchema,
   View,
 } from "@workspace.sh/table-core";
-import { projectsTable } from "@workspace.sh/table-fixtures";
+import { tables as initialTables } from "@workspace.sh/table-fixtures";
 import {
   BodyEditor,
   BoardView,
@@ -30,6 +35,14 @@ import {
 // title/tabs/search above, but scrolls past the right padding instead
 // of being clipped by it.
 const MOBILE_H_PADDING = 16;
+
+const DEFAULT_TABLE_PATH = "projects";
+const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
+  Object.entries(initialTables).map(([key, t]) => [
+    key,
+    (t.schema["schema-version"] as number | undefined) ?? 1,
+  ]),
+);
 
 const styles = css.create({
   root: {
@@ -59,6 +72,11 @@ const styles = css.create({
     },
   },
   subtitle: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
     fontSize: 12,
     marginBottom: 12,
     color: {
@@ -66,14 +84,52 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
-  viewTabs: {
+  validityOk: {
+    color: {
+      default: "#1f7a2c",
+      "@media (prefers-color-scheme: dark)": "#7ee08a",
+    },
+  },
+  validityBad: {
+    color: {
+      default: "#c00",
+      "@media (prefers-color-scheme: dark)": "#ff6b6b",
+    },
+  },
+  schemaBumpBadge: {
+    paddingInline: 6,
+    paddingBlock: 1,
+    borderRadius: 4,
+    fontSize: 10,
+    fontWeight: "600",
+    backgroundColor: {
+      default: "#fef3c7",
+      "@media (prefers-color-scheme: dark)": "#3f2e0a",
+    },
+    color: {
+      default: "#92400e",
+      "@media (prefers-color-scheme: dark)": "#fbbf24",
+    },
+  },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 4,
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
+  tabRow: {
     display: "flex",
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 4,
     marginBottom: 10,
   },
-  viewTab: {
+  tab: {
     paddingInline: 10,
     paddingBlock: 5,
     borderRadius: 6,
@@ -92,7 +148,7 @@ const styles = css.create({
     },
     cursor: "pointer",
   },
-  viewTabActive: {
+  tabActive: {
     backgroundColor: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
@@ -144,6 +200,8 @@ interface ViewCallbacks {
   onAddField: (field: Field) => void;
   onOpenBody: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
+  relatedTables: Record<string, ParsedTable>;
+  onOpenRelation: (address: string) => void;
 }
 
 function renderView(
@@ -157,19 +215,14 @@ function renderView(
     rows: visibleRows,
     schema: table.schema,
     bodies: table.bodies,
+    relatedTables: cb.relatedTables,
+    onOpenRelation: cb.onOpenRelation,
   };
   switch (view.layout) {
     case "board":
-      return (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginHorizontal: -MOBILE_H_PADDING }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
-        >
-          <BoardView {...common} onUpdateRow={cb.onUpdateRow} />
-        </ScrollView>
-      );
+      // BoardView handles its own horizontal scroll — snap-paging
+      // carousel on touch viewports, free scroll on wide ones.
+      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} onOpenBody={cb.onOpenBody} />;
     case "gallery":
       return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":
@@ -183,23 +236,18 @@ function renderView(
     case "calendar":
       return <CalendarView {...common} onOpenBody={cb.onOpenBody} />;
     default:
+      // TableView manages its own horizontal scroll internally now (the
+      // scrollable pane to the right of the frozen primary column).
       return (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginHorizontal: -MOBILE_H_PADDING }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING }}
-        >
-          <TableView
-            {...common}
-            onUpdateRow={cb.onUpdateRow}
-            onUpdateField={cb.onUpdateField}
-            onAddEnumValue={cb.onAddEnumValue}
-            onMoveField={cb.onMoveField}
-            onAddField={cb.onAddField}
-            onOpenBody={cb.onOpenBody}
-          />
-        </ScrollView>
+        <TableView
+          {...common}
+          onUpdateRow={cb.onUpdateRow}
+          onUpdateField={cb.onUpdateField}
+          onAddEnumValue={cb.onAddEnumValue}
+          onMoveField={cb.onMoveField}
+          onAddField={cb.onAddField}
+          onOpenBody={cb.onOpenBody}
+        />
       );
   }
 }
@@ -222,26 +270,79 @@ const Safe = SafeAreaView as unknown as ComponentType<{
 }>;
 
 export default function App() {
-  const [table, setTable] = useState<ParsedTable>(projectsTable);
-  const [activeViewId, setActiveViewId] = useState<string>(table.views[0]!.id);
+  const [tables, setTables] =
+    useState<Record<string, ParsedTable>>(initialTables);
+  const [activeTablePath, setActiveTablePath] =
+    useState<string>(DEFAULT_TABLE_PATH);
+  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        Object.entries(initialTables).map(([key, t]) => [
+          key,
+          t.views[0]?.id ?? "",
+        ]),
+      ),
+  );
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
 
+  const table = tables[activeTablePath]!;
+  const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
+
+  const setActiveViewId = useCallback(
+    (viewId: string) =>
+      setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: viewId })),
+    [activeTablePath],
+  );
+
+  // Apply an Address to app state — shared between relation clicks and
+  // any future deep-link transport so both behave identically. Mirrors
+  // apps/web + apps/desktop so cross-table navigation works the same on
+  // every platform.
+  const applyAddress = useCallback(
+    (addr: { tablePath: string; rowId?: string; viewId?: string }) => {
+      if (!tables[addr.tablePath]) return;
+      setActiveTablePath(addr.tablePath);
+      if (addr.viewId) {
+        setActiveViewIds((prev) => ({ ...prev, [addr.tablePath]: addr.viewId! }));
+      }
+      if (addr.rowId) {
+        const target = tables[addr.tablePath];
+        setActiveBodyRowId(target?.bodies?.[addr.rowId] ? addr.rowId : null);
+      } else {
+        setActiveBodyRowId(null);
+      }
+    },
+    [tables],
+  );
+
+  const openRelation = useCallback(
+    (address: string) => {
+      const addr = parseAddress(address);
+      if (addr) applyAddress(addr);
+    },
+    [applyAddress],
+  );
+
   const updateRow = useCallback(
     (rowId: string, fieldName: string, value: unknown) => {
-      setTable((t) => ({
-        ...t,
-        rows: t.rows.map((r) =>
-          r.id === rowId ? { ...r, [fieldName]: value } : r,
-        ),
+      setTables((all) => ({
+        ...all,
+        [activeTablePath]: {
+          ...all[activeTablePath]!,
+          rows: all[activeTablePath]!.rows.map((r) =>
+            r.id === rowId ? { ...r, [fieldName]: value } : r,
+          ),
+        },
       }));
     },
-    [],
+    [activeTablePath],
   );
 
   const updateField = useCallback(
     (fieldName: string, patch: Partial<Field>) => {
-      setTable((t) => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
         const fields = t.schema.fields.map((f) =>
           f.name === fieldName ? { ...f, ...patch } : f,
         );
@@ -252,70 +353,110 @@ export default function App() {
         const nextSchema: TableSchema = isStructural
           ? bumpSchemaVersion({ ...t.schema, fields })
           : { ...t.schema, fields };
-        return { ...t, schema: nextSchema };
+        return { ...all, [activeTablePath]: { ...t, schema: nextSchema } };
       });
     },
-    [],
+    [activeTablePath],
   );
 
-  const addEnumValue = useCallback((fieldName: string, value: string) => {
-    setTable((t) => {
-      const fields = t.schema.fields.map((f) => {
-        if (f.name !== fieldName) return f;
-        const existing = f.constraints?.enum ?? [];
-        if (existing.includes(value)) return f;
+  const addEnumValue = useCallback(
+    (fieldName: string, value: string) => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        const fields = t.schema.fields.map((f) => {
+          if (f.name !== fieldName) return f;
+          const existing = f.constraints?.enum ?? [];
+          if (existing.includes(value)) return f;
+          return {
+            ...f,
+            constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
+          };
+        });
         return {
-          ...f,
-          constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
+          ...all,
+          [activeTablePath]: {
+            ...t,
+            schema: bumpSchemaVersion({ ...t.schema, fields }),
+          },
         };
       });
-      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
-    });
-  }, []);
+    },
+    [activeTablePath],
+  );
 
-  const moveField = useCallback((fieldName: string, delta: -1 | 1) => {
-    setTable((t) => {
-      const from = t.schema.fields.findIndex((f) => f.name === fieldName);
-      if (from === -1) return t;
-      const to = from + delta;
-      if (to < 0 || to >= t.schema.fields.length) return t;
-      const fields = t.schema.fields.slice();
-      const [moved] = fields.splice(from, 1);
-      fields.splice(to, 0, moved!);
-      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
-    });
-  }, []);
+  const moveField = useCallback(
+    (fieldName: string, delta: -1 | 1) => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        const from = t.schema.fields.findIndex((f) => f.name === fieldName);
+        if (from === -1) return all;
+        const to = from + delta;
+        if (to < 0 || to >= t.schema.fields.length) return all;
+        const fields = t.schema.fields.slice();
+        const [moved] = fields.splice(from, 1);
+        fields.splice(to, 0, moved!);
+        return {
+          ...all,
+          [activeTablePath]: {
+            ...t,
+            schema: bumpSchemaVersion({ ...t.schema, fields }),
+          },
+        };
+      });
+    },
+    [activeTablePath],
+  );
 
-  const addField = useCallback((field: Field) => {
-    setTable((t) => {
-      if (t.schema.fields.some((f) => f.name === field.name)) return t;
-      const fields = [...t.schema.fields, field];
-      return { ...t, schema: bumpSchemaVersion({ ...t.schema, fields }) };
-    });
-  }, []);
+  const addField = useCallback(
+    (field: Field) => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        if (t.schema.fields.some((f) => f.name === field.name)) return all;
+        const fields = [...t.schema.fields, field];
+        return {
+          ...all,
+          [activeTablePath]: {
+            ...t,
+            schema: bumpSchemaVersion({ ...t.schema, fields }),
+          },
+        };
+      });
+    },
+    [activeTablePath],
+  );
 
-  const updateBody = useCallback((rowId: string, content: string) => {
-    setTable((t) => {
-      const bodies = { ...(t.bodies ?? {}) };
-      if (content.length === 0) delete bodies[rowId];
-      else bodies[rowId] = content;
-      return { ...t, bodies };
-    });
-  }, []);
+  const updateBody = useCallback(
+    (rowId: string, content: string) => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        const bodies = { ...(t.bodies ?? {}) };
+        if (content.length === 0) delete bodies[rowId];
+        else bodies[rowId] = content;
+        return { ...all, [activeTablePath]: { ...t, bodies } };
+      });
+    },
+    [activeTablePath],
+  );
 
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);
 
   const updateActiveView = useCallback(
     (patch: Partial<View>) => {
-      setTable((t) => ({
-        ...t,
-        views: t.views.map((v) =>
-          v.id === activeViewId ? { ...v, ...patch } : v,
-        ),
-      }));
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        return {
+          ...all,
+          [activeTablePath]: {
+            ...t,
+            views: t.views.map((v) =>
+              v.id === activeViewId ? { ...v, ...patch } : v,
+            ),
+          },
+        };
+      });
     },
-    [activeViewId],
+    [activeTablePath, activeViewId],
   );
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
@@ -325,65 +466,109 @@ export default function App() {
     bodies: table.bodies,
   });
   const errors = validate(table.schema, table.rows);
+  const searching = query.trim().length > 0;
+  const tablePaths = Object.keys(tables);
+  const showTablePicker = tablePaths.length > 1;
+  const currentSchemaVersion =
+    (table.schema["schema-version"] as number | undefined) ?? 1;
+  const schemaBumped =
+    currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PortalHost>
           <html.div style={styles.root}>
-        <Safe style={{ flex: 1 }}>
-          <html.div style={styles.scroll}>
-            <html.span style={styles.title}>{table.meta.title ?? "Untitled"}</html.span>
-            <html.span style={styles.subtitle}>
-              {visibleRows.length} of {table.rows.length} rows ·{" "}
-              {errors.length === 0
-                ? "schema valid"
-                : `${errors.length} validation issues`}
-            </html.span>
-            <html.div style={styles.viewTabs}>
-              {table.views.map((v) => (
-                <html.button
-                  key={v.id}
-                  onClick={() => setActiveViewId(v.id)}
-                  style={[styles.viewTab, v.id === activeViewId && styles.viewTabActive]}
+            <Safe style={{ flex: 1 }}>
+              <html.div style={styles.scroll}>
+                <html.span style={styles.title}>{view.name}</html.span>
+                <html.div style={styles.subtitle}>
+                  <html.span>
+                    {searching
+                      ? `${visibleRows.length} of ${viewRows.length} matching`
+                      : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
+                  </html.span>
+                  <html.span>·</html.span>
+                  <html.span
+                    style={errors.length === 0 ? styles.validityOk : styles.validityBad}
+                  >
+                    {errors.length === 0
+                      ? "schema valid"
+                      : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
+                  </html.span>
+                  {schemaBumped && (
+                    <html.span style={styles.schemaBumpBadge}>
+                      schema v{currentSchemaVersion}
+                    </html.span>
+                  )}
+                </html.div>
+                {showTablePicker && (
+                  <>
+                    <html.span style={styles.sectionLabel}>Tables</html.span>
+                    <html.div style={styles.tabRow}>
+                      {tablePaths.map((path) => (
+                        <html.button
+                          key={path}
+                          onClick={() => {
+                            setActiveTablePath(path);
+                            setQuery("");
+                            setActiveBodyRowId(null);
+                          }}
+                          style={[styles.tab, path === activeTablePath && styles.tabActive]}
+                        >
+                          {tables[path]!.meta.title ?? path}
+                        </html.button>
+                      ))}
+                    </html.div>
+                  </>
+                )}
+                <html.span style={styles.sectionLabel}>Views</html.span>
+                <html.div style={styles.tabRow}>
+                  {table.views.map((v) => (
+                    <html.button
+                      key={v.id}
+                      onClick={() => setActiveViewId(v.id)}
+                      style={[styles.tab, v.id === activeViewId && styles.tabActive]}
+                    >
+                      {v.name}
+                    </html.button>
+                  ))}
+                </html.div>
+                <html.input
+                  type="text"
+                  placeholder="Search..."
+                  value={query}
+                  onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
+                  style={styles.searchInput}
+                />
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  showsVerticalScrollIndicator={false}
                 >
-                  {v.name}
-                </html.button>
-              ))}
-            </html.div>
-            <html.input
-              type="text"
-              placeholder="Search..."
-              value={query}
-              onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
-              style={styles.searchInput}
-            />
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingBottom: 24 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {renderView(view, table, visibleRows, {
-                onUpdateRow: updateRow,
-                onUpdateField: updateField,
-                onAddEnumValue: addEnumValue,
-                onMoveField: moveField,
-                onAddField: addField,
-                onOpenBody: openBody,
-                onUpdateView: updateActiveView,
-              })}
-            </ScrollView>
-          </html.div>
-        </Safe>
-        {activeBodyRowId && (
-          <BodyEditor
-            rowId={activeBodyRowId}
-            rowTitle={rowTitleFor(table, activeBodyRowId)}
-            content={table.bodies?.[activeBodyRowId] ?? ""}
-            onSave={(content) => updateBody(activeBodyRowId, content)}
-            onClose={closeBody}
-          />
-        )}
+                  {renderView(view, table, visibleRows, {
+                    onUpdateRow: updateRow,
+                    onUpdateField: updateField,
+                    onAddEnumValue: addEnumValue,
+                    onMoveField: moveField,
+                    onAddField: addField,
+                    onOpenBody: openBody,
+                    onUpdateView: updateActiveView,
+                    relatedTables: tables,
+                    onOpenRelation: openRelation,
+                  })}
+                </ScrollView>
+              </html.div>
+            </Safe>
+            {activeBodyRowId && (
+              <BodyEditor
+                rowId={activeBodyRowId}
+                rowTitle={rowTitleFor(table, activeBodyRowId)}
+                content={table.bodies?.[activeBodyRowId] ?? ""}
+                onSave={(content) => updateBody(activeBodyRowId, content)}
+                onClose={closeBody}
+              />
+            )}
           </html.div>
         </PortalHost>
       </SafeAreaProvider>
