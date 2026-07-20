@@ -340,3 +340,25 @@ justify. Same park-with-reserved-shape posture as D14's
 `history.ndjson`. Explicitly out of scope even when built:
 spreadsheet-style range references (`A1:A10`) — position-based
 addressing is wrong for an id-keyed row model.
+
+## D22: `schema-version` is single-writer scoped
+
+The `schema-version` counter is meaningful only without concurrent
+writers (one device, or git with human-resolved merges). Under
+multi-writer sync it is **advisory**: the sync layer's linearisation
+order is authoritative for schema supersession, and consumers must
+not treat counter equality as schema equality across replicas —
+compare the field set itself. (Resolves issue #45; follows from the
+D17 op-log model.)
+
+**Why:** a monotonic counter cannot converge — two offline peers can
+both bump 1 → 2 with different schemas, and on sync there are two
+distinct "v2"s. The honest options were: derive the version from
+content (loses the human-readable number), hand it to the sync layer
+(leans on a layer that isn't built), or scope the counter to the
+substrate where it works. The append-only schema rule (D18) already
+makes concurrent schema *edits* commute; only the *number* was lying.
+Scoping it is zero-code, honest, and correct for the 1.0 substrate
+(git / single device). When the sync layer lands, it owns
+supersession by log position — the counter stays what it is today: a
+human-facing "the schema changed" signal.

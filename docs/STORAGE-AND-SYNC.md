@@ -85,7 +85,12 @@ granularity. Viable only for single-writer / many-reader publishing.
 - **Conflict semantics:** per-field last-writer-wins on the causal
   order. Sufficient for structured records (the Figma/Linear class
   of sync); long-form *body* text wants real text merging and is a
-  separate problem with separate tooling.
+  separate problem with separate tooling. One rule the sync layer
+  must still define: **row-delete vs concurrent field-update** —
+  per-field LWW assumes the row exists, so deletes need a tombstone
+  convention (delete-wins with a tombstone, or resurrect-on-update).
+  Owned by the sync layer; flagged here so it isn't discovered in
+  production.
 - **Attachments** ride the blob layer (Hyperblobs/Hyperdrive),
   content-addressed; D7's filename-only convention accommodates that
   unchanged.

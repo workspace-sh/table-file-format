@@ -140,6 +140,11 @@ must ignore unknown keys):
 
 Fields without `x-tier` are tier 0 — visible to everyone in the org.
 
+Within a tier, every key-holder sees identical data — `x-tier` scopes
+*access*, not a per-user *view*. This is consistent with `.table/`'s
+"no private layer" stance (docs/PRIOR-ART.md): the format carries no
+hidden per-user state, only per-field access.
+
 A row in `rows.ndjson` is written as a single JSON object, but each
 field's value is encrypted with its tier's key before being written to
 the Hypercore log. A peer without `K2` replicates all blocks — the

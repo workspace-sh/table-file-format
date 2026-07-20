@@ -261,6 +261,27 @@ Podfile uses `react_native_pods.rb` from
 fork in the right place inside the monorepo. Includes the
 Xcode 26 / Apple Clang 17 `fmt` consteval workaround.
 
+## Platform realities — "a directory that IS a file"
+
+The `.app`-bundle model works everywhere, but "IS a file" carries
+platform caveats consumers should plan for rather than discover:
+
+- **macOS**: presenting a `.table/` as a single Finder item needs the
+  consuming app to declare the extension as a document package (UTI
+  conforming to `com.apple.package`). Without that it's just a folder
+  — still fully functional, just not one-item-shaped.
+- **iOS**: directory documents are second-class in the Files app and
+  file-provider APIs compared to flat files; expect extra
+  `NSFileCoordinator` care in a document-based app.
+- **Android**: Storage Access Framework hands out tree URIs, not
+  paths — readers must be written against SAF documents, not `fs`.
+- **Transport**: email/upload flows flatten or reject directories;
+  the interchange convention is "zip it" (`projects.table.zip`).
+- **Git on case-insensitive filesystems**: checkout behaviour for
+  case-colliding paths feeds the row-id rules in SPEC section 3.
+
+None of these blocks the model; all of them shape consuming-app work.
+
 ## Build outputs
 
 - `packages/core/dist/` — TypeScript compilation of the format
