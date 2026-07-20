@@ -262,6 +262,23 @@ export interface TableMeta {
 
 export const TABLE_FORMAT_VERSION = 1;
 
+// ---- Diagnostics ----
+
+/**
+ * One reported problem. Produced by `validate` / `validateBodies`
+ * (constraint violations) and by `parseTable` (parse-level
+ * skip-and-collect diagnostics — see SPEC section 3, "Reader error
+ * contract"). For parse diagnostics, `rowIndex` is the ZERO-BASED
+ * LINE NUMBER in rows.ndjson (pointing at the line to fix), or −1
+ * for file-level problems (e.g. a malformed views.json).
+ */
+export interface ValidationError {
+  rowIndex: number;
+  rowId?: string;
+  field?: string;
+  message: string;
+}
+
 // ---- Parsed Table ----
 
 export interface ParsedTable {
@@ -275,5 +292,13 @@ export interface ParsedTable {
    * Rows without a body simply have no entry here.
    */
   bodies?: Record<string, string>;
+  /**
+   * Parse-level diagnostics from the skip-and-collect reader —
+   * malformed NDJSON lines, rows missing a system id, malformed
+   * optional files. Absent when the parse was clean. A caller that
+   * wants strictness can treat a non-empty array as an error; the
+   * default posture is to surface and continue.
+   */
+  diagnostics?: ValidationError[];
   path: string;
 }

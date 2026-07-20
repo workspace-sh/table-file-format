@@ -409,3 +409,24 @@ renames, which is proportionate. Durability (fsync) is explicitly
 out of scope — the contract is about what readers can observe, not
 about power loss; the same posture as the `index.sqlite` rule
 (D15).
+
+## D25: Readers are skip-and-collect, not fail-fast
+
+`parseTable` skips a malformed NDJSON line, a row without a system
+`id`, or a malformed optional file, and reports each as a diagnostic
+(`ParsedTable.diagnostics`, `ValidationError` shape, `rowIndex` =
+zero-based line number, or −1 for file-level). Valid rows always
+load. The single fatal case is a missing or malformed `schema.json`.
+(Resolves issue #44.)
+
+**Why:** the format's pitch is hand-editable, line-diffable text
+under git. Fail-fast meant one typo or a merge-conflict marker made
+the entire table unreadable — an exception, with no way to see the
+surviving data. That punishes exactly the users the plain-text
+design courts. Skip-and-collect matches NDJSON's own design (each
+line independently parseable, SPEC section 3) and the format's
+existing tolerance posture (optional files may be absent; unknown
+root files are ignored). Strictness remains available one level up:
+a consumer can refuse to proceed when `diagnostics` is non-empty.
+Schema stays fatal because every downstream interpretation depends
+on it — degrading there would fabricate meaning.

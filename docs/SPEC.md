@@ -235,6 +235,25 @@ order belongs in views (`sort` and `group`). Append-friendly:
 appending a new row to the end MUST be a valid edit, even
 mid-document.
 
+### Reader error contract
+
+Readers SHOULD be **skip-and-collect**, not fail-fast (DECISIONS
+D25): a malformed NDJSON line, a row without a system `id`, or a
+malformed *optional* file (views.json, meta.json) degrades to a
+per-item diagnostic while every valid row still loads. The format is
+hand-editable, line-oriented text under git — one typo or a
+merge-conflict marker must not make the whole table unreadable.
+
+The one fatal case: `schema.json` missing or malformed. A `.table/`
+without a readable schema is not a table; there is nothing sound to
+degrade to.
+
+Reference shape: `parseTable` returns `diagnostics` (same structure
+as validation errors; `rowIndex` is the zero-based line number in
+`rows.ndjson`, or −1 for file-level problems). Strict consumers MAY
+treat any diagnostic as an error — the contract is that the *reader*
+does not have to.
+
 ### Canonical write order
 
 Readers MUST NOT assign meaning to row order, but writers SHOULD
