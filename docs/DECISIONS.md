@@ -362,3 +362,26 @@ Scoping it is zero-code, honest, and correct for the 1.0 substrate
 (git / single device). When the sync layer lands, it owns
 supersession by log position — the counter stays what it is today: a
 human-facing "the schema changed" signal.
+
+## D23: Ids are case-safe; validity is loose, minting is opinionated
+
+Writer-minted ids are 25 chars of lowercase base36 (`0-9a-z`,
+~129 bits) via `customAlphabet` — no uppercase anywhere in the
+alphabet. Validity stays loose: any non-empty string unique within
+the table is a legal id, so hand-authored ids (`p1`) remain fine.
+(Resolves issue #42.)
+
+**Why:** ids are used verbatim as filenames (`bodies/{id}.md`), and
+the default nanoid alphabet mixes case — on case-insensitive
+filesystems (default APFS, NTFS, most sync targets) two ids differing
+only in letter case resolve to the same path and silently overwrite
+each other's bodies. Silent data loss is the worst failure mode, so
+the fix removes the failure *class* (case leaves the alphabet)
+rather than adding a filename-encoding layer both writer and parser
+would carry forever. Length went 21 → 25 to keep entropy at parity
+with the old base64url alphabet. Breaking for previously-minted
+mixed-case ids, which is acceptable pre-1.0 — no production data
+exists, and fixtures use hand-authored ids that were never affected.
+The loose-validity rule is deliberate (maintainer call): a `.table/`
+outside a managed workspace should be writable by a human or an
+agent without opaque-id ceremony.
