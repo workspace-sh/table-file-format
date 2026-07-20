@@ -24,6 +24,12 @@ adjusted in one client, dark mode, which views are pinned to the
 sidebar) live OUTSIDE the `.table/` — they're the consuming app's
 problem, not the data format's.
 
+"No private layer" refers to per-user *state* — there is no hidden,
+per-user divergent view of the data. Per-field *access control* (see
+docs/PERMISSIONS.md) is a separate concern: a reader either holds a
+field's key or does not, and all key-holders for a field see identical
+values. Access granularity is not the same as hidden state.
+
 The dividing line `.table/` draws on display semantics is Notion's:
 visual meaning gets encoded as **schema**, not as marks scattered
 across cells. "Active = green" is declared once on the field; every
@@ -115,10 +121,11 @@ references + arithmetic + a few stdlib functions (sum, count, today).
 That's well-trodden ground — `CEL`, `JSONata`, or Airtable's formula
 syntax are reasonable starting points.
 
-Open question: should computed values be **materialised** into
-`rows.ndjson` (faster reads, denormalised) or **never persisted** (no
-staleness risk)? Default to "never persisted, recompute on read"; let
-the optional `index.sqlite` cache them for query speed.
+**Status**: the `computed` shape is now reserved in SPEC section 2
+(issue #34, DECISIONS D21); the evaluator is deferred until a real
+consumer motivates the dialect choice. The materialisation question is
+settled: **never persisted, recompute on read** — the optional
+`index.sqlite` may cache results for query speed.
 
 ### Multi-target relations
 
@@ -146,6 +153,9 @@ When `cardinality === "many"`, the row's value is an array of ids
 instead of a single id. Address grammar can already point at one row
 per id; the UI surfaces it as a chip list. Backwards-compatible if we
 default `cardinality` to `"one"`.
+
+**Status**: shipped (issue #35, landed in PR #40) — `cardinality` is
+in SPEC section 2 and validated in `@workspace.sh/table-core`.
 
 ### Rich text in a cell
 
@@ -319,9 +329,11 @@ clean.
 - **Custom RGB color codes**. Symbolic colors only — the consumer owns
   the palette.
 
-This is the most substantive proposed schema extension in this file.
-Worth doing as its own PR after we agree on the color palette and the
-format-string vocabulary.
+This was the most substantive proposed schema extension in this file,
+and it has since **shipped** (issues #31 / #32 / #33, landed in PR
+#40): per-enum color/label, the closed `format` vocabulary, and field
+`description` / `icon` are all in SPEC section 2 and implemented in
+`@workspace.sh/table-core`.
 
 ### Multiple tables in one container
 
@@ -359,8 +371,10 @@ Airtable / Notion locked to their vendor.
 **Closing the gap**: Three concrete moves to lower the activation
 energy for "another tool to read this":
 
-1. Ship a `fromCSV` / `toCSV` converter (issue #5) so users can land
-   their existing data here without writing JSON by hand.
+1. Ship a `fromCSV` / `toCSV` converter (issue #5 — **shipped** in PR
+   #41: RFC 4180, schema-coerced import, lossy-export warnings) so
+   users can land their existing data here without writing JSON by
+   hand.
 2. Ship the portable reference core in Rust (#19) so non-JS apps can
    read/write `.table/` without rewriting the parser.
 3. Document a "minimum viable reader" — what you need to implement to
