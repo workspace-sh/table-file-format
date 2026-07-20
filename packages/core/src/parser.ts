@@ -8,7 +8,7 @@ import type {
   TableSchema,
   ValidationError,
   View,
-} from "./types";
+} from "./types.js";
 
 /**
  * Parse a `.table/` directory.

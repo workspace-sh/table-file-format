@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
-import { defaultAlignFor } from "@workspace.sh/table-core";
+import { defaultAlignFor, enumOptions, enumValues } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportWidth } from "./internal/useViewportWidth";
@@ -370,7 +370,9 @@ export function SchemaFieldEditor({
   const submitEnumValue = () => {
     const value = enumDraft.trim();
     if (!value) return;
-    if (field.constraints?.enum?.includes(value)) return;
+    // Membership check via the normalised values so the rich
+    // { value, color, label } enum form deduplicates correctly too.
+    if (enumValues(field).includes(value)) return;
     onAddEnumValue(value);
     setEnumDraft("");
   };
@@ -437,9 +439,9 @@ export function SchemaFieldEditor({
           <>
             <html.span style={styles.label}>Enum values</html.span>
             <html.div style={styles.enumRow}>
-              {field.constraints!.enum!.map((v) => (
-                <html.span key={v} style={styles.enumPill}>
-                  {v}
+              {enumOptions(field).map((opt) => (
+                <html.span key={opt.value} style={styles.enumPill}>
+                  {opt.label ?? opt.value}
                 </html.span>
               ))}
             </html.div>

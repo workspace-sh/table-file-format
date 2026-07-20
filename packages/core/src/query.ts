@@ -6,8 +6,8 @@ import type {
   View,
   ViewFilter,
   ViewSort,
-} from "./types";
-import { enumValues } from "./types";
+} from "./types.js";
+import { enumValues } from "./types.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
