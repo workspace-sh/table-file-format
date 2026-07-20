@@ -32,7 +32,7 @@ export type EnumColor =
 
 /**
  * Rich enum entry. The on-disk `enum` array may hold bare strings
- * (legacy / minimal form) or these objects; readers normalise both
+ * (minimal form) or these objects; readers normalise both
  * via `enumOptions()`. Only `value` participates in validation and
  * sort/group order — `color` and `label` are display-only.
  */
