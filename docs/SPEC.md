@@ -1,7 +1,11 @@
 # `.table/` format specification
 
-> Spike-status. Versioned by `formatVersion: 1` in `meta.json`. Will
-> move before 1.0.
+> **Frozen at `formatVersion: 1`** (2026-07-20, DECISIONS D26).
+> Changes from here are **additive only** — new optional fields,
+> annotations, and files that existing readers safely ignore.
+> Breaking changes require a major bump of `formatVersion`. The
+> reference library's *API* may still evolve; the on-disk format is
+> stable.
 
 A `.table/` is a directory that IS a file. The extension is `.table`.
 The directory contains plain-text files designed for line-diffable

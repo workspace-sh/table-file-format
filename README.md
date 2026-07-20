@@ -7,9 +7,10 @@ spreadsheet, for information workers, not developers.
 A `.table/` is a directory that IS a file (like macOS `.app` bundles).
 Plain text inside, line-diffable, greppable, self-contained.
 
-> **Status:** spike / research. The format and reference library are
-> usable; the API is unstable and the spec will move. Not for production
-> data yet.
+> **Status:** format **frozen at `formatVersion: 1`** (tag
+> `format-v1`) — the on-disk format is stable and additive-only from
+> here; see docs/SPEC.md. The reference library works and is tested;
+> its TypeScript API may still evolve ahead of a 1.0 package release.
 
 ## What's in a `.table/`
 

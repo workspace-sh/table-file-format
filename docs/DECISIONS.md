@@ -430,3 +430,22 @@ root files are ignored). Strictness remains available one level up:
 a consumer can refuse to proceed when `diagnostics` is non-empty.
 Schema stays fatal because every downstream interpretation depends
 on it — degrading there would fabricate meaning.
+
+## D26: formatVersion 1 is frozen (2026-07-20)
+
+The on-disk format is frozen at `formatVersion: 1`, tagged
+`format-v1`. Changes from here are additive only — new optional
+fields, annotations, or files that existing readers safely ignore
+(the tolerance rules in SPEC section 1 make this cheap). Breaking
+changes require a major `formatVersion` bump. The reference
+library's TypeScript API is versioned separately and may still move.
+
+**Why now:** every open vocabulary question is implemented or
+reserved-with-a-shape (D18–D21), the storage/sync contracts are
+written (D15–D17, D22), the reader/writer behaviour contracts are
+implemented and tested (D23–D25), the architectural review
+(docs/REVIEW.md) found no remaining freeze-blockers after the
+access-model reconciliation landed, and the first real consumer
+(the Workspace app) is waiting on a stable target. A frozen format
+with an evolving library is the correct boundary: consumers bet on
+bytes, not on npm semver.
