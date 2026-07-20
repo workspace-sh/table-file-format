@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types";
@@ -19,6 +19,30 @@ export interface WriteTableInput {
   bodies?: Record<string, string>;
 }
 
+/**
+ * Write a `.table/` directory with a staged, near-atomic commit
+ * (SPEC section 1, "Writer atomicity"; DECISIONS D24):
+ *
+ *   Stage    — every file's full content is written to a `<name>.tmp`
+ *              sibling first. Any failure here (disk full, bad body
+ *              id, crash) leaves the existing table byte-for-byte
+ *              intact; at worst, ignorable `*.tmp` litter remains,
+ *              which readers skip by contract (unknown root files are
+ *              ignored; body readers only match `*.md`).
+ *   Commit   — each temp is renamed over its target. rename(2) within
+ *              a directory is atomic per file, so a reader never
+ *              observes a partially-written file. The commit phase is
+ *              a handful of renames — the torn-window shrinks from
+ *              "the whole serialisation" to microseconds.
+ *   Trim     — stale body files (and an emptied bodies/ dir) are
+ *              removed only after every rename has landed, so a crash
+ *              can never leave bodies deleted-but-not-rewritten.
+ *
+ * This is atomicity against readers and crashes, not durability —
+ * no fsync is issued; power-loss durability is the platform's page
+ * cache policy. Apps needing stronger guarantees can fsync the
+ * directory afterwards.
+ */
 export async function writeTable(dir: string, input: WriteTableInput | ParsedTable): Promise<void> {
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, "attachments"), { recursive: true });
@@ -29,36 +53,56 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
     ...(input.meta ?? {}),
   };
 
-  await writeFile(join(dir, "schema.json"), pretty(input.schema));
-  await writeFile(join(dir, "rows.ndjson"), serializeNdjson(input.rows));
-  await writeFile(join(dir, "views.json"), pretty(input.views ?? []));
-  await writeFile(join(dir, "meta.json"), pretty(meta));
-  await writeBodies(join(dir, "bodies"), input.bodies);
-}
+  const bodiesDir = join(dir, "bodies");
+  const bodies = input.bodies ?? {};
+  const haveBodies = Object.keys(bodies).length > 0;
 
-async function writeBodies(dir: string, bodies: Record<string, string> | undefined): Promise<void> {
-  const entries = bodies ?? {};
-  const haveAny = Object.keys(entries).length > 0;
-  if (!haveAny) {
-    if (existsSync(dir)) await rm(dir, { recursive: true, force: true });
-    return;
-  }
+  // ---- Stage: write everything to *.tmp; nothing existing is touched.
+  const staged: Array<{ tmp: string; target: string }> = [];
+  const stage = async (target: string, content: string) => {
+    const tmp = target + ".tmp";
+    await writeFile(tmp, content);
+    staged.push({ tmp, target });
+  };
 
-  await mkdir(dir, { recursive: true });
-
-  // Wholesale replace: drop any existing .md files not in the input.
-  const existing = await readdir(dir).catch(() => [] as string[]);
-  for (const name of existing) {
-    if (!name.endsWith(".md")) continue;
-    const id = name.slice(0, -".md".length);
-    if (!(id in entries)) {
-      await rm(join(dir, name), { force: true });
+  try {
+    await stage(join(dir, "schema.json"), pretty(input.schema));
+    await stage(join(dir, "rows.ndjson"), serializeNdjson(input.rows));
+    await stage(join(dir, "views.json"), pretty(input.views ?? []));
+    await stage(join(dir, "meta.json"), pretty(meta));
+    if (haveBodies) {
+      await mkdir(bodiesDir, { recursive: true });
+      for (const [id, content] of Object.entries(bodies)) {
+        const normalised = content.endsWith("\n") ? content : content + "\n";
+        await stage(join(bodiesDir, `${id}.md`), normalised);
+      }
     }
+  } catch (err) {
+    // Failed mid-stage: remove whatever temps we managed to write so
+    // the directory returns to exactly its pre-call state, then
+    // surface the original error. Cleanup failures are swallowed —
+    // stray temps are inert by the reader contract.
+    await Promise.allSettled(staged.map((s) => rm(s.tmp, { force: true })));
+    throw err;
   }
 
-  for (const [id, content] of Object.entries(entries)) {
-    const normalised = content.endsWith("\n") ? content : content + "\n";
-    await writeFile(join(dir, `${id}.md`), normalised);
+  // ---- Commit: atomic per-file renames. No content writes happen here.
+  for (const { tmp, target } of staged) {
+    await rename(tmp, target);
+  }
+
+  // ---- Trim: deletions strictly after every rename has landed.
+  if (haveBodies) {
+    const existing = await readdir(bodiesDir).catch(() => [] as string[]);
+    for (const name of existing) {
+      if (!name.endsWith(".md")) continue;
+      const id = name.slice(0, -".md".length);
+      if (!(id in bodies)) {
+        await rm(join(bodiesDir, name), { force: true });
+      }
+    }
+  } else if (existsSync(bodiesDir)) {
+    await rm(bodiesDir, { recursive: true, force: true });
   }
 }
 

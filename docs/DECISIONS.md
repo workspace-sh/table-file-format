@@ -385,3 +385,27 @@ exists, and fixtures use hand-authored ids that were never affected.
 The loose-validity rule is deliberate (maintainer call): a `.table/`
 outside a managed workspace should be writable by a human or an
 agent without opaque-id ceremony.
+
+## D24: Writer commits via stage → rename → trim
+
+`writeTable` stages every file to a `<name>.tmp` sibling, commits
+each with an atomic per-file `rename()`, and performs deletions
+(stale bodies, emptied `bodies/`) only after every rename has
+landed. A failure during staging aborts with the previous table
+byte-for-byte intact. (Resolves issue #43.)
+
+**Why:** the old writer wrote each file in place, sequentially — a
+crash, a concurrent reader, or a file-sync client could observe a
+new `schema.json` alongside the old `rows.ndjson` (a torn table),
+and a crash mid-bodies could leave bodies deleted but not
+rewritten. For a format whose pitch is local-first files under git
+and sync clients, the writer must never make a reader's view
+inconsistent. Full-directory swap (staging a sibling directory and
+renaming it into place) was considered and rejected for 1.0: it
+breaks open file handles and watchers on every save and costs a
+directory copy for unchanged attachments; per-file rename shrinks
+the torn window from "the whole serialisation" to a handful of
+renames, which is proportionate. Durability (fsync) is explicitly
+out of scope — the contract is about what readers can observe, not
+about power loss; the same posture as the `index.sqlite` rule
+(D15).
