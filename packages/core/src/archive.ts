@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { strFromU8, strToU8 } from "fflate";
 import type {
   ParsedTable,
   TableMeta,
@@ -12,10 +12,14 @@ import { normaliseBody, pretty, serializeNdjson, stampMeta } from "./serialize.j
 import { readZip, writeZip, type ZipEntry } from "./zip.js";
 
 /**
- * `.table.zip` archive transport (SPEC section 13). Node-only, like
- * parser/writer. Canonical layout: the archive contains exactly one
- * root-level directory named `<name>.table/` with the bundle's files
- * inside it.
+ * `.table.zip` archive transport (SPEC section 13). Portable — Node,
+ * browsers, React Native — because a shared archive arrives on every
+ * platform (mail on a phone, upload in a browser, Finder on a Mac).
+ * Callers hand in the archive BYTES; getting bytes from a path, a
+ * fetch, or a document picker is the platform's one line, not this
+ * module's concern. Canonical layout: the archive contains exactly
+ * one root-level directory named `<name>.table/` with the bundle's
+ * files inside it.
  *
  * Reading happens entirely in memory — no extraction to disk, so the
  * zip-slip vulnerability class cannot arise here (entry names are
@@ -33,20 +37,16 @@ function isJunk(name: string): boolean {
 }
 
 /**
- * Read a `.table.zip` archive into the same `ParsedTable` shape
+ * Read `.table.zip` archive bytes into the same `ParsedTable` shape
  * `parseTable` returns, including the skip-and-collect diagnostics
  * contract (SPEC section 3). Missing or malformed `schema.json`
- * inside the archive is fatal, exactly as for a directory.
- *
- * `source` is a path to the archive or its bytes. `path` on the
- * result is the archive path when one was given, otherwise the root
- * directory name from inside the archive.
+ * inside the archive is fatal, exactly as for a directory. `path` on
+ * the result is the root directory name from inside the archive.
  */
 export async function readTableArchive(
-  source: string | Uint8Array,
+  source: Uint8Array,
 ): Promise<ParsedTable> {
-  const bytes = typeof source === "string" ? await readFile(source) : source;
-  const entries = readZip(bytes).filter((e) => !isJunk(e.name));
+  const entries = readZip(source).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
   }
@@ -65,14 +65,13 @@ export async function readTableArchive(
     );
   }
 
-  const decoder = new TextDecoder();
   const files = new Map<string, Uint8Array>();
   for (const e of entries) {
     files.set(e.name.slice(root.length + 1), e.data);
   }
   const text = (name: string): string | undefined => {
     const data = files.get(name);
-    return data === undefined ? undefined : decoder.decode(data);
+    return data === undefined ? undefined : strFromU8(data);
   };
 
   const diagnostics: ValidationError[] = [];
@@ -96,7 +95,7 @@ export async function readTableArchive(
     if (!name.startsWith("bodies/") || !name.endsWith(".md")) continue;
     const inner = name.slice("bodies/".length);
     if (inner.includes("/")) continue;
-    bodies[inner.slice(0, -".md".length)] = decoder.decode(files.get(name)!);
+    bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(name)!);
   }
 
   const parsed: ParsedTable = {
@@ -104,7 +103,7 @@ export async function readTableArchive(
     rows,
     views,
     meta,
-    path: typeof source === "string" ? source : root,
+    path: root,
   };
   if (Object.keys(bodies).length > 0) parsed.bodies = bodies;
   if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
@@ -131,10 +130,10 @@ export async function writeTableArchive(
     throw new Error(`invalid table name: ${JSON.stringify(name)}`);
   }
   const root = `${bare}.table`;
-  const encoder = new TextEncoder();
   const entry = (path: string, content: string): ZipEntry => ({
     name: `${root}/${path}`,
-    data: encoder.encode(content),
+    // strToU8, not a global TextEncoder — portable across Hermes.
+    data: strToU8(content),
   });
 
   const entries: ZipEntry[] = [

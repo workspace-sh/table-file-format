@@ -471,3 +471,24 @@ format's pitch is implementable-in-an-afternoon; stored + deflate
 over a fixed layout doesn't justify an archive stack. Constraints
 accepted: no zip64, no encryption — readers MAY reject >4 GiB
 archives.
+
+## D28: Archive transport is portable; codec via fflate
+
+`readTableArchive` / `writeTableArchive` run on Node, browsers, and
+React Native (Hermes): no Node globals, bytes-only API (the platform
+supplies bytes from a path, fetch, or document picker), string
+encoding via fflate's helpers rather than assuming global
+TextEncoder/TextDecoder. The raw-deflate codec is `fflate` (pure JS,
+zero transitive deps); the container logic — layout, security
+posture, determinism — remains bespoke. Supersedes D27's
+zero-dependency claim.
+
+**Why:** a shared archive arrives on every platform — mail on a
+phone, upload in a browser, Finder on a Mac — so a Node-only reader
+served exactly one of the format's three UI targets. Hermes has
+neither `node:zlib` nor `DecompressionStream`, which leaves pure-JS
+deflate as the only implementation that runs everywhere; writing and
+maintaining our own inflate/deflate is not where this format's value
+lives. fflate is small, audited, and dependency-free, and only the
+codec crosses the boundary — everything the spec normatively
+constrains stays in-repo.

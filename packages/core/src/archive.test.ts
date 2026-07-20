@@ -99,17 +99,10 @@ test("reads archives produced by the system zip CLI", async (t) => {
   }
 });
 
-test("file-path source sets path to the archive path", async () => {
+test("bytes-only API: path is the root name; .table name suffix accepted", async () => {
   const disk = await parseTable(resolve(fixturesDir, "tasks.table"));
-  const dir = await mkdtemp(join(tmpdir(), "table-zip-"));
-  try {
-    const out = join(dir, "tasks.table.zip");
-    const bytes = await writeTableArchive("tasks.table", disk); // .table suffix accepted
-    await (await import("node:fs/promises")).writeFile(out, bytes);
-    const back = await readTableArchive(out);
-    assert.equal(back.path, out);
-    assert.equal(back.rows.length, disk.rows.length);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+  const bytes = await writeTableArchive("tasks.table", disk); // suffix accepted
+  const back = await readTableArchive(bytes);
+  assert.equal(back.path, "tasks.table");
+  assert.equal(back.rows.length, disk.rows.length);
 });

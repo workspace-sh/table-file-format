@@ -1,10 +1,11 @@
-import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 
 /**
  * Minimal zip read/write for the `.table.zip` transport convention
- * (SPEC section 13). Deliberately zero-dependency — the format's
- * pitch is "implementable in an afternoon", and its reference
- * library should not pull an archive stack for two fixed layouts.
+ * (SPEC section 13). Portable: runs on Node, browsers, and React
+ * Native (Hermes) — no Node globals, no platform APIs. The container
+ * logic (layout, security posture, determinism) is ours; only the
+ * raw-deflate codec comes from `fflate` (pure JS, DECISIONS D28).
  *
  * Scope is the convention, not the whole zip universe: methods
  * stored (0) and deflate (8), UTF-8 names, no encryption, no
@@ -57,12 +58,6 @@ export function crc32(buf: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function toBuffer(data: Uint8Array): Buffer {
-  return Buffer.isBuffer(data)
-    ? data
-    : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
-}
-
 /** Reject entry names that could escape an extraction root. */
 function assertSafeEntryName(name: string): void {
   const bad =
@@ -80,7 +75,10 @@ export function readZip(
   source: Uint8Array,
   opts?: { maxTotalBytes?: number },
 ): ZipEntry[] {
-  const buf = toBuffer(source);
+  const buf = source;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const u16 = (o: number) => dv.getUint16(o, true);
+  const u32 = (o: number) => dv.getUint32(o, true);
   const maxTotal = opts?.maxTotalBytes ?? ZIP_MAX_TOTAL_BYTES;
 
   // End-of-central-directory: scan backwards over the trailing
@@ -88,15 +86,15 @@ export function readZip(
   let eocd = -1;
   const scanFrom = Math.max(0, buf.length - 22 - 0xffff);
   for (let i = buf.length - 22; i >= scanFrom; i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) {
+    if (u32(i) === EOCD_SIG) {
       eocd = i;
       break;
     }
   }
   if (eocd === -1) throw new Error("not a zip archive (no end-of-central-directory)");
 
-  const count = buf.readUInt16LE(eocd + 10);
-  const cdOffset = buf.readUInt32LE(eocd + 16);
+  const count = u16(eocd + 10);
+  const cdOffset = u32(eocd + 16);
   if (count === 0xffff || cdOffset === 0xffffffff) {
     throw new Error("zip64 archives are not supported");
   }
@@ -106,18 +104,18 @@ export function readZip(
   let declaredTotal = 0;
 
   for (let n = 0; n < count; n++) {
-    if (pos + 46 > buf.length || buf.readUInt32LE(pos) !== CENTRAL_SIG) {
+    if (pos + 46 > buf.length || u32(pos) !== CENTRAL_SIG) {
       throw new Error("corrupt zip: bad central directory entry");
     }
-    const method = buf.readUInt16LE(pos + 10);
-    const crc = buf.readUInt32LE(pos + 16);
-    const compSize = buf.readUInt32LE(pos + 20);
-    const uncompSize = buf.readUInt32LE(pos + 24);
-    const nameLen = buf.readUInt16LE(pos + 28);
-    const extraLen = buf.readUInt16LE(pos + 30);
-    const commentLen = buf.readUInt16LE(pos + 32);
-    const localOffset = buf.readUInt32LE(pos + 42);
-    const name = buf.toString("utf8", pos + 46, pos + 46 + nameLen);
+    const method = u16(pos + 10);
+    const crc = u32(pos + 16);
+    const compSize = u32(pos + 20);
+    const uncompSize = u32(pos + 24);
+    const nameLen = u16(pos + 28);
+    const extraLen = u16(pos + 30);
+    const commentLen = u16(pos + 32);
+    const localOffset = u32(pos + 42);
+    const name = strFromU8(buf.subarray(pos + 46, pos + 46 + nameLen));
     pos += 46 + nameLen + extraLen + commentLen;
 
     if (compSize === 0xffffffff || uncompSize === 0xffffffff) {
@@ -136,20 +134,20 @@ export function readZip(
 
     // Local header repeats name/extra with possibly different extra
     // length — read it to find where the data actually starts.
-    if (localOffset + 30 > buf.length || buf.readUInt32LE(localOffset) !== LOCAL_SIG) {
+    if (localOffset + 30 > buf.length || u32(localOffset) !== LOCAL_SIG) {
       throw new Error(`corrupt zip: bad local header for ${name}`);
     }
-    const localNameLen = buf.readUInt16LE(localOffset + 26);
-    const localExtraLen = buf.readUInt16LE(localOffset + 28);
+    const localNameLen = u16(localOffset + 26);
+    const localExtraLen = u16(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
     const raw = buf.subarray(dataStart, dataStart + compSize);
     if (raw.length !== compSize) throw new Error(`corrupt zip: truncated data for ${name}`);
 
-    let data: Buffer;
+    let data: Uint8Array;
     if (method === 0) {
-      data = Buffer.from(raw);
+      data = raw.slice();
     } else if (method === 8) {
-      data = inflateRawSync(raw, { maxOutputLength: uncompSize });
+      data = inflateSync(raw, { out: new Uint8Array(uncompSize) });
     } else {
       throw new Error(`unsupported compression method ${method} for ${name}`);
     }
@@ -164,49 +162,60 @@ export function readZip(
   return entries;
 }
 
+function header(size: number, write: (dv: DataView) => void): Uint8Array {
+  const out = new Uint8Array(size);
+  write(new DataView(out.buffer));
+  return out;
+}
+
 export function writeZip(entries: ZipEntry[]): Uint8Array {
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
   let offset = 0;
 
   for (const entry of entries) {
     assertSafeEntryName(entry.name);
-    const name = Buffer.from(entry.name, "utf8");
-    const data = toBuffer(entry.data);
+    // strToU8, not a global TextEncoder — Hermes only gained the web
+    // encoding APIs recently; fflate's helper is portable everywhere.
+    const name = strToU8(entry.name);
+    const data = entry.data;
     const crc = crc32(data);
-    const deflated = deflateRawSync(data);
+    const deflated = deflateSync(data);
     // Store when deflate doesn't help (already-compressed or tiny).
     const useDeflate = deflated.length < data.length;
     const payload = useDeflate ? deflated : data;
     const method = useDeflate ? 8 : 0;
 
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(LOCAL_SIG, 0);
-    local.writeUInt16LE(20, 4); // version needed
-    local.writeUInt16LE(0x0800, 6); // UTF-8 names
-    local.writeUInt16LE(method, 8);
-    local.writeUInt16LE(DOS_TIME, 10);
-    local.writeUInt16LE(DOS_DATE, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(payload.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(name.length, 26);
-    local.writeUInt16LE(0, 28);
+    const local = header(30, (dv) => {
+      dv.setUint32(0, LOCAL_SIG, true);
+      dv.setUint16(4, 20, true); // version needed
+      dv.setUint16(6, 0x0800, true); // UTF-8 names
+      dv.setUint16(8, method, true);
+      dv.setUint16(10, DOS_TIME, true);
+      dv.setUint16(12, DOS_DATE, true);
+      dv.setUint32(14, crc, true);
+      dv.setUint32(18, payload.length, true);
+      dv.setUint32(22, data.length, true);
+      dv.setUint16(26, name.length, true);
+      dv.setUint16(28, 0, true);
+    });
 
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(CENTRAL_SIG, 0);
-    central.writeUInt16LE(20, 4); // version made by
-    central.writeUInt16LE(20, 6); // version needed
-    central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(method, 10);
-    central.writeUInt16LE(DOS_TIME, 12);
-    central.writeUInt16LE(DOS_DATE, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(payload.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    // extra, comment, disk, internal attrs, external attrs all zero
-    central.writeUInt32LE(offset, 42);
+    const localOffset = offset;
+    const central = header(46, (dv) => {
+      dv.setUint32(0, CENTRAL_SIG, true);
+      dv.setUint16(4, 20, true); // version made by
+      dv.setUint16(6, 20, true); // version needed
+      dv.setUint16(8, 0x0800, true);
+      dv.setUint16(10, method, true);
+      dv.setUint16(12, DOS_TIME, true);
+      dv.setUint16(14, DOS_DATE, true);
+      dv.setUint32(16, crc, true);
+      dv.setUint32(20, payload.length, true);
+      dv.setUint32(24, data.length, true);
+      dv.setUint16(28, name.length, true);
+      // extra, comment, disk, internal attrs, external attrs all zero
+      dv.setUint32(42, localOffset, true);
+    });
 
     localParts.push(local, name, payload);
     centralParts.push(central, name);
@@ -214,12 +223,21 @@ export function writeZip(entries: ZipEntry[]): Uint8Array {
   }
 
   const centralSize = centralParts.reduce((s, b) => s + b.length, 0);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(EOCD_SIG, 0);
-  eocd.writeUInt16LE(entries.length, 8);
-  eocd.writeUInt16LE(entries.length, 10);
-  eocd.writeUInt32LE(centralSize, 12);
-  eocd.writeUInt32LE(offset, 16);
+  const eocd = header(22, (dv) => {
+    dv.setUint32(0, EOCD_SIG, true);
+    dv.setUint16(8, entries.length, true);
+    dv.setUint16(10, entries.length, true);
+    dv.setUint32(12, centralSize, true);
+    dv.setUint32(16, offset, true);
+  });
 
-  return Buffer.concat([...localParts, ...centralParts, eocd]);
+  const parts = [...localParts, ...centralParts, eocd];
+  const total = parts.reduce((s, b) => s + b.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
 }

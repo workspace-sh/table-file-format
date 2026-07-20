@@ -709,10 +709,15 @@ and size declarations.
 
 ### Reference implementation
 
-`@workspace.sh/table-core/archive` (Node-only, like parser/writer;
-zero dependencies — zip handling is ~200 lines over `node:zlib`):
+`@workspace.sh/table-core/archive`, also re-exported from the
+barrel — **portable**: Node, browsers, and React Native (Hermes)
+alike, because a shared archive arrives on every platform. The
+container logic is bespoke (~200 lines); only the raw-deflate codec
+comes from `fflate` (pure JS; DECISIONS D28). Callers pass archive
+BYTES — obtaining them from a path, fetch, or document picker is the
+platform's one line:
 
-- `readTableArchive(source: string | Uint8Array): Promise<ParsedTable>`
+- `readTableArchive(source: Uint8Array): Promise<ParsedTable>`
   — same shape and skip-and-collect diagnostics contract as
   `parseTable` (section 3); missing/malformed `schema.json` is
   fatal. Reads entirely **in memory** — nothing is extracted to
