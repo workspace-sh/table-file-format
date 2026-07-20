@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTable } from "./parser";
@@ -137,6 +137,67 @@ test("writeTable removes bodies/ entirely when input has no bodies", async () =>
       rows: [{ id: "r1", title: "one" }],
     });
     assert.ok(!existsSync(join(target, "bodies")), "bodies/ should be removed when input bodies is undefined");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- Atomicity contract (issue #43 / DECISIONS D24) ----
+
+test("writeTable leaves no *.tmp litter after a successful write", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const target = join(dir, "out.table");
+    await writeTable(target, {
+      schema: { fields: [{ name: "title", type: "string" }] },
+      rows: [{ id: "r1", title: "one" }],
+      bodies: { r1: "body" },
+    });
+    const rootEntries = await readdir(target);
+    assert.ok(
+      rootEntries.every((n) => !n.endsWith(".tmp")),
+      `unexpected temp files at root: ${rootEntries.join(", ")}`,
+    );
+    const bodyEntries = await readdir(join(target, "bodies"));
+    assert.ok(bodyEntries.every((n) => !n.endsWith(".tmp")));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("failed write leaves the previous table fully intact (injected stage failure)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const target = join(dir, "out.table");
+    // Establish a known-good table first.
+    await writeTable(target, {
+      schema: { fields: [{ name: "title", type: "string" }] },
+      rows: [{ id: "r1", title: "original" }],
+      bodies: { r1: "original body" },
+    });
+
+    // Inject a failure DURING the stage phase: a body id containing a
+    // path separator makes its temp write fail (ENOENT — subdirectory
+    // does not exist). This lands after the root files have staged,
+    // exercising the mid-stage abort path.
+    await assert.rejects(
+      writeTable(target, {
+        schema: { fields: [{ name: "title", type: "string" }] },
+        rows: [{ id: "r1", title: "REPLACED" }],
+        bodies: { "no/such/dir": "boom" },
+      }),
+    );
+
+    // The previous table must be byte-for-byte what it was: the failed
+    // call must not have renamed anything.
+    const round = await parseTable(target);
+    assert.equal(round.rows.length, 1);
+    assert.equal(round.rows[0]!.title, "original");
+    assert.match(round.bodies!.r1!, /original body/);
+
+    // And staged temps from the failed call were cleaned up.
+    const rootEntries = await readdir(target);
+    assert.ok(rootEntries.every((n) => !n.endsWith(".tmp")));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

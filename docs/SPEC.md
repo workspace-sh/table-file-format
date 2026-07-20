@@ -25,6 +25,23 @@ Readers MUST tolerate any of the optional members being absent. Readers
 MUST ignore unknown files at the directory root. Writers SHOULD
 preserve unknown files on round-trip (treat them as the user's domain).
 
+### Writer atomicity
+
+Writers MUST NOT expose partially-written files to readers. The
+reference discipline (DECISIONS D24, mirrored from the
+`index.sqlite` rule in section 8): **stage** every file's full
+content to a `<name>.tmp` sibling first, then **commit** each via
+`rename()` — atomic per file within a directory — and only then
+**trim** stale files (body deletions last, so a crash can never
+leave bodies deleted-but-not-rewritten). A failure before the commit
+phase leaves the previous table byte-for-byte intact; stray `*.tmp`
+files are inert because readers ignore unknown files (above) and
+body readers match `*.md` only.
+
+This is atomicity against concurrent readers and crashes, not
+power-loss durability — writers MAY additionally fsync when their
+platform demands it.
+
 ## 2. `schema.json`
 
 Defines the fields of every row, their types, and any constraints.
