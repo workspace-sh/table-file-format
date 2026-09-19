@@ -169,6 +169,44 @@ Constraints inherited from RSD's strict subset:
 - **Explicit `display: "flex"`** on every flex container. RSD on web
   does not auto-set it (only on native does the equivalent kick in).
 
+### How much of RSD this actually depends on
+
+Worth knowing, because RSD is pinned at `0.0.55` and has been
+pre-1.0 since 2022: the surface consumed here is very small.
+
+Measured across the 2,235 lines of `packages/ui/src/views.tsx`
+(19 Sep 2026):
+
+| API | Uses |
+|---|---|
+| `html.div` | 57 |
+| `html.span` | 52 |
+| `html.button` | 18 |
+| `html.option` | 4 |
+| `html.select` | 2 |
+| `html.input` | 2 |
+| `html.a` | 1 |
+| `css.create` | 2 |
+
+Seven elements and one function. No other RSD API is used in the
+shared view layer, and that layer imports nothing from `react-native`
+directly.
+
+The point is not that RSD is unimportant — it is what makes one
+component set serve four platforms. The point is that the **exit cost
+is bounded and knowable**: replacing RSD means implementing seven
+elements and `css.create` over the host primitives, not rewriting the
+views. That is worth re-measuring before any decision about whether to
+keep betting on it:
+
+```sh
+grep -oE "html\.[a-zA-Z]+|css\.[a-zA-Z]+" packages/ui/src/views.tsx \
+  | sort | uniq -c | sort -rn
+```
+
+If that table grows a long tail, the calculation changes. Today it
+does not have one.
+
 ### Cross-platform internals — `.ts` + `.web.ts` file-split
 
 `packages/ui/src/internal/` contains primitives that need different

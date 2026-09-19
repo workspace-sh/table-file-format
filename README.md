@@ -72,16 +72,20 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │                         RSD/StyleX view components — TableView, BoardView,
 │                         GalleryView, ListView, CalendarView, SchemaEditor,
 │                         BodyEditor.
-│                         Currently web-targeted; cross-platform lifting tracked.
+│                         Cross-platform: the same components render on web,
+│                         iOS, Android and macOS. Every platform fork lives in
+│                         `src/internal/` — see "What is platform-specific".
 ├── apps/
 │   ├── web/              @workspace.sh/table-web
 │   │                     Vite 7 + React 19 + RSD 0.0.55 + StyleX (PostCSS).
 │   │                     Full demo with editing, drag-and-drop, search, etc.
 │   ├── mobile/           @workspace.sh/table-mobile
-│   │                     Expo 55 — iOS + Android. Minimal list viewer.
+│   │                     Expo 55 — iOS + Android. Same five views, body
+│   │                     editor and search as web.
 │   │                     `npm run mobile:prebuild` to generate native projects.
 │   └── desktop/          @workspace.sh/table-desktop
-│                         Bare RN + react-native-macos 0.81. Minimal viewer.
+│                         Bare RN + react-native-macos 0.81. Same five views,
+│                         body editor and search as web.
 │                         `macos/` Xcode project inside (gitignored,
 │                         bootstrap per README).
 ├── fixtures/
@@ -95,6 +99,31 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 
 Apps consume packages via the workspace alias (`"@workspace.sh/table-core": "*"`);
 NPM resolves locally. No publishing required for local development.
+
+## What is platform-specific
+
+The five views, the schema editor and the body editor are written once
+and run unchanged on web, iOS, Android and macOS. Nothing in the view
+layer branches on platform.
+
+Every fork lives in `packages/ui/src/internal/`, and there are nine of
+them — each a `.web.tsx` / `.web.ts` override beside a default that
+serves native:
+
+| Fork | Why it forks |
+|---|---|
+| `Portal`, `PortalHost` | Overlay hosting. RN's `Modal` crashes on macOS, so native uses a context-based host instead of the DOM's `createPortal`. |
+| `BottomSheet` | Presentation differs by convention, not just API. |
+| `HScroll`, `SnapHScroll` | Horizontal scrolling and snap points. |
+| `DragHandle`, `useDropTargets` | Pointer events vs. gesture handlers. |
+| `measureAnchor`, `useContainerWidth`, `useViewportWidth` | Layout measurement, which has no shared primitive. |
+
+The pattern is worth stating plainly: the forks are **scrolling,
+dragging, measuring and overlays** — the things no cross-platform
+abstraction unifies, because they are where platforms genuinely differ.
+Feature code does not fork. If a new fork appears outside
+`internal/`, that is a signal worth examining rather than a routine
+cost.
 
 ## Running
 
