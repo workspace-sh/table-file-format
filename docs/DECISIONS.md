@@ -559,4 +559,43 @@ referenced), they compose cleanly with the reserved `scenarios.json`
 extension (tracked separately) — a scenario evaluator re-runs the
 same `expr` once per input combination with no special-casing.
 
+**Coordinates are an authoring and display surface, never storage:**
+a grid MAY label columns `A, B, C…` and rows `1, 2, 3…`, and a formula
+bar MAY accept `=B7`. Neither reaches disk. A coordinate typed at entry
+is resolved immediately against the current view to a stable reference
+— the field name, plus a row id when it points at another row — and
+that is what is stored. On display the stored reference is rendered
+back into whatever coordinate it occupies in the current view.
+
+The formula therefore never changes when rows are sorted, filtered or
+grouped; only its rendering moves. `=B7` becomes `=B3` after a sort,
+still meaning the same row. This is strictly stronger than A1: a
+spreadsheet must rewrite every affected formula on an insert or delete
+(O(formulas) per structural edit) and still cannot protect references
+that point INTO a sorted range from outside — they keep their
+coordinate and silently mean different data. A reference bound to a row
+id cannot be broken by reordering at all, so there is no rewriting pass
+and no `#REF!` arising from a sort.
+
+**`display` caches only stable renderings:** the optional `display`
+key described above may hold a rendered Excel-style form
+(`=SUM(price, quantity)`) because function and field names do not
+depend on the view. It MUST NOT hold a coordinate form (`=B7`), which
+is view-dependent and goes stale on the next sort or filter. Cached
+`display` and live-rendered coordinates are different mechanisms:
+the first is written once, the second is computed per render.
+
+**Row-local evaluation is a performance boundary, not only a scope
+decision:** while a computed field may reference only its own row
+(D21, issue #34), each row's evaluation is independent and there is no
+cross-row dependency graph. Combined with recompute-on-read, this
+means a reader computes only the rows it is showing — a million-row
+table costs what is on screen, not what is on disk, and recalculation
+parallelises per row. Cross-row aggregation is precisely what
+reintroduces the dependency graph and the topological recalculation
+that makes large spreadsheets slow. That is a reason to keep it
+deferred, and when it is built it needs designing against that cost
+(incremental aggregates, or materialisation into the optional
+`index.sqlite`) rather than treating it as ordinary scope.
+
 (Resolves issue #34.)
