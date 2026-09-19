@@ -172,35 +172,48 @@ Constraints inherited from RSD's strict subset:
 ### How much of RSD this actually depends on
 
 Worth knowing, because RSD is pinned at `0.0.55` and has been
-pre-1.0 since 2022: the surface consumed here is very small.
+pre-1.0 since 2022: the surface consumed here is narrow, but it is
+not free to leave.
 
-Measured across the 2,235 lines of `packages/ui/src/views.tsx`
-(19 Sep 2026):
+Measured across all 5,621 lines that import RSD — `packages/ui/src`
+plus all three apps (19 Sep 2026):
 
 | API | Uses |
 |---|---|
-| `html.div` | 57 |
-| `html.span` | 52 |
-| `html.button` | 18 |
-| `html.option` | 4 |
-| `html.select` | 2 |
-| `html.input` | 2 |
+| `html.div` | 160 |
+| `html.span` | 148 |
+| `html.button` | 54 |
+| `css.create` | 13 |
+| `html.input` | 12 |
+| `html.option` | 6 |
+| `html.select` | 4 |
+| `html.textarea` | 1 |
 | `html.a` | 1 |
-| `css.create` | 2 |
 
-Seven elements and one function. No other RSD API is used in the
-shared view layer, and that layer imports nothing from `react-native`
-directly.
+Eight elements and one styling function. Nothing else.
 
-The point is not that RSD is unimportant — it is what makes one
-component set serve four platforms. The point is that the **exit cost
-is bounded and knowable**: replacing RSD means implementing seven
-elements and `css.create` over the host primitives, not rewriting the
-views. That is worth re-measuring before any decision about whether to
-keep betting on it:
+**The elements are the easy half.** Eight components mapping onto host
+primitives is an afternoon's work.
+
+**`css.create` is the other half, and it is not an afternoon.** RSD is
+not a name-mapping shim — it also normalises pseudo-states
+(`usePseudoState`), the pointer-event active-state polyfill,
+`unstable_TextAncestorContext`, reduced-motion, and the web/native
+`display: flex` divergence documented above. None of that is visible
+in the usage counts, and all of it would have to be reproduced to
+reach parity on four platforms. Expect days to weeks, with subtle
+rendering divergence as the failure mode rather than a clean break.
+
+So the honest summary is: the dependency is **shallow but not
+disposable**. Leaving is a bounded project, not a chore — which is
+still a far better position than a surface that would need rewriting.
+
+Re-measure before any decision about whether to keep betting on it:
 
 ```sh
-grep -oE "html\.[a-zA-Z]+|css\.[a-zA-Z]+" packages/ui/src/views.tsx \
+find packages/ui/src apps/web/src apps/desktop apps/mobile \
+  -name "*.tsx" -o -name "*.ts" | grep -v node_modules \
+  | xargs grep -hoE "html\.[a-zA-Z]+|css\.[a-zA-Z]+" \
   | sort | uniq -c | sort -rn
 ```
 
