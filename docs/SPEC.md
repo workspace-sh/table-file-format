@@ -178,12 +178,11 @@ no "stored 100 but recomputes to 110" staleness class. The optional
 `index.sqlite` cache MAY materialise results for query speed.
 
 Until an evaluator ships, readers MUST tolerate a `computed` field's
-presence — it simply renders empty. The dialect is `table-expr-v1`, a canonical S-expression grammar (see
-DECISIONS D29). The standard library and whether cross-row
-aggregation is ever in scope remain open. No evaluator ships yet —
-readers MUST still tolerate a `computed` field's presence and render
-it empty until one exists. Do not write tooling against evaluation
-yet; the dialect itself may be relied upon.
+presence — it simply renders empty. The dialect is `table-expr-v1`, a
+canonical S-expression grammar (see DECISIONS D29). The standard
+library and whether cross-row aggregation is ever in scope remain
+open. Do not write tooling against evaluation yet; the dialect itself
+may be relied upon.
 
 ### Schema evolution
 

@@ -555,9 +555,11 @@ interpreters.
 
 **Composability payoff:** because `table-expr-v1` expressions are
 pure (no side effects, no cross-row state beyond what's explicitly
-referenced), they compose cleanly with the reserved `scenarios.json`
-extension (tracked separately) — a scenario evaluator re-runs the
-same `expr` once per input combination with no special-casing.
+referenced), they would compose cleanly with a future multi-value
+("amb") scenario extension, should one be reserved — such an
+evaluator re-runs the same `expr` once per input combination with no
+special-casing. Nothing of the kind is reserved today; this notes a
+property worth preserving, not an existing commitment.
 
 **Coordinates are an authoring and display surface, never storage:**
 a grid MAY label columns `A, B, C…` and rows `1, 2, 3…`, and a formula
@@ -575,7 +577,12 @@ spreadsheet must rewrite every affected formula on an insert or delete
 that point INTO a sorted range from outside — they keep their
 coordinate and silently mean different data. A reference bound to a row
 id cannot be broken by reordering at all, so there is no rewriting pass
-and no `#REF!` arising from a sort.
+and no `#REF!` arising from a sort. This extends D21 rather than
+adding to it: D21 already rules out spreadsheet-style range references
+(`A1:A10`) on the grounds that position-based addressing is wrong for
+an id-keyed row model. The same reasoning applies to a single
+coordinate, which is why one may be typed and displayed but never
+stored.
 
 **`display` caches only stable renderings:** the optional `display`
 key described above may hold a rendered Excel-style form
