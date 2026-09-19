@@ -492,3 +492,58 @@ maintaining our own inflate/deflate is not where this format's value
 lives. fflate is small, audited, and dependency-free, and only the
 codec crosses the boundary — everything the spec normatively
 constrains stays in-repo.
+
+## D29: Computed field dialect — `table-expr-v1` is a canonical S-expression grammar; Excel-style syntax is a compiling authoring surface
+
+The `dialect: "table-expr-v1"` placeholder in D21/SPEC section 2 is
+defined: an S-expression (EDN-style) grammar — `(sum price quantity)`,
+`(if (> total 4200) "over" "ok")` — as the one form every reader's
+evaluator parses. `dialect` remains a string precisely so a future
+`table-expr-v2` or an entirely different grammar can be introduced
+without a `formatVersion` bump; `table-expr-v1` names this first one.
+
+No second stored grammar is introduced. Excel-familiar syntax
+(`=SUM(price, quantity)`) is an **authoring-surface convenience**,
+not a storage format: a consuming app's editor MAY compile it down to
+`table-expr-v1` and cache the rendered string in an optional `display`
+key alongside `expr`, purely for UIs that can't (or choose not to) run
+an evaluator — the same role `format` plays for display semantics
+elsewhere in the schema (see "Field format" above). `display` is
+never authoritative and readers MUST ignore it if `expr` is present.
+
+**Why S-expressions over CEL, JSONata, or a bespoke infix grammar:**
+the format's pitch is a minimal reader implementable in an afternoon
+(D9, D26's freeze rationale). CEL and JSONata both need real
+tokenizers with operator-precedence climbing before anything can be
+evaluated; an S-expression reader is closer to a hundred lines in any
+language — no precedence table, no ambiguity, `(op arg arg…)`
+uniformly. That cost is paid by every third-party reader that wants
+to resolve a computed field, not just this repo's own.
+
+**Why not restricted/sandboxed JS:** same reason in sharper relief —
+even a minimal secure-subset JS parser is a substantially bigger
+implementation surface than an S-expression reader, for a format
+whose whole thesis is implementer accessibility.
+
+**Why one stored grammar rather than a dialect per column:** `dialect`
+already makes multiple grammars representable, but every additional
+*stored* grammar is an interpreter every compliant reader must embed
+to be spec-compliant — directly opposed to the minimal-reader thesis.
+Mixing is fine at the *authoring* layer (one column's formula typed
+via an Excel-style bar, another hand-written in `table-expr-v1`
+directly) because both compile to the same stored `expr`; it is a
+cost only when the *storage* layer forks.
+
+**Precedent:** Grist (Python formulas, Excel-named functions exposed
+as callables in the same language) solves the "don't alienate
+spreadsheet users" problem the same way — one execution language, a
+familiar vocabulary layered on top — rather than by shipping two
+interpreters.
+
+**Composability payoff:** because `table-expr-v1` expressions are
+pure (no side effects, no cross-row state beyond what's explicitly
+referenced), they compose cleanly with the reserved `scenarios.json`
+extension (tracked separately) — a scenario evaluator re-runs the
+same `expr` once per input combination with no special-casing.
+
+(Resolves issue #34.)
