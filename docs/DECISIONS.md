@@ -511,6 +511,19 @@ an evaluator — the same role `format` plays for display semantics
 elsewhere in the schema (see "Field format" above). `display` is
 never authoritative and readers MUST ignore it if `expr` is present.
 
+**Case:** function names are case-insensitive at the authoring surface
+and normalise to lowercase in the stored `expr` — `SUM(price)`,
+`Sum(price)` and `sum(price)` all compile to `(sum price)`. Uppercase
+is a spreadsheet typing convention, not a requirement, and carrying it
+into storage would oblige every reader to case-fold before dispatch.
+
+Field references and string literals are case-**sensitive** and
+preserved verbatim. A field reference is a key in `rows.ndjson`, so
+`price` and `Price` are genuinely different fields and nothing can
+safely guess which was meant; folding them would silently resolve to
+the wrong column. Readers MUST NOT case-fold anything but the
+function position.
+
 **Why S-expressions over CEL, JSONata, or a bespoke infix grammar:**
 the format's pitch is a minimal reader implementable in an afternoon
 (D9, D26's freeze rationale). CEL and JSONata both need real
