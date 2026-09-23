@@ -11,6 +11,14 @@ A `.table/` is a directory that IS a file. The extension is `.table`.
 The directory contains plain-text files designed for line-diffable
 storage in git, plus an optional rebuildable SQLite cache.
 
+**Written by tools, readable by people.** The files are text so that
+version control can diff, review and merge them, not so that people
+can edit them. A `.table/` is written by software — an app, a CLI, a
+library — the same way a JSON file is. Where two branches merge, the
+consuming tool resolves the result per field, as sync does
+(docs/STORAGE-AND-SYNC.md section 3), rather than leaving it to a
+person.
+
 ## 1. Directory layout
 
 ```
@@ -302,9 +310,9 @@ user, and never declared in `schema.json` (it is implicit on every
 row).
 
 **Validity** is deliberately loose: any non-empty string, unique
-within the table. Hand-authored ids (`p1`, `budget-2026`) are legal —
-a `.table/` edited by a human or an agent outside a managed workspace
-should not need opaque identifiers.
+within the table. Readable ids (`p1`, `budget-2026`) are legal — a
+`.table/` written by another tool, or by an agent outside a managed
+workspace, should not need opaque identifiers.
 
 **Writer-minted ids** SHOULD be 25 characters from the lowercase
 base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
@@ -313,7 +321,7 @@ base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
 and on case-insensitive filesystems (default APFS, NTFS) two ids
 differing only in letter case would resolve to the same path and
 silently overwrite each other. For the same reason, all ids — minted
-or hand-authored — MUST be filename-safe and SHOULD avoid case-only
+or readable — MUST be filename-safe and SHOULD avoid case-only
 distinctions from other ids in the table. (DECISIONS D23.)
 
 `id` is what cross-table `relation` references resolve against.
@@ -333,8 +341,9 @@ Readers SHOULD be **skip-and-collect**, not fail-fast (DECISIONS
 D25): a malformed NDJSON line, a row without a system `id`, or a
 malformed *optional* file (views.json, meta.json) degrades to a
 per-item diagnostic while every valid row still loads. The format is
-hand-editable, line-oriented text under git — one typo or a
-merge-conflict marker must not make the whole table unreadable.
+line-oriented text that passes through version control, transports
+and other people's tools — one damaged line or a merge-conflict marker
+must not make the whole table unreadable.
 
 The one fatal case: `schema.json` missing or malformed. A `.table/`
 without a readable schema is not a table; there is nothing sound to
@@ -361,7 +370,7 @@ can't answer "have these replicas converged?" with a hash comparison.
 Deterministic output is what lets git and log-based replication (see
 docs/STORAGE-AND-SYNC.md) compose instead of compete.
 
-This is a SHOULD, not a MUST: a hand-edited `.table/` with shuffled
+This is a SHOULD, not a MUST: a `.table/` from a writer that shuffles
 keys is still valid. Canonical order is a property of well-behaved
 writers, not a validity rule.
 
