@@ -121,11 +121,14 @@ references + arithmetic + a few stdlib functions (sum, count, today).
 That's well-trodden ground — `CEL`, `JSONata`, or Airtable's formula
 syntax are reasonable starting points.
 
-**Status**: the `computed` shape is now reserved in SPEC section 2
-(issue #34, DECISIONS D21); the evaluator is deferred until a real
-consumer motivates the dialect choice. The materialisation question is
-settled: **never persisted, recompute on read** — the optional
-`index.sqlite` may cache results for query speed.
+**Status**: the `computed` shape is reserved in SPEC section 2 (issue
+#34, DECISIONS D21). The dialect is settled — `table-expr-v1`, a
+canonical S-expression grammar, with Excel-style syntax supported only
+as an authoring-surface layer that compiles down to it (DECISIONS
+D29). The evaluator implementation itself is still deferred until a
+real consumer needs it. The materialisation question is settled:
+**never persisted, recompute on read** — the optional `index.sqlite`
+may cache results for query speed.
 
 ### Multi-target relations
 
