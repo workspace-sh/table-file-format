@@ -504,12 +504,20 @@ without a `formatVersion` bump; `table-expr-v1` names this first one.
 
 No second stored grammar is introduced. Excel-familiar syntax
 (`=SUM(price, quantity)`) is an **authoring-surface convenience**,
-not a storage format: a consuming app's editor MAY compile it down to
-`table-expr-v1` and cache the rendered string in an optional `display`
-key alongside `expr`, purely for UIs that can't (or choose not to) run
-an evaluator — the same role `format` plays for display semantics
-elsewhere in the schema (see "Field format" above). `display` is
-never authoritative and readers MUST ignore it if `expr` is present.
+not a storage format: a consuming app's editor compiles it down to
+`table-expr-v1`, and renders the stored form back into Excel-style
+syntax when it shows it. The file holds one formula in one notation.
+
+**Why no cached rendering beside `expr`:** a client able to compile
+`=SUM(price, quantity)` down can equally print the stored form back,
+and printing is the easier of the two directions. Storing a second
+copy would save a consumer a few dozen lines, at the cost of a value
+that can silently disagree with the formula it describes. The format
+already refuses that trade for computed results ("never persisted,
+recompute on read"); a cached rendering is the same staleness in a
+different field, and is refused for the same reason. This is a
+deliberate omission — do not reintroduce a `display` key as a
+convenience.
 
 **Case:** function names are case-insensitive at the authoring surface
 and normalise to lowercase in the stored `expr` — `SUM(price)`,
@@ -583,14 +591,6 @@ adding to it: D21 already rules out spreadsheet-style range references
 an id-keyed row model. The same reasoning applies to a single
 coordinate, which is why one may be typed and displayed but never
 stored.
-
-**`display` caches only stable renderings:** the optional `display`
-key described above may hold a rendered Excel-style form
-(`=SUM(price, quantity)`) because function and field names do not
-depend on the view. It MUST NOT hold a coordinate form (`=B7`), which
-is view-dependent and goes stale on the next sort or filter. Cached
-`display` and live-rendered coordinates are different mechanisms:
-the first is written once, the second is computed per render.
 
 **Row-local evaluation is a performance boundary, not only a scope
 decision:** while a computed field may reference only its own row
