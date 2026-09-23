@@ -492,3 +492,117 @@ maintaining our own inflate/deflate is not where this format's value
 lives. fflate is small, audited, and dependency-free, and only the
 codec crosses the boundary — everything the spec normatively
 constrains stays in-repo.
+
+## D29: Computed field dialect — `table-expr-v1` is a canonical S-expression grammar; Excel-style syntax is a compiling authoring surface
+
+The `dialect: "table-expr-v1"` placeholder in D21/SPEC section 2 is
+defined: an S-expression (EDN-style) grammar — `(sum price quantity)`,
+`(if (> total 4200) "over" "ok")` — as the one form every reader's
+evaluator parses. `dialect` remains a string precisely so a future
+`table-expr-v2` or an entirely different grammar can be introduced
+without a `formatVersion` bump; `table-expr-v1` names this first one.
+
+No second stored grammar is introduced. Excel-familiar syntax
+(`=SUM(price, quantity)`) is an **authoring-surface convenience**,
+not a storage format: a consuming app's editor compiles it down to
+`table-expr-v1`, and renders the stored form back into Excel-style
+syntax when it shows it. The file holds one formula in one notation.
+
+**Why no cached rendering beside `expr`:** a client able to compile
+`=SUM(price, quantity)` down can equally print the stored form back,
+and printing is the easier of the two directions. Storing a second
+copy would save a consumer a few dozen lines, at the cost of a value
+that can silently disagree with the formula it describes. The format
+already refuses that trade for computed results ("never persisted,
+recompute on read"); a cached rendering is the same staleness in a
+different field, and is refused for the same reason. This is a
+deliberate omission — do not reintroduce a `display` key as a
+convenience.
+
+**Case:** function names are case-insensitive at the authoring surface
+and normalise to lowercase in the stored `expr` — `SUM(price)`,
+`Sum(price)` and `sum(price)` all compile to `(sum price)`. Uppercase
+is a spreadsheet typing convention, not a requirement, and carrying it
+into storage would oblige every reader to case-fold before dispatch.
+
+Field references and string literals are case-**sensitive** and
+preserved verbatim. A field reference is a key in `rows.ndjson`, so
+`price` and `Price` are genuinely different fields and nothing can
+safely guess which was meant; folding them would silently resolve to
+the wrong column. Readers MUST NOT case-fold anything but the
+function position.
+
+**Why S-expressions over CEL, JSONata, or a bespoke infix grammar:**
+the format's pitch is a minimal reader implementable in an afternoon
+(D9, D26's freeze rationale). CEL and JSONata both need real
+tokenizers with operator-precedence climbing before anything can be
+evaluated; an S-expression reader is closer to a hundred lines in any
+language — no precedence table, no ambiguity, `(op arg arg…)`
+uniformly. That cost is paid by every third-party reader that wants
+to resolve a computed field, not just this repo's own.
+
+**Why not restricted/sandboxed JS:** same reason in sharper relief —
+even a minimal secure-subset JS parser is a substantially bigger
+implementation surface than an S-expression reader, for a format
+whose whole thesis is implementer accessibility.
+
+**Why one stored grammar rather than a dialect per column:** `dialect`
+already makes multiple grammars representable, but every additional
+*stored* grammar is an interpreter every compliant reader must embed
+to be spec-compliant — directly opposed to the minimal-reader thesis.
+Mixing is fine at the *authoring* layer (one column's formula typed
+via an Excel-style bar, another hand-written in `table-expr-v1`
+directly) because both compile to the same stored `expr`; it is a
+cost only when the *storage* layer forks.
+
+**Precedent:** Grist (Python formulas, Excel-named functions exposed
+as callables in the same language) solves the "don't alienate
+spreadsheet users" problem the same way — one execution language, a
+familiar vocabulary layered on top — rather than by shipping two
+interpreters.
+
+**Composability payoff:** because `table-expr-v1` expressions are
+pure (no side effects, no cross-row state beyond what's explicitly
+referenced), they would compose cleanly with a future multi-value
+("amb") scenario extension, should one be reserved — such an
+evaluator re-runs the same `expr` once per input combination with no
+special-casing. Nothing of the kind is reserved today; this notes a
+property worth preserving, not an existing commitment.
+
+**Coordinates are an authoring and display surface, never storage:**
+a grid MAY label columns `A, B, C…` and rows `1, 2, 3…`, and a formula
+bar MAY accept `=B7`. Neither reaches disk. A coordinate typed at entry
+is resolved immediately against the current view to a stable reference
+— the field name, plus a row id when it points at another row — and
+that is what is stored. On display the stored reference is rendered
+back into whatever coordinate it occupies in the current view.
+
+The formula therefore never changes when rows are sorted, filtered or
+grouped; only its rendering moves. `=B7` becomes `=B3` after a sort,
+still meaning the same row. This is strictly stronger than A1: a
+spreadsheet must rewrite every affected formula on an insert or delete
+(O(formulas) per structural edit) and still cannot protect references
+that point INTO a sorted range from outside — they keep their
+coordinate and silently mean different data. A reference bound to a row
+id cannot be broken by reordering at all, so there is no rewriting pass
+and no `#REF!` arising from a sort. This extends D21 rather than
+adding to it: D21 already rules out spreadsheet-style range references
+(`A1:A10`) on the grounds that position-based addressing is wrong for
+an id-keyed row model. The same reasoning applies to a single
+coordinate, which is why one may be typed and displayed but never
+stored.
+
+**Row-local evaluation is a performance boundary, not only a scope
+decision:** while a computed field may reference only its own row
+(D21, issue #34), each row's evaluation is independent and there is no
+cross-row dependency graph. Combined with recompute-on-read, this
+means a reader computes only the rows it is showing — a million-row
+table costs what is on screen, not what is on disk, and recalculation
+parallelises per row. Cross-row aggregation is precisely what
+reintroduces the dependency graph and the topological recalculation
+that makes large spreadsheets slow. That is a reason to keep it
+deferred, and when it is built it needs designing against that cost
+(incremental aggregates, or materialisation into the optional
+`index.sqlite`) rather than treating it as ordinary scope.
+
+(Resolves issue #34.)
