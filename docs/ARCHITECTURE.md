@@ -169,6 +169,57 @@ Constraints inherited from RSD's strict subset:
 - **Explicit `display: "flex"`** on every flex container. RSD on web
   does not auto-set it (only on native does the equivalent kick in).
 
+### How much of RSD this actually depends on
+
+Worth knowing, because RSD is pinned at `0.0.55` and has been
+pre-1.0 since 2022: the surface consumed here is narrow, but it is
+not free to leave.
+
+Measured across all 5,621 lines that import RSD — `packages/ui/src`
+plus all three apps (19 Sep 2026):
+
+| API | Uses |
+|---|---|
+| `html.div` | 160 |
+| `html.span` | 148 |
+| `html.button` | 54 |
+| `css.create` | 13 |
+| `html.input` | 12 |
+| `html.option` | 6 |
+| `html.select` | 4 |
+| `html.textarea` | 1 |
+| `html.a` | 1 |
+
+Eight elements and one styling function. Nothing else.
+
+**The elements are the easy half.** Eight components mapping onto host
+primitives is an afternoon's work.
+
+**`css.create` is the other half, and it is not an afternoon.** RSD is
+not a name-mapping shim — it also normalises pseudo-states
+(`usePseudoState`), the pointer-event active-state polyfill,
+`unstable_TextAncestorContext`, reduced-motion, and the web/native
+`display: flex` divergence documented above. None of that is visible
+in the usage counts, and all of it would have to be reproduced to
+reach parity on four platforms. Expect days to weeks, with subtle
+rendering divergence as the failure mode rather than a clean break.
+
+So the honest summary is: the dependency is **shallow but not
+disposable**. Leaving is a bounded project, not a chore — which is
+still a far better position than a surface that would need rewriting.
+
+Re-measure before any decision about whether to keep betting on it:
+
+```sh
+find packages/ui/src apps/web/src apps/desktop apps/mobile \
+  -name "*.tsx" -o -name "*.ts" | grep -v node_modules \
+  | xargs grep -hoE "html\.[a-zA-Z]+|css\.[a-zA-Z]+" \
+  | sort | uniq -c | sort -rn
+```
+
+If that table grows a long tail, the calculation changes. Today it
+does not have one.
+
 ### Cross-platform internals — `.ts` + `.web.ts` file-split
 
 `packages/ui/src/internal/` contains primitives that need different
