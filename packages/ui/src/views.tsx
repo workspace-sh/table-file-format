@@ -4,6 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import {
   applyGroup,
+  completeSeconds,
   effectiveAlign,
   enumOptions,
   enumValues,
@@ -985,6 +986,10 @@ function coerceValue(field: Field | undefined, raw: string): unknown {
     }
     case "boolean":
       return raw === "true";
+    case "time":
+    case "datetime":
+      // The native inputs omit seconds; the format stores them (SPEC "Value encodings").
+      return completeSeconds(field.type, raw);
     default:
       return raw;
   }
