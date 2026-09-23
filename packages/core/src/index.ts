@@ -1,6 +1,16 @@
 export * from "./types.js";
 export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
 export { validate, validateBodies } from "./validator.js";
+export {
+  isDate,
+  isDateTime,
+  isTime,
+  isDuration,
+  isGeopoint,
+  isGeoJSON,
+  instantOf,
+  completeSeconds,
+} from "./encoding.js";
 export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query.js";
 export { formatValue, stringFormatKind } from "./format.js";
 export { readTableArchive, writeTableArchive } from "./archive.js";
