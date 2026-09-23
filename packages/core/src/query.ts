@@ -8,6 +8,7 @@ import type {
   ViewSort,
 } from "./types.js";
 import { enumValues } from "./types.js";
+import { instantOf } from "./encoding.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
@@ -60,8 +61,9 @@ export function applySort(rows: Row[], sorts: ViewSort[], schema: TableSchema): 
     for (const s of sorts) {
       const aVal = a[s.field];
       const bVal = b[s.field];
-      const aMissing = aVal === undefined || aVal === null;
-      const bMissing = bVal === undefined || bVal === null;
+      // Absent, null and "" are all empty, and empties sort last (SPEC "Empty values").
+      const aMissing = aVal === undefined || aVal === null || aVal === "";
+      const bMissing = bVal === undefined || bVal === null || bVal === "";
       if (aMissing && bMissing) continue;
       if (aMissing) return 1;
       if (bMissing) return -1;
@@ -170,6 +172,12 @@ function compare(a: unknown, b: unknown, field: Field | undefined): number {
     if (ai !== -1 && bi !== -1) return ai - bi;
     if (ai !== -1) return -1;
     if (bi !== -1) return 1;
+  }
+  if (field?.type === "datetime" && typeof a === "string" && typeof b === "string") {
+    // By instant, not spelling: "10:00+02:00" is before "09:00Z" (SPEC "Value encodings").
+    const ai = instantOf(a);
+    const bi = instantOf(b);
+    if (!Number.isNaN(ai) && !Number.isNaN(bi) && ai !== bi) return ai - bi;
   }
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);

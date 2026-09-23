@@ -606,3 +606,62 @@ deferred, and when it is built it needs designing against that cost
 `index.sqlite`) rather than treating it as ordinary scope.
 
 (Resolves issue #34.)
+
+## D30: Every field type has exactly one JSON encoding
+
+SPEC section 2 named thirteen field types but said how only some of
+them are written. `datetime` did not say whether an offset is
+required, `duration` had no grammar, `geopoint` was a two-number array
+in the reference validator but a `"lat,lon"` string in the
+`index.sqlite` mapping, and `geojson` was a string in the validator
+where every other GeoJSON consumer expects an object. Two independent
+readers of one file could reasonably disagree about its values. For a
+format whose point is being read by software that isn't ours, that is
+the most serious kind of gap, so the encodings are now pinned (SPEC
+"Value encodings", "Empty values", "Numbers").
+
+**Standards, not inventions.** Dates and times are RFC 3339; durations
+are ISO 8601; `geojson` is RFC 7946; `geopoint` is `[longitude,
+latitude]`, GeoJSON's order and Frictionless's array form. A third
+party can check a value with a library they already have.
+
+**`datetime` offsets are optional.** With one, the value is an
+instant, and writers SHOULD spell instants in UTC so that equal values
+are byte-identical. Without one, it is a floating wall-clock time,
+as in iCalendar: "the stand-up is at 09:30" means 09:30 wherever the
+reader is, and forcing an offset would misstate it. What IS required
+is that readers compare instants, not strings; the reference sort
+compared strings, which misorders `10:00+02:00` against `09:00Z`.
+
+**Seconds are required** in `time` and `datetime`, although HTML's own
+inputs omit them. Allowing both would give `09:30` and `09:30:00` as
+two spellings of one value, which breaks the byte-identical guarantee
+of canonical write order. The reference provides `completeSeconds()`
+for writers fed by those inputs.
+
+**Numbers are doubles, and the spec says so.** This matches what
+spreadsheet applications do, but was never stated. Integers are bound
+to ±(2⁵³−1), where common JSON parsers start rounding silently. An
+exact decimal type is deliberately not added here: it is a real
+design question (string-encoded? a scale on the field?) and belongs
+with the formula work that would compute on it.
+
+**Absent, `null` and `""` are one "empty".** The reference already
+treated them alike in validation, filters and grouping, but sorted
+`""` as an ordinary string — first when ascending. It now sorts last
+in both directions, like the other two, and writers SHOULD omit the
+key.
+
+**Additive under D26.** No fixture in this repository uses any of the
+newly pinned types, so no stored value changes meaning. `geojson` now
+reads both the object and the old string form. One reference writer
+did produce a now-refused spelling: the table view's cell editor saved
+`time` and `datetime` without seconds, straight from the browser
+input. It now completes them. Otherwise, the newly refused values are
+ones no two readers could have interpreted consistently anyway.
+
+Documented at the same time, because the reference already used them
+without the spec mentioning them: the field annotations `title` (the
+display name, which is how a column is "renamed" under append-only
+evolution) and `align`, and the view properties `group`, `order` and
+`columnWidths`.

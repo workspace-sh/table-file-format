@@ -83,6 +83,82 @@ Field type names follow standard conventions used across text-first
 data formats. `.table/` is not aligned with any specific format —
 borrowing the names is for readability, not compatibility.
 
+#### Value encodings
+
+Each type has exactly one JSON encoding in `rows.ndjson`. Two readers
+given the same file MUST see the same values, so the encoding is part
+of the format, not a reader's choice (DECISIONS D30).
+
+| Type | JSON encoding | Example |
+| --- | --- | --- |
+| `string` | string | `"Workspace v1"` |
+| `number` | number | `4200.5` |
+| `integer` | number with no fractional part, within ±(2⁵³−1) | `42` |
+| `boolean` | `true` / `false` only | `true` |
+| `date` | string, RFC 3339 `full-date` (`YYYY-MM-DD`) | `"2026-04-01"` |
+| `datetime` | string, RFC 3339 `date-time`; offset RECOMMENDED | `"2026-04-01T09:30:00Z"` |
+| `time` | string, RFC 3339 `partial-time` (`HH:MM:SS`, optional fraction); no offset | `"09:30:00"` |
+| `year` | integer | `2026` |
+| `duration` | string, ISO 8601 duration | `"PT1H30M"`, `"P3D"` |
+| `array` | array of any JSON values | `["a", 1]` |
+| `object` | object | `{"k": "v"}` |
+| `geopoint` | array `[longitude, latitude]` of two numbers, WGS 84 | `[-0.1276, 51.5072]` |
+| `geojson` | a GeoJSON object (RFC 7946) | `{"type": "Point", "coordinates": [-0.1276, 51.5072]}` |
+
+Notes:
+
+- **`datetime` offsets.** A value with an offset (`Z` or `±HH:MM`)
+  names an instant, and writers SHOULD write instants in UTC (`Z`) —
+  one spelling per instant keeps equal values byte-identical (section 3,
+  "Canonical write order"). A value **without** an offset is a
+  *floating* wall-clock time (iCalendar's term): "09:30 wherever the
+  reader is". Both are valid. Readers MUST compare `datetime` values
+  chronologically, not as strings — `"10:00+02:00"` is earlier than
+  `"09:00Z"`; a floating value compares as if it were UTC.
+- **Seconds are always written.** HTML `time` and `datetime-local`
+  inputs return `"09:30"` / `"2026-04-01T09:30"`; a writer completes
+  them to `"09:30:00"` before storing (reference: `completeSeconds()`).
+- **`geopoint` order** is longitude first, matching GeoJSON (RFC 7946)
+  and the array form of Frictionless `geopoint`: longitude −180…180,
+  latitude −90…90. The label `"lat, lon"` a UI shows is a display
+  concern; the stored order is fixed.
+- **`geojson`** earlier reference readers accepted only a string
+  holding the GeoJSON text. Readers SHOULD still accept that form and
+  parse it; writers MUST write the object.
+- **`duration`** vs `format: "duration:seconds"`: the `duration` type is
+  a calendar-aware ISO 8601 string (`P1M` is a month, not 30 days). A
+  plain count of seconds is a `number` or `integer` field with
+  `format: "duration:seconds"`.
+
+#### Empty values
+
+An absent key, `null`, and `""` are the same thing: an **empty**
+value. Validation, filtering (`empty` / `not_empty`), sorting (empties
+last) and grouping (the `"(empty)"` bucket) treat all three alike.
+Writers SHOULD omit the key rather than write `null` or `""`, so a
+sparse table stays small and there is one spelling of "nothing here".
+A `required` field rejects all three.
+
+#### Numbers
+
+`number` values are IEEE 754 double-precision, which is also what
+spreadsheet applications use: about 15–17 significant digits, and
+decimal fractions are approximate (`0.1 + 0.2` is not exactly `0.3`).
+Consequences a writer MUST respect:
+
+- `integer` and `year` values MUST lie within ±(2⁵³−1)
+  (±9,007,199,254,740,991). Beyond that, JSON parsers in common
+  languages silently round. An identifier that can exceed it (a
+  64-bit database key, a card number, a phone number) is a `string`.
+- JSON has no `NaN` or `Infinity`; neither can be stored. A value that
+  cannot be computed is empty.
+- `format: "decimal:N"` and `format: "currency:…"` round **for
+  display only**; the stored value is unchanged.
+
+Exact decimal arithmetic (money that must reconcile to the cent) is
+not yet provided by the format. Until it is, store amounts as an
+`integer` count of the smallest unit (cents) where exactness matters.
+
 ### Field constraints
 
 `required`, `unique`, `enum`, `minimum`, `maximum`, `minLength`,
@@ -120,6 +196,15 @@ either form — objects when color/label is set, strings otherwise.
 
 ### Field annotations
 
+- `title: "<text>"` — the column's display name. Defaults to `name`.
+  Unlike `name`, it MAY change freely: `name` is the stored key that
+  rows, views, relations and computed-field expressions refer to, and
+  schema evolution never renames it (below). Renaming a column in a UI
+  means changing its `title`.
+- `align: "left" | "center" | "right"` — column alignment in grid
+  layouts. Defaults by type: `right` for `number`, `integer` and
+  `year`; `center` for `boolean`; `left` otherwise (reference:
+  `effectiveAlign()`). Display-only.
 - `format: "<token>"` — display-semantic hint from a closed
   vocabulary (see "Field format" below). Renderer hint; no validator
   effect. Stored values stay raw.
@@ -187,7 +272,9 @@ may be relied upon.
 ### Schema evolution
 
 Schema evolution is **append-only**. Never remove or rename a field.
-Add new fields; mark old ones `deprecated: true` to retire them.
+Add new fields; mark old ones `deprecated: true` to retire them. To
+show a field under a new name, change its `title` (above); its `name`
+stays.
 Reordering enum values changes sort/group semantics and SHOULD bump
 `schema-version`.
 
@@ -317,6 +404,9 @@ two `"table"` views named "Active" and "Done").
 
 - For enum fields, sort by the enum's **declared order** (not
   alphabetical).
+- `date`, `datetime` and `time` values sort chronologically, per
+  "Value encodings" (section 2) — not by string comparison, which
+  misorders `datetime` values carrying different offsets.
 - Null/undefined values sort **last regardless of direction**
   (asc and desc).
 
@@ -327,6 +417,18 @@ two `"table"` views named "Active" and "Done").
   constraint is present; otherwise by row arrival.
 - Rows with null/undefined/empty group value go into the literal
   `"(empty)"` bucket, which always sorts last.
+
+### Grouping, manual order and column widths
+
+- `group: { "field": "<name>" }` — bucket rows by that field's value
+  (see "Group behaviour" above).
+- `order: ["<row id>", …]` — a manual row order, set by drag-and-drop
+  reordering. When present and non-empty it takes precedence over
+  `sort` for the rows it lists; rows it does not list follow, in file
+  order. Ids that match no row are ignored.
+- `columnWidths: { "<field name>": <pixels> }` — column widths set by
+  resizing in table layouts. Columns not listed use the app's default.
+  Display-only.
 
 ### Layout-specific fields
 
@@ -496,7 +598,7 @@ Mapping:
 | `integer` / `year` | INTEGER | |
 | `boolean` | INTEGER | 0/1 |
 | `array` / `object` | TEXT | JSON-encoded |
-| `geopoint` | TEXT or two REAL columns | `"lat,lon"` or split |
+| `geopoint` | TEXT or two REAL columns | JSON `[lon, lat]`, or split into two columns |
 | (any when missing) | NULL | |
 
 ## 9. Validation
