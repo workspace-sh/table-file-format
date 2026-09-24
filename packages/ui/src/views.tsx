@@ -548,6 +548,50 @@ const styles = css.create({
   calendarDayOther: {
     opacity: 0.4,
   },
+  calendarDayToday: {
+    alignSelf: "flex-start",
+    paddingInline: 6,
+    borderRadius: 999,
+    color: "#ffffff",
+    backgroundColor: {
+      default: "#3478f6",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+  },
+  calendarChips: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    marginTop: 4,
+    minWidth: 0,
+  },
+  calendarChip: {
+    fontSize: 11,
+    lineHeight: "16px",
+    maxHeight: 16,
+    lineClamp: 1,
+    overflow: "hidden",
+    paddingInline: 5,
+    borderRadius: 4,
+    cursor: "pointer",
+    color: {
+      default: "#1d4ed8",
+      "@media (prefers-color-scheme: dark)": "#93c5fd",
+    },
+    backgroundColor: {
+      default: "#e8f0fe",
+      ":hover": "#d2e3fc",
+      "@media (prefers-color-scheme: dark)": "#1e2a44",
+    },
+  },
+  calendarChipMore: {
+    fontSize: 10,
+    paddingInline: 5,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
   calendarDayNum: {
     fontSize: 11,
     fontWeight: "500",
@@ -2122,6 +2166,22 @@ export function ListView({
 }
 
 /**
+ * `YYYY-MM-DD` (or the date part of a datetime) as a LOCAL calendar
+ * day. `new Date("2026-01-15")` is midnight UTC, which west of UTC is
+ * the evening of the 14th — so the day shown, and the month the
+ * calendar opens on, came out a day early there.
+ */
+function localDay(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** How many entries a day shows by title before "+N more". */
+const CALENDAR_CHIPS_PER_DAY = 3;
+
+/**
  * Minimal calendar view — month grid. Anchors rows on their
  * `view.calendar_field` (date string). Days outside the current month
  * render dimmed. Prev / next month navigation; "today" highlight is
@@ -2147,8 +2207,14 @@ export function CalendarView({
   const range = view.calendar_range;
 
   // Day cell tap opens a sheet listing that day's rows — Apple /
-  // Google Calendar pattern. Cells themselves render just dots.
+  // Google Calendar pattern. On a phone the cells show dots; wider,
+  // they show each entry's title, and clicking a title opens it.
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const isTouchViewport = useViewportWidth() <= TOUCH_VIEWPORT_MAX;
+  // A title chip sits inside its day's button. The chip's click marks
+  // itself handled so the day's click doesn't also open the sheet —
+  // this works whether or not a platform lets a click stop propagating.
+  const chipClicked = useRef(false);
 
   // Measure the calendar's own container — viewport width would be
   // wrong on web layouts with a sidebar (calendar's parent is the
@@ -2174,15 +2240,13 @@ export function CalendarView({
   // Invalid dates in the range silently degrade to "no bound".
   const rangeStart = (() => {
     if (!range?.start) return null;
-    const d = new Date(range.start.slice(0, 10));
-    if (Number.isNaN(d.getTime())) return null;
-    return new Date(d.getFullYear(), d.getMonth(), 1);
+    const d = localDay(range.start);
+    return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null;
   })();
   const rangeEnd = (() => {
     if (!range?.end) return null;
-    const d = new Date(range.end.slice(0, 10));
-    if (Number.isNaN(d.getTime())) return null;
-    return new Date(d.getFullYear(), d.getMonth(), 1);
+    const d = localDay(range.end);
+    return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null;
   })();
 
   // Anchor the cursor on the earliest date in the data so the calendar
@@ -2193,9 +2257,9 @@ export function CalendarView({
     if (calField) {
       const earliest = rows
         .map((r) => r[calField])
-        .filter((v): v is string => typeof v === "string" && v.length >= 10)
-        .map((s) => new Date(s.slice(0, 10)))
-        .filter((d) => !Number.isNaN(d.getTime()))
+        .filter((v): v is string => typeof v === "string")
+        .map(localDay)
+        .filter((d): d is Date => d !== null)
         .sort((a, b) => a.getTime() - b.getTime())[0];
       if (earliest) {
         initial = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
@@ -2267,6 +2331,8 @@ export function CalendarView({
   }
 
   const titleField = schema.fields[0]?.name;
+  const labelOf = (row: Row) => (titleField ? formatValue(row[titleField]) : row.id);
+  const today = new Date();
   const dateKey = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
       d.getDate(),
@@ -2325,10 +2391,19 @@ export function CalendarView({
           const dayRows = rowsByDate.get(key) ?? [];
           const dotsToShow = Math.min(dayRows.length, 3);
           const overflowCount = dayRows.length - dotsToShow;
+          const isToday = key === dateKey(today);
+          const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
+          const moreCount = dayRows.length - chips.length;
           return (
             <html.button
               key={i}
-              onClick={() => setSelectedDateKey(key)}
+              onClick={() => {
+                if (chipClicked.current) {
+                  chipClicked.current = false;
+                  return;
+                }
+                setSelectedDateKey(key);
+              }}
               style={[
                 styles.calendarDay,
                 styles.calendarDayButton,
@@ -2336,10 +2411,29 @@ export function CalendarView({
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >
-              <html.span style={styles.calendarDayNum}>
+              <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
                 {cell.date.getDate()}
               </html.span>
-              {dayRows.length > 0 && (
+              {!isTouchViewport && chips.length > 0 && (
+                <html.div style={styles.calendarChips}>
+                  {chips.map((row) => (
+                    <html.span
+                      key={row.id}
+                      onClick={() => {
+                        chipClicked.current = true;
+                        onOpenBody?.(row.id);
+                      }}
+                      style={styles.calendarChip}
+                    >
+                      {labelOf(row)}
+                    </html.span>
+                  ))}
+                  {moreCount > 0 && (
+                    <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
+                  )}
+                </html.div>
+              )}
+              {isTouchViewport && dayRows.length > 0 && (
                 <html.div style={styles.calendarDayDots}>
                   {Array.from({ length: dotsToShow }).map((_, j) => (
                     <html.span key={j} style={styles.calendarDayDot} />
@@ -2363,7 +2457,7 @@ export function CalendarView({
           ? rowsByDate.get(selectedDateKey) ?? []
           : [];
         const sheetTitle = selectedDateKey
-          ? new Date(selectedDateKey).toLocaleDateString(undefined, {
+          ? localDay(selectedDateKey)!.toLocaleDateString(undefined, {
               weekday: "long",
               month: "long",
               day: "numeric",
@@ -2382,20 +2476,17 @@ export function CalendarView({
               </html.span>
             ) : (
               dayRows.map((row) => {
-                const label = titleField
-                  ? formatValue(row[titleField])
-                  : row.id;
-                const hasBody = !!bodies?.[row.id];
                 return (
                   <html.button
                     key={row.id}
                     onClick={() => {
                       setSelectedDateKey(null);
-                      if (hasBody && onOpenBody) onOpenBody(row.id);
+                      onOpenBody?.(row.id);
                     }}
                     style={styles.daySheetItem}
                   >
-                    {label}
+                    {labelOf(row)}
+                    {bodies?.[row.id] ? <BodyBadge /> : null}
                   </html.button>
                 );
               })
