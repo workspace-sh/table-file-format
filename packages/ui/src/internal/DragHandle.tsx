@@ -25,7 +25,7 @@
  */
 import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 export interface DragEvent {
@@ -46,7 +46,18 @@ export interface DragHandleProps {
    * where immediate-activation feels right with mouse input.
    */
   longPressMs?: number;
+  /**
+   * Render as a thin grab strip along one edge of the parent, instead
+   * of wrapping `children` — the resize handle on a column's right edge
+   * or a row's bottom edge. Wider than on web: it's for a finger.
+   */
+  edge?: "right" | "bottom";
 }
+
+const edgeStyles = StyleSheet.create({
+  right: { position: "absolute", top: 0, bottom: 0, right: 0, width: 12, zIndex: 2 },
+  bottom: { position: "absolute", left: 0, right: 0, bottom: -6, height: 12, zIndex: 2 },
+});
 
 export function DragHandle({
   children,
@@ -54,6 +65,7 @@ export function DragHandle({
   onDragMove,
   onDragEnd,
   longPressMs,
+  edge,
 }: DragHandleProps) {
   // Read callbacks through refs so the gesture object stays stable
   // across renders. Without this, consumers passing inline lambdas
@@ -133,7 +145,9 @@ export function DragHandle({
   // hierarchy.
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false}>{children}</View>
+      <View collapsable={false} style={edge ? edgeStyles[edge] : undefined}>
+        {children}
+      </View>
     </GestureDetector>
   );
 }

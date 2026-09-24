@@ -48,6 +48,22 @@ import {
  * the available width Airtable-style instead of leaving empty space.
  */
 const MIN_CELL_WIDTH = 180;
+/** Narrowest a column can be dragged. */
+const MIN_RESIZED_COLUMN_WIDTH = 60;
+/**
+ * Body row height when the view doesn't set one: one line of text plus
+ * the cell's vertical padding. Every body row has the view's height, in
+ * both panes, so the frozen title column can't drift out of line.
+ */
+const DEFAULT_ROW_HEIGHT = 44;
+const MIN_ROW_HEIGHT = 36;
+const MAX_ROW_HEIGHT = 240;
+const CELL_LINE_HEIGHT = 20;
+const CELL_PADDING_BLOCK = 10;
+/** Lines of text a row of this height shows. */
+function linesFor(rowHeight: number): number {
+  return Math.max(1, Math.floor((rowHeight - 2 * CELL_PADDING_BLOCK) / CELL_LINE_HEIGHT));
+}
 
 /**
  * Viewport breakpoint for touch-first UX. Below this width:
@@ -107,6 +123,23 @@ const styles = css.create({
   // Applied at use-site to both header and body cells so columns align.
   cellWidth: (w: number) => ({
     width: w,
+  }),
+  rowHeight: (h: number) => ({
+    height: h,
+  }),
+  positioned: {
+    position: "relative",
+  },
+  /** Cell text shows only the lines its row has room for. */
+  // lineClamp becomes numberOfLines on native (with an ellipsis); on
+  // web it doesn't take effect, so maxHeight stops the text at the last
+  // whole line instead.
+  clamp: (n: number) => ({
+    lineClamp: n,
+    overflow: "hidden",
+    minWidth: 0,
+    lineHeight: `${CELL_LINE_HEIGHT}px`,
+    maxHeight: n * CELL_LINE_HEIGHT,
   }),
   tableRow: {
     display: "flex",
@@ -902,9 +935,12 @@ interface CellValueProps {
   relatedTables?: Record<string, ParsedTable>;
   /** Called with a row address when a relation cell is clicked. */
   onOpenRelation?: (address: string) => void;
+  /** In a grid: the lines of text the row has room for; the rest is clipped. */
+  lines?: number;
 }
 
-function CellValue({ field, value, relatedTables, onOpenRelation }: CellValueProps) {
+function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellValueProps) {
+  const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   // Relation field → resolve to related row, render as link (or
   // broken-state when dangling).
   if (field?.relation && typeof value === "string" && value.length > 0) {
@@ -930,9 +966,9 @@ function CellValue({ field, value, relatedTables, onOpenRelation }: CellValuePro
   // A declared display format (currency:USD, decimal:2, …) is honoured;
   // the stored value is untouched (SPEC "Field format").
   if (field?.format && value !== undefined && value !== null && value !== "") {
-    return <html.span>{formatWithFieldFormat(field, value)}</html.span>;
+    return <html.span style={clamp}>{formatWithFieldFormat(field, value)}</html.span>;
   }
-  return <html.span>{formatValue(value)}</html.span>;
+  return <html.span style={clamp}>{formatValue(value)}</html.span>;
 }
 
 function RelationCellValue({
@@ -1024,6 +1060,8 @@ interface EditableCellProps {
   /** Forwarded to CellValue for relation-cell rendering in idle state. */
   relatedTables?: Record<string, ParsedTable>;
   onOpenRelation?: (address: string) => void;
+  /** Forwarded to CellValue: the lines of text the row has room for. */
+  lines?: number;
 }
 
 function EditableCell({
@@ -1032,6 +1070,7 @@ function EditableCell({
   onCommit,
   relatedTables,
   onOpenRelation,
+  lines,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1064,7 +1103,7 @@ function EditableCell({
 
   if (readOnly) {
     return (
-      <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} />
+      <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
     );
   }
 
@@ -1091,6 +1130,7 @@ function EditableCell({
             value={value}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
+            lines={lines}
           />
         </html.span>
       );
@@ -1123,6 +1163,7 @@ function EditableCell({
           value={value}
           relatedTables={relatedTables}
           onOpenRelation={onOpenRelation}
+          lines={lines}
         />
       </html.span>
     );
@@ -1249,10 +1290,19 @@ export function TableView({
   onAddField,
   onOpenBody,
   onOpenRelation,
+  onUpdateView,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
+
+  // Resizing: live values while a handle is dragged, committed to the
+  // view (columnWidths / rowHeight, SPEC section 4) when it's let go.
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  const [liveRowHeight, setLiveRowHeight] = useState<number | null>(null);
+  const resizeStart = useRef<{ at: number; size: number } | null>(null);
+  const rowHeight = liveRowHeight ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
+  const lines = linesFor(rowHeight);
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
   // Ref typed loosely (`unknown`) because the underlying instance differs
@@ -1302,24 +1352,82 @@ export function TableView({
   // the scroll pane share the same global column order, so the per-
   // column widths still sum to the same total whether a column lives
   // left of the freeze line or right of it.
+  //
+  // Columns the user has resized keep their width; the rest share what's
+  // left the same way.
   const chrome = freezePrimary ? 3 : 2;
   const addFieldW = canAddField ? ADD_FIELD_COLUMN_WIDTH : 0;
-  const dataCols = fields.length;
-  const available = Math.max(0, containerWidth - chrome - addFieldW);
+  const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
+  const fixedWidth = (name: string) => {
+    const w = setWidths[name];
+    return typeof w === "number" ? Math.max(MIN_RESIZED_COLUMN_WIDTH, w) : undefined;
+  };
+  const flexible = fields.filter((name) => fixedWidth(name) === undefined);
+  const fixedTotal = fields.reduce((sum, name) => sum + (fixedWidth(name) ?? 0), 0);
+  const available = Math.max(0, containerWidth - chrome - addFieldW - fixedTotal);
   const rawWidth =
-    dataCols > 0 && containerWidth > 0
-      ? Math.floor(available / dataCols)
+    flexible.length > 0 && containerWidth > 0
+      ? Math.floor(available / flexible.length)
       : MIN_CELL_WIDTH;
   // Below MIN_CELL_WIDTH the table overflows and the pane scrolls —
   // uniform columns, nothing to distribute. At or above it the table
   // fills the container and the remainder gets spread.
   const fills = rawWidth >= MIN_CELL_WIDTH;
   const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
-  const remainder = fills ? available - cellW * dataCols : 0;
+  const remainder = fills ? available - cellW * flexible.length : 0;
   const colWidth = (name: string) => {
-    const i = fields.indexOf(name);
+    const fixed = fixedWidth(name);
+    if (fixed !== undefined) return fixed;
+    const i = flexible.indexOf(name);
     return cellW + (i >= 0 && i < remainder ? 1 : 0);
   };
+
+  const columnResizer = (name: string) =>
+    onUpdateView ? (
+      <DragHandle
+        edge="right"
+        onDragStart={(e) => {
+          resizeStart.current = { at: e.pageX, size: colWidth(name) };
+        }}
+        onDragMove={(e) => {
+          const start = resizeStart.current;
+          if (!start) return;
+          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + e.pageX - start.at));
+          setLiveWidths((prev) => ({ ...prev, [name]: w }));
+        }}
+        onDragEnd={(e) => {
+          const start = resizeStart.current;
+          resizeStart.current = null;
+          if (!start) return;
+          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + e.pageX - start.at));
+          onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: w } });
+          setLiveWidths({});
+        }}
+      />
+    ) : null;
+
+  const rowResizer = onUpdateView ? (
+    <DragHandle
+      edge="bottom"
+      onDragStart={(e) => {
+        resizeStart.current = { at: e.pageY, size: rowHeight };
+      }}
+      onDragMove={(e) => {
+        const start = resizeStart.current;
+        if (!start) return;
+        const h = Math.round(start.size + e.pageY - start.at);
+        setLiveRowHeight(Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, h)));
+      }}
+      onDragEnd={(e) => {
+        const start = resizeStart.current;
+        resizeStart.current = null;
+        if (!start) return;
+        const h = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, Math.round(start.size + e.pageY - start.at)));
+        onUpdateView({ rowHeight: h });
+        setLiveRowHeight(null);
+      }}
+    />
+  ) : null;
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
   // Primary is the title field — first in the visible order. Empty
@@ -1349,11 +1457,13 @@ export function TableView({
             styles.tableCell,
             styles.cellWidth(colWidth(name)),
             styles.tableHeaderCell,
+            styles.positioned,
             cellAlignStyle(align),
             !isLast && styles.tableCellSeparator,
           ]}
         >
           {field?.title ?? name}
+          {columnResizer(name)}
         </html.span>
       );
     }
@@ -1404,6 +1514,7 @@ export function TableView({
             }}
           />
         )}
+        {columnResizer(name)}
       </html.span>
     );
   };
@@ -1434,6 +1545,7 @@ export function TableView({
             onCommit={(next) => onUpdateRow(row.id, name, next)}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
+            lines={lines}
           />
         ) : (
           <CellValue
@@ -1441,6 +1553,7 @@ export function TableView({
             value={row[name]}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
+            lines={lines}
           />
         )}
         {name === titleField && bodies?.[row.id] ? (
@@ -1467,10 +1580,13 @@ export function TableView({
                 key={row.id}
                 style={[
                   styles.tableRow,
+                  styles.rowHeight(rowHeight),
+                  styles.positioned,
                   i === rows.length - 1 && styles.tableRowLast,
                 ]}
               >
                 {renderBodyCell(row, primaryName, 0, 1)}
+                {rowResizer}
               </html.div>
             ))}
           </html.div>
@@ -1497,6 +1613,8 @@ export function TableView({
                   key={row.id}
                   style={[
                     styles.tableRow,
+                    styles.rowHeight(rowHeight),
+                    styles.positioned,
                     i === rows.length - 1 && styles.tableRowLast,
                   ]}
                 >
@@ -1504,6 +1622,8 @@ export function TableView({
                     renderBodyCell(row, name, idx, restNames.length),
                   )}
                   {canAddField && <html.div style={styles.addFieldSpacer} />}
+                  {/* Without a frozen pane, this pane carries the row handle. */}
+                  {!primaryName && rowResizer}
                 </html.div>
               ))}
             </html.div>

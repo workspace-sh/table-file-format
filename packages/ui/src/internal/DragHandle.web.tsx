@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { html } from "react-strict-dom";
+import { css, html } from "react-strict-dom";
 
 export interface DragEvent {
   pageX: number;
@@ -31,7 +31,34 @@ export interface DragHandleProps {
    * no-op here. Touch-web users may want this eventually — defer.
    */
   longPressMs?: number;
+  /**
+   * Render as a thin grab strip along one edge of the nearest
+   * positioned ancestor, instead of wrapping `children` — the resize
+   * handle on a column's right edge or a row's bottom edge.
+   */
+  edge?: "right" | "bottom";
 }
+
+const edgeStyles = css.create({
+  right: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 6,
+    cursor: "col-resize",
+    zIndex: 2,
+  },
+  bottom: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: -3,
+    height: 7,
+    cursor: "row-resize",
+    zIndex: 2,
+  },
+});
 
 interface PointerEventLike {
   clientX: number;
@@ -49,6 +76,7 @@ export function DragHandle({
   onDragStart,
   onDragMove,
   onDragEnd,
+  edge,
 }: DragHandleProps) {
   const activeRef = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -102,6 +130,7 @@ export function DragHandle({
 
   return (
     <html.div
+      style={edge ? edgeStyles[edge] : undefined}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onPointerDown={handlePointerDown as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -528,6 +528,10 @@ two `"table"` views named "Active" and "Done").
 - `columnWidths: { "<field name>": <pixels> }` — column widths set by
   resizing in table layouts. Columns not listed use the app's default.
   Display-only.
+- `rowHeight: <pixels>` — the height of every body row in a table
+  layout, set by resizing a row. Each row shows as many lines of text
+  as fit and clips the rest; absent means one line. One height for all
+  rows keeps rows aligned across a frozen first column. Display-only.
 
 ### Layout-specific fields
 
