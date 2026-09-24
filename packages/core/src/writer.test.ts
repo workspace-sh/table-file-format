@@ -30,7 +30,7 @@ test("writeTable round-trips through parseTable", async () => {
     assert.equal(round.rows[0]!.title, "one");
     assert.equal(round.meta.title, "Test");
     assert.equal(round.meta.format, "table");
-    assert.equal(round.meta.formatVersion, 1);
+    assert.equal(round.meta.formatVersion, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -61,7 +61,26 @@ test("writeTable stamps format and formatVersion when meta omits them", async ()
     });
     const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
     assert.equal(meta.format, "table");
-    assert.equal(meta.formatVersion, 1);
+    assert.equal(meta.formatVersion, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeTable stamps the version it writes, even over an older meta.json", async () => {
+  // A table read as formatVersion 1 and saved again is written in this
+  // version's layout, so it must say so — not keep the old number.
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const target = join(dir, "out.table");
+    await writeTable(target, {
+      schema: { fields: [{ name: "x", type: "string" }] },
+      rows: [],
+      meta: { format: "table", formatVersion: 1, title: "Old" },
+    });
+    const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
+    assert.equal(meta.formatVersion, 2);
+    assert.equal(meta.title, "Old");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

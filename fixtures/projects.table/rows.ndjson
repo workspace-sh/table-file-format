@@ -1,17 +1,188 @@
-{"id":"p1","title":"Workspace v1","status":"active","owner":"leslie","budget":80000,"launched":"2026-01-15","summary":"Local-first markdown app for information workers"}
-{"id":"p2","title":"Table file format spike","status":"done","owner":"leslie","budget":0,"launched":"2026-04-20","summary":"Open .table format research"}
-{"id":"p3","title":"iOS Pro launch","status":"planning","owner":"leslie","budget":25000,"summary":"Premium tier on the App Store"}
-{"id":"p4","title":"Web companion app","status":"planning","owner":"claude","budget":15000,"summary":"Web read-only viewer"}
-{"id":"p5","title":"Sync engine","status":"on-hold","owner":"claude","budget":40000,"summary":"P2P sync between devices"}
-{"id":"p6","title":"Brand redesign","status":"done","owner":"sam","budget":12000,"launched":"2026-03-01","summary":"Visual identity refresh"}
-{"id":"p7","title":"Docs site","status":"active","owner":"sam","budget":5000,"launched":"2026-04-01","summary":"Public-facing documentation"}
-{"id":"p8","title":"Plugin SDK","status":"planning","owner":"claude","budget":35000,"summary":"Third-party extension API"}
-{"id":"p9","title":"Onboarding flow","status":"active","owner":"sam","budget":8000,"launched":"2026-02-10","summary":"First-run experience and templates"}
-{"id":"p10","title":"Encrypted vaults","status":"on-hold","owner":"leslie","budget":50000,"summary":"Per-workspace E2EE — blocked on KMS decision"}
-{"id":"p11","title":"Search v2","status":"active","owner":"claude","budget":18000,"launched":"2026-03-22","summary":"Full-text + structured query across the workspace"}
-{"id":"p12","title":"Q2 marketing site","status":"done","owner":"sam","budget":7000,"launched":"2026-04-05","summary":"Landing page refresh and pricing"}
-{"id":"p13","title":"AI assist","status":"planning","owner":"leslie","budget":22000,"summary":"Inline LLM helpers for writing and table editing"}
-{"id":"p14","title":"Mobile beta","status":"active","owner":"leslie","budget":11000,"launched":"2026-04-12","summary":"TestFlight + Play Console internal track"}
-{"id":"p15","title":"Templates gallery","status":"done","owner":"sam","budget":3500,"launched":"2026-03-15","summary":"Curated starting points — projects, OKRs, CRMs"}
-{"id":"p16","title":"API stability v1","status":"planning","owner":"claude","budget":9000,"summary":"Lock public types, write the migration guide"}
-{"id":"p17","title":"Performance pass","status":"on-hold","owner":"claude","budget":6000,"summary":"Large-vault rendering — needs profiling tooling first"}
+{"id":"p1","title":"Workspace v1"}
+
+{"id":"p1","status":"active"}
+
+{"id":"p1","owner":"leslie"}
+
+{"id":"p1","budget":80000}
+
+{"id":"p1","launched":"2026-01-15"}
+
+{"id":"p1","summary":"Local-first markdown app for information workers"}
+
+{"id":"p10","title":"Encrypted vaults"}
+
+{"id":"p10","status":"on-hold"}
+
+{"id":"p10","owner":"leslie"}
+
+{"id":"p10","budget":50000}
+
+{"id":"p10","summary":"Per-workspace E2EE — blocked on KMS decision"}
+
+{"id":"p11","title":"Search v2"}
+
+{"id":"p11","status":"active"}
+
+{"id":"p11","owner":"claude"}
+
+{"id":"p11","budget":18000}
+
+{"id":"p11","launched":"2026-03-22"}
+
+{"id":"p11","summary":"Full-text + structured query across the workspace"}
+
+{"id":"p12","title":"Q2 marketing site"}
+
+{"id":"p12","status":"done"}
+
+{"id":"p12","owner":"sam"}
+
+{"id":"p12","budget":7000}
+
+{"id":"p12","launched":"2026-04-05"}
+
+{"id":"p12","summary":"Landing page refresh and pricing"}
+
+{"id":"p13","title":"AI assist"}
+
+{"id":"p13","status":"planning"}
+
+{"id":"p13","owner":"leslie"}
+
+{"id":"p13","budget":22000}
+
+{"id":"p13","summary":"Inline LLM helpers for writing and table editing"}
+
+{"id":"p14","title":"Mobile beta"}
+
+{"id":"p14","status":"active"}
+
+{"id":"p14","owner":"leslie"}
+
+{"id":"p14","budget":11000}
+
+{"id":"p14","launched":"2026-04-12"}
+
+{"id":"p14","summary":"TestFlight + Play Console internal track"}
+
+{"id":"p15","title":"Templates gallery"}
+
+{"id":"p15","status":"done"}
+
+{"id":"p15","owner":"sam"}
+
+{"id":"p15","budget":3500}
+
+{"id":"p15","launched":"2026-03-15"}
+
+{"id":"p15","summary":"Curated starting points — projects, OKRs, CRMs"}
+
+{"id":"p16","title":"API stability v1"}
+
+{"id":"p16","status":"planning"}
+
+{"id":"p16","owner":"claude"}
+
+{"id":"p16","budget":9000}
+
+{"id":"p16","summary":"Lock public types, write the migration guide"}
+
+{"id":"p17","title":"Performance pass"}
+
+{"id":"p17","status":"on-hold"}
+
+{"id":"p17","owner":"claude"}
+
+{"id":"p17","budget":6000}
+
+{"id":"p17","summary":"Large-vault rendering — needs profiling tooling first"}
+
+{"id":"p2","title":"Table file format spike"}
+
+{"id":"p2","status":"done"}
+
+{"id":"p2","owner":"leslie"}
+
+{"id":"p2","budget":0}
+
+{"id":"p2","launched":"2026-04-20"}
+
+{"id":"p2","summary":"Open .table format research"}
+
+{"id":"p3","title":"iOS Pro launch"}
+
+{"id":"p3","status":"planning"}
+
+{"id":"p3","owner":"leslie"}
+
+{"id":"p3","budget":25000}
+
+{"id":"p3","summary":"Premium tier on the App Store"}
+
+{"id":"p4","title":"Web companion app"}
+
+{"id":"p4","status":"planning"}
+
+{"id":"p4","owner":"claude"}
+
+{"id":"p4","budget":15000}
+
+{"id":"p4","summary":"Web read-only viewer"}
+
+{"id":"p5","title":"Sync engine"}
+
+{"id":"p5","status":"on-hold"}
+
+{"id":"p5","owner":"claude"}
+
+{"id":"p5","budget":40000}
+
+{"id":"p5","summary":"P2P sync between devices"}
+
+{"id":"p6","title":"Brand redesign"}
+
+{"id":"p6","status":"done"}
+
+{"id":"p6","owner":"sam"}
+
+{"id":"p6","budget":12000}
+
+{"id":"p6","launched":"2026-03-01"}
+
+{"id":"p6","summary":"Visual identity refresh"}
+
+{"id":"p7","title":"Docs site"}
+
+{"id":"p7","status":"active"}
+
+{"id":"p7","owner":"sam"}
+
+{"id":"p7","budget":5000}
+
+{"id":"p7","launched":"2026-04-01"}
+
+{"id":"p7","summary":"Public-facing documentation"}
+
+{"id":"p8","title":"Plugin SDK"}
+
+{"id":"p8","status":"planning"}
+
+{"id":"p8","owner":"claude"}
+
+{"id":"p8","budget":35000}
+
+{"id":"p8","summary":"Third-party extension API"}
+
+{"id":"p9","title":"Onboarding flow"}
+
+{"id":"p9","status":"active"}
+
+{"id":"p9","owner":"sam"}
+
+{"id":"p9","budget":8000}
+
+{"id":"p9","launched":"2026-02-10"}
+
+{"id":"p9","summary":"First-run experience and templates"}
+

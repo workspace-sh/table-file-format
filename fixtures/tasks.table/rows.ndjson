@@ -1,8 +1,80 @@
-{"id":"t1","title":"Land .table extension","project":"p2","status":"done","priority":1,"assignee":"leslie"}
-{"id":"t2","title":"Wire RSD + StyleX","project":"p2","status":"doing","priority":2,"assignee":"leslie"}
-{"id":"t3","title":"Fixtures + tests","project":"p2","status":"doing","priority":3,"assignee":"claude"}
-{"id":"t4","title":"Settings panel","project":"p1","status":"todo","priority":2,"assignee":"leslie"}
-{"id":"t5","title":"Markdown editor polish","project":"p1","status":"doing","priority":1,"assignee":"sam"}
-{"id":"t6","title":"App icon","project":"p3","status":"todo","priority":3,"assignee":"sam"}
-{"id":"t7","title":"Sync conflict resolution","project":"p5","status":"todo","priority":4,"assignee":"claude"}
-{"id":"t8","title":"OG images","project":"p7","status":"done","priority":5,"assignee":"sam"}
+{"id":"t1","title":"Land .table extension"}
+
+{"id":"t1","project":"p2"}
+
+{"id":"t1","status":"done"}
+
+{"id":"t1","priority":1}
+
+{"id":"t1","assignee":"leslie"}
+
+{"id":"t2","title":"Wire RSD + StyleX"}
+
+{"id":"t2","project":"p2"}
+
+{"id":"t2","status":"doing"}
+
+{"id":"t2","priority":2}
+
+{"id":"t2","assignee":"leslie"}
+
+{"id":"t3","title":"Fixtures + tests"}
+
+{"id":"t3","project":"p2"}
+
+{"id":"t3","status":"doing"}
+
+{"id":"t3","priority":3}
+
+{"id":"t3","assignee":"claude"}
+
+{"id":"t4","title":"Settings panel"}
+
+{"id":"t4","project":"p1"}
+
+{"id":"t4","status":"todo"}
+
+{"id":"t4","priority":2}
+
+{"id":"t4","assignee":"leslie"}
+
+{"id":"t5","title":"Markdown editor polish"}
+
+{"id":"t5","project":"p1"}
+
+{"id":"t5","status":"doing"}
+
+{"id":"t5","priority":1}
+
+{"id":"t5","assignee":"sam"}
+
+{"id":"t6","title":"App icon"}
+
+{"id":"t6","project":"p3"}
+
+{"id":"t6","status":"todo"}
+
+{"id":"t6","priority":3}
+
+{"id":"t6","assignee":"sam"}
+
+{"id":"t7","title":"Sync conflict resolution"}
+
+{"id":"t7","project":"p5"}
+
+{"id":"t7","status":"todo"}
+
+{"id":"t7","priority":4}
+
+{"id":"t7","assignee":"claude"}
+
+{"id":"t8","title":"OG images"}
+
+{"id":"t8","project":"p7"}
+
+{"id":"t8","status":"done"}
+
+{"id":"t8","priority":5}
+
+{"id":"t8","assignee":"sam"}
+

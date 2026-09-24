@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
-import { normaliseBody, pretty, serializeNdjson, stampMeta } from "./serialize.js";
+import { normaliseBody, pretty, serializeRows, stampMeta } from "./serialize.js";
 
 export interface WriteTableInput {
   schema: TableSchema;
@@ -63,7 +63,7 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
 
   try {
     await stage(join(dir, "schema.json"), pretty(input.schema));
-    await stage(join(dir, "rows.ndjson"), serializeNdjson(input.rows));
+    await stage(join(dir, "rows.ndjson"), serializeRows(input.rows, input.schema));
     await stage(join(dir, "views.json"), pretty(input.views ?? []));
     await stage(join(dir, "meta.json"), pretty(meta));
     if (haveBodies) {

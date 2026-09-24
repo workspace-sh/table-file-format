@@ -20,7 +20,9 @@ test("round-trip: writeTableArchive → readTableArchive matches parseTable", as
   const zipped = await writeTableArchive("projects", disk);
   const back = await readTableArchive(zipped);
   assert.deepEqual(back.schema, disk.schema);
-  assert.deepEqual(back.rows, disk.rows);
+  // Row order carries no meaning (SPEC section 3); rows compare by id.
+  const byId = (rows: typeof disk.rows) => [...rows].sort((a, b) => (a.id < b.id ? -1 : 1));
+  assert.deepEqual(byId(back.rows), byId(disk.rows));
   assert.deepEqual(back.views, disk.views);
   assert.deepEqual(back.bodies, disk.bodies);
   assert.equal(back.meta.format, "table");
