@@ -525,6 +525,7 @@ function renderView(
           onMoveField={cb.onMoveField}
           onAddField={cb.onAddField}
           onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
           {...common}
         />
       );
