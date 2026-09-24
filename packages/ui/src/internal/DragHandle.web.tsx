@@ -60,6 +60,13 @@ const edgeStyles = css.create({
   },
 });
 
+/**
+ * How far the pointer must move before a press becomes a drag. Below
+ * it the press is a click: nothing is captured, so the click reaches
+ * whatever was pressed (a row, a badge, a link) as usual.
+ */
+const DRAG_THRESHOLD_PX = 4;
+
 interface PointerEventLike {
   clientX: number;
   clientY: number;
@@ -79,6 +86,9 @@ export function DragHandle({
   edge,
 }: DragHandleProps) {
   const activeRef = useRef(false);
+  /** Detaches the window listeners of a press that hasn't become a drag yet. */
+  const pendingRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => pendingRef.current?.(), []);
   const [dragging, setDragging] = useState(false);
 
   // Disable text selection on the document body while dragging — keeps
@@ -101,11 +111,38 @@ export function DragHandle({
     };
   }, [dragging]);
 
+  // A press becomes a drag only once the pointer has moved
+  // DRAG_THRESHOLD_PX. Until then the window is watched rather than this
+  // element — a fast flick can land its first move event anywhere — and
+  // nothing is captured, so a press that ends in place is an ordinary
+  // click on whatever was pressed.
   const handlePointerDown = (e: PointerEventLike) => {
-    activeRef.current = true;
-    setDragging(true);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    onDragStart?.({ pageX: e.clientX, pageY: e.clientY });
+    pendingRef.current?.();
+    e.preventDefault?.(); // a press that may become a drag selects no text
+    const el = e.currentTarget;
+    const id = e.pointerId;
+    const start = { x: e.clientX, y: e.clientY };
+    if (typeof window === "undefined") return;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < DRAG_THRESHOLD_PX) return;
+      stop();
+      activeRef.current = true;
+      setDragging(true);
+      el.setPointerCapture?.(id);
+      onDragStart?.({ pageX: start.x, pageY: start.y });
+      onDragMove?.({ pageX: ev.clientX, pageY: ev.clientY });
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      pendingRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    pendingRef.current = stop;
   };
 
   const handlePointerMove = (e: PointerEventLike) => {
