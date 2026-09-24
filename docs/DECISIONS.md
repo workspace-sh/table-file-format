@@ -520,8 +520,9 @@ deliberate omission — do not reintroduce a `display` key as a
 convenience.
 
 **Case:** function names are case-insensitive at the authoring surface
-and normalise to lowercase in the stored `expr` — `SUM(price)`,
-`Sum(price)` and `sum(price)` all compile to `(sum price)`. Uppercase
+and normalise to lowercase in the stored `expr` — `ROUND(price, 2)`,
+`Round(price, 2)` and `round(price, 2)` all compile to
+`(round price 2)`. Uppercase
 is a spreadsheet typing convention, not a requirement, and carrying it
 into storage would oblige every reader to case-fold before dispatch.
 
@@ -606,6 +607,24 @@ deferred, and when it is built it needs designing against that cost
 `index.sqlite`) rather than treating it as ordinary scope.
 
 (Resolves issue #34.)
+
+**Addendum (2026-09-24): refusal, and what `sum` means.**
+
+- **A formula that can't compile is refused, never stored.** An
+  authoring surface compiles what was typed to `table-expr-v1` before
+  saving. If it can't, the formula is refused with an error at the
+  point of entry, and nothing is written. `expr` never holds raw
+  authoring text: a stored infix string would be the second grammar
+  this decision rules out, and every reader would have to guess at it.
+  A reader given an `expr` that does not parse renders the field empty
+  and reports it.
+- **`sum` adds its arguments within the row.** `(sum price quantity)`
+  is `price + quantity`, and a one-argument `(sum price)` is just
+  `price`. It never means a column total. The case example above used
+  `SUM(price)` until this addendum and was changed to `ROUND`, because
+  a spreadsheet user reads `SUM(price)` as a column total. Cross-row
+  aggregation is still deferred, for the performance reasons above;
+  when it arrives it gets its own form rather than overloading `sum`.
 
 ## D30: Every field type has exactly one JSON encoding
 
