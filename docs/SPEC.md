@@ -262,7 +262,7 @@ declaration for a formula whose result is derived, never stored:
 {
   "name": "total",
   "type": "number",
-  "computed": { "expr": "price * quantity", "dialect": "table-expr-v1" }
+  "computed": { "expr": "(* price quantity)", "dialect": "table-expr-v1" }
 }
 ```
 
@@ -273,9 +273,14 @@ no "stored 100 but recomputes to 110" staleness class. The optional
 
 Until an evaluator ships, readers MUST tolerate a `computed` field's
 presence — it simply renders empty. The dialect is `table-expr-v1`, a
-canonical S-expression grammar (see DECISIONS D29). The standard
-library and whether cross-row aggregation is ever in scope remain
-open. Do not write tooling against evaluation yet; the dialect itself
+canonical S-expression grammar (see DECISIONS D29). `expr` holds only
+that canonical form: a formula typed in another syntax (`=price *
+quantity`) is compiled before it is saved, and one that cannot be
+compiled is refused at authoring time — never stored as raw text. A
+reader given an `expr` it cannot parse renders the field empty and
+reports it. The standard library and whether cross-row aggregation is
+ever in scope remain open; `sum` adds its arguments within the row
+(`(sum price quantity)`) and does not mean a column total. Do not write tooling against evaluation yet; the dialect itself
 may be relied upon.
 
 ### Schema evolution
