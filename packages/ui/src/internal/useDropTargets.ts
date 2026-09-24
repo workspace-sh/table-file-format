@@ -42,6 +42,8 @@ export interface DropTargets<K> {
   hitTest: (x: number, y: number) => K | null;
   /** Re-measure all (or one) registered target. */
   remeasure: (key?: K) => void;
+  /** Where a registered target was last measured, or null. */
+  rectOf: (key: K) => DropTargetRect | null;
 }
 
 type MeasureCallback = (
@@ -127,5 +129,7 @@ export function useDropTargets<K>(): DropTargets<K> {
     return nearestKey;
   }, []);
 
-  return { register, hitTest, remeasure };
+  const rectOf = useCallback((key: K): DropTargetRect | null => rects.current.get(key) ?? null, []);
+
+  return { register, hitTest, remeasure, rectOf };
 }

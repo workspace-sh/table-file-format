@@ -474,6 +474,7 @@ function renderView(
           bodies={bodies}
           onUpdateRow={cb.onUpdateRow}
           onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
           {...common}
         />
       );

@@ -273,6 +273,13 @@ const styles = css.create({
   listItemDragging: {
     opacity: 0.4,
   },
+  // Board drop position: a line above or below the card under the pointer.
+  dropBefore: {
+    boxShadow: "0 -3px 0 0 #3478f6",
+  },
+  dropAfter: {
+    boxShadow: "0 3px 0 0 #3478f6",
+  },
   listItemDropTarget: {
     borderTopWidth: 2,
     borderTopStyle: "solid",
@@ -1638,7 +1645,10 @@ export function BoardView({
   view,
   rows,
   schema,
+  bodies,
   onUpdateRow,
+  onUpdateView,
+  onOpenBody,
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
@@ -1659,6 +1669,16 @@ export function BoardView({
     hitTest,
     remeasure: remeasureColumns,
   } = useDropTargets<string>();
+  // Cards are drop targets too, so a card lands where it's dropped
+  // within a column — before or after the card under the pointer —
+  // not only at the end.
+  const {
+    register: registerCard,
+    hitTest: hitTestCard,
+    remeasure: remeasureCards,
+    rectOf: cardRect,
+  } = useDropTargets<string>();
+  const [dropSlot, setDropSlot] = useState<{ id: string; after: boolean } | null>(null);
 
   // After a row's group field changes (card moved between columns),
   // the columns can resize / shift — refresh the rect cache so the
@@ -1666,7 +1686,36 @@ export function BoardView({
   // ListView; see the comment there for the bug it fixes.
   useEffect(() => {
     remeasureColumns();
-  }, [rows, remeasureColumns]);
+    remeasureCards();
+  }, [rows, remeasureColumns, remeasureCards]);
+
+  /** The card slot under the pointer, if it's in `column` and isn't the dragged card. */
+  const slotAt = (x: number, y: number, column: string | null, dragged: string) => {
+    if (!column) return null;
+    const id = hitTestCard(x, y);
+    if (!id || id === dragged) return null;
+    const target = rows.find((r) => r.id === id);
+    const key = target ? (target[groupField] === undefined || target[groupField] === null || target[groupField] === "" ? "(empty)" : String(target[groupField])) : null;
+    if (key !== column) return null;
+    const r = cardRect(id);
+    return { id, after: r ? y > r.y + r.height / 2 : false };
+  };
+
+  /** The whole view's row order with `dragged` moved into `column` at `slot`. */
+  const orderAfterDrop = (dragged: string, column: string, slot: { id: string; after: boolean } | null) => {
+    const ids = rows.map((r) => r.id).filter((id) => id !== dragged);
+    let at: number;
+    if (slot) {
+      at = ids.indexOf(slot.id) + (slot.after ? 1 : 0);
+    } else {
+      // Dropped on the column but not on a card: after the column's last card.
+      const inColumn = (groups[column] ?? []).map((r) => r.id).filter((id) => id !== dragged);
+      const last = inColumn[inColumn.length - 1];
+      at = last !== undefined ? ids.indexOf(last) + 1 : ids.length;
+    }
+    ids.splice(at, 0, dragged);
+    return ids;
+  };
 
   // Phone-shaped viewport → column carousel: each column is sized to
   // ~84% of the viewport so the next one peeks at the right edge, and
@@ -1742,6 +1791,10 @@ export function BoardView({
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     const hit = hitTest(e.pageX, e.pageY);
                     setHoveredColumn((prev) => (prev === hit ? prev : hit));
+                    const slot = slotAt(e.pageX, e.pageY, hit, row.id);
+                    setDropSlot((prev) =>
+                      prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot,
+                    );
                   }
                 : undefined
             }
@@ -1758,19 +1811,29 @@ export function BoardView({
                           target === "(empty)" ? null : target,
                         );
                       }
+                      // Where in the column: saved as the view's manual
+                      // order, as the list does (SPEC section 4, `order`).
+                      if (onUpdateView) {
+                        const slot = slotAt(e.pageX, e.pageY, target, row.id);
+                        onUpdateView({ order: orderAfterDrop(row.id, target, slot) });
+                      }
                     }
                     setDraggedRowId(null);
                     setHoveredColumn(null);
                     setPointerPos(null);
+                    setDropSlot(null);
                   }
                 : undefined
             }
           >
             <html.div
+              ref={canDrag ? registerCard(row.id).ref : undefined}
+              onClick={onOpenBody ? () => onOpenBody(row.id) : undefined}
               style={[
                 styles.boardCardWrapper,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.cardDragging,
+                dropSlot?.id === row.id && (dropSlot.after ? styles.dropAfter : styles.dropBefore),
               ]}
             >
               <Card
@@ -1779,6 +1842,7 @@ export function BoardView({
                 fieldMap={fieldMap}
                 relatedTables={relatedTables}
                 onOpenRelation={onOpenRelation}
+                hasBody={!!bodies?.[row.id]}
               />
             </html.div>
           </DragHandle>
@@ -2011,6 +2075,7 @@ export function ListView({
           >
             <html.div
               ref={dropReg?.ref}
+              onClick={onOpenBody ? () => onOpenBody(row.id) : undefined}
               style={[
                 styles.listItem,
                 viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
@@ -2348,15 +2413,20 @@ interface CardProps {
   fieldMap: Map<string, Field>;
   relatedTables?: Record<string, ParsedTable>;
   onOpenRelation?: (address: string) => void;
+  /** The row has a long-form body; the card shows the DOC badge. */
+  hasBody?: boolean;
 }
 
-function Card({ row, fields, fieldMap, relatedTables, onOpenRelation }: CardProps) {
+function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody }: CardProps) {
   const titleField = fields[0];
   const restFields = fields.slice(1);
   return (
     <html.div style={styles.card}>
       {titleField && (
-        <html.span style={styles.cardTitle}>{formatValue(row[titleField])}</html.span>
+        <html.span style={styles.cardTitle}>
+          {formatValue(row[titleField])}
+          {hasBody ? <BodyBadge /> : null}
+        </html.span>
       )}
       <CardBody
         row={row}

@@ -222,7 +222,14 @@ function renderView(
     case "board":
       // BoardView handles its own horizontal scroll — snap-paging
       // carousel on touch viewports, free scroll on wide ones.
-      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} onOpenBody={cb.onOpenBody} />;
+      return (
+        <BoardView
+          {...common}
+          onUpdateRow={cb.onUpdateRow}
+          onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
+        />
+      );
     case "gallery":
       return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":

@@ -23,6 +23,8 @@ export interface DropTargets<K> {
   register: (key: K) => DropTargetRegistration;
   hitTest: (x: number, y: number) => K | null;
   remeasure: (key?: K) => void;
+  /** Where a registered target is on screen now, or null. */
+  rectOf: (key: K) => DropTargetRect | null;
 }
 
 export function useDropTargets<K>(): DropTargets<K> {
@@ -67,5 +69,12 @@ export function useDropTargets<K>(): DropTargets<K> {
   // No-op — reads are lazy, rects always current.
   const remeasure = useCallback((_key?: K) => {}, []);
 
-  return { register, hitTest, remeasure };
+  const rectOf = useCallback((key: K): DropTargetRect | null => {
+    const el = elements.current.get(key);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height };
+  }, []);
+
+  return { register, hitTest, remeasure, rectOf };
 }

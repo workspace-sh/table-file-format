@@ -218,7 +218,14 @@ function renderView(
   };
   switch (view.layout) {
     case "board":
-      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} onOpenBody={cb.onOpenBody} />;
+      return (
+        <BoardView
+          {...common}
+          onUpdateRow={cb.onUpdateRow}
+          onOpenBody={cb.onOpenBody}
+          onUpdateView={cb.onUpdateView}
+        />
+      );
     case "gallery":
       return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":
