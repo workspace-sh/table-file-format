@@ -159,8 +159,7 @@ Consequences a writer MUST respect:
   (±9,007,199,254,740,991). Beyond that, JSON parsers in common
   languages silently round. An identifier that can exceed it (a
   64-bit database key, a card number, a phone number) is a `string`.
-- JSON has no `NaN` or `Infinity`; neither can be stored. A value that
-  cannot be computed is empty.
+- JSON has no `NaN` or `Infinity`; neither can be stored.
 - `format: "decimal:N"` and `format: "currency:…"` round **for
   display only**; the stored value is unchanged.
 
@@ -231,7 +230,7 @@ either form — objects when color/label is set, strings otherwise.
   walk parent, etc.).
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
-- `computed: { … }` — RESERVED; see "Computed fields (reserved)".
+- `computed: { expr, dialect }` — a formula; see "Computed fields".
 
 ### Field format
 
@@ -253,35 +252,74 @@ Unknown tokens fall back to plain text.
 honoured by the body editor), `url`, `email`, `phone`. The last three
 are link-rendering hints; the stored value is the raw target.
 
-### Computed fields (reserved)
+### Computed fields
 
-RESERVED — not yet implemented. A field MAY carry a `computed`
-declaration for a formula whose result is derived, never stored:
+A field MAY carry a `computed` declaration for a formula whose result
+is derived, never stored:
 
 ```json
 {
-  "name": "total",
+  "name": "per_month",
+  "title": "Budget / month",
   "type": "number",
-  "computed": { "expr": "(* price quantity)", "dialect": "table-expr-v1" }
+  "format": "currency:USD",
+  "computed": { "expr": "(round (/ budget 12) 0)", "dialect": "table-expr-v1" }
 }
 ```
 
 The expression lives in the schema (one definition for every row);
 the result is **never persisted** — recomputed on read, so there is
-no "stored 100 but recomputes to 110" staleness class. The optional
-`index.sqlite` cache MAY materialise results for query speed.
+no "stored 100 but recomputes to 110" staleness class. Writers drop
+computed fields from `rows.ndjson`, and validation skips them. The
+optional `index.sqlite` cache MAY materialise results for query speed.
 
-Until an evaluator ships, readers MUST tolerate a `computed` field's
-presence — it simply renders empty. The dialect is `table-expr-v1`, a
-canonical S-expression grammar (see DECISIONS D29). `expr` holds only
-that canonical form: a formula typed in another syntax (`=price *
-quantity`) is compiled before it is saved, and one that cannot be
-compiled is refused at authoring time — never stored as raw text. A
-reader given an `expr` it cannot parse renders the field empty and
-reports it. The standard library and whether cross-row aggregation is
-ever in scope remain open; `sum` adds its arguments within the row
-(`(sum price quantity)`) and does not mean a column total. Do not write tooling against evaluation yet; the dialect itself
-may be relied upon.
+`expr` holds only the canonical `table-expr-v1` form (DECISIONS D29):
+a formula typed in another syntax (`=price * quantity`) is compiled
+before it is saved, and one that cannot be compiled is refused at
+authoring time — never stored as raw text. A reader given an `expr`
+it cannot parse, or a `dialect` it doesn't know, renders the field
+empty and reports it.
+
+**`table-expr-v1`** (standard library: DECISIONS D32):
+
+- `(function arg …)`; numbers and strings as in JSON; `true`, `false`.
+- A bare word is a field of the same row; `(field "unit price")`
+  reaches a field whose name isn't a bare word. Another computed field
+  may be used; a loop between computed fields is `#REF!`.
+- Function names are case-insensitive and stored lowercase; field
+  names are case-sensitive.
+- Formulas see only their own row. Cross-row aggregation (column
+  totals) is not part of `table-expr-v1`.
+
+| Functions | Behaviour |
+| --- | --- |
+| `+` `*` | any number of arguments |
+| `-` | one argument negates; two subtract |
+| `/` | two arguments; dividing by zero is `#DIV/0!` |
+| `sum` `min` `max` | any number of arguments; empty arguments are skipped |
+| `round` | `(round x)` or `(round x digits)`; halves round away from zero |
+| `abs` | absolute value |
+| `=` `<>` | equality; two empties are equal |
+| `<` `<=` `>` `>=` | two numbers or two strings |
+| `and` `or` `not` | `true` / `false` only |
+| `if` | `(if test then)` or `(if test then else)`; only the chosen branch is evaluated; an empty test takes `else` |
+| `isblank` | `true` when the value is empty |
+| `concat` | joins its arguments as text; empties add nothing |
+| `upper` `lower` `len` | text; `len` counts characters |
+
+**Empty values** (see "Empty values"): an empty argument makes
+arithmetic, comparison with `<`/`>`, and text functions empty; `sum`,
+`min`, `max` skip it.
+
+**Errors** are values, shown as their code, and pass through anything
+that uses them: `#DIV/0!` (division by zero), `#VALUE!` (wrong kind of
+argument, or wrong number of arguments), `#NAME?` (unknown function
+or field), `#REF!` (a computed field that depends on itself), `#NUM!`
+(a result too large to represent).
+
+Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
+`applyView()` computes before filtering and sorting, so views can use
+computed fields.
 
 ### Schema evolution
 

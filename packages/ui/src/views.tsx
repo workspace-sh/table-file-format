@@ -6,6 +6,8 @@ import {
   applyGroup,
   completeSeconds,
   effectiveAlign,
+  FormulaError,
+  formatValue as formatWithFieldFormat,
   enumOptions,
   enumValues,
   formatAddress,
@@ -718,6 +720,15 @@ const styles = css.create({
    * table (or the table isn't loaded). Surface visibly rather than
    * silently rendering nothing.
    */
+  /** A computed field whose formula failed (#DIV/0!, #VALUE!, …). */
+  formulaError: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: 12,
+    color: {
+      default: "#c00",
+      "@media (prefers-color-scheme: dark)": "#ff6b6b",
+    },
+  },
   relationBroken: {
     fontStyle: "italic",
     opacity: 0.55,
@@ -878,6 +889,7 @@ function headerAlignStyle(align: FieldAlignment) {
 
 function formatValue(value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
+  if (value instanceof FormulaError) return value.code;
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "string" || typeof value === "number") return String(value);
   return JSON.stringify(value);
@@ -906,9 +918,19 @@ function CellValue({ field, value, relatedTables, onOpenRelation }: CellValuePro
     );
   }
 
+  // A formula that failed shows its spreadsheet-style code (#DIV/0!).
+  if (value instanceof FormulaError) {
+    return <html.span style={styles.formulaError}>{value.code}</html.span>;
+  }
+
   const isEnum = field?.constraints?.enum != null;
   if (isEnum && value !== undefined && value !== null && value !== "") {
     return <html.span style={styles.pill}>{String(value)}</html.span>;
+  }
+  // A declared display format (currency:USD, decimal:2, …) is honoured;
+  // the stored value is untouched (SPEC "Field format").
+  if (field?.format && value !== undefined && value !== null && value !== "") {
+    return <html.span>{formatWithFieldFormat(field, value)}</html.span>;
   }
   return <html.span>{formatValue(value)}</html.span>;
 }
@@ -1011,6 +1033,10 @@ function EditableCell({
   relatedTables,
   onOpenRelation,
 }: EditableCellProps) {
+  // A computed field is derived on read and never stored, so there is
+  // nothing to edit. (Hooks below stay unconditional; this only picks
+  // what renders.)
+  const readOnly = field?.computed !== undefined;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
@@ -1035,6 +1061,12 @@ function EditableCell({
   };
 
   const cancel = () => setEditing(false);
+
+  if (readOnly) {
+    return (
+      <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} />
+    );
+  }
 
   // Boolean: toggle on click, no draft state
   if (field?.type === "boolean") {

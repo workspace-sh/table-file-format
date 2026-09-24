@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
+import { computeRows } from "./expr.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
@@ -131,7 +132,9 @@ export function applyOrder(rows: Row[], order: string[] | undefined): Row[] {
 }
 
 export function applyView(parsed: ParsedTable, view: View): Row[] {
-  let rows = parsed.rows;
+  // Computed fields first, so a view can filter and sort on them. The
+  // results live only in the returned rows — never in parsed.rows.
+  let rows = computeRows(parsed.schema, parsed.rows).rows;
   if (view.filter) rows = applyFilters(rows, view.filter);
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
