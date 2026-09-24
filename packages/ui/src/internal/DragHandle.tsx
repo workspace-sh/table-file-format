@@ -84,9 +84,10 @@ export function DragHandle({
       // Run callbacks on the JS thread, not as Reanimated worklets.
       // State updates flow through React; no Reanimated dependency.
       .runOnJS(true)
-      // Activate immediately on press once the long-press gate (if
-      // any) clears — no additional movement threshold.
-      .minDistance(0);
+      // Without a long-press gate, a press only becomes a drag after a
+      // few points of movement, so a tap still reaches the row or badge
+      // underneath. With the gate, the hold itself is the signal.
+      .minDistance(longPressMs && longPressMs > 0 ? 0 : 4);
     if (longPressMs && longPressMs > 0) {
       pan = pan
         .activateAfterLongPress(longPressMs)
