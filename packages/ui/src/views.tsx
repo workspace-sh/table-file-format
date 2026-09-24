@@ -1086,7 +1086,12 @@ function EditableCell({
   if (!editing) {
     return (
       <html.span onClick={startEdit} style={styles.cellEditableIdle}>
-        <CellValue field={field} value={value} />
+        <CellValue
+          field={field}
+          value={value}
+          relatedTables={relatedTables}
+          onOpenRelation={onOpenRelation}
+        />
       </html.span>
     );
   }
