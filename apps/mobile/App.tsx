@@ -241,6 +241,7 @@ function renderView(
       return (
         <TableView
           {...common}
+          onUpdateView={cb.onUpdateView}
           onUpdateRow={cb.onUpdateRow}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}

@@ -223,6 +223,12 @@ export interface View {
    * data or schema. Set by column-resize gestures in table views.
    */
   columnWidths?: Record<string, number>;
+  /**
+   * Body row height in pixels, for every row of a table view. Rows
+   * show as many lines of text as fit; the rest is clipped. Absent
+   * means one line. Set by dragging a row's bottom edge.
+   */
+  rowHeight?: number;
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;
