@@ -19,6 +19,7 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
     }
 
     for (const field of schema.fields) {
+      if (field.computed) continue; // derived on read, never stored — nothing to validate
       const value = row[field.name];
       const fieldErrors = validateField(field, value);
       for (const message of fieldErrors) {

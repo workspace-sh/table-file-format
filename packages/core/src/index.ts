@@ -37,3 +37,11 @@ export {
 } from "./address.js";
 export { parseRowsText } from "./parse-text.js";
 export { serializeRows } from "./serialize.js";
+export {
+  computeRows,
+  parseExpr,
+  FormulaError,
+  type Expr,
+  type FormulaErrorCode,
+  type ParseResult,
+} from "./expr.js";

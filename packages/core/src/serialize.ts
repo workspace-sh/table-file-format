@@ -20,8 +20,10 @@ export function pretty(value: unknown): string {
  * so no two lines a merge can change ever touch — see D31 for why.
  */
 export function serializeRows(rows: Row[], schema: TableSchema): string {
-  const declared = schema.fields.map((f) => f.name);
-  const declaredSet = new Set(declared);
+  // Computed fields are never stored (SPEC section 2), even if a caller
+  // hands back rows that had them filled in for display.
+  const declared = schema.fields.filter((f) => !f.computed).map((f) => f.name);
+  const declaredSet = new Set(schema.fields.map((f) => f.name));
   const out: string[] = [];
   for (const row of rows.slice().sort((a, b) => compareCodePoints(a.id, b.id))) {
     const undeclared = Object.keys(row)
