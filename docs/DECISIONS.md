@@ -752,3 +752,37 @@ In the other direction nothing breaks: the version 2 reader's rule
 files unchanged, because a whole-row line is just a line with many
 cells. No migration step exists or is needed. Writers stamp the
 version they write over any older `meta.json` value.
+
+## D32: `table-expr-v1` standard library — spreadsheet names, spreadsheet behaviour
+
+D29 settled the grammar and left the standard library open. The
+reference evaluator now defines it (SPEC section 2, "Computed
+fields"): arithmetic, comparison, `sum min max round abs`,
+`if and or not isblank`, and `concat upper lower len`, row-local only.
+
+**Excel's names and Excel's behaviour, lowercased.** People writing
+formulas already know them, and D29's authoring surface compiles
+`=ROUND(x, 2)` to `(round x 2)` one-for-one, so no renaming table has
+to be learned or maintained. Where Excel's behaviour is a convention
+rather than an accident, it is kept: `sum`/`min`/`max` skip blanks,
+`round` rounds halves away from zero, `<>` is not-equal, and failures
+show as `#DIV/0!`, `#VALUE!`, `#NAME?`, `#REF!` and `#NUM!`.
+
+**One deliberate departure: an empty operand makes arithmetic empty.**
+Excel treats a blank as 0, so `price * quantity` with no quantity
+shows 0 — a plausible-looking wrong answer in a column of real ones.
+Empty-in, empty-out makes missing data visible instead. `sum` still
+skips blanks, so "add these up, ignoring gaps" stays one word.
+
+**Errors are values, not exceptions.** A failed row shows its code in
+its own cell and the rest of the column still computes; anything built
+on a failed value carries the same code, so the first cause is the
+one shown. The untaken branch of `if` is never evaluated, so
+`(if (= q 0) 0 (/ p q))` guards a division the way it does in a
+spreadsheet.
+
+**Left out on purpose:** `today`/`now`, because a formula whose value
+changes with the clock is not pure (D29 relies on purity for
+recompute-on-read and for any future multi-value extension), and
+column totals, which stay deferred for the performance reasons in
+D29. Both can be added later without changing anything here.
