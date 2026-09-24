@@ -260,7 +260,7 @@ export interface TableMeta {
   [key: string]: unknown;
 }
 
-export const TABLE_FORMAT_VERSION = 1;
+export const TABLE_FORMAT_VERSION = 2;
 
 // ---- Diagnostics ----
 

@@ -665,3 +665,71 @@ without the spec mentioning them: the field annotations `title` (the
 display name, which is how a column is "renamed" under append-only
 evolution) and `align`, and the view properties `group`, `order` and
 `columnWidths`.
+
+## D31: `rows.ndjson` holds one cell per line (formatVersion 2)
+
+A `.table/` is written by tools and lives in version control like any
+other file. With one row per line, a line-based merge (git's, and
+most others') conflicted on nearly every kind of parallel work: two
+branches adding a row both append at the end of the file, and two
+edits to different cells of one row change the same line. The
+conflicted file then held two versions of the row under one `id`, and
+nothing said which was right.
+
+Now each line carries one cell, lines are sorted by row `id` then
+schema field order, and every line is followed by a blank line (SPEC
+section 3). Git merges this unaided. Measured on real git merges of
+each candidate layout, parallel work on a small table:
+
+| Parallel change | 1 row per line | 1 cell per line |
+| --- | --- | --- |
+| both add a row | conflict | clean if the new rows sort to different places; else a conflict that reads back correctly |
+| edit neighbouring rows | conflict | clean |
+| edit different cells of one row | conflict | clean |
+| fill an empty cell, edit the one before it | conflict | clean |
+| both fill different empty cells of one row | conflict | conflict, reads back correctly |
+| same cell, two values | conflict | conflict, row whole, reported |
+| delete a row vs edit it | conflict | conflict, row kept, reported |
+
+The blank lines matter: git treats changes to adjacent lines as one
+conflict even when they don't overlap, and a blank line between every
+pair stops that. Rows sorted by `id` scatter new rows through the file,
+because minted ids are random (D23), so in a table of any size two
+additions usually land in different places. Not always: in a small
+table, or one whose ids share a prefix, two new rows can sort between
+the same two lines. Git then conflicts, and the reader still gets both
+rows back (below). A real two-branch merge of the `projects` fixture,
+whose ids all start with `p`, did exactly that. No line-based layout
+avoids it, because two insertions at one position always conflict.
+
+**Conflicts read as a table.** Every line is a complete JSON value,
+so a conflicted file needs no repair to be read: the reader
+recognises the markers, keeps everything either side changed, lets
+the later side win a contested cell, ignores a diff3 base section,
+and reports what it resolved. Keeping an edited row that the other
+side deleted is the "resurrect-on-update" choice already listed for
+sync in STORAGE-AND-SYNC section 3, so git merges and sync resolve the
+same case the same way.
+
+**Alternatives measured and not taken.** One file per row (with one
+cell per line inside it) merges exactly as well, but a 50,000-row
+table becomes 50,000 files. A pretty-printed JSON object per row fails
+on the comma a new last key adds to the line before it. Sorting
+whole-row lines by `id` fixes parallel additions only.
+
+**Costs, accepted.** The file is roughly 2–3× larger, because each
+line repeats its row's `id`; repetition compresses well in git and in
+`.table.zip`. A row is no longer one line to eyeball. And without a
+sort in the view, rows appear in `id` order, which for minted ids is
+effectively random. The spec never promised any other order (row
+order carries no meaning); an app wanting creation order sorts by a
+field.
+
+**Why a major version.** A version 1 reader given this layout sees
+each row's `id` many times and one cell per line. So the layout
+change is `formatVersion` 2, as D26 requires for a breaking change.
+In the other direction nothing breaks: the version 2 reader's rule
+("each line adds its cells to the row it names") reads version 1
+files unchanged, because a whole-row line is just a line with many
+cells. No migration step exists or is needed. Writers stamp the
+version they write over any older `meta.json` value.

@@ -8,7 +8,7 @@ import type {
 } from "./types.js";
 import type { WriteTableInput } from "./writer.js";
 import { parseNdjsonText, parseOptionalJsonText } from "./parse-text.js";
-import { normaliseBody, pretty, serializeNdjson, stampMeta } from "./serialize.js";
+import { normaliseBody, pretty, serializeRows, stampMeta } from "./serialize.js";
 import { readZip, writeZip, type ZipEntry } from "./zip.js";
 
 /**
@@ -138,7 +138,7 @@ export async function writeTableArchive(
 
   const entries: ZipEntry[] = [
     entry("schema.json", pretty(input.schema)),
-    entry("rows.ndjson", serializeNdjson(input.rows)),
+    entry("rows.ndjson", serializeRows(input.rows, input.schema)),
     entry("views.json", pretty(input.views ?? [])),
     entry("meta.json", pretty(stampMeta(input.meta))),
   ];

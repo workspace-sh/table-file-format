@@ -35,3 +35,5 @@ export {
   type Address,
   type TableLookup,
 } from "./address.js";
+export { parseRowsText } from "./parse-text.js";
+export { serializeRows } from "./serialize.js";

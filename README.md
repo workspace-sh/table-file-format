@@ -17,8 +17,8 @@ Plain text inside, line-diffable, greppable, self-contained.
 ```
 my-data.table/
 ├── schema.json          required — typed fields, constraints, version
-├── rows.ndjson          required — one JSON record per line, every row
-│                                   carries a system `id` (nanoid)
+├── rows.ndjson          required — one cell per line, each naming its
+│                                   row by system `id`, so git merges cleanly
 ├── views.json           optional — saved views (table/board/gallery/list/calendar)
 ├── meta.json            optional — manifest, title, timestamps, generator
 ├── attachments/         optional — files referenced by row values

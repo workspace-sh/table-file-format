@@ -6,6 +6,7 @@ import tasksSchema from "../../../fixtures/tasks.table/schema.json" with { type:
 import tasksViews from "../../../fixtures/tasks.table/views.json" with { type: "json" };
 import tasksMeta from "../../../fixtures/tasks.table/meta.json" with { type: "json" };
 import tasksRowsRaw from "../../../fixtures/tasks.table/rows.ndjson?raw";
+import { parseRowsText } from "@workspace.sh/table-core";
 import type {
   ParsedTable,
   Row,
@@ -19,11 +20,9 @@ const projectsBodyFiles = import.meta.glob<string>(
   { eager: true, query: "?raw", import: "default" },
 );
 
+/** Through core's reader: a row spans several lines (SPEC section 3). */
 function parseNdjson(raw: string): Row[] {
-  return raw
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as Row);
+  return parseRowsText(raw).rows;
 }
 
 function bodiesByRowId(files: Record<string, string>): Record<string, string> {

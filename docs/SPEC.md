@@ -1,6 +1,7 @@
 # `.table/` format specification
 
-> **Frozen at `formatVersion: 1`** (2026-07-20, DECISIONS D26).
+> **`formatVersion: 2`** (2026-09-24, DECISIONS D31; version 1 was
+> frozen 2026-07-20, D26).
 > Changes from here are **additive only** — new optional fields,
 > annotations, and files that existing readers safely ignore.
 > Breaking changes require a major bump of `formatVersion`. The
@@ -294,13 +295,35 @@ on round-trip.
 
 ## 3. `rows.ndjson`
 
-One JSON object per line. Each row is independently parseable. Blank
-lines are skipped. The file ends with a trailing `\n` (POSIX-correct).
+One cell per line (DECISIONS D31). Each line is a JSON object naming
+a row by `id` and carrying one of its cells, and is followed by a
+blank line. The file ends with a trailing `\n` (POSIX-correct).
 
 ```ndjson
-{"id":"p1","title":"Workspace v1","status":"active","priority":1}
-{"id":"p2","title":"Table file format spike","status":"done","priority":2}
+{"id":"p1","title":"Workspace v1"}
+
+{"id":"p1","status":"active"}
+
+{"id":"p1","priority":1}
+
+{"id":"p2","title":"Table file format spike"}
+
 ```
+
+**Reading.** A reader collects lines by `id`: each line adds the cells
+it carries to that row, and a line with only an `id` says the row
+exists. A line carrying several cells — a whole row, as in
+`formatVersion` 1 — reads by the same rule. Blank lines are skipped.
+If one cell is given two different values, the later line wins and
+the reader reports it.
+
+**Why a cell per line:** so that version control merges a `.table/`
+the way it merges any text, with no tool installed. Two branches that
+edit different rows or different cells of one row touch different
+lines and merge cleanly, and so do added rows that sort to different
+places. Only the same cell changed
+two ways conflicts — and even that reads back as a whole table (see
+"Reader error contract").
 
 ### System `id`
 
@@ -331,9 +354,9 @@ constraint over user-facing fields, not row identity.
 ### Row ordering
 
 Row order in `rows.ndjson` is **not** semantically meaningful. Display
-order belongs in views (`sort` and `group`). Append-friendly:
-appending a new row to the end MUST be a valid edit, even
-mid-document.
+order belongs in views (`sort`, `group`, `order`). Readers MUST accept
+lines in any order — a row's lines need not be adjacent — so appending
+lines to the end is always a valid edit.
 
 ### Reader error contract
 
@@ -344,6 +367,20 @@ per-item diagnostic while every valid row still loads. The format is
 line-oriented text that passes through version control, transports
 and other people's tools — one damaged line or a merge-conflict marker
 must not make the whole table unreadable.
+
+**Merge conflicts.** Readers SHOULD recognise version-control conflict
+markers — a line beginning `<<<<<<<`, `|||||||` or `>>>>>>>`, or a
+line of exactly `=======` — and read through them:
+
+- Lines on both sides of a conflict are read. Anything changed on
+  either side survives, including a row or cell that one side deleted
+  and the other edited.
+- Where both sides give the same cell different values, the later
+  side (after `=======`) wins.
+- Lines in a base section (from `|||||||` to `=======`, git's `diff3`
+  style) are ignored: they hold the value both sides moved away from.
+- Every contested cell is reported, so an app can ask a person to
+  confirm it, then write the table back without markers.
 
 The one fatal case: `schema.json` missing or malformed. A `.table/`
 without a readable schema is not a table; there is nothing sound to
@@ -357,10 +394,20 @@ does not have to.
 
 ### Canonical write order
 
-Readers MUST NOT assign meaning to row order, but writers SHOULD
-produce a **canonical serialisation**: rows in stable insertion order
-(new rows appended, existing rows keep their line position), and
-within each row, keys in schema declaration order with `id` first.
+Readers MUST NOT assign meaning to line order, but writers SHOULD
+produce a **canonical serialisation**:
+
+- one cell per line: `{"id":…,"<field>":<value>}`, `id` first;
+- rows in code-point order of `id`; within a row, fields in schema
+  declaration order, then any undeclared keys in code-point order;
+- empty cells (see "Empty values") left out; a row with no cells is
+  the single line `{"id":…}`;
+- every line followed by one blank line, so that no two lines a merge
+  may change are adjacent (adjacent changes conflict in line-based
+  merges even when they don't overlap).
+
+Reference: `serializeRows()` / `parseRowsText()` in
+`@workspace.sh/table-core`.
 
 Why this matters: two independent writers materialising the same
 logical state should produce **byte-identical** files. Without a
@@ -460,7 +507,7 @@ descriptive metadata.
 ```json
 {
   "format": "table",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "title": "Projects",
   "description": "Workspace product roadmap",
   "created_at": "2026-04-01T00:00:00Z",
@@ -741,9 +788,11 @@ docs/DECISIONS.md D14).
 ### Spec version — `formatVersion`
 
 The spec itself is versioned by `formatVersion` in `meta.json`. The
-current value is `1`. Breaking changes bump the major; additive
-changes do not. Readers SHOULD warn on `formatVersion` higher than
-they recognise but MAY still attempt to read.
+current value is `2` (D31 changed the `rows.ndjson` layout; a version
+2 reader reads version 1 rows by the same rule). Breaking changes bump
+the major; additive changes do not. Readers SHOULD warn on
+`formatVersion` higher than they recognise but MAY still attempt to
+read.
 
 ### Schema version — `schema-version`
 
