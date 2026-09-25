@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   applyView,
@@ -22,6 +22,7 @@ import {
   TableView,
 } from "@workspace.sh/table-ui";
 import { tables as initialTables } from "./loadFixture";
+import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
 import { useHashAddress } from "./useHashAddress";
 
@@ -127,19 +128,46 @@ const styles = css.create({
   },
 });
 
+/** The first view of each table, as the demo opens it. */
+function firstViews(tables: Record<string, ParsedTable>): Record<string, string> {
+  return Object.fromEntries(Object.entries(tables).map(([key, t]) => [key, t.views[0]?.id ?? ""]));
+}
+
+/** The table to show first: the default one when it exists, otherwise any. */
+function firstTablePath(tables: Record<string, ParsedTable>): string {
+  return tables[DEFAULT_TABLE_PATH] ? DEFAULT_TABLE_PATH : Object.keys(tables)[0]!;
+}
+
 function bumpSchemaVersion(schema: TableSchema): TableSchema {
   const current = (schema["schema-version"] as number | undefined) ?? 1;
   return { ...schema, "schema-version": current + 1 };
 }
 
 export function App() {
-  const [tables, setTables] = useState<Record<string, ParsedTable>>(initialTables);
-  const [activeTablePath, setActiveTablePath] = useState<string>(DEFAULT_TABLE_PATH);
-  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      Object.entries(initialTables).map(([key, t]) => [key, t.views[0]?.id ?? ""]),
-    ),
+  // Edits survive a reload (#86): what was saved, or the fixtures when
+  // nothing usable was.
+  const [tables, setTables] = useState<Record<string, ParsedTable>>(
+    () => loadSaved(browserStore()) ?? initialTables,
   );
+  const [activeTablePath, setActiveTablePath] = useState<string>(() => firstTablePath(tables));
+  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
+    firstViews(tables),
+  );
+
+  // Saved after every change. The fixtures themselves are never saved, so
+  // an untouched demo keeps following them as they change.
+  useEffect(() => {
+    if (tables !== initialTables) save(browserStore(), tables);
+  }, [tables]);
+
+  const resetDemo = useCallback(() => {
+    clearSaved(browserStore());
+    setTables(initialTables);
+    setActiveTablePath(firstTablePath(initialTables));
+    setActiveViewIds(firstViews(initialTables));
+    setSearchQuery("");
+    setActiveBodyRowId(null);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
 
@@ -379,6 +407,7 @@ export function App() {
         table={table}
         activeViewId={view.id}
         onSelect={setActiveViewId}
+        onReset={resetDemo}
       />
       <html.div style={styles.main}>
         <html.div style={styles.header}>

@@ -82,6 +82,44 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#6e6e73",
     },
   },
+  footer: {
+    display: "flex",
+    flexDirection: "column",
+    // Under the views rather than pinned to the bottom: the sidebar is as
+    // tall as the page, so the bottom is off screen on any long table.
+    marginTop: 20,
+    paddingInline: 8,
+  },
+  resetButton: {
+    alignSelf: "flex-start",
+    paddingInline: 10,
+    paddingBlock: 5,
+    fontSize: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  resetNote: {
+    fontSize: 11,
+    marginTop: 6,
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
 });
 
 interface SidebarProps {
@@ -91,6 +129,8 @@ interface SidebarProps {
   table: ParsedTable;
   activeViewId: string;
   onSelect: (viewId: string) => void;
+  /** Forget every edit and start again from the fixtures. */
+  onReset: () => void;
 }
 
 export function Sidebar({
@@ -100,6 +140,7 @@ export function Sidebar({
   table,
   activeViewId,
   onSelect,
+  onReset,
 }: SidebarProps) {
   const tablePaths = Object.keys(tables);
   const showTablePicker = tablePaths.length > 1;
@@ -143,6 +184,17 @@ export function Sidebar({
             <html.span style={styles.itemLayout}>{view.layout}</html.span>
           </html.div>
         ))}
+      </html.div>
+      <html.div style={styles.footer}>
+        <html.button
+          style={styles.resetButton}
+          onClick={() => {
+            if (window.confirm("Reset the demo data? Every edit you made here is lost.")) onReset();
+          }}
+        >
+          Reset demo data
+        </html.button>
+        <html.span style={styles.resetNote}>Edits are kept in this browser.</html.span>
       </html.div>
     </html.div>
   );
