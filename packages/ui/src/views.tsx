@@ -21,7 +21,6 @@ import type {
   View,
 } from "@workspace.sh/table-core";
 import {
-  ADD_FIELD_COLUMN_WIDTH,
   AddFieldButton,
   SchemaFieldEditor,
 } from "./SchemaEditor";
@@ -895,9 +894,31 @@ const styles = css.create({
   // Width must match SchemaEditor's `addFieldWrapper.width` — kept as a
   // literal here because StyleX is static-extraction-only and can't
   // resolve cross-module constants inside css.create().
-  addFieldSpacer: {
-    width: 84,
+  cellInputAffixed: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    width: "100%",
+  },
+  cellInputAffix: {
+    fontSize: 12,
     flexShrink: 0,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  noRightBorder: {
+    borderRightWidth: 0,
+  },
+  noBottomBorder: {
+    borderBottomWidth: 0,
+  },
+  tableFooter: {
+    display: "flex",
+    flexDirection: "row",
+    marginTop: 8,
   },
 
   // "doc" badge for rows with a markdown body — clickable variant overrides
@@ -1234,7 +1255,11 @@ function EditableCell({
           : field?.type === "time"
             ? "time"
             : "text";
-  return (
+  // The stored value is a plain number; a currency format only changes
+  // how it's shown. While editing, show the symbol beside the input so
+  // it's clear what the number is in.
+  const currencySymbol = currencySymbolOf(field);
+  const input = (
     <html.input
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={inputRef as any}
@@ -1249,6 +1274,28 @@ function EditableCell({
       style={styles.cellInput}
     />
   );
+  if (!currencySymbol) return input;
+  return (
+    <html.span style={styles.cellInputAffixed}>
+      <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
+      {input}
+    </html.span>
+  );
+}
+
+/** The symbol for a `currency:XXX` format, in the reader's locale, or null. */
+function currencySymbolOf(field: Field | undefined): string | null {
+  const format = field?.format;
+  if (!format?.startsWith("currency:")) return null;
+  try {
+    const parts = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: format.slice("currency:".length),
+    }).formatToParts(0);
+    return parts.find((p) => p.type === "currency")?.value ?? null;
+  } catch {
+    return null; // unknown ISO 4217 code — show the plain input
+  }
 }
 
 interface ViewProps {
@@ -1407,7 +1454,9 @@ export function TableView({
   // Columns the user has resized keep their width; the rest share what's
   // left the same way.
   const chrome = freezePrimary ? 3 : 2;
-  const addFieldW = canAddField ? ADD_FIELD_COLUMN_WIDTH : 0;
+  // "+ Field" sits under the table, not in a column of its own, so
+  // it takes no width from the grid.
+  const addFieldW = 0;
   const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
   const fixedWidth = (name: string) => {
     const w = setWidths[name];
@@ -1499,7 +1548,7 @@ export function TableView({
     // primary pane never has a right-edge separator (the column's own
     // right border does it); rest-pane cells separate themselves
     // except the last one, where the `+ Field` button takes over.
-    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    const isLast = idxInPane === paneLen - 1;
     if (!schemaEditable) {
       return (
         <html.span
@@ -1578,7 +1627,7 @@ export function TableView({
   ) => {
     const field = fieldMap.get(name);
     const align = effectiveAlign(field);
-    const isLast = idxInPane === paneLen - 1 && !canAddField;
+    const isLast = idxInPane === paneLen - 1;
     return (
       <html.span
         key={name}
@@ -1615,6 +1664,7 @@ export function TableView({
   };
 
   return (
+    <>
     <html.div {...measureProps} style={styles.table}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
@@ -1652,12 +1702,6 @@ export function TableView({
                 {restNames.map((name, idx) =>
                   renderHeaderCell(name, idx, restNames.length),
                 )}
-                {canAddField && (
-                  <AddFieldButton
-                    existingNames={new Set(schema.fields.map((f) => f.name))}
-                    onAdd={onAddField!}
-                  />
-                )}
               </html.div>
               {rows.map((row, i) => (
                 <html.div
@@ -1672,7 +1716,6 @@ export function TableView({
                   {restNames.map((name, idx) =>
                     renderBodyCell(row, name, idx, restNames.length),
                   )}
-                  {canAddField && <html.div style={styles.addFieldSpacer} />}
                   {/* Without a frozen pane, this pane carries the row handle. */}
                   {!primaryName && rowResizer}
                 </html.div>
@@ -1682,6 +1725,15 @@ export function TableView({
         </html.div>
       </html.div>
     </html.div>
+      {canAddField && (
+        <html.div style={styles.tableFooter}>
+          <AddFieldButton
+            existingNames={new Set(schema.fields.map((f) => f.name))}
+            onAdd={onAddField!}
+          />
+        </html.div>
+      )}
+    </>
   );
 }
 
@@ -2408,6 +2460,10 @@ export function CalendarView({
                 styles.calendarDay,
                 styles.calendarDayButton,
                 styles.cellWidth(dayColWidth(i % 7)),
+                // The calendar's own border is the outer edge; the last
+                // column and last week don't draw a second one.
+                i % 7 === 6 && styles.noRightBorder,
+                i >= cells.length - 7 && styles.noBottomBorder,
                 !cell.inMonth && styles.calendarDayOther,
               ]}
             >
