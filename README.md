@@ -139,15 +139,18 @@ npm install                       # installs everything; symlinks workspace pack
 
 # Format library
 npm run core:build                # tsc → packages/core/dist/
-npm run core:test                 # node:test suite (48 tests)
+npm run core:test                 # node:test suite
 npm run core:test:watch           # watch mode
 npm run core:typecheck
 
-# Web (full demo)
+# Web (full demo). Edits are kept in the browser that made them, never in
+# the repo, until that browser's data is cleared or you press Reset demo
+# data in the sidebar.
 npm run web:dev                   # vite at http://localhost:5173
 npm run web:build                 # production bundle
 npm run web:preview               # preview the built bundle
 npm run web:typecheck
+npm run test -w @workspace.sh/table-web   # the demo's own tests
 npm run dev                       # alias for `web:dev`
 
 # Mobile (Expo 55, iOS + Android — Metro on port 8082)

@@ -196,10 +196,76 @@ const CELL_ADDRESS = /^[A-Za-z]{1,3}[0-9]+$/;
  */
 export function compileFormula(text: string, options: { fields?: Iterable<string> } = {}): CompileResult {
   const fields = options.fields ? new Set(options.fields) : undefined;
-  const warnings = new Set<string>();
   const lead = /^\s*=?/.exec(text)![0].length;
   const body = text.slice(lead);
   if (body.trim() === "") return { ok: false, message: "Type a formula, such as =round(budget / 12, 0).", at: lead };
+
+  // The stored form, typed directly (#76; D29 allows it at the authoring
+  // layer). Tried only for text that opens with "(", and taken only when
+  // it reads completely and uses D32's functions, so an Excel-style
+  // "(budget + 1) * 2" still compiles as Excel.
+  if (body.trimStart().startsWith("(")) {
+    const stored = compileStoredForm(body, lead, fields);
+    if (stored.ok) return stored;
+    const excel = compileExcel(body, lead, fields);
+    // Neither: the stored form's reason when it read as one, so a typo in
+    // a function name isn't reported as an Excel syntax error.
+    return excel.ok || !stored.parsed ? excel : stored.failure;
+  }
+  return compileExcel(body, lead, fields);
+}
+
+/** Library functions, as the stored form names them (D32). */
+const LIBRARY = new Set(FUNCTION_NAMES);
+
+function compileStoredForm(
+  body: string,
+  lead: number,
+  fields: Set<string> | undefined,
+): (CompileResult & { ok: true }) | { ok: false; parsed: boolean; failure: CompileResult & { ok: false } } {
+  const read = parseExpr(body);
+  if (!read.ok) {
+    return { ok: false, parsed: false, failure: { ok: false, message: read.message, at: lead + read.at } };
+  }
+  const warnings = new Set<string>();
+  let unknown: string | null = null;
+  // The reader has already lowercased function names, as D32 writes them.
+  const walk = (e: Expr): Expr => {
+    if (e.kind === "field") {
+      if (fields && !fields.has(e.name)) warnings.add(`There is no field called “${e.name}”, so the result will show #NAME?.`);
+      return e;
+    }
+    if (e.kind !== "call") return e;
+    const fn = e.fn;
+    if (fn === "field") {
+      const [a] = e.args;
+      if (e.args.length === 1 && a?.kind === "string") {
+        if (fields && !fields.has(a.value)) warnings.add(`There is no field called “${a.value}”, so the result will show #NAME?.`);
+        return fieldRef(a.value);
+      }
+    }
+    if (!LIBRARY.has(fn)) unknown ??= fn;
+    return { kind: "call", fn, args: e.args.map(walk) };
+  };
+  const expr = walk(read.expr);
+  if (unknown !== null) {
+    const names = [...LIBRARY].filter((n) => /^[a-z]/.test(n) && n !== "field").join(", ");
+    return {
+      ok: false,
+      parsed: true,
+      failure: { ok: false, message: `${unknown} isn't a function .table formulas have. They can use: ${names}.`, at: lead },
+    };
+  }
+  const stored = formatExpr(expr);
+  const back = parseExpr(stored);
+  if (!back.ok || formatExpr(back.expr) !== stored) {
+    return { ok: false, parsed: true, failure: { ok: false, message: "This formula can't be stored faithfully.", at: lead } };
+  }
+  return { ok: true, expr, stored, warnings: [...warnings] };
+}
+
+function compileExcel(body: string, lead: number, fields: Set<string> | undefined): CompileResult {
+  const warnings = new Set<string>();
 
   let tokens: Token[];
   try {
