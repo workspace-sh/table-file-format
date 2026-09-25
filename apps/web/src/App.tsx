@@ -249,7 +249,11 @@ export function App() {
           f.name === fieldName ? { ...f, ...patch } : f,
         );
         const isStructural =
-          "constraints" in patch || "deprecated" in patch || "relation" in patch;
+          "constraints" in patch ||
+          "deprecated" in patch ||
+          "relation" in patch ||
+          // A new formula changes what the column means for every row.
+          "computed" in patch;
         const nextSchema: TableSchema = isStructural
           ? bumpSchemaVersion({ ...t.schema, fields })
           : { ...t.schema, fields };
@@ -313,16 +317,25 @@ export function App() {
         const t = all[activeTablePath]!;
         if (t.schema.fields.some((f) => f.name === field.name)) return all;
         const fields = [...t.schema.fields, field];
+        // A view that lists its fields shows only those, so a field added
+        // from it would otherwise never appear where it was added. It joins
+        // the view it was added from; other views are left as they are.
+        const views = t.views.map((v) =>
+          v.id === activeViewId && Array.isArray(v.fields) && !v.fields.includes(field.name)
+            ? { ...v, fields: [...v.fields, field.name] }
+            : v,
+        );
         return {
           ...all,
           [activeTablePath]: {
             ...t,
             schema: bumpSchemaVersion({ ...t.schema, fields }),
+            views,
           },
         };
       });
     },
-    [activeTablePath],
+    [activeTablePath, activeViewId],
   );
 
   const updateActiveView = useCallback(

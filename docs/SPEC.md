@@ -348,7 +348,9 @@ result; `empty` means the cell shows nothing.
 
 Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
 `applyView()` computes before filtering and sorting, so views can use
-computed fields.
+computed fields. The Excel-style authoring surface D29 describes is
+`compileFormula()` (typed → stored, refusing what can't compile) and
+`printFormula()` (stored → shown), in the same package.
 
 ### Schema evolution
 

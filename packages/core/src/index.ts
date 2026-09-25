@@ -40,8 +40,16 @@ export { serializeRows } from "./serialize.js";
 export {
   computeRows,
   parseExpr,
+  FUNCTION_NAMES,
   FormulaError,
   type Expr,
   type FormulaErrorCode,
   type ParseResult,
 } from "./expr.js";
+export {
+  compileFormula,
+  printFormula,
+  formatExpr,
+  formulaType,
+  type CompileResult,
+} from "./formula.js";
