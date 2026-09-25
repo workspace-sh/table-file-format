@@ -3,6 +3,7 @@ import { html, css } from "react-strict-dom";
 import {
   applyView,
   newId,
+  newTable,
   parseAddress,
   searchRows,
   validate,
@@ -23,6 +24,7 @@ import {
   TableView,
 } from "@workspace.sh/table-ui";
 import { tables as initialTables } from "./loadFixture";
+import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
 import { useHashAddress } from "./useHashAddress";
@@ -159,6 +161,18 @@ export function App() {
   // an untouched demo keeps following them as they change.
   useEffect(() => {
     if (tables !== initialTables) save(browserStore(), tables);
+  }, [tables]);
+
+  const createTable = useCallback(() => {
+    const title = window.prompt("Name the new table")?.trim();
+    if (!title) return;
+    const key = tableKeyFor(title, Object.keys(tables));
+    const made = newTable(title, `${key}.table`);
+    setTables((all) => ({ ...all, [key]: made }));
+    setActiveViewIds((prev) => ({ ...prev, [key]: made.views[0]!.id }));
+    setActiveTablePath(key);
+    setSearchQuery("");
+    setActiveBodyRowId(null);
   }, [tables]);
 
   const resetDemo = useCallback(() => {
@@ -441,6 +455,7 @@ export function App() {
         activeViewId={view.id}
         onSelect={setActiveViewId}
         onReset={resetDemo}
+        onNewTable={createTable}
       />
       <html.div style={styles.main}>
         <html.div style={styles.header}>

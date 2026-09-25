@@ -69,6 +69,17 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#1f1f23",
     },
   },
+  newTable: {
+    marginBottom: 8,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    fontSize: 13,
+    textAlign: "left",
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
   itemName: {
     flex: 1,
     fontSize: 13,
@@ -131,6 +142,8 @@ interface SidebarProps {
   onSelect: (viewId: string) => void;
   /** Forget every edit and start again from the fixtures. */
   onReset: () => void;
+  /** Make a new, empty table and switch to it. */
+  onNewTable: () => void;
 }
 
 export function Sidebar({
@@ -141,19 +154,19 @@ export function Sidebar({
   activeViewId,
   onSelect,
   onReset,
+  onNewTable,
 }: SidebarProps) {
   const tablePaths = Object.keys(tables);
-  const showTablePicker = tablePaths.length > 1;
   return (
     <html.div style={styles.root}>
       <html.div style={styles.header}>
         <html.span style={styles.tableTitle}>{table.meta.title ?? "Untitled"}</html.span>
         <html.span style={styles.tableSubtitle}>
-          {table.rows.length} {table.rows.length === 1 ? "row" : "rows"} · {table.schema.fields.length} fields
+          {table.rows.length} {table.rows.length === 1 ? "row" : "rows"} · {table.schema.fields.length}{" "}
+          {table.schema.fields.length === 1 ? "field" : "fields"}
         </html.span>
       </html.div>
-      {showTablePicker && (
-        <>
+      <>
           <html.span style={styles.sectionLabel}>Tables</html.span>
           <html.div style={styles.list}>
             {tablePaths.map((path) => {
@@ -169,9 +182,11 @@ export function Sidebar({
                 </html.div>
               );
             })}
+            <html.button style={[styles.item, styles.newTable]} onClick={onNewTable}>
+              + New table
+            </html.button>
           </html.div>
-        </>
-      )}
+      </>
       <html.span style={styles.sectionLabel}>Views</html.span>
       <html.div style={styles.list}>
         {table.views.map((view) => (
