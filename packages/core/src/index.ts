@@ -54,3 +54,4 @@ export {
   formulaFields,
   type CompileResult,
 } from "./formula.js";
+export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";

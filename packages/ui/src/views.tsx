@@ -10,6 +10,7 @@ import {
   formatValue as formatWithFieldFormat,
   enumOptions,
   enumValues,
+  effectiveFormat,
   formatAddress,
   formulaFields,
   parseExpr,
@@ -998,8 +999,18 @@ const styles = css.create({
   },
 });
 
+/**
+ * Fields by name, each carrying the format it is shown with. A formula
+ * with no format of its own shows its inputs' currency (D33): a formula
+ * over dollars is shown in dollars, never silently relabelled.
+ */
 function fieldsByName(schema: TableSchema): Map<string, Field> {
-  return new Map(schema.fields.map((f) => [f.name, f]));
+  return new Map(
+    schema.fields.map((f) => {
+      const format = effectiveFormat(f, schema);
+      return [f.name, format === f.format ? f : { ...f, format }];
+    }),
+  );
 }
 
 function visibleFields(view: View, schema: TableSchema): string[] {
@@ -1639,7 +1650,11 @@ export function TableView({
         </html.button>
         {isEditing && field && anchorRect && (
           <SchemaFieldEditor
-            field={field}
+            // The field as the file has it. fieldMap's copy carries the
+            // format it is *shown* with, which for a formula may be an
+            // inherited currency (D33) — editing that would write the
+            // inheritance down as the field's own format.
+            field={schema.fields[fieldIndex] ?? field}
             fieldIndex={fieldIndex}
             totalFields={schema.fields.length}
             align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
@@ -1798,7 +1813,7 @@ export function TableView({
           <FormulaCellPanel
             // A fresh draft for each cell opened — never another column's.
             key={`${formulaCell.rowId}\u0000${name}`}
-            field={openFormulaField}
+            field={schema.fields.find((f) => f.name === name) ?? openFormulaField}
             row={openRow}
             fields={schema.fields}
             anchorRect={formulaCell.rect}

@@ -221,7 +221,7 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
   };
 
   const ref = (name: string): Expr => {
-    if (fields && !fields.has(name)) warnings.add(`There is no field called “${name}” — the result will show #NAME?.`);
+    if (fields && !fields.has(name)) warnings.add(`There is no field called “${name}”, so the result will show #NAME?.`);
     return fieldRef(name);
   };
 

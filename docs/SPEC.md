@@ -244,6 +244,16 @@ Unknown tokens fall back to plain text.
 (N fraction digits), `percent`, `currency:<ISO-4217>` (e.g.
 `currency:USD`), `duration:seconds`.
 
+**Currency is a unit** (DECISIONS D33). `currency:<ISO-4217>` names
+what the stored number is in, not only how it looks, so changing it
+relabels every value and converts none. A `.table/` holds no exchange
+rates and a reader never fetches one. A computed field with no
+`format` of its own is shown in the currency of the fields it reads
+when they all share one, so a formula over dollars is shown in
+dollars; when they are in different currencies it is shown as a plain
+number. Converting is a formula over a rate kept as data:
+`(* budget usd_to_eur)`.
+
 **Date** (`date`, `datetime`): `iso` (default), `short`, `long`,
 `weekday`, `relative`.
 
@@ -261,7 +271,6 @@ is derived, never stored:
   "name": "per_month",
   "title": "Budget / month",
   "type": "number",
-  "format": "currency:USD",
   "computed": { "expr": "(round (/ budget 12) 0)", "dialect": "table-expr-v1" }
 }
 ```
