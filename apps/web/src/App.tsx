@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   applyView,
+  newId,
   parseAddress,
   searchRows,
   validate,
@@ -264,6 +265,38 @@ export function App() {
     [activeTablePath],
   );
 
+  // A new row is just an id (D23); the view it lands in decides where it
+  // shows, and a filter may hide it until its cells are filled in.
+  const addRow = useCallback(() => {
+    setTables((all) => {
+      const t = all[activeTablePath]!;
+      return { ...all, [activeTablePath]: { ...t, rows: [...t.rows, { id: newId() }] } };
+    });
+  }, [activeTablePath]);
+
+  const deleteRow = useCallback(
+    (rowId: string) => {
+      const t = tables[activeTablePath]!;
+      const hasBody = t.bodies?.[rowId] !== undefined;
+      if (!window.confirm(`Delete "${rowTitleFor(t, rowId)}"?${hasBody ? " Its document goes too." : ""}`)) return;
+      setTables((all) => {
+        const current = all[activeTablePath]!;
+        const bodies = { ...(current.bodies ?? {}) };
+        delete bodies[rowId];
+        return {
+          ...all,
+          [activeTablePath]: {
+            ...current,
+            rows: current.rows.filter((r) => r.id !== rowId),
+            ...(current.bodies ? { bodies } : {}),
+          },
+        };
+      });
+      setActiveBodyRowId((open) => (open === rowId ? null : open));
+    },
+    [tables, activeTablePath],
+  );
+
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);
 
@@ -452,6 +485,8 @@ export function App() {
           onAddEnumValue: addEnumValue,
           onMoveField: moveField,
           onAddField: addField,
+          onAddRow: addRow,
+          onDeleteRow: deleteRow,
           onOpenBody: openBody,
           onUpdateView: updateActiveView,
           relatedTables: tables,
@@ -490,6 +525,8 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
+  onAddRow: () => void;
+  onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
   relatedTables: Record<string, ParsedTable>;
@@ -568,6 +605,8 @@ function renderView(
           onAddEnumValue={cb.onAddEnumValue}
           onMoveField={cb.onMoveField}
           onAddField={cb.onAddField}
+          onAddRow={cb.onAddRow}
+          onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}
           onUpdateView={cb.onUpdateView}
           {...common}
