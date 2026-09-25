@@ -135,9 +135,8 @@ design (DECISIONS D17). Do not couple consumer code to a transport.
 To claim `.table/` support, an implementation needs only:
 
 1. Parse `schema.json` (fatal if missing/malformed).
-2. Iterate `rows.ndjson` line-by-line, adding each line's cells to the
-   row its `id` names; skip-and-collect on bad lines (SPEC section 3,
-   "Reader error contract").
+2. Iterate `rows.ndjson` line-by-line, skip-and-collect on bad lines
+   (SPEC section 3, "Reader error contract").
 3. Tolerate every optional file being absent; ignore unknown files.
 
 Everything else — views, bodies, attachments, the SQLite cache — is
