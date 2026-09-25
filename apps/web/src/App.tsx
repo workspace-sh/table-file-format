@@ -409,8 +409,9 @@ export function App() {
             {schemaBumped && (
               <>
                 <html.span>·</html.span>
+                {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
                 <html.span style={styles.schemaBumpBadge}>
-                  schema v{currentSchemaVersion}
+                  schema changed
                 </html.span>
               </>
             )}
