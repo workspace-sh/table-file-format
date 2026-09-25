@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import {
   compileFormula,
   computeRows,
+  currencyOf,
+  inputCurrency,
   defaultAlignFor,
   enumOptions,
   enumValues,
@@ -500,9 +502,33 @@ const FORMAT_CHOICES: Record<Exclude<FormatFamily, null>, { value: string; label
  * that any reader renders with Intl. Currency is an ISO 4217 code, so a
  * .table written here reads the same in any app that follows the spec.
  */
-function FormatPicker({ field, onUpdate }: { field: Field; onUpdate: (patch: Partial<Field>) => void }) {
+function FormatPicker({
+  field,
+  fields,
+  onUpdate,
+}: {
+  field: Field;
+  fields: Field[];
+  onUpdate: (patch: Partial<Field>) => void;
+}) {
   const family = formatFamily(field.type);
   if (!family) return null;
+  // Currency is a unit (D33): a formula shows its inputs' currency unless
+  // told otherwise, and choosing another relabels without converting.
+  const inherited = field.computed ? inputCurrency(field, { fields }) : undefined;
+  const own = currencyOf(field);
+  const title = field.title ?? field.name;
+  const choices = FORMAT_CHOICES[family].map((o) =>
+    o.value === "" && family === "number" && inherited
+      ? {
+          ...o,
+          label:
+            inherited === "mixed"
+              ? "Plain number (inputs are in different currencies)"
+              : `Same as inputs (${inherited})`,
+        }
+      : o,
+  );
   const current = field.format ?? "";
   const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current;
   const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : 2;
@@ -510,7 +536,10 @@ function FormatPicker({ field, onUpdate }: { field: Field; onUpdate: (patch: Par
   const set = (format: string) => onUpdate({ format: format || undefined });
   const choose = (next: string) => {
     if (next === "decimal") set(`decimal:${digits}`);
-    else if (next === "currency") set(`currency:${code || defaultCurrency()}`);
+    // A formula's inputs decide its unit; only a column with nothing to go
+    // on falls back to the reader's own currency.
+    else if (next === "currency")
+      set(`currency:${code || (inherited && inherited !== "mixed" ? inherited : defaultCurrency())}`);
     else set(next);
   };
   return (
@@ -521,7 +550,7 @@ function FormatPicker({ field, onUpdate }: { field: Field; onUpdate: (patch: Par
         onChange={(e: { target: { value: string } }) => choose(e.target.value)}
         style={styles.input}
       >
-        {FORMAT_CHOICES[family].map((o) => (
+        {choices.map((o) => (
           <html.option key={o.value || "default"} value={o.value}>
             {o.label}
           </html.option>
@@ -552,6 +581,18 @@ function FormatPicker({ field, onUpdate }: { field: Field; onUpdate: (patch: Par
             </html.option>
           ))}
         </html.select>
+      )}
+      {own && inherited && inherited !== "mixed" && own !== inherited && (
+        <html.span style={styles.warnText}>
+          {title} is worked out from values in {inherited}. Showing it in {own} relabels the numbers; it
+          doesn't convert them.
+        </html.span>
+      )}
+      {own && !field.computed && (
+        <html.span style={styles.noteText}>
+          The currency labels these numbers. Changing it doesn't convert them. To convert, use a formula with a
+          rate.
+        </html.span>
       )}
     </>
   );
@@ -743,7 +784,7 @@ export function SchemaFieldEditor({
           style={styles.input}
         />
 
-        <FormatPicker field={field} onUpdate={onUpdate} />
+        <FormatPicker field={field} fields={fields ?? []} onUpdate={onUpdate} />
 
         <html.div style={styles.checkRow}>
           <html.input
@@ -1136,7 +1177,7 @@ export function FormulaCellPanel({
         )}
 
         <html.span style={styles.noteText}>
-          One formula for the whole column — every row is worked out the same way.
+          One formula for the whole column. Every row is worked out the same way.
         </html.span>
 
         <html.div style={styles.actionRow}>
