@@ -11,6 +11,8 @@ import {
   enumOptions,
   enumValues,
   formatAddress,
+  formulaFields,
+  parseExpr,
 } from "@workspace.sh/table-core";
 import type {
   Field,
@@ -22,6 +24,7 @@ import type {
 } from "@workspace.sh/table-core";
 import {
   AddFieldButton,
+  FormulaCellPanel,
   SchemaFieldEditor,
 } from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
@@ -203,6 +206,29 @@ const styles = css.create({
   tableCellAlignRight: {
     justifyContent: "flex-end",
     textAlign: "right",
+  },
+  /** A formula cell can be clicked to see how it was worked out. */
+  formulaCellClickable: {
+    cursor: "pointer",
+  },
+  /** The column a formula belongs to, while one of its cells is open. */
+  formulaColumnTint: {
+    backgroundColor: {
+      default: "rgba(10, 132, 255, 0.06)",
+      "@media (prefers-color-scheme: dark)": "rgba(10, 132, 255, 0.10)",
+    },
+  },
+  /** The cell that was opened. */
+  formulaCellActive: {
+    boxShadow: "inset 0 0 0 2px #0a84ff",
+  },
+  /** A cell the open formula reads, in the same row. */
+  formulaInputCell: {
+    boxShadow: "inset 0 0 0 1px rgba(10, 132, 255, 0.7)",
+    backgroundColor: {
+      default: "rgba(10, 132, 255, 0.10)",
+      "@media (prefers-color-scheme: dark)": "rgba(10, 132, 255, 0.16)",
+    },
   },
   tableCellSeparator: {
     borderRightWidth: 1,
@@ -1409,6 +1435,19 @@ export function TableView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const headerButtonRefs = useRef<Record<string, any>>({});
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
+  // A formula cell opened to see how it was worked out: which row and
+  // column, and where to anchor the panel. While it's open, the column is
+  // tinted and the cells it read in that row are outlined.
+  const [formulaCell, setFormulaCell] = useState<{ rowId: string; name: string; rect: AnchorRect } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cellRefs = useRef<Record<string, any>>({});
+  const openFormulaField = formulaCell ? fieldMap.get(formulaCell.name) : undefined;
+  const openFormulaInputs = (() => {
+    const expr = openFormulaField?.computed?.expr;
+    if (!expr) return new Set<string>();
+    const r = parseExpr(expr);
+    return new Set(r.ok ? formulaFields(r.expr) : []);
+  })();
   const canAddField = !!onAddField;
   const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
 
@@ -1629,14 +1668,39 @@ export function TableView({
     const field = fieldMap.get(name);
     const align = effectiveAlign(field);
     const isLast = idxInPane === paneLen - 1;
+    const isFormula = field?.computed !== undefined;
+    const cellKey = `${row.id}\u0000${name}`;
+    const inOpenColumn = formulaCell?.name === name;
+    const isOpenCell = inOpenColumn && formulaCell?.rowId === row.id;
+    const isInputCell = formulaCell?.rowId === row.id && openFormulaInputs.has(name);
     return (
       <html.span
         key={name}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={(el: any) => {
+          if (isFormula) cellRefs.current[cellKey] = el;
+        }}
+        onClick={
+          isFormula
+            ? async () => {
+                if (isOpenCell) {
+                  setFormulaCell(null);
+                  return;
+                }
+                const rect = await measureAnchor(cellRefs.current[cellKey]);
+                if (rect) setFormulaCell({ rowId: row.id, name, rect });
+              }
+            : undefined
+        }
         style={[
           styles.tableCell,
           styles.cellWidth(colWidth(name)),
           cellAlignStyle(align),
           !isLast && styles.tableCellSeparator,
+          isFormula && styles.formulaCellClickable,
+          inOpenColumn && styles.formulaColumnTint,
+          isInputCell && styles.formulaInputCell,
+          isOpenCell && styles.formulaCellActive,
         ]}
       >
         {onUpdateRow ? (
@@ -1726,6 +1790,38 @@ export function TableView({
         </html.div>
       </html.div>
     </html.div>
+      {formulaCell && openFormulaField && (() => {
+        const openRow = rows.find((r) => r.id === formulaCell.rowId);
+        if (!openRow) return null;
+        const name = formulaCell.name;
+        return (
+          <FormulaCellPanel
+            field={openFormulaField}
+            row={openRow}
+            fields={schema.fields}
+            anchorRect={formulaCell.rect}
+            renderValue={(fieldName, value) => (
+              <CellValue
+                field={fieldMap.get(fieldName)}
+                value={value}
+                relatedTables={relatedTables}
+                lines={1}
+              />
+            )}
+            onEdit={
+              schemaEditable
+                ? async () => {
+                    setFormulaCell(null);
+                    const rect = await measureAnchor(headerButtonRefs.current[name]);
+                    if (rect) setAnchorRect(rect);
+                    setEditingFieldName(name);
+                  }
+                : undefined
+            }
+            onClose={() => setFormulaCell(null)}
+          />
+        );
+      })()}
       {canAddField && (
         <html.div style={styles.tableFooter}>
           <AddFieldButton

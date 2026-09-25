@@ -8,7 +8,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseExpr } from "./expr.js";
-import { compileFormula, formatExpr, formulaType, printFormula } from "./formula.js";
+import { compileFormula, formatExpr, formulaFields, formulaType, printFormula } from "./formula.js";
 
 const stored = (text: string, fields?: string[]) => {
   const r = compileFormula(text, fields ? { fields } : {});
@@ -100,7 +100,7 @@ test("a minus on a number is that negative number; on anything else it negates",
 
 test("strings follow the spreadsheet rule: \"\" is a quote", () => {
   assert.equal(stored('=CONCAT("say ""hi""", name)'), '(concat "say \\"hi\\"" name)');
-  assert.equal(printFormula('(concat "say \\"hi\\"" name)'), '=CONCAT("say ""hi""", name)');
+  assert.equal(printFormula('(concat "say \\"hi\\"" name)'), '=concat("say ""hi""", name)');
 });
 
 test("TRUE and FALSE are booleans, in any case", () => {
@@ -116,7 +116,7 @@ test("printing adds only the brackets the meaning needs", () => {
   assert.equal(printFormula("(* (+ a b) c)"), "=(a + b) * c");
   assert.equal(printFormula("(/ a (* b c))"), "=a / (b * c)");
   assert.equal(printFormula("(+ a b c)"), "=a + b + c");
-  assert.equal(printFormula("(round (/ budget 12) 0)"), "=ROUND(budget / 12, 0)");
+  assert.equal(printFormula("(round (/ budget 12) 0)"), "=round(budget / 12, 0)");
 });
 
 test("a stored formula that doesn't parse is shown as it is", () => {
@@ -128,7 +128,7 @@ test("a stored formula that doesn't parse is shown as it is", () => {
 test("a function outside the standard library is refused, and says what is available", () => {
   const msg = refused("=VLOOKUP(budget, 1)");
   assert.match(msg, /VLOOKUP isn't a function/);
-  assert.match(msg, /ROUND/);
+  assert.match(msg, /\bround\b/);
 });
 
 test("a cell address is refused: a formula works on every row", () => {
@@ -183,4 +183,22 @@ test("a formula's result type", () => {
   assert.equal(t("=budget > 10"), "boolean");
   assert.equal(t('=IF(status = "done", "yes", "no")'), "string");
   assert.equal(t("=owner", { owner: "string" }), "string");
+});
+
+test("lowercase and UPPERCASE are the same formula, and it is shown lowercase", () => {
+  assert.equal(stored("=round(budget / 12, 0)"), stored("=ROUND(budget / 12, 0)"));
+  assert.equal(printFormula("(round (/ budget 12) 0)"), "=round(budget / 12, 0)");
+  assert.equal(printFormula("(if true 1 0)"), "=if(true, 1, 0)");
+});
+
+test("the fields a formula reads, in order, without repeats", () => {
+  const f = (text: string) => {
+    const r = compileFormula(text);
+    assert.ok(r.ok);
+    return formulaFields(r.expr);
+  };
+  assert.deepEqual(f("=round(budget / 12, 0)"), ["budget"]);
+  assert.deepEqual(f('=if(status = "done", budget, budget / 2)'), ["status", "budget"]);
+  assert.deepEqual(f("={unit price} * quantity"), ["unit price", "quantity"]);
+  assert.deepEqual(f("=1 + 2"), []);
 });

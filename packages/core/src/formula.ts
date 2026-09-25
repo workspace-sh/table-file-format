@@ -7,7 +7,7 @@
  * them:
  *
  *   compileFormula("=ROUND(budget / 12, 0)")  → (round (/ budget 12) 0)
- *   printFormula("(round (/ budget 12) 0)")   → =ROUND(budget / 12, 0)
+ *   printFormula("(round (/ budget 12) 0)")   → =round(budget / 12, 0)
  *
  * What it accepts, and what it refuses, follows PRIOR-ART's "Authoring
  * syntaxes" notes: field references as a bare word, `[@x]`, `{x}`,
@@ -199,7 +199,7 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
   const warnings = new Set<string>();
   const lead = /^\s*=?/.exec(text)![0].length;
   const body = text.slice(lead);
-  if (body.trim() === "") return { ok: false, message: "Type a formula, such as =ROUND(budget / 12, 0).", at: lead };
+  if (body.trim() === "") return { ok: false, message: "Type a formula, such as =round(budget / 12, 0).", at: lead };
 
   let tokens: Token[];
   try {
@@ -238,7 +238,7 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
         break;
       }
     }
-    expectOp(")", `${name.toUpperCase()}( is missing its closing ).`);
+    expectOp(")", `${name}( is missing its closing ).`);
     // prop("x") and field("x") are field references, not functions.
     if (fn === "prop" || fn === "field") {
       const [a] = args;
@@ -249,9 +249,8 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
     }
     if (!CALLABLE.has(fn)) {
       throw new CompileError(
-        `${name.toUpperCase()} isn't a function .table formulas have. They can use: ${[...CALLABLE]
+        `${name} isn't a function .table formulas have. They can use: ${[...CALLABLE]
           .filter((n) => n !== "field")
-          .map((n) => n.toUpperCase())
           .join(", ")}.`,
         at,
       );
@@ -316,7 +315,7 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
       next();
       // Comparisons don't chain: a = b = c is refused rather than guessed at.
       if (op.prec === 1 && left.kind === "call" && ["=", "<>", "<", "<=", ">", ">="].includes(left.fn) && (left as { chained?: boolean }).chained) {
-        throw new CompileError("Comparisons can't be chained. Use AND(…) to combine them.", t.at);
+        throw new CompileError("Comparisons can't be chained. Use and(…) to combine them.", t.at);
       }
       const right = parse(op.prec);
       if (op.flat && left.kind === "call" && left.fn === op.fn && (left as { flat?: boolean }).flat) {
@@ -412,7 +411,7 @@ function printExpr(e: Expr): string {
     case "string":
       return printString(e.value);
     case "boolean":
-      return e.value ? "TRUE" : "FALSE";
+      return e.value ? "true" : "false";
     case "field":
       return printRef(e.name);
     case "call": {
@@ -435,13 +434,16 @@ function printExpr(e: Expr): string {
           })
           .join(` ${e.fn} `);
       }
-      return `${e.fn.toUpperCase()}(${e.args.map(printExpr).join(", ")})`;
+      return `${e.fn}(${e.args.map(printExpr).join(", ")})`;
     }
   }
 }
 
 /**
- * Show a stored formula the way people write one: `=ROUND(budget / 12, 0)`.
+ * Show a stored formula the way people write one: `=round(budget / 12, 0)`.
+ * Function names are shown lowercase, as they are stored: typing is
+ * case-insensitive, so `=ROUND(…)` works the same, and which case to show
+ * is an app's choice (D29 keeps no rendering in the file).
  * Accepts the stored text or a tree. Stored text that doesn't parse comes
  * back as-is, so an editor can still show what's there.
  */
@@ -485,4 +487,24 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
       if (expr.fn === "if" && expr.args[1]) return formulaType(expr.args[1], fieldTypes);
       return "number";
   }
+}
+
+/**
+ * The fields a formula reads, in the order they first appear — what a
+ * UI highlights as "this result comes from these cells".
+ */
+export function formulaFields(expr: Expr): string[] {
+  const seen: string[] = [];
+  const add = (name: string) => {
+    if (!seen.includes(name)) seen.push(name);
+  };
+  const walk = (e: Expr): void => {
+    if (e.kind === "field") add(e.name);
+    else if (e.kind === "call") {
+      if (e.fn === "field" && e.args.length === 1 && e.args[0]!.kind === "string") add(e.args[0]!.value);
+      else e.args.forEach(walk);
+    }
+  };
+  walk(expr);
+  return seen;
 }
