@@ -4,6 +4,7 @@ import type { CompileResult, Field, FieldAlignment, FieldType } from "@workspace
 import type { ReactNode } from "react";
 import {
   compileFormula,
+  computeRows,
   defaultAlignFor,
   enumOptions,
   enumValues,
@@ -367,6 +368,25 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#2c2c30",
     },
     fontWeight: "600",
+  },
+  previewRow: {
+    fontWeight: "600",
+    color: {
+      default: "#0a84ff",
+      "@media (prefers-color-scheme: dark)": "#4aa3ff",
+    },
+  },
+  linkButton: {
+    alignSelf: "flex-start",
+    padding: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    fontSize: 11,
+    cursor: "pointer",
+    color: {
+      default: "#0a84ff",
+      "@media (prefers-color-scheme: dark)": "#4aa3ff",
+    },
   },
   /** Plain explanatory text; hintText is for code-shaped content. */
   noteText: {
@@ -854,8 +874,13 @@ interface FormulaCellPanelProps {
   anchorRect: AnchorRect;
   /** Render one of this row's values the way its cell shows it. */
   renderValue: (fieldName: string, value: unknown) => ReactNode;
-  /** Absent when the schema can't be edited here. */
-  onEdit?: () => void;
+  /**
+   * Save a new formula for the column. Absent when the schema can't be
+   * edited here, and the panel is read-only.
+   */
+  onSave?: (patch: Partial<Field>) => void;
+  /** Open the column's full editor — title, alignment and the rest. */
+  onMoreOptions?: () => void;
   onClose: () => void;
 }
 
@@ -870,7 +895,8 @@ export function FormulaCellPanel({
   fields,
   anchorRect,
   renderValue,
-  onEdit,
+  onSave,
+  onMoreOptions,
   onClose,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
@@ -881,9 +907,34 @@ export function FormulaCellPanel({
     Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left + anchorRect.width - POPOVER_WIDTH),
   );
   const stored = field.computed?.expr ?? "";
+  // Edited here, from any cell, as Grist does — but it is the column's
+  // formula, so saving says "every row" and every row changes.
+  const [draft, setDraft] = useState(() => printFormula(stored));
+  const compiled = onSave ? compileFormula(draft, { fields: fields.map((f) => f.name) }) : null;
+  const changed = compiled?.ok === true && compiled.stored !== stored;
+  const shownExpr = changed && compiled?.ok ? compiled.expr : null;
   const parsed = parseExpr(stored);
-  const inputs = parsed.ok ? formulaFields(parsed.expr) : [];
+  const inputs = shownExpr ? formulaFields(shownExpr) : parsed.ok ? formulaFields(parsed.expr) : [];
   const title = (name: string) => fields.find((f) => f.name === name)?.title ?? name;
+  // What this row would show with the draft formula — the one thing the
+  // column editor can't tell you. Computed the same way the table is.
+  const preview = (() => {
+    if (!changed || !compiled?.ok) return undefined;
+    const trial = fields.map((f) =>
+      f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: DIALECT } } : f,
+    );
+    const { rows } = computeRows({ fields: trial }, [row as never]);
+    return { value: rows[0]?.[field.name] };
+  })();
+  const save = () => {
+    if (!onSave || !changed || !compiled?.ok) return;
+    const types = new Map(fields.map((f) => [f.name, f.type] as const));
+    const produced = formulaType(compiled.expr, types);
+    onSave({
+      computed: { expr: compiled.stored, dialect: DIALECT },
+      ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
+    });
+  };
 
   return (
     <Portal>
@@ -905,8 +956,26 @@ export function FormulaCellPanel({
           </html.span>
         </html.div>
 
-        <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored)}</html.span>
-        <html.span style={styles.hintText}>Stored as {stored}</html.span>
+        {onSave ? (
+          <>
+            <html.input
+              type="text"
+              value={draft}
+              onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") save();
+                if (e.key === "Escape") onClose();
+              }}
+              style={[styles.input, styles.formulaInput]}
+            />
+            <FormulaStatus result={compiled} />
+          </>
+        ) : (
+          <>
+            <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored)}</html.span>
+            <html.span style={styles.hintText}>Stored as {stored}</html.span>
+          </>
+        )}
 
         {inputs.length > 0 && (
           <>
@@ -923,21 +992,36 @@ export function FormulaCellPanel({
           <html.span style={styles.inputName}>Result</html.span>
           <html.span>{renderValue(field.name, row[field.name])}</html.span>
         </html.div>
+        {preview && (
+          <html.div style={[styles.inputRow, styles.previewRow]}>
+            <html.span style={styles.inputName}>After saving</html.span>
+            <html.span>{renderValue(field.name, preview.value)}</html.span>
+          </html.div>
+        )}
 
         <html.span style={styles.noteText}>
           One formula for the whole column — every row is worked out the same way.
         </html.span>
 
         <html.div style={styles.actionRow}>
-          {onEdit && (
-            <html.button onClick={onEdit} style={[styles.button, styles.primaryButton]}>
-              Edit formula
+          {onSave && (
+            <html.button
+              disabled={!changed}
+              onClick={save}
+              style={[styles.button, changed && styles.primaryButton]}
+            >
+              Save for every row
             </html.button>
           )}
           <html.button onClick={onClose} style={styles.button}>
             Close
           </html.button>
         </html.div>
+        {onMoreOptions && (
+          <html.button onClick={onMoreOptions} style={styles.linkButton}>
+            More options…
+          </html.button>
+        )}
       </html.div>
     </Portal>
   );

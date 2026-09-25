@@ -1796,6 +1796,8 @@ export function TableView({
         const name = formulaCell.name;
         return (
           <FormulaCellPanel
+            // A fresh draft for each cell opened — never another column's.
+            key={`${formulaCell.rowId}\u0000${name}`}
             field={openFormulaField}
             row={openRow}
             fields={schema.fields}
@@ -1808,7 +1810,8 @@ export function TableView({
                 lines={1}
               />
             )}
-            onEdit={
+            onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
+            onMoreOptions={
               schemaEditable
                 ? async () => {
                     setFormulaCell(null);
