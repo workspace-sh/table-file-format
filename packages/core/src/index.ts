@@ -1,5 +1,6 @@
 export * from "./types.js";
 export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
+export { newTable } from "./new-table.js";
 export { validate, validateBodies } from "./validator.js";
 export {
   isDate,
