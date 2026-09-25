@@ -202,3 +202,56 @@ test("the fields a formula reads, in order, without repeats", () => {
   assert.deepEqual(f("={unit price} * quantity"), ["unit price", "quantity"]);
   assert.deepEqual(f("=1 + 2"), []);
 });
+
+// ---- the stored form, typed directly (#76)
+
+test("the stored form can be typed directly, and is stored canonically", () => {
+  const r = compileFormula("(round   (/ budget 12)\n 0)", { fields: ["budget"] });
+  assert.ok(r.ok);
+  assert.equal(r.stored, "(round (/ budget 12) 0)");
+  assert.deepEqual(r.warnings, []);
+  // With the = people type out of habit, too.
+  const withEq = compileFormula("=(round (/ budget 12) 0)");
+  assert.ok(withEq.ok);
+  assert.equal(withEq.stored, "(round (/ budget 12) 0)");
+});
+
+test("typed in the stored form or Excel style, the same formula is stored the same way", () => {
+  const stored = compileFormula("(concat (upper owner) \"!\")");
+  const excel = compileFormula('=UPPER(owner) & "!"');
+  assert.ok(stored.ok && excel.ok);
+  assert.equal(stored.stored, excel.stored);
+});
+
+test("function names are lowercased as D32 writes them; field names are left alone", () => {
+  const r = compileFormula('(ROUND (field "Unit Price") 2)', { fields: ["Unit Price"] });
+  assert.ok(r.ok);
+  assert.equal(r.stored, '(round (field "Unit Price") 2)');
+});
+
+test("a function outside D32's library is refused, with the ones there are", () => {
+  const r = compileFormula("(vlookup budget 2)");
+  assert.ok(!r.ok);
+  assert.match(r.message, /^vlookup isn't a function \.table formulas have\. They can use: .*round/);
+});
+
+test("a missing field is a warning, as in Excel style", () => {
+  const r = compileFormula("(* budgte 2)", { fields: ["budget"] });
+  assert.ok(r.ok);
+  assert.deepEqual(r.warnings, ["There is no field called “budgte”, so the result will show #NAME?."]);
+});
+
+test("Excel style that happens to open with ( is still Excel style", () => {
+  const r = compileFormula("(budget + 1) * 2", { fields: ["budget"] });
+  assert.ok(r.ok);
+  assert.equal(r.stored, "(* (+ budget 1) 2)");
+  const one = compileFormula("(budget)", { fields: ["budget"] });
+  assert.ok(one.ok);
+  assert.equal(one.stored, "budget");
+});
+
+test("unbalanced stored form is refused with where it went wrong", () => {
+  const r = compileFormula("(round budget 2");
+  assert.ok(!r.ok);
+  assert.ok(r.at >= 0);
+});
