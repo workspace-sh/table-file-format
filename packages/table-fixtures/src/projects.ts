@@ -33,7 +33,6 @@ export const projectsTable: ParsedTable = {
         name: "per_month",
         title: "Budget / month",
         type: "number",
-        format: "currency:USD",
         computed: { expr: "(round (/ budget 12) 0)", dialect: "table-expr-v1" },
       },
     ],

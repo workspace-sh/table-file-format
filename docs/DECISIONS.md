@@ -738,3 +738,40 @@ changes with the clock is not pure (D29 relies on purity for
 recompute-on-read and for any future multi-value extension), and
 column totals, which stay deferred for the performance reasons in
 D29. Both can be added later without changing anything here.
+
+## D33: Currency is a unit, and nothing converts
+
+`currency:<ISO-4217>` sat in SPEC section 2 as a display format, beside
+`percent` and `decimal:2`. It is more than that: it says what the
+stored number is *in*. `80000` in a `currency:USD` column is eighty
+thousand dollars, and relabelling the column EUR doesn't make it
+euros.
+
+Treating it as display alone let a formula column say something false.
+`(/ budget 5)` over a USD budget, shown with `currency:EUR`, printed
+€16,000 beside US$80,000 as though a conversion had happened. None had.
+
+**Nothing converts.** A `.table/` stores no exchange rates, and a reader
+never fetches one: rates change by the minute, depend on a provider,
+and would make a formula's result depend on when and where it was
+read, which breaks the purity D29 relies on for recompute-on-read.
+Converting is a formula over a rate the table holds as data,
+`(* budget usd_to_eur)`, so the rate is visible, dated if you like,
+and the same for every reader.
+
+**Formulas show their inputs' currency.** A computed field with no
+`format` of its own is shown in the currency of the fields it reads,
+when they all share one. A formula over dollars is shown in dollars
+without anyone setting it. When the inputs are in different
+currencies there is no single unit, so the result is shown as a plain
+number. A field's own `format` still wins, and an authoring surface
+should say, when it differs from the inputs, that it relabels rather
+than converts.
+
+**Different columns in different currencies are fine.** A table of
+prices by market can hold a USD column beside a EUR one. What the
+format refuses is implying that numbers in one were derived from the
+other by a rate that isn't there.
+
+Reference: `effectiveFormat()` / `inputCurrency()` in
+`@workspace.sh/table-core`.
