@@ -259,6 +259,13 @@ const FUNCTIONS: Record<string, Fn> = {
   },
 };
 
+/**
+ * The standard library's function names (D32), lowercase — what an
+ * authoring surface may compile a function call to. Anything else is
+ * refused at entry (D29 addendum).
+ */
+export const FUNCTION_NAMES: readonly string[] = Object.freeze(Object.keys(FUNCTIONS));
+
 export function evaluate(expr: Expr, scope: Scope): Value {
   switch (expr.kind) {
     case "number":

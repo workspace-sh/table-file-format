@@ -1,9 +1,17 @@
 import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import type { Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
-import { defaultAlignFor, enumOptions, enumValues } from "@workspace.sh/table-core";
+import type { CompileResult, Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
+import {
+  compileFormula,
+  defaultAlignFor,
+  enumOptions,
+  enumValues,
+  formulaType,
+  printFormula,
+} from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
+import { useViewportHeight } from "./internal/useViewportHeight";
 import { useViewportWidth } from "./internal/useViewportWidth";
 
 /**
@@ -89,6 +97,17 @@ const styles = css.create({
     top,
     left,
     width,
+  }),
+  /** Placed above its trigger: anchored by its bottom edge, so its height doesn't matter. */
+  popoverAbove: (bottom: number, left: number, width: number) => ({
+    bottom,
+    left,
+    width,
+  }),
+  /** Never taller than the room it has; scrolls instead of running off-screen. */
+  popoverMaxHeight: (maxHeight: number) => ({
+    maxHeight,
+    overflowY: "auto",
   }),
   identity: {
     display: "flex",
@@ -311,7 +330,54 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
     },
   },
+  /** Formulas are code-shaped: monospace keeps brackets and operators legible. */
+  formulaInput: {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  },
+  warnText: {
+    fontSize: 11,
+    color: {
+      default: "#9a6700",
+      "@media (prefers-color-scheme: dark)": "#e3b341",
+    },
+  },
+  hintText: {
+    fontSize: 11,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
 });
+
+const DIALECT = "table-expr-v1";
+
+/** numeric, text or true/false — what a formula's type change actually changes. */
+function typeFamily(t: FieldType): string {
+  return t === "integer" || t === "number" ? "number" : t;
+}
+
+/**
+ * The line under a formula box: why it can't be saved, what might go
+ * wrong, or — once it compiles — exactly what the file will hold. Showing
+ * the stored form keeps D29's two notations honest: what you typed is a
+ * convenience, the bracketed form is the formula.
+ */
+function FormulaStatus({ result }: { result: CompileResult | null }) {
+  if (result === null) return null;
+  if (!result.ok) return <html.span style={styles.errorText}>{result.message}</html.span>;
+  return (
+    <>
+      {result.warnings.map((w) => (
+        <html.span key={w} style={styles.warnText}>
+          {w}
+        </html.span>
+      ))}
+      <html.span style={styles.hintText}>Stored as {result.stored}</html.span>
+    </>
+  );
+}
 
 interface SchemaFieldEditorProps {
   field: Field;
@@ -328,10 +394,33 @@ interface SchemaFieldEditorProps {
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
+  /** The table's fields, so a formula can warn about a name that doesn't exist. */
+  fields?: Field[];
 }
 
 const POPOVER_WIDTH = 280;
 const POPOVER_GAP = 6;
+/** Below this much room, a popover opens on whichever side has more. */
+const POPOVER_COMFORTABLE_HEIGHT = 360;
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Which side of its trigger a popover opens on, and how tall it may be.
+ *
+ * A popover opened below a trigger near the bottom of the window runs
+ * off-screen, taking its buttons with it — the "+ Field" popover did,
+ * and its Add button couldn't be clicked. So it opens below when there's
+ * comfortable room (or more room than above), otherwise above; and it is
+ * capped at the room on that side, scrolling rather than overflowing.
+ */
+function placePopover(anchor: AnchorRect, viewportHeight: number) {
+  const below = viewportHeight - (anchor.top + anchor.height) - POPOVER_GAP - VIEWPORT_MARGIN;
+  const above = anchor.top - POPOVER_GAP - VIEWPORT_MARGIN;
+  const openBelow = below >= POPOVER_COMFORTABLE_HEIGHT || below >= above;
+  return openBelow
+    ? { below: true as const, top: anchor.top + anchor.height + POPOVER_GAP, maxHeight: Math.max(120, below) }
+    : { below: false as const, bottom: viewportHeight - anchor.top + POPOVER_GAP, maxHeight: Math.max(120, above) };
+}
 
 export function SchemaFieldEditor({
   field,
@@ -343,16 +432,35 @@ export function SchemaFieldEditor({
   onAddEnumValue,
   onMove,
   onClose,
+  fields,
 }: SchemaFieldEditorProps) {
   const [enumDraft, setEnumDraft] = useState("");
+  // A formula is edited in Excel style and saved in the stored form (D29).
+  // Only a field that is already computed shows this: turning a stored
+  // field into a formula would drop its data, and schemas only grow.
+  const [formulaDraft, setFormulaDraft] = useState(() =>
+    field.computed ? printFormula(field.computed.expr) : "",
+  );
+  const formula = field.computed
+    ? compileFormula(formulaDraft, { fields: (fields ?? []).map((f) => f.name) })
+    : null;
+  const formulaChanged = formula?.ok === true && formula.stored !== field.computed?.expr;
+  const saveFormula = () => {
+    if (!formula?.ok || !formulaChanged) return;
+    const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
+    const produced = formulaType(formula.expr, types);
+    onUpdate({
+      computed: { expr: formula.stored, dialect: DIALECT },
+      // A formula rewritten from sums into text is a text column now.
+      ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
+    });
+  };
   const viewportWidth = useViewportWidth();
+  const viewportHeight = useViewportHeight();
 
-  // Position the popover under the trigger's bottom edge. AnchorRect
-  // gives us {top, left, width, height} in viewport coords — derive
-  // bottom + right from there.
-  const anchorBottom = anchorRect.top + anchorRect.height;
+  // Below the trigger when there's room, above it when there isn't.
+  const place = placePopover(anchorRect, viewportHeight);
   const anchorRight = anchorRect.left + anchorRect.width;
-  const popoverTop = anchorBottom + POPOVER_GAP;
   const popoverLeft =
     align === "right"
       ? Math.max(8, anchorRight - POPOVER_WIDTH)
@@ -384,15 +492,46 @@ export function SchemaFieldEditor({
           the same onClick handler wires up correctly. */}
       <html.button onClick={onClose} style={styles.backdrop} />
       <html.div
-        style={[styles.popover, styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH)]}
+        style={[
+          styles.popover,
+          place.below
+            ? styles.popoverPosition(place.top, popoverLeft, POPOVER_WIDTH)
+            : styles.popoverAbove(place.bottom, popoverLeft, POPOVER_WIDTH),
+          styles.popoverMaxHeight(place.maxHeight),
+        ]}
       >
         <html.div style={styles.identity}>
           <html.span>{field.name}</html.span>
           <html.span style={styles.typeBadge}>
-            <html.span>{friendlyType(field.type)}</html.span>
+            <html.span>{field.computed ? "Formula" : friendlyType(field.type)}</html.span>
             <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
           </html.span>
         </html.div>
+
+        {field.computed && (
+          <>
+            <html.span style={styles.label}>Formula</html.span>
+            <html.input
+              type="text"
+              value={formulaDraft}
+              onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") saveFormula();
+              }}
+              style={[styles.input, styles.formulaInput]}
+            />
+            <FormulaStatus result={formula} />
+            <html.div style={styles.actionRow}>
+              <html.button
+                disabled={!formulaChanged}
+                onClick={saveFormula}
+                style={[styles.button, formulaChanged && styles.primaryButton]}
+              >
+                Save formula
+              </html.button>
+            </html.div>
+          </>
+        )}
 
         <html.span style={styles.label}>Display title</html.span>
         <html.input
@@ -508,7 +647,12 @@ export function SchemaFieldEditor({
 interface AddFieldButtonProps {
   existingNames: Set<string>;
   onAdd: (field: Field) => void;
+  /** The table's fields: a formula's references are checked against them. */
+  fields?: Field[];
 }
+
+/** "Formula" sits beside the stored types in the picker; it isn't one. */
+type AddableChoice = FieldType | "formula";
 
 const ADDABLE_TYPES: FieldType[] = [
   "string",
@@ -519,10 +663,11 @@ const ADDABLE_TYPES: FieldType[] = [
   "datetime",
 ];
 
-export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [type, setType] = useState<FieldType>("string");
+  const [type, setType] = useState<AddableChoice>("string");
+  const [formulaDraft, setFormulaDraft] = useState("");
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
   // Ref typed as `unknown` because the underlying instance differs per
   // platform (HTMLButtonElement on web, Pressable view ref on native).
@@ -530,24 +675,43 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const triggerRef = useRef<any>(null);
   const viewportWidth = useViewportWidth();
+  const viewportHeight = useViewportHeight();
 
   const trimmed = name.trim();
   const duplicate = trimmed.length > 0 && existingNames.has(trimmed);
-  const valid = trimmed.length > 0 && !duplicate;
+  const formula =
+    type === "formula" && formulaDraft.trim() !== ""
+      ? compileFormula(formulaDraft, { fields: [...existingNames] })
+      : null;
+  // A formula field can only be added once its formula compiles: nothing
+  // that can't be stored in the canonical form is ever written (D29).
+  const valid = trimmed.length > 0 && !duplicate && (type !== "formula" || formula?.ok === true);
 
   const submit = () => {
     if (!valid) return;
-    onAdd({ name: trimmed, type });
+    if (type === "formula") {
+      if (!formula?.ok) return;
+      const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
+      onAdd({
+        name: trimmed,
+        type: formulaType(formula.expr, types),
+        computed: { expr: formula.stored, dialect: DIALECT },
+      });
+    } else {
+      onAdd({ name: trimmed, type });
+    }
     setName("");
     setType("string");
+    setFormulaDraft("");
     setOpen(false);
   };
 
   // Derive popover position from the anchor rect when open. AnchorRect
   // is {top, left, width, height} — derive right from left+width.
   const anchorRight = anchorRect ? anchorRect.left + anchorRect.width : 0;
-  const anchorBottom = anchorRect ? anchorRect.top + anchorRect.height : 0;
-  const popoverTop = anchorRect ? anchorBottom + POPOVER_GAP : 0;
+  // "+ Field" sits at the foot of a table, often near the bottom of the
+  // window: open upwards there rather than off-screen.
+  const place = anchorRect ? placePopover(anchorRect, viewportHeight) : null;
   // Use viewport width to clamp the left edge so the popover doesn't
   // overflow the right edge of the screen.
   const desiredLeft = Math.max(8, anchorRight - POPOVER_WIDTH);
@@ -577,7 +741,10 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
           <html.div
             style={[
               styles.popover,
-              styles.popoverPosition(popoverTop, popoverLeft, POPOVER_WIDTH),
+              place?.below === false
+                ? styles.popoverAbove(place.bottom, popoverLeft, POPOVER_WIDTH)
+                : styles.popoverPosition(place?.below ? place.top : 0, popoverLeft, POPOVER_WIDTH),
+              styles.popoverMaxHeight(place?.maxHeight ?? 400),
             ]}
           >
             <html.span style={styles.label}>Name</html.span>
@@ -595,7 +762,7 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
             <html.span style={styles.label}>Type</html.span>
             <html.select
               value={type}
-              onChange={(e: { target: { value: string } }) => setType(e.target.value as FieldType)}
+              onChange={(e: { target: { value: string } }) => setType(e.target.value as AddableChoice)}
               style={styles.input}
             >
               {ADDABLE_TYPES.map((t) => (
@@ -603,7 +770,25 @@ export function AddFieldButton({ existingNames, onAdd }: AddFieldButtonProps) {
                   {friendlyType(t)} · {t}
                 </html.option>
               ))}
+              <html.option value="formula">Formula · computed</html.option>
             </html.select>
+
+            {type === "formula" && (
+              <>
+                <html.span style={styles.label}>Formula</html.span>
+                <html.input
+                  type="text"
+                  value={formulaDraft}
+                  placeholder="=ROUND(budget / 12, 0)"
+                  onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
+                  onKeyDown={(e: { key: string }) => {
+                    if (e.key === "Enter") submit();
+                  }}
+                  style={[styles.input, styles.formulaInput]}
+                />
+                <FormulaStatus result={formula} />
+              </>
+            )}
 
             {duplicate && <html.span style={styles.errorText}>Name already in use</html.span>}
 
