@@ -65,6 +65,9 @@ atomic per-file rename → deletions last. A crashed write leaves the
 previous table intact; readers never observe a torn file. Do not
 hand-roll writes that bypass this unless you replicate the contract.
 
+To start a table from nothing, `newTable(title, path)` returns one with a
+`title` text field, one table view and no rows, its manifest stamped.
+
 Rules that matter when constructing rows:
 
 - **Ids**: any non-empty string unique in the table is valid; mint
