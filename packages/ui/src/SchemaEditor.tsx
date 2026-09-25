@@ -1,12 +1,15 @@
 import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { CompileResult, Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
+import type { ReactNode } from "react";
 import {
   compileFormula,
   defaultAlignFor,
   enumOptions,
   enumValues,
+  formulaFields,
   formulaType,
+  parseExpr,
   printFormula,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
@@ -339,6 +342,38 @@ const styles = css.create({
     color: {
       default: "#9a6700",
       "@media (prefers-color-scheme: dark)": "#e3b341",
+    },
+  },
+  inputRow: {
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 12,
+  },
+  inputName: {
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  resultRow: {
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#2c2c30",
+    },
+    fontWeight: "600",
+  },
+  /** Plain explanatory text; hintText is for code-shaped content. */
+  noteText: {
+    fontSize: 11,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
   hintText: {
@@ -779,7 +814,7 @@ export function AddFieldButton({ existingNames, onAdd, fields }: AddFieldButtonP
                 <html.input
                   type="text"
                   value={formulaDraft}
-                  placeholder="=ROUND(budget / 12, 0)"
+                  placeholder="=round(budget / 12, 0)"
                   onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
                   onKeyDown={(e: { key: string }) => {
                     if (e.key === "Enter") submit();
@@ -808,5 +843,102 @@ export function AddFieldButton({ existingNames, onAdd, fields }: AddFieldButtonP
         </Portal>
       )}
     </html.div>
+  );
+}
+
+interface FormulaCellPanelProps {
+  field: Field;
+  /** The row as displayed — computed values already filled in. */
+  row: Record<string, unknown>;
+  fields: Field[];
+  anchorRect: AnchorRect;
+  /** Render one of this row's values the way its cell shows it. */
+  renderValue: (fieldName: string, value: unknown) => ReactNode;
+  /** Absent when the schema can't be edited here. */
+  onEdit?: () => void;
+  onClose: () => void;
+}
+
+/**
+ * What a formula cell is: the column's one formula, what it read in this
+ * row, and what it made. A formula belongs to its column (SPEC section 2),
+ * so the panel says so and offers to edit the column rather than the cell.
+ */
+export function FormulaCellPanel({
+  field,
+  row,
+  fields,
+  anchorRect,
+  renderValue,
+  onEdit,
+  onClose,
+}: FormulaCellPanelProps) {
+  const viewportWidth = useViewportWidth();
+  const viewportHeight = useViewportHeight();
+  const place = placePopover(anchorRect, viewportHeight);
+  const left = Math.max(
+    8,
+    Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left + anchorRect.width - POPOVER_WIDTH),
+  );
+  const stored = field.computed?.expr ?? "";
+  const parsed = parseExpr(stored);
+  const inputs = parsed.ok ? formulaFields(parsed.expr) : [];
+  const title = (name: string) => fields.find((f) => f.name === name)?.title ?? name;
+
+  return (
+    <Portal>
+      <html.button onClick={onClose} style={styles.backdrop} />
+      <html.div
+        style={[
+          styles.popover,
+          place.below
+            ? styles.popoverPosition(place.top, left, POPOVER_WIDTH)
+            : styles.popoverAbove(place.bottom, left, POPOVER_WIDTH),
+          styles.popoverMaxHeight(place.maxHeight),
+        ]}
+      >
+        <html.div style={styles.identity}>
+          <html.span>{field.title ?? field.name}</html.span>
+          <html.span style={styles.typeBadge}>
+            <html.span>Formula</html.span>
+            <html.span style={styles.typeBadgeTechnical}>· every row</html.span>
+          </html.span>
+        </html.div>
+
+        <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored)}</html.span>
+        <html.span style={styles.hintText}>Stored as {stored}</html.span>
+
+        {inputs.length > 0 && (
+          <>
+            <html.span style={styles.label}>In this row</html.span>
+            {inputs.map((name) => (
+              <html.div key={name} style={styles.inputRow}>
+                <html.span style={styles.inputName}>{title(name)}</html.span>
+                <html.span>{renderValue(name, row[name])}</html.span>
+              </html.div>
+            ))}
+          </>
+        )}
+        <html.div style={[styles.inputRow, styles.resultRow]}>
+          <html.span style={styles.inputName}>Result</html.span>
+          <html.span>{renderValue(field.name, row[field.name])}</html.span>
+        </html.div>
+
+        <html.span style={styles.noteText}>
+          One formula for the whole column — every row is worked out the same way.
+        </html.span>
+
+        <html.div style={styles.actionRow}>
+          {onEdit && (
+            <html.button onClick={onEdit} style={[styles.button, styles.primaryButton]}>
+              Edit formula
+            </html.button>
+          )}
+          <html.button onClick={onClose} style={styles.button}>
+            Close
+          </html.button>
+        </html.div>
+      </html.div>
+    </Portal>
   );
 }

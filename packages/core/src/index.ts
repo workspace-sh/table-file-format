@@ -51,5 +51,6 @@ export {
   printFormula,
   formatExpr,
   formulaType,
+  formulaFields,
   type CompileResult,
 } from "./formula.js";
