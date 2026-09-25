@@ -945,7 +945,47 @@ const styles = css.create({
   tableFooter: {
     display: "flex",
     flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     marginTop: 8,
+  },
+  // "+ Row", styled as "+ Field"'s trigger so the two read as a pair.
+  addRowButton: {
+    paddingInline: 8,
+    paddingBlock: 4,
+    fontSize: 11,
+    fontWeight: "600",
+    borderRadius: 4,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: "transparent",
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+    cursor: "pointer",
+  },
+  // A row's delete control, in its title cell. Quiet until pointed at, so
+  // a column of them doesn't shout; still there on touch, where nothing hovers.
+  deleteRowButton: {
+    marginLeft: "auto",
+    paddingInline: 6,
+    paddingBlock: 0,
+    fontSize: 14,
+    lineHeight: 1,
+    borderWidth: 0,
+    borderRadius: 4,
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    opacity: { default: 0.35, ":hover": 1 },
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
   },
 
   // "doc" badge for rows with a markdown body — clickable variant overrides
@@ -1353,6 +1393,10 @@ interface ViewProps {
   onAddEnumValue?: (fieldName: string, value: string) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onAddField?: (field: Field) => void;
+  /** Add an empty row. The app mints its id (D23). */
+  onAddRow?: () => void;
+  /** Delete a row, and its body. The app confirms first if it wants to. */
+  onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;
   onUpdateView?: (patch: Partial<View>) => void;
   /**
@@ -1423,6 +1467,8 @@ export function TableView({
   onAddEnumValue,
   onMoveField,
   onAddField,
+  onAddRow,
+  onDeleteRow,
   onOpenBody,
   onOpenRelation,
   onUpdateView,
@@ -1739,6 +1785,18 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
+        {name === titleField && onDeleteRow ? (
+          <html.button
+            aria-label="Delete row"
+            onClick={(e: { stopPropagation: () => void }) => {
+              e.stopPropagation();
+              onDeleteRow(row.id);
+            }}
+            style={styles.deleteRowButton}
+          >
+            ×
+          </html.button>
+        ) : null}
       </html.span>
     );
   };
@@ -1840,13 +1898,20 @@ export function TableView({
           />
         );
       })()}
-      {canAddField && (
+      {(canAddField || onAddRow) && (
         <html.div style={styles.tableFooter}>
-          <AddFieldButton
-            existingNames={new Set(schema.fields.map((f) => f.name))}
-            fields={schema.fields}
-            onAdd={onAddField!}
-          />
+          {onAddRow && (
+            <html.button onClick={onAddRow} style={styles.addRowButton}>
+              + Row
+            </html.button>
+          )}
+          {canAddField && (
+            <AddFieldButton
+              existingNames={new Set(schema.fields.map((f) => f.name))}
+              fields={schema.fields}
+              onAdd={onAddField!}
+            />
+          )}
         </html.div>
       )}
     </>
