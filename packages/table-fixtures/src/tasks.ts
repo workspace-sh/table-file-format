@@ -64,7 +64,7 @@ export const tasksTable: ParsedTable = {
   ],
   meta: {
     format: "table",
-    formatVersion: 2,
+    formatVersion: 1,
     title: "Tasks",
     generator: "table-file-format spike fixture",
   },

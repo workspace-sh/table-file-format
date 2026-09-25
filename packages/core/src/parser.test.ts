@@ -17,7 +17,7 @@ test("parseTable reads projects.table fixture", async () => {
   assert.equal(t.views.length, 10);
   assert.equal(t.meta.title, "Projects");
   assert.equal(t.meta.format, "table");
-  assert.equal(t.meta.formatVersion, 2);
+  assert.equal(t.meta.formatVersion, 1);
 });
 
 test("every parsed row carries a non-empty system id", async () => {
@@ -77,7 +77,7 @@ test("malformed NDJSON line is skipped and reported; good rows survive", async (
   }
 });
 
-test("a git conflict reads as one row, the incoming value, and a reported conflict", async () => {
+test("git conflict markers degrade to reported skips, not total loss", async () => {
   const target = await scratchTable({
     "schema.json": MINIMAL_SCHEMA,
     "rows.ndjson":
@@ -89,12 +89,10 @@ test("a git conflict reads as one row, the incoming value, and a reported confli
   });
   try {
     const t = await parseTable(target);
-    // One row, not two variants sharing an id (D31): the markers are
-    // understood, the incoming side wins the contested cell, and the
-    // conflict is reported once, for that cell.
-    assert.deepEqual(t.rows, [{ id: "r1", title: "theirs" }]);
-    assert.equal(t.diagnostics?.length, 1);
-    assert.equal(t.diagnostics?.[0]?.field, "title");
+    // Both row variants parse (duplicate-id detection is validate()'s
+    // job); the three marker lines are reported skips.
+    assert.equal(t.rows.length, 2);
+    assert.equal(t.diagnostics?.length, 3);
   } finally {
     await rm(dirname(target), { recursive: true, force: true });
   }

@@ -263,7 +263,7 @@ export const projectsTable: ParsedTable = {
   },
   meta: {
     format: "table",
-    formatVersion: 2,
+    formatVersion: 1,
     title: "Projects",
     generator: "table-file-format spike fixture",
   },
