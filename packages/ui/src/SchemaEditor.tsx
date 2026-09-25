@@ -434,6 +434,140 @@ function FormulaStatus({ result }: { result: CompileResult | null }) {
   );
 }
 
+// ---- display formats (SPEC section 2, "Field format")
+
+/**
+ * ISO 4217 currency codes, from the platform's own Intl data so the list
+ * never goes stale. Hermes and older engines lack supportedValuesOf, so a
+ * short list of the commonest stands in there.
+ */
+function currencyCodes(): string[] {
+  try {
+    if (typeof Intl.supportedValuesOf === "function") return Intl.supportedValuesOf("currency");
+  } catch {
+    // fall through
+  }
+  return ["AUD", "BRL", "CAD", "CHF", "CNY", "DKK", "EUR", "GBP", "HKD", "INR", "JPY", "KRW", "MXN", "NOK", "NZD", "SEK", "SGD", "USD", "ZAR"];
+}
+
+/** "British Pound" for GBP, in the reader's own language; the code alone if the platform can't say. */
+function currencyName(code: string): string {
+  try {
+    return new Intl.DisplayNames(undefined, { type: "currency" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+type FormatFamily = "number" | "date" | "string" | null;
+
+function formatFamily(type: FieldType): FormatFamily {
+  if (type === "number" || type === "integer" || type === "year") return "number";
+  if (type === "date" || type === "datetime") return "date";
+  if (type === "string") return "string";
+  return null;
+}
+
+/** The spec's closed vocabulary, per family. The empty value means "the default". */
+const FORMAT_CHOICES: Record<Exclude<FormatFamily, null>, { value: string; label: string }[]> = {
+  number: [
+    { value: "", label: "Plain number" },
+    { value: "integer", label: "Whole number" },
+    { value: "decimal", label: "Decimal places…" },
+    { value: "percent", label: "Percent" },
+    { value: "currency", label: "Currency…" },
+    { value: "duration:seconds", label: "Duration (seconds)" },
+  ],
+  date: [
+    { value: "", label: "ISO (2026-09-25)" },
+    { value: "short", label: "Short" },
+    { value: "long", label: "Long" },
+    { value: "weekday", label: "With weekday" },
+    { value: "relative", label: "Relative (3 days ago)" },
+  ],
+  string: [
+    { value: "", label: "Plain text" },
+    { value: "markdown", label: "Markdown" },
+    { value: "url", label: "Link" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+  ],
+};
+
+/**
+ * Choose how a column's values are shown — never what is stored. Values
+ * stay raw (SPEC section 2); `format` is a token from a closed vocabulary
+ * that any reader renders with Intl. Currency is an ISO 4217 code, so a
+ * .table written here reads the same in any app that follows the spec.
+ */
+function FormatPicker({ field, onUpdate }: { field: Field; onUpdate: (patch: Partial<Field>) => void }) {
+  const family = formatFamily(field.type);
+  if (!family) return null;
+  const current = field.format ?? "";
+  const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current;
+  const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : 2;
+  const code = current.startsWith("currency:") ? current.slice("currency:".length).toUpperCase() : "";
+  const set = (format: string) => onUpdate({ format: format || undefined });
+  const choose = (next: string) => {
+    if (next === "decimal") set(`decimal:${digits}`);
+    else if (next === "currency") set(`currency:${code || defaultCurrency()}`);
+    else set(next);
+  };
+  return (
+    <>
+      <html.span style={styles.label}>Format</html.span>
+      <html.select
+        value={kind}
+        onChange={(e: { target: { value: string } }) => choose(e.target.value)}
+        style={styles.input}
+      >
+        {FORMAT_CHOICES[family].map((o) => (
+          <html.option key={o.value || "default"} value={o.value}>
+            {o.label}
+          </html.option>
+        ))}
+      </html.select>
+      {kind === "decimal" && (
+        <html.select
+          value={String(digits)}
+          onChange={(e: { target: { value: string } }) => set(`decimal:${e.target.value}`)}
+          style={styles.input}
+        >
+          {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+            <html.option key={d} value={String(d)}>
+              {d} decimal place{d === 1 ? "" : "s"}
+            </html.option>
+          ))}
+        </html.select>
+      )}
+      {kind === "currency" && (
+        <html.select
+          value={code}
+          onChange={(e: { target: { value: string } }) => set(`currency:${e.target.value}`)}
+          style={styles.input}
+        >
+          {currencyCodes().map((c) => (
+            <html.option key={c} value={c}>
+              {c} · {currencyName(c)}
+            </html.option>
+          ))}
+        </html.select>
+      )}
+    </>
+  );
+}
+
+/** The reader's own currency where the platform can tell, else US dollars. */
+function defaultCurrency(): string {
+  try {
+    const region = new Intl.Locale(Intl.NumberFormat().resolvedOptions().locale).maximize().region;
+    const byRegion: Record<string, string> = { GB: "GBP", US: "USD", IE: "EUR", DE: "EUR", FR: "EUR", ES: "EUR", IT: "EUR", NL: "EUR", JP: "JPY", CA: "CAD", AU: "AUD", NZ: "NZD", CH: "CHF", IN: "INR" };
+    return (region && byRegion[region]) || "USD";
+  } catch {
+    return "USD";
+  }
+}
+
 interface SchemaFieldEditorProps {
   field: Field;
   fieldIndex: number;
@@ -608,6 +742,8 @@ export function SchemaFieldEditor({
           }
           style={styles.input}
         />
+
+        <FormatPicker field={field} onUpdate={onUpdate} />
 
         <html.div style={styles.checkRow}>
           <html.input
