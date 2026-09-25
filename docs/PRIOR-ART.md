@@ -108,27 +108,85 @@ needs in JS at view time.
   "name": "total",
   "type": "number",
   "computed": {
-    "expr": "price * quantity",
+    "expr": "(* price quantity)",
     "dialect": "table-expr-v1"
   }
 }
 ```
 
-The expression lives in the schema (one definition, applies to every
-row); the computed value lives nowhere on disk (computed on read). We'd
-need to spec the expression dialect — minimal start would be field
-references + arithmetic + a few stdlib functions (sum, count, today).
-That's well-trodden ground — `CEL`, `JSONata`, or Airtable's formula
-syntax are reasonable starting points.
+The expression is stored in the canonical `table-expr-v1`
+S-expression form (DECISIONS D29), not infix. `price * quantity` is
+what someone types; `(* price quantity)` is what the file holds.
 
-**Status**: the `computed` shape is reserved in SPEC section 2 (issue
-#34, DECISIONS D21). The dialect is settled — `table-expr-v1`, a
-canonical S-expression grammar, with Excel-style syntax supported only
-as an authoring-surface layer that compiles down to it (DECISIONS
-D29). The evaluator implementation itself is still deferred until a
-real consumer needs it. The materialisation question is settled:
-**never persisted, recompute on read** — the optional `index.sqlite`
-may cache results for query speed.
+The expression lives in the schema (one definition, applies to every
+row); the computed value lives nowhere on disk (computed on read).
+
+**Status**: done. The dialect is `table-expr-v1` (D29), its standard
+library is defined (D32, SPEC section 2 "Computed fields"), and
+`@workspace.sh/table-core` evaluates it (`computeRows`, `parseExpr`).
+Results are **never persisted** — recomputed on read — and the
+optional `index.sqlite` may cache them for query speed. Cross-row
+aggregation (column totals) is still deliberately out of scope (D29).
+
+#### Maintained formula libraries (checked 2026-09-25)
+
+Libraries in this space with a release in the twelve months before
+the date above, from the npm registry. None is a dependency: the
+reference evaluator is a few hundred lines of its own (D29's
+minimal-reader thesis). They are listed as prior art, and as
+candidates for an app that wants a fuller Excel function library
+behind its authoring surface. Stale projects are left out on purpose;
+re-check dates before relying on this list.
+
+| Library | Latest | Released | Licence | What it is |
+| --- | --- | --- | --- | --- |
+| [HyperFormula](https://github.com/handsontable/hyperformula) | 3.4.0 | 2026-08-10 | GPL-3.0-only | A spreadsheet calculation engine: Excel-compatible functions over a grid, with a dependency graph. |
+| [Formula.js](https://github.com/formulajs/formulajs) (`@formulajs/formulajs`) | 4.6.1 | 2026-07-28 | MIT | Excel functions as plain JavaScript functions; no parser. |
+| [IronCalc](https://github.com/ironcalc/IronCalc) (`@ironcalc/wasm`) | 0.8.4 | 2026-08-01 | MIT / Apache-2.0 | A spreadsheet engine in Rust, compiled to WebAssembly. |
+| [JSONata](https://github.com/jsonata-js/jsonata) | 2.2.2 | 2026-07-16 | MIT | A JSON query and transformation language. |
+| [cel-js](https://github.com/marcbachmann/cel-js) (`@marcbachmann/cel-js`) | 8.0.0 | 2026-07-07 | MIT | Google's Common Expression Language in JavaScript. |
+| [math.js](https://github.com/josdejong/mathjs) | 15.2.0 | 2026-04-07 | Apache-2.0 | A math library with an infix expression parser. |
+
+Why none is used as the stored form: HyperFormula and IronCalc are
+grid engines — cell addresses and a recalculation graph, which
+`.table/` deliberately doesn't have (D29, "coordinates are never
+stored"). Formula.js is a function library without a grammar.
+JSONata, CEL and math.js each bring a full infix grammar that every
+third-party reader would have to embed (D29's reason for
+S-expressions).
+
+#### Authoring syntaxes that compile to `table-expr-v1`
+
+D29 makes Excel-style syntax the authoring surface; it is not the only
+one an app could offer. The same two formulas in the syntaxes people
+already use, and what each compiles to:
+
+| Syntax | Budget per month | Budget if done, else 0 |
+| --- | --- | --- |
+| **Stored (`table-expr-v1`)** | `(round (/ budget 12) 0)` | `(if (= status "done") budget 0)` |
+| Excel-style (D29's authoring surface) | `=ROUND(budget / 12, 0)` | `=IF(status = "done", budget, 0)` |
+| Excel, in a table | `=ROUND([@budget] / 12, 0)` | `=IF([@status] = "done", [@budget], 0)` |
+| Airtable | `ROUND({budget} / 12, 0)` | `IF({status} = "done", {budget}, 0)` |
+| Notion | `round(prop("budget") / 12)` | `if(prop("status") == "done", prop("budget"), 0)` |
+| Grist (Python) | `ROUND($budget / 12, 0)` | `$budget if $status == "done" else 0` |
+| JSONata | `$round(budget / 12)` | `status = "done" ? budget : 0` |
+| CEL | — | `status == "done" ? budget : 0` |
+
+What a compiler has to get right is meaning, not spelling:
+
+- **Rounding.** `table-expr-v1`'s `round` rounds halves away from
+  zero, as Excel, Airtable and Grist's `ROUND` do (D32). Python's
+  built-in `round` and JSONata's `$round` round halves to even, so
+  `$round(2.5)` is 2 where `(round 2.5)` is 3. A compiler from those
+  surfaces must not map them to `round` blindly.
+- **Field references.** `[@budget]`, `{budget}`, `prop("budget")` and
+  `$budget` all mean the row's `budget` field — a bare word, or
+  `(field "unit price")` for a name that isn't one (SPEC section 2).
+- **Equality.** `=` and `==` both compile to `=`; `<>` and `!=` to `<>`.
+- **What doesn't compile is refused.** A cell address (`=B7` that
+  isn't resolved to a field), a cross-row reference, or a function
+  outside D32's library is rejected at authoring time, never stored
+  as text (D29 addendum).
 
 ### Multi-target relations
 
