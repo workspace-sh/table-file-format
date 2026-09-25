@@ -504,9 +504,10 @@ export default function App() {
                       ? "schema valid"
                       : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
                   </html.span>
+                  {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
                   {schemaBumped && (
-                    <html.span style={styles.schemaBumpBadge}>
-                      schema v{currentSchemaVersion}
+                <html.span style={styles.schemaBumpBadge}>
+                      schema changed
                     </html.span>
                   )}
                 </html.div>
