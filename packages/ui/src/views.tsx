@@ -1608,6 +1608,7 @@ export function TableView({
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onMove={(delta) => onMoveField!(name, delta)}
+            fields={schema.fields}
             onClose={() => {
               setEditingFieldName(null);
               setAnchorRect(null);
@@ -1729,6 +1730,7 @@ export function TableView({
         <html.div style={styles.tableFooter}>
           <AddFieldButton
             existingNames={new Set(schema.fields.map((f) => f.name))}
+            fields={schema.fields}
             onAdd={onAddField!}
           />
         </html.div>
