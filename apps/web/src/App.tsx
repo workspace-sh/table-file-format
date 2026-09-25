@@ -24,6 +24,7 @@ import {
   TableView,
 } from "@workspace.sh/table-ui";
 import { tables as initialTables } from "./loadFixture";
+import { archiveFileName, openArchive, tableToArchive } from "./tableFiles";
 import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
@@ -107,6 +108,33 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#fbbf24",
     },
   },
+  headerActions: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  downloadButton: {
+    paddingInline: 10,
+    paddingBlock: 6,
+    fontSize: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
   searchInput: {
     width: 240,
     paddingInline: 10,
@@ -173,6 +201,49 @@ export function App() {
     setActiveTablePath(key);
     setSearchQuery("");
     setActiveBodyRowId(null);
+  }, [tables]);
+
+  // Download: the table as a real `.table.zip` (D27), named by its key.
+  const downloadTable = useCallback(async () => {
+    const bytes = await tableToArchive(activeTablePath, tables[activeTablePath]!);
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = archiveFileName(activeTablePath);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [tables, activeTablePath]);
+
+  // Open: a `.table.zip` becomes one more table here, saying what the
+  // reader skipped (D25). Only a file with no table in it is refused.
+  const openTableFile = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip,application/zip";
+    input.style.display = "none";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file) return;
+      try {
+        const opened = await openArchive(new Uint8Array(await file.arrayBuffer()), Object.keys(tables));
+        setTables((all) => ({ ...all, [opened.key]: opened.table }));
+        setActiveViewIds((prev) => ({ ...prev, [opened.key]: opened.table.views[0]?.id ?? "" }));
+        setActiveTablePath(opened.key);
+        setSearchQuery("");
+        setActiveBodyRowId(null);
+        if (opened.skipped.length > 0) {
+          const n = opened.skipped.length;
+          window.alert(
+            `Opened "${opened.table.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:\n\n${opened.skipped.join("\n")}`,
+          );
+        }
+      } catch (error) {
+        window.alert(`Couldn't open ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+    document.body.appendChild(input);
+    input.click();
   }, [tables]);
 
   const resetDemo = useCallback(() => {
@@ -456,11 +527,16 @@ export function App() {
         onSelect={setActiveViewId}
         onReset={resetDemo}
         onNewTable={createTable}
+        onOpenFile={openTableFile}
       />
       <html.div style={styles.main}>
         <html.div style={styles.header}>
           <html.div style={styles.headerTopRow}>
             <html.span style={styles.title}>{view.name}</html.span>
+            <html.div style={styles.headerActions}>
+            <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
+              Download .table.zip
+            </html.button>
             <html.input
               type="search"
               placeholder="Search…"
@@ -470,6 +546,7 @@ export function App() {
               }
               style={styles.searchInput}
             />
+            </html.div>
           </html.div>
           <html.div style={styles.subtitle}>
             <html.span>

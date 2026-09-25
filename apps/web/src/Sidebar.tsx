@@ -70,7 +70,6 @@ const styles = css.create({
     },
   },
   newTable: {
-    marginBottom: 8,
     borderWidth: 0,
     backgroundColor: "transparent",
     fontSize: 13,
@@ -79,6 +78,9 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
+  },
+  lastAction: {
+    marginBottom: 8,
   },
   itemName: {
     flex: 1,
@@ -144,6 +146,8 @@ interface SidebarProps {
   onReset: () => void;
   /** Make a new, empty table and switch to it. */
   onNewTable: () => void;
+  /** Open a `.table.zip` as one more table. */
+  onOpenFile: () => void;
 }
 
 export function Sidebar({
@@ -155,6 +159,7 @@ export function Sidebar({
   onSelect,
   onReset,
   onNewTable,
+  onOpenFile,
 }: SidebarProps) {
   const tablePaths = Object.keys(tables);
   return (
@@ -184,6 +189,9 @@ export function Sidebar({
             })}
             <html.button style={[styles.item, styles.newTable]} onClick={onNewTable}>
               + New table
+            </html.button>
+            <html.button style={[styles.item, styles.newTable, styles.lastAction]} onClick={onOpenFile}>
+              Open .table.zip…
             </html.button>
           </html.div>
       </>

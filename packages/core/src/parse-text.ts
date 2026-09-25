@@ -27,7 +27,7 @@ export function parseRowsText(
     } catch (err) {
       diagnostics.push({
         rowIndex: i,
-        message: `skipped malformed line: ${message(err)} — ${line.slice(0, 60)}`,
+        message: `skipped malformed line (${message(err)}): ${line.slice(0, 60)}`,
       });
       continue;
     }
@@ -67,7 +67,7 @@ export function parseOptionalJsonText<T>(
   } catch (err) {
     diagnostics.push({
       rowIndex: -1,
-      message: `malformed ${label}: ${message(err)} — using defaults`,
+      message: `malformed ${label}, using defaults: ${message(err)}`,
     });
     return undefined;
   }
