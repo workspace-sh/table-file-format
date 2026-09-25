@@ -317,6 +317,36 @@ argument, or wrong number of arguments), `#NAME?` (unknown function
 or field), `#REF!` (a computed field that depends on itself), `#NUM!`
 (a result too large to represent).
 
+**Worked examples** (illustrative). Each row of this table is checked
+against the reference evaluator by `packages/core/src/spec-examples.test.ts`,
+so an example here can't drift from what the evaluator does. `→` is the
+result; `empty` means the cell shows nothing.
+
+<!-- worked-examples:start -->
+| Row | `expr` | → |
+| --- | --- | --- |
+| `{"price": 2.5, "quantity": 4}` | `(* price quantity)` | `10` |
+| `{"price": 2.5}` | `(* price quantity)` | empty |
+| `{"price": 2.5}` | `(sum price quantity)` | `2.5` |
+| `{}` | `(sum price quantity)` | empty |
+| `{"budget": 50000}` | `(round (/ budget 12) 0)` | `4167` |
+| `{}` | `(round 2.5)` | `3` |
+| `{}` | `(round -2.5)` | `-3` |
+| `{}` | `(round 3.14159 2)` | `3.14` |
+| `{"budget": 7000, "status": "done"}` | `(if (= status "done") budget 0)` | `7000` |
+| `{"budget": 7000}` | `(if (= status "done") budget 0)` | `0` |
+| `{"price": 1, "quantity": 0}` | `(if (= quantity 0) 0 (/ price quantity))` | `0` |
+| `{"price": 1, "quantity": 0}` | `(/ price quantity)` | `#DIV/0!` |
+| `{"price": 1}` | `(* price "x")` | `#VALUE!` |
+| `{"price": 1}` | `(* Price 2)` | `#NAME?` |
+| `{"price": 1}` | `(SUM price 1)` | `2` |
+| `{"unit price": 3, "quantity": 2}` | `(* (field "unit price") quantity)` | `6` |
+| `{"status": "active", "price": 5}` | `(concat status ": " price)` | `"active: 5"` |
+| `{}` | `(if (isblank status) "none" status)` | `"none"` |
+| `{"status": "done"}` | `(upper status)` | `"DONE"` |
+| `{}` | `(* 1e308 10)` | `#NUM!` |
+<!-- worked-examples:end -->
+
 Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
 `applyView()` computes before filtering and sorting, so views can use
 computed fields.
