@@ -119,7 +119,7 @@ test("computed values are never written, and never validated as stored data", ()
   };
   const { rows } = computeRows(schema, [{ id: "r1", price: 3 }]);
   assert.equal(rows[0]!.total, 6);
-  assert.equal(serializeRows(rows, schema), '{"id":"r1","price":3}\n\n');
+  assert.equal(serializeRows(rows, schema), '{"id":"r1","price":3}\n');
   assert.deepEqual(validate(schema, [{ id: "r1", price: 3 }]), []);
 });
 

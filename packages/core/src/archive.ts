@@ -7,7 +7,7 @@ import type {
   View,
 } from "./types.js";
 import type { WriteTableInput } from "./writer.js";
-import { parseNdjsonText, parseOptionalJsonText } from "./parse-text.js";
+import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta } from "./serialize.js";
 import { readZip, writeZip, type ZipEntry } from "./zip.js";
 
@@ -83,7 +83,7 @@ export async function readTableArchive(
   // Fatal by design — do not wrap (same posture as parseTable).
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
-  const rows = parseNdjsonText(text("rows.ndjson") ?? "", diagnostics);
+  const rows = parseRowsText(text("rows.ndjson") ?? "", diagnostics);
   const views =
     parseOptionalJsonText<View[]>("views.json", text("views.json"), diagnostics) ?? [];
   const meta =

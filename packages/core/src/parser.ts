@@ -8,7 +8,7 @@ import type {
   ValidationError,
   View,
 } from "./types.js";
-import { parseNdjsonText, parseOptionalJsonText } from "./parse-text.js";
+import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 
 /**
  * Parse a `.table/` directory.
@@ -31,7 +31,7 @@ export async function parseTable(dir: string): Promise<ParsedTable> {
   const schemaRaw = await readFile(join(dir, "schema.json"), "utf8");
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
-  const rows = parseNdjsonText(
+  const rows = parseRowsText(
     (await readTextOptional(join(dir, "rows.ndjson"))) ?? "",
     diagnostics,
   );
