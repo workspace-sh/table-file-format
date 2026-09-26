@@ -1,0 +1,53 @@
+{
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "title": "Customer",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "title": "Email",
+      "format": "email",
+      "constraints": {
+        "unique": true
+      }
+    },
+    {
+      "name": "city",
+      "type": "string",
+      "title": "City"
+    },
+    {
+      "name": "since",
+      "type": "date",
+      "title": "Customer since"
+    },
+    {
+      "name": "order_count",
+      "type": "number",
+      "title": "Orders",
+      "description": "How many orders link to this customer.",
+      "computed": {
+        "expr": "(count (linked \"orders\" \"customer\" \"number\"))",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "lifetime_value",
+      "type": "number",
+      "title": "Lifetime value",
+      "format": "currency:GBP",
+      "description": "The total of this customer's orders. Each order's total is itself the sum of its lines, so this reads two tables deep (D36).",
+      "computed": {
+        "expr": "(sum (linked \"orders\" \"customer\" \"total\"))",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ],
+  "schema-version": 1
+}

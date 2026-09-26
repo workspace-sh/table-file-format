@@ -1,0 +1,110 @@
+{
+  "fields": [
+    {
+      "name": "number",
+      "type": "string",
+      "title": "Order",
+      "constraints": {
+        "required": true,
+        "unique": true
+      }
+    },
+    {
+      "name": "customer",
+      "type": "string",
+      "title": "Customer",
+      "relation": {
+        "table": "customers",
+        "field": "id"
+      }
+    },
+    {
+      "name": "ordered",
+      "type": "date",
+      "title": "Ordered"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "title": "Status",
+      "constraints": {
+        "enum": [
+          {
+            "value": "pending",
+            "label": "Pending",
+            "color": "gray"
+          },
+          {
+            "value": "paid",
+            "label": "Paid",
+            "color": "blue"
+          },
+          {
+            "value": "shipped",
+            "label": "Shipped",
+            "color": "orange"
+          },
+          {
+            "value": "delivered",
+            "label": "Delivered",
+            "color": "green"
+          },
+          {
+            "value": "refunded",
+            "label": "Refunded",
+            "color": "red"
+          }
+        ]
+      }
+    },
+    {
+      "name": "shipping",
+      "type": "number",
+      "title": "Shipping",
+      "format": "currency:GBP"
+    },
+    {
+      "name": "items",
+      "type": "number",
+      "title": "Items",
+      "description": "How many things are on the order: the quantities on its lines.",
+      "computed": {
+        "expr": "(sum (linked \"lines\" \"order\" \"quantity\"))",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "subtotal",
+      "type": "number",
+      "title": "Subtotal",
+      "format": "currency:GBP",
+      "description": "The sum of the order's lines (D36).",
+      "computed": {
+        "expr": "(sum (linked \"lines\" \"order\" \"line_total\"))",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "total",
+      "type": "number",
+      "title": "Total",
+      "format": "currency:GBP",
+      "description": "Subtotal plus shipping.",
+      "computed": {
+        "expr": "(+ subtotal shipping)",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "city",
+      "type": "string",
+      "title": "City",
+      "description": "Looked up from the order's customer (D36).",
+      "computed": {
+        "expr": "(lookup \"customer\" \"city\")",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ],
+  "schema-version": 1
+}
