@@ -10,7 +10,8 @@ are written down rather than implied.
 Companion docs: SPEC section 3 (canonical write order), SPEC
 section 8 (the SQLite cache contract), DECISIONS D14–D17, and the
 workspace-p2p-spike repo's FINDINGS.md (Hypercore viability across
-Node / macOS).
+Node / macOS). [LARGE-TABLES.md](LARGE-TABLES.md) measures 50k to 1M
+rows: SQLite, DuckDB, compression, splitting rows, and sparse sync.
 
 ## 1. The three storage tiers
 
