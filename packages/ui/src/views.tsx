@@ -245,6 +245,11 @@ const styles = css.create({
     },
   },
   tableHeaderCell: {
+    // One line, always: a header that wraps is taller than the frozen
+    // pane's, and every row below it then sits out of line.
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
     fontSize: 11,
     fontWeight: "600",
     textTransform: "uppercase",
@@ -911,6 +916,11 @@ const styles = css.create({
   },
   headerCellButton: {
     flex: 1,
+    minWidth: 0,
+    // One line, as tableHeaderCell: the full title is in the hover hint.
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
     paddingBlock: 10,
     paddingInline: 16,
     backgroundColor: "transparent",

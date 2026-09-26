@@ -3,12 +3,14 @@ import type { ParsedTable } from "@workspace.sh/table-core";
 import { companiesTable } from "./companies";
 import { contactsTable } from "./contacts";
 import { dealsTable } from "./deals";
+import { householdBudgetTable } from "./household-budget";
 import { projectsTable } from "./projects";
 import { tasksTable } from "./tasks";
 
 export { companiesTable } from "./companies";
 export { contactsTable } from "./contacts";
 export { dealsTable } from "./deals";
+export { householdBudgetTable } from "./household-budget";
 export { projectsTable } from "./projects";
 export { tasksTable } from "./tasks";
 
@@ -20,6 +22,7 @@ export const tables: Record<string, ParsedTable> = {
   "companies": companiesTable,
   "contacts": contactsTable,
   "deals": dealsTable,
+  "household-budget": householdBudgetTable,
   "projects": projectsTable,
   "tasks": tasksTable,
 };
