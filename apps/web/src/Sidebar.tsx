@@ -1,7 +1,8 @@
 import { html, css } from "react-strict-dom";
-import type { ParsedTable } from "@workspace.sh/table-core";
+import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "./displaySettings";
+import { bundleOf, tableKeysIn } from "./bundles";
 
 const styles = css.create({
   root: {
@@ -75,6 +76,37 @@ const styles = css.create({
       default: "#8e8e93",
       "@media (prefers-color-scheme: dark)": "#6e6e73",
     },
+  },
+  bundleHeader: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+    paddingInline: 8,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  /** The file name: one line, cut short rather than wrapped. */
+  bundleFile: {
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
+  },
+  bundleTitle: {
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  /** "+ New table", level with the tables' names, past their arrows. */
+  tableAction: {
+    paddingLeft: 24,
   },
   firstAction: {
     marginTop: 6,
@@ -209,8 +241,12 @@ interface SidebarProps {
   onSelect: (viewId: string) => void;
   /** Forget every edit and start again from the fixtures. */
   onReset: () => void;
-  /** Make a new, empty table and switch to it. */
-  onNewTable: () => void;
+  /** Each .table file's manifest (D37): its title and table order. */
+  bundles: Record<string, BundleMeta>;
+  /** Make a new, empty table in this .table file and switch to it. */
+  onNewTable: (bundle: string) => void;
+  /** Make a new .table file holding one table, and switch to it. */
+  onNewFile: () => void;
   /** Add a view to this table and open its settings. */
   onNewView: () => void;
   /** Open a `.table.zip` as one more table. */
@@ -228,67 +264,85 @@ export function Sidebar({
   activeViewId,
   onSelect,
   onReset,
+  bundles,
   onNewTable,
+  onNewFile,
   onNewView,
   onOpenFile,
   display,
   onDisplayChange,
 }: SidebarProps) {
   const browserLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
-  const tablePaths = Object.keys(tables);
   return (
     <html.div style={styles.root}>
-      {/* One tree: each table, and under the open one its views, so a view
-          is always seen as part of its table. Only what's on screen is
+      {/* One tree: each .table file, its tables, and under the open table
+          its views, so a view is always seen as part of its table and a
+          table as part of its file (D37). Only what's on screen is
           highlighted; its table is bold. */}
-      <html.span style={styles.sectionLabel}>Tables</html.span>
       <html.div style={styles.list}>
-        {tablePaths.map((path) => {
-          const t = tables[path]!;
-          const open = path === activeTablePath;
-          const title = t.meta.title ?? path;
-          // Two tables can share a title (open a file twice): then the key,
-          // which never repeats, tells them apart.
-          const shared = tablePaths.some((p) => p !== path && (tables[p]!.meta.title ?? p) === title);
+        {Object.keys(bundles).map((bundle) => {
+          const keys = tableKeysIn(tables, bundles, bundle);
+          const openBundle = bundle === bundleOf(activeTablePath);
           return (
-            <html.div key={path} style={styles.list}>
-              <html.div
-                role="button"
-                aria-expanded={open}
-                style={styles.item}
-                onClick={() => onSelectTable(path)}
-              >
-                <html.span style={styles.disclosure}>{open ? "▾" : "▸"}</html.span>
-                <html.span style={[styles.itemName, open && styles.itemNameOpen]}>
-                  {title}
-                  {shared && <html.span style={styles.itemKey}> {path}</html.span>}
-                </html.span>
-                <html.span style={styles.itemCount}>{t.rows.length}</html.span>
+            <html.div key={bundle} style={styles.list}>
+              <html.div style={styles.bundleHeader}>
+                <html.span style={styles.bundleTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
+                <html.span style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
               </html.div>
-              {open && (
-                <html.div style={styles.list}>
-                  {table.views.map((view) => (
+              {keys.map((path) => {
+                const t = tables[path]!;
+                const open = path === activeTablePath;
+                const title = t.meta.title ?? path;
+                // Two tables in one file can share a title: then the name,
+                // which never repeats within a file, tells them apart.
+                const shared = keys.some((p) => p !== path && (tables[p]!.meta.title ?? p) === title);
+                return (
+                  <html.div key={path} style={styles.list}>
                     <html.div
-                      key={view.id}
                       role="button"
-                      aria-current={view.id === activeViewId ? "page" : undefined}
-                      style={[styles.item, styles.viewItem, view.id === activeViewId && styles.itemActive]}
-                      onClick={() => onSelect(view.id)}
+                      aria-expanded={open}
+                      style={styles.item}
+                      onClick={() => onSelectTable(path)}
                     >
-                      <html.span style={styles.itemName}>{view.name}</html.span>
-                      <html.span style={styles.itemLayout}>{view.layout}</html.span>
+                      <html.span style={styles.disclosure}>{open ? "▾" : "▸"}</html.span>
+                      <html.span style={[styles.itemName, open && styles.itemNameOpen]}>
+                        {title}
+                        {shared && <html.span style={styles.itemKey}> {path.slice(bundle.length + 1)}</html.span>}
+                      </html.span>
+                      <html.span style={styles.itemCount}>{t.rows.length}</html.span>
                     </html.div>
-                  ))}
-                  <html.button style={[styles.item, styles.viewItem, styles.newTable]} onClick={onNewView}>
-                    + New view
-                  </html.button>
-                </html.div>
+                    {open && (
+                      <html.div style={styles.list}>
+                        {table.views.map((view) => (
+                          <html.div
+                            key={view.id}
+                            role="button"
+                            aria-current={view.id === activeViewId ? "page" : undefined}
+                            style={[styles.item, styles.viewItem, view.id === activeViewId && styles.itemActive]}
+                            onClick={() => onSelect(view.id)}
+                          >
+                            <html.span style={styles.itemName}>{view.name}</html.span>
+                            <html.span style={styles.itemLayout}>{view.layout}</html.span>
+                          </html.div>
+                        ))}
+                        <html.button style={[styles.item, styles.viewItem, styles.newTable]} onClick={onNewView}>
+                          + New view
+                        </html.button>
+                      </html.div>
+                    )}
+                  </html.div>
+                );
+              })}
+              {openBundle && (
+                <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
+                  + New table
+                </html.button>
               )}
             </html.div>
           );
         })}
-        <html.button style={[styles.item, styles.newTable, styles.firstAction]} onClick={onNewTable}>
-          + New table
+        <html.button style={[styles.item, styles.newTable, styles.firstAction]} onClick={onNewFile}>
+          + New .table file
         </html.button>
         <html.button style={[styles.item, styles.newTable]} onClick={onOpenFile}>
           Open .table.zip…

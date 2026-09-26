@@ -2,9 +2,9 @@
  * Sync app navigation state with `location.hash` using the
  * row-address grammar (`<path>#<key>=<value>&...`). Result:
  *
- *   https://demo/#projects#row=p1&view=v5
+ *   https://demo/#projects.table#table=tasks&row=t1&view=v5
  *   ↓ parseAddress(location.hash.slice(1))
- *   { tablePath: "projects", rowId: "p1", viewId: "v5" }
+ *   { tablePath: "projects.table", tableName: "tasks", rowId: "t1", viewId: "v5" }
  *
  * The inner `#` survives because browsers preserve the full fragment
  * after the FIRST `#` — assignments through history.replaceState keep
@@ -22,6 +22,8 @@ import { formatAddress, parseAddress, type Address } from "@workspace.sh/table-c
 
 export interface HashAddressState {
   tablePath: string;
+  /** The table in the bundle (`table=`, SPEC section 10). */
+  tableName?: string;
   viewId?: string;
   rowId?: string;
 }
@@ -50,6 +52,7 @@ function readHash(): Address | null {
 function buildHash(state: HashAddressState): string {
   return formatAddress({
     tablePath: state.tablePath,
+    tableName: state.tableName,
     rowId: state.rowId,
     viewId: state.viewId,
   });
@@ -90,5 +93,5 @@ export function useHashAddress({ state, onExternalChange }: UseHashAddressOpts) 
     // could be promoted to pushState later if the back-button UX needs
     // it.
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${next}`);
-  }, [state.tablePath, state.viewId, state.rowId]);
+  }, [state.tablePath, state.tableName, state.viewId, state.rowId]);
 }

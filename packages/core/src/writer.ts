@@ -1,8 +1,9 @@
 import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
-import { normaliseBody, pretty, serializeRows, stampMeta } from "./serialize.js";
+import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, View } from "./types.js";
+import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
+import { isTableName, tableOrder } from "./bundle.js";
 
 export interface WriteTableInput {
   schema: TableSchema;
@@ -47,7 +48,9 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
   await mkdir(dir, { recursive: true });
   await mkdir(join(dir, "attachments"), { recursive: true });
 
-  const meta: TableMeta = stampMeta(input.meta);
+  // A table's meta.json carries only its own title and description:
+  // `format`, `formatVersion` and `tables` describe the bundle.
+  const meta: TableMeta = tableMetaOnly(input.meta);
 
   const bodiesDir = join(dir, "bodies");
   const bodies = input.bodies ?? {};
@@ -98,5 +101,42 @@ export async function writeTable(dir: string, input: WriteTableInput | ParsedTab
     }
   } else if (existsSync(bodiesDir)) {
     await rm(bodiesDir, { recursive: true, force: true });
+  }
+}
+
+export interface WriteBundleInput {
+  meta?: BundleMeta;
+  tables: Record<string, WriteTableInput | ParsedTable>;
+}
+
+/**
+ * Write a `.table` bundle (SPEC section 1, D37): every table under
+ * `tables/<name>/` by `writeTable`, then the manifest, with the
+ * `tables` order the bundle is shown in. Each file keeps D24's
+ * stage-then-rename discipline. Trim comes last, as there: a table
+ * directory no longer in the bundle is removed only after everything
+ * else has been written.
+ */
+export async function writeBundle(dir: string, input: WriteBundleInput | ParsedBundle): Promise<void> {
+  const names = tableOrder(input);
+  for (const name of names) {
+    if (!isTableName(name)) throw new Error(`invalid table name: ${JSON.stringify(name)}`);
+  }
+  const tablesDir = join(dir, "tables");
+  await mkdir(tablesDir, { recursive: true });
+  for (const name of names) {
+    await writeTable(join(tablesDir, name), input.tables[name]!);
+  }
+
+  const manifest = join(dir, "meta.json");
+  await writeFile(manifest + ".tmp", pretty(stampMeta({ ...(input.meta ?? {}), tables: names })));
+  await rename(manifest + ".tmp", manifest);
+
+  for (const entry of await readdir(tablesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || names.includes(entry.name)) continue;
+    // Only what the reader would call a table: never an unknown directory.
+    if (existsSync(join(tablesDir, entry.name, "schema.json"))) {
+      await rm(join(tablesDir, entry.name), { recursive: true, force: true });
+    }
   }
 }

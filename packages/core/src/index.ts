@@ -1,6 +1,7 @@
 export * from "./types.js";
 export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
-export { newTable } from "./new-table.js";
+export { newTable, newBundle } from "./new-table.js";
+export { isTableName, tableOrder, orderedTables } from "./bundle.js";
 export { validate, validateBodies } from "./validator.js";
 export {
   isDate,
