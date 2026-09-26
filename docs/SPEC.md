@@ -201,6 +201,14 @@ coerce a bare string `"x"` into `{ "value": "x" }` (reference:
 `enumOptions()` in `@workspace.sh/table-core`). Writers MAY emit
 either form — objects when color/label is set, strings otherwise.
 
+#### Multi-select
+
+An `enum` on an `array` field constrains each item: the value is a
+list of choices, as a Notion or Airtable multi-select is (DECISIONS
+D35). `["emea", "priority"]` is valid when both are choices; an empty
+array is valid, and `required` still rejects it as empty. Colours and
+labels apply to each item.
+
 ### Field annotations
 
 - `title: "<text>"` — the column's display name. Defaults to `name`.
@@ -518,6 +526,10 @@ two `"table"` views named "Active" and "Done").
 
 `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`, `not_contains`,
 `starts_with`, `ends_with`, `empty`, `not_empty`, `in`, `not_in`.
+
+On an `array` value, `contains` and `not_contains` ask whether it has
+the given item, and `in` / `not_in` whether any of its items is in the
+given list.
 
 ### Sort behaviour
 

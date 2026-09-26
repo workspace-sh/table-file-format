@@ -879,6 +879,9 @@ const styles = css.create({
   pillBlue: { backgroundColor: { default: "#dde9fd", "@media (prefers-color-scheme: dark)": "#15284a" }, color: { default: "#1d4ed8", "@media (prefers-color-scheme: dark)": "#8ab4ff" } },
   pillPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" }, color: { default: "#6d28d9", "@media (prefers-color-scheme: dark)": "#c4a8ff" } },
   pillPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" }, color: { default: "#be185d", "@media (prefers-color-scheme: dark)": "#ff9ecb" } },
+  pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  choiceCheck: { width: 12, fontSize: 12 },
   relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
   link: {
     textDecorationLine: "underline",
@@ -1246,6 +1249,18 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
     return <html.span style={styles.formulaError}>{value.code}</html.span>;
   }
 
+  // A list: each item a pill, in its choice's colour for a multi-select (D35).
+  if (Array.isArray(value) && !field?.relation) {
+    if (value.length === 0) return <html.span style={clamp}>—</html.span>;
+    return (
+      <html.span style={styles.pillList}>
+        {value.map((item, i) => (
+          <EnumPill key={`${i}\u0000${String(item)}`} field={field} value={item} />
+        ))}
+      </html.span>
+    );
+  }
+
   const isEnum = field?.constraints?.enum != null;
   if (isEnum && value !== undefined && value !== null && value !== "") {
     return <EnumPill field={field} value={value} />;
@@ -1495,6 +1510,20 @@ function EditableCell({
     );
   }
 
+  // A list: a multi-select picks from its choices; a plain list is typed
+  // as comma-separated text.
+  if (field?.type === "array" && !field.relation) {
+    return (
+      <ListCell
+        field={field}
+        value={value}
+        onCommit={onCommit}
+        relatedTables={relatedTables}
+        lines={lines}
+      />
+    );
+  }
+
   // Enum: select dropdown. Normalised via enumOptions() so both the
   // bare-string and { value, color, label } on-disk forms render.
   const enumOpts = enumOptions(field);
@@ -1585,6 +1614,110 @@ function EditableCell({
       <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
       {input}
     </html.span>
+  );
+}
+
+/**
+ * A list cell (D35). With a choice list it opens a picker of the choices,
+ * each toggled on click and saved straight away, as Notion's multi-select
+ * does; without one it's typed as comma-separated text.
+ */
+function ListCell({
+  field,
+  value,
+  onCommit,
+  relatedTables,
+  lines,
+}: {
+  field: Field;
+  value: unknown;
+  onCommit: (next: unknown) => void;
+  relatedTables?: Record<string, ParsedTable>;
+  lines?: number;
+}) {
+  const items = Array.isArray(value) ? value.map(String) : [];
+  const options = enumOptions(field);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [rect, setRect] = useState<AnchorRect | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anchor = useRef<any>(null);
+  const shown = (
+    <html.span
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={(el: any) => {
+        anchor.current = el;
+      }}
+      onClick={async () => {
+        setText(items.join(", "));
+        setRect(await measureAnchor(anchor.current));
+        setOpen(true);
+      }}
+      style={styles.cellEditableIdle}
+    >
+      <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
+    </html.span>
+  );
+  if (!open) return shown;
+  if (options.length === 0) {
+    const commit = () => {
+      setOpen(false);
+      const next = text.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+      onCommit(next.length ? next : undefined);
+    };
+    return (
+      <html.input
+        type="text"
+        autoFocus
+        value={text}
+        placeholder="a, b, c"
+        onChange={(e: { target: { value: string } }) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e: { key: string }) => {
+          if (e.key === "Enter") commit();
+          else if (e.key === "Escape") setOpen(false);
+        }}
+        style={styles.cellInput}
+      />
+    );
+  }
+  const toggle = (choice: string) => {
+    const next = items.includes(choice) ? items.filter((i) => i !== choice) : [...items, choice];
+    // Kept in the choice list's order, so the same set is always written the same way.
+    const ordered = options.map((o) => o.value).filter((v) => next.includes(v));
+    onCommit(ordered.length ? ordered : undefined);
+  };
+  return (
+    <>
+      {shown}
+      <Portal>
+        <html.div style={styles.rowMenuBackdrop} onClick={() => setOpen(false)} />
+        <html.div
+          role="listbox"
+          aria-multiselectable={true}
+          style={[
+            styles.rowMenu,
+            styles.rowMenuAt(
+              (rect?.top ?? 0) + (rect?.height ?? 0) + 4,
+              typeof window === "undefined" ? (rect?.left ?? 0) : Math.min(rect?.left ?? 0, window.innerWidth - 200),
+            ),
+          ]}
+        >
+          {options.map((o) => (
+            <html.button
+              key={o.value}
+              role="option"
+              aria-selected={items.includes(o.value)}
+              style={[styles.rowMenuItem, styles.choiceItem]}
+              onClick={() => toggle(o.value)}
+            >
+              <html.span style={styles.choiceCheck}>{items.includes(o.value) ? "✓" : ""}</html.span>
+              <EnumPill field={field} value={o.value} />
+            </html.button>
+          ))}
+        </html.div>
+      </Portal>
+    </>
   );
 }
 

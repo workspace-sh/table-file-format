@@ -710,7 +710,8 @@ export function SchemaFieldEditor({
       ? Math.max(8, anchorRight - POPOVER_WIDTH)
       : Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left);
 
-  const hasEnum = Array.isArray(field.constraints?.enum);
+  // A list field can always gain choices: that's what makes it a multi-select (D35).
+  const hasEnum = Array.isArray(field.constraints?.enum) || (field.type === "array" && !field.relation);
 
   const setRequired = (next: boolean) => {
     const c = { ...(field.constraints ?? {}) };
@@ -822,7 +823,7 @@ export function SchemaFieldEditor({
 
         {hasEnum && (
           <>
-            <html.span style={styles.label}>Enum values</html.span>
+            <html.span style={styles.label}>{field.type === "array" ? "Choices (each item is one of these)" : "Enum values"}</html.span>
             <html.div style={styles.enumRow}>
               {enumOptions(field).map((opt) => (
                 <html.span key={opt.value} style={styles.enumPill}>

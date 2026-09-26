@@ -808,3 +808,20 @@ boundary for cross-row aggregation is untouched.
 
 Reference: `computeRows()` and `formulaRefs()` in
 `@workspace.sh/table-core`; SPEC section 2 "References to another row".
+
+## D35: Multi-select is an array with a choice list
+
+Notion and Airtable both have a multi-select: a cell holding several
+choices from one coloured list. The format had the parts, an `array`
+type and an `enum` constraint, but the enum checked the whole value, so
+an array with a choice list could never be valid (#97). Now an `enum` on
+an `array` field constrains each item, and colours and labels apply to
+each. `contains` and `not_contains` ask about an array's items, and `in`
+/ `not_in` match when any item is in the list.
+
+**Why:** it is what the two constraints already mean together, so no new
+type or key is needed and a reader that checks enums needs one loop. A
+separate `multiselect` type would duplicate `array` for one use.
+
+**Empty.** An empty array is empty (SPEC "Empty values"): `required`
+rejects it, and a row with no items is none of any list.
