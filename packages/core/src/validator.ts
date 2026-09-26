@@ -98,8 +98,10 @@ function validateField(field: Field, value: unknown): string[] {
 
   if (c?.enum) {
     const allowed = enumValues(field);
-    if (!allowed.includes(value as string)) {
-      errors.push(`value not in enum: ${JSON.stringify(value)}`);
+    // On an array, the choice list checks each item: multi-select (D35).
+    const items = Array.isArray(value) ? value : [value];
+    for (const item of items) {
+      if (!allowed.includes(item as string)) errors.push(`value not in enum: ${JSON.stringify(item)}`);
     }
   }
   if (typeof value === "number") {

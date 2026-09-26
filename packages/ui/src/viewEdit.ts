@@ -29,6 +29,8 @@ const DATES: FieldType[] = ["date", "datetime", "time"];
 export function operatorsFor(field: Field | undefined): FilterOperator[] {
   const type = field?.type ?? "string";
   if (type === "boolean") return ["eq", "neq", "empty", "not_empty"];
+  // A list (a multi-select, say) is asked about its items (D35).
+  if (type === "array") return ["contains", "not_contains", "in", "not_in", "empty", "not_empty"];
   if (NUMERIC.includes(type) || DATES.includes(type)) {
     return ["eq", "neq", "gt", "gte", "lt", "lte", "empty", "not_empty", "in", "not_in"];
   }

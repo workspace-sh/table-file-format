@@ -156,14 +156,16 @@ function matchesFilter(row: Row, f: ViewFilter): boolean {
     case "gte": return (v as number) >= (f.value as number);
     case "lt": return (v as number) < (f.value as number);
     case "lte": return (v as number) <= (f.value as number);
-    case "contains": return typeof v === "string" && v.includes(String(f.value));
-    case "not_contains": return typeof v === "string" && !v.includes(String(f.value));
+    // On an array (a multi-select, say) these ask about its items (D35).
+    case "contains": return Array.isArray(v) ? v.includes(f.value) : typeof v === "string" && v.includes(String(f.value));
+    case "not_contains": return Array.isArray(v) ? !v.includes(f.value) : typeof v === "string" && !v.includes(String(f.value));
     case "starts_with": return typeof v === "string" && v.startsWith(String(f.value));
     case "ends_with": return typeof v === "string" && v.endsWith(String(f.value));
     case "empty": return v === undefined || v === null || v === "";
     case "not_empty": return !(v === undefined || v === null || v === "");
-    case "in": return Array.isArray(f.value) && f.value.includes(v);
-    case "not_in": return Array.isArray(f.value) && !f.value.includes(v);
+    // An array value is "in" the list when any of its items is.
+    case "in": return Array.isArray(f.value) && (Array.isArray(v) ? v.some((x) => (f.value as unknown[]).includes(x)) : f.value.includes(v));
+    case "not_in": return Array.isArray(f.value) && (Array.isArray(v) ? !v.some((x) => (f.value as unknown[]).includes(x)) : !f.value.includes(v));
   }
 }
 

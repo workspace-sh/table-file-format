@@ -94,7 +94,43 @@ export const companiesTable: ParsedTable = {
         "name": "tags",
         "type": "array",
         "title": "Tags",
-        "description": "Free tags. A choice list for these needs multi-select (not yet in the format)."
+        "description": "A multi-select: any number of these tags (D35).",
+        "constraints": {
+          "enum": [
+            {
+              "value": "enterprise",
+              "color": "blue"
+            },
+            {
+              "value": "startup",
+              "color": "green"
+            },
+            {
+              "value": "agency",
+              "color": "pink"
+            },
+            {
+              "value": "emea",
+              "color": "purple"
+            },
+            {
+              "value": "priority",
+              "color": "red"
+            },
+            {
+              "value": "wholesale",
+              "color": "orange"
+            },
+            {
+              "value": "clinics",
+              "color": "yellow"
+            },
+            {
+              "value": "renewables",
+              "color": "gray"
+            }
+          ]
+        }
       }
     ],
     "schema-version": 1

@@ -58,3 +58,11 @@ test("a layout starts from the field it needs, and isn't offered without one", (
   const deprecated: TableSchema = { fields: [{ ...due, deprecated: true }] };
   assert.equal(canUseLayout("calendar", deprecated), false);
 });
+
+test("a list field is asked about its items", () => {
+  const tags: Field = { name: "tags", type: "array", constraints: { enum: ["emea", "priority"] } };
+  assert.deepEqual(operatorsFor(tags), ["contains", "not_contains", "in", "not_in", "empty", "not_empty"]);
+  assert.equal(filterValueFrom(tags, "contains", " emea "), "emea");
+  assert.deepEqual(filterValueFrom(tags, "in", "emea, priority"), ["emea", "priority"]);
+});
+

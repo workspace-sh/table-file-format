@@ -263,7 +263,9 @@ function FilterRow({
   // What's typed, kept as typed, so "1," on the way to "1, 2" isn't
   // tidied away under the cursor. The stored value follows it.
   const [draft, setDraft] = useState(() => filterValueText(filter.value));
-  const pickChoice = choices.length > 0 && (filter.operator === "eq" || filter.operator === "neq");
+  // One choice from the list: equal to it, or (for a multi-select) having it.
+  const pickChoice =
+    choices.length > 0 && ["eq", "neq", "contains", "not_contains"].includes(filter.operator);
   return (
     <html.div style={styles.row}>
       <FieldSelect
