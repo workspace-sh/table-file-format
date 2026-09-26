@@ -22,6 +22,8 @@
     "ui:typecheck": "npm run typecheck -w @workspace.sh/table-ui",
 
     "fixtures:typecheck": "npm run typecheck -w @workspace.sh/table-fixtures",
+    "fixtures:generate": "npm run generate -w @workspace.sh/table-fixtures",
+    "fixtures:test": "npm run test -w @workspace.sh/table-fixtures",
 
     "web:dev": "npm run dev -w @workspace.sh/table-web",
     "web:build": "npm run build -w @workspace.sh/table-web",
