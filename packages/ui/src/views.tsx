@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
@@ -815,6 +815,35 @@ const styles = css.create({
     },
   },
 
+  // A grouped table's band at the start of each group (fixed height, so
+  // the frozen and scrolling panes stay in line).
+  groupRow: {
+    height: 32,
+    alignItems: "center",
+    paddingInline: 16,
+    backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#141417" },
+  },
+  groupLabel: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    whiteSpace: "nowrap",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
+  },
+  listGroup: {
+    paddingInline: 4,
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
+  groupCount: {
+    fontWeight: "400",
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
   // A sheet's row numbers and column letters (`coordinates`, D34).
   rowNumber: {
     width: 32,
@@ -1150,6 +1179,28 @@ function headerAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.headerCellButtonCenter;
   if (align === "right") return styles.headerCellButtonRight;
   return false as const;
+}
+
+/**
+ * Rows in the order a grouped view shows them (SPEC section 4, `group`),
+ * each marked with the group it starts, if any. Ungrouped: as they are.
+ */
+function groupedRows(
+  view: View,
+  rows: Row[],
+  schema: TableSchema,
+): { row: Row; starts?: { label: string; count: number } }[] {
+  const field = view.group?.field;
+  if (!field) return rows.map((row) => ({ row }));
+  const def = schema.fields.find((f) => f.name === field);
+  const options = enumOptions(def);
+  const out: { row: Row; starts?: { label: string; count: number } }[] = [];
+  for (const [key, members] of Object.entries(applyGroup(rows, field, schema))) {
+    if (members.length === 0) continue;
+    const label = key === "(empty)" ? "Empty" : (options.find((o) => o.value === key)?.label ?? key);
+    members.forEach((row, i) => out.push(i === 0 ? { row, starts: { label, count: members.length } } : { row }));
+  }
+  return out;
 }
 
 /** A sheet's row-number gutter (`coordinates`), which comes out of the columns' width. */
@@ -1712,7 +1763,10 @@ export function TableView({
   // A sheet (SPEC section 4, `coordinates`): lettered columns, numbered
   // rows, in this view's order, and formulas typed and shown as =B7.
   const coords = view.coordinates === true;
-  const grid = coords ? { columns: fields, rows: rows.map((r) => r.id) } : undefined;
+  // In group order when the view groups; row numbers follow what's shown.
+  const displayed = groupedRows(view, rows, schema);
+  const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
+  const grid = coords ? { columns: fields, rows: displayed.map((d) => d.row.id) } : undefined;
   const canAddField = !!onAddField;
   // Editors for the rightmost columns on screen open leftwards, so they
   // stay inside the window. On screen, not in the schema: a view can hide
@@ -2022,21 +2076,30 @@ export function TableView({
               {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
-            {rows.map((row, i) => (
-              <html.div
-                key={row.id}
-                onContextMenu={openRowMenu(row.id)}
-                style={[
-                  styles.tableRow,
-                  styles.rowHeight(rowHeight),
-                  styles.positioned,
-                  i === rows.length - 1 && styles.tableRowLast,
-                ]}
-              >
-                {coords && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
-                {renderBodyCell(row, primaryName, 0, 1)}
-                {rowResizer}
-              </html.div>
+            {displayed.map(({ row, starts }, i) => (
+              <Fragment key={row.id}>
+                {starts && (
+                  <html.div style={[styles.tableRow, styles.groupRow]}>
+                    <html.span style={styles.groupLabel}>
+                      {groupTitle} · {starts.label}
+                      <html.span style={styles.groupCount}>{starts.count}</html.span>
+                    </html.span>
+                  </html.div>
+                )}
+                <html.div
+                  onContextMenu={openRowMenu(row.id)}
+                  style={[
+                    styles.tableRow,
+                    styles.rowHeight(rowHeight),
+                    styles.positioned,
+                    i === displayed.length - 1 && styles.tableRowLast,
+                  ]}
+                >
+                  {coords && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
+                  {renderBodyCell(row, primaryName, 0, 1)}
+                  {rowResizer}
+                </html.div>
+              </Fragment>
             ))}
           </html.div>
         )}
@@ -2052,24 +2115,37 @@ export function TableView({
                   renderHeaderCell(name, idx, restNames.length),
                 )}
               </html.div>
-              {rows.map((row, i) => (
-                <html.div
-                  key={row.id}
-                  onContextMenu={openRowMenu(row.id)}
-                  style={[
-                    styles.tableRow,
-                    styles.rowHeight(rowHeight),
-                    styles.positioned,
-                    i === rows.length - 1 && styles.tableRowLast,
-                  ]}
-                >
-                  {coords && !primaryName && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
-                  {restNames.map((name, idx) =>
-                    renderBodyCell(row, name, idx, restNames.length),
+              {displayed.map(({ row, starts }, i) => (
+                <Fragment key={row.id}>
+                  {starts && (
+                    // The frozen pane labels the group; this pane's band
+                    // matches its height so the rows stay in line.
+                    <html.div style={[styles.tableRow, styles.groupRow]}>
+                      {!primaryName && (
+                        <html.span style={styles.groupLabel}>
+                          {groupTitle} · {starts.label}
+                          <html.span style={styles.groupCount}>{starts.count}</html.span>
+                        </html.span>
+                      )}
+                    </html.div>
                   )}
-                  {/* Without a frozen pane, this pane carries the row handle. */}
-                  {!primaryName && rowResizer}
-                </html.div>
+                  <html.div
+                    onContextMenu={openRowMenu(row.id)}
+                    style={[
+                      styles.tableRow,
+                      styles.rowHeight(rowHeight),
+                      styles.positioned,
+                      i === displayed.length - 1 && styles.tableRowLast,
+                    ]}
+                  >
+                    {coords && !primaryName && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
+                    {restNames.map((name, idx) =>
+                      renderBodyCell(row, name, idx, restNames.length),
+                    )}
+                    {/* Without a frozen pane, this pane carries the row handle. */}
+                    {!primaryName && rowResizer}
+                  </html.div>
+                </Fragment>
               ))}
             </html.div>
           </HScroll>
@@ -2563,15 +2639,23 @@ export function ListView({
 
   return (
     <html.div style={styles.list}>
-      {rows.map((row, i) => {
+      {groupedRows(view, rows, schema).map(({ row, starts }, i) => {
         const dropReg = canDrag ? registerRow(row.id) : undefined;
         const isDropTarget =
           draggedRowId !== null &&
           hoveredRowId === row.id &&
           hoveredRowId !== draggedRowId;
         return (
+          <Fragment key={row.id}>
+          {starts && (
+            <html.div style={styles.listGroup}>
+              <html.span style={styles.groupLabel}>
+                {view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : ""} · {starts.label}
+                <html.span style={styles.groupCount}>{starts.count}</html.span>
+              </html.span>
+            </html.div>
+          )}
           <DragHandle
-            key={row.id}
             longPressMs={dragLongPressMs}
             onDragStart={
               canDrag
@@ -2638,6 +2722,7 @@ export function ListView({
               ))}
             </html.div>
           </DragHandle>
+          </Fragment>
         );
       })}
       {draggedRowId &&
