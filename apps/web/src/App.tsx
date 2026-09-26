@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   applyView,
@@ -35,6 +35,7 @@ import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
 import { useHashAddress } from "./useHashAddress";
+import { useNarrow } from "./useNarrow";
 
 const DEFAULT_TABLE_PATH = "projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
@@ -59,6 +60,56 @@ const styles = css.create({
     paddingBlock: 20,
     overflow: "auto",
   },
+  mainNarrow: {
+    paddingInline: 12,
+    paddingBlock: 12,
+  },
+  topBar: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  menuButton: {
+    fontSize: 18,
+    paddingInline: 10,
+    paddingBlock: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#3a3a3f" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#17171a" },
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  topBarTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
+  },
+  drawerBackdrop: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 69,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  drawer: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    zIndex: 70,
+    display: "flex",
+    overflowY: "auto",
+    boxShadow: "0 0 32px rgba(0, 0, 0, 0.25)",
+  },
+  searchNarrow: {
+    width: "100%",
+  },
   header: {
     display: "flex",
     flexDirection: "column",
@@ -67,6 +118,7 @@ const styles = css.create({
   headerTopRow: {
     display: "flex",
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
@@ -123,6 +175,7 @@ const styles = css.create({
   headerActions: {
     display: "flex",
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8,
   },
@@ -275,6 +328,30 @@ export function App() {
   }, []);
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
+  // At phone width the sidebar is a drawer, opened from the top bar.
+  const narrow = useNarrow();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const closeDrawer = () => setDrawerOpen(false);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Going wide shows the sidebar in place; coming back narrow starts closed.
+  useEffect(() => {
+    if (!narrow) setDrawerOpen(false);
+  }, [narrow]);
+  // While open: focus is in the drawer and Escape closes it. On close,
+  // focus goes back to the button that opened it.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    drawerRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      menuButtonRef.current?.focus();
+    };
+  }, [drawerOpen]);
 
   const table = tables[activeTablePath];
   if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
@@ -554,29 +631,64 @@ export function App() {
   const schemaBumped =
     currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
+  // Built once, shown in the drawer or beside the page. Choosing closes the
+  // drawer; beside the page there is none to close, so that does nothing.
+  const sidebar = (
+    <Sidebar
+      tables={tables}
+      activeTablePath={activeTablePath}
+      onSelectTable={(path) => {
+        setActiveTablePath(path);
+        setSearchQuery("");
+        setActiveBodyRowId(null);
+        closeDrawer();
+      }}
+      table={table}
+      activeViewId={view.id}
+      onSelect={(id) => {
+        setActiveViewId(id);
+        closeDrawer();
+      }}
+      onReset={resetDemo}
+      onNewTable={createTable}
+      onNewView={addView}
+      onOpenFile={openTableFile}
+      display={display}
+      onDisplayChange={changeDisplay}
+    />
+  );
+
   return (
     <DisplaySettingsProvider value={display}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
-      <Sidebar
-        tables={tables}
-        activeTablePath={activeTablePath}
-        onSelectTable={(path) => {
-          setActiveTablePath(path);
-          setSearchQuery("");
-          setActiveBodyRowId(null);
-        }}
-        table={table}
-        activeViewId={view.id}
-        onSelect={setActiveViewId}
-        onReset={resetDemo}
-        onNewTable={createTable}
-        onNewView={addView}
-        onOpenFile={openTableFile}
-        display={display}
-        onDisplayChange={changeDisplay}
-      />
-      <html.div style={styles.main}>
+      {narrow ? (
+        drawerOpen && (
+          <>
+            <html.div style={styles.drawerBackdrop} onClick={closeDrawer} />
+            <html.div ref={drawerRef} tabIndex={-1} role="dialog" aria-modal={true} aria-label="Tables and views" style={styles.drawer}>
+              {sidebar}
+            </html.div>
+          </>
+        )
+      ) : (
+        sidebar
+      )}
+      <html.div style={[styles.main, narrow && styles.mainNarrow]}>
+        {narrow && (
+          <html.div style={styles.topBar}>
+            <html.button
+              ref={menuButtonRef}
+              style={styles.menuButton}
+              aria-label="Tables and views"
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen(true)}
+            >
+              ☰
+            </html.button>
+            <html.span style={styles.topBarTitle}>{table.meta.title ?? activeTablePath}</html.span>
+          </html.div>
+        )}
         <html.div style={styles.header}>
           <html.div style={styles.headerTopRow}>
             <html.span style={styles.title}>{view.name}</html.span>
@@ -601,7 +713,7 @@ export function App() {
               onChange={(e: { target: { value: string } }) =>
                 setSearchQuery(e.target.value)
               }
-              style={styles.searchInput}
+              style={[styles.searchInput, narrow && styles.searchNarrow]}
             />
             </html.div>
           </html.div>
