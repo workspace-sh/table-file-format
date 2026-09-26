@@ -27,7 +27,6 @@ test("an order line looks up its product's price and works out its total", async
   const first = lines.find((r) => r.id === "li-01")!;
   assert.equal(first.unit_price, 8.5);
   assert.equal(first.line_total, 17);
-  assert.equal(first.item, "#1001 · House blend, 250 g");
 });
 
 test("an order totals its lines, then adds shipping", async () => {

@@ -4,7 +4,7 @@
     "name": "All lines",
     "layout": "table",
     "totals": {
-      "item": "count",
+      "order": "count",
       "quantity": "sum",
       "line_total": "sum"
     }

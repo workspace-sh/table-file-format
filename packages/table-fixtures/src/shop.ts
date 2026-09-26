@@ -708,16 +708,6 @@ export const shopBundle: ParsedBundle = {
       "schema": {
         "fields": [
           {
-            "name": "item",
-            "type": "string",
-            "title": "Line",
-            "description": "The order and the product, for reading.",
-            "computed": {
-              "expr": "(concat (lookup \"order\" \"number\") \" · \" (lookup \"product\" \"name\"))",
-              "dialect": "table-expr-v1"
-            }
-          },
-          {
             "name": "order",
             "type": "string",
             "title": "Order",
@@ -950,7 +940,7 @@ export const shopBundle: ParsedBundle = {
           "name": "All lines",
           "layout": "table",
           "totals": {
-            "item": "count",
+            "order": "count",
             "quantity": "sum",
             "line_total": "sum"
           }
