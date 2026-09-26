@@ -40,6 +40,7 @@ import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
 import { useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
+import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
 
 const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
@@ -63,6 +64,44 @@ const styles = css.create({
     paddingInline: 24,
     paddingBlock: 20,
     overflow: "auto",
+  },
+  /** Holds the sidebar at full width, or slides it to nothing when collapsed. */
+  sidebarSlot: {
+    display: "flex",
+    flexShrink: 0,
+    maxWidth: 320,
+    overflow: "hidden",
+    visibility: "visible",
+    transitionProperty: "max-width, visibility",
+    transitionDuration: "200ms",
+    transitionTimingFunction: "ease",
+  },
+  sidebarSlotCollapsed: {
+    maxWidth: 0,
+    visibility: "hidden",
+  },
+  titleRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sidebarTrigger: {
+    fontSize: 16,
+    lineHeight: "16px",
+    paddingInline: 6,
+    paddingBlock: 4,
+    borderRadius: 6,
+    borderWidth: 0,
+    cursor: "pointer",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#1f1f23" },
+    },
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
   },
   mainNarrow: {
     paddingInline: 12,
@@ -365,6 +404,44 @@ export function App() {
   const narrow = useNarrow();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
+  // The sidebar collapses out of the way, as shadcn/ui's does: a trigger
+  // in the header, or ⌘B / Ctrl+B. Its files and Display group fold too.
+  // All of it is this viewer's, kept in this browser.
+  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(browserStore()));
+  const updateSidebar = useCallback((patch: Partial<SidebarPrefs>) => {
+    setSidebarPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveSidebarPrefs(browserStore(), next);
+      return next;
+    });
+  }, []);
+  const sidebarCollapsed = sidebarPrefs.collapsed === true;
+  const toggleSidebar = useCallback(() => {
+    if (narrow) setDrawerOpen((open) => !open);
+    else updateSidebar({ collapsed: !sidebarCollapsed });
+  }, [narrow, sidebarCollapsed, updateSidebar]);
+  const toggleFile = useCallback(
+    (bundle: string) => {
+      const folded = sidebarPrefs.foldedFiles ?? [];
+      updateSidebar({
+        foldedFiles: folded.includes(bundle) ? folded.filter((b) => b !== bundle) : [...folded, bundle],
+      });
+    },
+    [sidebarPrefs.foldedFiles, updateSidebar],
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "b" || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      // In a text box, ⌘B belongs to the text.
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleSidebar]);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   // Going wide shows the sidebar in place; coming back narrow starts closed.
@@ -690,6 +767,10 @@ export function App() {
       }}
       onReset={resetDemo}
       bundles={bundles}
+      foldedFiles={sidebarPrefs.foldedFiles ?? []}
+      onToggleFile={toggleFile}
+      foldedDisplay={sidebarPrefs.foldedDisplay === true}
+      onToggleDisplay={() => updateSidebar({ foldedDisplay: !sidebarPrefs.foldedDisplay })}
       onNewTable={createTable}
       onNewFile={createFile}
       onNewView={addView}
@@ -713,7 +794,14 @@ export function App() {
           </>
         )
       ) : (
-        sidebar
+        // Collapsed, it slides to nothing and is hidden from the keyboard
+        // and screen readers until it comes back.
+        <html.div
+          aria-hidden={sidebarCollapsed ? true : undefined}
+          style={[styles.sidebarSlot, sidebarCollapsed && styles.sidebarSlotCollapsed]}
+        >
+          {sidebar}
+        </html.div>
       )}
       <html.div style={[styles.main, narrow && styles.mainNarrow]}>
         {narrow && (
@@ -732,7 +820,21 @@ export function App() {
         )}
         <html.div style={styles.header}>
           <html.div style={styles.headerTopRow}>
-            <html.span style={styles.title}>{view.name}</html.span>
+            <html.div style={styles.titleRow}>
+              {!narrow && (
+                <Hinted hint={`${sidebarCollapsed ? "Show" : "Hide"} the sidebar (⌘B / Ctrl+B)`}>
+                  <html.button
+                    aria-label="Toggle the sidebar"
+                    aria-expanded={!sidebarCollapsed}
+                    onClick={toggleSidebar}
+                    style={styles.sidebarTrigger}
+                  >
+                    ◧
+                  </html.button>
+                </Hinted>
+              )}
+              <html.span style={styles.title}>{view.name}</html.span>
+            </html.div>
             <html.div style={styles.headerActions}>
             <Hinted hint="Name, layout, filters, sorting and grouping for this view. Saved with the table, so everyone who opens it sees the same view.">
               <html.button
