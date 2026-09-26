@@ -12,4 +12,5 @@ export {
 } from "./SchemaEditor";
 export { BodyEditor } from "./BodyEditor";
 export { DisplaySettingsProvider, useDisplaySettings } from "./DisplaySettings";
+export { Hinted } from "./FieldHint";
 export { PortalHost } from "./internal/PortalHost";
