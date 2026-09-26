@@ -10,6 +10,8 @@ const viewFiles = import.meta.glob<View[]>("../../../fixtures/*.table/views.json
 const metaFiles = import.meta.glob<TableMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
 const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/rows.ndjson", { eager: true, query: "?raw", import: "default" });
 const bodyFiles = import.meta.glob<string>("../../../fixtures/*.table/bodies/*.md", { eager: true, query: "?raw", import: "default" });
+// Attachments stay files (SPEC section 6): the demo only needs somewhere to show them from.
+const attachmentFiles = import.meta.glob<string>("../../../fixtures/*.table/attachments/*", { eager: true, query: "?url", import: "default" });
 
 /** "../../../fixtures/projects.table/schema.json" → "projects" */
 function keyOf(path: string): string {
@@ -56,3 +58,9 @@ export const tables: Record<string, ParsedTable> = Object.fromEntries(
       },
     ]),
 );
+
+/** Each fixture's attachments, by filename: a URL the demo can show them from. */
+export const attachmentUrls: Record<string, Record<string, string>> = {};
+for (const [path, url] of Object.entries(attachmentFiles)) {
+  (attachmentUrls[keyOf(path)] ??= {})[path.split("/").pop()!] = url;
+}
