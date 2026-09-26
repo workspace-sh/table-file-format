@@ -904,3 +904,34 @@ addition.
 **No version bump.** The format was frozen at `formatVersion` 1 (D26),
 but no one used it yet. As with D31's withdrawal, nothing reads the old
 layout, so there is no `formatVersion` 2 and no migration.
+
+## D38: Functions come in published layers, each with a public test suite
+
+A function is supported only when a published specification defines
+what it does and a public test suite checks it, so another `.table`
+client can implement it and prove it matches. Layers are added one at
+a time, each complete before the next (D32 and #124).
+
+1. **OpenFormula (ODF 1.4 Part 4).** The base, and the only layer
+   until it is complete.
+2. **ECMA-376 Part 1 §18.17.7 additions.** The Excel file standard
+   defines 356 functions; 14 are not in OpenFormula. They form a
+   separate, second layer, not an extension of OpenFormula. Of the 14:
+   - **Shipped in this layer**, each with a public suite:
+     `networkdays.intl` and `workday.intl` (LibreOffice's function
+     tests, IronCalc's Excel-computed workbooks, and Formula.js),
+     `amordegrc` and `bahttext` (LibreOffice's function tests).
+   - **Held until a public suite exists:** `usdollar`, `phonetic`.
+     `phonetic` also reads furigana stored with a cell, which a
+     `.table` has no place for.
+   - **Refused:** `rtd` and the seven `cube*` functions. They read
+     from an outside server, so a file can't reproduce their answers
+     (#124, refused families).
+3. **Modern Excel functions** (`xlookup`, `let`, `lambda`, `filter`
+   and others). Held. Microsoft publishes only their names and
+   argument counts. Each is added once an open specification (such as
+   ODF 1.5) defines it and a public test suite covers it.
+
+**Why:** without a published definition and a shared suite, two
+implementations have nothing to align on, and a formula that works in
+one client may give a different answer in another.
