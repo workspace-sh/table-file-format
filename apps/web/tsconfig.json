@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // Typecheck workspace packages from their source, not a build that
+    // may be stale after a pull (#77). Core exports a "source" condition.
+    "customConditions": ["source"],
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
