@@ -41,6 +41,11 @@
   {
     "id": "all",
     "name": "All deals",
-    "layout": "table"
+    "layout": "table",
+    "totals": {
+      "title": "count",
+      "value": "sum",
+      "weighted": "sum"
+    }
   }
 ]

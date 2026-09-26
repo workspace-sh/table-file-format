@@ -198,6 +198,9 @@ export interface ViewSort {
   direction: "asc" | "desc";
 }
 
+/** What a totals footer shows for a column. */
+export type ViewTotal = "sum" | "average" | "min" | "max" | "count" | "count_empty";
+
 export interface ViewGroup {
   field: string;
 }
@@ -236,6 +239,12 @@ export interface View {
    * stored.
    */
   coordinates?: boolean;
+  /**
+   * A footer under a table layout, one calculation per column, over the
+   * rows the view shows (SPEC section 4). Display-only; nothing is stored
+   * but the choice.
+   */
+  totals?: Record<string, ViewTotal>;
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;

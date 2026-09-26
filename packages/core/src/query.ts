@@ -1,4 +1,5 @@
 import type {
+  ViewTotal,
   Field,
   ParsedTable,
   Row,
@@ -9,7 +10,7 @@ import type {
 } from "./types.js";
 import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
-import { computeRows } from "./expr.js";
+import { computeRows, type ComputeOptions } from "./expr.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
@@ -131,10 +132,11 @@ export function applyOrder(rows: Row[], order: string[] | undefined): Row[] {
   return [...mentioned, ...unmentioned];
 }
 
-export function applyView(parsed: ParsedTable, view: View): Row[] {
+export function applyView(parsed: ParsedTable, view: View, options: ComputeOptions = {}): Row[] {
   // Computed fields first, so a view can filter and sort on them. The
   // results live only in the returned rows — never in parsed.rows.
-  let rows = computeRows(parsed.schema, parsed.rows).rows;
+  // `options.tables` lets lookups and linked rows reach other tables (D36).
+  let rows = computeRows(parsed.schema, parsed.rows, options).rows;
   if (view.filter) rows = applyFilters(rows, view.filter);
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
@@ -188,3 +190,30 @@ function compare(a: unknown, b: unknown, field: Field | undefined): number {
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
   return String(a).localeCompare(String(b));
 }
+
+const isBlank = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+
+/**
+ * A totals footer's value for one column (SPEC section 4, `totals`), over
+ * the rows a view shows. Sums and averages read numbers and skip anything
+ * else; counts count values, or blanks. Undefined when there's nothing to
+ * total.
+ */
+export function viewTotal(rows: Row[], field: string, kind: ViewTotal): number | undefined {
+  const values = rows.map((r) => r[field]);
+  if (kind === "count") return values.filter((v) => !isBlank(v)).length;
+  if (kind === "count_empty") return values.filter(isBlank).length;
+  const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (nums.length === 0) return undefined;
+  switch (kind) {
+    case "sum":
+      return nums.reduce((a, b) => a + b, 0);
+    case "average":
+      return nums.reduce((a, b) => a + b, 0) / nums.length;
+    case "min":
+      return Math.min(...nums);
+    case "max":
+      return Math.max(...nums);
+  }
+}
+

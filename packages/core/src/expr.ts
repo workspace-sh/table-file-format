@@ -14,7 +14,7 @@
  * no platform APIs — it runs wherever table-core does.
  */
 
-import type { Field, Row, TableSchema, ValidationError } from "./types.js";
+import type { Field, ParsedTable, Row, TableSchema, ValidationError } from "./types.js";
 
 export type FormulaErrorCode = "#DIV/0!" | "#VALUE!" | "#NAME?" | "#REF!" | "#NUM!";
 
@@ -108,15 +108,33 @@ export function parseExpr(src: string): ParseResult {
 
 // ---- evaluator
 
-type Value = number | string | boolean | undefined | FormulaError;
+type Scalar = number | string | boolean | undefined | FormulaError;
+/** A list comes from reading across rows: `column`, `linked`, or a many `lookup` (D36). */
+type Value = Scalar | Value[];
 
 const isEmpty = (v: unknown): v is undefined => v === undefined || v === null || v === "";
+
+/** A list's items, lists within it opened out. */
+function flatten(vs: Value[]): Scalar[] {
+  const out: Scalar[] = [];
+  for (const v of vs) {
+    if (Array.isArray(v)) out.push(...flatten(v));
+    else out.push(v);
+  }
+  return out;
+}
 
 interface Scope {
   /** A field of the row being computed. */
   field(name: string): Value;
   /** A field of another row, by its system id (D34). */
   fieldOf(rowId: string, name: string): Value;
+  /** Every row's value of a field of this table, in file order (D36). */
+  column(name: string): Value;
+  /** Follow this row's relation field to its target row(s) and read a field there (D36). */
+  lookup(relation: string, name: string): Value;
+  /** A field of every row in `table` whose `relation` field points at this row (D36). */
+  linked(table: string, relation: string, name: string): Value;
 }
 
 type Fn = (args: Expr[], scope: Scope) => Value;
@@ -143,8 +161,20 @@ function numeric(
     }
     const vs = values(args, scope);
     if (vs instanceof FormulaError) return vs;
-    const nums: number[] = [];
+    // sum / min / max / average take lists as spreadsheets take ranges:
+    // every item counts, blanks skipped. Arithmetic on a list is an error.
+    const flat: Value[] = [];
     for (const v of vs) {
+      if (Array.isArray(v)) {
+        if (!opts.skipEmpty) return new FormulaError("#VALUE!", `${name} needs single values, got a list`);
+        for (const item of flatten(v)) {
+          if (item instanceof FormulaError) return item;
+          flat.push(item);
+        }
+      } else flat.push(v);
+    }
+    const nums: number[] = [];
+    for (const v of flat) {
       if (isEmpty(v)) {
         if (opts.skipEmpty) continue;
         return undefined;
@@ -250,6 +280,38 @@ const FUNCTIONS: Record<string, Fn> = {
     if (vs instanceof FormulaError) return vs;
     return vs.map((v) => (isEmpty(v) ? "" : String(v))).join("");
   },
+  average: numeric("average", (n) => n.reduce((a, b) => a + b, 0) / n.length, { skipEmpty: true }),
+  // How many values are there: blanks aren't counted, a list counts its items.
+  count: (args, scope) => {
+    const vs = values(args, scope);
+    if (vs instanceof FormulaError) return vs;
+    let n = 0;
+    for (const v of flatten(vs)) {
+      if (v instanceof FormulaError) return v;
+      if (!isEmpty(v)) n += 1;
+    }
+    return n;
+  },
+  // Reading across rows (D36). Each names what it reads; nothing is stored.
+  column: (args, scope) => {
+    const [a] = args;
+    if (args.length !== 1 || a?.kind !== "string") return new FormulaError("#VALUE!", 'column takes a field name: (column "quarter")');
+    return scope.column(a.value);
+  },
+  lookup: (args, scope) => {
+    const [a, b] = args;
+    if (args.length !== 2 || a?.kind !== "string" || b?.kind !== "string") {
+      return new FormulaError("#VALUE!", 'lookup takes a relation field and a field there: (lookup "company" "industry")');
+    }
+    return scope.lookup(a.value, b.value);
+  },
+  linked: (args, scope) => {
+    const [t, r, f] = args;
+    if (args.length !== 3 || t?.kind !== "string" || r?.kind !== "string" || f?.kind !== "string") {
+      return new FormulaError("#VALUE!", 'linked takes a table, its relation field and a field: (linked "deals" "company" "value")');
+    }
+    return scope.linked(t.value, r.value, f.value);
+  },
   upper: text("upper", (s) => s.toUpperCase()),
   lower: text("lower", (s) => s.toLowerCase()),
   len: text("len", (s) => Array.from(s).length),
@@ -289,6 +351,19 @@ export function evaluate(expr: Expr, scope: Scope): Value {
 
 // ---- computing a table's rows
 
+/** What computing a table can see beyond its own rows (D36). */
+export interface ComputeOptions {
+  /**
+   * The other tables `lookup` and `linked` read, keyed as a relation's
+   * `table` names them. Without them, those forms are #REF!.
+   */
+  tables?: Record<string, ParsedTable>;
+  /** This table's key in `tables`, so a loop back to it is caught. */
+  self?: string;
+  /** Tables already being computed further up (internal). */
+  visiting?: string[];
+}
+
 /**
  * Rows with their computed fields filled in, for display and querying.
  * Results are never stored (SPEC section 2): callers hand these to views,
@@ -299,6 +374,7 @@ export function evaluate(expr: Expr, scope: Scope): Value {
 export function computeRows(
   schema: TableSchema,
   rows: Row[],
+  options: ComputeOptions = {},
 ): { rows: Row[]; diagnostics: ValidationError[] } {
   const computed = schema.fields.filter((f) => f.computed);
   if (computed.length === 0) return { rows, diagnostics: [] };
@@ -347,6 +423,73 @@ export function computeRows(
     results.set(key, v);
     return v;
   };
+  // Across rows and tables (D36): each list is built once, and each
+  // relation indexed once, so a column of lookups costs O(rows), not the
+  // grid-wide recalculation D29 warns about.
+  const columns = new Map<string, Value[]>();
+  const columnOf = (name: string): Value => {
+    if (!known.has(name)) return new FormulaError("#NAME?", `no field named ${name}`);
+    let list = columns.get(name);
+    if (!list) {
+      list = rows.map((r) => valueOf(r, name));
+      columns.set(name, list);
+    }
+    return list;
+  };
+  const visiting = new Set([...(options.visiting ?? []), ...(options.self ? [options.self] : [])]);
+  const others = new Map<string, Map<string, Row> | null>();
+  /** Another table's rows by id, its own formulas computed, or null when it isn't there. */
+  const otherTable = (name: string): Map<string, Row> | null => {
+    if (others.has(name)) return others.get(name)!;
+    const t = options.tables?.[name];
+    let byId: Map<string, Row> | null = null;
+    if (t) {
+      // A table already being computed further up (A looks up B looks up A)
+      // is read as stored: its formulas aren't recomputed, so no loop.
+      const rowsThere = visiting.has(name)
+        ? t.rows
+        : computeRows(t.schema, t.rows, { tables: options.tables, self: name, visiting: [...visiting] }).rows;
+      byId = new Map(rowsThere.map((r) => [r.id, r]));
+    }
+    others.set(name, byId);
+    return byId;
+  };
+  const backlinks = new Map<string, Map<string, Row[]>>();
+  const linkedOf = (row: Row, table: string, relation: string, name: string): Value => {
+    const there = otherTable(table);
+    if (!there) return new FormulaError("#REF!", `no table ${table}`);
+    const key = `${table}\u0000${relation}`;
+    let index = backlinks.get(key);
+    if (!index) {
+      index = new Map();
+      for (const r of there.values()) {
+        const v = r[relation];
+        for (const id of Array.isArray(v) ? v : [v]) {
+          if (typeof id !== "string" || id === "") continue;
+          const list = index.get(id);
+          if (list) list.push(r);
+          else index.set(id, [r]);
+        }
+      }
+      backlinks.set(key, index);
+    }
+    return (index.get(row.id) ?? []).map((r) => r[name] as Value);
+  };
+  const lookupOf = (row: Row, relation: string, name: string): Value => {
+    const def = known.get(relation);
+    if (!def) return new FormulaError("#NAME?", `no field named ${relation}`);
+    if (!def.relation) return new FormulaError("#VALUE!", `${relation} doesn't link to another table`);
+    const there = otherTable(def.relation.table);
+    if (!there) return new FormulaError("#REF!", `no table ${def.relation.table}`);
+    const read = (id: unknown): Value => {
+      if (isEmpty(id)) return undefined;
+      const target = there.get(String(id));
+      return target ? (target[name] as Value) : new FormulaError("#REF!", `no row ${String(id)} in ${def.relation!.table}`);
+    };
+    const v = row[relation];
+    return Array.isArray(v) ? v.map(read) : read(v);
+  };
+
   const scopeFor = (row: Row): Scope => ({
     field: (name) => valueOf(row, name),
     fieldOf: (rowId, name) => {
@@ -355,6 +498,9 @@ export function computeRows(
       // as a spreadsheet's is: shown, not silently empty.
       return other ? valueOf(other, name) : new FormulaError("#REF!", `no row ${rowId}`);
     },
+    column: columnOf,
+    lookup: (relation, name) => lookupOf(row, relation, name),
+    linked: (table, relation, name) => linkedOf(row, table, relation, name),
   });
 
   const out = rows.map((row) => {

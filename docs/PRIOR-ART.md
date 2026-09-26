@@ -125,8 +125,9 @@ row); the computed value lives nowhere on disk (computed on read).
 library is defined (D32, SPEC section 2 "Computed fields"), and
 `@workspace.sh/table-core` evaluates it (`computeRows`, `parseExpr`).
 Results are **never persisted** — recomputed on read — and the
-optional `index.sqlite` may cache them for query speed. Cross-row
-aggregation (column totals) is still deliberately out of scope (D29).
+optional `index.sqlite` may cache them for query speed. Reading across
+rows (column totals, rollups, lookups) is three named forms over lists
+(D36), each built once per evaluation.
 
 #### Maintained formula libraries (checked 2026-09-25)
 
