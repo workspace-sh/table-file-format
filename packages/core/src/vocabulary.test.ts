@@ -168,3 +168,35 @@ test("stringFormatKind branches only for string fields", () => {
   assert.equal(stringFormatKind({ name: "s", type: "string" }), "plain");
   assert.equal(stringFormatKind({ name: "n", type: "number", format: "url" }), "plain");
 });
+
+// ---- the app's display settings (personal, outside the file)
+
+const launched = (format?: string): Field => ({ name: "launched", type: "date", ...(format ? { format } : {}) });
+
+test("formatValue: an app's locale is used for dates and numbers", () => {
+  assert.equal(formatValue(launched("long"), "2026-04-20", { locale: "en-GB" }), "20 April 2026");
+  assert.equal(formatValue(launched("long"), "2026-04-20", { locale: "en-US" }), "April 20, 2026");
+  assert.equal(formatValue(launched("short"), "2026-04-20", { locale: "en-GB" }), "20/04/26");
+  assert.equal(formatValue(launched("short"), "2026-04-20", { locale: "en-US" }), "4/20/26");
+  assert.equal(formatValue(launched("weekday"), "2026-04-20", { locale: "de-DE" }), "Montag");
+  assert.equal(formatValue(numField("decimal:2"), 1234.5, { locale: "de-DE" }), "1.234,50");
+});
+
+test("formatValue: an app's default date format fills in only where the table has none", () => {
+  const opts = { locale: "en-GB", dateFormat: "long" };
+  assert.equal(formatValue(launched(), "2026-04-20", opts), "20 April 2026");
+  // The table's own choice wins.
+  assert.equal(formatValue(launched("iso"), "2026-04-20", opts), "2026-04-20");
+  assert.equal(formatValue(launched("short"), "2026-04-20", opts), "20/04/26");
+  // Without either, dates stay as stored (SPEC: iso is the default).
+  assert.equal(formatValue(launched(), "2026-04-20"), "2026-04-20");
+  // Not a date field: the date default doesn't apply.
+  assert.equal(formatValue({ name: "t", type: "string" }, "2026-04-20", opts), "2026-04-20");
+});
+
+test("formatValue: relative dates follow the app's locale and clock", () => {
+  const now = new Date("2026-09-26T12:00:00");
+  assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "en-GB", now }), "yesterday");
+  assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "fr-FR", now }), "hier");
+  assert.equal(formatValue(launched("relative"), "2026-09-12", { locale: "en-GB", now }), "2 weeks ago");
+});

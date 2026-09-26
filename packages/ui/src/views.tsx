@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
+import { useDisplaySettings } from "./DisplaySettings";
 import {
   applyGroup,
   completeSeconds,
@@ -1090,6 +1091,7 @@ interface CellValueProps {
 
 function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
+  const display = useDisplaySettings();
   // Relation field → resolve to related row, render as link (or
   // broken-state when dangling).
   if (field?.relation && typeof value === "string" && value.length > 0) {
@@ -1113,9 +1115,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
     return <html.span style={styles.pill}>{String(value)}</html.span>;
   }
   // A declared display format (currency:USD, decimal:2, …) is honoured;
-  // the stored value is untouched (SPEC "Field format").
-  if (field?.format && value !== undefined && value !== null && value !== "") {
-    return <html.span style={clamp}>{formatWithFieldFormat(field, value)}</html.span>;
+  // the stored value is untouched (SPEC "Field format"). A date with no
+  // format of its own takes the app's default, in the app's locale.
+  const isDate = field?.type === "date" || field?.type === "datetime";
+  if ((field?.format || isDate) && value !== undefined && value !== null && value !== "") {
+    return <html.span style={clamp}>{formatWithFieldFormat(field, value, display)}</html.span>;
   }
   return <html.span style={clamp}>{formatValue(value)}</html.span>;
 }
@@ -1506,7 +1510,10 @@ export function TableView({
     return new Set(r.ok ? formulaFields(r.expr) : []);
   })();
   const canAddField = !!onAddField;
-  const lastFieldThreshold = Math.max(0, schema.fields.length - 2);
+  // Editors for the rightmost columns on screen open leftwards, so they
+  // stay inside the window. On screen, not in the schema: a view can hide
+  // or reorder fields, so the schema's last field may not be the last shown.
+  const opensLeftwards = (name: string) => fields.indexOf(name) >= Math.max(0, fields.length - 2);
 
   // Frozen primary column on the left, scrollable rest on the right —
   // useful on wide viewports for tables with many columns. On narrow
@@ -1703,7 +1710,7 @@ export function TableView({
             field={schema.fields[fieldIndex] ?? field}
             fieldIndex={fieldIndex}
             totalFields={schema.fields.length}
-            align={fieldIndex >= lastFieldThreshold ? "right" : "left"}
+            align={opensLeftwards(name) ? "right" : "left"}
             anchorRect={anchorRect}
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}

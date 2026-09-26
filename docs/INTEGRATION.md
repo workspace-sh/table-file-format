@@ -65,6 +65,13 @@ atomic per-file rename → deletions last. A crashed write leaves the
 previous table intact; readers never observe a torn file. Do not
 hand-roll writes that bypass this unless you replicate the contract.
 
+To show values, `formatValue(field, value, { locale, dateFormat })` renders
+a field's `format` with `Intl`. `locale` and `dateFormat` are the viewer's
+own preferences and are never written to the table. `dateFormat` applies
+only to date fields with no `format` of their own; a field's own format
+always wins. In the UI package, `DisplaySettingsProvider` hands them to every
+cell.
+
 To start a table from nothing, `newTable(title, path)` returns one with a
 `title` text field, one table view and no rows, its manifest stamped.
 

@@ -13,19 +13,39 @@ import type { Field } from "./types.js";
  * rendering, turning a `url`/`email`/`phone` string into a link) are
  * the consumer's job — use `stringFormatKind()` to branch on those.
  */
-export function formatValue(field: Field | undefined, value: unknown): string {
+/**
+ * How the app showing a table wants it shown: personal preferences that
+ * live outside the `.table/` (SPEC section 4: personal state is app-local).
+ * A field's own `format` is the table's choice and always wins; these fill
+ * in what the table leaves open.
+ */
+export interface DisplayOptions {
+  /** BCP 47 locale for dates and numbers, e.g. "en-GB". Absent: the runtime's. */
+  locale?: string;
+  /**
+   * The date format for `date` / `datetime` fields that have none of their
+   * own, from the same vocabulary (`iso`, `short`, `long`, `weekday`,
+   * `relative`). Absent: `iso`, the SPEC default.
+   */
+  dateFormat?: string;
+  /** "Now", for `relative`. Injectable so tests are deterministic. */
+  now?: Date;
+}
+
+export function formatValue(field: Field | undefined, value: unknown, options: DisplayOptions = {}): string {
   if (value === undefined || value === null || value === "") return "";
-  const format = field?.format;
+  const isDate = field?.type === "date" || field?.type === "datetime";
+  const format = field?.format ?? (isDate ? options.dateFormat : undefined);
   if (!format) return String(value);
 
   switch (field!.type) {
     case "number":
     case "integer":
     case "year":
-      return formatNumber(format, value);
+      return formatNumber(format, value, options.locale);
     case "date":
     case "datetime":
-      return formatDate(format, value);
+      return formatDate(format, value, options);
     default:
       // string + everything else: raw text (see stringFormatKind).
       return String(value);
@@ -52,21 +72,21 @@ export function stringFormatKind(
   }
 }
 
-function formatNumber(format: string, value: unknown): string {
+function formatNumber(format: string, value: unknown, locale: string | undefined): string {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
 
   if (format === "integer") {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(locale, {
       maximumFractionDigits: 0,
     }).format(n);
   }
   if (format === "percent") {
-    return new Intl.NumberFormat(undefined, { style: "percent" }).format(n);
+    return new Intl.NumberFormat(locale, { style: "percent" }).format(n);
   }
   if (format.startsWith("decimal:")) {
     const digits = clampDigits(format.slice("decimal:".length));
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(locale, {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     }).format(n);
@@ -74,13 +94,13 @@ function formatNumber(format: string, value: unknown): string {
   if (format.startsWith("currency:")) {
     const code = format.slice("currency:".length).toUpperCase();
     try {
-      return new Intl.NumberFormat(undefined, {
+      return new Intl.NumberFormat(locale, {
         style: "currency",
         currency: code,
       }).format(n);
     } catch {
       // Unknown ISO 4217 code → plain number rather than throwing.
-      return new Intl.NumberFormat().format(n);
+      return new Intl.NumberFormat(locale).format(n);
     }
   }
   if (format.startsWith("duration:")) {
@@ -89,10 +109,10 @@ function formatNumber(format: string, value: unknown): string {
       return formatDurationSeconds(n);
     }
   }
-  return new Intl.NumberFormat().format(n);
+  return new Intl.NumberFormat(locale).format(n);
 }
 
-function formatDate(format: string, value: unknown): string {
+function formatDate(format: string, value: unknown, { locale, now }: DisplayOptions): string {
   // Accept YYYY-MM-DD and full ISO datetime strings.
   const raw = String(value);
   const d = new Date(raw.length === 10 ? raw + "T00:00:00" : raw);
@@ -102,21 +122,21 @@ function formatDate(format: string, value: unknown): string {
     case "iso":
       return raw.slice(0, 10);
     case "short":
-      return d.toLocaleDateString(undefined, {
+      return d.toLocaleDateString(locale, {
         year: "2-digit",
         month: "numeric",
         day: "numeric",
       });
     case "long":
-      return d.toLocaleDateString(undefined, {
+      return d.toLocaleDateString(locale, {
         year: "numeric",
         month: "long",
         day: "numeric",
       });
     case "weekday":
-      return d.toLocaleDateString(undefined, { weekday: "long" });
+      return d.toLocaleDateString(locale, { weekday: "long" });
     case "relative":
-      return formatRelativeDate(d);
+      return formatRelativeDate(d, locale, now ?? new Date());
     default:
       return raw.slice(0, 10);
   }
@@ -147,12 +167,11 @@ function formatDurationSeconds(totalSeconds: number): string {
  * weeks". Uses `Intl.RelativeTimeFormat` for the phrasing so it
  * localises; day-granularity to match the format's `date` type.
  */
-function formatRelativeDate(d: Date): string {
-  const now = new Date();
+function formatRelativeDate(d: Date, locale: string | undefined, now: Date): string {
   const startOf = (x: Date) =>
     Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
   const days = Math.round((startOf(d) - startOf(now)) / 86_400_000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   if (Math.abs(days) >= 365) return rtf.format(Math.trunc(days / 365), "year");
   if (Math.abs(days) >= 30) return rtf.format(Math.trunc(days / 30), "month");
   if (Math.abs(days) >= 7) return rtf.format(Math.trunc(days / 7), "week");

@@ -1,5 +1,6 @@
 import { html, css } from "react-strict-dom";
-import type { ParsedTable } from "@workspace.sh/table-core";
+import type { DisplayOptions, ParsedTable } from "@workspace.sh/table-core";
+import { DATE_FORMATS, LOCALES } from "./displaySettings";
 
 const styles = css.create({
   root: {
@@ -79,6 +80,45 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
+  displayNote: {
+    paddingInline: 8,
+  },
+  displayLabel: {
+    marginTop: 16,
+  },
+  displayRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingInline: 8,
+    paddingBlock: 3,
+  },
+  displayName: {
+    fontSize: 13,
+  },
+  select: {
+    fontSize: 12,
+    paddingInline: 6,
+    paddingBlock: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    maxWidth: 140,
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
   lastAction: {
     marginBottom: 8,
   },
@@ -135,6 +175,14 @@ const styles = css.create({
   },
 });
 
+const DATE_LABELS: Record<string, string> = {
+  iso: "ISO (2026-04-20)",
+  short: "Short",
+  long: "Long",
+  weekday: "With weekday",
+  relative: "Relative",
+};
+
 interface SidebarProps {
   tables: Record<string, ParsedTable>;
   activeTablePath: string;
@@ -148,6 +196,9 @@ interface SidebarProps {
   onNewTable: () => void;
   /** Open a `.table.zip` as one more table. */
   onOpenFile: () => void;
+  /** This viewer's locale and default date format. */
+  display: DisplayOptions;
+  onDisplayChange: (next: DisplayOptions) => void;
 }
 
 export function Sidebar({
@@ -160,7 +211,10 @@ export function Sidebar({
   onReset,
   onNewTable,
   onOpenFile,
+  display,
+  onDisplayChange,
 }: SidebarProps) {
+  const browserLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
   const tablePaths = Object.keys(tables);
   return (
     <html.div style={styles.root}>
@@ -208,6 +262,43 @@ export function Sidebar({
           </html.div>
         ))}
       </html.div>
+      <html.span style={[styles.sectionLabel, styles.displayLabel]}>Display</html.span>
+      <html.div style={styles.displayRow}>
+        <html.span style={styles.displayName}>Language</html.span>
+        <html.select
+          aria-label="Language and region for dates and numbers"
+          value={display.locale ?? ""}
+          onChange={(e: { target: { value: string } }) =>
+            onDisplayChange({ ...display, locale: e.target.value || undefined })
+          }
+          style={styles.select}
+        >
+          <html.option value="">Browser ({browserLocale})</html.option>
+          {LOCALES.map((l) => (
+            <html.option key={l} value={l}>
+              {l}
+            </html.option>
+          ))}
+        </html.select>
+      </html.div>
+      <html.div style={styles.displayRow}>
+        <html.span style={styles.displayName}>Dates</html.span>
+        <html.select
+          aria-label="How dates are shown where a table doesn't say"
+          value={display.dateFormat ?? "iso"}
+          onChange={(e: { target: { value: string } }) =>
+            onDisplayChange({ ...display, dateFormat: e.target.value === "iso" ? undefined : e.target.value })
+          }
+          style={styles.select}
+        >
+          {DATE_FORMATS.map((f) => (
+            <html.option key={f} value={f}>
+              {DATE_LABELS[f]}
+            </html.option>
+          ))}
+        </html.select>
+      </html.div>
+      <html.span style={[styles.resetNote, styles.displayNote]}>Where a column hasn't chosen its own date format.</html.span>
       <html.div style={styles.footer}>
         <html.button
           style={styles.resetButton}
