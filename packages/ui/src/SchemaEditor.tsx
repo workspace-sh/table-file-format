@@ -57,7 +57,7 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   geojson: "Map shape",
 };
 
-function friendlyType(type: FieldType): string {
+export function friendlyType(type: FieldType): string {
   return FIELD_TYPE_LABELS[type] ?? type;
 }
 

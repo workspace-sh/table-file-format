@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import { useDisplaySettings } from "./DisplaySettings";
+import { FieldHint, Hinted } from "./FieldHint";
 import {
   applyGroup,
   completeSeconds,
@@ -972,8 +973,12 @@ const styles = css.create({
   },
   // A row's delete control, in its title cell. Quiet until pointed at, so
   // a column of them doesn't shout; still there on touch, where nothing hovers.
-  deleteRowButton: {
+  // The × sits at the far end of the title cell; its hint wrapper takes
+  // that place so the button inside needn't.
+  deleteRowHint: {
     marginLeft: "auto",
+  },
+  deleteRowButton: {
     paddingInline: 6,
     paddingBlock: 0,
     fontSize: 14,
@@ -1448,6 +1453,7 @@ function DragGhost({
 function BodyBadge({ onClick }: { onClick?: () => void }) {
   if (!onClick) return <html.span style={styles.bodyBadge}>doc</html.span>;
   return (
+    <Hinted hint="This row has a document. Click to open it.">
     <html.button
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
@@ -1457,6 +1463,7 @@ function BodyBadge({ onClick }: { onClick?: () => void }) {
     >
       doc
     </html.button>
+    </Hinted>
   );
 }
 
@@ -1652,10 +1659,12 @@ export function TableView({
     // right border does it); rest-pane cells separate themselves
     // except the last one, where the `+ Field` button takes over.
     const isLast = idxInPane === paneLen - 1;
+    const hint = <FieldHint field={field} name={name} schema={schema} editable={schemaEditable} />;
     if (!schemaEditable) {
       return (
-        <html.span
+        <Hinted
           key={name}
+          hint={hint}
           style={[
             styles.tableCell,
             styles.cellWidth(colWidth(name)),
@@ -1667,12 +1676,13 @@ export function TableView({
         >
           {field?.title ?? name}
           {columnResizer(name)}
-        </html.span>
+        </Hinted>
       );
     }
     return (
-      <html.span
+      <Hinted
         key={name}
+        hint={isEditing ? null : hint}
         style={[
           styles.headerCellWrapper,
           styles.cellWidth(colWidth(name)),
@@ -1723,7 +1733,7 @@ export function TableView({
           />
         )}
         {columnResizer(name)}
-      </html.span>
+      </Hinted>
     );
   };
 
@@ -1793,6 +1803,7 @@ export function TableView({
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
         {name === titleField && onDeleteRow ? (
+          <Hinted hint="Delete this row, and its document if it has one. Asks first." style={styles.deleteRowHint}>
           <html.button
             aria-label="Delete row"
             onClick={(e: { stopPropagation: () => void }) => {
@@ -1803,6 +1814,7 @@ export function TableView({
           >
             ×
           </html.button>
+          </Hinted>
         ) : null}
       </html.span>
     );
@@ -1908,9 +1920,11 @@ export function TableView({
       {(canAddField || onAddRow) && (
         <html.div style={styles.tableFooter}>
           {onAddRow && (
-            <html.button onClick={onAddRow} style={styles.addRowButton}>
-              + Row
-            </html.button>
+            <Hinted hint="Add an empty row at the end of the table. A view's filter may hide it until it's filled in.">
+              <html.button onClick={onAddRow} style={styles.addRowButton}>
+                + Row
+              </html.button>
+            </Hinted>
           )}
           {canAddField && (
             <AddFieldButton

@@ -20,6 +20,7 @@ import {
   BodyEditor,
   BoardView,
   DisplaySettingsProvider,
+  Hinted,
   CalendarView,
   GalleryView,
   ListView,
@@ -546,9 +547,11 @@ export function App() {
           <html.div style={styles.headerTopRow}>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.headerActions}>
-            <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
-              Download .table.zip
-            </html.button>
+            <Hinted hint="Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, documents) that any .table reader opens.">
+              <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
+                Download .table.zip
+              </html.button>
+            </Hinted>
             <html.input
               type="search"
               placeholder="Search…"
@@ -567,18 +570,31 @@ export function App() {
                 : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
             </html.span>
             <html.span>·</html.span>
-            <html.span style={errors.length === 0 ? styles.validityOk : styles.validityBad}>
+            <Hinted
+              hint={
+                errors.length === 0
+                  ? "Every row fits the schema: required fields are filled, choices are from their lists, and values are the right type."
+                  : errors
+                      .slice(0, 5)
+                      .map((e) => `${e.field ?? "row"}: ${e.message}`)
+                      .join("\n") + (errors.length > 5 ? `\n…and ${errors.length - 5} more` : "")
+              }
+              style={errors.length === 0 ? styles.validityOk : styles.validityBad}
+            >
               {errors.length === 0
                 ? "schema valid"
                 : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
-            </html.span>
+            </Hinted>
             {schemaBumped && (
               <>
                 <html.span>·</html.span>
                 {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-                <html.span style={styles.schemaBumpBadge}>
+                <Hinted
+                  hint="A column was added, moved, retyped or given new rules since this table was opened. The table's schema-version goes up by one for each such change (D22)."
+                  style={styles.schemaBumpBadge}
+                >
                   schema changed
-                </html.span>
+                </Hinted>
               </>
             )}
           </html.div>
