@@ -80,8 +80,10 @@ const styles = css.create({
   bundleHeader: {
     display: "flex",
     flexDirection: "row",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: 6,
+    cursor: "pointer",
+    borderRadius: 6,
     paddingInline: 8,
     paddingTop: 12,
     paddingBottom: 4,
@@ -92,6 +94,30 @@ const styles = css.create({
     overflow: "hidden",
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
+  },
+  /** A group's fold toggle, as in shadcn/ui's sidebar: › turns down when open. */
+  groupChevron: {
+    display: "inline-block",
+    width: 12,
+    fontSize: 13,
+    lineHeight: "13px",
+    textAlign: "center",
+    transitionProperty: "transform",
+    transitionDuration: "150ms",
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
+  groupChevronOpen: {
+    transform: "rotate(90deg)",
+  },
+  /** A folded file that holds the table on screen still says so. */
+  bundleTitleActive: {
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   bundleTitle: {
     flexShrink: 0,
@@ -243,6 +269,12 @@ interface SidebarProps {
   onReset: () => void;
   /** Each .table file's manifest (D37): its title and table order. */
   bundles: Record<string, BundleMeta>;
+  /** `.table` files whose tables are folded away. */
+  foldedFiles: string[];
+  onToggleFile: (bundle: string) => void;
+  /** The Display settings group, folded away. */
+  foldedDisplay: boolean;
+  onToggleDisplay: () => void;
   /** Make a new, empty table in this .table file and switch to it. */
   onNewTable: (bundle: string) => void;
   /** Make a new .table file holding one table, and switch to it. */
@@ -265,6 +297,10 @@ export function Sidebar({
   onSelect,
   onReset,
   bundles,
+  foldedFiles,
+  onToggleFile,
+  foldedDisplay,
+  onToggleDisplay,
   onNewTable,
   onNewFile,
   onNewView,
@@ -283,13 +319,23 @@ export function Sidebar({
         {Object.keys(bundles).map((bundle) => {
           const keys = tableKeysIn(tables, bundles, bundle);
           const openBundle = bundle === bundleOf(activeTablePath);
+          const folded = foldedFiles.includes(bundle);
           return (
             <html.div key={bundle} style={styles.list}>
-              <html.div style={styles.bundleHeader}>
-                <html.span style={styles.bundleTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
+              {/* A file folds its tables away, as a shadcn/ui group does. */}
+              <html.div
+                role="button"
+                aria-expanded={!folded}
+                onClick={() => onToggleFile(bundle)}
+                style={styles.bundleHeader}
+              >
+                <html.span style={[styles.groupChevron, !folded && styles.groupChevronOpen]}>›</html.span>
+                <html.span style={[styles.bundleTitle, folded && openBundle && styles.bundleTitleActive]}>
+                  {bundles[bundle]?.title ?? bundle}
+                </html.span>
                 <html.span style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
               </html.div>
-              {keys.map((path) => {
+              {!folded && keys.map((path) => {
                 const t = tables[path]!;
                 const open = path === activeTablePath;
                 const title = t.meta.title ?? path;
@@ -333,7 +379,7 @@ export function Sidebar({
                   </html.div>
                 );
               })}
-              {openBundle && (
+              {openBundle && !folded && (
                 <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
                   + New table
                 </html.button>
@@ -348,7 +394,17 @@ export function Sidebar({
           Open .table.zip…
         </html.button>
       </html.div>
-      <html.span style={[styles.sectionLabel, styles.displayLabel]}>Display</html.span>
+      <html.div
+        role="button"
+        aria-expanded={!foldedDisplay}
+        onClick={onToggleDisplay}
+        style={[styles.bundleHeader, styles.displayLabel]}
+      >
+        <html.span style={[styles.groupChevron, !foldedDisplay && styles.groupChevronOpen]}>›</html.span>
+        <html.span style={styles.bundleTitle}>Display</html.span>
+      </html.div>
+      {!foldedDisplay && (
+        <>
       <html.div style={styles.displayRow}>
         <html.span style={styles.displayName}>Language</html.span>
         <html.select
@@ -403,6 +459,8 @@ export function Sidebar({
         </html.select>
       </html.div>
       <html.span style={[styles.resetNote, styles.displayNote]}>Either can be typed. The file keeps one form.</html.span>
+        </>
+      )}
       <html.div style={styles.footer}>
         <html.button
           style={styles.resetButton}
