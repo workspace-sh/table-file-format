@@ -1,0 +1,49 @@
+{
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "title": "Name",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "company",
+      "type": "string",
+      "title": "Company",
+      "relation": {
+        "table": "companies",
+        "field": "id"
+      }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "title": "Email",
+      "format": "email",
+      "constraints": {
+        "unique": true
+      }
+    },
+    {
+      "name": "phone",
+      "type": "string",
+      "title": "Phone",
+      "format": "phone",
+      "description": "Stored as text: a phone number is not a number."
+    },
+    {
+      "name": "role",
+      "type": "string",
+      "title": "Role"
+    },
+    {
+      "name": "last_contacted",
+      "type": "datetime",
+      "title": "Last contacted",
+      "format": "relative"
+    }
+  ],
+  "schema-version": 1
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "pipeline",
+    "name": "Pipeline",
+    "layout": "board",
+    "board_field": "stage",
+    "fields": [
+      "title",
+      "company",
+      "value",
+      "close_date"
+    ]
+  },
+  {
+    "id": "open",
+    "name": "Open deals",
+    "layout": "table",
+    "filter": [
+      {
+        "field": "stage",
+        "operator": "not_in",
+        "value": [
+          "won",
+          "lost"
+        ]
+      }
+    ],
+    "sort": [
+      {
+        "field": "weighted",
+        "direction": "desc"
+      }
+    ]
+  },
+  {
+    "id": "closing",
+    "name": "Closing",
+    "layout": "calendar",
+    "calendar_field": "close_date"
+  },
+  {
+    "id": "all",
+    "name": "All deals",
+    "layout": "table"
+  }
+]

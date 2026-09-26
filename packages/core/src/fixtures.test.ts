@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -68,6 +68,20 @@ test("every relation in every fixture points at a row that exists", async () => 
         const value = row[field.name];
         const targets = Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [] : [value];
         for (const id of targets) assert.ok(ids.has(String(id)), `${name} row ${row.id}: ${field.name} → ${String(id)} is dangling`);
+      }
+    }
+  }
+});
+
+test("every attachment a fixture names is in its attachments/ folder", async () => {
+  for (const [name, t] of Object.entries(await loadAll())) {
+    for (const field of t.schema.fields.filter((f) => f.attachment)) {
+      for (const row of t.rows) {
+        const file = row[field.name];
+        if (typeof file !== "string" || file === "") continue;
+        await access(resolve(fixturesDir, `${name}.table`, "attachments", file)).catch(() =>
+          assert.fail(`${name} row ${row.id}: ${field.name} names ${file}, which isn't in attachments/`),
+        );
       }
     }
   }

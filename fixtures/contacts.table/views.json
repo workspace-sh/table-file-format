@@ -1,0 +1,29 @@
+[
+  {
+    "id": "all",
+    "name": "All contacts",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "last_contacted",
+        "direction": "desc"
+      }
+    ]
+  },
+  {
+    "id": "call-list",
+    "name": "Call list",
+    "layout": "list",
+    "fields": [
+      "name",
+      "phone",
+      "company"
+    ],
+    "order": [
+      "ct-maya",
+      "ct-ines",
+      "ct-kofi",
+      "ct-priya"
+    ]
+  }
+]
