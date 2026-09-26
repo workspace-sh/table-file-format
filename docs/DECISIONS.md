@@ -861,3 +861,46 @@ broken by reading the table already being computed as stored.
 
 Reference: `computeRows(schema, rows, { tables, self })` and
 `applyView(table, view, { tables, self })` in `@workspace.sh/table-core`.
+
+## D37: A `.table` holds one or more tables
+
+A `.table` is a bundle. Every table lives in its own directory under
+`tables/<name>/`, holding the files sections 2 to 7 describe. This
+applies even when there is only one table, so readers and writers have
+a single layout. The bundle root holds the manifest `meta.json`
+(`format`, `formatVersion`, `title` and the `tables` order), the
+optional `index.sqlite` for all its tables, and nothing else the
+format defines. Each table keeps its own `meta.json` for its own title
+and description (SPEC sections 1 and 5).
+
+- **Names.** A table's name is its directory name, which relations
+  (D3), addresses (`table=`) and the manifest use. It is stable; the
+  table's `title` is what people see and can change.
+- **Relations** resolve within the bundle first. A name the bundle
+  doesn't contain is the app's to resolve elsewhere, as D3 always
+  allowed.
+- **The archive** (D27) carries the whole bundle, so linked tables
+  travel together.
+- **The extension stays `.table`.** Container formats are named for
+  what they are, not how many things they hold (`.xlsx`, `.numbers`,
+  `.sqlite`); `.base` is Obsidian's, and `.tables` read awkwardly.
+
+**Why:** Leslie wants a `.table` to act like an Excel workbook as well
+as a Notion or Airtable base. The earlier convention, a folder of
+sibling one-table `.table/`s (PRIOR-ART "Multiple tables in one
+container"), fell short:
+
+- A folder can't travel as one file. The archive carried exactly one
+  table, so a table sent alone arrived with its relations dangling.
+- There was no table order, no name for the whole, and nowhere for
+  settings shared across tables.
+- The index had no natural unit for joins across tables.
+
+**Why not flat when there's one table:** two layouts means every
+reader and writer carries both, and a one-table bundle gaining a
+second table would move its files. One layout keeps that a plain
+addition.
+
+**No version bump.** The format was frozen at `formatVersion` 1 (D26),
+but no one used it yet. As with D31's withdrawal, nothing reads the old
+layout, so there is no `formatVersion` 2 and no migration.

@@ -4,7 +4,8 @@ An open, app-agnostic file format for what Airtable, Google Tables, and
 Obsidian Bases do — a portable database that's also kind of a
 spreadsheet, for information workers, not developers.
 
-A `.table/` is a directory that IS a file (like macOS `.app` bundles).
+A `.table/` is a directory that IS a file (like macOS `.app` bundles),
+holding one or more tables, as a spreadsheet holds sheets.
 Plain text inside, line-diffable, greppable, self-contained.
 
 > **Status:** format **frozen at `formatVersion: 1`** (tag
@@ -15,16 +16,20 @@ Plain text inside, line-diffable, greppable, self-contained.
 ## What's in a `.table/`
 
 ```
-my-data.table/
-├── schema.json          required — typed fields, constraints, version
-├── rows.ndjson          required — one JSON record per line, every row
-│                                   carries a system `id` (nanoid)
-├── views.json           optional — saved views (table/board/gallery/list/calendar)
-├── meta.json            optional — manifest, title, timestamps, generator
-├── attachments/         optional — files referenced by row values
-├── bodies/              optional — long-form markdown bodies, one per row
-│   └── {row.id}.md
-└── index.sqlite         optional — rebuildable query/search cache (gitignored)
+crm.table/
+├── meta.json                optional: manifest: title, table order, version
+├── tables/                  one directory per table, even if there's one
+│   ├── companies/
+│   │   ├── schema.json      required: typed fields, constraints, version
+│   │   ├── rows.ndjson      required: one JSON record per line, every row
+│   │   │                               carries a system `id` (nanoid)
+│   │   ├── views.json       optional: saved views (table/board/gallery/list/calendar)
+│   │   ├── meta.json        optional: the table's title and description
+│   │   ├── attachments/     optional: files referenced by row values
+│   │   └── bodies/          optional: long-form markdown bodies, one per row
+│   │       └── {row.id}.md
+│   └── deals/…
+└── index.sqlite             optional: rebuildable query/search cache (gitignored)
 ```
 
 See [docs/SPEC.md](docs/SPEC.md) for the full format specification.
