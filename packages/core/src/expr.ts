@@ -113,7 +113,10 @@ type Value = number | string | boolean | undefined | FormulaError;
 const isEmpty = (v: unknown): v is undefined => v === undefined || v === null || v === "";
 
 interface Scope {
+  /** A field of the row being computed. */
   field(name: string): Value;
+  /** A field of another row, by its system id (D34). */
+  fieldOf(rowId: string, name: string): Value;
 }
 
 type Fn = (args: Expr[], scope: Scope) => Value;
@@ -250,12 +253,14 @@ const FUNCTIONS: Record<string, Fn> = {
   upper: text("upper", (s) => s.toUpperCase()),
   lower: text("lower", (s) => s.toLowerCase()),
   len: text("len", (s) => Array.from(s).length),
+  // (field "name") is this row's field; (field "name" "<row id>") is that
+  // row's (D34), which is how a typed coordinate like =B7 is stored.
   field: (args, scope) => {
-    const a = args[0];
-    if (args.length !== 1 || a?.kind !== "string") {
-      return new FormulaError("#VALUE!", 'field takes one name, as in (field "unit price")');
+    const [a, b] = args;
+    if (args.length < 1 || args.length > 2 || a?.kind !== "string" || (b !== undefined && b.kind !== "string")) {
+      return new FormulaError("#VALUE!", 'field takes a name and, optionally, a row id: (field "unit price" "r7")');
     }
-    return scope.field(a.value);
+    return b === undefined ? scope.field(a.value) : scope.fieldOf(b.value, a.value);
   },
 };
 
@@ -321,25 +326,39 @@ export function computeRows(
     }
   }
 
+  // Keyed by row and field, not per row: a formula may read another row
+  // (D34), so a loop can run across rows, and a value computed for one row
+  // is reused when another row reads it.
+  const byId = new Map<string, Row>(rows.map((r) => [r.id, r]));
+  const results = new Map<string, Value>();
+  const inProgress = new Set<string>();
+  const valueOf = (row: Row, name: string): Value => {
+    const def = known.get(name);
+    if (!def) return new FormulaError("#NAME?", `no field named ${name}`);
+    if (!def.computed) return row[name] as Value;
+    const key = `${row.id}\u0000${name}`;
+    if (results.has(key)) return results.get(key);
+    if (inProgress.has(key)) return new FormulaError("#REF!", `${name} depends on itself`);
+    const expr = parsed.get(name);
+    if (!expr) return undefined;
+    inProgress.add(key);
+    const v = evaluate(expr, scopeFor(row));
+    inProgress.delete(key);
+    results.set(key, v);
+    return v;
+  };
+  const scopeFor = (row: Row): Scope => ({
+    field: (name) => valueOf(row, name),
+    fieldOf: (rowId, name) => {
+      const other = byId.get(rowId);
+      // A reference to a row that isn't there (deleted, say) is broken,
+      // as a spreadsheet's is: shown, not silently empty.
+      return other ? valueOf(other, name) : new FormulaError("#REF!", `no row ${rowId}`);
+    },
+  });
+
   const out = rows.map((row) => {
-    const results = new Map<string, Value>();
-    const inProgress = new Set<string>();
-    const scope: Scope = {
-      field(name) {
-        const def = known.get(name);
-        if (!def) return new FormulaError("#NAME?", `no field named ${name}`);
-        if (!def.computed) return row[name] as Value;
-        if (results.has(name)) return results.get(name);
-        if (inProgress.has(name)) return new FormulaError("#REF!", `${name} depends on itself`);
-        const expr = parsed.get(name);
-        if (!expr) return undefined;
-        inProgress.add(name);
-        const v = evaluate(expr, scope);
-        inProgress.delete(name);
-        results.set(name, v);
-        return v;
-      },
-    };
+    const scope = scopeFor(row);
     const next: Row = { ...row };
     for (const f of computed) {
       const v = scope.field(f.name);

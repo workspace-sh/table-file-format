@@ -238,10 +238,15 @@ function compileStoredForm(
     if (e.kind !== "call") return e;
     const fn = e.fn;
     if (fn === "field") {
-      const [a] = e.args;
+      const [a, b] = e.args;
       if (e.args.length === 1 && a?.kind === "string") {
         if (fields && !fields.has(a.value)) warnings.add(`There is no field called “${a.value}”, so the result will show #NAME?.`);
         return fieldRef(a.value);
+      }
+      // Another row's field (D34): kept as written.
+      if (e.args.length === 2 && a?.kind === "string" && b?.kind === "string") {
+        if (fields && !fields.has(a.value)) warnings.add(`There is no field called “${a.value}”, so the result will show #NAME?.`);
+        return e;
       }
     }
     if (!LIBRARY.has(fn)) unknown ??= fn;
@@ -306,6 +311,15 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
     }
     expectOp(")", `${name}( is missing its closing ).`);
     // prop("x") and field("x") are field references, not functions.
+    // field("x", "r7") is field x of the row whose id is r7 (D34).
+    if (fn === "field" && args.length === 2) {
+      const [a, b] = args;
+      if (a?.kind !== "string" || b?.kind !== "string") {
+        throw new CompileError(`${name}(…) takes a field name and a row id, both in quotes, as in ${name}("budget", "r7").`, at);
+      }
+      ref(a.value);
+      return { kind: "call", fn: "field", args: [a, b] };
+    }
     if (fn === "prop" || fn === "field") {
       const [a] = args;
       if (args.length !== 1 || a?.kind !== "string") {
@@ -555,22 +569,39 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
   }
 }
 
+/** One cell a formula reads: a field of this row, or of another row by its id (D34). */
+export interface FormulaRef {
+  field: string;
+  /** Absent: the row being computed. */
+  rowId?: string;
+}
+
 /**
- * The fields a formula reads, in the order they first appear — what a
- * UI highlights as "this result comes from these cells".
+ * The cells a formula reads, in the order they first appear: what a UI
+ * highlights as "this result comes from these cells".
  */
-export function formulaFields(expr: Expr): string[] {
-  const seen: string[] = [];
-  const add = (name: string) => {
-    if (!seen.includes(name)) seen.push(name);
+export function formulaRefs(expr: Expr): FormulaRef[] {
+  const seen: FormulaRef[] = [];
+  const add = (ref: FormulaRef) => {
+    if (!seen.some((r) => r.field === ref.field && r.rowId === ref.rowId)) seen.push(ref);
   };
   const walk = (e: Expr): void => {
-    if (e.kind === "field") add(e.name);
+    if (e.kind === "field") add({ field: e.name });
     else if (e.kind === "call") {
-      if (e.fn === "field" && e.args.length === 1 && e.args[0]!.kind === "string") add(e.args[0]!.value);
-      else e.args.forEach(walk);
+      const [a, b] = e.args;
+      if (e.fn === "field" && a?.kind === "string" && e.args.length === 1) add({ field: a.value });
+      else if (e.fn === "field" && a?.kind === "string" && b?.kind === "string" && e.args.length === 2) {
+        add({ field: a.value, rowId: b.value });
+      } else e.args.forEach(walk);
     }
   };
   walk(expr);
   return seen;
+}
+
+/** The fields a formula reads, in this row or another, each once. */
+export function formulaFields(expr: Expr): string[] {
+  const names: string[] = [];
+  for (const r of formulaRefs(expr)) if (!names.includes(r.field)) names.push(r.field);
+  return names;
 }

@@ -294,10 +294,15 @@ empty and reports it.
 - A bare word is a field of the same row; `(field "unit price")`
   reaches a field whose name isn't a bare word. Another computed field
   may be used; a loop between computed fields is `#REF!`.
+- `(field "q1" "income")` is the field `q1` of the row whose system
+  `id` is `"income"`: a reference to another row (DECISIONS D34). It is
+  how a coordinate typed as `=B7` is stored, so sorting or filtering
+  never changes what it reads.
 - Function names are case-insensitive and stored lowercase; field
   names are case-sensitive.
-- Formulas see only their own row. Cross-row aggregation (column
-  totals) is not part of `table-expr-v1`.
+- A formula reads its own row and any other row it names by `id`.
+  Cross-row aggregation (column totals, rollups, lookups) is not part
+  of `table-expr-v1`.
 
 | Functions | Behaviour |
 | --- | --- |
@@ -322,7 +327,8 @@ arithmetic, comparison with `<`/`>`, and text functions empty; `sum`,
 **Errors** are values, shown as their code, and pass through anything
 that uses them: `#DIV/0!` (division by zero), `#VALUE!` (wrong kind of
 argument, or wrong number of arguments), `#NAME?` (unknown function
-or field), `#REF!` (a computed field that depends on itself), `#NUM!`
+or field), `#REF!` (a computed field that depends on itself, directly or through
+other rows, or a reference to a row that doesn't exist), `#NUM!`
 (a result too large to represent).
 
 **Worked examples** (illustrative). Each row of this table is checked
@@ -354,6 +360,26 @@ result; `empty` means the cell shows nothing.
 | `{"status": "done"}` | `(upper status)` | `"DONE"` |
 | `{}` | `(* 1e308 10)` | `#NUM!` |
 <!-- worked-examples:end -->
+
+**References to another row.** Checked the same way, over this table,
+whose `share` field is `(/ q1 (field "q1" "income"))`:
+
+```
+{"id": "rent",   "item": "Rent",   "q1": 3000}
+{"id": "food",   "item": "Food",   "q1": 1200}
+{"id": "income", "item": "Income", "q1": 12000}
+```
+
+<!-- other-row-examples:start -->
+| Row | `expr` | → |
+| --- | --- | --- |
+| `rent` | `(/ q1 (field "q1" "income"))` | `0.25` |
+| `food` | `(/ q1 (field "q1" "income"))` | `0.1` |
+| `income` | `(/ q1 (field "q1" "income"))` | `1` |
+| `rent` | `(- q1 (field "q1" "food"))` | `1800` |
+| `rent` | `(field "q1" "gone")` | `#REF!` |
+| `rent` | `(field "q1" "income" "extra")` | `#VALUE!` |
+<!-- other-row-examples:end -->
 
 Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
 `applyView()` computes before filtering and sorting, so views can use

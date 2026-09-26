@@ -775,3 +775,36 @@ other by a rate that isn't there.
 
 Reference: `effectiveFormat()` / `inputCurrency()` in
 `@workspace.sh/table-core`.
+
+## D34: Another row is named by its id: `(field "name" "<row id>")`
+
+D29 decided that a coordinate such as `=B7` may be typed and shown but
+is stored as the field name plus a row id. That left the stored form
+unwritten, so nothing could point at another row. It is the existing
+`field` form with a second argument: `(field "q1" "income")` is the
+field `q1` of the row whose system `id` is `"income"`. A bare word, and
+`(field "name")`, still mean the row being computed.
+
+**Why:** it is D29's own wording made concrete, and it adds one optional
+argument rather than a new function, so a reader that already evaluates
+`field` needs only to look the row up. The id is the system `id`, which
+never changes (D23), so the reference survives sorting, filtering,
+grouping and edits to any other field.
+
+**Resolving a typed coordinate.** An authoring surface resolves a
+coordinate against the grid it shows. One in the row being edited
+becomes a bare field, which means "this row" for every row: a
+spreadsheet's fill-down. One in another row becomes
+`(field "name" "<row id>")`, which is absolute. Relative offsets such
+as "the previous row" are not provided. On display the reference is
+shown at whatever coordinate its row now holds, or as
+`field("name", "<row id>")` when the row is not in view.
+
+**Errors.** A reference to a row that doesn't exist (deleted, say) is
+`#REF!`, as in a spreadsheet: shown, never silently empty. So is a loop
+that runs through other rows. Evaluation stays per cell: a formula
+reads the cells it names and nothing else, so D29's performance
+boundary for cross-row aggregation is untouched.
+
+Reference: `computeRows()` and `formulaRefs()` in
+`@workspace.sh/table-core`; SPEC section 2 "References to another row".
