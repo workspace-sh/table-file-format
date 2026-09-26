@@ -21,25 +21,6 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#0a0a0c",
     },
   },
-  header: {
-    display: "flex",
-    flexDirection: "column",
-    paddingInline: 8,
-    paddingBlock: 8,
-    marginBottom: 12,
-  },
-  tableTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  tableSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
-  },
   sectionLabel: {
     fontSize: 10,
     fontWeight: "600",
@@ -65,6 +46,39 @@ const styles = css.create({
     borderRadius: 6,
     cursor: "pointer",
   },
+  itemNameOpen: {
+    fontWeight: "600",
+  },
+  disclosure: {
+    width: 16,
+    fontSize: 13,
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
+  /** A view, under its table: indented past the table's disclosure arrow. */
+  viewItem: {
+    paddingLeft: 30,
+  },
+  itemKey: {
+    fontSize: 11,
+    fontWeight: "400",
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
+  itemCount: {
+    fontSize: 11,
+    color: {
+      default: "#8e8e93",
+      "@media (prefers-color-scheme: dark)": "#6e6e73",
+    },
+  },
+  firstAction: {
+    marginTop: 6,
+  },
   itemActive: {
     backgroundColor: {
       default: "#e8e8ed",
@@ -85,7 +99,7 @@ const styles = css.create({
     paddingInline: 8,
   },
   displayLabel: {
-    marginTop: 16,
+    marginTop: 20,
   },
   displayRow: {
     display: "flex",
@@ -119,9 +133,6 @@ const styles = css.create({
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
-  },
-  lastAction: {
-    marginBottom: 8,
   },
   itemName: {
     flex: 1,
@@ -227,51 +238,60 @@ export function Sidebar({
   const tablePaths = Object.keys(tables);
   return (
     <html.div style={styles.root}>
-      <html.div style={styles.header}>
-        <html.span style={styles.tableTitle}>{table.meta.title ?? "Untitled"}</html.span>
-        <html.span style={styles.tableSubtitle}>
-          {table.rows.length} {table.rows.length === 1 ? "row" : "rows"} · {table.schema.fields.length}{" "}
-          {table.schema.fields.length === 1 ? "field" : "fields"}
-        </html.span>
-      </html.div>
-      <>
-          <html.span style={styles.sectionLabel}>Tables</html.span>
-          <html.div style={styles.list}>
-            {tablePaths.map((path) => {
-              const t = tables[path]!;
-              return (
-                <html.div
-                  key={path}
-                  style={[styles.item, path === activeTablePath && styles.itemActive]}
-                  onClick={() => onSelectTable(path)}
-                >
-                  <html.span style={styles.itemName}>{t.meta.title ?? path}</html.span>
-                  <html.span style={styles.itemLayout}>{path}</html.span>
-                </html.div>
-              );
-            })}
-            <html.button style={[styles.item, styles.newTable]} onClick={onNewTable}>
-              + New table
-            </html.button>
-            <html.button style={[styles.item, styles.newTable, styles.lastAction]} onClick={onOpenFile}>
-              Open .table.zip…
-            </html.button>
-          </html.div>
-      </>
-      <html.span style={styles.sectionLabel}>Views</html.span>
+      {/* One tree: each table, and under the open one its views, so a view
+          is always seen as part of its table. Only what's on screen is
+          highlighted; its table is bold. */}
+      <html.span style={styles.sectionLabel}>Tables</html.span>
       <html.div style={styles.list}>
-        {table.views.map((view) => (
-          <html.div
-            key={view.id}
-            style={[styles.item, view.id === activeViewId && styles.itemActive]}
-            onClick={() => onSelect(view.id)}
-          >
-            <html.span style={styles.itemName}>{view.name}</html.span>
-            <html.span style={styles.itemLayout}>{view.layout}</html.span>
-          </html.div>
-        ))}
-        <html.button style={[styles.item, styles.newTable]} onClick={onNewView}>
-          + New view
+        {tablePaths.map((path) => {
+          const t = tables[path]!;
+          const open = path === activeTablePath;
+          const title = t.meta.title ?? path;
+          // Two tables can share a title (open a file twice): then the key,
+          // which never repeats, tells them apart.
+          const shared = tablePaths.some((p) => p !== path && (tables[p]!.meta.title ?? p) === title);
+          return (
+            <html.div key={path} style={styles.list}>
+              <html.div
+                role="button"
+                aria-expanded={open}
+                style={styles.item}
+                onClick={() => onSelectTable(path)}
+              >
+                <html.span style={styles.disclosure}>{open ? "▾" : "▸"}</html.span>
+                <html.span style={[styles.itemName, open && styles.itemNameOpen]}>
+                  {title}
+                  {shared && <html.span style={styles.itemKey}> {path}</html.span>}
+                </html.span>
+                <html.span style={styles.itemCount}>{t.rows.length}</html.span>
+              </html.div>
+              {open && (
+                <html.div style={styles.list}>
+                  {table.views.map((view) => (
+                    <html.div
+                      key={view.id}
+                      role="button"
+                      aria-current={view.id === activeViewId ? "page" : undefined}
+                      style={[styles.item, styles.viewItem, view.id === activeViewId && styles.itemActive]}
+                      onClick={() => onSelect(view.id)}
+                    >
+                      <html.span style={styles.itemName}>{view.name}</html.span>
+                      <html.span style={styles.itemLayout}>{view.layout}</html.span>
+                    </html.div>
+                  ))}
+                  <html.button style={[styles.item, styles.viewItem, styles.newTable]} onClick={onNewView}>
+                    + New view
+                  </html.button>
+                </html.div>
+              )}
+            </html.div>
+          );
+        })}
+        <html.button style={[styles.item, styles.newTable, styles.firstAction]} onClick={onNewTable}>
+          + New table
+        </html.button>
+        <html.button style={[styles.item, styles.newTable]} onClick={onOpenFile}>
+          Open .table.zip…
         </html.button>
       </html.div>
       <html.span style={[styles.sectionLabel, styles.displayLabel]}>Display</html.span>
