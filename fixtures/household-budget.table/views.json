@@ -1,0 +1,60 @@
+[
+  {
+    "id": "sheet",
+    "name": "Sheet",
+    "layout": "table",
+    "coordinates": true,
+    "fields": [
+      "item",
+      "category",
+      "jan",
+      "feb",
+      "mar",
+      "quarter",
+      "share"
+    ],
+    "columnWidths": {
+      "item": 150,
+      "category": 130,
+      "jan": 110,
+      "feb": 110,
+      "mar": 110,
+      "quarter": 120,
+      "share": 110
+    }
+  },
+  {
+    "id": "spending",
+    "name": "Spending",
+    "layout": "table",
+    "filter": [
+      {
+        "field": "category",
+        "operator": "neq",
+        "value": "Income"
+      }
+    ],
+    "sort": [
+      {
+        "field": "quarter",
+        "direction": "desc"
+      }
+    ],
+    "fields": [
+      "item",
+      "category",
+      "quarter",
+      "share"
+    ]
+  },
+  {
+    "id": "by-category",
+    "name": "By category",
+    "layout": "board",
+    "board_field": "category",
+    "fields": [
+      "item",
+      "quarter"
+    ]
+  }
+]
