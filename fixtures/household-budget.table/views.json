@@ -14,13 +14,19 @@
       "share"
     ],
     "columnWidths": {
-      "item": 150,
-      "category": 130,
-      "jan": 110,
-      "feb": 110,
-      "mar": 110,
-      "quarter": 120,
-      "share": 110
+      "item": 140,
+      "category": 120,
+      "jan": 130,
+      "feb": 130,
+      "mar": 130,
+      "quarter": 145,
+      "share": 90
+    },
+    "totals": {
+      "jan": "sum",
+      "feb": "sum",
+      "mar": "sum",
+      "quarter": "sum"
     }
   },
   {
@@ -44,7 +50,8 @@
       "item",
       "category",
       "quarter",
-      "share"
+      "share",
+      "of_spending"
     ]
   },
   {
