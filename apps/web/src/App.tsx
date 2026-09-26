@@ -22,6 +22,7 @@ import {
   BoardView,
   DisplaySettingsProvider,
   Hinted,
+  ViewSettings,
   CalendarView,
   GalleryView,
   ListView,
@@ -111,6 +112,12 @@ const styles = css.create({
     color: {
       default: "#92400e",
       "@media (prefers-color-scheme: dark)": "#fbbf24",
+    },
+  },
+  buttonOn: {
+    backgroundColor: {
+      default: "#e8e8ed",
+      "@media (prefers-color-scheme: dark)": "#26262b",
     },
   },
   headerActions: {
@@ -267,6 +274,7 @@ export function App() {
     saveDisplay(browserStore(), next);
   }, []);
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
+  const [showViewSettings, setShowViewSettings] = useState(false);
 
   const table = tables[activeTablePath];
   if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
@@ -511,6 +519,28 @@ export function App() {
     [activeTablePath, activeViewId],
   );
 
+  // A new view starts as a plain table of everything; its settings open
+  // so it can be made into what's wanted straight away.
+  const addView = useCallback(() => {
+    const made: View = { id: newId(), name: "New view", layout: "table" };
+    setTables((all) => {
+      const t = all[activeTablePath]!;
+      return { ...all, [activeTablePath]: { ...t, views: [...t.views, made] } };
+    });
+    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
+    setShowViewSettings(true);
+  }, [activeTablePath]);
+
+  const deleteView = useCallback(() => {
+    const t = tables[activeTablePath]!;
+    if (t.views.length <= 1) return;
+    if (!window.confirm(`Delete the view "${view.name}"? The rows stay; only this way of showing them goes.`)) return;
+    const remaining = t.views.filter((v) => v.id !== activeViewId);
+    setTables((all) => ({ ...all, [activeTablePath]: { ...all[activeTablePath]!, views: remaining } }));
+    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: remaining[0]!.id }));
+    setShowViewSettings(false);
+  }, [tables, activeTablePath, activeViewId, view.name]);
+
   const viewRows = applyView(table, view);
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
@@ -540,6 +570,7 @@ export function App() {
         onSelect={setActiveViewId}
         onReset={resetDemo}
         onNewTable={createTable}
+        onNewView={addView}
         onOpenFile={openTableFile}
         display={display}
         onDisplayChange={changeDisplay}
@@ -549,6 +580,14 @@ export function App() {
           <html.div style={styles.headerTopRow}>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.headerActions}>
+            <Hinted hint="Name, layout, filters, sorting and grouping for this view. Saved with the table, so everyone who opens it sees the same view.">
+              <html.button
+                style={[styles.downloadButton, showViewSettings && styles.buttonOn]}
+                onClick={() => setShowViewSettings((open) => !open)}
+              >
+                View settings
+              </html.button>
+            </Hinted>
             <Hinted hint="Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, documents) that any .table reader opens.">
               <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
                 Download .table.zip
@@ -601,6 +640,16 @@ export function App() {
             )}
           </html.div>
         </html.div>
+        {showViewSettings && (
+          <ViewSettings
+            key={view.id}
+            view={view}
+            schema={table.schema}
+            onChange={updateActiveView}
+            onDelete={table.views.length > 1 ? deleteView : undefined}
+            onClose={() => setShowViewSettings(false)}
+          />
+        )}
         {renderView(view, visibleRows, table.schema, table.bodies, {
           onUpdateRow: updateRow,
           onUpdateField: updateField,
