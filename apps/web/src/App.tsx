@@ -613,6 +613,7 @@ export function App() {
           onUpdateView: updateActiveView,
           relatedTables: tables,
           onOpenRelation: openRelation,
+          allRows: table.rows,
         })}
       </html.div>
       {activeBodyRowId && (
@@ -655,6 +656,8 @@ interface ViewCallbacks {
   onUpdateView: (patch: Partial<View>) => void;
   relatedTables: Record<string, ParsedTable>;
   onOpenRelation: (address: string) => void;
+  /** Every row of the table, for formulas that read another row (D34). */
+  allRows: Row[];
 }
 
 function renderView(
@@ -732,6 +735,7 @@ function renderView(
           onAddRow={cb.onAddRow}
           onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}
+          allRows={cb.allRows}
           onUpdateView={cb.onUpdateView}
           {...common}
         />
