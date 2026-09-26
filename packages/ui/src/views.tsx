@@ -150,6 +150,14 @@ const styles = css.create({
   positioned: {
     position: "relative",
   },
+  /** A value that can't wrap: one line, cut short with an ellipsis. */
+  oneLine: {
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
+    lineHeight: `${CELL_LINE_HEIGHT}px`,
+  },
   /** Cell text shows only the lines its row has room for. */
   // lineClamp becomes numberOfLines on native (with an ellipsis); on
   // web it doesn't take effect, so maxHeight stops the text at the last
@@ -982,6 +990,10 @@ const styles = css.create({
     flexShrink: 0,
     flexGrow: 0,
     overflow: "hidden",
+    // As tableCell: the separator is inside the column's width. Without
+    // this each header is 1px wider than its cells, and the drift adds up
+    // across the row.
+    boxSizing: "border-box",
   },
   headerCellButton: {
     flex: 1,
@@ -1042,6 +1054,9 @@ const styles = css.create({
     flex: 1,
     alignItems: "center",
     width: "100%",
+    // May be narrower than its value, so a long one is cut short, not
+    // pushed out of the cell.
+    minWidth: 0,
     minHeight: 22,
     cursor: "text",
   },
@@ -1363,10 +1378,15 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
   // the stored value is untouched (SPEC "Field format"). A date with no
   // format of its own takes the app's default, in the app's locale.
   const isDate = field?.type === "date" || field?.type === "datetime";
+  // A number or date is one token: in a narrow column it ends "US$18…"
+  // on one line, never wraps to a fragment the row clips away.
+  const oneToken =
+    isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
+  const textStyle = oneToken && lines !== undefined ? styles.oneLine : clamp;
   if ((field?.format || isDate) && value !== undefined && value !== null && value !== "") {
-    return <html.span style={clamp}>{formatWithFieldFormat(field, value, display)}</html.span>;
+    return <html.span style={textStyle}>{formatWithFieldFormat(field, value, display)}</html.span>;
   }
-  return <html.span style={clamp}>{formatValue(value)}</html.span>;
+  return <html.span style={textStyle}>{formatValue(value)}</html.span>;
 }
 
 const PILL_COLORS = {
@@ -1508,6 +1528,8 @@ interface EditableCellProps {
   onOpenRelation?: (address: string) => void;
   /** Forwarded to CellValue: the lines of text the row has room for. */
   lines?: number;
+  /** The column's alignment, which the idle cell fills the width to keep. */
+  align?: FieldAlignment;
 }
 
 function EditableCell({
@@ -1517,6 +1539,7 @@ function EditableCell({
   relatedTables,
   onOpenRelation,
   lines,
+  align,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1584,7 +1607,7 @@ function EditableCell({
   if (enumOpts.length > 0) {
     if (!editing) {
       return (
-        <html.span onClick={startEdit} style={styles.cellEditableIdle}>
+        <html.span onClick={startEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
           <CellValue
             field={field}
             value={value}
@@ -1617,7 +1640,7 @@ function EditableCell({
   // Text/number/integer: text input on click
   if (!editing) {
     return (
-      <html.span onClick={startEdit} style={styles.cellEditableIdle}>
+      <html.span onClick={startEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
         <CellValue
           field={field}
           value={value}
@@ -2283,6 +2306,7 @@ export function TableView({
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
             lines={lines}
+            align={align}
           />
         ) : (
           <CellValue
