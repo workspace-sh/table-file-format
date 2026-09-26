@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import type { CompileResult, Field, FieldAlignment, FieldType } from "@workspace.sh/table-core";
+import type { CompileResult, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
   compileFormula,
@@ -10,7 +10,8 @@ import {
   defaultAlignFor,
   enumOptions,
   enumValues,
-  formulaFields,
+  formulaRefs,
+  coordinateOf,
   formulaType,
   parseExpr,
   printFormula,
@@ -636,6 +637,8 @@ interface SchemaFieldEditorProps {
   onClose: () => void;
   /** The table's fields, so a formula can warn about a name that doesn't exist. */
   fields?: Field[];
+  /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
+  grid?: Grid;
 }
 
 const POPOVER_WIDTH = 280;
@@ -673,16 +676,17 @@ export function SchemaFieldEditor({
   onMove,
   onClose,
   fields,
+  grid,
 }: SchemaFieldEditorProps) {
   const [enumDraft, setEnumDraft] = useState("");
   // A formula is edited in Excel style and saved in the stored form (D29).
   // Only a field that is already computed shows this: turning a stored
   // field into a formula would drop its data, and schemas only grow.
   const [formulaDraft, setFormulaDraft] = useState(() =>
-    field.computed ? printFormula(field.computed.expr) : "",
+    field.computed ? printFormula(field.computed.expr, { grid }) : "",
   );
   const formula = field.computed
-    ? compileFormula(formulaDraft, { fields: (fields ?? []).map((f) => f.name) })
+    ? compileFormula(formulaDraft, { fields: (fields ?? []).map((f) => f.name), grid })
     : null;
   const formulaChanged = formula?.ok === true && formula.stored !== field.computed?.expr;
   const saveFormula = () => {
@@ -891,6 +895,8 @@ interface AddFieldButtonProps {
   onAdd: (field: Field) => void;
   /** The table's fields: a formula's references are checked against them. */
   fields?: Field[];
+  /** The sheet, when the view shows coordinates (D34). */
+  grid?: Grid;
 }
 
 /** "Formula" sits beside the stored types in the picker; it isn't one. */
@@ -905,7 +911,7 @@ const ADDABLE_TYPES: FieldType[] = [
   "datetime",
 ];
 
-export function AddFieldButton({ existingNames, onAdd, fields }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
@@ -923,7 +929,7 @@ export function AddFieldButton({ existingNames, onAdd, fields }: AddFieldButtonP
   const duplicate = trimmed.length > 0 && existingNames.has(trimmed);
   const formula =
     type === "formula" && formulaDraft.trim() !== ""
-      ? compileFormula(formulaDraft, { fields: [...existingNames] })
+      ? compileFormula(formulaDraft, { fields: [...existingNames], grid })
       : null;
   // A formula field can only be added once its formula compiles: nothing
   // that can't be stored in the canonical form is ever written (D29).
@@ -1069,6 +1075,13 @@ interface FormulaCellPanelProps {
   /** Open the column's full editor — title, alignment and the rest. */
   onMoreOptions?: () => void;
   onClose: () => void;
+  /** The sheet, with this row as `here`, when the view shows coordinates (D34). */
+  grid?: Grid;
+  /**
+   * Every row of the table as stored, so a formula that reads another row
+   * previews, and shows that row's input, correctly. Absent: this row only.
+   */
+  allRows?: Row[];
 }
 
 /**
@@ -1085,6 +1098,8 @@ export function FormulaCellPanel({
   onSave,
   onMoreOptions,
   onClose,
+  grid,
+  allRows,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1096,13 +1111,24 @@ export function FormulaCellPanel({
   const stored = field.computed?.expr ?? "";
   // Edited here, from any cell, as Grist does — but it is the column's
   // formula, so saving says "every row" and every row changes.
-  const [draft, setDraft] = useState(() => printFormula(stored));
-  const compiled = onSave ? compileFormula(draft, { fields: fields.map((f) => f.name) }) : null;
+  const [draft, setDraft] = useState(() => printFormula(stored, { grid }));
+  const compiled = onSave ? compileFormula(draft, { fields: fields.map((f) => f.name), grid }) : null;
   const changed = compiled?.ok === true && compiled.stored !== stored;
   const shownExpr = changed && compiled?.ok ? compiled.expr : null;
   const parsed = parseExpr(stored);
-  const inputs = shownExpr ? formulaFields(shownExpr) : parsed.ok ? formulaFields(parsed.expr) : [];
+  const refs = shownExpr ? formulaRefs(shownExpr) : parsed.ok ? formulaRefs(parsed.expr) : [];
   const title = (name: string) => fields.find((f) => f.name === name)?.title ?? name;
+  const rowId = String(row.id);
+  // The whole table, computed, so another row's value (computed or not)
+  // shows as its cell does.
+  const tableRows = allRows ?? [row as Row];
+  const computedAll = computeRows({ fields }, tableRows).rows;
+  const valueIn = (id: string, name: string) =>
+    id === rowId ? row[name] : computedAll.find((r) => r.id === id)?.[name];
+  const thisRow = refs.filter((r) => r.rowId === undefined || r.rowId === rowId);
+  const otherRows = refs.filter((r) => r.rowId !== undefined && r.rowId !== rowId);
+  const otherLabel = (r: { field: string; rowId?: string }) =>
+    (grid && coordinateOf(r.field, r.rowId!, grid)) ?? `${title(r.field)} of row ${r.rowId}`;
   // What this row would show with the draft formula — the one thing the
   // column editor can't tell you. Computed the same way the table is.
   const preview = (() => {
@@ -1110,8 +1136,8 @@ export function FormulaCellPanel({
     const trial = fields.map((f) =>
       f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: DIALECT } } : f,
     );
-    const { rows } = computeRows({ fields: trial }, [row as never]);
-    return { value: rows[0]?.[field.name] };
+    const { rows } = computeRows({ fields: trial }, tableRows);
+    return { value: rows.find((r) => r.id === rowId)?.[field.name] };
   })();
   const save = () => {
     if (!onSave || !changed || !compiled?.ok) return;
@@ -1159,18 +1185,29 @@ export function FormulaCellPanel({
           </>
         ) : (
           <>
-            <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored)}</html.span>
+            <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored, { grid })}</html.span>
             <html.span style={styles.hintText}>Stored as {stored}</html.span>
           </>
         )}
 
-        {inputs.length > 0 && (
+        {thisRow.length > 0 && (
           <>
             <html.span style={styles.label}>In this row</html.span>
-            {inputs.map((name) => (
+            {thisRow.map(({ field: name }) => (
               <html.div key={name} style={styles.inputRow}>
                 <html.span style={styles.inputName}>{title(name)}</html.span>
                 <html.span>{renderValue(name, row[name])}</html.span>
+              </html.div>
+            ))}
+          </>
+        )}
+        {otherRows.length > 0 && (
+          <>
+            <html.span style={styles.label}>From other rows</html.span>
+            {otherRows.map((r) => (
+              <html.div key={`${r.rowId}\u0000${r.field}`} style={styles.inputRow}>
+                <html.span style={styles.inputName}>{otherLabel(r)}</html.span>
+                <html.span>{renderValue(r.field, valueIn(r.rowId!, r.field))}</html.span>
               </html.div>
             ))}
           </>
