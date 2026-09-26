@@ -971,27 +971,46 @@ const styles = css.create({
     },
     cursor: "pointer",
   },
-  // A row's delete control, in its title cell. Quiet until pointed at, so
-  // a column of them doesn't shout; still there on touch, where nothing hovers.
-  // The × sits at the far end of the title cell; its hint wrapper takes
-  // that place so the button inside needn't.
-  deleteRowHint: {
-    marginLeft: "auto",
-  },
-  deleteRowButton: {
-    paddingInline: 6,
-    paddingBlock: 0,
-    fontSize: 14,
-    lineHeight: 1,
-    borderWidth: 0,
-    borderRadius: 4,
+  // Right-click menu on a row: what can be done to the row as a whole.
+  rowMenuBackdrop: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 49,
     backgroundColor: "transparent",
+  },
+  rowMenu: {
+    position: "fixed",
+    zIndex: 50,
+    minWidth: 180,
+    paddingBlock: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    display: "flex",
+    flexDirection: "column",
+    boxShadow: "0 6px 24px rgba(0, 0, 0, 0.18)",
+    borderColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#2c2c31" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
+  },
+  rowMenuAt: (top: number, left: number) => ({ top, left }),
+  rowMenuItem: {
+    textAlign: "left",
+    paddingInline: 12,
+    paddingBlock: 6,
+    fontSize: 13,
+    borderWidth: 0,
     cursor: "pointer",
-    opacity: { default: 0.35, ":hover": 1 },
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#2a2a2e" },
     },
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  rowMenuDanger: {
+    color: { default: "#c00", "@media (prefers-color-scheme: dark)": "#ff6b6b" },
   },
 
   // "doc" badge for rows with a markdown body — clickable variant overrides
@@ -1507,6 +1526,24 @@ export function TableView({
   // column, and where to anchor the panel. While it's open, the column is
   // tinted and the cells it read in that row are outlined.
   const [formulaCell, setFormulaCell] = useState<{ rowId: string; name: string; rect: AnchorRect } | null>(null);
+  // Right-click on a row: its actions, where the pointer is. Deleting lives
+  // here rather than as a control in every row, where it would be clutter
+  // and easy to hit.
+  const [rowMenu, setRowMenu] = useState<{ rowId: string; x: number; y: number } | null>(null);
+  const canOpenRowMenu = !!onDeleteRow || !!onOpenBody;
+  const openRowMenu = (rowId: string) => (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
+    if (!canOpenRowMenu) return;
+    e.preventDefault();
+    setRowMenu({ rowId, x: e.clientX, y: e.clientY });
+  };
+  useEffect(() => {
+    if (!rowMenu || typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRowMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rowMenu]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cellRefs = useRef<Record<string, any>>({});
   const openFormulaField = formulaCell ? fieldMap.get(formulaCell.name) : undefined;
@@ -1802,20 +1839,6 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
-        {name === titleField && onDeleteRow ? (
-          <Hinted hint="Delete this row, and its document if it has one. Asks first." style={styles.deleteRowHint}>
-          <html.button
-            aria-label="Delete row"
-            onClick={(e: { stopPropagation: () => void }) => {
-              e.stopPropagation();
-              onDeleteRow(row.id);
-            }}
-            style={styles.deleteRowButton}
-          >
-            ×
-          </html.button>
-          </Hinted>
-        ) : null}
       </html.span>
     );
   };
@@ -1836,6 +1859,7 @@ export function TableView({
             {rows.map((row, i) => (
               <html.div
                 key={row.id}
+                onContextMenu={openRowMenu(row.id)}
                 style={[
                   styles.tableRow,
                   styles.rowHeight(rowHeight),
@@ -1863,6 +1887,7 @@ export function TableView({
               {rows.map((row, i) => (
                 <html.div
                   key={row.id}
+                  onContextMenu={openRowMenu(row.id)}
                   style={[
                     styles.tableRow,
                     styles.rowHeight(rowHeight),
@@ -1917,10 +1942,52 @@ export function TableView({
           />
         );
       })()}
+      {rowMenu && (
+        <Portal>
+          <html.div style={styles.rowMenuBackdrop} onClick={() => setRowMenu(null)} onContextMenu={(e: { preventDefault: () => void }) => { e.preventDefault(); setRowMenu(null); }} />
+          <html.div
+            role="menu"
+            style={[
+              styles.rowMenu,
+              styles.rowMenuAt(
+                typeof window === "undefined" ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 90),
+                typeof window === "undefined" ? rowMenu.x : Math.min(rowMenu.x, window.innerWidth - 190),
+              ),
+            ]}
+          >
+            {onOpenBody && bodies?.[rowMenu.rowId] !== undefined && (
+              <html.button
+                role="menuitem"
+                style={styles.rowMenuItem}
+                onClick={() => {
+                  const id = rowMenu.rowId;
+                  setRowMenu(null);
+                  onOpenBody(id);
+                }}
+              >
+                Open document
+              </html.button>
+            )}
+            {onDeleteRow && (
+              <html.button
+                role="menuitem"
+                style={[styles.rowMenuItem, styles.rowMenuDanger]}
+                onClick={() => {
+                  const id = rowMenu.rowId;
+                  setRowMenu(null);
+                  onDeleteRow(id);
+                }}
+              >
+                Delete row
+              </html.button>
+            )}
+          </html.div>
+        </Portal>
+      )}
       {(canAddField || onAddRow) && (
         <html.div style={styles.tableFooter}>
           {onAddRow && (
-            <Hinted hint="Add an empty row at the end of the table. A view's filter may hide it until it's filled in.">
+            <Hinted hint={"Add an empty row at the end of the table. A view's filter may hide it until it's filled in." + (onDeleteRow ? "\nRight-click a row to delete it." : "")}>
               <html.button onClick={onAddRow} style={styles.addRowButton}>
                 + Row
               </html.button>
