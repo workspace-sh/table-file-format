@@ -229,6 +229,13 @@ export interface View {
    * means one line. Set by dragging a row's bottom edge.
    */
   rowHeight?: number;
+  /**
+   * Show the table layout as a sheet: columns lettered A, B, C… and rows
+   * numbered 1, 2, 3… in the order this view shows them, so a formula can
+   * be typed as `=B7` (D29, D34). Display-only; coordinates are never
+   * stored.
+   */
+  coordinates?: boolean;
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;

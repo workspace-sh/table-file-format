@@ -552,6 +552,12 @@ two `"table"` views named "Active" and "Done").
   layout, set by resizing a row. Each row shows as many lines of text
   as fit and clips the rest; absent means one line. One height for all
   rows keeps rows aligned across a frozen first column. Display-only.
+- `coordinates: true`: show a table layout as a sheet: columns
+  lettered `A, B, C…` and rows numbered `1, 2, 3…`, in this view's
+  order, so a formula can be typed as `=B7` and is shown that way.
+  Display-only: a typed coordinate is stored as the field and the row's
+  `id` (DECISIONS D34), so sorting or filtering the view renumbers the
+  grid without changing any formula.
 
 ### Layout-specific fields
 

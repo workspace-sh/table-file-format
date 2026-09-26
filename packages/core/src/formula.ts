@@ -188,13 +188,55 @@ const BINARY: Record<string, { prec: number; fn: string; flat: boolean }> = {
 const CALLABLE = new Set(FUNCTION_NAMES.filter((n) => /^[a-z]/.test(n)));
 const CELL_ADDRESS = /^[A-Za-z]{1,3}[0-9]+$/;
 
+// ---- coordinates (D29, D34)
+
+/**
+ * A grid a formula is typed into or shown in: its columns (field names)
+ * and rows (row ids), in the order the view shows them. `here` is the row
+ * being edited, when there is one. Coordinates exist only against a grid;
+ * none is ever stored.
+ */
+export interface Grid {
+  columns: readonly string[];
+  rows: readonly string[];
+  here?: string;
+}
+
+/** 0 → A, 25 → Z, 26 → AA, as spreadsheets letter their columns. */
+export function columnLetter(index: number): string {
+  let n = index + 1;
+  let out = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function columnIndex(letters: string): number {
+  let n = 0;
+  for (const c of letters.toUpperCase()) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/** Where a field of a row sits in the grid, as `B7`, or null when either isn't shown. */
+export function coordinateOf(field: string, rowId: string, grid: Grid): string | null {
+  const col = grid.columns.indexOf(field);
+  const row = grid.rows.indexOf(rowId);
+  return col === -1 || row === -1 ? null : `${columnLetter(col)}${row + 1}`;
+}
+
 /**
  * Compile Excel-style formula text to `table-expr-v1`. A leading `=` is
  * optional. `fields` — the table's field names — lets a reference to a
  * field that doesn't exist come back as a warning, and lets a field
  * named like a cell address (`B7`) be used by name.
  */
-export function compileFormula(text: string, options: { fields?: Iterable<string> } = {}): CompileResult {
+export function compileFormula(
+  text: string,
+  options: { fields?: Iterable<string>; grid?: Grid } = {},
+): CompileResult {
   const fields = options.fields ? new Set(options.fields) : undefined;
   const lead = /^\s*=?/.exec(text)![0].length;
   const body = text.slice(lead);
@@ -207,12 +249,12 @@ export function compileFormula(text: string, options: { fields?: Iterable<string
   if (body.trimStart().startsWith("(")) {
     const stored = compileStoredForm(body, lead, fields);
     if (stored.ok) return stored;
-    const excel = compileExcel(body, lead, fields);
+    const excel = compileExcel(body, lead, fields, options.grid);
     // Neither: the stored form's reason when it read as one, so a typo in
     // a function name isn't reported as an Excel syntax error.
     return excel.ok || !stored.parsed ? excel : stored.failure;
   }
-  return compileExcel(body, lead, fields);
+  return compileExcel(body, lead, fields, options.grid);
 }
 
 /** Library functions, as the stored form names them (D32). */
@@ -269,7 +311,7 @@ function compileStoredForm(
   return { ok: true, expr, stored, warnings: [...warnings] };
 }
 
-function compileExcel(body: string, lead: number, fields: Set<string> | undefined): CompileResult {
+function compileExcel(body: string, lead: number, fields: Set<string> | undefined, grid?: Grid): CompileResult {
   const warnings = new Set<string>();
 
   let tokens: Token[];
@@ -355,10 +397,28 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         const lower = t.v.toLowerCase();
         if (lower === "true" || lower === "false") return { kind: "boolean", value: lower === "true" };
         if (CELL_ADDRESS.test(t.v) && !(fields?.has(t.v) ?? false)) {
-          throw new CompileError(
-            `${t.v} looks like a cell address. A formula here works on every row, so refer to a field by its name instead.`,
-            t.at,
-          );
+          if (!grid) {
+            throw new CompileError(
+              `${t.v} looks like a cell address, but this view doesn't number its cells. Refer to a field by its name instead.`,
+              t.at,
+            );
+          }
+          // Resolved now, against the grid being edited, and stored as the
+          // field plus the row's id (D34): never as the coordinate.
+          const m = /^([A-Za-z]+)([0-9]+)$/.exec(t.v)!;
+          const col = columnIndex(m[1]!);
+          const row = Number(m[2]) - 1;
+          if (col >= grid.columns.length || row < 0 || row >= grid.rows.length) {
+            throw new CompileError(
+              `${t.v.toUpperCase()} is outside this sheet, which runs from A1 to ${columnLetter(grid.columns.length - 1)}${grid.rows.length}.`,
+              t.at,
+            );
+          }
+          const name = grid.columns[col]!;
+          const rowId = grid.rows[row]!;
+          // This row: a bare field, meaning this row for every row (fill-down).
+          if (rowId === grid.here) return ref(name);
+          return { kind: "call", fn: "field", args: [{ kind: "string", value: name }, { kind: "string", value: rowId }] };
         }
         return ref(t.v);
       }
@@ -484,7 +544,9 @@ function printString(s: string): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
-function printExpr(e: Expr): string {
+function printExpr(e: Expr, grid?: Grid): string {
+  const at = (name: string, rowId: string | undefined) =>
+    grid && rowId !== undefined ? coordinateOf(name, rowId, grid) : null;
   switch (e.kind) {
     case "number":
       return String(e.value);
@@ -493,15 +555,20 @@ function printExpr(e: Expr): string {
     case "boolean":
       return e.value ? "true" : "false";
     case "field":
-      return printRef(e.name);
+      return at(e.name, grid?.here) ?? printRef(e.name);
     case "call": {
       if (e.fn === "field" && e.args.length === 1 && e.args[0]!.kind === "string") {
-        return printRef(e.args[0]!.value);
+        return at(e.args[0]!.value, grid?.here) ?? printRef(e.args[0]!.value);
+      }
+      // Another row (D34): its coordinate where the grid shows it.
+      if (e.fn === "field" && e.args.length === 2 && e.args[0]!.kind === "string" && e.args[1]!.kind === "string") {
+        const shown = at(e.args[0]!.value, e.args[1]!.value);
+        if (shown) return shown;
       }
       if (e.fn === "-" && e.args.length === 1) {
         const a = e.args[0]!;
         // -(2) keeps a negated literal distinct from the literal -2.
-        return precOf(a) < 5 || a.kind === "number" ? `-(${printExpr(a)})` : `-${printExpr(a)}`;
+        return precOf(a) < 5 || a.kind === "number" ? `-(${printExpr(a, grid)})` : `-${printExpr(a, grid)}`;
       }
       const p = PRINT_PREC[e.fn];
       if (p !== undefined && e.args.length >= 2 && (e.args.length === 2 || e.fn === "+" || e.fn === "*")) {
@@ -510,11 +577,11 @@ function printExpr(e: Expr): string {
           .map((a, i) => {
             const ap = precOf(a);
             const wrap = ap < p || (ap === p && (p === 1 || (nonAssoc && i > 0)));
-            return wrap ? `(${printExpr(a)})` : printExpr(a);
+            return wrap ? `(${printExpr(a, grid)})` : printExpr(a, grid);
           })
           .join(` ${e.fn} `);
       }
-      return `${e.fn}(${e.args.map(printExpr).join(", ")})`;
+      return `${e.fn}(${e.args.map((a) => printExpr(a, grid)).join(", ")})`;
     }
   }
 }
@@ -527,13 +594,13 @@ function printExpr(e: Expr): string {
  * Accepts the stored text or a tree. Stored text that doesn't parse comes
  * back as-is, so an editor can still show what's there.
  */
-export function printFormula(stored: string | Expr): string {
+export function printFormula(stored: string | Expr, options: { grid?: Grid } = {}): string {
   if (typeof stored === "string") {
     const r = parseExpr(stored);
     if (!r.ok) return stored;
-    return `=${printExpr(r.expr)}`;
+    return `=${printExpr(r.expr, options.grid)}`;
   }
-  return `=${printExpr(stored)}`;
+  return `=${printExpr(stored, options.grid)}`;
 }
 
 // ---- what a new formula field's values will be

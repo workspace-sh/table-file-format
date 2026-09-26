@@ -16,7 +16,8 @@ import {
   stringFormatKind,
   effectiveFormat,
   formatAddress,
-  formulaFields,
+  formulaRefs,
+  columnLetter,
   parseExpr,
 } from "@workspace.sh/table-core";
 import type {
@@ -809,6 +810,32 @@ const styles = css.create({
     },
   },
 
+  // A sheet's row numbers and column letters (`coordinates`, D34).
+  rowNumber: {
+    width: 32,
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingInline: 6,
+    boxSizing: "border-box",
+    fontSize: 11,
+    fontVariantNumeric: "tabular-nums",
+    borderRightWidth: 1,
+    borderRightStyle: "solid",
+    borderRightColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+    backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
+  },
+  rowNumberCorner: {
+    alignSelf: "stretch",
+  },
+  columnLetter: {
+    marginRight: 6,
+    fontSize: 10,
+    fontWeight: "600",
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
   // The 8 symbolic enum colours (SPEC section 2), mapped onto light and dark.
   pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
   pillRed: { backgroundColor: { default: "#fde2e1", "@media (prefers-color-scheme: dark)": "#4a1f1f" }, color: { default: "#b42318", "@media (prefers-color-scheme: dark)": "#ff8a80" } },
@@ -1114,6 +1141,9 @@ function headerAlignStyle(align: FieldAlignment) {
   if (align === "right") return styles.headerCellButtonRight;
   return false as const;
 }
+
+/** A sheet's row-number gutter (`coordinates`), which comes out of the columns' width. */
+const ROW_NUMBER_WIDTH = 32;
 
 function formatValue(value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
@@ -1542,6 +1572,11 @@ interface ViewProps {
    * implement to navigate to the target row.
    */
   onOpenRelation?: (address: string) => void;
+  /**
+   * Every row of the table as stored, not only those this view shows, so
+   * a formula reading another row (D34) can be previewed and explained.
+   */
+  allRows?: Row[];
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -1611,6 +1646,7 @@ export function TableView({
   onOpenBody,
   onOpenRelation,
   onUpdateView,
+  allRows,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
@@ -1656,12 +1692,17 @@ export function TableView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cellRefs = useRef<Record<string, any>>({});
   const openFormulaField = formulaCell ? fieldMap.get(formulaCell.name) : undefined;
-  const openFormulaInputs = (() => {
+  // The cells the open formula reads: in its own row, or another (D34).
+  const openFormulaRefs = (() => {
     const expr = openFormulaField?.computed?.expr;
-    if (!expr) return new Set<string>();
+    if (!expr) return [];
     const r = parseExpr(expr);
-    return new Set(r.ok ? formulaFields(r.expr) : []);
+    return r.ok ? formulaRefs(r.expr) : [];
   })();
+  // A sheet (SPEC section 4, `coordinates`): lettered columns, numbered
+  // rows, in this view's order, and formulas typed and shown as =B7.
+  const coords = view.coordinates === true;
+  const grid = coords ? { columns: fields, rows: rows.map((r) => r.id) } : undefined;
   const canAddField = !!onAddField;
   // Editors for the rightmost columns on screen open leftwards, so they
   // stay inside the window. On screen, not in the schema: a view can hide
@@ -1709,7 +1750,7 @@ export function TableView({
   //
   // Columns the user has resized keep their width; the rest share what's
   // left the same way.
-  const chrome = freezePrimary ? 3 : 2;
+  const chrome = (freezePrimary ? 3 : 2) + (coords ? ROW_NUMBER_WIDTH : 0);
   // "+ Field" sits under the table, not in a column of its own, so
   // it takes no width from the grid.
   const addFieldW = 0;
@@ -1820,6 +1861,7 @@ export function TableView({
             !isLast && styles.tableCellSeparator,
           ]}
         >
+          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
           {field?.title ?? name}
           {columnResizer(name)}
         </Hinted>
@@ -1855,6 +1897,7 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
+          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
           {field?.title ?? name}
         </html.button>
         {isEditing && field && anchorRect && (
@@ -1872,6 +1915,7 @@ export function TableView({
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onMove={(delta) => onMoveField!(name, delta)}
             fields={schema.fields}
+            grid={grid}
             onClose={() => {
               setEditingFieldName(null);
               setAnchorRect(null);
@@ -1896,7 +1940,9 @@ export function TableView({
     const cellKey = `${row.id}\u0000${name}`;
     const inOpenColumn = formulaCell?.name === name;
     const isOpenCell = inOpenColumn && formulaCell?.rowId === row.id;
-    const isInputCell = formulaCell?.rowId === row.id && openFormulaInputs.has(name);
+    const isInputCell =
+      formulaCell !== null &&
+      openFormulaRefs.some((r) => r.field === name && (r.rowId ?? formulaCell.rowId) === row.id);
     return (
       <html.span
         key={name}
@@ -1963,6 +2009,7 @@ export function TableView({
         {primaryName && (
           <html.div style={styles.tableFrozenColumn}>
             <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+              {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
             {rows.map((row, i) => (
@@ -1976,6 +2023,7 @@ export function TableView({
                   i === rows.length - 1 && styles.tableRowLast,
                 ]}
               >
+                {coords && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
                 {renderBodyCell(row, primaryName, 0, 1)}
                 {rowResizer}
               </html.div>
@@ -1989,6 +2037,7 @@ export function TableView({
           <HScroll>
             <html.div style={styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+                {coords && !primaryName && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   renderHeaderCell(name, idx, restNames.length),
                 )}
@@ -2004,6 +2053,7 @@ export function TableView({
                     i === rows.length - 1 && styles.tableRowLast,
                   ]}
                 >
+                  {coords && !primaryName && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
                   {restNames.map((name, idx) =>
                     renderBodyCell(row, name, idx, restNames.length),
                   )}
@@ -2048,6 +2098,8 @@ export function TableView({
                 : undefined
             }
             onClose={() => setFormulaCell(null)}
+            grid={grid ? { ...grid, here: formulaCell.rowId } : undefined}
+            allRows={allRows}
           />
         );
       })()}
@@ -2106,6 +2158,7 @@ export function TableView({
             <AddFieldButton
               existingNames={new Set(schema.fields.map((f) => f.name))}
               fields={schema.fields}
+              grid={grid}
               onAdd={onAddField!}
             />
           )}

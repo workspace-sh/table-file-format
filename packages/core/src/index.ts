@@ -54,6 +54,9 @@ export {
   formulaType,
   formulaFields,
   formulaRefs,
+  columnLetter,
+  coordinateOf,
+  type Grid,
   type CompileResult,
   type FormulaRef,
 } from "./formula.js";
