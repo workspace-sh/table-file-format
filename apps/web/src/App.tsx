@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   applyView,
+  newBundle,
   newId,
   newTable,
   parseAddress,
@@ -9,6 +10,8 @@ import {
   validate,
 } from "@workspace.sh/table-core";
 import type {
+  Address,
+  BundleMeta,
   Field,
   ParsedTable,
   Row,
@@ -28,16 +31,17 @@ import {
   TableView,
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
-import { attachmentUrls, tables as initialTables } from "./loadFixture";
+import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { loadDisplay, saveDisplay } from "./displaySettings";
-import { archiveFileName, openArchive, tableToArchive } from "./tableFiles";
+import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles";
+import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "./bundles";
 import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
 import { Sidebar } from "./Sidebar";
 import { useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
 
-const DEFAULT_TABLE_PATH = "projects";
+const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
   Object.entries(initialTables).map(([key, t]) => [
     key,
@@ -242,9 +246,10 @@ function bumpSchemaVersion(schema: TableSchema): TableSchema {
 export function App() {
   // Edits survive a reload (#86): what was saved, or the fixtures when
   // nothing usable was.
-  const [tables, setTables] = useState<Record<string, ParsedTable>>(
-    () => loadSaved(browserStore()) ?? initialTables,
-  );
+  const [initial] = useState(() => loadSaved(browserStore()) ?? { tables: initialTables, bundles: initialBundles });
+  const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
+  // Each bundle's manifest (D37): its title and the order of its tables.
+  const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
   const [activeTablePath, setActiveTablePath] = useState<string>(() => firstTablePath(tables));
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
     firstViews(tables),
@@ -253,31 +258,58 @@ export function App() {
   // Saved after every change. The fixtures themselves are never saved, so
   // an untouched demo keeps following them as they change.
   useEffect(() => {
-    if (tables !== initialTables) save(browserStore(), tables);
-  }, [tables]);
+    if (tables !== initialTables || bundles !== initialBundles) save(browserStore(), { tables, bundles });
+  }, [tables, bundles]);
 
-  const createTable = useCallback(() => {
-    const title = window.prompt("Name the new table")?.trim();
-    if (!title) return;
-    const key = tableKeyFor(title, Object.keys(tables));
-    const made = newTable(title, `${key}.table`);
-    setTables((all) => ({ ...all, [key]: made }));
-    setActiveViewIds((prev) => ({ ...prev, [key]: made.views[0]!.id }));
+  const openKey = (key: string, viewId: string) => {
+    setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
     setActiveTablePath(key);
     setSearchQuery("");
     setActiveBodyRowId(null);
-  }, [tables]);
+  };
 
-  // Download: the table as a real `.table.zip` (D27), named by its key.
+  // A new table goes into a bundle, as a new sheet goes into a workbook (D37).
+  const createTable = useCallback(
+    (bundle: string) => {
+      const title = window.prompt("Name the new table")?.trim();
+      if (!title) return;
+      const name = tableKeyFor(title, Object.keys(bundleTables(tables, bundle)));
+      const made = newTable(title, `${bundle}.table/tables/${name}`);
+      setTables((all) => ({ ...all, [`${bundle}/${name}`]: made }));
+      setBundles((all) => {
+        const meta = all[bundle] ?? {};
+        const order = meta.tables ?? Object.keys(bundleTables(tables, bundle));
+        return { ...all, [bundle]: { ...meta, tables: [...order, name] } };
+      });
+      openKey(`${bundle}/${name}`, made.views[0]!.id);
+    },
+    [tables],
+  );
+
+  // A new `.table` file: a bundle holding one new table.
+  const createFile = useCallback(() => {
+    const title = window.prompt("Name the new .table file")?.trim();
+    if (!title) return;
+    const key = tableKeyFor(title, Object.keys(bundles));
+    const name = tableKeyFor(title, []);
+    const made = newBundle(title, `${key}.table`, name);
+    setTables((all) => ({ ...all, ...fromBundle(key, made) }));
+    setBundles((all) => ({ ...all, [key]: made.meta }));
+    openKey(`${key}/${name}`, made.tables[name]!.views[0]!.id);
+  }, [bundles]);
+
+  // Download: the whole bundle as a real `.table.zip` (D27, D37), so the
+  // tables it links together travel together.
   const downloadTable = useCallback(async () => {
-    const bytes = await tableToArchive(activeTablePath, tables[activeTablePath]!);
+    const bundle = bundleOf(activeTablePath);
+    const bytes = await bundleToArchive(bundle, toBundle(tables, bundles, bundle));
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = archiveFileName(activeTablePath);
+    a.download = archiveFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [tables, activeTablePath]);
+  }, [tables, bundles, activeTablePath]);
 
   // Open: a `.table.zip` becomes one more table here, saying what the
   // reader skipped (D25). Only a file with no table in it is refused.
@@ -291,16 +323,16 @@ export function App() {
       input.remove();
       if (!file) return;
       try {
-        const opened = await openArchive(new Uint8Array(await file.arrayBuffer()), Object.keys(tables));
-        setTables((all) => ({ ...all, [opened.key]: opened.table }));
-        setActiveViewIds((prev) => ({ ...prev, [opened.key]: opened.table.views[0]?.id ?? "" }));
-        setActiveTablePath(opened.key);
-        setSearchQuery("");
-        setActiveBodyRowId(null);
+        const opened = await openArchive(new Uint8Array(await file.arrayBuffer()), Object.keys(bundles));
+        const entries = fromBundle(opened.key, opened.bundle);
+        setTables((all) => ({ ...all, ...entries }));
+        setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
+        const first = Object.keys(entries)[0]!;
+        openKey(first, entries[first]!.views[0]?.id ?? "");
         if (opened.skipped.length > 0) {
           const n = opened.skipped.length;
           window.alert(
-            `Opened "${opened.table.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:\n\n${opened.skipped.join("\n")}`,
+            `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:\n\n${opened.skipped.join("\n")}`,
           );
         }
       } catch (error) {
@@ -309,11 +341,12 @@ export function App() {
     });
     document.body.appendChild(input);
     input.click();
-  }, [tables]);
+  }, [bundles]);
 
   const resetDemo = useCallback(() => {
     clearSaved(browserStore());
     setTables(initialTables);
+    setBundles(initialBundles);
     setActiveTablePath(firstTablePath(initialTables));
     setActiveViewIds(firstViews(initialTables));
     setSearchQuery("");
@@ -368,21 +401,21 @@ export function App() {
   // Apply an Address to app state — shared between relation clicks
   // and URL-hash rehydration so both paths behave identically.
   const applyAddress = useCallback(
-    (addr: { tablePath: string; rowId?: string; viewId?: string }) => {
-      // Only switch if we actually have the target table loaded.
-      if (!tables[addr.tablePath]) {
-        // Visible-broken at the cell level already; nothing more to do.
-        return;
-      }
-      setActiveTablePath(addr.tablePath);
+    (addr: Address) => {
+      // A relation names a table alone, within its own bundle (D37); the
+      // URL uses the spec's `crm.table#table=deals` form.
+      const key = keyForAddress(addr, tables, bundles, bundleOf(activeTablePath));
+      // Not here: visible-broken at the cell level already; nothing more to do.
+      if (!key) return;
+      setActiveTablePath(key);
       if (addr.viewId) {
-        setActiveViewIds((prev) => ({ ...prev, [addr.tablePath]: addr.viewId! }));
+        setActiveViewIds((prev) => ({ ...prev, [key]: addr.viewId! }));
       }
       // If the row has a body and the target table tracks bodies, open
       // the body editor as a quick "row detail" surface. Tables without
       // bodies just switch + scroll-to (deferred).
       if (addr.rowId) {
-        const target = tables[addr.tablePath];
+        const target = tables[key];
         if (target?.bodies?.[addr.rowId]) {
           setActiveBodyRowId(addr.rowId);
         } else {
@@ -392,7 +425,7 @@ export function App() {
         setActiveBodyRowId(null);
       }
     },
-    [tables],
+    [tables, bundles, activeTablePath],
   );
 
   // Relation click → parse + apply.
@@ -411,7 +444,8 @@ export function App() {
   // relation clicks.
   useHashAddress({
     state: {
-      tablePath: activeTablePath,
+      tablePath: `${bundleOf(activeTablePath)}.table`,
+      tableName: tableNameOf(activeTablePath),
       viewId: activeViewId,
       rowId: activeBodyRowId ?? undefined,
     },
@@ -621,8 +655,10 @@ export function App() {
     setShowViewSettings(false);
   }, [tables, activeTablePath, activeViewId, view.name]);
 
-  // Every table, so lookups and rollups reach the ones they name (D36).
-  const viewRows = applyView(table, view, { tables, self: activeTablePath });
+  // The bundle's tables by name, so lookups and rollups reach the ones
+  // they name (D36), within this bundle (D37).
+  const inBundle = bundleTables(tables, bundleOf(activeTablePath));
+  const viewRows = applyView(table, view, { tables: inBundle, self: tableNameOf(activeTablePath) });
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
     bodies: table.bodies,
@@ -653,7 +689,9 @@ export function App() {
         closeDrawer();
       }}
       onReset={resetDemo}
+      bundles={bundles}
       onNewTable={createTable}
+      onNewFile={createFile}
       onNewView={addView}
       onOpenFile={openTableFile}
       display={display}
@@ -776,10 +814,10 @@ export function App() {
           onDeleteRow: deleteRow,
           onOpenBody: openBody,
           onUpdateView: updateActiveView,
-          relatedTables: tables,
+          relatedTables: inBundle,
           onOpenRelation: openRelation,
           allRows: table.rows,
-          tableKey: activeTablePath,
+          tableKey: tableNameOf(activeTablePath),
         })}
       </html.div>
       {activeBodyRowId && (

@@ -1,25 +1,32 @@
 // Every fixture in fixtures/, found by globbing, so adding one needs no
-// change here. Each becomes a ParsedTable keyed as a relation's `table`
-// names it: the directory's name without `.table`.
+// change here. Each is a bundle (D37); its tables go into the demo's one
+// map under `bundle/table` keys, and its manifest beside them.
 
-import type { ParsedTable, Row, TableMeta, TableSchema, View } from "@workspace.sh/table-core";
+import type { BundleMeta, ParsedTable, Row, TableMeta, TableSchema, View } from "@workspace.sh/table-core";
 
 type Json<T> = Record<string, T>;
-const schemas = import.meta.glob<TableSchema>("../../../fixtures/*.table/schema.json", { eager: true, import: "default" });
-const viewFiles = import.meta.glob<View[]>("../../../fixtures/*.table/views.json", { eager: true, import: "default" });
-const metaFiles = import.meta.glob<TableMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
-const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/rows.ndjson", { eager: true, query: "?raw", import: "default" });
-const bodyFiles = import.meta.glob<string>("../../../fixtures/*.table/bodies/*.md", { eager: true, query: "?raw", import: "default" });
+const manifests = import.meta.glob<BundleMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
+const schemas = import.meta.glob<TableSchema>("../../../fixtures/*.table/tables/*/schema.json", { eager: true, import: "default" });
+const viewFiles = import.meta.glob<View[]>("../../../fixtures/*.table/tables/*/views.json", { eager: true, import: "default" });
+const metaFiles = import.meta.glob<TableMeta>("../../../fixtures/*.table/tables/*/meta.json", { eager: true, import: "default" });
+const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/rows.ndjson", { eager: true, query: "?raw", import: "default" });
+const bodyFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/bodies/*.md", { eager: true, query: "?raw", import: "default" });
 // Attachments stay files (SPEC section 6): the demo only needs somewhere to show them from.
-const attachmentFiles = import.meta.glob<string>("../../../fixtures/*.table/attachments/*", { eager: true, query: "?url", import: "default" });
+const attachmentFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/attachments/*", { eager: true, query: "?url", import: "default" });
 
-/** "../../../fixtures/projects.table/schema.json" → "projects" */
-function keyOf(path: string): string {
+/** "../../../fixtures/crm.table/meta.json" → "crm" */
+function bundleKeyOf(path: string): string {
   return /fixtures\/([^/]+)\.table\//.exec(path)![1]!;
 }
 
-function byKey<T>(files: Json<T>): Record<string, T> {
-  return Object.fromEntries(Object.entries(files).map(([path, value]) => [keyOf(path), value]));
+/** "../../../fixtures/crm.table/tables/deals/schema.json" → "crm/deals" */
+function tableKeyOf(path: string): string {
+  const m = /fixtures\/([^/]+)\.table\/tables\/([^/]+)\//.exec(path)!;
+  return `${m[1]}/${m[2]}`;
+}
+
+function byTableKey<T>(files: Json<T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(files).map(([path, value]) => [tableKeyOf(path), value]));
 }
 
 function parseNdjson(raw: string): Row[] {
@@ -29,27 +36,33 @@ function parseNdjson(raw: string): Row[] {
     .map((line) => JSON.parse(line) as Row);
 }
 
-const views = byKey(viewFiles);
-const metas = byKey(metaFiles);
-const rows = byKey(rowFiles);
+const views = byTableKey(viewFiles);
+const metas = byTableKey(metaFiles);
+const rows = byTableKey(rowFiles);
 const bodies: Record<string, Record<string, string>> = {};
 for (const [path, content] of Object.entries(bodyFiles)) {
   const id = path.split("/").pop()!.replace(/\.md$/, "");
-  (bodies[keyOf(path)] ??= {})[id] = content;
+  (bodies[tableKeyOf(path)] ??= {})[id] = content;
 }
 
+/** Each fixture bundle's manifest, by the bundle's name. */
+export const bundles: Record<string, BundleMeta> = Object.fromEntries(
+  Object.entries(manifests)
+    .map(([path, meta]) => [bundleKeyOf(path), meta] as const)
+    .sort(([a], [b]) => a.localeCompare(b)),
+);
+
 /**
- * The demo's tables, keyed by the same string a relation uses in its
- * `table` declaration: tasks reference projects as `"table": "projects"`.
- * Apps with a real filesystem would key by the resolved path.
+ * Every fixture table, keyed `bundle/table`. Relations name a table by
+ * its name alone and resolve within its own bundle (D37); see bundles.ts.
  */
 export const tables: Record<string, ParsedTable> = Object.fromEntries(
-  Object.entries(byKey(schemas))
+  Object.entries(byTableKey(schemas))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, schema]) => [
       key,
       {
-        path: `fixtures/${key}.table`,
+        path: `fixtures/${key.replace("/", ".table/tables/")}`,
         schema,
         rows: parseNdjson(rows[key] ?? ""),
         views: views[key] ?? [],
@@ -59,8 +72,8 @@ export const tables: Record<string, ParsedTable> = Object.fromEntries(
     ]),
 );
 
-/** Each fixture's attachments, by filename: a URL the demo can show them from. */
+/** Each fixture table's attachments, by filename: a URL the demo can show them from. */
 export const attachmentUrls: Record<string, Record<string, string>> = {};
 for (const [path, url] of Object.entries(attachmentFiles)) {
-  (attachmentUrls[keyOf(path)] ??= {})[path.split("/").pop()!] = url;
+  (attachmentUrls[tableKeyOf(path)] ??= {})[path.split("/").pop()!] = url;
 }

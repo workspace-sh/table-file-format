@@ -1,10 +1,17 @@
-// The demo's tables, kept in the browser so a reload doesn't lose edits
-// (#86, step 1). `ParsedTable` is plain JSON, so it is stored as it is.
+// The demo's bundles, kept in the browser so a reload doesn't lose edits
+// (#86, step 1): every table under its `bundle/table` key, and each
+// bundle's manifest (D37). Both are plain JSON, so they're stored as they are.
 //
 // Pre-alpha: the stored shape has no version. Anything that doesn't read
-// back as tables is discarded, and the demo starts from the fixtures.
+// back as bundles (including what earlier demos saved) is discarded, and
+// the demo starts from the fixtures.
 
-import type { ParsedTable } from "@workspace.sh/table-core";
+import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+
+export interface Saved {
+  tables: Record<string, ParsedTable>;
+  bundles: Record<string, BundleMeta>;
+}
 
 export const STORAGE_KEY = "table-demo:tables";
 
@@ -24,8 +31,8 @@ export function browserStore(): KeyValueStore | null {
   }
 }
 
-/** The saved tables, or null when nothing usable is saved. */
-export function loadSaved(store: KeyValueStore | null): Record<string, ParsedTable> | null {
+/** The saved bundles, or null when nothing usable is saved. */
+export function loadSaved(store: KeyValueStore | null): Saved | null {
   let raw: string | null;
   try {
     raw = store?.getItem(STORAGE_KEY) ?? null;
@@ -35,15 +42,15 @@ export function loadSaved(store: KeyValueStore | null): Record<string, ParsedTab
   if (raw === null) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isTables(parsed) ? parsed : null;
+    return isSaved(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function save(store: KeyValueStore | null, tables: Record<string, ParsedTable>): void {
+export function save(store: KeyValueStore | null, saved: Saved): void {
   try {
-    store?.setItem(STORAGE_KEY, JSON.stringify(tables));
+    store?.setItem(STORAGE_KEY, JSON.stringify(saved));
   } catch {
     // Full or refused: the edit still stands on screen; it just won't survive a reload.
   }
@@ -55,6 +62,16 @@ export function clearSaved(store: KeyValueStore | null): void {
   } catch {
     // Nothing to do: the next load falls back to the fixtures anyway.
   }
+}
+
+/** Bundles, and tables that each belong to one of them. */
+function isSaved(value: unknown): value is Saved {
+  if (!isObject(value) || !isObject(value.bundles) || !isTables(value.tables)) return false;
+  const bundles = value.bundles as Record<string, unknown>;
+  return Object.keys(value.tables).every((key) => {
+    const slash = key.indexOf("/");
+    return slash > 0 && isObject(bundles[key.slice(0, slash)]);
+  });
 }
 
 /**

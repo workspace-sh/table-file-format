@@ -2,61 +2,77 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { strToU8, unzipSync, zipSync } from "fflate";
 
-import { newTable } from "@workspace.sh/table-core";
-import { archiveFileName, openArchive, tableToArchive } from "./tableFiles.ts";
+import { newBundle, newTable } from "@workspace.sh/table-core";
+import type { ParsedBundle } from "@workspace.sh/table-core";
+import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles.ts";
 
-function sample() {
-  const t = newTable("Reading list", "reading-list.table", new Date("2026-09-25T20:00:00Z"));
+const NOW = new Date("2026-09-25T20:00:00Z");
+
+function sample(): ParsedBundle {
+  const b = newBundle("Reading list", "reading-list.table", "books", NOW);
+  const books = b.tables.books!;
+  const authors = newTable("Authors", "reading-list.table/tables/authors", NOW);
   return {
-    ...t,
-    rows: [
-      { id: "a1", title: "The Dispossessed" },
-      { id: "b2", title: "Braiding Sweetgrass" },
-    ],
-    // Bodies end with a newline, as the writer writes them.
-    bodies: { a1: "# Notes\n\nAnarres.\n" },
+    ...b,
+    meta: { ...b.meta, tables: ["books", "authors"] },
+    tables: {
+      books: {
+        ...books,
+        rows: [
+          { id: "a1", title: "The Dispossessed" },
+          { id: "b2", title: "Braiding Sweetgrass" },
+        ],
+        // Bodies end with a newline, as the writer writes them.
+        bodies: { a1: "# Notes\n\nAnarres.\n" },
+      },
+      authors: { ...authors, rows: [{ id: "u1", title: "Ursula K. Le Guin" }] },
+    },
   };
 }
 
-test("a table downloads as <key>.table.zip and opens back as it was", async () => {
-  const t = sample();
+test("a bundle downloads as <key>.table.zip and opens back as it was, every table (D37)", async () => {
+  const b = sample();
   assert.equal(archiveFileName("reading-list"), "reading-list.table.zip");
-  const opened = await openArchive(await tableToArchive("reading-list", t), ["projects"]);
+  const opened = await openArchive(await bundleToArchive("reading-list", b), ["projects"]);
   assert.equal(opened.key, "reading-list");
-  assert.deepEqual(opened.table.rows, t.rows);
-  assert.deepEqual(opened.table.schema, t.schema);
-  assert.deepEqual(opened.table.views, t.views);
-  assert.deepEqual(opened.table.bodies, t.bodies);
-  assert.equal(opened.table.meta.title, "Reading list");
+  assert.deepEqual(opened.bundle.meta.tables, ["books", "authors"]);
+  for (const name of ["books", "authors"]) {
+    assert.deepEqual(opened.bundle.tables[name]!.rows, b.tables[name]!.rows, name);
+    assert.deepEqual(opened.bundle.tables[name]!.schema, b.tables[name]!.schema, name);
+    assert.deepEqual(opened.bundle.tables[name]!.views, b.tables[name]!.views, name);
+  }
+  assert.deepEqual(opened.bundle.tables.books!.bodies, b.tables.books!.bodies);
+  assert.equal(opened.bundle.meta.title, "Reading list");
   assert.deepEqual(opened.skipped, []);
 });
 
 test("opening one whose name is taken keeps both", async () => {
-  const opened = await openArchive(await tableToArchive("reading-list", sample()), ["reading-list"]);
+  const opened = await openArchive(await bundleToArchive("reading-list", sample()), ["reading-list"]);
   assert.equal(opened.key, "reading-list-2");
 });
 
-test("what the reader skipped is said, and the rest still opens (D25)", async () => {
-  const files = unzipSync(await tableToArchive("reading-list", sample()));
-  const rows = "reading-list.table/rows.ndjson";
+test("what the reader skipped is said, per table, and the rest still opens (D25)", async () => {
+  const files = unzipSync(await bundleToArchive("reading-list", sample()));
+  const rows = "reading-list.table/tables/books/rows.ndjson";
   files[rows] = strToU8(`{"id":"a1","title":"Kept"}\n<<<<<<< HEAD\n{"title":"no id"}\n`);
   const opened = await openArchive(zipSync(files), []);
-  assert.deepEqual(opened.table.rows, [{ id: "a1", title: "Kept" }]);
+  assert.deepEqual(opened.bundle.tables.books!.rows, [{ id: "a1", title: "Kept" }]);
   assert.equal(opened.skipped.length, 2);
-  assert.match(opened.skipped[0]!, /^rows\.ndjson line 2: /);
-  assert.match(opened.skipped[1]!, /^rows\.ndjson line 3: /);
-  assert.equal(opened.table.diagnostics, undefined);
+  assert.match(opened.skipped[0]!, /^books: rows\.ndjson line 2: /);
+  assert.match(opened.skipped[1]!, /^books: rows\.ndjson line 3: /);
+  assert.equal(opened.bundle.tables.books!.diagnostics, undefined);
 });
 
 test("a file with no table in it is refused, not half-opened", async () => {
   await assert.rejects(openArchive(strToU8("not a zip"), []));
-  const files = unzipSync(await tableToArchive("reading-list", sample()));
-  delete files["reading-list.table/schema.json"];
-  await assert.rejects(openArchive(zipSync(files), []));
+  const files = unzipSync(await bundleToArchive("reading-list", sample()));
+  for (const name of Object.keys(files)) if (name.includes("/schema.json")) delete files[name];
+  await assert.rejects(openArchive(zipSync(files), []), /isn't a table/);
 });
 
 test("what a file was read with is never written back", async () => {
-  const withNotes = { ...sample(), diagnostics: [{ rowIndex: 0, message: "old" }] };
-  const opened = await openArchive(await tableToArchive("reading-list", withNotes), []);
+  const b = sample();
+  const withNotes = { ...b, tables: { ...b.tables, books: { ...b.tables.books!, diagnostics: [{ rowIndex: 0, message: "old" }] } } };
+  const opened = await openArchive(await bundleToArchive("reading-list", withNotes), []);
   assert.deepEqual(opened.skipped, []);
 });

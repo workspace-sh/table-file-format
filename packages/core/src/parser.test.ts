@@ -4,24 +4,67 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { parseTable } from "./parser.js";
+import { parseBundle, parseTable } from "./parser.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // packages/core/src/parser.test.ts → repo root → fixtures/
 const fixturesDir = resolve(here, "..", "..", "..", "fixtures");
+/** A table's directory inside a fixture bundle (D37). */
+const tableDir = (bundle: string, table: string) => resolve(fixturesDir, `${bundle}.table`, "tables", table);
 
-test("parseTable reads projects.table fixture", async () => {
-  const t = await parseTable(resolve(fixturesDir, "projects.table"));
+test("parseTable reads the projects table in projects.table", async () => {
+  const t = await parseTable(tableDir("projects", "projects"));
   assert.equal(t.schema.fields.length, 7);
   assert.equal(t.rows.length, 17);
   assert.equal(t.views.length, 10);
   assert.equal(t.meta.title, "Projects");
-  assert.equal(t.meta.format, "table");
-  assert.equal(t.meta.formatVersion, 1);
+  // format and formatVersion describe the bundle, not each table (SPEC section 5).
+  assert.equal(t.meta.format, undefined);
+});
+
+test("parseBundle reads the manifest and every table, in order (D37)", async () => {
+  const b = await parseBundle(resolve(fixturesDir, "crm.table"));
+  assert.equal(b.meta.format, "table");
+  assert.equal(b.meta.formatVersion, 1);
+  assert.equal(b.meta.title, "CRM");
+  assert.deepEqual(b.meta.tables, ["companies", "contacts", "deals"]);
+  assert.deepEqual(Object.keys(b.tables).sort(), ["companies", "contacts", "deals"]);
+  assert.equal(b.tables.deals!.meta.title, "Deals");
+  assert.equal(b.diagnostics, undefined);
+});
+
+test("parseBundle reports a directory under tables/ that isn't a table, and reads the rest", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-bundle-test-"));
+  try {
+    await mkdir(join(dir, "b.table", "tables", "good"), { recursive: true });
+    await mkdir(join(dir, "b.table", "tables", "empty"), { recursive: true });
+    await mkdir(join(dir, "b.table", "tables", ".hidden"), { recursive: true });
+    await writeFile(join(dir, "b.table", "tables", "good", "schema.json"), '{"fields":[{"name":"x","type":"string"}]}');
+    await writeFile(join(dir, "b.table", "tables", "good", "rows.ndjson"), '{"id":"r1","x":"a"}\n');
+    const b = await parseBundle(join(dir, "b.table"));
+    assert.deepEqual(Object.keys(b.tables), ["good"]);
+    assert.equal(b.diagnostics?.length, 1);
+    assert.match(b.diagnostics![0]!.message, /tables\/empty isn't a table/);
+    assert.deepEqual(b.meta, {}, "a missing manifest is implicit empty");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseBundle on a bundle with no tables/ is valid and empty", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-bundle-test-"));
+  try {
+    await mkdir(join(dir, "e.table"));
+    const b = await parseBundle(join(dir, "e.table"));
+    assert.deepEqual(b.tables, {});
+    assert.equal(b.diagnostics, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("every parsed row carries a non-empty system id", async () => {
-  const t = await parseTable(resolve(fixturesDir, "projects.table"));
+  const t = await parseTable(tableDir("projects", "projects"));
   for (const row of t.rows) {
     assert.equal(typeof row.id, "string");
     assert.ok((row.id as string).length > 0);
@@ -29,7 +72,7 @@ test("every parsed row carries a non-empty system id", async () => {
 });
 
 test("parseTable preserves cross-table relation declaration on tasks", async () => {
-  const t = await parseTable(resolve(fixturesDir, "tasks.table"));
+  const t = await parseTable(tableDir("projects", "tasks"));
   const projectField = t.schema.fields.find((f) => f.name === "project");
   assert.ok(projectField, "tasks schema should declare a project field");
   assert.equal(projectField!.relation?.table, "projects");
@@ -132,18 +175,18 @@ test("malformed optional views.json degrades to defaults with a diagnostic", asy
 });
 
 test("clean parse carries no diagnostics field", async () => {
-  const t = await parseTable(resolve(fixturesDir, "projects.table"));
+  const t = await parseTable(tableDir("projects", "projects"));
   assert.equal(t.diagnostics, undefined);
 });
 
 test("parseTable reads bodies/{id}.md and keys them by row id", async () => {
-  const t = await parseTable(resolve(fixturesDir, "projects.table"));
+  const t = await parseTable(tableDir("projects", "projects"));
   assert.ok(t.bodies, "bodies map should be present when bodies/ exists");
   assert.ok("p2" in t.bodies!, "p2 should have a body in fixtures");
   assert.match(t.bodies!.p2!, /Table file format spike/);
 });
 
 test("parseTable returns no bodies field when bodies/ is absent", async () => {
-  const t = await parseTable(resolve(fixturesDir, "tasks.table"));
+  const t = await parseTable(tableDir("projects", "tasks"));
   assert.equal(t.bodies, undefined);
 });

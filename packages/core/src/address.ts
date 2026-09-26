@@ -4,7 +4,7 @@
  *
  *   <path>[#<key>=<value>[&<key>=<value>]*]
  *
- * Reserved keys: `row`, `view`, `field`. Unknown keys round-trip via
+ * Reserved keys: `table`, `row`, `view`, `field`. Unknown keys round-trip via
  * `extra` so apps can layer their own conventions (e.g. `query=`,
  * `highlight=`) without losing them on parse/format.
  *
@@ -22,6 +22,11 @@ export interface Address {
    * absolute paths fine for in-app deep links.
    */
   tablePath: string;
+  /**
+   * `table=<name>`: the table in the bundle (SPEC section 1). May be
+   * absent when the bundle holds exactly one table.
+   */
+  tableName?: string;
   /** `row=<id>` — system id of the target row. */
   rowId?: string;
   /** `view=<id>` — view id to pin the row to on open. */
@@ -65,6 +70,9 @@ export function parseAddress(input: string): Address | null {
     const value = pair.slice(eqIdx + 1);
     if (!key || !value) continue;
     switch (key) {
+      case "table":
+        out.tableName = value;
+        break;
       case "row":
         out.rowId = value;
         break;
@@ -89,6 +97,7 @@ export function parseAddress(input: string): Address | null {
  */
 export function formatAddress(addr: Address): string {
   const parts: string[] = [];
+  if (addr.tableName) parts.push(`table=${addr.tableName}`);
   if (addr.rowId) parts.push(`row=${addr.rowId}`);
   if (addr.viewId) parts.push(`view=${addr.viewId}`);
   if (addr.fieldName) parts.push(`field=${addr.fieldName}`);
@@ -101,14 +110,17 @@ export function formatAddress(addr: Address): string {
 }
 
 /**
- * Look up a `.table/` by path. Apps decide how — scan the workspace
- * filesystem, look in an in-memory map, fetch over the network. May
- * be sync or async; the resolver awaits it either way.
+ * Look up a table by its bundle's path and, when the address names one,
+ * the table's name in that bundle (`table=`; absent for a one-table
+ * bundle). Apps decide how: scan the workspace filesystem, look in an
+ * in-memory map, fetch over the network. May be sync or async; the
+ * resolver awaits it either way.
  *
  * Returning `null` signals "not found" (the address is dangling).
  */
 export type TableLookup = (
   path: string,
+  tableName?: string,
 ) => ParsedTable | null | Promise<ParsedTable | null>;
 
 /**
@@ -129,7 +141,7 @@ export async function resolveRow(
 ): Promise<Row | null> {
   const addr = typeof address === "string" ? parseAddress(address) : address;
   if (!addr || !addr.rowId) return null;
-  const table = await lookup(addr.tablePath);
+  const table = await lookup(addr.tablePath, addr.tableName);
   if (!table) return null;
   return table.rows.find((r) => r.id === addr.rowId) ?? null;
 }

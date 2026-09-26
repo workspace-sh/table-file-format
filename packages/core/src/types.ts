@@ -284,6 +284,16 @@ export interface TableMeta {
 
 export const TABLE_FORMAT_VERSION = 1;
 
+/**
+ * The bundle's manifest: its root `meta.json` (SPEC section 5). A
+ * table's own `meta.json` is a `TableMeta` without `format`,
+ * `formatVersion` or `tables`, which describe the bundle.
+ */
+export interface BundleMeta extends TableMeta {
+  /** The order tables are shown in, like a spreadsheet's sheet tabs. */
+  tables?: string[];
+}
+
 // ---- Diagnostics ----
 
 /**
@@ -321,6 +331,19 @@ export interface ParsedTable {
    * wants strictness can treat a non-empty array as an error; the
    * default posture is to surface and continue.
    */
+  diagnostics?: ValidationError[];
+  path: string;
+}
+
+/**
+ * A whole `.table`: one or more tables, each under `tables/<name>/`
+ * (SPEC section 1, D37). `tables` is keyed by name; the order to show
+ * them in is `tableOrder(bundle)`, not the object's key order.
+ */
+export interface ParsedBundle {
+  meta: BundleMeta;
+  tables: Record<string, ParsedTable>;
+  /** Bundle-level problems: an unreadable manifest, a directory that isn't a table. */
   diagnostics?: ValidationError[];
   path: string;
 }

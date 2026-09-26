@@ -2,6 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type {
+  BundleMeta,
+  ParsedBundle,
   ParsedTable,
   TableMeta,
   TableSchema,
@@ -9,9 +11,51 @@ import type {
   View,
 } from "./types.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
+import { isTableName } from "./bundle.js";
 
 /**
- * Parse a `.table/` directory.
+ * Parse a `.table` bundle: its manifest and every table under
+ * `tables/<name>/` (SPEC section 1, D37).
+ *
+ * Each table is read by `parseTable`, with its own skip-and-collect
+ * diagnostics. A directory under `tables/` without both `schema.json`
+ * and `rows.ndjson` isn't a table: it's reported on the bundle's
+ * diagnostics and otherwise ignored, as SPEC section 1 says. Hidden
+ * entries (`.DS_Store` and the like) are ignored silently.
+ */
+export async function parseBundle(dir: string): Promise<ParsedBundle> {
+  const diagnostics: ValidationError[] = [];
+  const meta =
+    parseOptionalJsonText<BundleMeta>(
+      "meta.json",
+      await readTextOptional(join(dir, "meta.json")),
+      diagnostics,
+    ) ?? {};
+  const tables: Record<string, ParsedTable> = {};
+  const tablesDir = join(dir, "tables");
+  if (existsSync(tablesDir)) {
+    const entries = (await readdir(tablesDir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory() && isTableName(e.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const tableDir = join(tablesDir, entry.name);
+      if (!existsSync(join(tableDir, "schema.json")) || !existsSync(join(tableDir, "rows.ndjson"))) {
+        diagnostics.push({
+          rowIndex: -1,
+          message: `tables/${entry.name} isn't a table: it needs schema.json and rows.ndjson`,
+        });
+        continue;
+      }
+      tables[entry.name] = await parseTable(tableDir);
+    }
+  }
+  const bundle: ParsedBundle = { meta, tables, path: dir };
+  if (diagnostics.length > 0) bundle.diagnostics = diagnostics;
+  return bundle;
+}
+
+/**
+ * Parse one table's directory, `tables/<name>/` inside a bundle.
  *
  * Reader posture is **skip-and-collect** (SPEC section 3, "Reader
  * error contract"; DECISIONS D25): a malformed NDJSON line, a row
@@ -21,7 +65,7 @@ import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
  * hand-editable, git-friendly file unreadable.
  *
  * The single fatal case: `schema.json` missing or malformed. A
- * `.table/` without a readable schema is not a table — there is
+ * directory without a readable schema is not a table: there is
  * nothing sound to degrade to.
  */
 export async function parseTable(dir: string): Promise<ParsedTable> {
