@@ -1,6 +1,9 @@
 {
   "extends": "@react-native/typescript-config/tsconfig.json",
   "compilerOptions": {
+    // Typecheck workspace packages from their source, not a build that
+    // may be stale after a pull (#77). Core exports a "source" condition.
+    "customConditions": ["source"],
     "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
