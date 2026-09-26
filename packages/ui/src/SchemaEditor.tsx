@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { CompileResult, ComputeOptions, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
@@ -18,6 +18,7 @@ import {
   formatValue,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
+import { fieldKey } from "./fieldKey";
 import { useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportHeight } from "./internal/useViewportHeight";
@@ -331,6 +332,63 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
     cursor: "pointer",
+  },
+  /** "+" at the end of the header row, just outside the table. */
+  addFieldCompactWrapper: {
+    position: "relative",
+    display: "flex",
+    flexShrink: 0,
+  },
+  addFieldCompact: {
+    width: 30,
+    height: 30,
+    fontSize: 18,
+    lineHeight: "18px",
+    borderRadius: 6,
+    borderWidth: 0,
+    cursor: "pointer",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#1f1f23" },
+    },
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
+  fieldNameInput: {
+    fontSize: 14,
+  },
+  typeGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 4,
+  },
+  typeChoice: {
+    paddingInline: 8,
+    paddingBlock: 6,
+    fontSize: 12,
+    textAlign: "left",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#2c2c31",
+    },
+    backgroundColor: "transparent",
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  typeChoiceOn: {
+    borderColor: "#0a84ff",
+    backgroundColor: {
+      default: "#eaf3ff",
+      "@media (prefers-color-scheme: dark)": "#0f2744",
+    },
   },
   errorText: {
     fontSize: 11,
@@ -903,6 +961,8 @@ interface AddFieldButtonProps {
   fields?: Field[];
   /** The sheet, when the view shows coordinates (D34). */
   grid?: Grid;
+  /** A small "+" at the end of the header row, not a labelled button. */
+  compact?: boolean;
 }
 
 /** "Formula" sits beside the stored types in the picker; it isn't one. */
@@ -917,7 +977,7 @@ const ADDABLE_TYPES: FieldType[] = [
   "datetime",
 ];
 
-export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
@@ -929,43 +989,64 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
   // measureAnchor() handles the platform-specific measurement internally.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const triggerRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nameRef = useRef<any>(null);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
 
+  // What's typed is the column's title; its stored key is made from it,
+  // never clashing, so there's no "name in use" to fix by hand.
   const trimmed = name.trim();
-  const duplicate = trimmed.length > 0 && existingNames.has(trimmed);
+  const key = fieldKey(trimmed, existingNames);
   const formula =
     type === "formula" && formulaDraft.trim() !== ""
       ? compileFormula(formulaDraft, { fields: [...existingNames], grid })
       : null;
   // A formula field can only be added once its formula compiles: nothing
   // that can't be stored in the canonical form is ever written (D29).
-  const valid = trimmed.length > 0 && !duplicate && (type !== "formula" || formula?.ok === true);
+  const valid = trimmed.length > 0 && (type !== "formula" || formula?.ok === true);
 
-  const submit = () => {
-    if (!valid) return;
-    if (type === "formula") {
-      if (!formula?.ok) return;
-      const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
-      onAdd({
-        name: trimmed,
-        type: formulaType(formula.expr, types),
-        computed: { expr: formula.stored, dialect: DIALECT },
-      });
-    } else {
-      onAdd({ name: trimmed, type });
-    }
+  const close = () => {
     setName("");
     setType("string");
     setFormulaDraft("");
     setOpen(false);
   };
 
+  // Open: typing goes straight into the name, and Escape closes.
+  useEffect(() => {
+    if (!open) return;
+    nameRef.current?.focus?.();
+    if (typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const submit = () => {
+    if (!valid) return;
+    const title = key === trimmed ? {} : { title: trimmed };
+    if (type === "formula") {
+      if (!formula?.ok) return;
+      const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
+      onAdd({
+        name: key,
+        ...title,
+        type: formulaType(formula.expr, types),
+        computed: { expr: formula.stored, dialect: DIALECT },
+      });
+    } else {
+      onAdd({ name: key, ...title, type });
+    }
+    close();
+  };
+
   // Derive popover position from the anchor rect when open. AnchorRect
   // is {top, left, width, height} — derive right from left+width.
   const anchorRight = anchorRect ? anchorRect.left + anchorRect.width : 0;
-  // "+ Field" sits at the foot of a table, often near the bottom of the
-  // window: open upwards there rather than off-screen.
+  // Near the bottom of the window it opens upwards rather than off-screen.
   const place = anchorRect ? placePopover(anchorRect, viewportHeight) : null;
   // Use viewport width to clamp the left edge so the popover doesn't
   // overflow the right edge of the screen.
@@ -974,25 +1055,31 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
     ? Math.min(viewportWidth - POPOVER_WIDTH - 8, desiredLeft)
     : 0;
 
+  const choices: { value: AddableChoice; label: string }[] = [
+    ...ADDABLE_TYPES.map((t) => ({ value: t as AddableChoice, label: friendlyType(t) })),
+    { value: "formula", label: "Formula" },
+  ];
+
   return (
-    <html.div style={styles.addFieldWrapper}>
+    <html.div style={compact ? styles.addFieldCompactWrapper : styles.addFieldWrapper}>
       <html.button
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={(el: any) => {
           triggerRef.current = el;
         }}
+        aria-label="Add a field"
         onClick={async () => {
           const rect = await measureAnchor(triggerRef.current);
           if (rect) setAnchorRect(rect);
           setOpen(true);
         }}
-        style={styles.addFieldButton}
+        style={compact ? styles.addFieldCompact : styles.addFieldButton}
       >
-        + Field
+        {compact ? "+" : "+ Field"}
       </html.button>
       {open && anchorRect && (
         <Portal>
-          <html.button onClick={() => setOpen(false)} style={styles.backdrop} />
+          <html.button onClick={close} style={styles.backdrop} />
           <html.div
             style={[
               styles.popover,
@@ -1002,31 +1089,39 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
               styles.popoverMaxHeight(place?.maxHeight ?? 400),
             ]}
           >
-            <html.span style={styles.label}>Name</html.span>
             <html.input
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                nameRef.current = el;
+              }}
               type="text"
               value={name}
-              placeholder="e.g. priority"
+              aria-label="Field name"
+              placeholder="Field name"
               onChange={(e: { target: { value: string } }) => setName(e.target.value)}
               onKeyDown={(e: { key: string }) => {
                 if (e.key === "Enter") submit();
               }}
-              style={styles.input}
+              style={[styles.input, styles.fieldNameInput]}
             />
+            {trimmed.length > 0 && key !== trimmed ? (
+              <html.span style={styles.hintText}>Stored as {key}</html.span>
+            ) : null}
 
             <html.span style={styles.label}>Type</html.span>
-            <html.select
-              value={type}
-              onChange={(e: { target: { value: string } }) => setType(e.target.value as AddableChoice)}
-              style={styles.input}
-            >
-              {ADDABLE_TYPES.map((t) => (
-                <html.option key={t} value={t}>
-                  {friendlyType(t)} · {t}
-                </html.option>
+            <html.div role="radiogroup" aria-label="Field type" style={styles.typeGrid}>
+              {choices.map((c) => (
+                <html.button
+                  key={c.value}
+                  role="radio"
+                  aria-checked={type === c.value}
+                  onClick={() => setType(c.value)}
+                  style={[styles.typeChoice, type === c.value && styles.typeChoiceOn]}
+                >
+                  {c.label}
+                </html.button>
               ))}
-              <html.option value="formula">Formula · computed</html.option>
-            </html.select>
+            </html.div>
 
             {type === "formula" && (
               <>
@@ -1045,8 +1140,6 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
               </>
             )}
 
-            {duplicate && <html.span style={styles.errorText}>Name already in use</html.span>}
-
             <html.div style={styles.actionRow}>
               <html.button
                 disabled={!valid}
@@ -1055,7 +1148,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
               >
                 Add field
               </html.button>
-              <html.button onClick={() => setOpen(false)} style={styles.button}>
+              <html.button onClick={close} style={styles.button}>
                 Cancel
               </html.button>
             </html.div>
