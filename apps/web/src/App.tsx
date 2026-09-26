@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   applyView,
@@ -332,6 +332,26 @@ export function App() {
   const narrow = useNarrow();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Going wide shows the sidebar in place; coming back narrow starts closed.
+  useEffect(() => {
+    if (!narrow) setDrawerOpen(false);
+  }, [narrow]);
+  // While open: focus is in the drawer and Escape closes it. On close,
+  // focus goes back to the button that opened it.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    drawerRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      menuButtonRef.current?.focus();
+    };
+  }, [drawerOpen]);
 
   const table = tables[activeTablePath];
   if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
@@ -611,6 +631,33 @@ export function App() {
   const schemaBumped =
     currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
+  // Built once, shown in the drawer or beside the page. Choosing closes the
+  // drawer; beside the page there is none to close, so that does nothing.
+  const sidebar = (
+    <Sidebar
+      tables={tables}
+      activeTablePath={activeTablePath}
+      onSelectTable={(path) => {
+        setActiveTablePath(path);
+        setSearchQuery("");
+        setActiveBodyRowId(null);
+        closeDrawer();
+      }}
+      table={table}
+      activeViewId={view.id}
+      onSelect={(id) => {
+        setActiveViewId(id);
+        closeDrawer();
+      }}
+      onReset={resetDemo}
+      onNewTable={createTable}
+      onNewView={addView}
+      onOpenFile={openTableFile}
+      display={display}
+      onDisplayChange={changeDisplay}
+    />
+  );
+
   return (
     <DisplaySettingsProvider value={display}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
@@ -619,60 +666,24 @@ export function App() {
         drawerOpen && (
           <>
             <html.div style={styles.drawerBackdrop} onClick={closeDrawer} />
-            <html.div style={styles.drawer}>
-          <Sidebar
-            tables={tables}
-            activeTablePath={activeTablePath}
-            onSelectTable={(path) => {
-              setActiveTablePath(path);
-              setSearchQuery("");
-              setActiveBodyRowId(null);
-              closeDrawer();
-            }}
-            table={table}
-            activeViewId={view.id}
-            onSelect={(id) => {
-              setActiveViewId(id);
-              closeDrawer();
-            }}
-            onReset={resetDemo}
-            onNewTable={createTable}
-            onNewView={addView}
-            onOpenFile={openTableFile}
-            display={display}
-            onDisplayChange={changeDisplay}
-          />
+            <html.div ref={drawerRef} tabIndex={-1} role="dialog" aria-modal={true} aria-label="Tables and views" style={styles.drawer}>
+              {sidebar}
             </html.div>
           </>
         )
       ) : (
-          <Sidebar
-            tables={tables}
-            activeTablePath={activeTablePath}
-            onSelectTable={(path) => {
-              setActiveTablePath(path);
-              setSearchQuery("");
-              setActiveBodyRowId(null);
-              closeDrawer();
-            }}
-            table={table}
-            activeViewId={view.id}
-            onSelect={(id) => {
-              setActiveViewId(id);
-              closeDrawer();
-            }}
-            onReset={resetDemo}
-            onNewTable={createTable}
-            onNewView={addView}
-            onOpenFile={openTableFile}
-            display={display}
-            onDisplayChange={changeDisplay}
-          />
+        sidebar
       )}
       <html.div style={[styles.main, narrow && styles.mainNarrow]}>
         {narrow && (
           <html.div style={styles.topBar}>
-            <html.button style={styles.menuButton} aria-label="Tables and views" onClick={() => setDrawerOpen(true)}>
+            <html.button
+              ref={menuButtonRef}
+              style={styles.menuButton}
+              aria-label="Tables and views"
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen(true)}
+            >
               ☰
             </html.button>
             <html.span style={styles.topBarTitle}>{table.meta.title ?? activeTablePath}</html.span>
