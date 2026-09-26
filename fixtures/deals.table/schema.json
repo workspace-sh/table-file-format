@@ -1,0 +1,109 @@
+{
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "title": "Deal",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "company",
+      "type": "string",
+      "title": "Company",
+      "relation": {
+        "table": "companies",
+        "field": "id"
+      }
+    },
+    {
+      "name": "contacts",
+      "type": "array",
+      "title": "Contacts",
+      "relation": {
+        "table": "contacts",
+        "field": "id",
+        "cardinality": "many"
+      }
+    },
+    {
+      "name": "stage",
+      "type": "string",
+      "title": "Stage",
+      "constraints": {
+        "enum": [
+          {
+            "value": "lead",
+            "label": "Lead",
+            "color": "gray"
+          },
+          {
+            "value": "qualified",
+            "label": "Qualified",
+            "color": "blue"
+          },
+          {
+            "value": "proposal",
+            "label": "Proposal",
+            "color": "purple"
+          },
+          {
+            "value": "negotiation",
+            "label": "Negotiation",
+            "color": "orange"
+          },
+          {
+            "value": "won",
+            "label": "Won",
+            "color": "green"
+          },
+          {
+            "value": "lost",
+            "label": "Lost",
+            "color": "red"
+          }
+        ],
+        "required": true
+      }
+    },
+    {
+      "name": "value",
+      "type": "number",
+      "title": "Value",
+      "format": "currency:USD",
+      "align": "right"
+    },
+    {
+      "name": "probability",
+      "type": "number",
+      "title": "Probability",
+      "format": "percent",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "name": "weighted",
+      "type": "number",
+      "title": "Weighted",
+      "description": "Value times probability: what the deal is worth to the forecast.",
+      "computed": {
+        "expr": "(round (* value probability) 0)",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "close_date",
+      "type": "date",
+      "title": "Close date"
+    },
+    {
+      "name": "renewal",
+      "type": "boolean",
+      "title": "Renewal"
+    }
+  ],
+  "schema-version": 1
+}

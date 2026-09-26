@@ -1,0 +1,59 @@
+[
+  {
+    "id": "all",
+    "name": "All companies",
+    "layout": "table",
+    "fields": [
+      "name",
+      "industry",
+      "customer",
+      "employees",
+      "growth",
+      "domain",
+      "tags"
+    ],
+    "columnWidths": {
+      "name": 220
+    },
+    "rowHeight": 44
+  },
+  {
+    "id": "logos",
+    "name": "Logos",
+    "layout": "gallery",
+    "gallery_field": "logo",
+    "fields": [
+      "name",
+      "industry",
+      "website"
+    ]
+  },
+  {
+    "id": "by-industry",
+    "name": "By industry",
+    "layout": "board",
+    "board_field": "industry",
+    "fields": [
+      "name",
+      "employees"
+    ]
+  },
+  {
+    "id": "customers",
+    "name": "Customers",
+    "layout": "table",
+    "filter": [
+      {
+        "field": "customer",
+        "operator": "eq",
+        "value": true
+      }
+    ],
+    "sort": [
+      {
+        "field": "employees",
+        "direction": "desc"
+      }
+    ]
+  }
+]
