@@ -1,0 +1,96 @@
+{
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "title": "Company",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "domain",
+      "type": "string",
+      "title": "Domain",
+      "description": "The company's web domain, lowercase, without https://.",
+      "constraints": {
+        "unique": true,
+        "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+      }
+    },
+    {
+      "name": "website",
+      "type": "string",
+      "title": "Website",
+      "format": "url"
+    },
+    {
+      "name": "industry",
+      "type": "string",
+      "title": "Industry",
+      "icon": "\ud83c\udff7\ufe0f",
+      "constraints": {
+        "enum": [
+          {
+            "value": "Retail",
+            "color": "orange"
+          },
+          {
+            "value": "Healthcare",
+            "color": "green"
+          },
+          {
+            "value": "Logistics",
+            "color": "blue"
+          },
+          {
+            "value": "Media",
+            "color": "purple"
+          },
+          {
+            "value": "Energy",
+            "color": "yellow"
+          },
+          {
+            "value": "Design",
+            "color": "pink"
+          }
+        ]
+      }
+    },
+    {
+      "name": "customer",
+      "type": "boolean",
+      "title": "Customer",
+      "description": "Has signed at least one deal."
+    },
+    {
+      "name": "employees",
+      "type": "integer",
+      "title": "Employees",
+      "constraints": {
+        "minimum": 1
+      }
+    },
+    {
+      "name": "growth",
+      "type": "number",
+      "title": "Growth",
+      "format": "percent",
+      "description": "Headcount growth over the last year."
+    },
+    {
+      "name": "logo",
+      "type": "string",
+      "title": "Logo",
+      "attachment": true
+    },
+    {
+      "name": "tags",
+      "type": "array",
+      "title": "Tags",
+      "description": "Free tags. A choice list for these needs multi-select (not yet in the format)."
+    }
+  ],
+  "schema-version": 1
+}
