@@ -605,7 +605,9 @@ export function printFormula(stored: string | Expr, options: { grid?: Grid } = {
 
 // ---- what a new formula field's values will be
 
-const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len"]);
+const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len", "count", "average"]);
+/** What reads across rows as a list (D36). */
+const LIST_FNS = new Set(["column", "linked"]);
 const TEXT_FNS = new Set(["concat", "upper", "lower"]);
 const BOOLEAN_FNS = new Set(["=", "<>", "<", "<=", ">", ">=", "and", "or", "not", "isblank"]);
 
@@ -628,6 +630,9 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
       if (TEXT_FNS.has(expr.fn)) return "string";
       if (BOOLEAN_FNS.has(expr.fn)) return "boolean";
       if (NUMBER_FNS.has(expr.fn)) return "number";
+      if (LIST_FNS.has(expr.fn)) return "array";
+      // A lookup is whatever it reads; not knowing, text is the safe guess.
+      if (expr.fn === "lookup") return "string";
       if (expr.fn === "field" && expr.args[0]?.kind === "string") {
         return fieldTypes.get(expr.args[0].value) ?? "number";
       }

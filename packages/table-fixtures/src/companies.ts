@@ -131,6 +131,27 @@ export const companiesTable: ParsedTable = {
             }
           ]
         }
+      },
+      {
+        "name": "open_pipeline",
+        "type": "number",
+        "title": "Open pipeline",
+        "format": "currency:USD",
+        "description": "The sum of this company's open deals: a rollup over the deals that link here (D36).",
+        "computed": {
+          "expr": "(sum (linked \"deals\" \"company\" \"open_value\"))",
+          "dialect": "table-expr-v1"
+        }
+      },
+      {
+        "name": "deal_count",
+        "type": "number",
+        "title": "Deals",
+        "description": "How many deals link to this company.",
+        "computed": {
+          "expr": "(count (linked \"deals\" \"company\" \"title\"))",
+          "dialect": "table-expr-v1"
+        }
       }
     ],
     "schema-version": 1
@@ -238,7 +259,9 @@ export const companiesTable: ParsedTable = {
         "employees",
         "growth",
         "domain",
-        "tags"
+        "tags",
+        "open_pipeline",
+        "deal_count"
       ],
       "columnWidths": {
         "name": 220

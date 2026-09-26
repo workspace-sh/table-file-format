@@ -10,7 +10,9 @@
       "employees",
       "growth",
       "domain",
-      "tags"
+      "tags",
+      "open_pipeline",
+      "deal_count"
     ],
     "columnWidths": {
       "name": 220

@@ -84,6 +84,28 @@ export const householdBudgetTable: ParsedTable = {
           "expr": "(/ quarter (field \"quarter\" \"income\"))",
           "dialect": "table-expr-v1"
         }
+      },
+      {
+        "name": "spend",
+        "type": "number",
+        "title": "Spend",
+        "format": "currency:GBP",
+        "description": "Q1 for spending lines; nothing for income.",
+        "computed": {
+          "expr": "(if (= category \"Income\") 0 quarter)",
+          "dialect": "table-expr-v1"
+        }
+      },
+      {
+        "name": "of_spending",
+        "type": "number",
+        "title": "Of spending",
+        "format": "percent",
+        "description": "This line's share of the quarter's total spending: its Q1 over the whole Spend column (D36).",
+        "computed": {
+          "expr": "(if (<> category \"Income\") (/ quarter (sum (column \"spend\"))))",
+          "dialect": "table-expr-v1"
+        }
       }
     ],
     "schema-version": 1
@@ -162,13 +184,19 @@ export const householdBudgetTable: ParsedTable = {
         "share"
       ],
       "columnWidths": {
-        "item": 150,
-        "category": 130,
-        "jan": 110,
-        "feb": 110,
-        "mar": 110,
-        "quarter": 120,
-        "share": 110
+        "item": 140,
+        "category": 120,
+        "jan": 130,
+        "feb": 130,
+        "mar": 130,
+        "quarter": 145,
+        "share": 90
+      },
+      "totals": {
+        "jan": "sum",
+        "feb": "sum",
+        "mar": "sum",
+        "quarter": "sum"
       }
     },
     {
@@ -192,7 +220,8 @@ export const householdBudgetTable: ParsedTable = {
         "item",
         "category",
         "quarter",
-        "share"
+        "share",
+        "of_spending"
       ]
     },
     {

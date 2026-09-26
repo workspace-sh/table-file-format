@@ -541,7 +541,8 @@ export function App() {
     setShowViewSettings(false);
   }, [tables, activeTablePath, activeViewId, view.name]);
 
-  const viewRows = applyView(table, view);
+  // Every table, so lookups and rollups reach the ones they name (D36).
+  const viewRows = applyView(table, view, { tables, self: activeTablePath });
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
     bodies: table.bodies,
@@ -663,6 +664,7 @@ export function App() {
           relatedTables: tables,
           onOpenRelation: openRelation,
           allRows: table.rows,
+          tableKey: activeTablePath,
         })}
       </html.div>
       {activeBodyRowId && (
@@ -707,6 +709,8 @@ interface ViewCallbacks {
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  /** This table's key among `relatedTables`. */
+  tableKey: string;
 }
 
 function renderView(
@@ -785,6 +789,7 @@ function renderView(
           onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}
           allRows={cb.allRows}
+          tableKey={cb.tableKey}
           onUpdateView={cb.onUpdateView}
           {...common}
         />

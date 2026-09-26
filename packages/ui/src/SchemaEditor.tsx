@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import type { CompileResult, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
+import type { CompileResult, ComputeOptions, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
   compileFormula,
@@ -1083,6 +1083,8 @@ interface FormulaCellPanelProps {
    * previews, and shows that row's input, correctly. Absent: this row only.
    */
   allRows?: Row[];
+  /** The other tables, so lookups and linked rows preview too (D36). */
+  computeOptions?: ComputeOptions;
 }
 
 /**
@@ -1101,6 +1103,7 @@ export function FormulaCellPanel({
   onClose,
   grid,
   allRows,
+  computeOptions,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1123,7 +1126,7 @@ export function FormulaCellPanel({
   // The whole table, computed, so another row's value (computed or not)
   // shows as its cell does.
   const tableRows = allRows ?? [row as Row];
-  const computedAll = computeRows({ fields }, tableRows).rows;
+  const computedAll = computeRows({ fields }, tableRows, computeOptions).rows;
   const valueIn = (id: string, name: string) =>
     id === rowId ? row[name] : computedAll.find((r) => r.id === id)?.[name];
   const thisRow = refs.filter((r) => r.rowId === undefined || r.rowId === rowId);
@@ -1137,7 +1140,7 @@ export function FormulaCellPanel({
     const trial = fields.map((f) =>
       f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: DIALECT } } : f,
     );
-    const { rows } = computeRows({ fields: trial }, tableRows);
+    const { rows } = computeRows({ fields: trial }, tableRows, computeOptions);
     return { value: rows.find((r) => r.id === rowId)?.[field.name] };
   })();
   const save = () => {

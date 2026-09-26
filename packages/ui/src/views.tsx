@@ -18,9 +18,11 @@ import {
   formatAddress,
   formulaRefs,
   columnLetter,
+  viewTotal,
   parseExpr,
 } from "@workspace.sh/table-core";
 import type {
+  ViewTotal,
   Field,
   FieldAlignment,
   ParsedTable,
@@ -815,6 +817,31 @@ const styles = css.create({
     },
   },
 
+  // The totals footer.
+  totalsRow: {
+    height: 36,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
+  },
+  totalCell: {
+    gap: 6,
+    cursor: "pointer",
+    alignItems: "center",
+  },
+  totalLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
+  totalPlaceholder: {
+    fontSize: 11,
+    opacity: { default: 0, ":hover": 1 },
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
   // A grouped table's band at the start of each group (fixed height, so
   // the frozen and scrolling panes stay in line).
   groupRow: {
@@ -1205,6 +1232,23 @@ function groupedRows(
   }
   return out;
 }
+
+const TOTAL_LABELS: Record<ViewTotal, string> = {
+  sum: "Sum",
+  average: "Avg",
+  min: "Min",
+  max: "Max",
+  count: "Count",
+  count_empty: "Empty",
+};
+const TOTAL_NAMES: Record<ViewTotal, string> = {
+  sum: "Sum",
+  average: "Average",
+  min: "Smallest",
+  max: "Largest",
+  count: "Count values",
+  count_empty: "Count empty",
+};
 
 /** A sheet's row-number gutter (`coordinates`), which comes out of the columns' width. */
 const ROW_NUMBER_WIDTH = 32;
@@ -1771,6 +1815,8 @@ interface ViewProps {
    * a formula reading another row (D34) can be previewed and explained.
    */
   allRows?: Row[];
+  /** This table's key in `relatedTables`, so lookups and linked rows preview (D36). */
+  tableKey?: string;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -1841,6 +1887,7 @@ export function TableView({
   onOpenRelation,
   onUpdateView,
   allRows,
+  tableKey,
 }: ViewProps) {
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
@@ -1870,6 +1917,10 @@ export function TableView({
   // and easy to hit.
   const [rowMenu, setRowMenu] = useState<{ rowId: string; x: number; y: number } | null>(null);
   const canOpenRowMenu = !!onDeleteRow || !!onOpenBody;
+  // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
+  const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const totals = view.totals ?? {};
+  const showTotals = !!onUpdateView || Object.keys(totals).length > 0;
   const openRowMenu = (rowId: string) => (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
     if (!canOpenRowMenu) return;
     e.preventDefault();
@@ -2124,6 +2175,50 @@ export function TableView({
     );
   };
 
+  const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
+    const field = fieldMap.get(name);
+    const kind = totals[name];
+    const value = kind ? viewTotal(rows, name, kind) : undefined;
+    const numeric = kind === "sum" || kind === "average" || kind === "min" || kind === "max";
+    const shown = kind === "average" && typeof value === "number" ? Math.round(value * 100) / 100 : value;
+    return (
+      <html.span
+        key={name}
+        style={[
+          styles.tableCell,
+          styles.cellWidth(colWidth(name)),
+          cellAlignStyle(effectiveAlign(field)),
+          idxInPane !== paneLen - 1 && styles.tableCellSeparator,
+          styles.totalCell,
+        ]}
+        onClick={
+          onUpdateView
+            ? (e: { pageX: number; pageY: number }) =>
+                // The menu is fixed to the window: page coordinates less the scroll.
+                setTotalsMenu({
+                  name,
+                  x: e.pageX - (typeof window === "undefined" ? 0 : window.scrollX),
+                  y: e.pageY - (typeof window === "undefined" ? 0 : window.scrollY),
+                })
+            : undefined
+        }
+      >
+        {kind ? (
+          <>
+            <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
+            {numeric ? (
+              <CellValue field={field} value={shown} relatedTables={relatedTables} lines={1} />
+            ) : (
+              <html.span>{String(shown ?? "")}</html.span>
+            )}
+          </>
+        ) : onUpdateView ? (
+          <html.span style={styles.totalPlaceholder}>Calculate</html.span>
+        ) : null}
+      </html.span>
+    );
+  };
+
   const renderBodyCell = (
     row: Row,
     name: string,
@@ -2234,6 +2329,12 @@ export function TableView({
                 </html.div>
               </Fragment>
             ))}
+            {showTotals && (
+              <html.div style={[styles.tableRow, styles.totalsRow]}>
+                {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                {renderTotalCell(primaryName, 0, 1)}
+              </html.div>
+            )}
           </html.div>
         )}
         {/* Scrollable pane: everything past the primary field, plus the
@@ -2280,6 +2381,12 @@ export function TableView({
                   </html.div>
                 </Fragment>
               ))}
+              {showTotals && (
+                <html.div style={[styles.tableRow, styles.totalsRow]}>
+                  {coords && !primaryName && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                  {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
+                </html.div>
+              )}
             </html.div>
           </HScroll>
         </html.div>
@@ -2319,7 +2426,44 @@ export function TableView({
             onClose={() => setFormulaCell(null)}
             grid={grid ? { ...grid, here: formulaCell.rowId } : undefined}
             allRows={allRows}
+            computeOptions={{ tables: relatedTables, self: tableKey }}
           />
+        );
+      })()}
+      {totalsMenu && onUpdateView && (() => {
+        const field = fieldMap.get(totalsMenu.name);
+        const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
+        const kinds: ViewTotal[] = [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+        const choose = (kind: ViewTotal | null) => {
+          const next = { ...totals };
+          if (kind) next[totalsMenu.name] = kind;
+          else delete next[totalsMenu.name];
+          onUpdateView({ totals: Object.keys(next).length ? next : undefined });
+          setTotalsMenu(null);
+        };
+        return (
+          <Portal>
+            <html.div style={styles.rowMenuBackdrop} onClick={() => setTotalsMenu(null)} />
+            <html.div
+              role="menu"
+              style={[
+                styles.rowMenu,
+                styles.rowMenuAt(
+                  typeof window === "undefined" ? totalsMenu.y : Math.min(totalsMenu.y, window.innerHeight - 40 * (kinds.length + 1)),
+                  typeof window === "undefined" ? totalsMenu.x : Math.min(totalsMenu.x, window.innerWidth - 190),
+                ),
+              ]}
+            >
+              <html.button role="menuitem" style={styles.rowMenuItem} onClick={() => choose(null)}>
+                None
+              </html.button>
+              {kinds.map((k) => (
+                <html.button key={k} role="menuitem" style={styles.rowMenuItem} onClick={() => choose(k)}>
+                  {TOTAL_NAMES[k]}
+                </html.button>
+              ))}
+            </html.div>
+          </Portal>
         );
       })()}
       {rowMenu && (

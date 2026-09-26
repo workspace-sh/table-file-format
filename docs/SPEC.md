@@ -309,15 +309,31 @@ empty and reports it.
 - Function names are case-insensitive and stored lowercase; field
   names are case-sensitive.
 - A formula reads its own row and any other row it names by `id`.
-  Cross-row aggregation (column totals, rollups, lookups) is not part
-  of `table-expr-v1`.
+- Reading across rows and tables (DECISIONS D36):
+  - `(column "q1")` is every row's `q1`, as a list, in file order.
+  - `(lookup "company" "industry")` follows this row's relation field
+    `company` to its row and reads `industry` there (a list for a
+    relation of cardinality `many`).
+  - `(linked "deals" "company" "value")` is the `value` of every row in
+    `deals` whose `company` field points at this row, as a list: a
+    rollup's input.
+  - A list is not a cell value on its own terms: `sum`, `min`, `max`,
+    `average` and `count` take lists, as spreadsheet functions take
+    ranges; arithmetic on a list is `#VALUE!`. A formula whose result is
+    a list shows it as its items.
+  - Which table a name like `"deals"` means is resolved as relations are
+    (section 10): the app supplies the tables. A reader without them
+    shows `#REF!` rather than guessing.
 
 | Functions | Behaviour |
 | --- | --- |
 | `+` `*` | any number of arguments |
 | `-` | one argument negates; two subtract |
 | `/` | two arguments; dividing by zero is `#DIV/0!` |
-| `sum` `min` `max` | any number of arguments; empty arguments are skipped |
+| `sum` `min` `max` | any number of arguments, lists included; empty values are skipped |
+| `average` | the mean of its arguments, lists included; empty values are skipped |
+| `count` | how many non-empty values its arguments hold, lists included |
+| `column` `lookup` `linked` | read across rows and tables (above); each gives a list, or one value for a `lookup` of cardinality `one` |
 | `round` | `(round x)` or `(round x digits)`; halves round away from zero |
 | `abs` | absolute value |
 | `=` `<>` | equality; two empties are equal |
@@ -336,7 +352,7 @@ arithmetic, comparison with `<`/`>`, and text functions empty; `sum`,
 that uses them: `#DIV/0!` (division by zero), `#VALUE!` (wrong kind of
 argument, or wrong number of arguments), `#NAME?` (unknown function
 or field), `#REF!` (a computed field that depends on itself, directly or through
-other rows, or a reference to a row that doesn't exist), `#NUM!`
+other rows, or a reference to a row or table that isn't there), `#NUM!`
 (a result too large to represent).
 
 **Worked examples** (illustrative). Each row of this table is checked
@@ -387,6 +403,9 @@ whose `share` field is `(/ q1 (field "q1" "income"))`:
 | `rent` | `(- q1 (field "q1" "food"))` | `1800` |
 | `rent` | `(field "q1" "gone")` | `#REF!` |
 | `rent` | `(field "q1" "income" "extra")` | `#VALUE!` |
+| `rent` | `(sum (column "q1"))` | `16200` |
+| `rent` | `(count (column "q1"))` | `3` |
+| `rent` | `(/ q1 (max (column "q1")))` | `0.25` |
 <!-- other-row-examples:end -->
 
 Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
@@ -564,6 +583,12 @@ given list.
   layout, set by resizing a row. Each row shows as many lines of text
   as fit and clips the rest; absent means one line. One height for all
   rows keeps rows aligned across a frozen first column. Display-only.
+- `totals: { "<field>": "sum" | "average" | "min" | "max" | "count" |
+  "count_empty" }`: a footer under a table layout, one calculation per
+  column, over the rows the view shows (after its filters). `sum`,
+  `average`, `min` and `max` read the numbers and skip anything else;
+  `count` counts values and `count_empty` blanks. Display-only: only the
+  choice is stored, never a result (reference: `viewTotal()`).
 - `coordinates: true`: show a table layout as a sheet: columns
   lettered `A, B, C…` and rows numbered `1, 2, 3…`, in this view's
   order, so a formula can be typed as `=B7` and is shown that way.

@@ -12,7 +12,7 @@ export {
   instantOf,
   completeSeconds,
 } from "./encoding.js";
-export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query.js";
+export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal } from "./query.js";
 export { formatValue, stringFormatKind, type DisplayOptions } from "./format.js";
 export { readTableArchive, writeTableArchive } from "./archive.js";
 export {
@@ -46,6 +46,7 @@ export {
   type Expr,
   type FormulaErrorCode,
   type ParseResult,
+  type ComputeOptions,
 } from "./expr.js";
 export {
   compileFormula,

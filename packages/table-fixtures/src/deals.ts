@@ -100,6 +100,16 @@ export const dealsTable: ParsedTable = {
         }
       },
       {
+        "name": "open_value",
+        "type": "number",
+        "title": "Open value",
+        "description": "The deal's value while it's still open; nothing once it's won or lost.",
+        "computed": {
+          "expr": "(if (or (= stage \"won\") (= stage \"lost\")) 0 value)",
+          "dialect": "table-expr-v1"
+        }
+      },
+      {
         "name": "close_date",
         "type": "date",
         "title": "Close date"
@@ -108,6 +118,16 @@ export const dealsTable: ParsedTable = {
         "name": "renewal",
         "type": "boolean",
         "title": "Renewal"
+      },
+      {
+        "name": "industry",
+        "type": "string",
+        "title": "Industry",
+        "description": "Looked up from the deal's company (D36).",
+        "computed": {
+          "expr": "(lookup \"company\" \"industry\")",
+          "dialect": "table-expr-v1"
+        }
       }
     ],
     "schema-version": 1
@@ -263,7 +283,12 @@ export const dealsTable: ParsedTable = {
     {
       "id": "all",
       "name": "All deals",
-      "layout": "table"
+      "layout": "table",
+      "totals": {
+        "title": "count",
+        "value": "sum",
+        "weighted": "sum"
+      }
     }
   ],
   "meta": {

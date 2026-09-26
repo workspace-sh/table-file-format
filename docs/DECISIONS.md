@@ -825,3 +825,39 @@ separate `multiselect` type would duplicate `array` for one use.
 
 **Empty.** An empty array is empty (SPEC "Empty values"): `required`
 rejects it, and a row with no items is none of any list.
+
+## D36: Reading across rows: `column`, `lookup`, `linked`, and lists
+
+Totals, rollups and lookups are what Notion, Airtable and spreadsheets do
+across rows, and D29 deferred them because a naive version rebuilds a
+dependency graph over the whole grid. They are now three forms that each
+name what they read, plus lists:
+
+- `(column "q1")` is every row's `q1`.
+- `(lookup "company" "industry")` follows this row's relation to its row.
+- `(linked "deals" "company" "value")` is the `value` of every `deals`
+  row whose `company` points at this row: the input of a rollup.
+
+`sum`, `min`, `max`, `average` and `count` take lists, as spreadsheet
+functions take ranges, so a column total is `(sum (column "value"))` and
+a rollup is `(sum (linked "deals" "company" "open_value"))`. Arithmetic
+on a list is `#VALUE!`: a list is an input to an aggregate, not a cell
+value.
+
+**Why these forms, and why the cost is bounded.** Each form names its
+input, so evaluation stays per cell and nothing is inferred. A reader
+builds each list once and indexes each relation once per evaluation, so
+a table of rollups costs O(rows) rather than a recalculation graph.
+Nothing is stored: results are recomputed on read as every computed
+field is (D21), so there is no stale total to reconcile. Excel's SUMIF
+family is not added: a filtered rollup is a computed field on the other
+table (`open_value`) summed here, which keeps each piece checkable on
+its own row.
+
+**Tables are the app's to supply.** Which table `"deals"` is resolves as
+a relation does (SPEC section 10). A reader without the other table
+shows `#REF!`. A loop between tables (A looks up B, which looks up A) is
+broken by reading the table already being computed as stored.
+
+Reference: `computeRows(schema, rows, { tables, self })` and
+`applyView(table, view, { tables, self })` in `@workspace.sh/table-core`.
