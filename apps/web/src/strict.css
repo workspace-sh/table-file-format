@@ -32,8 +32,9 @@ body {
  *
  * Suppress every browser default. Form elements (input/select/textarea)
  * have NO focus indicator beyond the text caret — the focused cell looks
- * identical to a cell at rest. Buttons get a subtle outline for keyboard
- * nav only (:focus-visible, neutral gray, not blue).
+ * identical to a cell at rest. Buttons and links get a subtle outline for
+ * keyboard nav only (:focus-visible, neutral gray, not blue). A table's
+ * grid shows focus with its selected cell, so it gets none.
  *
  * Text selection (which auto-selects the input's value on focus) uses a
  * neutral muted highlight instead of the OS-default blue so the focused
@@ -47,7 +48,9 @@ body {
   outline: none;
 }
 
-:focus-visible {
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
   outline: 2px solid #9ca3af;
   outline-offset: 1px;
   border-radius: 3px;
@@ -65,7 +68,9 @@ select:focus-visible {
 }
 
 @media (prefers-color-scheme: dark) {
-  :focus-visible {
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
     outline-color: #6b7280;
   }
   ::selection {
