@@ -13,7 +13,7 @@ export {
   completeSeconds,
 } from "./encoding.js";
 export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows } from "./query.js";
-export { formatValue, stringFormatKind } from "./format.js";
+export { formatValue, stringFormatKind, type DisplayOptions } from "./format.js";
 export { readTableArchive, writeTableArchive } from "./archive.js";
 export {
   buildIndex,

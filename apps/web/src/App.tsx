@@ -9,6 +9,7 @@ import {
   validate,
 } from "@workspace.sh/table-core";
 import type {
+  DisplayOptions,
   Field,
   ParsedTable,
   Row,
@@ -18,12 +19,14 @@ import type {
 import {
   BodyEditor,
   BoardView,
+  DisplaySettingsProvider,
   CalendarView,
   GalleryView,
   ListView,
   TableView,
 } from "@workspace.sh/table-ui";
 import { tables as initialTables } from "./loadFixture";
+import { loadDisplay, saveDisplay } from "./displaySettings";
 import { archiveFileName, openArchive, tableToArchive } from "./tableFiles";
 import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
@@ -255,6 +258,12 @@ export function App() {
     setActiveBodyRowId(null);
   }, []);
   const [searchQuery, setSearchQuery] = useState("");
+  // This viewer's locale and default date format: theirs, not the tables'.
+  const [display, setDisplay] = useState<DisplayOptions>(() => loadDisplay(browserStore()));
+  const changeDisplay = useCallback((next: DisplayOptions) => {
+    setDisplay(next);
+    saveDisplay(browserStore(), next);
+  }, []);
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
 
   const table = tables[activeTablePath];
@@ -513,6 +522,7 @@ export function App() {
     currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
   return (
+    <DisplaySettingsProvider value={display}>
     <html.div style={styles.root}>
       <Sidebar
         tables={tables}
@@ -528,6 +538,8 @@ export function App() {
         onReset={resetDemo}
         onNewTable={createTable}
         onOpenFile={openTableFile}
+        display={display}
+        onDisplayChange={changeDisplay}
       />
       <html.div style={styles.main}>
         <html.div style={styles.header}>
@@ -595,6 +607,7 @@ export function App() {
         />
       )}
     </html.div>
+    </DisplaySettingsProvider>
   );
 }
 
