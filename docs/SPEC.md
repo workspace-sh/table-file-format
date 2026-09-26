@@ -5,11 +5,16 @@
 > annotations, and files that existing readers safely ignore.
 > Breaking changes require a major bump of `formatVersion`. The
 > reference library's *API* may still evolve; the on-disk format is
-> stable.
+> stable. One exception, made before anyone used the format: D37
+> moved every table under `tables/<name>/` so a `.table` can hold
+> several. There were no users, so there is no version bump and no
+> migration.
 
 A `.table/` is a directory that IS a file. The extension is `.table`.
-The directory contains plain-text files designed for line-diffable
-storage in git, plus an optional rebuildable SQLite cache.
+It holds **one or more tables**, the way a spreadsheet holds sheets or
+an Airtable base holds linked tables. The directory contains
+plain-text files designed for line-diffable storage in git, plus an
+optional rebuildable SQLite cache.
 
 **Written by tools, readable by people.** The files are text so that
 version control can diff, review and merge them, not so that people
@@ -22,20 +27,45 @@ person.
 ## 1. Directory layout
 
 ```
-my-data.table/
-├── schema.json          REQUIRED
-├── rows.ndjson          REQUIRED
-├── views.json           OPTIONAL
-├── meta.json            OPTIONAL — implicit empty if missing
-├── attachments/         OPTIONAL
-├── bodies/              OPTIONAL
-│   └── {row.id}.md
-└── index.sqlite         OPTIONAL — gitignored rebuildable cache
+crm.table/
+├── meta.json                 OPTIONAL: the bundle's manifest (section 5)
+├── tables/                   REQUIRED: one directory per table
+│   ├── companies/
+│   │   ├── schema.json       REQUIRED
+│   │   ├── rows.ndjson       REQUIRED
+│   │   ├── views.json        OPTIONAL
+│   │   ├── meta.json         OPTIONAL: the table's own title and description
+│   │   ├── attachments/      OPTIONAL
+│   │   └── bodies/           OPTIONAL
+│   │       └── {row.id}.md
+│   └── deals/
+│       └── …
+└── index.sqlite              OPTIONAL: gitignored rebuildable cache for the bundle
 ```
 
+A `.table` is a **bundle** of one or more tables. Every table lives in
+its own directory under `tables/`, **even when it is the only one**, so
+readers and writers have a single layout (D37). A bundle with no
+tables is valid and empty.
+
+**Table names.** The directory name is the table's **name**. Relations
+(section 2), addresses (section 10) and the manifest's `tables` list
+(section 5) all use it. A name MUST be non-empty, MUST NOT contain
+`/` or `\`, and MUST NOT start with `.`. Names SHOULD be lowercase
+words joined by `-` or `_` (`companies`, `household-budget`). A
+table's display name is its own `meta.json` `title`, which can change
+freely; the name stays, as a field's `name` does (section 2, "Schema
+evolution").
+
+Sections 2 to 7 describe the files of **one table**, and their paths
+are relative to that table's directory, `tables/<name>/`.
+
 Readers MUST tolerate any of the optional members being absent. Readers
-MUST ignore unknown files at the directory root. Writers SHOULD
-preserve unknown files on round-trip (treat them as the user's domain).
+MUST ignore unknown files at the bundle root and in each table's
+directory. A directory under `tables/` without both `schema.json` and
+`rows.ndjson` is not a table: readers SHOULD report it and otherwise
+ignore it. Writers SHOULD preserve unknown files on round-trip (treat
+them as the user's domain).
 
 ### Writer atomicity
 
@@ -231,10 +261,12 @@ labels apply to each item.
 - `attachment: true` — the value is a filename inside `attachments/`.
 - `relation: { table: "<name>", field: "id", cardinality?: "one" | "many" }`
   — the value points at a row (or, for `"many"`, an array of rows) in
-  a sibling `.table/` directory by that table's system `id`.
+  the table named `<name>`, by that table's system `id`.
   `cardinality` defaults to `"one"`; `"many"` means the row value is
-  an array of ids. Resolution is the app's concern (scan workspace,
-  walk parent, etc.).
+  an array of ids. The name resolves **within the same bundle first**
+  (section 1). A name the bundle doesn't contain is the app's to
+  resolve elsewhere, for example in other `.table` files in the same
+  workspace (D3).
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
 - `computed: { expr, dialect }` — a formula; see "Computed fields".
@@ -611,15 +643,20 @@ given list.
 
 ## 5. `meta.json`
 
-The manifest. Identifies the file as a `.table/` and carries
-descriptive metadata.
+There are two, at two levels, and both are OPTIONAL (implicit empty if
+missing).
+
+**The bundle's `meta.json`**, at the root, is the manifest. It
+identifies the directory as a `.table/`, orders its tables, and
+carries descriptive metadata for the whole:
 
 ```json
 {
   "format": "table",
   "formatVersion": 1,
-  "title": "Projects",
-  "description": "Workspace product roadmap",
+  "title": "CRM",
+  "description": "Companies, the people there, and deals",
+  "tables": ["companies", "contacts", "deals"],
   "created_at": "2026-04-01T00:00:00Z",
   "modified_at": "2026-04-27T00:00:00Z",
   "generator": "table-file-format spike fixture"
@@ -628,6 +665,16 @@ descriptive metadata.
 
 `format` and `formatVersion` are stamped on every write. Readers MAY
 use them to validate that a directory is a `.table/`.
+
+`tables` is the order tables are shown in, like a spreadsheet's sheet
+tabs. Tables not listed follow the listed ones, in name order. A name
+listed with no directory under `tables/` is ignored by readers and
+dropped by writers.
+
+**Each table's `meta.json`**, in `tables/<name>/`, carries that
+table's own `title`, `description`, `created_at` and `modified_at`.
+It does not repeat `format` or `formatVersion`: those describe the
+bundle.
 
 `modified_at` SHOULD be stamped only on **user-initiated** writes —
 not on mechanical re-materialisations (sync engines applying remote
@@ -685,7 +732,10 @@ Rules:
 ## 8. `index.sqlite`
 
 OPTIONAL rebuildable cache for filtered queries and full-text search.
-Never the source of truth.
+Never the source of truth. There is one per bundle, at its root,
+covering every table in it, so relations between those tables are
+joins inside one database. Where this section says `schema.json` and
+`rows.ndjson`, read every table's.
 
 - Excluded from git via `.gitignore`.
 - When present and fresh, readers SHOULD use it for fast queries.
@@ -786,7 +836,7 @@ None of these block validity.
 Stable addressing for rows, views, and tables — used by:
 
 - Cross-table relations (per-field `relation` references one row in
-  another `.table/`)
+  another table, in the same bundle or another)
 - Cross-format references (a markdown body inside `bodies/{id}.md`
   linking to a row elsewhere, an external markdown file linking into
   a `.table/`, etc.)
@@ -794,7 +844,7 @@ Stable addressing for rows, views, and tables — used by:
 
 ### Address grammar
 
-An address is a path to a `.table/` followed by an optional URL
+An address is a path to a `.table/` bundle followed by an optional URL
 fragment:
 
 ```
@@ -806,6 +856,8 @@ fragment:
   (typically against the containing workspace root) so the address
   survives directory moves.
 - `<key>=<value>` — a key-value pair. Keys defined by this spec:
+  - `table=<name>`: the table in the bundle with this name (section 1).
+    It MAY be omitted when the bundle holds exactly one table.
   - `row=<id>` — the row with this system `id`
   - `view=<id>` — the view with this id
   - `field=<name>` — a specific field on the row (cell-level
@@ -820,11 +872,12 @@ silently ignore.
 ### Examples
 
 ```
-docs/projects.table                              # whole table
-docs/projects.table#row=p1                       # specific row
-docs/projects.table#view=v3                      # specific view
-docs/projects.table#row=p1&view=v3               # row pinned to view
-../suppliers.table#row=ACME_CORP                 # cross-directory
+docs/crm.table                                   # the whole bundle
+docs/crm.table#table=deals                       # one table in it
+docs/crm.table#table=deals&row=dl-1              # a row in that table
+docs/crm.table#table=deals&view=pipeline         # a view of that table
+docs/projects.table#row=p1                       # a one-table bundle may omit table=
+../suppliers.table#table=suppliers&row=ACME_CORP # another bundle
 ```
 
 ### Resolution
@@ -848,7 +901,7 @@ the address grammar literally — relations are structured as
 on the row, so apps can resolve them efficiently without parsing a
 string. Conceptually, a relation `{table: "tasks", field: "id"}` with
 row value `"t_42"` corresponds to the address
-`<path-to-tasks.table>#row=t_42` — the grammar is the
+`<path-to-the-bundle>.table#table=tasks&row=t_42`. The grammar is the
 serialisation; the relation declaration is the structured form.
 
 ### Reverse direction (markdown → row)
@@ -897,7 +950,8 @@ docs/DECISIONS.md D14).
 
 ### Spec version — `formatVersion`
 
-The spec itself is versioned by `formatVersion` in `meta.json`. The
+The spec itself is versioned by `formatVersion` in the bundle's
+`meta.json` (section 5). The
 current value is `1`. Breaking changes bump the major; additive
 changes do not. Readers SHOULD warn on `formatVersion` higher than
 they recognise but MAY still attempt to read.
@@ -931,7 +985,7 @@ merging, branching, and authorship for free.
 Apps that need versioning beyond what git provides (in-app undo,
 "what did this row look like yesterday," audit trail, real-time
 collaboration) implement it themselves. A future optional
-`history.ndjson` extension is reserved at the directory root for a
+`history.ndjson` extension is reserved in each table's directory for a
 portable append-only edit log, but it is **not yet specified** — its
 shape will be designed when a consumer's UX actually motivates it.
 
@@ -945,16 +999,21 @@ transport convention only — the on-disk format is unchanged and
 ### Canonical layout
 
 `<name>.table.zip` contains exactly **one** root-level directory,
-`<name>.table/`, holding the bundle's files:
+`<name>.table/`, holding the whole bundle: every table travels
+together, so relations between them still resolve.
 
 ```
-projects.table.zip
-└── projects.table/
-    ├── schema.json
-    ├── rows.ndjson
-    ├── views.json
+crm.table.zip
+└── crm.table/
     ├── meta.json
-    └── bodies/…
+    └── tables/
+        ├── companies/
+        │   ├── schema.json
+        │   ├── rows.ndjson
+        │   ├── views.json
+        │   ├── meta.json
+        │   └── bodies/…
+        └── deals/…
 ```
 
 Nested — not files-at-root — because both Finder and CLI `unzip`

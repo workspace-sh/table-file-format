@@ -405,13 +405,15 @@ and it has since **shipped** (issues #31 / #32 / #33, landed in PR
 **Other formats**: Excel workbook = many sheets. Frictionless TDP =
 many CSVs declared in `datapackage.json`. Airtable base = many tables.
 
-**`.table/` today**: One `.table/` is one table. Multiple tables = a
-folder of sibling `.table/`s. Relations cross via the address grammar.
+**`.table/` today**: A `.table` holds one or more tables, each under
+`tables/<name>/`, with the table order in the bundle's `meta.json`
+(D37). Relations resolve within the bundle first, and the archive
+carries the whole bundle.
 
-**Closing the gap**: Already solved by convention — apps load sibling
-`.table/`s from the same workspace directory and resolve relations by
-the relation's `table` name (see the address spec). No format change
-needed; just an app pattern.
+**Closing the gap**: Closed by D37. The earlier answer, "a folder of
+sibling `.table/`s, no format change needed", couldn't travel as one
+file, had no table order, and gave the index no unit for joins across
+tables.
 
 ### Cell range references in formulas
 
