@@ -1,0 +1,7 @@
+{"id": "rent", "item": "Rent", "category": "Housing", "jan": 1450, "feb": 1450, "mar": 1450}
+{"id": "energy", "item": "Energy", "category": "Housing", "jan": 142, "feb": 131, "mar": 118}
+{"id": "groceries", "item": "Groceries", "category": "Food", "jan": 410, "feb": 385, "mar": 402}
+{"id": "eating-out", "item": "Eating out", "category": "Fun", "jan": 120, "feb": 95, "mar": 150}
+{"id": "transport", "item": "Transport", "category": "Transport", "jan": 165, "feb": 165, "mar": 180}
+{"id": "savings", "item": "Savings", "category": "Savings", "jan": 500, "feb": 500, "mar": 500}
+{"id": "income", "item": "Income", "category": "Income", "jan": 3600, "feb": 3600, "mar": 3750}

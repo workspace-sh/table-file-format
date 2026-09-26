@@ -1,0 +1,85 @@
+{
+  "fields": [
+    {
+      "name": "item",
+      "type": "string",
+      "title": "Item",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "title": "Category",
+      "constraints": {
+        "enum": [
+          {
+            "value": "Housing",
+            "color": "blue"
+          },
+          {
+            "value": "Food",
+            "color": "green"
+          },
+          {
+            "value": "Transport",
+            "color": "orange"
+          },
+          {
+            "value": "Fun",
+            "color": "pink"
+          },
+          {
+            "value": "Savings",
+            "color": "purple"
+          },
+          {
+            "value": "Income",
+            "color": "gray"
+          }
+        ]
+      }
+    },
+    {
+      "name": "jan",
+      "type": "number",
+      "title": "Jan",
+      "format": "currency:GBP"
+    },
+    {
+      "name": "feb",
+      "type": "number",
+      "title": "Feb",
+      "format": "currency:GBP"
+    },
+    {
+      "name": "mar",
+      "type": "number",
+      "title": "Mar",
+      "format": "currency:GBP"
+    },
+    {
+      "name": "quarter",
+      "type": "number",
+      "title": "Q1",
+      "description": "January to March. In the sheet, typed in row 1 as =C1+D1+E1: its own row's months, so every row adds up its own.",
+      "computed": {
+        "expr": "(+ jan feb mar)",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "share",
+      "type": "number",
+      "title": "Share",
+      "format": "percent",
+      "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/F7: F7 is the Income row, stored by its id, so sorting never breaks it.",
+      "computed": {
+        "expr": "(/ quarter (field \"quarter\" \"income\"))",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ],
+  "schema-version": 1
+}
