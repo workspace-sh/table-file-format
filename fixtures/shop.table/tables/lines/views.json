@@ -1,0 +1,12 @@
+[
+  {
+    "id": "all",
+    "name": "All lines",
+    "layout": "table",
+    "totals": {
+      "item": "count",
+      "quantity": "sum",
+      "line_total": "sum"
+    }
+  }
+]

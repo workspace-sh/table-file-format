@@ -3,16 +3,19 @@ import type { ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 import { crmBundle } from "./crm";
 import { householdBudgetBundle } from "./household-budget";
 import { projectsBundle } from "./projects";
+import { shopBundle } from "./shop";
 
 export { crmBundle } from "./crm";
 export { householdBudgetBundle } from "./household-budget";
 export { projectsBundle } from "./projects";
+export { shopBundle } from "./shop";
 
 /** Every fixture bundle, keyed by its name: the directory's name without `.table` (D37). */
 export const bundles: Record<string, ParsedBundle> = {
   "crm": crmBundle,
   "household-budget": householdBudgetBundle,
   "projects": projectsBundle,
+  "shop": shopBundle,
 };
 
 /**

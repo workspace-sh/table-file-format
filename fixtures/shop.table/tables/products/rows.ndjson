@@ -1,0 +1,10 @@
+{"id": "pr-house", "name": "House blend, 250 g", "sku": "COF-001", "category": "coffee", "price": 8.5, "stock": 40}
+{"id": "pr-ethiopia", "name": "Ethiopia Yirgacheffe, 250 g", "sku": "COF-002", "category": "coffee", "price": 11.0, "stock": 22}
+{"id": "pr-decaf", "name": "Swiss water decaf, 250 g", "sku": "COF-003", "category": "coffee", "price": 9.0, "stock": 15}
+{"id": "pr-sencha", "name": "Sencha green tea, 100 g", "sku": "TEA-001", "category": "tea", "price": 6.5, "stock": 30}
+{"id": "pr-earl", "name": "Earl Grey, 100 g", "sku": "TEA-002", "category": "tea", "price": 5.5, "stock": 28}
+{"id": "pr-v60", "name": "Pour-over dripper", "sku": "EQP-001", "category": "equipment", "price": 24.0, "stock": 8}
+{"id": "pr-grinder", "name": "Hand grinder", "sku": "EQP-002", "category": "equipment", "price": 65.0, "stock": 5}
+{"id": "pr-kettle", "name": "Gooseneck kettle", "sku": "EQP-003", "category": "equipment", "price": 49.0, "stock": 6}
+{"id": "pr-mug", "name": "Enamel mug", "sku": "MER-001", "category": "merch", "price": 12.0, "stock": 50}
+{"id": "pr-tote", "name": "Canvas tote", "sku": "MER-002", "category": "merch", "price": 9.5, "stock": 35}

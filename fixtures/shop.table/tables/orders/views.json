@@ -1,0 +1,76 @@
+[
+  {
+    "id": "all",
+    "name": "All orders",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "ordered",
+        "direction": "desc"
+      }
+    ],
+    "totals": {
+      "number": "count",
+      "items": "sum",
+      "subtotal": "sum",
+      "total": "sum"
+    },
+    "fields": [
+      "number",
+      "customer",
+      "status",
+      "items",
+      "subtotal",
+      "shipping",
+      "total",
+      "ordered",
+      "city"
+    ]
+  },
+  {
+    "id": "fulfilment",
+    "name": "Fulfilment",
+    "layout": "board",
+    "board_field": "status",
+    "fields": [
+      "number",
+      "customer",
+      "total",
+      "ordered"
+    ]
+  },
+  {
+    "id": "calendar",
+    "name": "Calendar",
+    "layout": "calendar",
+    "calendar_field": "ordered"
+  },
+  {
+    "id": "to-ship",
+    "name": "To ship",
+    "layout": "table",
+    "filter": [
+      {
+        "field": "status",
+        "operator": "in",
+        "value": [
+          "paid",
+          "pending"
+        ]
+      }
+    ],
+    "sort": [
+      {
+        "field": "ordered",
+        "direction": "asc"
+      }
+    ],
+    "fields": [
+      "number",
+      "customer",
+      "city",
+      "items",
+      "total"
+    ]
+  }
+]

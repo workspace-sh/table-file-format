@@ -1,0 +1,42 @@
+[
+  {
+    "id": "all",
+    "name": "All customers",
+    "layout": "table",
+    "totals": {
+      "name": "count",
+      "order_count": "sum",
+      "lifetime_value": "sum"
+    }
+  },
+  {
+    "id": "top",
+    "name": "Top customers",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "lifetime_value",
+        "direction": "desc"
+      }
+    ],
+    "fields": [
+      "name",
+      "city",
+      "order_count",
+      "lifetime_value"
+    ]
+  },
+  {
+    "id": "by-city",
+    "name": "By city",
+    "layout": "table",
+    "group": {
+      "field": "city"
+    },
+    "fields": [
+      "name",
+      "email",
+      "lifetime_value"
+    ]
+  }
+]
