@@ -4,8 +4,9 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseTable } from "./parser.js";
-import { writeTable } from "./writer.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { parseBundle, parseTable } from "./parser.js";
+import { writeBundle, writeTable } from "./writer.js";
 
 test("writeTable round-trips through parseTable", async () => {
   const dir = await mkdtemp(join(tmpdir(), "table-test-"));
@@ -29,8 +30,8 @@ test("writeTable round-trips through parseTable", async () => {
     assert.equal(round.rows.length, 2);
     assert.equal(round.rows[0]!.title, "one");
     assert.equal(round.meta.title, "Test");
-    assert.equal(round.meta.format, "table");
-    assert.equal(round.meta.formatVersion, 1);
+    // format and formatVersion describe the bundle (SPEC section 5).
+    assert.equal(round.meta.format, undefined);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -51,17 +52,68 @@ test("writeTable terminates rows.ndjson with a trailing newline (POSIX)", async 
   }
 });
 
-test("writeTable stamps format and formatVersion when meta omits them", async () => {
+test("writeTable leaves bundle fields out of a table's meta.json", async () => {
   const dir = await mkdtemp(join(tmpdir(), "table-test-"));
   try {
-    const target = join(dir, "out.table");
+    const target = join(dir, "out");
     await writeTable(target, {
       schema: { fields: [{ name: "x", type: "string" }] },
       rows: [],
+      meta: { format: "table", formatVersion: 1, title: "X" },
+    });
+    const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
+    assert.deepEqual(meta, { title: "X" });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeBundle writes every table under tables/ and stamps the manifest (D37)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const target = join(dir, "crm.table");
+    await writeBundle(target, {
+      meta: { title: "CRM", tables: ["deals", "companies"] },
+      tables: {
+        companies: { schema: { fields: [{ name: "name", type: "string" }] }, rows: [{ id: "c1", name: "Atlas" }] },
+        deals: { schema: { fields: [{ name: "title", type: "string" }] }, rows: [{ id: "d1", title: "Renewal" }] },
+      },
     });
     const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
     assert.equal(meta.format, "table");
     assert.equal(meta.formatVersion, 1);
+    assert.deepEqual(meta.tables, ["deals", "companies"], "the given order is kept");
+    const back = await parseBundle(target);
+    assert.equal(back.tables.companies!.rows[0]!.name, "Atlas");
+    assert.equal(back.tables.deals!.rows[0]!.title, "Renewal");
+    assert.ok(existsSync(join(target, "tables", "deals", "rows.ndjson")));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeBundle removes a table no longer in the bundle, and nothing else", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const target = join(dir, "b.table");
+    const t = { schema: { fields: [{ name: "x", type: "string" as const }] }, rows: [] };
+    await writeBundle(target, { tables: { keep: t, gone: t } });
+    await mkdir(join(target, "tables", "notes"));
+    await writeFile(join(target, "tables", "notes", "readme.txt"), "the user's own folder");
+    await writeBundle(target, { tables: { keep: t } });
+    const names = (await readdir(join(target, "tables"))).sort();
+    assert.deepEqual(names, ["keep", "notes"], "a removed table goes; an unknown folder stays");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeBundle refuses a table name that isn't one", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "table-test-"));
+  try {
+    const t = { schema: { fields: [{ name: "x", type: "string" as const }] }, rows: [] };
+    await assert.rejects(writeBundle(join(dir, "b.table"), { tables: { "../escape": t } }), /invalid table name/);
+    await assert.rejects(writeBundle(join(dir, "b.table"), { tables: { ".hidden": t } }), /invalid table name/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

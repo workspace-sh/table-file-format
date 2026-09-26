@@ -23,10 +23,12 @@ const table: ParsedTable = {
   bodies: { abc: "# Notes" },
 };
 
+const saved = { tables: { "projects/projects": table }, bundles: { projects: { title: "Projects" } } };
+
 test("what is saved comes back as it was", () => {
   const store = memory();
-  save(store, { projects: table });
-  assert.deepEqual(loadSaved(store), { projects: table });
+  save(store, saved);
+  assert.deepEqual(loadSaved(store), saved);
 });
 
 test("nothing saved, or no storage at all, means start from the fixtures", () => {
@@ -40,10 +42,14 @@ test("anything unreadable is discarded rather than trusted", () => {
     "null",
     "[]",
     "{}",
-    JSON.stringify({ projects: { ...table, views: [] } }),
-    JSON.stringify({ projects: { ...table, rows: "nope" } }),
-    JSON.stringify({ projects: { ...table, schema: {} } }),
-    JSON.stringify({ projects: { ...table, meta: undefined } }),
+    JSON.stringify({ tables: { "projects/projects": { ...table, views: [] } }, bundles: saved.bundles }),
+    JSON.stringify({ tables: { "projects/projects": { ...table, rows: "nope" } }, bundles: saved.bundles }),
+    JSON.stringify({ tables: { "projects/projects": { ...table, schema: {} } }, bundles: saved.bundles }),
+    JSON.stringify({ tables: { "projects/projects": { ...table, meta: undefined } }, bundles: saved.bundles }),
+    // What demos before bundles saved (D37): discarded, not migrated.
+    JSON.stringify({ projects: table }),
+    // A table whose bundle isn't there.
+    JSON.stringify({ tables: { "crm/deals": table }, bundles: saved.bundles }),
   ];
   for (const raw of bad) {
     assert.equal(loadSaved(memory({ [STORAGE_KEY]: raw })), null, raw.slice(0, 40));
@@ -63,13 +69,13 @@ test("a store that throws is treated as no store", () => {
     },
   };
   assert.equal(loadSaved(throwing), null);
-  save(throwing, { projects: table });
+  save(throwing, saved);
   clearSaved(throwing);
 });
 
 test("reset forgets what was saved", () => {
   const store = memory();
-  save(store, { projects: table });
+  save(store, saved);
   clearSaved(store);
   assert.equal(loadSaved(store), null);
 });

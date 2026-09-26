@@ -37,6 +37,15 @@ export function stampMeta(meta: TableMeta | undefined): TableMeta {
   };
 }
 
+/**
+ * A table's own meta.json: its title and description, without the
+ * fields that describe the bundle (`format`, `formatVersion`, `tables`).
+ */
+export function tableMetaOnly(meta: TableMeta | undefined): TableMeta {
+  const { format: _f, formatVersion: _v, tables: _t, ...own } = (meta ?? {}) as TableMeta & { tables?: unknown };
+  return own;
+}
+
 /** Body files end with a newline (POSIX, same rule as rows.ndjson). */
 export function normaliseBody(content: string): string {
   return content.endsWith("\n") ? content : content + "\n";

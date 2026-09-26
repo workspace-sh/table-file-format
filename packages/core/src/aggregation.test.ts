@@ -4,19 +4,15 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
-import { parseTable } from "./parser.js";
 import { computeRows, FormulaError } from "./expr.js";
+import { fixtureBundles, fixtureTable } from "./test-fixtures.js";
 import type { ParsedTable, Row, TableSchema } from "./types.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string) => parseTable(resolve(here, "..", "..", "..", "fixtures", `${name}.table`));
+const fixture = fixtureTable;
 
+/** The CRM bundle's tables: relations resolve within it (D37). */
 async function crm(): Promise<Record<string, ParsedTable>> {
-  const [companies, contacts, deals] = await Promise.all([fixture("companies"), fixture("contacts"), fixture("deals")]);
-  return { companies, contacts, deals };
+  return (await fixtureBundles()).crm!.tables;
 }
 const byId = (rows: Row[], id: string) => rows.find((r) => r.id === id)!;
 
@@ -52,7 +48,7 @@ test("column total: the pipeline's total value", async () => {
 });
 
 test("sheet: each line's share of the quarter's total spending", async () => {
-  const budget = await fixture("household-budget");
+  const budget = await fixture("budget");
   const { rows } = computeRows(budget.schema, budget.rows);
   const schema: TableSchema = {
     fields: [...budget.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (column "spend"))', dialect: "table-expr-v1" } }],

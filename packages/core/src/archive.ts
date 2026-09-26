@@ -1,14 +1,17 @@
 import { strFromU8, strToU8 } from "fflate";
 import type {
+  BundleMeta,
+  ParsedBundle,
   ParsedTable,
   TableMeta,
   TableSchema,
   ValidationError,
   View,
 } from "./types.js";
-import type { WriteTableInput } from "./writer.js";
+import type { WriteBundleInput } from "./writer.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
-import { normaliseBody, pretty, serializeRows, stampMeta } from "./serialize.js";
+import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
+import { isTableName, tableOrder } from "./bundle.js";
 import { readZip, writeZip, type ZipEntry } from "./zip.js";
 
 /**
@@ -37,15 +40,17 @@ function isJunk(name: string): boolean {
 }
 
 /**
- * Read `.table.zip` archive bytes into the same `ParsedTable` shape
- * `parseTable` returns, including the skip-and-collect diagnostics
- * contract (SPEC section 3). Missing or malformed `schema.json`
- * inside the archive is fatal, exactly as for a directory. `path` on
- * the result is the root directory name from inside the archive.
+ * Read `.table.zip` archive bytes into the same `ParsedBundle` shape
+ * `parseBundle` returns: the manifest, and every table under
+ * `tables/<name>/` with its own skip-and-collect diagnostics (SPEC
+ * section 3). A directory under `tables/` without a `schema.json` isn't
+ * a table and is reported on the bundle's diagnostics, as on disk. A
+ * malformed `schema.json` stays fatal. `path` on the result is the
+ * root directory name from inside the archive.
  */
 export async function readTableArchive(
   source: Uint8Array,
-): Promise<ParsedTable> {
+): Promise<ParsedBundle> {
   const entries = readZip(source).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
@@ -75,55 +80,71 @@ export async function readTableArchive(
   };
 
   const diagnostics: ValidationError[] = [];
-
-  const schemaRaw = text("schema.json");
-  if (schemaRaw === undefined) {
-    throw new Error(`archive ${root} is missing schema.json`);
-  }
-  // Fatal by design — do not wrap (same posture as parseTable).
-  const schema = JSON.parse(schemaRaw) as TableSchema;
-
-  const rows = parseRowsText(text("rows.ndjson") ?? "", diagnostics);
-  const views =
-    parseOptionalJsonText<View[]>("views.json", text("views.json"), diagnostics) ?? [];
   const meta =
-    parseOptionalJsonText<TableMeta>("meta.json", text("meta.json"), diagnostics) ?? {};
+    parseOptionalJsonText<BundleMeta>("meta.json", text("meta.json"), diagnostics) ?? {};
 
-  const bodies: Record<string, string> = {};
+  const names = new Set<string>();
   for (const name of files.keys()) {
-    // Direct children of bodies/ only, mirroring the directory parser.
-    if (!name.startsWith("bodies/") || !name.endsWith(".md")) continue;
-    const inner = name.slice("bodies/".length);
-    if (inner.includes("/")) continue;
-    bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(name)!);
+    const m = /^tables\/([^/]+)\//.exec(name);
+    if (m && isTableName(m[1]!)) names.add(m[1]!);
   }
 
-  const parsed: ParsedTable = {
-    schema,
-    rows,
-    views,
-    meta,
-    path: root,
-  };
-  if (Object.keys(bodies).length > 0) parsed.bodies = bodies;
-  if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
-  return parsed;
+  const tables: Record<string, ParsedTable> = {};
+  for (const name of [...names].sort()) {
+    const prefix = `tables/${name}/`;
+    const schemaRaw = text(`${prefix}schema.json`);
+    if (schemaRaw === undefined || text(`${prefix}rows.ndjson`) === undefined) {
+      diagnostics.push({
+        rowIndex: -1,
+        message: `tables/${name} isn't a table: it needs schema.json and rows.ndjson`,
+      });
+      continue;
+    }
+    const tableDiagnostics: ValidationError[] = [];
+    // Fatal by design — do not wrap (same posture as parseTable).
+    const schema = JSON.parse(schemaRaw) as TableSchema;
+    const rows = parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
+    const views =
+      parseOptionalJsonText<View[]>("views.json", text(`${prefix}views.json`), tableDiagnostics) ?? [];
+    const tableMeta =
+      parseOptionalJsonText<TableMeta>("meta.json", text(`${prefix}meta.json`), tableDiagnostics) ?? {};
+
+    const bodies: Record<string, string> = {};
+    for (const file of files.keys()) {
+      // Direct children of the table's bodies/ only, mirroring the directory parser.
+      if (!file.startsWith(`${prefix}bodies/`) || !file.endsWith(".md")) continue;
+      const inner = file.slice(`${prefix}bodies/`.length);
+      if (inner.includes("/")) continue;
+      bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(file)!);
+    }
+
+    const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/tables/${name}` };
+    if (Object.keys(bodies).length > 0) table.bodies = bodies;
+    if (tableDiagnostics.length > 0) table.diagnostics = tableDiagnostics;
+    tables[name] = table;
+  }
+
+  const bundle: ParsedBundle = { meta, tables, path: root };
+  if (diagnostics.length > 0) bundle.diagnostics = diagnostics;
+  return bundle;
 }
 
 /**
- * Serialise a table into `.table.zip` bytes in the canonical layout.
- * `name` is the table's name — "projects" and "projects.table" are
- * both accepted; the archive root is always `<name>.table/`.
+ * Serialise a bundle into `.table.zip` bytes in the canonical layout:
+ * the manifest, then each table in display order under
+ * `tables/<name>/`. `name` is the bundle's name — "crm" and
+ * "crm.table" are both accepted; the archive root is always
+ * `<name>.table/`.
  *
  * Output is byte-deterministic for identical input: fixed entry
- * order (schema, rows, views, meta, bodies sorted by id), fixed
- * timestamps, canonical serialisation shared with `writeTable`.
- * The rebuildable `index.sqlite` cache and `attachments/` are not
- * carried by this writer (see SPEC section 13).
+ * order (manifest; per table schema, rows, views, meta, bodies sorted
+ * by id), fixed timestamps, canonical serialisation shared with
+ * `writeBundle`. The rebuildable `index.sqlite` cache and
+ * `attachments/` are not carried by this writer (see SPEC section 13).
  */
 export async function writeTableArchive(
   name: string,
-  input: WriteTableInput | ParsedTable,
+  input: WriteBundleInput | ParsedBundle,
 ): Promise<Uint8Array> {
   const bare = name.endsWith(".table") ? name.slice(0, -".table".length) : name;
   if (bare.length === 0 || bare.includes("/") || bare.includes("\\")) {
@@ -136,15 +157,22 @@ export async function writeTableArchive(
     data: strToU8(content),
   });
 
-  const entries: ZipEntry[] = [
-    entry("schema.json", pretty(input.schema)),
-    entry("rows.ndjson", serializeRows(input.rows, input.schema)),
-    entry("views.json", pretty(input.views ?? [])),
-    entry("meta.json", pretty(stampMeta(input.meta))),
-  ];
-  const bodies = input.bodies ?? {};
-  for (const id of Object.keys(bodies).sort()) {
-    entries.push(entry(`bodies/${id}.md`, normaliseBody(bodies[id]!)));
+  const names = tableOrder(input);
+  const entries: ZipEntry[] = [entry("meta.json", pretty(stampMeta({ ...(input.meta ?? {}), tables: names })))];
+  for (const tableName of names) {
+    if (!isTableName(tableName)) throw new Error(`invalid table name: ${JSON.stringify(tableName)}`);
+    const t = input.tables[tableName]!;
+    const at = `tables/${tableName}/`;
+    entries.push(
+      entry(`${at}schema.json`, pretty(t.schema)),
+      entry(`${at}rows.ndjson`, serializeRows(t.rows, t.schema)),
+      entry(`${at}views.json`, pretty(t.views ?? [])),
+      entry(`${at}meta.json`, pretty(tableMetaOnly(t.meta))),
+    );
+    const bodies = t.bodies ?? {};
+    for (const id of Object.keys(bodies).sort()) {
+      entries.push(entry(`${at}bodies/${id}.md`, normaliseBody(bodies[id]!)));
+    }
   }
   return writeZip(entries);
 }
