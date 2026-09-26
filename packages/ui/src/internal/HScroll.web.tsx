@@ -14,6 +14,10 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     overflowX: "auto",
+    // overflow-x makes this a vertical scroller too. The frozen column
+    // beside it can't scroll, so nothing here may: a vertical drag moves
+    // the page, never these columns out of line with the frozen one.
+    overflowY: "hidden",
     // Hides the macOS overlay scrollbar when there's no overflow.
     // Keep visible when actually scrollable so users get feedback.
     flex: 1,

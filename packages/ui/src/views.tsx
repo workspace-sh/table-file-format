@@ -844,6 +844,10 @@ const styles = css.create({
     backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
   },
   totalCell: {
+    // Fits the 36px totals row. A cell's usual minimum of 40 hung below
+    // it, and in the scrolling pane that overhang could be scrolled.
+    minHeight: 0,
+    paddingBlock: 0,
     gap: 6,
     cursor: "pointer",
     alignItems: "center",
