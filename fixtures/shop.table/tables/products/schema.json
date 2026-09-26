@@ -1,0 +1,89 @@
+{
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "title": "Product",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "sku",
+      "type": "string",
+      "title": "SKU",
+      "constraints": {
+        "unique": true,
+        "pattern": "^[A-Z]{3}-[0-9]{3}$"
+      }
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "title": "Category",
+      "constraints": {
+        "enum": [
+          {
+            "value": "coffee",
+            "label": "Coffee",
+            "color": "orange"
+          },
+          {
+            "value": "tea",
+            "label": "Tea",
+            "color": "green"
+          },
+          {
+            "value": "equipment",
+            "label": "Equipment",
+            "color": "gray"
+          },
+          {
+            "value": "merch",
+            "label": "Merch",
+            "color": "purple"
+          }
+        ]
+      }
+    },
+    {
+      "name": "price",
+      "type": "number",
+      "title": "Price",
+      "format": "currency:GBP",
+      "constraints": {
+        "minimum": 0
+      }
+    },
+    {
+      "name": "stock",
+      "type": "integer",
+      "title": "In stock",
+      "constraints": {
+        "minimum": 0
+      }
+    },
+    {
+      "name": "units_sold",
+      "type": "number",
+      "title": "Units sold",
+      "description": "The quantity on every order line for this product.",
+      "computed": {
+        "expr": "(sum (linked \"lines\" \"product\" \"quantity\"))",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "revenue",
+      "type": "number",
+      "title": "Revenue",
+      "format": "currency:GBP",
+      "description": "The total of every order line for this product.",
+      "computed": {
+        "expr": "(sum (linked \"lines\" \"product\" \"line_total\"))",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ],
+  "schema-version": 1
+}

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "catalogue",
+    "name": "Catalogue",
+    "layout": "table",
+    "totals": {
+      "name": "count",
+      "units_sold": "sum",
+      "revenue": "sum"
+    }
+  },
+  {
+    "id": "by-category",
+    "name": "By category",
+    "layout": "board",
+    "board_field": "category",
+    "fields": [
+      "name",
+      "price",
+      "stock"
+    ]
+  },
+  {
+    "id": "best-sellers",
+    "name": "Best sellers",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "units_sold",
+        "direction": "desc"
+      }
+    ],
+    "fields": [
+      "name",
+      "category",
+      "units_sold",
+      "revenue"
+    ]
+  }
+]

@@ -1,0 +1,69 @@
+{
+  "fields": [
+    {
+      "name": "item",
+      "type": "string",
+      "title": "Line",
+      "description": "The order and the product, for reading.",
+      "computed": {
+        "expr": "(concat (lookup \"order\" \"number\") \" · \" (lookup \"product\" \"name\"))",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "order",
+      "type": "string",
+      "title": "Order",
+      "relation": {
+        "table": "orders",
+        "field": "id"
+      },
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "product",
+      "type": "string",
+      "title": "Product",
+      "relation": {
+        "table": "products",
+        "field": "id"
+      },
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "quantity",
+      "type": "integer",
+      "title": "Quantity",
+      "constraints": {
+        "minimum": 1
+      }
+    },
+    {
+      "name": "unit_price",
+      "type": "number",
+      "title": "Unit price",
+      "format": "currency:GBP",
+      "description": "Looked up from the product (D36).",
+      "computed": {
+        "expr": "(lookup \"product\" \"price\")",
+        "dialect": "table-expr-v1"
+      }
+    },
+    {
+      "name": "line_total",
+      "type": "number",
+      "title": "Line total",
+      "format": "currency:GBP",
+      "description": "Quantity times unit price.",
+      "computed": {
+        "expr": "(* quantity unit_price)",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ],
+  "schema-version": 1
+}
