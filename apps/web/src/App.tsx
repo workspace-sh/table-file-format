@@ -9,7 +9,6 @@ import {
   validate,
 } from "@workspace.sh/table-core";
 import type {
-  DisplayOptions,
   Field,
   ParsedTable,
   Row,
@@ -27,6 +26,7 @@ import {
   GalleryView,
   ListView,
   TableView,
+  type DisplaySettings,
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, tables as initialTables } from "./loadFixture";
 import { loadDisplay, saveDisplay } from "./displaySettings";
@@ -321,8 +321,8 @@ export function App() {
   }, []);
   const [searchQuery, setSearchQuery] = useState("");
   // This viewer's locale and default date format: theirs, not the tables'.
-  const [display, setDisplay] = useState<DisplayOptions>(() => loadDisplay(browserStore()));
-  const changeDisplay = useCallback((next: DisplayOptions) => {
+  const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(browserStore()));
+  const changeDisplay = useCallback((next: DisplaySettings) => {
     setDisplay(next);
     saveDisplay(browserStore(), next);
   }, []);

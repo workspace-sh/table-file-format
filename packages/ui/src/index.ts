@@ -12,6 +12,7 @@ export {
 } from "./SchemaEditor";
 export { BodyEditor } from "./BodyEditor";
 export { DisplaySettingsProvider, useDisplaySettings } from "./DisplaySettings";
+export type { DisplaySettings } from "./DisplaySettings";
 export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";

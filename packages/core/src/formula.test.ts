@@ -46,6 +46,25 @@ for (const expr of examples) {
   });
 }
 
+for (const expr of examples) {
+  test(`SPEC example ${expr}: shown in the stored syntax, typed back, stored unchanged`, () => {
+    const parsed = parseExpr(expr);
+    assert.ok(parsed.ok);
+    const canonical = formatExpr(parsed.expr);
+    const shown = printFormula(expr, { syntax: "stored" });
+    assert.equal(shown, canonical);
+    assert.equal(stored(shown), canonical);
+  });
+}
+
+test("the stored syntax shows other rows by id, never a coordinate (#76)", () => {
+  const grid = { columns: ["item", "q1"], rows: ["a", "b"], here: "a" };
+  const other = '(/ q1 (field "q1" "b"))';
+  assert.equal(printFormula(other, { grid }), "=B1 / B2");
+  assert.equal(printFormula(other, { grid, syntax: "stored" }), other);
+  assert.equal(printFormula("(+ 1", { syntax: "stored" }), "(+ 1", "unparseable text comes back as-is");
+});
+
 // ---- what people type (PRIOR-ART "Authoring syntaxes")
 
 test("PRIOR-ART's two formulas, as typed and as stored", () => {

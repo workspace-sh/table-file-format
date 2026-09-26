@@ -30,3 +30,12 @@ test("anything unknown is dropped, not trusted", () => {
   }
   assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"locale":"de-DE","dateFormat":"bogus"}' })), { locale: "de-DE" });
 });
+
+test("formula syntax: the stored form is kept; Excel style is the default, so it isn't", () => {
+  const store = memory();
+  saveDisplay(store, { formulaSyntax: "stored" });
+  assert.deepEqual(loadDisplay(store), { formulaSyntax: "stored" });
+  saveDisplay(store, { formulaSyntax: "excel" });
+  assert.deepEqual(loadDisplay(store), {});
+  assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"formulaSyntax":"lisp"}' })), {});
+});

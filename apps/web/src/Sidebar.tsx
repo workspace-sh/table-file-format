@@ -1,6 +1,7 @@
 import { html, css } from "react-strict-dom";
-import type { DisplayOptions, ParsedTable } from "@workspace.sh/table-core";
-import { DATE_FORMATS, LOCALES } from "./displaySettings";
+import type { ParsedTable } from "@workspace.sh/table-core";
+import type { DisplaySettings } from "@workspace.sh/table-ui";
+import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "./displaySettings";
 
 const styles = css.create({
   root: {
@@ -183,6 +184,11 @@ const DATE_LABELS: Record<string, string> = {
   relative: "Relative",
 };
 
+const FORMULA_LABELS: Record<string, string> = {
+  excel: "Excel style (=a + b)",
+  stored: "Stored form ((+ a b))",
+};
+
 interface SidebarProps {
   tables: Record<string, ParsedTable>;
   activeTablePath: string;
@@ -199,8 +205,8 @@ interface SidebarProps {
   /** Open a `.table.zip` as one more table. */
   onOpenFile: () => void;
   /** This viewer's locale and default date format. */
-  display: DisplayOptions;
-  onDisplayChange: (next: DisplayOptions) => void;
+  display: DisplaySettings;
+  onDisplayChange: (next: DisplaySettings) => void;
 }
 
 export function Sidebar({
@@ -305,6 +311,24 @@ export function Sidebar({
         </html.select>
       </html.div>
       <html.span style={[styles.resetNote, styles.displayNote]}>Where a column hasn't chosen its own date format.</html.span>
+      <html.div style={styles.displayRow}>
+        <html.span style={styles.displayName}>Formulas</html.span>
+        <html.select
+          aria-label="Which syntax formulas are shown in"
+          value={display.formulaSyntax ?? "excel"}
+          onChange={(e: { target: { value: string } }) =>
+            onDisplayChange({ ...display, formulaSyntax: e.target.value === "stored" ? "stored" : undefined })
+          }
+          style={styles.select}
+        >
+          {FORMULA_SYNTAXES.map((s) => (
+            <html.option key={s} value={s}>
+              {FORMULA_LABELS[s]}
+            </html.option>
+          ))}
+        </html.select>
+      </html.div>
+      <html.span style={[styles.resetNote, styles.displayNote]}>Either can be typed. The file keeps one form.</html.span>
       <html.div style={styles.footer}>
         <html.button
           style={styles.resetButton}

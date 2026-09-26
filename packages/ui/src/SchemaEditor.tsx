@@ -422,9 +422,10 @@ function typeFamily(t: FieldType): string {
  * The line under a formula box: why it can't be saved, what might go
  * wrong, or — once it compiles — exactly what the file will hold. Showing
  * the stored form keeps D29's two notations honest: what you typed is a
- * convenience, the bracketed form is the formula.
+ * convenience, the bracketed form is the formula. When what was typed
+ * already is the stored form, the line would only repeat it (#76).
  */
-function FormulaStatus({ result }: { result: CompileResult | null }) {
+function FormulaStatus({ result, typed }: { result: CompileResult | null; typed: string }) {
   if (result === null) return null;
   if (!result.ok) return <html.span style={styles.errorText}>{result.message}</html.span>;
   return (
@@ -434,7 +435,9 @@ function FormulaStatus({ result }: { result: CompileResult | null }) {
           {w}
         </html.span>
       ))}
-      <html.span style={styles.hintText}>Stored as {result.stored}</html.span>
+      {typed.trim() === result.stored ? null : (
+        <html.span style={styles.hintText}>Stored as {result.stored}</html.span>
+      )}
     </>
   );
 }
@@ -679,11 +682,13 @@ export function SchemaFieldEditor({
   grid,
 }: SchemaFieldEditorProps) {
   const [enumDraft, setEnumDraft] = useState("");
-  // A formula is edited in Excel style and saved in the stored form (D29).
-  // Only a field that is already computed shows this: turning a stored
-  // field into a formula would drop its data, and schemas only grow.
+  // A formula is shown in the app's chosen syntax, typed in either, and
+  // saved in the stored form (D29, #76). Only a field that is already
+  // computed shows this: turning a stored field into a formula would drop
+  // its data, and schemas only grow.
+  const { formulaSyntax } = useDisplaySettings();
   const [formulaDraft, setFormulaDraft] = useState(() =>
-    field.computed ? printFormula(field.computed.expr, { grid }) : "",
+    field.computed ? printFormula(field.computed.expr, { grid, syntax: formulaSyntax }) : "",
   );
   const formula = field.computed
     ? compileFormula(formulaDraft, { fields: (fields ?? []).map((f) => f.name), grid })
@@ -765,7 +770,7 @@ export function SchemaFieldEditor({
               }}
               style={[styles.input, styles.formulaInput]}
             />
-            <FormulaStatus result={formula} />
+            <FormulaStatus result={formula} typed={formulaDraft} />
             <html.div style={styles.actionRow}>
               <html.button
                 disabled={!formulaChanged}
@@ -917,6 +922,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
   const [formulaDraft, setFormulaDraft] = useState("");
+  const { formulaSyntax } = useDisplaySettings();
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
   // Ref typed as `unknown` because the underlying instance differs per
   // platform (HTMLButtonElement on web, Pressable view ref on native).
@@ -1028,14 +1034,14 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid }: AddFieldB
                 <html.input
                   type="text"
                   value={formulaDraft}
-                  placeholder="=round(budget / 12, 0)"
+                  placeholder={formulaSyntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)"}
                   onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
                   onKeyDown={(e: { key: string }) => {
                     if (e.key === "Enter") submit();
                   }}
                   style={[styles.input, styles.formulaInput]}
                 />
-                <FormulaStatus result={formula} />
+                <FormulaStatus result={formula} typed={formulaDraft} />
               </>
             )}
 
@@ -1113,9 +1119,10 @@ export function FormulaCellPanel({
     Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left + anchorRect.width - POPOVER_WIDTH),
   );
   const stored = field.computed?.expr ?? "";
+  const { formulaSyntax } = useDisplaySettings();
   // Edited here, from any cell, as Grist does — but it is the column's
   // formula, so saving says "every row" and every row changes.
-  const [draft, setDraft] = useState(() => printFormula(stored, { grid }));
+  const [draft, setDraft] = useState(() => printFormula(stored, { grid, syntax: formulaSyntax }));
   const compiled = onSave ? compileFormula(draft, { fields: fields.map((f) => f.name), grid }) : null;
   const changed = compiled?.ok === true && compiled.stored !== stored;
   const shownExpr = changed && compiled?.ok ? compiled.expr : null;
@@ -1185,12 +1192,12 @@ export function FormulaCellPanel({
               }}
               style={[styles.input, styles.formulaInput]}
             />
-            <FormulaStatus result={compiled} />
+            <FormulaStatus result={compiled} typed={draft} />
           </>
         ) : (
           <>
-            <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored, { grid })}</html.span>
-            <html.span style={styles.hintText}>Stored as {stored}</html.span>
+            <html.span style={[styles.input, styles.formulaInput]}>{printFormula(stored, { grid, syntax: formulaSyntax })}</html.span>
+            {formulaSyntax === "stored" ? null : <html.span style={styles.hintText}>Stored as {stored}</html.span>}
           </>
         )}
 
