@@ -122,6 +122,16 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
   },
+  // The pane beside the frozen column. A flex item grows to fit its
+  // content unless told it may shrink; without minWidth 0 it takes the
+  // whole table's width, HScroll inside it never overflows, and the
+  // table's rounded overflow: hidden cuts the far columns off.
+  tableScrollOuter: {
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    minWidth: 0,
+  },
   tableScrollPane: {
     display: "flex",
     flexDirection: "column",
@@ -2340,7 +2350,7 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={styles.tableScrollPane}>
+        <html.div style={styles.tableScrollOuter}>
           <HScroll>
             <html.div style={styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
