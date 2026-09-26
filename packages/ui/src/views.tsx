@@ -843,6 +843,25 @@ const styles = css.create({
     borderTopColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
     backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
   },
+  totalsRowQuiet: {
+    height: 32,
+    borderTopWidth: 0,
+    backgroundColor: "transparent",
+  },
+  newRow: {
+    height: 36,
+    alignItems: "center",
+    cursor: "pointer",
+  },
+  newRowHot: {
+    backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#17171a" },
+  },
+  newRowLabel: {
+    paddingInline: 16,
+    fontSize: 13,
+    whiteSpace: "nowrap",
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
   totalCell: {
     // Fits the 36px totals row. A cell's usual minimum of 40 hung below
     // it, and in the scrolling pane that overhang could be scrolled.
@@ -1096,26 +1115,6 @@ const styles = css.create({
     alignItems: "center",
     gap: 8,
     marginTop: 8,
-  },
-  // "+ Row", styled as "+ Field"'s trigger so the two read as a pair.
-  addRowButton: {
-    paddingInline: 8,
-    paddingBlock: 4,
-    fontSize: 11,
-    fontWeight: "600",
-    borderRadius: 4,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: {
-      default: "#d1d1d6",
-      "@media (prefers-color-scheme: dark)": "#3a3a3f",
-    },
-    backgroundColor: "transparent",
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
-    cursor: "pointer",
   },
   // Right-click menu on a row: what can be done to the row as a whole.
   rowMenuBackdrop: {
@@ -1534,6 +1533,8 @@ interface EditableCellProps {
   lines?: number;
   /** The column's alignment, which the idle cell fills the width to keep. */
   align?: FieldAlignment;
+  /** Open for typing as soon as it appears: a row just added. */
+  autoEdit?: boolean;
 }
 
 function EditableCell({
@@ -1544,6 +1545,7 @@ function EditableCell({
   onOpenRelation,
   lines,
   align,
+  autoEdit,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1573,6 +1575,12 @@ function EditableCell({
   };
 
   const cancel = () => setEditing(false);
+
+  useEffect(() => {
+    if (autoEdit && !readOnly) startEdit();
+    // Only as the cell first appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (readOnly) {
     return (
@@ -1835,8 +1843,11 @@ interface ViewProps {
   onAddEnumValue?: (fieldName: string, value: string) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onAddField?: (field: Field) => void;
-  /** Add an empty row. The app mints its id (D23). */
-  onAddRow?: () => void;
+  /**
+   * Add an empty row. The app mints its id (D23) and may return it: the
+   * table then opens that row's first cell for typing.
+   */
+  onAddRow?: () => string | void;
   /** Delete a row, and its body. The app confirms first if it wants to. */
   onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;
@@ -1956,8 +1967,24 @@ export function TableView({
   const canOpenRowMenu = !!onDeleteRow || !!onOpenBody;
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  // The row just added from "+ New row": its first cell opens for typing
+  // as it appears, then this clears (the cell's effect runs first).
+  const [focusRowId, setFocusRowId] = useState<string | null>(null);
+  useEffect(() => {
+    if (focusRowId && rows.some((r) => r.id === focusRowId)) setFocusRowId(null);
+  }, [rows, focusRowId]);
+  const [newRowHot, setNewRowHot] = useState(false);
+  const addRow = onAddRow
+    ? () => {
+        const id = onAddRow();
+        if (typeof id === "string") setFocusRowId(id);
+      }
+    : undefined;
   const totals = view.totals ?? {};
   const showTotals = !!onUpdateView || Object.keys(totals).length > 0;
+  // No totals chosen: the footer is only a place to choose one, so it
+  // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
+  const quietTotals = Object.keys(totals).length === 0;
   const openRowMenu = (rowId: string) => (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
     if (!canOpenRowMenu) return;
     e.preventDefault();
@@ -2225,7 +2252,7 @@ export function TableView({
           styles.tableCell,
           styles.cellWidth(colWidth(name)),
           cellAlignStyle(effectiveAlign(field)),
-          idxInPane !== paneLen - 1 && styles.tableCellSeparator,
+          idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
           styles.totalCell,
         ]}
         onClick={
@@ -2311,6 +2338,7 @@ export function TableView({
             onOpenRelation={onOpenRelation}
             lines={lines}
             align={align}
+            autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
           />
         ) : (
           <CellValue
@@ -2327,6 +2355,30 @@ export function TableView({
       </html.span>
     );
   };
+
+  // "+ New row", in the table under the last row, as Notion and Airtable
+  // have it. It spans both panes at one height so they stay level; the
+  // pane with the first column carries the label, and either half adds.
+  const newRowBand = (labelled: boolean) => (
+    <html.div
+      role="button"
+      onClick={addRow}
+      onPointerEnter={() => setNewRowHot(true)}
+      onPointerLeave={() => setNewRowHot(false)}
+      style={[styles.tableRow, styles.newRow, newRowHot && styles.newRowHot, !showTotals && styles.tableRowLast]}
+    >
+      {labelled && (
+        <Hinted
+          hint={
+            "Add a row and start typing in it. A view's filter may hide it until it's filled in." +
+            (onDeleteRow ? "\nRight-click a row to delete it." : "")
+          }
+        >
+          <html.span style={styles.newRowLabel}>+ New row</html.span>
+        </Hinted>
+      )}
+    </html.div>
+  );
 
   return (
     <>
@@ -2358,7 +2410,7 @@ export function TableView({
                     styles.tableRow,
                     styles.rowHeight(rowHeight),
                     styles.positioned,
-                    i === displayed.length - 1 && styles.tableRowLast,
+                    i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                   ]}
                 >
                   {coords && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
@@ -2367,8 +2419,9 @@ export function TableView({
                 </html.div>
               </Fragment>
             ))}
+            {addRow && newRowBand(true)}
             {showTotals && (
-              <html.div style={[styles.tableRow, styles.totalsRow]}>
+              <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
                 {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {renderTotalCell(primaryName, 0, 1)}
               </html.div>
@@ -2407,7 +2460,7 @@ export function TableView({
                       styles.tableRow,
                       styles.rowHeight(rowHeight),
                       styles.positioned,
-                      i === displayed.length - 1 && styles.tableRowLast,
+                      i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                     ]}
                   >
                     {coords && !primaryName && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
@@ -2419,8 +2472,9 @@ export function TableView({
                   </html.div>
                 </Fragment>
               ))}
+              {addRow && newRowBand(!primaryName)}
               {showTotals && (
-                <html.div style={[styles.tableRow, styles.totalsRow]}>
+                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
                   {coords && !primaryName && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
                 </html.div>
@@ -2546,15 +2600,8 @@ export function TableView({
           </html.div>
         </Portal>
       )}
-      {(canAddField || onAddRow) && (
+      {canAddField && (
         <html.div style={styles.tableFooter}>
-          {onAddRow && (
-            <Hinted hint={"Add an empty row at the end of the table. A view's filter may hide it until it's filled in." + (onDeleteRow ? "\nRight-click a row to delete it." : "")}>
-              <html.button onClick={onAddRow} style={styles.addRowButton}>
-                + Row
-              </html.button>
-            </Hinted>
-          )}
           {canAddField && (
             <AddFieldButton
               existingNames={new Set(schema.fields.map((f) => f.name))}

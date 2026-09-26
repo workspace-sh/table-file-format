@@ -448,11 +448,14 @@ export function App() {
 
   // A new row is just an id (D23); the view it lands in decides where it
   // shows, and a filter may hide it until its cells are filled in.
+  // Returns the id, so the table can open the new row for typing.
   const addRow = useCallback(() => {
+    const id = newId();
     setTables((all) => {
       const t = all[activeTablePath]!;
-      return { ...all, [activeTablePath]: { ...t, rows: [...t.rows, { id: newId() }] } };
+      return { ...all, [activeTablePath]: { ...t, rows: [...t.rows, { id }] } };
     });
+    return id;
   }, [activeTablePath]);
 
   const deleteRow = useCallback(
@@ -813,7 +816,7 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
-  onAddRow: () => void;
+  onAddRow: () => string;
   onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
