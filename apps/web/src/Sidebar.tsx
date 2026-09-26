@@ -194,6 +194,8 @@ interface SidebarProps {
   onReset: () => void;
   /** Make a new, empty table and switch to it. */
   onNewTable: () => void;
+  /** Add a view to this table and open its settings. */
+  onNewView: () => void;
   /** Open a `.table.zip` as one more table. */
   onOpenFile: () => void;
   /** This viewer's locale and default date format. */
@@ -210,6 +212,7 @@ export function Sidebar({
   onSelect,
   onReset,
   onNewTable,
+  onNewView,
   onOpenFile,
   display,
   onDisplayChange,
@@ -261,6 +264,9 @@ export function Sidebar({
             <html.span style={styles.itemLayout}>{view.layout}</html.span>
           </html.div>
         ))}
+        <html.button style={[styles.item, styles.newTable]} onClick={onNewView}>
+          + New view
+        </html.button>
       </html.div>
       <html.span style={[styles.sectionLabel, styles.displayLabel]}>Display</html.span>
       <html.div style={styles.displayRow}>
