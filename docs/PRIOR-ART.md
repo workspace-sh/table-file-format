@@ -183,10 +183,13 @@ What a compiler has to get right is meaning, not spelling:
   `$budget` all mean the row's `budget` field — a bare word, or
   `(field "unit price")` for a name that isn't one (SPEC section 2).
 - **Equality.** `=` and `==` both compile to `=`; `<>` and `!=` to `<>`.
-- **What doesn't compile is refused.** A cell address (`=B7` that
-  isn't resolved to a field), a cross-row reference, or a function
-  outside D32's library is rejected at authoring time, never stored
-  as text (D29 addendum).
+- **Coordinates are resolved, not stored.** A cell address like `=B7`
+  is resolved against the grid being edited: to a bare field when it's
+  in the row being edited, otherwise to `(field "name" "<row id>")`
+  (D34). One that points outside the grid is refused.
+- **What doesn't compile is refused.** A function outside D32's
+  library, or anything else that doesn't compile, is rejected at
+  authoring time, never stored as text (D29 addendum).
 
 ### Multi-target relations
 
