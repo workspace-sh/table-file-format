@@ -94,6 +94,12 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 4,
+    // The selected cell shows where the keyboard is; no ring round it all.
+    outlineStyle: "none",
+  },
+  /** The selected cell: an inset ring, inside the cell's own borders. */
+  cellSelected: {
+    boxShadow: "inset 0 0 0 2px #0a84ff",
   },
   tableGrow: {
     flex: 1,
@@ -229,16 +235,15 @@ const styles = css.create({
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
-    // Subtle inset when the cell contains a focused descendant (i.e. the
+    // An inset ring when the cell contains a focused descendant (i.e. the
     // input is open). Indicator lives on the cell, not on the input, so
     // the input itself can stay layout-neutral and the text doesn't shift
     // on edit-mode swap. :focus-within is CSS-only — RN port via the same
     // useFocused hook pattern documented in strict.css.
     ":focus-within": {
-      boxShadow: {
-        default: "inset 0 0 0 1px #9ca3af",
-        "@media (prefers-color-scheme: dark)": "inset 0 0 0 1px #6b7280",
-      },
+      // The same ring as a selected cell: editing is the selected cell
+      // with a caret in it, as in Sheets.
+      boxShadow: "inset 0 0 0 2px #0a84ff",
     },
   },
   tableCellAlignCenter: {
@@ -1544,6 +1549,34 @@ interface EditableCellProps {
   align?: FieldAlignment;
   /** Open for typing as soon as it appears: a row just added. */
   autoEdit?: boolean;
+  /**
+   * In a table with a selected cell: a click on an unselected cell only
+   * selects it (the table does that), and a click on the selected one edits.
+   * Absent outside a table, where a click edits as before.
+   */
+  selected?: boolean;
+  /** Start editing; `text` replaces the value (a key typed on the cell). */
+  editRequest?: EditRequest;
+  /** How editing ended from the keyboard, so the table can move on. */
+  onEditEnd?: (how: EditEnd) => void;
+}
+
+/** A request from the table to open a cell; `n` changes for each one. */
+export interface EditRequest {
+  n: number;
+  text?: string;
+}
+export type EditEnd = "enter" | "tab" | "shift-tab" | "escape" | "done";
+
+/** What a key event carries on the web, beyond RSD's `{ key }`. */
+interface KeyEventLike {
+  key: string;
+  shiftKey?: boolean;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  preventDefault?: () => void;
+  target?: unknown;
 }
 
 function EditableCell({
@@ -1555,6 +1588,9 @@ function EditableCell({
   lines,
   align,
   autoEdit,
+  selected,
+  editRequest,
+  onEditEnd,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1563,18 +1599,35 @@ function EditableCell({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  // Opened by typing a character: the caret goes after it, so the next
+  // one adds to it. Opened any other way, the whole value is selected.
+  const caretAtEnd = useRef(false);
 
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
-      if (el && "select" in el && typeof el.select === "function") el.select();
+      if (caretAtEnd.current && el && "setSelectionRange" in el) {
+        el.focus();
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // number and date inputs have no caret to place
+        }
+      } else if (el && "select" in el && typeof el.select === "function") el.select();
       else el?.focus?.();
     }
   }, [editing]);
 
-  const startEdit = () => {
-    setDraft(value === undefined || value === null ? "" : String(value));
+  const startEdit = (text?: string) => {
+    caretAtEnd.current = text !== undefined;
+    setDraft(text ?? (value === undefined || value === null ? "" : String(value)));
     setEditing(true);
+  };
+  // A click edits the selected cell; an unselected one it leaves to the
+  // table to select. Outside a table (no `selected`), a click edits.
+  const clickToEdit = () => {
+    if (selected !== false) startEdit();
   };
 
   const commit = (raw: string) => {
@@ -1590,6 +1643,28 @@ function EditableCell({
     // Only as the cell first appears.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (editRequest && !readOnly) startEdit(editRequest.text);
+    // Each request once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest?.n]);
+
+  // Enter saves and moves down, Tab saves and moves across, Escape
+  // cancels; each hands the keyboard back to the table.
+  const onEditKey = (e: KeyEventLike) => {
+    if (e.key === "Enter") {
+      commit(draft);
+      onEditEnd?.("enter");
+    } else if (e.key === "Tab") {
+      e.preventDefault?.();
+      commit(draft);
+      onEditEnd?.(e.shiftKey ? "shift-tab" : "tab");
+    } else if (e.key === "Escape") {
+      cancel();
+      onEditEnd?.("escape");
+    }
+  };
 
   if (readOnly) {
     return (
@@ -1618,6 +1693,9 @@ function EditableCell({
         onCommit={onCommit}
         relatedTables={relatedTables}
         lines={lines}
+        selected={selected}
+        editRequest={editRequest}
+        onEditEnd={onEditEnd}
       />
     );
   }
@@ -1628,7 +1706,7 @@ function EditableCell({
   if (enumOpts.length > 0) {
     if (!editing) {
       return (
-        <html.span onClick={startEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
+        <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
           <CellValue
             field={field}
             value={value}
@@ -1644,7 +1722,20 @@ function EditableCell({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
-        onChange={(e: { target: { value: string } }) => commit(e.target.value)}
+        onChange={(e: { target: { value: string } }) => {
+          commit(e.target.value);
+          onEditEnd?.("done");
+        }}
+        onKeyDown={(e: KeyEventLike) => {
+          if (e.key === "Escape") {
+            cancel();
+            onEditEnd?.("escape");
+          } else if (e.key === "Tab") {
+            e.preventDefault?.();
+            cancel();
+            onEditEnd?.(e.shiftKey ? "shift-tab" : "tab");
+          }
+        }}
         onBlur={cancel}
         style={styles.cellInput}
       >
@@ -1661,7 +1752,7 @@ function EditableCell({
   // Text/number/integer: text input on click
   if (!editing) {
     return (
-      <html.span onClick={startEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
+      <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
         <CellValue
           field={field}
           value={value}
@@ -1699,10 +1790,7 @@ function EditableCell({
       value={draft}
       onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
       onBlur={() => commit(draft)}
-      onKeyDown={(e: { key: string }) => {
-        if (e.key === "Enter") commit(draft);
-        else if (e.key === "Escape") cancel();
-      }}
+      onKeyDown={onEditKey}
       style={styles.cellInput}
     />
   );
@@ -1726,12 +1814,18 @@ function ListCell({
   onCommit,
   relatedTables,
   lines,
+  selected,
+  editRequest,
+  onEditEnd,
 }: {
   field: Field;
   value: unknown;
   onCommit: (next: unknown) => void;
   relatedTables?: Record<string, ParsedTable>;
   lines?: number;
+  selected?: boolean;
+  editRequest?: EditRequest;
+  onEditEnd?: (how: EditEnd) => void;
 }) {
   const items = Array.isArray(value) ? value.map(String) : [];
   const options = enumOptions(field);
@@ -1740,16 +1834,49 @@ function ListCell({
   const [rect, setRect] = useState<AnchorRect | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anchor = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const optionRefs = useRef<any[]>([]);
+  const openPicker = async () => {
+    setText(items.join(", "));
+    setRect(await measureAnchor(anchor.current));
+    setOpen(true);
+  };
+  useEffect(() => {
+    if (editRequest) void openPicker();
+    // Each request once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest?.n]);
+  // Opened: the first choice has focus, so arrows and Space work at once.
+  useEffect(() => {
+    if (open) optionRefs.current[0]?.focus?.();
+  }, [open]);
+  const close = (how: EditEnd) => {
+    setOpen(false);
+    onEditEnd?.(how);
+  };
+  // Up and down move between choices; Space or Enter toggles (the
+  // button's own); Escape closes; Tab closes and moves across.
+  const onPickerKey = (e: KeyEventLike) => {
+    const at = optionRefs.current.findIndex((el) => el === e.target);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault?.();
+      const next = Math.max(0, Math.min(options.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)));
+      optionRefs.current[next]?.focus?.();
+    } else if (e.key === "Escape") {
+      close("done");
+    } else if (e.key === "Tab") {
+      e.preventDefault?.();
+      close(e.shiftKey ? "shift-tab" : "tab");
+    }
+  };
   const shown = (
     <html.span
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         anchor.current = el;
       }}
-      onClick={async () => {
-        setText(items.join(", "));
-        setRect(await measureAnchor(anchor.current));
-        setOpen(true);
+      onClick={() => {
+        if (selected !== false) void openPicker();
       }}
       style={styles.cellEditableIdle}
     >
@@ -1771,9 +1898,11 @@ function ListCell({
         placeholder="a, b, c"
         onChange={(e: { target: { value: string } }) => setText(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e: { key: string }) => {
-          if (e.key === "Enter") commit();
-          else if (e.key === "Escape") setOpen(false);
+        onKeyDown={(e: KeyEventLike) => {
+          if (e.key === "Enter") {
+            commit();
+            onEditEnd?.("enter");
+          } else if (e.key === "Escape") close("escape");
         }}
         style={styles.cellInput}
       />
@@ -1793,6 +1922,7 @@ function ListCell({
         <html.div
           role="listbox"
           aria-multiselectable={true}
+          onKeyDown={onPickerKey}
           style={[
             styles.rowMenu,
             styles.rowMenuAt(
@@ -1801,9 +1931,13 @@ function ListCell({
             ),
           ]}
         >
-          {options.map((o) => (
+          {options.map((o, i) => (
             <html.button
               key={o.value}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                optionRefs.current[i] = el;
+              }}
               role="option"
               aria-selected={items.includes(o.value)}
               style={[styles.rowMenuItem, styles.choiceItem]}
@@ -1979,8 +2113,17 @@ export function TableView({
   // The row just added from "+ New row": its first cell opens for typing
   // as it appears, then this clears (the cell's effect runs first).
   const [focusRowId, setFocusRowId] = useState<string | null>(null);
+  // The selected cell, as a spreadsheet has one: arrows move it, Enter or
+  // typing edits it (#85). Cleared when focus leaves the table.
+  const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
+  const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gridRef = useRef<any>(null);
   useEffect(() => {
-    if (focusRowId && rows.some((r) => r.id === focusRowId)) setFocusRowId(null);
+    if (focusRowId && rows.some((r) => r.id === focusRowId)) {
+      setSel({ rowId: focusRowId, name: fields[0]! });
+      setFocusRowId(null);
+    }
   }, [rows, focusRowId]);
   const [newRowHot, setNewRowHot] = useState(false);
   const addRow = onAddRow
@@ -2322,16 +2465,19 @@ export function TableView({
     const isInputCell =
       formulaCell !== null &&
       openFormulaRefs.some((r) => r.field === name && (r.rowId ?? formulaCell.rowId) === row.id);
+    const isSelected = sel?.rowId === row.id && sel.name === name;
+    const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
       <html.span
         key={name}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={(el: any) => {
-          if (isFormula) cellRefs.current[cellKey] = el;
+          cellRefs.current[cellKey] = el;
         }}
         onClick={
           isFormula
             ? async () => {
+                setSel({ rowId: row.id, name });
                 if (isOpenCell) {
                   setFormulaCell(null);
                   return;
@@ -2339,7 +2485,7 @@ export function TableView({
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
               }
-            : undefined
+            : () => setSel({ rowId: row.id, name })
         }
         style={[
           styles.tableCell,
@@ -2350,6 +2496,7 @@ export function TableView({
           inOpenColumn && styles.formulaColumnTint,
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
+          isSelected && styles.cellSelected,
         ]}
       >
         {onUpdateRow ? (
@@ -2362,6 +2509,9 @@ export function TableView({
             lines={lines}
             align={align}
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
+            selected={isSelected}
+            editRequest={request}
+            onEditEnd={endEdit(row.id, name)}
           />
         ) : (
           <CellValue
@@ -2378,6 +2528,137 @@ export function TableView({
       </html.span>
     );
   };
+
+  // ---- keyboard: a selected cell, moved and opened from the keyboard,
+  // as Sheets and Airtable have it. Columns in display order, rows as shown.
+  const rowIds = displayed.map((d) => d.row.id);
+  const lastRow = rowIds.length - 1;
+  const lastCol = fields.length - 1;
+  const cellAt = (r: number, c: number) => ({
+    rowId: rowIds[Math.max(0, Math.min(lastRow, r))]!,
+    name: fields[Math.max(0, Math.min(lastCol, c))]!,
+  });
+  const editable = (name: string) => !!onUpdateRow && fieldMap.get(name)?.computed === undefined;
+  const openCell = async (rowId: string, name: string, text?: string) => {
+    const field = fieldMap.get(name);
+    if (field?.computed) {
+      // A formula cell opens its formula, as a click does.
+      const rect = await measureAnchor(cellRefs.current[`${rowId}\u0000${name}`]);
+      if (rect) setFormulaCell({ rowId, name, rect });
+      return;
+    }
+    if (!editable(name)) return;
+    if (field?.type === "boolean") {
+      const row = rows.find((r) => r.id === rowId);
+      onUpdateRow!(rowId, name, !(row?.[name] === true));
+      return;
+    }
+    setEditReq({ rowId, name, req: { n: Date.now(), text } });
+  };
+  // Where the selection goes when editing ends from the keyboard; the
+  // table takes the keyboard back either way.
+  const endEdit = (rowId: string, name: string) => (how: EditEnd) => {
+    const r = rowIds.indexOf(rowId);
+    const c = fields.indexOf(name);
+    if (how === "enter") setSel(cellAt(r + 1, c));
+    else if (how === "tab" || how === "shift-tab") {
+      const i = r * fields.length + c + (how === "tab" ? 1 : -1);
+      setSel(i < 0 || i > lastRow * fields.length + lastCol ? { rowId, name } : cellAt(Math.floor(i / fields.length), i % fields.length));
+    } else setSel({ rowId, name });
+    gridRef.current?.focus?.({ preventScroll: true });
+  };
+  const onGridKey = (e: KeyEventLike) => {
+    const tag = (e.target as { tagName?: string } | undefined)?.tagName;
+    // Typing in a cell editor, a picker or a header button is theirs.
+    if (tag && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(tag)) return;
+    if (rowIds.length === 0 || fields.length === 0) return;
+    const cur = sel && rowIds.includes(sel.rowId) && fields.includes(sel.name) ? sel : null;
+    if (!cur) {
+      if (/^(Arrow|Tab$|Enter$|Home$|End$)/.test(e.key)) {
+        e.preventDefault?.();
+        setSel(cellAt(0, 0));
+      }
+      return;
+    }
+    const r = rowIds.indexOf(cur.rowId);
+    const c = fields.indexOf(cur.name);
+    const jump = e.metaKey || e.ctrlKey;
+    const go = (nr: number, nc: number) => {
+      e.preventDefault?.();
+      setSel(cellAt(nr, nc));
+    };
+    const field = fieldMap.get(cur.name);
+    switch (e.key) {
+      case "ArrowUp":
+        return go(jump ? 0 : r - 1, c);
+      case "ArrowDown":
+        return go(jump ? lastRow : r + 1, c);
+      case "ArrowLeft":
+        return go(r, jump ? 0 : c - 1);
+      case "ArrowRight":
+        return go(r, jump ? lastCol : c + 1);
+      case "Home":
+        return go(jump ? 0 : r, 0);
+      case "End":
+        return go(jump ? lastRow : r, lastCol);
+      case "Tab": {
+        const i = r * fields.length + c + (e.shiftKey ? -1 : 1);
+        // Past either end, Tab leaves the table as it would any control.
+        if (i < 0 || i > lastRow * fields.length + lastCol) return;
+        return go(Math.floor(i / fields.length), i % fields.length);
+      }
+      case "Enter":
+      case "F2":
+        e.preventDefault?.();
+        void openCell(cur.rowId, cur.name);
+        return;
+      case "Escape":
+        setSel(null);
+        return;
+      case "Backspace":
+      case "Delete":
+        if (editable(cur.name) && field?.type !== "boolean") {
+          e.preventDefault?.();
+          onUpdateRow!(cur.rowId, cur.name, undefined);
+        }
+        return;
+      case " ":
+        if (field?.type === "boolean") {
+          e.preventDefault?.();
+          void openCell(cur.rowId, cur.name);
+        }
+        return;
+      default:
+        // A character typed on a cell replaces what's in it. Choices,
+        // lists and dates open their picker instead.
+        if (e.key.length === 1 && !jump && !e.altKey && editable(cur.name) && field?.type !== "boolean") {
+          e.preventDefault?.();
+          const picks =
+            enumOptions(field).length > 0 ||
+            field?.type === "array" ||
+            field?.type === "date" ||
+            field?.type === "datetime" ||
+            field?.type === "time";
+          void openCell(cur.rowId, cur.name, picks ? undefined : e.key);
+        }
+    }
+  };
+  // Focus leaving the table (not moving within it) drops the selection.
+  // The browser's own focusout: RSD's blur event doesn't say where focus went.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el?.addEventListener) return;
+    const onOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if (!next || !el.contains(next)) setSel(null);
+    };
+    el.addEventListener("focusout", onOut);
+    return () => el.removeEventListener("focusout", onOut);
+  }, []);
+  useEffect(() => {
+    if (!sel) return;
+    cellRefs.current[`${sel.rowId}\u0000${sel.name}`]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [sel]);
 
   // "+ New row", in the table under the last row, as Notion and Airtable
   // have it. It spans both panes at one height so they stay level; the
@@ -2408,7 +2689,15 @@ export function TableView({
     {/* "+" for a new field sits at the end of the header row, just outside
         the table, as Airtable has it: the grid gives up its width once,
         rather than every row carrying an empty column (#71). */}
-    <html.div style={styles.tableWithAdd}>
+    <html.div
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={(el: any) => {
+        gridRef.current = el;
+      }}
+      tabIndex={0}
+      onKeyDown={onGridKey}
+      style={styles.tableWithAdd}
+    >
     <html.div {...measureProps} style={[styles.table, styles.tableGrow]}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
