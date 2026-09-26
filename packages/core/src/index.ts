@@ -58,6 +58,7 @@ export {
   columnLetter,
   coordinateOf,
   type Grid,
+  type FormulaSyntax,
   type CompileResult,
   type FormulaRef,
 } from "./formula.js";
