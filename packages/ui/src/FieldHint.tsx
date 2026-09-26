@@ -8,6 +8,7 @@ import { html, css } from "react-strict-dom";
 import { effectiveFormat, printFormula } from "@workspace.sh/table-core";
 import type { Field, TableSchema } from "@workspace.sh/table-core";
 
+import { useDisplaySettings } from "./DisplaySettings";
 import { friendlyType } from "./SchemaEditor";
 import { useHoverHint } from "./internal/useHoverHint";
 
@@ -75,7 +76,8 @@ export function FieldHint({
   if (field?.relation) facts.push(`Links to ${field.relation.table}`);
   if (format) facts.push(formatWords(format));
   if (field?.deprecated) facts.push("Deprecated");
-  const formula = field?.computed?.expr ? printFormula(field.computed.expr) : null;
+  const { formulaSyntax } = useDisplaySettings();
+  const formula = field?.computed?.expr ? printFormula(field.computed.expr, { syntax: formulaSyntax }) : null;
   return (
     <html.div style={styles.stack}>
       <html.span style={styles.title}>{title}</html.span>

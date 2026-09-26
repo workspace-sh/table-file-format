@@ -587,20 +587,35 @@ function printExpr(e: Expr, grid?: Grid): string {
 }
 
 /**
+ * Which syntax a client shows formulas in (#76). A preference only: the
+ * stored `table-expr-v1` form is the one formula (D29), and the editor
+ * takes either syntax whichever is shown.
+ */
+export type FormulaSyntax = "excel" | "stored";
+
+/**
  * Show a stored formula the way people write one: `=round(budget / 12, 0)`.
  * Function names are shown lowercase, as they are stored: typing is
  * case-insensitive, so `=ROUND(…)` works the same, and which case to show
  * is an app's choice (D29 keeps no rendering in the file).
+ * With `syntax: "stored"` it is the canonical stored text instead,
+ * `(round (/ budget 12) 0)`, with no coordinates: those are Excel style's.
  * Accepts the stored text or a tree. Stored text that doesn't parse comes
  * back as-is, so an editor can still show what's there.
  */
-export function printFormula(stored: string | Expr, options: { grid?: Grid } = {}): string {
+export function printFormula(
+  stored: string | Expr,
+  options: { grid?: Grid; syntax?: FormulaSyntax } = {},
+): string {
+  let expr: Expr;
   if (typeof stored === "string") {
     const r = parseExpr(stored);
     if (!r.ok) return stored;
-    return `=${printExpr(r.expr, options.grid)}`;
+    expr = r.expr;
+  } else {
+    expr = stored;
   }
-  return `=${printExpr(stored, options.grid)}`;
+  return options.syntax === "stored" ? formatExpr(expr) : `=${printExpr(expr, options.grid)}`;
 }
 
 // ---- what a new formula field's values will be
