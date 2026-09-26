@@ -89,6 +89,22 @@ const TOUCH_DRAG_LONGPRESS_MS = 300;
 
 const styles = css.create({
   // Table
+  tableWithAdd: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 4,
+  },
+  tableGrow: {
+    flex: 1,
+    minWidth: 0,
+  },
+  /** Centres the "+" on the header row (33px). */
+  addFieldSlot: {
+    display: "flex",
+    alignItems: "center",
+    height: 35,
+  },
   table: {
     display: "flex",
     flexDirection: "column",
@@ -1109,13 +1125,6 @@ const styles = css.create({
   noBottomBorder: {
     borderBottomWidth: 0,
   },
-  tableFooter: {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 8,
-  },
   // Right-click menu on a row: what can be done to the row as a whole.
   rowMenuBackdrop: {
     position: "fixed",
@@ -2016,6 +2025,20 @@ export function TableView({
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   const grid = coords ? { columns: fields, rows: displayed.map((d) => d.row.id) } : undefined;
   const canAddField = !!onAddField;
+  // A new field lands at the end of the row, often past the right edge:
+  // bring its header into view once it has rendered.
+  const [addedField, setAddedField] = useState<string | null>(null);
+  const addField = (field: Field) => {
+    onAddField?.(field);
+    setAddedField(field.name);
+  };
+  useEffect(() => {
+    if (!addedField) return;
+    const el = headerButtonRefs.current[addedField];
+    if (!el) return;
+    el.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    setAddedField(null);
+  }, [addedField, fields]);
   // Editors for the rightmost columns on screen open leftwards, so they
   // stay inside the window. On screen, not in the schema: a view can hide
   // or reorder fields, so the schema's last field may not be the last shown.
@@ -2382,7 +2405,11 @@ export function TableView({
 
   return (
     <>
-    <html.div {...measureProps} style={styles.table}>
+    {/* "+" for a new field sits at the end of the header row, just outside
+        the table, as Airtable has it: the grid gives up its width once,
+        rather than every row carrying an empty column (#71). */}
+    <html.div style={styles.tableWithAdd}>
+    <html.div {...measureProps} style={[styles.table, styles.tableGrow]}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
@@ -2483,6 +2510,20 @@ export function TableView({
           </HScroll>
         </html.div>
       </html.div>
+    </html.div>
+      {canAddField && (
+        <html.div style={styles.addFieldSlot}>
+          <Hinted hint="Add a field">
+            <AddFieldButton
+              compact
+              existingNames={new Set(schema.fields.map((f) => f.name))}
+              fields={schema.fields}
+              grid={grid}
+              onAdd={addField}
+            />
+          </Hinted>
+        </html.div>
+      )}
     </html.div>
       {formulaCell && openFormulaField && (() => {
         const openRow = rows.find((r) => r.id === formulaCell.rowId);
@@ -2599,18 +2640,6 @@ export function TableView({
             )}
           </html.div>
         </Portal>
-      )}
-      {canAddField && (
-        <html.div style={styles.tableFooter}>
-          {canAddField && (
-            <AddFieldButton
-              existingNames={new Set(schema.fields.map((f) => f.name))}
-              fields={schema.fields}
-              grid={grid}
-              onAdd={onAddField!}
-            />
-          )}
-        </html.div>
       )}
     </>
   );
