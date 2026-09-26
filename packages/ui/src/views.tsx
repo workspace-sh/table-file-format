@@ -42,6 +42,7 @@ import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
@@ -96,6 +97,15 @@ const styles = css.create({
     gap: 4,
     // The selected cell shows where the keyboard is; no ring round it all.
     outlineStyle: "none",
+  },
+  /** A card with the keyboard: the same blue as a selected cell. */
+  cardFocused: {
+    borderRadius: 10,
+    boxShadow: "0 0 0 2px #0a84ff",
+  },
+  /** A list row with the keyboard: inset, as rows sit edge to edge. */
+  listItemFocused: {
+    boxShadow: "inset 0 0 0 2px #0a84ff",
   },
   /** The selected cell: an inset ring, inside the cell's own borders. */
   cellSelected: {
@@ -2934,6 +2944,86 @@ export function TableView({
   );
 }
 
+/**
+ * Keyboard focus for the views that show rows as cards: one card has a
+ * ring, arrows move it (`move` says where), Enter opens the card's
+ * document, and Escape, or focus leaving the view, drops it. `onAltKey`
+ * takes Option/Alt+arrow first (moving a card), returning whether it did.
+ */
+function useCardKeys({
+  move,
+  firstId,
+  onOpen,
+  onAltKey,
+}: {
+  move: (id: string, key: string) => string;
+  firstId: string | undefined;
+  onOpen?: (id: string) => void;
+  onAltKey?: (id: string, key: string) => boolean;
+}) {
+  const [focusId, setFocusId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cardRefs = useRef<Record<string, any>>({});
+  // The container can change (a board becomes a carousel on a phone), so
+  // its focusout listener follows it: the browser's own event, as RSD's
+  // blur doesn't say where focus went.
+  const unbind = useRef<(() => void) | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const containerRef = (el: any) => {
+    unbind.current?.();
+    unbind.current = null;
+    if (!el?.addEventListener) return;
+    const onOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if (!next || !el.contains(next)) setFocusId(null);
+    };
+    el.addEventListener("focusout", onOut);
+    unbind.current = () => el.removeEventListener("focusout", onOut);
+  };
+  useEffect(() => {
+    if (focusId) cardRefs.current[focusId]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [focusId]);
+  const onKeyDown = (e: KeyEventLike) => {
+    const tag = (e.target as { tagName?: string } | undefined)?.tagName;
+    if (tag && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(tag)) return;
+    if (!focusId) {
+      if (firstId && /^(Arrow|Home$|End$)/.test(e.key)) {
+        e.preventDefault?.();
+        setFocusId(firstId);
+      }
+      return;
+    }
+    if (e.altKey && onAltKey?.(focusId, e.key)) {
+      e.preventDefault?.();
+      return;
+    }
+    if (e.key === "Enter") {
+      if (onOpen) {
+        e.preventDefault?.();
+        onOpen(focusId);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      setFocusId(null);
+      return;
+    }
+    if (/^(Arrow|Home$|End$)/.test(e.key)) {
+      e.preventDefault?.();
+      setFocusId(move(focusId, e.key));
+    }
+  };
+  return {
+    focusId,
+    setFocusId,
+    containerProps: { ref: containerRef, tabIndex: 0 as const, onKeyDown },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    cardRef: (id: string) => (el: any) => {
+      cardRefs.current[id] = el;
+    },
+  };
+}
+
 export function BoardView({
   view,
   rows,
@@ -3047,6 +3137,37 @@ export function BoardView({
       })()
     : Object.keys(groups);
 
+  const cardColumns = columnKeys.map((k) => (groups[k] ?? []).map((r) => r.id));
+  const cards = useCardKeys({
+    move: (id, key) => moveInColumns(cardColumns, id, key),
+    firstId: cardColumns.find((col) => col.length > 0)?.[0],
+    onOpen: onOpenBody,
+    // Option/Alt+←→ moves the card to the next column, Option/Alt+↑↓
+    // within its column: what dragging does, from the keyboard.
+    onAltKey: (id, key) => {
+      const c = cardColumns.findIndex((col) => col.includes(id));
+      if (c < 0 || !onUpdateRow) return false;
+      if (key === "ArrowLeft" || key === "ArrowRight") {
+        const target = columnKeys[c + (key === "ArrowLeft" ? -1 : 1)];
+        if (target !== undefined) onUpdateRow(id, groupField, target === "(empty)" ? null : target);
+        return true;
+      }
+      if ((key === "ArrowUp" || key === "ArrowDown") && onUpdateView) {
+        const col = cardColumns[c]!;
+        const neighbour = col[col.indexOf(id) + (key === "ArrowUp" ? -1 : 1)];
+        if (neighbour !== undefined) {
+          const ids = rows.map((r) => r.id);
+          const a = ids.indexOf(id);
+          const b = ids.indexOf(neighbour);
+          [ids[a], ids[b]] = [ids[b]!, ids[a]!];
+          onUpdateView({ order: ids });
+        }
+        return true;
+      }
+      return false;
+    },
+  });
+
   const columnsContent = columnKeys.map((key) => {
     const groupRows = groups[key] ?? [];
     const dropReg = canDrag ? registerColumn(key) : undefined;
@@ -3120,11 +3241,19 @@ export function BoardView({
             }
           >
             <html.div
-              ref={canDrag ? registerCard(row.id).ref : undefined}
-              onClick={onOpenBody ? () => onOpenBody(row.id) : undefined}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                cards.cardRef(row.id)(el);
+                if (canDrag) registerCard(row.id).ref(el);
+              }}
+              onClick={() => {
+                cards.setFocusId(row.id);
+                onOpenBody?.(row.id);
+              }}
               style={[
                 styles.boardCardWrapper,
                 canDrag && styles.draggableHandle,
+                cards.focusId === row.id && styles.cardFocused,
                 draggedRowId === row.id && styles.cardDragging,
                 dropSlot?.id === row.id && (dropSlot.after ? styles.dropAfter : styles.dropBefore),
               ]}
@@ -3164,14 +3293,16 @@ export function BoardView({
     return (
       <>
         <SnapHScroll snapInterval={carouselSnapInterval}>
-          <html.div style={styles.board}>{columnsContent}</html.div>
+          <html.div {...cards.containerProps} style={styles.board}>
+            {columnsContent}
+          </html.div>
         </SnapHScroll>
         {ghost}
       </>
     );
   }
   return (
-    <html.div style={styles.board}>
+    <html.div {...cards.containerProps} style={styles.board}>
       {columnsContent}
       {ghost}
     </html.div>
@@ -3223,15 +3354,38 @@ export function GalleryView({
         )
       : MIN_GALLERY_CARD_WIDTH;
 
+  const ids = rows.map((r) => r.id);
+  const cards = useCardKeys({
+    move: (id, key) => moveInGrid(ids, cardsPerRow, id, key),
+    firstId: ids[0],
+    onOpen: onOpenBody,
+  });
   return (
-    <html.div {...measureProps} style={styles.gallery}>
+    <html.div
+      {...measureProps}
+      {...cards.containerProps}
+      // Both want the element: the width measure and the keyboard.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={(el: any) => {
+        cards.containerProps.ref(el);
+        measureProps.ref?.(el);
+      }}
+      style={styles.gallery}
+    >
       {rows.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         return (
           <html.div
             key={row.id}
-            style={[styles.card, styles.galleryCard, styles.cellWidth(cardWidth)]}
+            ref={cards.cardRef(row.id)}
+            onClick={() => cards.setFocusId(row.id)}
+            style={[
+              styles.card,
+              styles.galleryCard,
+              styles.cellWidth(cardWidth),
+              cards.focusId === row.id && styles.cardFocused,
+            ]}
           >
             {galleryField && (
               <GalleryHero field={fieldMap.get(galleryField)} value={row[galleryField]} />
@@ -3317,9 +3471,22 @@ export function ListView({
     return next;
   };
 
+  const listed = groupedRows(view, rows, schema);
+  const cards = useCardKeys({
+    move: (id, key) => moveInColumns([listed.map((d) => d.row.id)], id, key),
+    firstId: listed[0]?.row.id,
+    onOpen: onOpenBody,
+    // Option/Alt+↑↓ moves the row, as dragging it does.
+    onAltKey: (id, key) => {
+      if (!onUpdateView || (key !== "ArrowUp" && key !== "ArrowDown")) return false;
+      onUpdateView({ order: nudge(rows.map((r) => r.id), id, key === "ArrowUp" ? -1 : 1) });
+      return true;
+    },
+  });
+
   return (
-    <html.div style={styles.list}>
-      {groupedRows(view, rows, schema).map(({ row, starts }, i) => {
+    <html.div {...cards.containerProps} style={styles.list}>
+      {listed.map(({ row, starts }, i) => {
         const dropReg = canDrag ? registerRow(row.id) : undefined;
         const isDropTarget =
           draggedRowId !== null &&
@@ -3373,10 +3540,18 @@ export function ListView({
             }
           >
             <html.div
-              ref={dropReg?.ref}
-              onClick={onOpenBody ? () => onOpenBody(row.id) : undefined}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                cards.cardRef(row.id)(el);
+                dropReg?.ref(el);
+              }}
+              onClick={() => {
+                cards.setFocusId(row.id);
+                onOpenBody?.(row.id);
+              }}
               style={[
                 styles.listItem,
+                cards.focusId === row.id && styles.listItemFocused,
                 viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
                 i === rows.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
