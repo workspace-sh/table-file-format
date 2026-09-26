@@ -13,4 +13,5 @@ export {
 export { BodyEditor } from "./BodyEditor";
 export { DisplaySettingsProvider, useDisplaySettings } from "./DisplaySettings";
 export { Hinted } from "./FieldHint";
+export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";

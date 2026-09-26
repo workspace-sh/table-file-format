@@ -17,6 +17,7 @@ import type {
   View,
 } from "@workspace.sh/table-core";
 import {
+  AttachmentsProvider,
   BodyEditor,
   BoardView,
   DisplaySettingsProvider,
@@ -26,7 +27,7 @@ import {
   ListView,
   TableView,
 } from "@workspace.sh/table-ui";
-import { tables as initialTables } from "./loadFixture";
+import { attachmentUrls, tables as initialTables } from "./loadFixture";
 import { loadDisplay, saveDisplay } from "./displaySettings";
 import { archiveFileName, openArchive, tableToArchive } from "./tableFiles";
 import { tableKeyFor } from "./tableKey";
@@ -524,6 +525,7 @@ export function App() {
 
   return (
     <DisplaySettingsProvider value={display}>
+    <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
       <Sidebar
         tables={tables}
@@ -623,6 +625,7 @@ export function App() {
         />
       )}
     </html.div>
+    </AttachmentsProvider>
     </DisplaySettingsProvider>
   );
 }
