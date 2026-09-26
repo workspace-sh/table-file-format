@@ -53,6 +53,8 @@ export {
   formatExpr,
   formulaType,
   formulaFields,
+  formulaRefs,
   type CompileResult,
+  type FormulaRef,
 } from "./formula.js";
 export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";

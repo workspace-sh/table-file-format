@@ -43,3 +43,41 @@ for (const { row, expr, want } of examples) {
     assert.equal(shown, want);
   });
 }
+
+// ---- references to another row (D34), over the small table SPEC shows
+
+const otherBlock = /<!-- other-row-examples:start -->([\s\S]*?)<!-- other-row-examples:end -->/.exec(spec)?.[1] ?? "";
+const otherExamples = otherBlock
+  .split("\n")
+  .filter((line) => line.startsWith("| `"))
+  .map((line) => {
+    const cells = line.split(" | ").map((c) => c.replace(/^\|\s*|\s*\|$/g, "").trim());
+    const unquote = (c: string) => c.replace(/^`|`$/g, "");
+    return { rowId: unquote(cells[0]!), expr: unquote(cells[1]!), want: cells[2]! };
+  });
+const sheet: Row[] = [
+  { id: "rent", item: "Rent", q1: 3000 },
+  { id: "food", item: "Food", q1: 1200 },
+  { id: "income", item: "Income", q1: 12000 },
+];
+
+test("SPEC has other-row examples to check", () => {
+  assert.ok(otherExamples.length >= 5, `found ${otherExamples.length}`);
+});
+
+for (const { rowId, expr, want } of otherExamples) {
+  test(`SPEC other-row example: ${expr} in ${rowId} → ${want}`, () => {
+    const schema: TableSchema = {
+      fields: [
+        { name: "item", type: "string" },
+        { name: "q1", type: "number" },
+        { name: "out", type: "number", computed: { expr, dialect: "table-expr-v1" } },
+      ],
+    };
+    const got = computeRows(schema, sheet).rows.find((r) => r.id === rowId)!.out;
+    const shown =
+      got === undefined ? "empty" : got instanceof FormulaError ? `\`${got.code}\`` : `\`${JSON.stringify(got)}\``;
+    assert.equal(shown, want);
+  });
+}
+
