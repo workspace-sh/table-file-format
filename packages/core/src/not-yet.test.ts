@@ -72,11 +72,3 @@ test("sheet total: the budget's spending for the quarter", { todo: "column total
 test("sheet share: each line as a share of total spending", { todo: "column totals (#96)" }, () => {
   assert.fail(`needs the column total; expected rent at ${EXPECTED.rentShareOfSpending}`);
 });
-
-test("multi-select: an array field's choice list checks each item", { todo: "enum on array fields (#97)" }, () => {
-  const schema = {
-    fields: [{ name: "tags", type: "array" as const, constraints: { enum: ["emea", "priority"] } }],
-  };
-  assert.deepEqual(validate(schema, [{ id: "r1", tags: ["emea", "priority"] }]), []);
-  assert.equal(validate(schema, [{ id: "r2", tags: ["emea", "nope"] }]).length, 1);
-});
