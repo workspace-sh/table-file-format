@@ -14,8 +14,10 @@ import {
   formulaType,
   parseExpr,
   printFormula,
+  formatValue,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
+import { useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportHeight } from "./internal/useViewportHeight";
 import { useViewportWidth } from "./internal/useViewportWidth";
@@ -481,11 +483,13 @@ const FORMAT_CHOICES: Record<Exclude<FormatFamily, null>, { value: string; label
     { value: "duration:seconds", label: "Duration (seconds)" },
   ],
   date: [
-    { value: "", label: "ISO (2026-09-25)" },
+    // Not set: the table leaves it to whoever shows it (the app's default).
+    { value: "", label: "App's default" },
+    { value: "iso", label: "ISO" },
     { value: "short", label: "Short" },
     { value: "long", label: "Long" },
     { value: "weekday", label: "With weekday" },
-    { value: "relative", label: "Relative (3 days ago)" },
+    { value: "relative", label: "Relative" },
   ],
   string: [
     { value: "", label: "Plain text" },
@@ -529,6 +533,12 @@ function FormatPicker({
         }
       : o,
   );
+  // Date choices show what they look like, today, in the app's locale.
+  const display = useDisplaySettings();
+  const today = new Date().toISOString().slice(0, 10);
+  const example = (token: string) =>
+    formatValue({ name: "example", type: "date", format: token || display.dateFormat || "iso" }, today, display);
+  const shown = family === "date" ? choices.map((o) => ({ ...o, label: `${o.label} (${example(o.value)})` })) : choices;
   const current = field.format ?? "";
   const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current;
   const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : 2;
@@ -550,7 +560,7 @@ function FormatPicker({
         onChange={(e: { target: { value: string } }) => choose(e.target.value)}
         style={styles.input}
       >
-        {choices.map((o) => (
+        {shown.map((o) => (
           <html.option key={o.value || "default"} value={o.value}>
             {o.label}
           </html.option>

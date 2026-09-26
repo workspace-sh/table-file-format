@@ -11,4 +11,5 @@ export {
   ADD_FIELD_COLUMN_WIDTH,
 } from "./SchemaEditor";
 export { BodyEditor } from "./BodyEditor";
+export { DisplaySettingsProvider, useDisplaySettings } from "./DisplaySettings";
 export { PortalHost } from "./internal/PortalHost";
