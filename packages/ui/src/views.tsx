@@ -4,6 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import { useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
+import { isImageFile, useAttachmentUrl } from "./Attachments";
 import {
   applyGroup,
   completeSeconds,
@@ -12,6 +13,7 @@ import {
   formatValue as formatWithFieldFormat,
   enumOptions,
   enumValues,
+  stringFormatKind,
   effectiveFormat,
   formatAddress,
   formulaFields,
@@ -807,6 +809,25 @@ const styles = css.create({
     },
   },
 
+  // The 8 symbolic enum colours (SPEC section 2), mapped onto light and dark.
+  pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
+  pillRed: { backgroundColor: { default: "#fde2e1", "@media (prefers-color-scheme: dark)": "#4a1f1f" }, color: { default: "#b42318", "@media (prefers-color-scheme: dark)": "#ff8a80" } },
+  pillOrange: { backgroundColor: { default: "#fde8d4", "@media (prefers-color-scheme: dark)": "#4a2c14" }, color: { default: "#b54708", "@media (prefers-color-scheme: dark)": "#ffb86b" } },
+  pillYellow: { backgroundColor: { default: "#fdf3c4", "@media (prefers-color-scheme: dark)": "#433a10" }, color: { default: "#8a6d00", "@media (prefers-color-scheme: dark)": "#f5d565" } },
+  pillGreen: { backgroundColor: { default: "#dcf5e3", "@media (prefers-color-scheme: dark)": "#16341f" }, color: { default: "#1f7a2c", "@media (prefers-color-scheme: dark)": "#7ee08a" } },
+  pillBlue: { backgroundColor: { default: "#dde9fd", "@media (prefers-color-scheme: dark)": "#15284a" }, color: { default: "#1d4ed8", "@media (prefers-color-scheme: dark)": "#8ab4ff" } },
+  pillPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" }, color: { default: "#6d28d9", "@media (prefers-color-scheme: dark)": "#c4a8ff" } },
+  pillPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" }, color: { default: "#be185d", "@media (prefers-color-scheme: dark)": "#ff9ecb" } },
+  relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
+  link: {
+    textDecorationLine: "underline",
+    textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
+    color: { default: "#1d4ed8", "@media (prefers-color-scheme: dark)": "#8ab4ff" },
+  },
+  attachment: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6 },
+  attachmentThumb: { width: 20, height: 20, borderRadius: 4, objectFit: "cover" },
+  galleryImage: { width: "100%", height: 120, objectFit: "contain", borderRadius: 6, marginBottom: 6 },
+
   /**
    * Relation cell — looks like a link, opens the target row on click.
    * `html.button` rather than `html.a` so we get cross-platform press
@@ -1136,7 +1157,47 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
 
   const isEnum = field?.constraints?.enum != null;
   if (isEnum && value !== undefined && value !== null && value !== "") {
-    return <html.span style={styles.pill}>{String(value)}</html.span>;
+    return <EnumPill field={field} value={value} />;
+  }
+
+  // Many related rows: one link each (cardinality "many", SPEC section 2).
+  if (field?.relation && Array.isArray(value)) {
+    return (
+      <html.span style={styles.relationList}>
+        {value.map((id) => (
+          <RelationCellValue
+            key={String(id)}
+            relation={field.relation!}
+            targetId={String(id)}
+            relatedTables={relatedTables}
+            onOpenRelation={onOpenRelation}
+          />
+        ))}
+      </html.span>
+    );
+  }
+
+  // An attachment: its filename, drawn as the image when the app can
+  // resolve it (SPEC section 6 leaves resolving to the app).
+  if (field?.attachment && typeof value === "string" && value !== "") {
+    return <AttachmentValue fileName={value} />;
+  }
+
+  // url / email / phone are links (SPEC "Field format").
+  const kind = stringFormatKind(field);
+  if ((kind === "url" || kind === "email" || kind === "phone") && typeof value === "string" && value !== "") {
+    const href = kind === "url" ? value : kind === "email" ? `mailto:${value}` : `tel:${value.replace(/[^+\d]/g, "")}`;
+    return (
+      <html.a
+        href={href}
+        target={kind === "url" ? "_blank" : undefined}
+        rel="noopener noreferrer"
+        onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+        style={[styles.link, clamp]}
+      >
+        {value}
+      </html.a>
+    );
   }
   // A declared display format (currency:USD, decimal:2, …) is honoured;
   // the stored value is untouched (SPEC "Field format"). A date with no
@@ -1146,6 +1207,52 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
     return <html.span style={clamp}>{formatWithFieldFormat(field, value, display)}</html.span>;
   }
   return <html.span style={clamp}>{formatValue(value)}</html.span>;
+}
+
+const PILL_COLORS = {
+  gray: styles.pillGray,
+  red: styles.pillRed,
+  orange: styles.pillOrange,
+  yellow: styles.pillYellow,
+  green: styles.pillGreen,
+  blue: styles.pillBlue,
+  purple: styles.pillPurple,
+  pink: styles.pillPink,
+} as const;
+
+/** A choice as the schema describes it: its label, in its colour. */
+function EnumPill({ field, value }: { field: Field | undefined; value: unknown }) {
+  const option = enumOptions(field).find((o) => o.value === value);
+  const color = option?.color && option.color in PILL_COLORS ? PILL_COLORS[option.color as keyof typeof PILL_COLORS] : null;
+  return <html.span style={[styles.pill, color]}>{option?.label ?? String(value)}</html.span>;
+}
+
+/** A board column's heading: the choice's label when it has one. */
+function BoardColumnTitle({ field, value }: { field: Field | undefined; value: string }) {
+  const option = enumOptions(field).find((o) => o.value === value);
+  return <html.span>{option?.label ?? value}</html.span>;
+}
+
+function AttachmentValue({ fileName }: { fileName: string }) {
+  const url = useAttachmentUrl()(fileName);
+  if (!url) return <html.span>{fileName}</html.span>;
+  return (
+    <html.span style={styles.attachment}>
+      {isImageFile(fileName) ? <html.img src={url} alt="" style={styles.attachmentThumb} /> : null}
+      <html.a href={url} target="_blank" rel="noopener noreferrer" style={styles.link}>
+        {fileName}
+      </html.a>
+    </html.span>
+  );
+}
+
+/** A gallery card's lead: the image itself when it's an attachment that resolves. */
+function GalleryHero({ field, value }: { field: Field | undefined; value: unknown }) {
+  const url = useAttachmentUrl()(typeof value === "string" ? value : "");
+  if (field?.attachment && typeof value === "string" && url && isImageFile(value)) {
+    return <html.img src={url} alt="" style={styles.galleryImage} />;
+  }
+  return <html.span style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
 }
 
 function RelationCellValue({
@@ -1162,13 +1269,15 @@ function RelationCellValue({
   const target = relatedTables?.[relation.table];
   const targetRow = target?.rows.find((r) => r.id === targetId);
 
-  // Display value: the related row's primary-key value when resolvable;
-  // otherwise the raw id (broken state).
-  const primaryKeyField = target?.schema.primaryKey?.[0];
-  const resolvedLabel =
-    targetRow && primaryKeyField
-      ? String(targetRow[primaryKeyField] ?? targetId)
-      : null;
+  // Display value: the related row's primary key when the table declares
+  // one, else its first text field (its title, in practice), else its id.
+  // Only a row that can't be found is broken.
+  const labelField =
+    target?.schema.primaryKey?.[0] ??
+    target?.schema.fields.find((f) => f.type === "string" && !f.relation && !f.deprecated)?.name;
+  const resolvedLabel = targetRow
+    ? String((labelField ? targetRow[labelField] : undefined) ?? targetId)
+    : null;
 
   if (!resolvedLabel) {
     // Dangling — no related table loaded, OR table loaded but row not
@@ -2133,7 +2242,7 @@ export function BoardView({
         ]}
       >
         <html.div style={styles.boardColumnHeader}>
-          <html.span>{key}</html.span>
+          <BoardColumnTitle field={schema.fields.find((f) => f.name === groupField)} value={key} />
           <html.span style={styles.boardCount}>{groupRows.length}</html.span>
         </html.div>
         {groupRows.map((row) => (
@@ -2306,9 +2415,7 @@ export function GalleryView({
             style={[styles.card, styles.galleryCard, styles.cellWidth(cardWidth)]}
           >
             {galleryField && (
-              <html.span style={styles.galleryCardHero}>
-                {formatValue(row[galleryField])}
-              </html.span>
+              <GalleryHero field={fieldMap.get(galleryField)} value={row[galleryField]} />
             )}
             <CardBody
               row={row}
@@ -2867,7 +2974,7 @@ function CardBody({
     <>
       {fields.map((name) => (
         <html.div key={name} style={styles.cardField}>
-          <html.span style={styles.cardFieldLabel}>{name}</html.span>
+          <html.span style={styles.cardFieldLabel}>{fieldMap.get(name)?.title ?? name}</html.span>
           <html.span style={styles.cardFieldValue}>
             <CellValue
               field={fieldMap.get(name)}
