@@ -4,14 +4,16 @@
 import { computeRows, FormulaError, parseExpr } from "@workspace.sh/table-core";
 import { Workbook } from "formualizer/pkg/formualizer_wasm.js";
 
-import { printNode } from "./edn.js";
-import type { Node, Value } from "./node.js";
+import { type Case, printNode } from "./edn.js";
+import { type Host, type Node, type Value, TABLE_HOST } from "./node.js";
 
 export interface Engine {
   name: string;
   /** The version measured, for the report. */
   version: string;
-  evaluate(expr: Node): Value | { cannotExpress: string };
+  /** The host settings it computes under (OpenFormula 3.4). */
+  host: Host;
+  evaluate(c: Case): Value | { cannotExpress: string };
 }
 
 // ---- Formualizer, through Excel's formula text
@@ -43,6 +45,7 @@ export function toExcel(node: Node): string {
       if (node.fn === "%" && a.length === 1) return `(${a[0]})%`;
       if ((node.fn === "-" || node.fn === "+") && a.length === 1) return `(${node.fn}${a[0]})`;
       if (INFIX.has(node.fn) && a.length >= 2) return `(${a.join(node.fn)})`;
+      if (node.fn === "ref" && node.args[0]?.kind === "string") return node.args[0].value;
       const name = node.fn.replace(/^com\.microsoft\./, "").toUpperCase();
       return `${name}(${a.join(",")})`;
     }
@@ -68,20 +71,49 @@ function fromFormualizer(v: unknown): Value {
   return { error: `unrecognised result ${JSON.stringify(v)}` };
 }
 
+function address(a: string): { row: number; col: number } {
+  const m = /^([A-Z]+)([0-9]+)$/.exec(a);
+  if (!m) throw new Error(`not a cell address: ${a}`);
+  const col = [...m[1]!].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+  return { row: Number(m[2]), col };
+}
+
+// A cell holding an error is set by a formula that gives it.
+const ERROR_FORMULAS: Record<string, string> = {
+  "#N/A": "=NA()",
+  "#DIV/0!": "=1/0",
+  "#VALUE!": '="a"+1',
+  "#NUM!": "=SQRT(-1)",
+  "#NAME?": "=NO.SUCH.FUNCTION()",
+  "#REF!": "=INDEX({1},2)",
+};
+
 export function formualizer(version: string): Engine {
-  const wb = new Workbook();
+  let wb = new Workbook();
   let n = 0;
   return {
     name: "Formualizer",
     version,
-    evaluate(expr) {
-      // A sheet of its own, so an array result has room to spill.
+    // Excel's behaviour: case-insensitive, wildcards, whole-cell matching.
+    host: TABLE_HOST,
+    evaluate(c) {
+      // A sheet of its own, so an array result has room to spill, with
+      // the cells the case reads and the formula where the case had it.
+      // A fresh workbook now and then: one that keeps growing slows every case.
+      if (n % 100 === 0) wb = new Workbook();
       const sheet = `c${n++}`;
       wb.addSheet(sheet);
       try {
-        wb.setFormula(sheet, 1, 1, `=${toExcel(expr)}`);
-        const top = wb.evaluateCell(sheet, 1, 1);
-        return fromFormualizer(top);
+        for (const [addr, v] of Object.entries(c.cells ?? {})) {
+          const { row, col } = address(addr);
+          if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+            const f = v.error ? ERROR_FORMULAS[v.error] : undefined;
+            if (f) wb.setFormula(sheet, row, col, f);
+          } else if (!Array.isArray(v)) wb.setValue(sheet, row, col, v);
+        }
+        const at = address(c.from.replace(/^.*!/, "") || "A1");
+        wb.setFormula(sheet, at.row, at.col, `=${toExcel(c.expr)}`);
+        return fromFormualizer(wb.evaluateCell(sheet, at.row, at.col));
       } catch (e) {
         return { error: `threw: ${String(e).slice(0, 80)}` };
       }
@@ -95,8 +127,10 @@ export function tableCore(version: string): Engine {
   return {
     name: "table-core",
     version,
-    evaluate(expr) {
-      const text = printNode(expr);
+    host: TABLE_HOST,
+    evaluate(c) {
+      if (c.cells) return { cannotExpress: "reads cells" };
+      const text = printNode(c.expr);
       const parsed = parseExpr(text);
       if (!parsed.ok) return { cannotExpress: parsed.message };
       const { rows } = computeRows(

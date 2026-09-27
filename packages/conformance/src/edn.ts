@@ -3,15 +3,30 @@
 // `:expr` is the stored form of SPEC section 2. `:expect` is a number,
 // string or boolean, `[[…]]` for an array, `{:error "#N/A"}`, or
 // `{:error nil}` for any error. `:round 12` or `:sig 10` compares
-// numbers rounded, as the source's own check did.
+// numbers rounded, as the source's own check did. A case whose formula
+// reads cells, `(ref "A1:B3")`, carries their values in `:cells`,
+// `{"A1" 1 "B2" "x"}`; a cell not listed is empty.
+//
+// A file may start with the host settings its cases were written under
+// (OpenFormula 3.4), applying to every case after it:
+//   {:host {:case-sensitive true :whole-cell true :regex true :wildcards false}}
+// Without one, a case is under `.table`'s own host settings.
 
 import { parseEDNString } from "edn-data";
-import type { Compare, Node, Value } from "./node.js";
+import { type Compare, type Host, type Node, type Value, TABLE_HOST } from "./node.js";
 
 // ---- printing
 
+/** An EDN string. Control characters are escaped, so none is invisible in a file. */
 function ednString(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}"`;
+  const escaped = s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return `"${escaped}"`;
 }
 
 /** EDN has no NaN or infinity; neither is a spreadsheet value either. */
@@ -49,13 +64,27 @@ export interface Case {
   expr: Node;
   expect: Value;
   compare?: Compare;
+  /** The values of the cells the formula reads, by address. */
+  cells?: Record<string, Value>;
+  /** The host settings the case was written under. */
+  host: Host;
   /** Where in the source the case came from, e.g. `Sheet2!A2`. */
   from: string;
 }
 
+export function printHost(h: Host): string {
+  return `{:host {:case-sensitive ${h.caseSensitive} :whole-cell ${h.wholeCell} :regex ${h.regex} :wildcards ${h.wildcards}}}`;
+}
+
+/** One case's line. Its host settings go once, at the top of the file (printHost). */
 export function printCase(c: Case): string {
   const compare = c.compare ? ("round" in c.compare ? ` :round ${c.compare.round}` : ` :sig ${c.compare.sig}`) : "";
-  return `{:expr ${printNode(c.expr)} :expect ${printValue(c.expect)}${compare} :from ${ednString(c.from)}}`;
+  const cells = c.cells
+    ? ` :cells {${Object.entries(c.cells)
+        .map(([k, v]) => `${ednString(k)} ${printValue(v)}`)
+        .join(" ")}}`
+    : "";
+  return `{:expr ${printNode(c.expr)} :expect ${printValue(c.expect)}${compare}${cells} :from ${ednString(c.from)}}`;
 }
 
 // ---- reading
@@ -93,18 +122,38 @@ function toValue(v: Edn): Value {
 
 /** Every case in one suite file: one per line; `;` starts a comment line. */
 export function readCases(text: string): Case[] {
-  return text
-    .split("\n")
-    .filter((line) => line.trim() !== "" && !line.trimStart().startsWith(";"))
-    .map((line) => {
-      const f = parseEDNString(line, OPTIONS) as { expr: Edn; expect: Edn; round?: number; sig?: number; from?: Edn };
-      const compare: Compare | undefined =
-        typeof f.round === "number" ? { round: f.round } : typeof f.sig === "number" ? { sig: f.sig } : undefined;
-      return {
-        expr: toNode(f.expr),
-        expect: toValue(f.expect),
-        ...(compare ? { compare } : {}),
-        from: String(f.from ?? ""),
+  let host: Host = TABLE_HOST;
+  const cases: Case[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "" || line.trimStart().startsWith(";")) continue;
+    const f = parseEDNString(line, OPTIONS) as {
+      host?: Record<string, boolean>;
+      expr: Edn;
+      expect: Edn;
+      round?: number;
+      sig?: number;
+      cells?: Record<string, Edn>;
+      from?: Edn;
+    };
+    if (f.host) {
+      host = {
+        caseSensitive: f.host["case-sensitive"] === true,
+        wholeCell: f.host["whole-cell"] === true,
+        regex: f.host.regex === true,
+        wildcards: f.host.wildcards === true,
       };
+      continue;
+    }
+    const compare: Compare | undefined =
+      typeof f.round === "number" ? { round: f.round } : typeof f.sig === "number" ? { sig: f.sig } : undefined;
+    cases.push({
+      expr: toNode(f.expr),
+      expect: toValue(f.expect),
+      ...(compare ? { compare } : {}),
+      ...(f.cells ? { cells: Object.fromEntries(Object.entries(f.cells).map(([k, v]) => [k, toValue(v)])) } : {}),
+      host,
+      from: String(f.from ?? ""),
     });
+  }
+  return cases;
 }

@@ -3,10 +3,14 @@
 // from an engine: the suite measures engines, so it can't share one's
 // reading of the text.
 //
-// Covers the expressions that hold no references: numbers, strings,
-// inline arrays, function calls, the operators of section 5.5 and
-// omitted arguments. A reference or an error literal is refused, so the
-// importer can count what it leaves for later.
+// Covers numbers, strings, inline arrays, function calls, the operators
+// of section 5.5, omitted arguments, and references to a cell or a
+// rectangle of cells on the case's own sheet. Those are read as
+// `(ref "A1")` or `(ref "A1:B3")`: suite scaffolding, with the cells'
+// values carried in the case (edn.ts), not part of the stored form. A
+// reference to another sheet, a whole row or column, an error literal
+// or a named expression is refused, so the importer can count what it
+// leaves for later.
 
 import type { Node } from "./node.js";
 
@@ -25,8 +29,33 @@ const INFIX: { ops: string[]; to?: Record<string, string> }[] = [
 const NUMBER = /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?/;
 const NAME = /^[A-Za-z_][A-Za-z0-9._]*/;
 
-/** `of:=ROUND(2.348;2)`, `=ROUND(2.348;2)` or `ROUND(2.348;2)`. */
-export function readOpenFormula(text: string): Node {
+const CELL = /^\$?([A-Z]+)\$?([0-9]+)$/;
+
+/**
+ * `.A1`, `.$A$1`, `.A1:.B3` or `Sheet2.A1:.B3` on the case's own sheet,
+ * as `A1` or `A1:B3`. Anything else is refused.
+ */
+function sameSheetRange(inside: string, sheet: string): string {
+  const parts = inside.split(":");
+  if (parts.length > 2) throw new Unsupported("a reference to another sheet");
+  const cells = parts.map((p) => {
+    const dot = p.lastIndexOf(".");
+    if (dot < 0) throw new Unsupported("a reference to another sheet");
+    const name = p.slice(0, dot).replace(/^\$/, "").replace(/^'(.*)'$/, "$1");
+    if (name !== "" && name !== sheet) throw new Unsupported("a reference to another sheet");
+    const m = CELL.exec(p.slice(dot + 1));
+    if (!m) throw new Unsupported("a whole row or column");
+    return `${m[1]}${m[2]}`;
+  });
+  return cells.join(":");
+}
+
+/**
+ * `of:=ROUND(2.348;2)`, `=ROUND(2.348;2)` or `ROUND(2.348;2)`. `sheet`
+ * is the name of the sheet the formula sits on, so a reference that
+ * names it counts as its own.
+ */
+export function readOpenFormula(text: string, sheet = "Sheet2"): Node {
   let src = text.startsWith("of:") ? text.slice(3) : text;
   if (src.startsWith("=")) src = src.slice(1);
   let pos = 0;
@@ -142,7 +171,13 @@ export function readOpenFormula(text: string): Node {
       eat("}");
       return { kind: "array", rows };
     }
-    if (c === "[") throw new Unsupported("a reference");
+    if (c === "[") {
+      const close = src.indexOf("]", pos);
+      if (close < 0) throw new SyntaxError(`unterminated reference in ${text}`);
+      const ref = sameSheetRange(src.slice(pos + 1, close), sheet);
+      pos = close + 1;
+      return { kind: "call", fn: "ref", args: [{ kind: "string", value: ref }] };
+    }
     if (c === "#") throw new Unsupported("an error literal");
     const num = NUMBER.exec(src.slice(pos));
     if (num) {

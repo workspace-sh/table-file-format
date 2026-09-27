@@ -3,13 +3,13 @@
   "commit": "a8b4e7c698c81371f83228f77d166718e1eea7e3",
   "path": "sc/qa/unit/data/functions",
   "licence": "MPL-2.0",
-  "imported": 2874,
+  "imported": 11293,
   "leftForLater": {
-    "references": 8734,
+    "references": 56,
     "errorLiterals": 21,
-    "namedExpressions": 269,
-    "noExpectedValue": 30,
-    "checksNotReadYet": 117,
-    "unreadable": 12
+    "namedExpressions": 281,
+    "noExpectedValue": 140,
+    "checksNotReadYet": 239,
+    "unreadable": 27
   }
 }

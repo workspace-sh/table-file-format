@@ -944,3 +944,29 @@ a time, each complete before the next (D32 and #124).
 **Why:** without a published definition and a shared suite, two
 implementations have nothing to align on, and a formula that works in
 one client may give a different answer in another.
+
+## D39: `.table`'s formula host settings are Excel's
+
+OpenFormula leaves some behaviour to the host (ODF 1.4 Part 4, section
+3.4): whether text comparison is case-sensitive, whether criteria
+match the whole cell, and whether criteria are read as regular
+expressions or wildcards. They change what `=`, `<` and the rest, the
+`*if` and `*ifs` functions, the database functions, `match`,
+`vlookup`, `hlookup`, `lookup` and `search` give.
+
+A `.table` fixes them, and a file can't change them:
+
+| Host property | `.table` |
+| --- | --- |
+| HOST-CASE-SENSITIVE | false |
+| HOST-SEARCH-CRITERIA-MUST-APPLY-TO-WHOLE-CELL | true |
+| HOST-USE-REGULAR-EXPRESSIONS | false |
+| HOST-USE-WILDCARDS | true |
+| HOST-NULL-DATE | 1899-12-30 |
+| HOST-PRECISION-AS-SHOWN | false |
+
+**Why:** these are how Excel, Numbers and Google Sheets behave, and
+`.table` formulas must match what those users expect. LibreOffice's
+defaults differ (case-sensitive, regular expressions), which the
+conformance suite records per case, so a difference that comes from
+the settings isn't counted against an engine.
