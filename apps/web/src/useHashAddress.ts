@@ -34,6 +34,15 @@ export interface UseHashAddressOpts {
   onExternalChange: (addr: Address) => void;
 }
 
+/**
+ * The address in the page's hash, if any. Read when the app starts, so
+ * the first render is already where the address says: an effect that
+ * reads it later would lose to the one that writes the hash.
+ */
+export function addressInHash(): Address | null {
+  return readHash();
+}
+
 function readHash(): Address | null {
   if (typeof window === "undefined") return null;
   const raw = window.location.hash.slice(1);
