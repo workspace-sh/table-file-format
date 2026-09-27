@@ -50,17 +50,13 @@ const styles = css.create({
   itemNameOpen: {
     fontWeight: "600",
   },
-  disclosure: {
-    width: 16,
-    fontSize: 13,
-    color: {
-      default: "#8e8e93",
-      "@media (prefers-color-scheme: dark)": "#6e6e73",
-    },
+  /** A table, under its file: one step in, so the tree reads file › table › view. */
+  tableItem: {
+    paddingLeft: 26,
   },
-  /** A view, under its table: indented past the table's disclosure arrow. */
+  /** A view, under its table: one more step in. */
   viewItem: {
-    paddingLeft: 30,
+    paddingLeft: 58,
   },
   itemKey: {
     fontSize: 11,
@@ -88,6 +84,33 @@ const styles = css.create({
     paddingTop: 12,
     paddingBottom: 4,
   },
+  /** A file: a row like the tables under it, not a section label. */
+  fileRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+    cursor: "pointer",
+    borderRadius: 6,
+    paddingInline: 8,
+    paddingBlock: 6,
+    marginTop: 4,
+  },
+  fileTitle: {
+    flexShrink: 0,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  /** Files first, then this viewer's settings, with a rule between. */
+  divider: {
+    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
   /** The file name: one line, cut short rather than wrapped. */
   bundleFile: {
     minWidth: 0,
@@ -112,12 +135,8 @@ const styles = css.create({
   groupChevronOpen: {
     transform: "rotate(90deg)",
   },
-  /** A folded file that holds the table on screen still says so. */
-  bundleTitleActive: {
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
+  tableChevron: {
+    marginRight: 6,
   },
   bundleTitle: {
     flexShrink: 0,
@@ -132,7 +151,7 @@ const styles = css.create({
   },
   /** "+ New table", level with the tables' names, past their arrows. */
   tableAction: {
-    paddingLeft: 24,
+    paddingLeft: 44,
   },
   firstAction: {
     marginTop: 6,
@@ -157,7 +176,7 @@ const styles = css.create({
     paddingInline: 8,
   },
   displayLabel: {
-    marginTop: 20,
+    marginTop: 8,
   },
   displayRow: {
     display: "flex",
@@ -315,10 +334,10 @@ export function Sidebar({
           its views, so a view is always seen as part of its table and a
           table as part of its file (D37). Only what's on screen is
           highlighted; its table is bold. */}
+      <html.span style={styles.sectionLabel}>.table files</html.span>
       <html.div style={styles.list}>
         {Object.keys(bundles).map((bundle) => {
           const keys = tableKeysIn(tables, bundles, bundle);
-          const openBundle = bundle === bundleOf(activeTablePath);
           const folded = foldedFiles.includes(bundle);
           return (
             <html.div key={bundle} style={styles.list}>
@@ -327,12 +346,10 @@ export function Sidebar({
                 role="button"
                 aria-expanded={!folded}
                 onClick={() => onToggleFile(bundle)}
-                style={styles.bundleHeader}
+                style={styles.fileRow}
               >
                 <html.span style={[styles.groupChevron, !folded && styles.groupChevronOpen]}>›</html.span>
-                <html.span style={[styles.bundleTitle, folded && openBundle && styles.bundleTitleActive]}>
-                  {bundles[bundle]?.title ?? bundle}
-                </html.span>
+                <html.span style={styles.fileTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
                 <html.span style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
               </html.div>
               {!folded && keys.map((path) => {
@@ -347,10 +364,10 @@ export function Sidebar({
                     <html.div
                       role="button"
                       aria-expanded={open}
-                      style={styles.item}
+                      style={[styles.item, styles.tableItem]}
                       onClick={() => onSelectTable(path)}
                     >
-                      <html.span style={styles.disclosure}>{open ? "▾" : "▸"}</html.span>
+                      <html.span style={[styles.groupChevron, styles.tableChevron, open && styles.groupChevronOpen]}>›</html.span>
                       <html.span style={[styles.itemName, open && styles.itemNameOpen]}>
                         {title}
                         {shared && <html.span style={styles.itemKey}> {path.slice(bundle.length + 1)}</html.span>}
@@ -379,7 +396,7 @@ export function Sidebar({
                   </html.div>
                 );
               })}
-              {openBundle && !folded && (
+              {bundle === bundleOf(activeTablePath) && !folded && (
                 <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
                   + New table
                 </html.button>
@@ -394,6 +411,7 @@ export function Sidebar({
           Open .table.zip…
         </html.button>
       </html.div>
+      <html.div style={styles.divider} />
       <html.div
         role="button"
         aria-expanded={!foldedDisplay}
