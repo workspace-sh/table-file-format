@@ -10,6 +10,7 @@
 import { Children } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
+import { GutterSpacer } from "./Bleed";
 
 export interface SnapHScrollProps {
   children?: ReactNode;
@@ -19,6 +20,8 @@ export interface SnapHScrollProps {
    */
   snapInterval?: number;
   paddingLeft?: number;
+  /** Space between the children, in pixels. */
+  gap?: number;
 }
 
 const styles = css.create({
@@ -34,7 +37,14 @@ const styles = css.create({
     // get the peek of the next column as the affordance instead.
     scrollbarWidth: "none",
   },
+  gap: (px: number) => ({
+    gap: px,
+  }),
   snapPoint: {
+    // A row, so its child stretches to the row's height: every column as
+    // tall as the tallest, as when they sat side by side in one row.
+    display: "flex",
+    flexDirection: "row",
     flexShrink: 0,
     scrollSnapAlign: "start",
   },
@@ -44,19 +54,24 @@ const styles = css.create({
   }),
 });
 
-export function SnapHScroll({
-  children,
-  paddingLeft,
-}: SnapHScrollProps) {
+/**
+ * Each child is a snap point: pass the columns themselves, not one
+ * element holding them all. A single snap point as wide as the whole
+ * row lets the browser pull the scroll back to its start from the end.
+ */
+export function SnapHScroll({ children, paddingLeft, gap = 0 }: SnapHScrollProps) {
   const wrapped = Children.map(children, (child, i) => (
     <html.div key={i} style={styles.snapPoint}>
       {child}
     </html.div>
   ));
   return (
-    <html.div style={styles.scroller}>
+    <html.div style={[styles.scroller, styles.gap(gap)]}>
       {paddingLeft ? <html.div style={styles.padder(paddingLeft)} /> : null}
+      {/* The page's margin at each end, not snap points themselves. */}
+      <GutterSpacer gap={gap} />
       {wrapped}
+      <GutterSpacer gap={gap} />
     </html.div>
   );
 }

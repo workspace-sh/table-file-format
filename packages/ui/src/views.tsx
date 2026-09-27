@@ -3293,17 +3293,17 @@ export function BoardView({
   // Either way the columns run to the page's edges as they scroll (Bleed),
   // starting and ending in line with the page (GutterSpacer).
   if (isTouchViewport) {
+    // Each column is a snap point of its own, so the carousel pages one
+    // column at a time and rests wherever it's swiped to.
     return (
       <>
-        <Bleed>
-          <SnapHScroll snapInterval={carouselSnapInterval}>
-            <html.div {...cards.containerProps} style={styles.board}>
-              <GutterSpacer gap={BOARD_GAP} />
+        <html.div {...cards.containerProps}>
+          <Bleed>
+            <SnapHScroll snapInterval={carouselSnapInterval} gap={BOARD_GAP}>
               {columnsContent}
-              <GutterSpacer gap={BOARD_GAP} />
-            </html.div>
-          </SnapHScroll>
-        </Bleed>
+            </SnapHScroll>
+          </Bleed>
+        </html.div>
         {ghost}
       </>
     );
