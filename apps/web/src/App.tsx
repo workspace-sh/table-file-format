@@ -50,6 +50,15 @@ const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
   ]),
 );
 
+/**
+ * "Shop (shop.table) › Orders": the file and the table a view belongs
+ * to. A file whose one table shares its title names it once.
+ */
+function breadcrumb(fileTitle: string, fileName: string, tableTitle: string): string {
+  const file = `${fileTitle} (${fileName})`;
+  return tableTitle === fileTitle ? file : `${file} › ${tableTitle}`;
+}
+
 const styles = css.create({
   root: {
     display: "flex",
@@ -169,6 +178,15 @@ const styles = css.create({
   title: {
     fontSize: 20,
     fontWeight: "600",
+  },
+  /** Where the view lives: its .table file, then its table. */
+  breadcrumb: {
+    fontSize: 12,
+    marginBottom: 2,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
   },
   subtitle: {
     display: "flex",
@@ -429,6 +447,22 @@ export function App() {
     },
     [sidebarPrefs.foldedFiles, updateSidebar],
   );
+  // Opening a table unfolds its file, so the sidebar always shows where
+  // you are. Folding it again afterwards is still yours to do.
+  const activeBundle = bundleOf(activeTablePath);
+  const firstUnfold = useRef(true);
+  useEffect(() => {
+    // On load the first table shows before the address is read; when the
+    // address names another, that first table isn't where you are.
+    const first = firstUnfold.current;
+    firstUnfold.current = false;
+    const hash = typeof window === "undefined" ? "" : window.location.hash;
+    if (first && hash.length > 1 && !hash.startsWith(`#${activeBundle}.table`)) return;
+    const folded = sidebarPrefs.foldedFiles ?? [];
+    if (folded.includes(activeBundle)) updateSidebar({ foldedFiles: folded.filter((b) => b !== activeBundle) });
+    // Only when the table on screen changes, not whenever a file is folded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBundle]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onKey = (e: KeyboardEvent) => {
@@ -819,6 +853,9 @@ export function App() {
           </html.div>
         )}
         <html.div style={styles.header}>
+          <html.span style={styles.breadcrumb}>
+            {breadcrumb(bundles[activeBundle]?.title ?? activeBundle, `${activeBundle}.table`, table.meta.title ?? tableNameOf(activeTablePath))}
+          </html.span>
           <html.div style={styles.headerTopRow}>
             <html.div style={styles.titleRow}>
               {!narrow && (
