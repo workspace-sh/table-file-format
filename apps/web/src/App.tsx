@@ -158,8 +158,16 @@ const styles = css.create({
     bottom: 0,
     zIndex: 70,
     display: "flex",
+    // The sidebar is as tall as its contents, and the drawer scrolls it.
+    // Stretched to the drawer's height instead, a long sidebar spilled
+    // past its own background over the page.
+    alignItems: "flex-start",
     overflowY: "auto",
     boxShadow: "0 0 32px rgba(0, 0, 0, 0.25)",
+    backgroundColor: {
+      default: "#fafafa",
+      "@media (prefers-color-scheme: dark)": "#0a0a0c",
+    },
   },
   searchNarrow: {
     width: "100%",
