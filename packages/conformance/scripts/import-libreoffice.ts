@@ -138,10 +138,13 @@ interface Tally {
   named: number;
   noExpected: number;
   otherChecks: number;
+  expectedTyped: number;
+  expectedCalculated: number;
   unreadable: string[];
 }
 const tally: Tally = {
-  imported: 0, references: 0, errorLiterals: 0, named: 0, noExpected: 0, otherChecks: 0, unreadable: [],
+  imported: 0, references: 0, errorLiterals: 0, named: 0, noExpected: 0, otherChecks: 0,
+  expectedTyped: 0, expectedCalculated: 0, unreadable: [],
 };
 
 rmSync(out, { recursive: true, force: true });
@@ -248,6 +251,10 @@ for (const file of files) {
     if (!a || !b) continue;
     const formula = attr(a.open, "table:formula");
     if (!formula?.startsWith("of:=")) continue;
+    // Who wrote the expected answer: typed in by the test's author, or a
+    // formula LibreOffice calculated when the file was saved.
+    if (attr(b.open, "table:formula")) tally.expectedCalculated++;
+    else tally.expectedTyped++;
     const from = `Sheet2!A${row}`;
     let expr: Node;
     try {
@@ -319,7 +326,15 @@ writeFileSync(
       repository: "https://github.com/LibreOffice/core",
       commit,
       path: "sc/qa/unit/data/functions",
+      testHarness: "https://github.com/LibreOffice/core/blob/master/sc/qa/unit/functions_test.cxx",
+      expectedAnswers:
+        `The files' Expected column: ${tally.expectedTyped.toLocaleString("en")} values typed by the tests' authors and ` +
+        `${tally.expectedCalculated.toLocaleString("en")} formulas LibreOffice calculated when the file was saved. ` +
+        "LibreOffice's test run recalculates each file and requires every Correct cell to be 1.",
       licence: "MPL-2.0",
+      licenceBasis:
+        "The files state no licence. LibreOffice is made available under MPL-2.0 " +
+        "(https://www.libreoffice.org/about-us/licenses/), and the test harness beside them states MPL-2.0.",
       imported: tally.imported,
       leftForLater: {
         references: tally.references,
