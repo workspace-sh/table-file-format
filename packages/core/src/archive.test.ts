@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { readTableArchive, writeTableArchive } from "./archive.js";
+import { bundleFiles, readTableArchive, writeTableArchive } from "./archive.js";
 import { writeZip } from "./zip.js";
 import { parseBundle } from "./parser.js";
 import { tableOrder } from "./bundle.js";
@@ -29,6 +29,31 @@ test("round-trip: writeTableArchive → readTableArchive matches parseBundle", a
   assert.equal(back.meta.title, "Projects");
   assert.equal(back.diagnostics, undefined);
   assert.equal(back.path, "projects.table"); // buffer source → root name
+});
+
+test("bundleFiles lists every text file on disk, holding the same data", async () => {
+  // Same data, not the same bytes: fixtures are written by hand, the
+  // writer's serialisation is canonical.
+  const data = (path: string, text: string): unknown =>
+    path.endsWith(".json") ? JSON.parse(text)
+    : path.endsWith(".ndjson") ? text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l))
+    : text.trim();
+  for (const name of ["crm", "projects", "shop"]) {
+    const dir = resolve(fixturesDir, `${name}.table`);
+    const files = bundleFiles(await parseBundle(dir));
+    const onDisk = execFileSync("find", [".", "-type", "f", "-not", "-path", "*/attachments/*"], { cwd: dir, encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean)
+      .map((p) => p.slice(2))
+      .sort();
+    assert.deepEqual(files.map((f) => f.path).sort(), onDisk, name);
+    for (const f of files) {
+      const disk = data(f.path, await readFile(join(dir, f.path), "utf8")) as Record<string, unknown>;
+      // The manifest gains format and formatVersion on every write (SPEC section 5).
+      const want = f.path === "meta.json" ? { format: "table", formatVersion: 1, ...disk } : disk;
+      assert.deepEqual(data(f.path, f.content), want, `${name}/${f.path}`);
+    }
+  }
 });
 
 test("archive output is byte-deterministic", async () => {
