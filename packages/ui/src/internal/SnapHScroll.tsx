@@ -19,12 +19,15 @@ export interface SnapHScrollProps {
   snapInterval: number;
   /** Optional left padding inside the scroll content. */
   paddingLeft?: number;
+  /** Space between the children, in points. */
+  gap?: number;
 }
 
 export function SnapHScroll({
   children,
   snapInterval,
   paddingLeft,
+  gap,
 }: SnapHScrollProps) {
   return (
     <ScrollView
@@ -33,7 +36,7 @@ export function SnapHScroll({
       snapToInterval={snapInterval}
       snapToAlignment="start"
       decelerationRate="fast"
-      contentContainerStyle={paddingLeft ? { paddingLeft } : undefined}
+      contentContainerStyle={{ ...(paddingLeft ? { paddingLeft } : {}), ...(gap ? { gap } : {}) }}
     >
       {children}
     </ScrollView>
