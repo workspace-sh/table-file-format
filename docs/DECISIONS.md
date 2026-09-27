@@ -970,3 +970,31 @@ A `.table` fixes them, and a file can't change them:
 defaults differ (case-sensitive, regular expressions), which the
 conformance suite records per case, so a difference that comes from
 the settings isn't counted against an engine.
+
+## D40: Right-to-left: layouts mirror, alignment is start and end
+
+A `.table` reads right to left as well as left to right. Arabic,
+Hebrew, Persian, Urdu and the other right-to-left languages get a
+mirrored layout: the first column and the sidebar on the right,
+columns running leftwards, and sideways scrolling reversed.
+
+- **The viewer's language decides the layout.** An app lays a table
+  out in the reading direction of the language it shows its interface
+  in. `textDirection(locale)` in table-core works that out from the
+  BCP 47 tag, by its script or the language's usual script, so every
+  platform agrees.
+- **Each value keeps its own direction.** Text in a cell is shown in
+  the direction its own characters set (the Unicode bidirectional
+  algorithm, `dir="auto"` on the web), so a Hebrew name reads correctly
+  in an English layout and an English one in an Arabic layout.
+- **Alignment is `start`, `center` or `end`** (SPEC section 2, field
+  annotations), not `left` and `right`: numbers sit at the end in
+  either direction, and a table mirrors as a whole.
+
+**Why:** Leslie asked for left-to-right and right-to-left support.
+Physical `left` and `right` would pin a table to one direction;
+logical alignment is what CSS, Android and iOS use for the same
+reason.
+
+**No version bump.** Pre-alpha (D26, D31): the one fixture using
+`"right"` now says `"end"`, and nothing reads the old values.

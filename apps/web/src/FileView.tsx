@@ -99,10 +99,13 @@ export function FileView({ bundle, path, content, imageUrl, onClose }: FileViewP
   return (
     <html.div style={styles.root}>
       <html.span style={styles.breadcrumb}>
-        {bundle}.table/{folder}
+        {/* A path reads left to right, whichever way the page does. */}
+        <html.span dir="ltr">
+          {bundle}.table/{folder}
+        </html.span>
       </html.span>
       <html.div style={styles.titleRow}>
-        <html.span style={styles.title}>{name}</html.span>
+        <html.span dir="ltr" style={styles.title}>{name}</html.span>
         <html.button style={styles.back} onClick={onClose}>
           Back to the table
         </html.button>
@@ -115,7 +118,7 @@ export function FileView({ bundle, path, content, imageUrl, onClose }: FileViewP
       {imageUrl ? (
         <html.img src={imageUrl} alt={name} style={styles.image} />
       ) : (
-        <html.pre style={styles.content}>{content ?? ""}</html.pre>
+        <html.pre dir="ltr" style={styles.content}>{content ?? ""}</html.pre>
       )}
     </html.div>
   );

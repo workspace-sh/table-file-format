@@ -243,6 +243,7 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
             </html.button>
           </html.div>
           <html.textarea
+        dir="auto"
             value={draft}
             onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
             placeholder="Long-form markdown body…"

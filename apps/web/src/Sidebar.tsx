@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
-import type { DisplaySettings } from "@workspace.sh/table-ui";
+import { useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
 import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "./displaySettings";
 import { bundleOf, tableKeysIn, toBundle } from "./bundles";
 
@@ -12,9 +12,9 @@ const styles = css.create({
     width: 240,
     paddingBlock: 16,
     paddingInline: 12,
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: {
+    borderInlineEndWidth: 1,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: {
       default: "#e5e5ea",
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
@@ -29,7 +29,7 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingRight: 4,
+    paddingInlineEnd: 4,
     marginBottom: 4,
   },
   switch: {
@@ -70,7 +70,6 @@ const styles = css.create({
   diskName: {
     fontSize: 11,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    marginLeft: 6,
     minWidth: 0,
 
     overflow: "hidden",
@@ -86,7 +85,7 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    paddingRight: 8,
+    paddingInlineEnd: 8,
     paddingBlock: 3,
     borderRadius: 6,
     cursor: "pointer",
@@ -94,8 +93,8 @@ const styles = css.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   },
   fileNote: {
-    marginLeft: "auto",
-    paddingLeft: 8,
+    marginInlineStart: "auto",
+    paddingInlineStart: 8,
     flexShrink: 0,
     fontSize: 11,
     fontFamily: "system-ui, sans-serif",
@@ -113,7 +112,7 @@ const styles = css.create({
     textOverflow: "ellipsis",
   },
   /** A files-tree row's depth. */
-  indent: (px: number) => ({ paddingLeft: px }),
+  indent: (px: number) => ({ paddingInlineStart: px }),
   fileName: {
     minWidth: 0,
     overflow: "hidden",
@@ -150,11 +149,11 @@ const styles = css.create({
   },
   /** A table, under its file: one step in, so the tree reads file › table › view. */
   tableItem: {
-    paddingLeft: 26,
+    paddingInlineStart: 26,
   },
   /** A view, under its table: one more step in. */
   viewItem: {
-    paddingLeft: 58,
+    paddingInlineStart: 58,
   },
   itemKey: {
     fontSize: 11,
@@ -233,8 +232,13 @@ const styles = css.create({
   groupChevronOpen: {
     transform: "rotate(90deg)",
   },
+  // In a right-to-left layout the › glyph is mirrored (‹) before it's
+  // turned, so open turns it the other way to point down too.
+  groupChevronOpenRtl: {
+    transform: "rotate(-90deg)",
+  },
   tableChevron: {
-    marginRight: 6,
+    marginInlineEnd: 6,
   },
   bundleTitle: {
     flexShrink: 0,
@@ -249,7 +253,7 @@ const styles = css.create({
   },
   /** "+ New table", level with the tables' names, past their arrows. */
   tableAction: {
-    paddingLeft: 44,
+    paddingInlineStart: 44,
   },
   firstAction: {
     marginTop: 6,
@@ -264,7 +268,7 @@ const styles = css.create({
     borderWidth: 0,
     backgroundColor: "transparent",
     fontSize: 13,
-    textAlign: "left",
+    textAlign: "start",
     color: {
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
@@ -318,8 +322,11 @@ const styles = css.create({
     display: "flex",
     flexDirection: "row",
     alignItems: "baseline",
+    // A gap, not a margin on the name: the name reads left to right in
+    // either layout, so its own "start" margin would land on the wrong side.
+    gap: 6,
     minWidth: 0,
-    marginRight: 6,
+    marginInlineEnd: 6,
   },
   headingLabel: {
     marginBottom: 0,
@@ -456,6 +463,7 @@ export function Sidebar({
   onShowFile,
 }: SidebarProps) {
   const browserLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
+  const rtl = useDirection() === "rtl";
   return (
     <html.div style={styles.root}>
       <html.div style={styles.headingRow}>
@@ -507,9 +515,9 @@ export function Sidebar({
                 onClick={() => onToggleFile(bundle)}
                 style={styles.fileRow}
               >
-                <html.span style={[styles.groupChevron, !folded && styles.groupChevronOpen]}>›</html.span>
-                <html.span style={styles.fileTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
-                <html.span style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
+                <html.span style={[styles.groupChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+                <html.span dir="auto" style={styles.fileTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
+                <html.span dir="ltr" style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
               </html.div>
               {!folded && keys.map((path) => {
                 const t = tables[path]!;
@@ -523,11 +531,11 @@ export function Sidebar({
                       style={[styles.item, styles.tableItem]}
                       onClick={() => onSelectTable(path)}
                     >
-                      <html.span style={[styles.groupChevron, styles.tableChevron, open && styles.groupChevronOpen]}>›</html.span>
+                      <html.span style={[styles.groupChevron, styles.tableChevron, open && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
                       <html.span style={[styles.itemName, styles.titleAndName, open && styles.itemNameOpen]}>
-                        <html.span style={styles.titleText}>{title}</html.span>
+                        <html.span dir="auto" style={styles.titleText}>{title}</html.span>
                         {/* Its folder under tables/, as the address bar names it. */}
-                        <html.span style={styles.diskName}>{path.slice(bundle.length + 1)}/</html.span>
+                        <html.span dir="ltr" style={styles.diskName}>{path.slice(bundle.length + 1)}/</html.span>
                       </html.span>
                       <html.span style={styles.itemCount}>{t.rows.length}</html.span>
                     </html.div>
@@ -542,9 +550,9 @@ export function Sidebar({
                             onClick={() => onSelect(view.id)}
                           >
                             <html.span style={[styles.itemName, styles.titleAndName]}>
-                              <html.span style={styles.titleText}>{view.name}</html.span>
+                              <html.span dir="auto" style={styles.titleText}>{view.name}</html.span>
                               {/* Its id in views.json, as the address bar names it. */}
-                              <html.span style={styles.diskName}>{view.id}</html.span>
+                              <html.span dir="ltr" style={styles.diskName}>{view.id}</html.span>
                             </html.span>
                             <html.span style={styles.itemLayout}>{view.layout}</html.span>
                           </html.div>
@@ -580,7 +588,7 @@ export function Sidebar({
         onClick={onToggleDisplay}
         style={[styles.bundleHeader, styles.displayLabel]}
       >
-        <html.span style={[styles.groupChevron, !foldedDisplay && styles.groupChevronOpen]}>›</html.span>
+        <html.span style={[styles.groupChevron, !foldedDisplay && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
         <html.span style={styles.bundleTitle}>Display</html.span>
       </html.div>
       {!foldedDisplay && (
@@ -716,6 +724,7 @@ function FilesTree({
   shownFile: ShownFile | null;
   onShowFile: (file: ShownFile) => void;
 }) {
+  const rtl = useDirection() === "rtl";
   const trees = useMemo(
     () =>
       Object.keys(bundles).map((bundle) => {
@@ -753,8 +762,8 @@ function FilesTree({
           style={[styles.fileEntry, indent(depth)]}
           onClick={() => setOpen((o) => ({ ...o, [`${bundle}/${dir.path}`]: !unfolded }))}
         >
-          <html.span style={[styles.groupChevron, styles.tableChevron, unfolded && styles.groupChevronOpen]}>›</html.span>
-          <html.span style={styles.fileName}>{dir.name}/</html.span>
+          <html.span style={[styles.groupChevron, styles.tableChevron, unfolded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+          <html.span dir="ltr" style={styles.fileName}>{dir.name}/</html.span>
           {dir.name === "bodies" || dir.name === "attachments" ? (
             <html.span style={styles.fileNote}>{dir.files.length}</html.span>
           ) : null}
@@ -777,7 +786,7 @@ function FilesTree({
             style={[styles.fileEntry, indent(depth, true), shown && styles.itemActive]}
             onClick={() => onShowFile({ bundle, path: f.path })}
           >
-            <html.span style={styles.fileName}>{f.name}</html.span>
+            <html.span dir="ltr" style={styles.fileName}>{f.name}</html.span>
             {note ? <html.span style={styles.fileNote}>{note}</html.span> : null}
           </html.div>
         );
@@ -798,8 +807,8 @@ function FilesTree({
               onClick={() => onToggleFile(bundle)}
               style={[styles.fileEntry, styles.fileTitle, indent(0)]}
             >
-              <html.span style={[styles.groupChevron, styles.tableChevron, !folded && styles.groupChevronOpen]}>›</html.span>
-              <html.span style={styles.fileName}>{bundle}.table/</html.span>
+              <html.span style={[styles.groupChevron, styles.tableChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+              <html.span dir="ltr" style={styles.fileName}>{bundle}.table/</html.span>
             </html.div>
             {!folded && renderEntries(bundle, tree, 1, undefined)}
           </html.div>
