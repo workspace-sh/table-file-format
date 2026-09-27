@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { printNode, readCases, printCase } from "./edn.js";
+import { printCase, printHost, printNode, readCases } from "./edn.js";
+import { TABLE_HOST } from "./node.js";
 import { readOpenFormula, Unsupported } from "./openformula.js";
 import { meets, roundTo } from "./compare.js";
 import { toExcel } from "./engines.js";
@@ -29,16 +30,34 @@ test("precedence follows OpenFormula's Table 1", () => {
   assert.equal(edn("of:=-2%"), "(% (- 2))", "prefix minus binds tighter than %");
 });
 
-test("references and error literals are left for later, not guessed", () => {
-  assert.throws(() => readOpenFormula("of:=SUM([.A1:.A3])"), Unsupported);
+test("references on the case's own sheet; others are left for later, not guessed", () => {
+  assert.equal(edn("of:=SUM([.$A$1:.A3];[Sheet2.B2])"), '(sum (ref "A1:A3") (ref "B2"))');
+  assert.throws(() => readOpenFormula("of:=SUM([Sheet3.A1])"), Unsupported);
+  assert.throws(() => readOpenFormula("of:=SUM([.A:.A])"), Unsupported);
   assert.throws(() => readOpenFormula("of:=ISNA(#N/A)"), Unsupported);
 });
 
-test("a case round-trips through EDN", () => {
-  const c = { expr: readOpenFormula("of:=ROUND(2.5;)"), expect: { error: null }, compare: { round: 12 }, from: "Sheet2!A2" };
+test("control characters are escaped and read back", () => {
+  const c = { expr: readOpenFormula('of:=CLEAN("a")'), expect: "\u007fx\ty", host: TABLE_HOST, from: "Sheet2!A1" };
   const line = printCase(c);
-  assert.equal(line, '{:expr (round 2.5 nil) :expect {:error nil} :round 12 :from "Sheet2!A2"}');
-  assert.deepEqual(readCases(`; a comment\n${line}\n`), [c]);
+  assert.ok(line.includes('"\\u007fx\\ty"'), line);
+  assert.deepEqual(readCases(line), [c]);
+});
+
+test("a case round-trips through EDN", () => {
+  const host = { caseSensitive: true, wholeCell: true, regex: true, wildcards: false };
+  const c = {
+    expr: readOpenFormula("of:=SUM([.A1:.B2];ROUND(2.5;))"),
+    expect: { error: null },
+    compare: { round: 12 },
+    cells: { A1: 1, B2: "x" },
+    host,
+    from: "Sheet2!A2",
+  };
+  const line = printCase(c);
+  assert.equal(line, '{:expr (sum (ref "A1:B2") (round 2.5 nil)) :expect {:error nil} :round 12 :cells {"A1" 1 "B2" "x"} :from "Sheet2!A2"}');
+  assert.deepEqual(readCases(`; a comment\n${printHost(host)}\n${line}\n`), [c]);
+  assert.deepEqual(readCases(line)[0]!.host, TABLE_HOST, "no host line: .table's own settings");
 });
 
 test("the Excel spelling for an engine that reads Excel", () => {
