@@ -27,6 +27,9 @@ const styles = css.create({
     flexDirection: "row",
     overflowX: "auto",
     scrollSnapType: "x mandatory",
+    // Snap in line with the page's margin, not the screen's edge, when
+    // the scroller runs over the margin (Bleed).
+    scrollPaddingInline: "var(--page-gutter, 0px)",
     // Hide scrollbar for the cleaner Trello-style swipe feel; users
     // get the peek of the next column as the affordance instead.
     scrollbarWidth: "none",
