@@ -21,6 +21,9 @@
 
     "ui:typecheck": "npm run typecheck -w @workspace.sh/table-ui",
 
+    "conformance:run": "npm run run -w @workspace.sh/table-conformance",
+    "conformance:test": "npm run test -w @workspace.sh/table-conformance",
+
     "fixtures:typecheck": "npm run typecheck -w @workspace.sh/table-fixtures",
     "fixtures:generate": "npm run generate -w @workspace.sh/table-fixtures",
     "fixtures:test": "npm run test -w @workspace.sh/table-fixtures",

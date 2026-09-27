@@ -357,6 +357,29 @@ empty and reports it.
     (section 10): the app supplies the tables. A reader without them
     shows `#REF!` rather than guessing.
 
+**OpenFormula in the stored form.** Formula meaning is OpenFormula's
+(ODF 1.4 Part 4, DECISIONS D38). Its expressions are written as
+follows; the public conformance suite in `conformance/openformula/`
+uses exactly this form.
+
+- A function call `ROUND(2.348;2)` is `(round 2.348 2)`: lowercase,
+  arguments in order.
+- An operator is a call named by its OpenFormula symbol: `(+ a b)`,
+  `(- a b)`, `(* a b)`, `(/ a b)`, `(& a b)`, `(= a b)`, `(<> a b)`,
+  `(< a b)`, `(<= a b)`, `(> a b)`, `(>= a b)`. Prefix `-a` is
+  `(- a)`, prefix `+a` is `(+ a)`, and postfix `a%` is `(% a)`.
+- `a^b` is `(power a b)`. `^` isn't a legal EDN symbol, and OpenFormula
+  defines `^` as `POWER(a; b)` (6.4.6).
+- `TRUE()` and `FALSE()` are the literals `true` and `false`.
+- An inline array `{1;2|3;4}` is a vector of rows, `[[1 2] [3 4]]`.
+- An omitted argument, as in `ROUND(2.5;)`, is `nil`.
+- Precedence needs no rules here: the brackets say it. A client's
+  typed syntax follows OpenFormula's Table 1 (5.5) when it compiles.
+
+The reference evaluator doesn't read arrays or `nil` yet, and covers
+only the functions below; the engine that replaces it covers
+OpenFormula (#124). `conformance/openformula/REPORT.md` measures both.
+
 | Functions | Behaviour |
 | --- | --- |
 | `+` `*` | any number of arguments |
