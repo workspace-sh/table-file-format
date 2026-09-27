@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
+  textDirection,
   bundleFiles,
   applyView,
   newBundle,
@@ -154,7 +155,8 @@ const styles = css.create({
   drawer: {
     position: "fixed",
     top: 0,
-    left: 0,
+    // From the start side: the left, or the right in a right-to-left layout.
+    insetInlineStart: 0,
     bottom: 0,
     zIndex: 70,
     display: "flex",
@@ -429,6 +431,17 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   // This viewer's locale and default date format: theirs, not the tables'.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(browserStore()));
+  // The layout reads the way the display language does (D40): the chosen
+  // language, or the browser's. The whole page takes it, so popovers and
+  // menus outside the app's root mirror too.
+  const pageLocale = display.locale ?? (typeof navigator === "undefined" ? undefined : navigator.language);
+  const direction = textDirection(pageLocale);
+  const shown = useMemo(() => ({ ...display, direction }), [display, direction]);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.dir = direction;
+    if (pageLocale) document.documentElement.lang = pageLocale;
+  }, [direction, pageLocale]);
   const changeDisplay = useCallback((next: DisplaySettings) => {
     setDisplay(next);
     saveDisplay(browserStore(), next);
@@ -851,7 +864,7 @@ export function App() {
   );
 
   return (
-    <DisplaySettingsProvider value={display}>
+    <DisplaySettingsProvider value={shown}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
       {narrow ? (
@@ -915,7 +928,7 @@ export function App() {
                   </html.button>
                 </Hinted>
               )}
-              <html.span style={styles.title}>{view.name}</html.span>
+              <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
             <html.div style={styles.headerActions}>
             <Hinted hint="Name, layout, filters, sorting and grouping for this view. Saved with the table, so everyone who opens it sees the same view.">

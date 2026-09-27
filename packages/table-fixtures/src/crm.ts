@@ -571,7 +571,7 @@ export const crmBundle: ParsedBundle = {
             "type": "number",
             "title": "Value",
             "format": "currency:USD",
-            "align": "right"
+            "align": "end"
           },
           {
             "name": "probability",

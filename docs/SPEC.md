@@ -246,10 +246,12 @@ labels apply to each item.
   rows, views, relations and computed-field expressions refer to, and
   schema evolution never renames it (below). Renaming a column in a UI
   means changing its `title`.
-- `align: "left" | "center" | "right"` — column alignment in grid
-  layouts. Defaults by type: `right` for `number`, `integer` and
-  `year`; `center` for `boolean`; `left` otherwise (reference:
-  `effectiveAlign()`). Display-only.
+- `align: "start" | "center" | "end"` — column alignment in grid
+  layouts, relative to the reading direction: `start` is the left in a
+  left-to-right layout and the right in a right-to-left one (D40).
+  Defaults by type: `end` for `number`, `integer` and `year`; `center`
+  for `boolean`; `start` otherwise (reference: `effectiveAlign()`).
+  Display-only.
 - `format: "<token>"` — display-semantic hint from a closed
   vocabulary (see "Field format" below). Renderer hint; no validator
   effect. Stored values stay raw.

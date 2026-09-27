@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
-import { useDisplaySettings } from "./DisplaySettings";
+import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
 import {
@@ -148,9 +148,9 @@ const styles = css.create({
     // Right border distinguishes the frozen column from the
     // scrollable pane; a subtle shadow would be nicer but needs
     // careful cross-platform handling — defer.
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: {
+    borderInlineEndWidth: 1,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: {
       default: "#e5e5ea",
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
@@ -261,9 +261,9 @@ const styles = css.create({
     justifyContent: "center",
     textAlign: "center",
   },
-  tableCellAlignRight: {
+  tableCellAlignEnd: {
     justifyContent: "flex-end",
-    textAlign: "right",
+    textAlign: "end",
   },
   /** A formula cell can be clicked to see how it was worked out. */
   formulaCellClickable: {
@@ -289,9 +289,9 @@ const styles = css.create({
     },
   },
   tableCellSeparator: {
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: {
+    borderInlineEndWidth: 1,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: {
       default: "#e5e5ea",
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
@@ -436,7 +436,7 @@ const styles = css.create({
     marginBottom: 4,
   },
   boardCount: {
-    marginLeft: 6,
+    marginInlineStart: 6,
     fontSize: 11,
     fontWeight: "400",
   },
@@ -618,9 +618,9 @@ const styles = css.create({
     minHeight: 80,
     paddingInline: 4,
     paddingBlock: 4,
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: {
+    borderInlineEndWidth: 1,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: {
       default: "#e5e5ea",
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
@@ -696,7 +696,7 @@ const styles = css.create({
     borderRadius: 3,
     borderWidth: 0,
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "start",
     overflow: "hidden",
     backgroundColor: {
       default: "#dbeafe",
@@ -745,7 +745,7 @@ const styles = css.create({
     backgroundColor: "transparent",
     borderWidth: 0,
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "start",
   },
   // Bottom-sheet event list — one tappable row per event for the
   // selected day.
@@ -769,11 +769,11 @@ const styles = css.create({
     },
     fontSize: 14,
     backgroundColor: "transparent",
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
+    borderInlineStartWidth: 0,
+    borderInlineEndWidth: 0,
     borderBottomWidth: 0,
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "start",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
@@ -955,9 +955,9 @@ const styles = css.create({
     boxSizing: "border-box",
     fontSize: 11,
     fontVariantNumeric: "tabular-nums",
-    borderRightWidth: 1,
-    borderRightStyle: "solid",
-    borderRightColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    borderInlineEndWidth: 1,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
     backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
   },
@@ -965,7 +965,7 @@ const styles = css.create({
     alignSelf: "stretch",
   },
   columnLetter: {
-    marginRight: 6,
+    marginInlineEnd: 6,
     fontSize: 10,
     fontWeight: "600",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
@@ -1003,7 +1003,7 @@ const styles = css.create({
     borderWidth: 0,
     backgroundColor: "transparent",
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "start",
     fontSize: 13,
     color: {
       default: "#3478f6",
@@ -1061,7 +1061,7 @@ const styles = css.create({
     paddingInline: 16,
     backgroundColor: "transparent",
     borderWidth: 0,
-    textAlign: "left",
+    textAlign: "start",
     cursor: "pointer",
     fontSize: 11,
     fontWeight: "600",
@@ -1075,8 +1075,8 @@ const styles = css.create({
   headerCellButtonCenter: {
     textAlign: "center",
   },
-  headerCellButtonRight: {
-    textAlign: "right",
+  headerCellButtonEnd: {
+    textAlign: "end",
   },
   headerCellDeprecated: {
     textDecorationLine: "line-through",
@@ -1136,7 +1136,7 @@ const styles = css.create({
     },
   },
   noRightBorder: {
-    borderRightWidth: 0,
+    borderInlineEndWidth: 0,
   },
   noBottomBorder: {
     borderBottomWidth: 0,
@@ -1167,7 +1167,7 @@ const styles = css.create({
   },
   rowMenuAt: (top: number, left: number) => ({ top, left }),
   rowMenuItem: {
-    textAlign: "left",
+    textAlign: "start",
     paddingInline: 12,
     paddingBlock: 6,
     fontSize: 13,
@@ -1191,7 +1191,7 @@ const styles = css.create({
   bodyBadge: {
     paddingInline: 6,
     paddingBlock: 1,
-    marginLeft: 6,
+    marginInlineStart: 6,
     borderRadius: 4,
     fontSize: 9,
     fontWeight: "600",
@@ -1209,11 +1209,11 @@ const styles = css.create({
 
   // Body excerpt (gallery cards) — clickable when onOpenBody is provided
   bodyExcerptButton: {
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
+    borderInlineStartWidth: 0,
+    borderInlineEndWidth: 0,
     borderBottomWidth: 0,
     cursor: "pointer",
-    textAlign: "left",
+    textAlign: "start",
     backgroundColor: "transparent",
   },
   bodyExcerpt: {
@@ -1254,13 +1254,13 @@ function visibleFields(view: View, schema: TableSchema): string[] {
 
 function cellAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.tableCellAlignCenter;
-  if (align === "right") return styles.tableCellAlignRight;
+  if (align === "end") return styles.tableCellAlignEnd;
   return false as const;
 }
 
 function headerAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.headerCellButtonCenter;
-  if (align === "right") return styles.headerCellButtonRight;
+  if (align === "end") return styles.headerCellButtonEnd;
   return false as const;
 }
 
@@ -1412,9 +1412,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
     isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
   const textStyle = oneToken && lines !== undefined ? styles.oneLine : clamp;
   if ((field?.format || isDate) && value !== undefined && value !== null && value !== "") {
-    return <html.span style={textStyle}>{formatWithFieldFormat(field, value, display)}</html.span>;
+    return <html.span dir="auto" style={textStyle}>{formatWithFieldFormat(field, value, display)}</html.span>;
   }
-  return <html.span style={textStyle}>{formatValue(value)}</html.span>;
+  // Each value reads in its own direction (D40): a Hebrew name in an
+  // English table, or an English one in an Arabic table.
+  return <html.span dir="auto" style={textStyle}>{formatValue(value)}</html.span>;
 }
 
 const PILL_COLORS = {
@@ -1460,7 +1462,7 @@ function GalleryHero({ field, value }: { field: Field | undefined; value: unknow
   if (field?.attachment && typeof value === "string" && url && isImageFile(value)) {
     return <html.img src={url} alt="" style={styles.galleryImage} />;
   }
-  return <html.span style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
+  return <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
 }
 
 function RelationCellValue({
@@ -1687,6 +1689,7 @@ function EditableCell({
   if (field?.type === "boolean") {
     return (
       <html.input
+        dir="auto"
         type="checkbox"
         checked={value === true}
         onChange={(e: { target: { checked: boolean } }) => onCommit(e.target.checked)}
@@ -1717,7 +1720,7 @@ function EditableCell({
   if (enumOpts.length > 0) {
     if (!editing) {
       return (
-        <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
+        <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
           <CellValue
             field={field}
             value={value}
@@ -1763,7 +1766,7 @@ function EditableCell({
   // Text/number/integer: text input on click
   if (!editing) {
     return (
-      <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "left")]}>
+      <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
         <CellValue
           field={field}
           value={value}
@@ -1795,6 +1798,7 @@ function EditableCell({
   const currencySymbol = currencySymbolOf(field);
   const input = (
     <html.input
+        dir="auto"
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={inputRef as any}
       type={inputType}
@@ -1903,6 +1907,7 @@ function ListCell({
     };
     return (
       <html.input
+        dir="auto"
         type="text"
         autoFocus
         value={text}
@@ -2091,6 +2096,7 @@ export function TableView({
   allRows,
   tableKey,
 }: ViewProps) {
+  const rtl = useDirection() === "rtl";
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
@@ -2193,10 +2199,12 @@ export function TableView({
     el.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "smooth" });
     setAddedField(null);
   }, [addedField, fields]);
-  // Editors for the rightmost columns on screen open leftwards, so they
-  // stay inside the window. On screen, not in the schema: a view can hide
-  // or reorder fields, so the schema's last field may not be the last shown.
-  const opensLeftwards = (name: string) => fields.indexOf(name) >= Math.max(0, fields.length - 2);
+  // Editors for the last columns on screen open back towards the table,
+  // so they stay inside the window: leftwards in a left-to-right layout,
+  // rightwards in a right-to-left one. On screen, not in the schema: a
+  // view can hide or reorder fields, so the schema's last field may not
+  // be the last shown.
+  const opensTowardStart = (name: string) => fields.indexOf(name) >= Math.max(0, fields.length - 2);
 
   // Frozen primary column on the left, scrollable rest on the right —
   // useful on wide viewports for tables with many columns. On narrow
@@ -2268,24 +2276,27 @@ export function TableView({
     return cellW + (i >= 0 && i < remainder ? 1 : 0);
   };
 
+  // A column's resize handle is on its end edge; in a right-to-left
+  // layout that's the left, so dragging leftwards widens it.
+  const widen = (start: { at: number }, pageX: number) => (rtl ? start.at - pageX : pageX - start.at);
   const columnResizer = (name: string) =>
     onUpdateView ? (
       <DragHandle
-        edge="right"
+        edge="end"
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
         }}
         onDragMove={(e) => {
           const start = resizeStart.current;
           if (!start) return;
-          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + e.pageX - start.at));
+          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + widen(start, e.pageX)));
           setLiveWidths((prev) => ({ ...prev, [name]: w }));
         }}
         onDragEnd={(e) => {
           const start = resizeStart.current;
           resizeStart.current = null;
           if (!start) return;
-          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + e.pageX - start.at));
+          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + widen(start, e.pageX)));
           onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: w } });
           setLiveWidths({});
         }}
@@ -2398,7 +2409,7 @@ export function TableView({
             field={schema.fields[fieldIndex] ?? field}
             fieldIndex={fieldIndex}
             totalFields={schema.fields.length}
-            align={opensLeftwards(name) ? "right" : "left"}
+            align={opensTowardStart(name) !== rtl ? "right" : "left"}
             anchorRect={anchorRect}
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
@@ -3575,7 +3586,7 @@ export function ListView({
                 isDropTarget && styles.listItemDropTarget,
               ]}
             >
-              <html.span style={styles.listItemTitle}>
+              <html.span dir="auto" style={styles.listItemTitle}>
                 {titleField ? formatValue(row[titleField]) : ""}
                 {bodies?.[row.id] ? (
                   <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
@@ -3965,7 +3976,7 @@ function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody }:
   return (
     <html.div style={styles.card}>
       {titleField && (
-        <html.span style={styles.cardTitle}>
+        <html.span dir="auto" style={styles.cardTitle}>
           {formatValue(row[titleField])}
           {hasBody ? <BodyBadge /> : null}
         </html.span>
