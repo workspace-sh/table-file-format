@@ -382,6 +382,21 @@ The reference evaluator doesn't read arrays or `nil` yet, and covers
 only the functions below; the engine that replaces it covers
 OpenFormula (#124). `conformance/openformula/REPORT.md` measures both.
 
+**Conformance tests and where they come from.** An implementation
+checks its formulas against the public cases in
+`conformance/openformula/`, each written in the stored form above and
+naming the file and cell it came from. They come from one source:
+
+| Source | Expected answers written by | Licence | Cases |
+| --- | --- | --- | --- |
+| LibreOffice's function tests, [`sc/qa/unit/data/functions`](https://github.com/LibreOffice/core/tree/master/sc/qa/unit/data/functions) at commit `a8b4e7c` | LibreOffice's test authors (11,062 typed values) and LibreOffice (995 calculated when the file was saved). LibreOffice's own test run passes them. | MPL-2.0 (LibreOffice's licence; the files state none of their own) | 11,293 |
+
+No case is taken from Excel. Other candidate sources (IronCalc's test
+workbooks, ECMA-376's worked examples, Formula.js's tests) are listed in
+`conformance/openformula/README.md` with what is and isn't known about
+each; none is used until it's verified and listed here. OpenFormula
+itself contains no test cases.
+
 | Functions | Behaviour |
 | --- | --- |
 | `+` `*` | any number of arguments |

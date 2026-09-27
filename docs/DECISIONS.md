@@ -919,12 +919,16 @@ a time, each complete before the next (D32 and #124).
    worked examples giving expected results. 14 are not in OpenFormula.
    They form a separate, second layer, not an extension of
    OpenFormula. Of the 14:
-   - **Shipped in this layer (5):** `networkdays.intl` and
-     `workday.intl` (the spec's examples, LibreOffice's function
-     tests, IronCalc's Excel-computed workbooks, Formula.js),
-     `amordegrc` and `bahttext` (the spec's examples, LibreOffice's
-     function tests), `usdollar` (the spec's three examples; no engine
-     implements it, and it is a fixed US-format `dollar`).
+   - **Shipped in this layer (5):** `networkdays.intl`,
+     `workday.intl`, `amordegrc`, `bahttext` and `usdollar`. Public
+     cases exist for each: the spec's own worked examples, and for the
+     first four LibreOffice's function tests. The layer's suite is
+     built from those and listed with its sources in
+     `conformance/openformula/README.md` before anything ships.
+     IronCalc's test workbooks and Formula.js's tests also cover the
+     `.intl` pair; who wrote their expected answers is recorded there
+     (for IronCalc, not yet verified). `usdollar` is a fixed US-format
+     `dollar`, and no engine implements it.
    - **Backlog (1):** `phonetic` returns the furigana stored with a
      cell's text. A `.table` has nowhere to store furigana, and the
      spec doesn't say what it returns when there is none;
