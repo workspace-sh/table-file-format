@@ -915,18 +915,27 @@ a time, each complete before the next (D32 and #124).
 1. **OpenFormula (ODF 1.4 Part 4).** The base, and the only layer
    until it is complete.
 2. **ECMA-376 Part 1 §18.17.7 additions.** The Excel file standard
-   defines 356 functions; 14 are not in OpenFormula. They form a
-   separate, second layer, not an extension of OpenFormula. Of the 14:
-   - **Shipped in this layer**, each with a public suite:
-     `networkdays.intl` and `workday.intl` (LibreOffice's function
-     tests, IronCalc's Excel-computed workbooks, and Formula.js),
-     `amordegrc` and `bahttext` (LibreOffice's function tests).
-   - **Held until a public suite exists:** `usdollar`, `phonetic`.
-     `phonetic` also reads furigana stored with a cell, which a
-     `.table` has no place for.
-   - **Refused:** `rtd` and the seven `cube*` functions. They read
-     from an outside server, so a file can't reproduce their answers
-     (#124, refused families).
+   (ECMA-376-1:2016, 5th edition) defines 354 functions, with 885
+   worked examples giving expected results. 14 are not in OpenFormula.
+   They form a separate, second layer, not an extension of
+   OpenFormula. Of the 14:
+   - **Shipped in this layer (5):** `networkdays.intl` and
+     `workday.intl` (the spec's examples, LibreOffice's function
+     tests, IronCalc's Excel-computed workbooks, Formula.js),
+     `amordegrc` and `bahttext` (the spec's examples, LibreOffice's
+     function tests), `usdollar` (the spec's three examples; no engine
+     implements it, and it is a fixed US-format `dollar`).
+   - **Held (1):** `phonetic` returns the furigana stored with a
+     cell's text. A `.table` has nowhere to store furigana, and the
+     spec doesn't say what it returns when there is none;
+     implementations disagree.
+   - **Kept, not calculated (8):** `rtd` and the seven `cube*`
+     functions ask an outside live source (a Windows COM program, an
+     OLAP server or data model) rather than the file. The spec gives
+     no fixed answer to test against. A `.table` keeps these formulas
+     intact so they survive a round trip, and calculating one without
+     its source gives the error Excel gives (`#N/A` for `rtd`,
+     `#NAME?` for `cube*`).
 3. **Modern Excel functions** (`xlookup`, `let`, `lambda`, `filter`
    and others). Held. Microsoft publishes only their names and
    argument counts. Each is added once an open specification (such as
