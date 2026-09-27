@@ -13,6 +13,19 @@ body,
   min-height: 100%;
 }
 
+/* The page's side margin. Things that scroll sideways run over it to the
+ * screen's edges (packages/ui Bleed), so they read it from here. Matches
+ * NARROW_QUERY in useNarrow.ts. */
+:root {
+  --page-gutter: 24px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --page-gutter: 12px;
+  }
+}
+
 body {
   background-color: #ffffff;
   color: #1c1c1e;

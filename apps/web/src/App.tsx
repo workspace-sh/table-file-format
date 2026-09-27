@@ -72,7 +72,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    paddingInline: 24,
+    // --page-gutter (strict.css), so what bleeds over it knows how far.
+    paddingInline: "var(--page-gutter)",
     paddingBlock: 20,
     overflow: "auto",
   },
@@ -115,7 +116,6 @@ const styles = css.create({
     },
   },
   mainNarrow: {
-    paddingInline: 12,
     paddingBlock: 12,
   },
   topBar: {
