@@ -25,3 +25,37 @@ export type Value = number | string | boolean | { error: string | null } | Value
  * equal as LibreOffice compares, to within 2^-48 of each other.
  */
 export type Compare = { round: number } | { sig: number };
+
+/**
+ * OpenFormula's host-defined properties (3.4) that change answers: text
+ * comparison, and how criteria match text.
+ */
+export interface Host {
+  caseSensitive: boolean;
+  wholeCell: boolean;
+  regex: boolean;
+  wildcards: boolean;
+}
+
+/** `.table`'s host: as Excel and Numbers behave (DECISIONS D39). */
+export const TABLE_HOST: Host = { caseSensitive: false, wholeCell: true, regex: false, wildcards: true };
+
+export const sameHost = (a: Host, b: Host) =>
+  a.caseSensitive === b.caseSensitive && a.wholeCell === b.wholeCell && a.regex === b.regex && a.wildcards === b.wildcards;
+
+// What OpenFormula says the host settings change (3.4, 4.11.8): criteria,
+// database queries, lookups, SEARCH, and comparing text.
+const HOST_SENSITIVE = new Set([
+  "averageif", "averageifs", "countif", "countifs", "sumif", "sumifs",
+  "daverage", "dcount", "dcounta", "dget", "dmax", "dmin", "dproduct",
+  "dstdev", "dstdevp", "dsum", "dvar", "dvarp",
+  "hlookup", "vlookup", "lookup", "match", "search",
+  "=", "<>", "<", "<=", ">", ">=",
+]);
+
+/** Could the host settings change this expression's answer? */
+export function hostSensitive(node: Node): boolean {
+  if (node.kind === "call") return HOST_SENSITIVE.has(node.fn) || node.args.some(hostSensitive);
+  if (node.kind === "array") return node.rows.some((r) => r.some(hostSensitive));
+  return false;
+}

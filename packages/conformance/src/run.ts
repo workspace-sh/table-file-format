@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { meets } from "./compare.js";
 import { type Case, printNode, printValue, readCases } from "./edn.js";
-import type { Value } from "./node.js";
+import { hostSensitive, sameHost, type Value } from "./node.js";
 import { type Engine, formualizer, tableCore } from "./engines.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,9 +56,14 @@ function shown(v: Value): string {
 interface Tally {
   cases: number;
   met: Map<string, number>;
-  cannotExpress: Map<string, number>;
+  /** Not met, under the host settings the engine uses: a real miss. */
+  missed: Map<string, number>;
+  /** Not met, but the case was written under other host settings, so the miss may be theirs. */
+  inconclusive: Map<string, number>;
   firstMiss: Map<string, string>;
 }
+
+const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
 
 // A source file tests one function, named by the file: round.edn, or
 // networkdays.intl.edn. LibreOffice's name for an Excel function carries
@@ -78,19 +83,25 @@ for (const file of ednFiles(suite)) {
     process.exitCode = 1;
     continue;
   }
-  const t = byFunction.get(fn) ?? { cases: 0, met: new Map(), cannotExpress: new Map(), firstMiss: new Map() };
+  const t = byFunction.get(fn) ?? { cases: 0, met: new Map(), missed: new Map(), inconclusive: new Map(), firstMiss: new Map() };
   byFunction.set(fn, t);
   for (const c of cases) {
     t.cases++;
     for (const engine of engines) {
-      const got = engine.evaluate(c.expr);
-      if (typeof got === "object" && got !== null && !Array.isArray(got) && "cannotExpress" in got) {
-        t.cannotExpress.set(engine.name, (t.cannotExpress.get(engine.name) ?? 0) + 1);
+      const got = engine.evaluate(c);
+      const expressed = !(typeof got === "object" && got !== null && !Array.isArray(got) && "cannotExpress" in got);
+      if (expressed && meets(got, c.expect, c.compare)) {
+        bump(t.met, engine.name);
         continue;
       }
-      if (meets(got, c.expect, c.compare)) t.met.set(engine.name, (t.met.get(engine.name) ?? 0) + 1);
-      else if (!t.firstMiss.has(engine.name)) {
-        t.firstMiss.set(engine.name, `${printNode(c.expr)} gave ${shown(got)}, expected ${printValue(c.expect)}`);
+      if (expressed && !sameHost(c.host, engine.host) && hostSensitive(c.expr)) {
+        bump(t.inconclusive, engine.name);
+        continue;
+      }
+      bump(t.missed, engine.name);
+      if (!t.firstMiss.has(engine.name)) {
+        const gave = expressed ? shown(got as Value) : "nothing (can't express it)";
+        t.firstMiss.set(engine.name, `${printNode(c.expr)} gave ${gave}, expected ${printValue(c.expect)}`);
       }
     }
   }
@@ -112,26 +123,34 @@ lines.push(
   `OpenFormula 1.4 has ${openformula.length} functions (functions.txt); ${inSpec.length} have cases here (${specCases} cases), ${untested.length} have none yet.`,
 );
 lines.push("");
-lines.push("| Engine | Version | OpenFormula functions fully met | Cases met |");
-lines.push("| --- | --- | --- | --- |");
+lines.push("| Engine | Version | Functions with no misses | Cases met | Missed | Inconclusive |");
+lines.push("| --- | --- | --- | --- | --- | --- |");
+const sum = (m: (t: Tally) => number) => inSpec.reduce((n, f) => n + m(byFunction.get(f)!), 0);
 for (const e of engines) {
-  const full = inSpec.filter((f) => (byFunction.get(f)!.met.get(e.name) ?? 0) === byFunction.get(f)!.cases).length;
-  const met = inSpec.reduce((n, f) => n + (byFunction.get(f)!.met.get(e.name) ?? 0), 0);
-  lines.push(`| ${e.name} | ${e.version} | ${full} of ${inSpec.length} | ${met} of ${specCases} |`);
+  const clean = inSpec.filter((f) => (byFunction.get(f)!.missed.get(e.name) ?? 0) === 0 && (byFunction.get(f)!.met.get(e.name) ?? 0) > 0).length;
+  lines.push(
+    `| ${e.name} | ${e.version} | ${clean} of ${inSpec.length} | ${sum((t) => t.met.get(e.name) ?? 0)} of ${specCases} | ` +
+      `${sum((t) => t.missed.get(e.name) ?? 0)} | ${sum((t) => t.inconclusive.get(e.name) ?? 0)} |`,
+  );
 }
 lines.push("");
-lines.push("A function is fully met when every one of its cases is. A case an engine can't express at all counts as not met.");
+lines.push(
+  "A **miss** is a wrong answer under the host settings the engine computes with (OpenFormula 3.4; `.table`'s are Excel's, DECISIONS D39). " +
+    "A case written under other settings, using something those settings change (criteria, database functions, lookups, `search`, comparisons), " +
+    "that an engine doesn't meet is **inconclusive**: the difference may be the settings'. " +
+    "A function has no misses when at least one case is met and none is missed. A case an engine can't express counts as missed.",
+);
 lines.push("");
 lines.push("## By function");
 lines.push("");
-lines.push(`| Function | Cases | ${engines.map((e) => e.name).join(" | ")} | First miss (${engines[0]!.name}) |`);
+lines.push(`| Function | Cases | ${engines.map((e) => `${e.name} met / missed`).join(" | ")} | First miss (${engines[0]!.name}) |`);
 lines.push(`| --- | --- | ${engines.map(() => "---").join(" | ")} | --- |`);
 const cell = (s: string) => s.replace(/\|/g, "\\|").slice(0, 160);
 for (const f of inSpec) {
   const t = byFunction.get(f)!;
   const counts = engines.map((e) => {
-    const met = t.met.get(e.name) ?? 0;
-    return met === t.cases ? `${met} ✓` : String(met);
+    const met = t.met.get(e.name) ?? 0, missed = t.missed.get(e.name) ?? 0;
+    return `${met} / ${missed}${missed === 0 && met > 0 ? " ✓" : ""}`;
   });
   lines.push(`| \`${f}\` | ${t.cases} | ${counts.join(" | ")} | ${cell(t.firstMiss.get(engines[0]!.name) ?? "")} |`);
 }
