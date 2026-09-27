@@ -10,7 +10,7 @@ import type { KeyValueStore } from "./savedTables.ts";
 export const DISPLAY_KEY = "table-demo:display";
 
 /** Locales offered, beside the browser's own. */
-export const LOCALES = ["en-GB", "en-US", "fr-FR", "de-DE", "es-ES", "pt-BR", "ja-JP"];
+export const LOCALES = ["en-GB", "en-US", "fr-FR", "de-DE", "es-ES", "pt-BR", "ja-JP", "ar-EG", "he-IL"];
 
 /** The date formats an app may default to: SPEC's date vocabulary. */
 export const DATE_FORMATS = ["iso", "short", "long", "weekday", "relative"];

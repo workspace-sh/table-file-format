@@ -34,17 +34,18 @@ export interface DragHandleProps {
   /**
    * Render as a thin grab strip along one edge of the nearest
    * positioned ancestor, instead of wrapping `children` — the resize
-   * handle on a column's right edge or a row's bottom edge.
+   * handle on a column's end edge (the right, or the left in a
+   * right-to-left layout) or a row's bottom edge.
    */
-  edge?: "right" | "bottom";
+  edge?: "end" | "bottom";
 }
 
 const edgeStyles = css.create({
-  right: {
+  end: {
     position: "absolute",
     top: 0,
     bottom: 0,
-    right: 0,
+    insetInlineEnd: 0,
     width: 6,
     cursor: "col-resize",
     zIndex: 2,

@@ -11,7 +11,7 @@ export {
   ADD_FIELD_COLUMN_WIDTH,
 } from "./SchemaEditor";
 export { BodyEditor } from "./BodyEditor";
-export { DisplaySettingsProvider, useDisplaySettings } from "./DisplaySettings";
+export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
 export type { DisplaySettings } from "./DisplaySettings";
 export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";

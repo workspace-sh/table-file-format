@@ -59,7 +59,12 @@ export interface FieldConstraints {
   pattern?: string;
 }
 
-export type FieldAlignment = "left" | "center" | "right";
+/**
+ * Where a column's values sit, relative to the reading direction (D40):
+ * `start` is the left in a left-to-right layout and the right in a
+ * right-to-left one, so a table mirrors as a whole.
+ */
+export type FieldAlignment = "start" | "center" | "end";
 
 export interface Field {
   name: string;
@@ -83,8 +88,9 @@ export interface Field {
   icon?: string;
   /**
    * Display alignment for the field's values. Optional; when absent,
-   * readers use the per-type default (numerics right, booleans center,
-   * everything else left). Setting this explicitly overrides the default.
+   * readers use the per-type default (numerics at the end, booleans
+   * centred, everything else at the start). Setting this explicitly
+   * overrides the default.
    * Purely cosmetic — does not affect data validation or storage.
    */
   align?: FieldAlignment;
@@ -137,29 +143,29 @@ export function enumValues(field: Field | undefined): string[] {
 /**
  * Default display alignment for a given field type, following the
  * convention used by spreadsheet/database apps (Airtable, Sheets, etc.).
- * Numerics right-align so digits line up; booleans center; everything
- * else left.
+ * Numerics sit at the end so digits line up; booleans centre; everything
+ * else at the start.
  */
 export function defaultAlignFor(type: FieldType): FieldAlignment {
   switch (type) {
     case "integer":
     case "number":
     case "year":
-      return "right";
+      return "end";
     case "boolean":
       return "center";
     default:
-      return "left";
+      return "start";
   }
 }
 
 /**
  * Resolve a field's effective alignment: the explicit `align` annotation
- * if present, otherwise the type-based default. Returns "left" when the
+ * if present, otherwise the type-based default. Returns "start" when the
  * field is undefined.
  */
 export function effectiveAlign(field: Field | undefined): FieldAlignment {
-  if (!field) return "left";
+  if (!field) return "start";
   return field.align ?? defaultAlignFor(field.type);
 }
 

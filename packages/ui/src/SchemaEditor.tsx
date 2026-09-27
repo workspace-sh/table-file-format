@@ -19,7 +19,7 @@ import {
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { fieldKey } from "./fieldKey";
-import { useDisplaySettings } from "./DisplaySettings";
+import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportHeight } from "./internal/useViewportHeight";
 import { useViewportWidth } from "./internal/useViewportWidth";
@@ -58,6 +58,16 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   geopoint: "Location",
   geojson: "Map shape",
 };
+
+/**
+ * An alignment as people say it: the file stores `start` and `end` (D40),
+ * which are Left and Right in a left-to-right layout and the other way
+ * round in a right-to-left one.
+ */
+function alignLabel(align: FieldAlignment, rtl: boolean): string {
+  if (align === "center") return "Center";
+  return (align === "start") !== rtl ? "Left" : "Right";
+}
 
 export function friendlyType(type: FieldType): string {
   return FIELD_TYPE_LABELS[type] ?? type;
@@ -368,7 +378,7 @@ const styles = css.create({
     paddingInline: 8,
     paddingBlock: 6,
     fontSize: 12,
-    textAlign: "left",
+    textAlign: "start",
     borderRadius: 6,
     borderWidth: 1,
     borderStyle: "solid",
@@ -745,6 +755,7 @@ export function SchemaFieldEditor({
   // computed shows this: turning a stored field into a formula would drop
   // its data, and schemas only grow.
   const { formulaSyntax } = useDisplaySettings();
+  const rtl = useDirection() === "rtl";
   const [formulaDraft, setFormulaDraft] = useState(() =>
     field.computed ? printFormula(field.computed.expr, { grid, syntax: formulaSyntax }) : "",
   );
@@ -820,6 +831,7 @@ export function SchemaFieldEditor({
           <>
             <html.span style={styles.label}>Formula</html.span>
             <html.input
+        dir="auto"
               type="text"
               value={formulaDraft}
               onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
@@ -843,6 +855,7 @@ export function SchemaFieldEditor({
 
         <html.span style={styles.label}>Display title</html.span>
         <html.input
+        dir="auto"
           type="text"
           value={field.title ?? ""}
           placeholder={field.name}
@@ -854,6 +867,7 @@ export function SchemaFieldEditor({
 
         <html.span style={styles.label}>Description</html.span>
         <html.input
+        dir="auto"
           type="text"
           value={field.description ?? ""}
           onChange={(e: { target: { value: string } }) =>
@@ -866,6 +880,7 @@ export function SchemaFieldEditor({
 
         <html.div style={styles.checkRow}>
           <html.input
+        dir="auto"
             type="checkbox"
             checked={field.constraints?.required === true}
             onChange={(e: { target: { checked: boolean } }) => setRequired(e.target.checked)}
@@ -875,6 +890,7 @@ export function SchemaFieldEditor({
 
         <html.div style={styles.checkRow}>
           <html.input
+        dir="auto"
             type="checkbox"
             checked={field.deprecated === true}
             onChange={(e: { target: { checked: boolean } }) =>
@@ -895,6 +911,7 @@ export function SchemaFieldEditor({
               ))}
             </html.div>
             <html.input
+        dir="auto"
               type="text"
               value={enumDraft}
               placeholder="Add value, press Enter"
@@ -909,11 +926,11 @@ export function SchemaFieldEditor({
 
         <html.span style={styles.label}>
           Alignment <html.span style={styles.typeBadgeTechnical}>
-            · auto = {defaultAlignFor(field.type)}
+            · auto = {alignLabel(defaultAlignFor(field.type), rtl).toLowerCase()}
           </html.span>
         </html.span>
         <html.div style={styles.alignmentRow}>
-          {(["auto", "left", "center", "right"] as const).map((opt) => {
+          {(["auto", "start", "center", "end"] as const).map((opt) => {
             const isAuto = opt === "auto";
             const isActive = isAuto ? field.align === undefined : field.align === opt;
             return (
@@ -927,7 +944,7 @@ export function SchemaFieldEditor({
                   isActive && styles.alignmentButtonActive,
                 ]}
               >
-                {isAuto ? "Auto" : opt[0]!.toUpperCase() + opt.slice(1)}
+                {isAuto ? "Auto" : alignLabel(opt, rtl)}
               </html.button>
             );
           })}
@@ -1090,6 +1107,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
             ]}
           >
             <html.input
+        dir="auto"
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               ref={(el: any) => {
                 nameRef.current = el;
@@ -1127,6 +1145,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
               <>
                 <html.span style={styles.label}>Formula</html.span>
                 <html.input
+        dir="auto"
                   type="text"
                   value={formulaDraft}
                   placeholder={formulaSyntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)"}
@@ -1276,6 +1295,7 @@ export function FormulaCellPanel({
         {onSave ? (
           <>
             <html.input
+        dir="auto"
               type="text"
               value={draft}
               onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}

@@ -48,14 +48,15 @@ export interface DragHandleProps {
   longPressMs?: number;
   /**
    * Render as a thin grab strip along one edge of the parent, instead
-   * of wrapping `children` — the resize handle on a column's right edge
-   * or a row's bottom edge. Wider than on web: it's for a finger.
+   * of wrapping `children` — the resize handle on a column's end edge
+   * (the right, or the left in a right-to-left layout) or a row's bottom
+   * edge. Wider than on web: it's for a finger.
    */
-  edge?: "right" | "bottom";
+  edge?: "end" | "bottom";
 }
 
 const edgeStyles = StyleSheet.create({
-  right: { position: "absolute", top: 0, bottom: 0, right: 0, width: 12, zIndex: 2 },
+  end: { position: "absolute", top: 0, bottom: 0, end: 0, width: 12, zIndex: 2 },
   bottom: { position: "absolute", left: 0, right: 0, bottom: -6, height: 12, zIndex: 2 },
 });
 
