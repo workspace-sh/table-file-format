@@ -920,15 +920,10 @@ a time, each complete before the next (D32 and #124).
    They form a separate, second layer, not an extension of
    OpenFormula. Of the 14:
    - **Shipped in this layer (5):** `networkdays.intl`,
-     `workday.intl`, `amordegrc`, `bahttext` and `usdollar`. Public
-     cases exist for each: the spec's own worked examples, and for the
-     first four LibreOffice's function tests. The layer's suite is
-     built from those and listed with its sources in
-     `conformance/openformula/README.md` before anything ships.
-     IronCalc's test workbooks and Formula.js's tests also cover the
-     `.intl` pair; who wrote their expected answers is recorded there
-     (for IronCalc, not yet verified). `usdollar` is a fixed US-format
-     `dollar`, and no engine implements it.
+     `workday.intl`, `amordegrc`, `bahttext` and `usdollar`, each once
+     it has public cases whose licence and origin are verified (SPEC
+     section 2). `usdollar` is a fixed US-format `dollar`, and no engine
+     implements it.
    - **Backlog (1):** `phonetic` returns the furigana stored with a
      cell's text. A `.table` has nowhere to store furigana, and the
      spec doesn't say what it returns when there is none;
@@ -970,10 +965,10 @@ A `.table` fixes them, and a file can't change them:
 | HOST-PRECISION-AS-SHOWN | false |
 
 **Why:** these are how Excel, Numbers and Google Sheets behave, and
-`.table` formulas must match what those users expect. LibreOffice's
-defaults differ (case-sensitive, regular expressions), which the
-conformance suite records per case, so a difference that comes from
-the settings isn't counted against an engine.
+`.table` formulas must match what those users expect. Other hosts'
+defaults differ (LibreOffice's are case-sensitive, with regular
+expressions), so a test case records the settings it was written
+under.
 
 ## D40: Right-to-left: layouts mirror, alignment is start and end
 
