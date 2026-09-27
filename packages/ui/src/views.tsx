@@ -41,6 +41,7 @@ import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
+import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { BottomSheet } from "./internal/BottomSheet";
@@ -3289,25 +3290,40 @@ export function BoardView({
   // peek of next at the right edge, swipe horizontally to advance.
   // Above the touch breakpoint: keep the free-scrolling multi-column
   // layout from the original desktop design.
+  // Either way the columns run to the page's edges as they scroll (Bleed),
+  // starting and ending in line with the page (GutterSpacer).
   if (isTouchViewport) {
     return (
       <>
-        <SnapHScroll snapInterval={carouselSnapInterval}>
-          <html.div {...cards.containerProps} style={styles.board}>
-            {columnsContent}
-          </html.div>
-        </SnapHScroll>
+        <Bleed>
+          <SnapHScroll snapInterval={carouselSnapInterval}>
+            <html.div {...cards.containerProps} style={styles.board}>
+              <GutterSpacer gap={BOARD_GAP} />
+              {columnsContent}
+              <GutterSpacer gap={BOARD_GAP} />
+            </html.div>
+          </SnapHScroll>
+        </Bleed>
         {ghost}
       </>
     );
   }
   return (
-    <html.div {...cards.containerProps} style={styles.board}>
-      {columnsContent}
+    <>
+      <Bleed>
+        <html.div {...cards.containerProps} style={styles.board}>
+          <GutterSpacer gap={BOARD_GAP} />
+          {columnsContent}
+          <GutterSpacer gap={BOARD_GAP} />
+        </html.div>
+      </Bleed>
       {ghost}
-    </html.div>
+    </>
   );
 }
+
+/** Gap between board columns. Must match `styles.board.gap`. */
+const BOARD_GAP = 12;
 
 /** Minimum readable gallery-card width before we wrap to the next row. */
 const MIN_GALLERY_CARD_WIDTH = 240;
