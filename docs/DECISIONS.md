@@ -925,7 +925,7 @@ a time, each complete before the next (D32 and #124).
      `amordegrc` and `bahttext` (the spec's examples, LibreOffice's
      function tests), `usdollar` (the spec's three examples; no engine
      implements it, and it is a fixed US-format `dollar`).
-   - **Held (1):** `phonetic` returns the furigana stored with a
+   - **Backlog (1):** `phonetic` returns the furigana stored with a
      cell's text. A `.table` has nowhere to store furigana, and the
      spec doesn't say what it returns when there is none;
      implementations disagree.
