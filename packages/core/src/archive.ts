@@ -12,7 +12,7 @@ import type { WriteBundleInput } from "./writer.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
-import { readZip, writeZip, type ZipEntry } from "./zip.js";
+import { readZip, writeZip } from "./zip.js";
 
 /**
  * `.table.zip` archive transport (SPEC section 13). Portable — Node,
@@ -151,28 +151,42 @@ export async function writeTableArchive(
     throw new Error(`invalid table name: ${JSON.stringify(name)}`);
   }
   const root = `${bare}.table`;
-  const entry = (path: string, content: string): ZipEntry => ({
-    name: `${root}/${path}`,
+  return writeZip(
     // strToU8, not a global TextEncoder — portable across Hermes.
-    data: strToU8(content),
-  });
+    bundleFiles(input).map((f) => ({ name: `${root}/${f.path}`, data: strToU8(f.content) })),
+  );
+}
 
+/** One file of a bundle: its path inside `<name>.table/`, and its text. */
+export interface BundleFile {
+  path: string;
+  content: string;
+}
+
+/**
+ * Every file a bundle's text is written as, in the archive's canonical
+ * order (manifest; per table schema, rows, views, meta, bodies sorted by
+ * id), serialised exactly as `writeBundle` and the archive write them.
+ * What a `.table` holds on disk, for showing or shipping. The rebuildable
+ * `index.sqlite` and `attachments/` (bytes, not text) aren't included.
+ */
+export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[] {
   const names = tableOrder(input);
-  const entries: ZipEntry[] = [entry("meta.json", pretty(stampMeta({ ...(input.meta ?? {}), tables: names })))];
+  const files: BundleFile[] = [{ path: "meta.json", content: pretty(stampMeta({ ...(input.meta ?? {}), tables: names })) }];
   for (const tableName of names) {
     if (!isTableName(tableName)) throw new Error(`invalid table name: ${JSON.stringify(tableName)}`);
     const t = input.tables[tableName]!;
     const at = `tables/${tableName}/`;
-    entries.push(
-      entry(`${at}schema.json`, pretty(t.schema)),
-      entry(`${at}rows.ndjson`, serializeRows(t.rows, t.schema)),
-      entry(`${at}views.json`, pretty(t.views ?? [])),
-      entry(`${at}meta.json`, pretty(tableMetaOnly(t.meta))),
+    files.push(
+      { path: `${at}schema.json`, content: pretty(t.schema) },
+      { path: `${at}rows.ndjson`, content: serializeRows(t.rows, t.schema) },
+      { path: `${at}views.json`, content: pretty(t.views ?? []) },
+      { path: `${at}meta.json`, content: pretty(tableMetaOnly(t.meta)) },
     );
     const bodies = t.bodies ?? {};
     for (const id of Object.keys(bodies).sort()) {
-      entries.push(entry(`${at}bodies/${id}.md`, normaliseBody(bodies[id]!)));
+      files.push({ path: `${at}bodies/${id}.md`, content: normaliseBody(bodies[id]!) });
     }
   }
-  return writeZip(entries);
+  return files;
 }

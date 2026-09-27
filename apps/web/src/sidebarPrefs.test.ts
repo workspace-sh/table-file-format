@@ -15,8 +15,8 @@ function memory(initial: Record<string, string> = {}): KeyValueStore {
 
 test("the sidebar comes back as it was left", () => {
   const store = memory();
-  saveSidebarPrefs(store, { collapsed: true, foldedFiles: ["crm"], foldedDisplay: true });
-  assert.deepEqual(loadSidebarPrefs(store), { collapsed: true, foldedFiles: ["crm"], foldedDisplay: true });
+  saveSidebarPrefs(store, { collapsed: true, foldedFiles: ["crm"], foldedDisplay: true, files: true });
+  assert.deepEqual(loadSidebarPrefs(store), { collapsed: true, foldedFiles: ["crm"], foldedDisplay: true, files: true });
 });
 
 test("nothing saved means open, with nothing folded", () => {
@@ -25,7 +25,7 @@ test("nothing saved means open, with nothing folded", () => {
 });
 
 test("anything unexpected is dropped, not trusted", () => {
-  for (const raw of ["nope", "null", '{"collapsed":"yes"}', '{"foldedFiles":[1,2]}', '{"foldedDisplay":1}']) {
+  for (const raw of ["nope", "null", '{"collapsed":"yes"}', '{"foldedFiles":[1,2]}', '{"foldedDisplay":1}', '{"files":"yes"}']) {
     assert.deepEqual(loadSidebarPrefs(memory({ [SIDEBAR_KEY]: raw })), {}, raw);
   }
 });

@@ -13,19 +13,22 @@ export interface SidebarPrefs {
   foldedFiles?: string[];
   /** The Display settings group, folded away. */
   foldedDisplay?: boolean;
+  /** Showing the files on disk rather than the tables and views. Absent: tables. */
+  files?: boolean;
 }
 
 export function loadSidebarPrefs(store: KeyValueStore | null): SidebarPrefs {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(SIDEBAR_KEY) ?? "{}");
     if (typeof parsed !== "object" || parsed === null) return {};
-    const { collapsed, foldedFiles, foldedDisplay } = parsed as Record<string, unknown>;
+    const { collapsed, foldedFiles, foldedDisplay, files } = parsed as Record<string, unknown>;
     return {
       ...(collapsed === true ? { collapsed } : {}),
       ...(Array.isArray(foldedFiles) && foldedFiles.every((f) => typeof f === "string") && foldedFiles.length > 0
         ? { foldedFiles: foldedFiles as string[] }
         : {}),
       ...(foldedDisplay === true ? { foldedDisplay } : {}),
+      ...(files === true ? { files } : {}),
     };
   } catch {
     return {};

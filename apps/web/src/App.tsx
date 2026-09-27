@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
+  bundleFiles,
   applyView,
   newBundle,
   newId,
@@ -37,8 +38,9 @@ import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "./bundles";
 import { tableKeyFor } from "./tableKey";
 import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
-import { Sidebar } from "./Sidebar";
-import { useHashAddress } from "./useHashAddress";
+import { Sidebar, type ShownFile } from "./Sidebar";
+import { FileView } from "./FileView";
+import { addressInHash, useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
 
@@ -307,10 +309,17 @@ export function App() {
   const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
   // Each bundle's manifest (D37): its title and the order of its tables.
   const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
-  const [activeTablePath, setActiveTablePath] = useState<string>(() => firstTablePath(tables));
-  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
-    firstViews(tables),
-  );
+  // Start where the address says, if it names a table here.
+  const [start] = useState(() => {
+    const addr = addressInHash();
+    const key = addr ? keyForAddress(addr, initial.tables, initial.bundles, "") : null;
+    return key ? { key, viewId: addr!.viewId } : null;
+  });
+  const [activeTablePath, setActiveTablePath] = useState<string>(() => start?.key ?? firstTablePath(tables));
+  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => ({
+    ...firstViews(tables),
+    ...(start?.viewId ? { [start.key]: start.viewId } : {}),
+  }));
 
   // Saved after every change. The fixtures themselves are never saved, so
   // an untouched demo keeps following them as they change.
@@ -418,6 +427,9 @@ export function App() {
   }, []);
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
+  // A file of a .table, opened from the Files side of the sidebar, shown
+  // in place of the view until a view or table is chosen again.
+  const [shownFile, setShownFile] = useState<ShownFile | null>(null);
   // At phone width the sidebar is a drawer, opened from the top bar.
   const narrow = useNarrow();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -450,14 +462,7 @@ export function App() {
   // Opening a table unfolds its file, so the sidebar always shows where
   // you are. Folding it again afterwards is still yours to do.
   const activeBundle = bundleOf(activeTablePath);
-  const firstUnfold = useRef(true);
   useEffect(() => {
-    // On load the first table shows before the address is read; when the
-    // address names another, that first table isn't where you are.
-    const first = firstUnfold.current;
-    firstUnfold.current = false;
-    const hash = typeof window === "undefined" ? "" : window.location.hash;
-    if (first && hash.length > 1 && !hash.startsWith(`#${activeBundle}.table`)) return;
     const folded = sidebarPrefs.foldedFiles ?? [];
     if (folded.includes(activeBundle)) updateSidebar({ foldedFiles: folded.filter((b) => b !== activeBundle) });
     // Only when the table on screen changes, not whenever a file is folded.
@@ -781,6 +786,16 @@ export function App() {
   const schemaBumped =
     currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
+  // What the Files side of the sidebar lists and opens: each bundle's
+  // files as saving writes them, and fixture tables' attachments.
+  const attachmentsOf = useCallback((key: string) => Object.keys(attachmentUrls[key] ?? {}).sort(), []);
+  const shownFileContent = (file: ShownFile): { content?: string; imageUrl?: string } => {
+    const m = /^tables\/([^/]+)\/attachments\/(.+)$/.exec(file.path);
+    if (m) return { imageUrl: attachmentUrls[`${file.bundle}/${m[1]}`]?.[m[2]!] };
+    const found = bundleFiles(toBundle(tables, bundles, file.bundle)).find((f) => f.path === file.path);
+    return { content: found?.content ?? "" };
+  };
+
   // Built once, shown in the drawer or beside the page. Choosing closes the
   // drawer; beside the page there is none to close, so that does nothing.
   const sidebar = (
@@ -788,6 +803,7 @@ export function App() {
       tables={tables}
       activeTablePath={activeTablePath}
       onSelectTable={(path) => {
+        setShownFile(null);
         setActiveTablePath(path);
         setSearchQuery("");
         setActiveBodyRowId(null);
@@ -796,6 +812,7 @@ export function App() {
       table={table}
       activeViewId={view.id}
       onSelect={(id) => {
+        setShownFile(null);
         setActiveViewId(id);
         closeDrawer();
       }}
@@ -811,6 +828,17 @@ export function App() {
       onOpenFile={openTableFile}
       display={display}
       onDisplayChange={changeDisplay}
+      filesMode={sidebarPrefs.files === true}
+      onFilesMode={(files) => {
+        if (!files) setShownFile(null);
+        updateSidebar({ files });
+      }}
+      attachmentsOf={attachmentsOf}
+      shownFile={shownFile}
+      onShowFile={(file) => {
+        setShownFile(file);
+        closeDrawer();
+      }}
     />
   );
 
@@ -852,6 +880,15 @@ export function App() {
             <html.span style={styles.topBarTitle}>{table.meta.title ?? activeTablePath}</html.span>
           </html.div>
         )}
+        {shownFile ? (
+          <FileView
+            bundle={shownFile.bundle}
+            path={shownFile.path}
+            {...shownFileContent(shownFile)}
+            onClose={() => setShownFile(null)}
+          />
+        ) : (
+        <>
         <html.div style={styles.header}>
           <html.span style={styles.breadcrumb}>
             {breadcrumb(bundles[activeBundle]?.title ?? activeBundle, `${activeBundle}.table`, table.meta.title ?? tableNameOf(activeTablePath))}
@@ -958,6 +995,8 @@ export function App() {
           allRows: table.rows,
           tableKey: tableNameOf(activeTablePath),
         })}
+        </>
+        )}
       </html.div>
       {activeBodyRowId && (
         <BodyEditor
