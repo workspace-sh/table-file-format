@@ -54,3 +54,21 @@ test("different kinds in one field: numbers, then text, then true/false", () => 
   const s: TableSchema = { fields: [{ name: "v", type: "any" as never }] };
   assert.deepEqual(applySort(mixed, [{ field: "v", direction: "asc" }], s).map((r) => r.id), ["c", "b", "a"]);
 });
+
+test("a saved sort puts emoji in code point order too", () => {
+  const out = applySort(rows(["😀", "�", "a"]), [{ field: "name", direction: "asc" }], schema);
+  assert.deepEqual(names(out), ["a", "�", "😀"]);
+});
+
+test("a sort of plain text gives compareText's order, both ways", () => {
+  // Plain text takes a quicker path through applySort; it must agree.
+  const letters = ["a", "A", "b", "B", "é", "É", "z", "Z", "-", " ", "ab", "aB", "Ab", "a b", "ä"];
+  let seed = 7;
+  const pick = () => letters[(seed = (seed * 16807) % 2147483647) % letters.length]!;
+  const words = Array.from({ length: 400 }, () => pick() + pick() + (seed % 3 ? pick() : ""));
+  const input = rows(words);
+  const expected = input.slice().sort((x, y) => compareText(x.name as string, y.name as string));
+  assert.deepEqual(applySort(input, [{ field: "name", direction: "asc" }], schema).map((r) => r.id), expected.map((r) => r.id));
+  const down = input.slice().sort((x, y) => compareText(y.name as string, x.name as string));
+  assert.deepEqual(applySort(input, [{ field: "name", direction: "desc" }], schema).map((r) => r.id), down.map((r) => r.id));
+});

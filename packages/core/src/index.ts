@@ -48,8 +48,11 @@ export {
   type Expr,
   type FormulaErrorCode,
   type ParseResult,
+  type Place,
+  type PlaceRow,
 } from "./expr.js";
-export { computeRows, type ComputeOptions } from "./workbook.js";
+export { computeRows, sheetGrid, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
   compileFormula,
   printFormula,
