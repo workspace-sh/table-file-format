@@ -15,13 +15,19 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "../../../conformance/openformula/functions.txt");
 
 const html = await (await fetch(URL)).text();
-const text = html
-  .replace(/<[^>]+>/g, "\n")
-  .replace(/&nbsp;/g, " ")
-  .replace(/&amp;/g, "&");
+// Whole heading elements: the HTML splits some headings across tags
+// (IMSEC reads "I" + "MSEC" line by line), and some names are one letter
+// (N, T).
 const names = new Set<string>();
-for (const m of text.matchAll(/\n\s*6\.(\d+)\.\d+\s+([A-Z][A-Z0-9.]+)\s*\n/g)) {
-  if (m[1] !== "4") names.add(m[2]!);
+for (const h of html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/g)) {
+  const text = h[2]!
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  const m = /^6\.(\d+)\.\d+ ([A-Z][A-Z0-9.]*)$/.exec(text);
+  if (m && m[1] !== "4") names.add(m[2]!);
 }
 const sorted = [...names].sort();
 writeFileSync(
