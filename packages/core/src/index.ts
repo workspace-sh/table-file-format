@@ -16,6 +16,7 @@ export {
 export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal } from "./query.js";
 export { formatValue, stringFormatKind, type DisplayOptions } from "./format.js";
 export { textDirection, type TextDirection } from "./direction.js";
+export { compareText, type TextOrder } from "./collate.js";
 export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile } from "./archive.js";
 export {
   buildIndex,

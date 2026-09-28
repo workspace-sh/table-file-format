@@ -623,6 +623,17 @@ given list.
   misorders `datetime` values carrying different offsets.
 - Null/undefined values sort **last regardless of direction**
   (asc and desc).
+- Text sorts by Unicode code point, ignoring case (Unicode's default
+  lower case, never a particular language's); when two values differ
+  only in case, capitals come first. So `A, a, B, b`, and `é` after `z`.
+  The order is the same on every device, whatever language a reader
+  uses, because a saved sort's order is shared (reference:
+  `compareText`).
+- In a field holding different kinds of value, numbers come first, then
+  text, then `true`/`false`.
+- Rows that tie keep file order.
+- An app MAY sort by its reader's language for a sort it doesn't save,
+  one that changes only that reader's screen.
 
 ### Group behaviour
 

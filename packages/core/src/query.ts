@@ -11,6 +11,7 @@ import type {
 import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
 import { computeRows, type ComputeOptions } from "./workbook.js";
+import { compareText, type TextOrder } from "./collate.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;
@@ -55,8 +56,20 @@ export function searchRows(
   });
 }
 
-export function applySort(rows: Row[], sorts: ViewSort[], schema: TableSchema): Row[] {
+/**
+ * Rows in a sort's order. Text is compared in the saved order
+ * (`compareText`, the same on every device) unless `options.text` gives a
+ * viewer's own, for a personal sort. Rows that tie keep the order they
+ * came in (the sort is stable), which is file order for a table's rows.
+ */
+export function applySort(
+  rows: Row[],
+  sorts: ViewSort[],
+  schema: TableSchema,
+  options: { text?: TextOrder } = {},
+): Row[] {
   if (!sorts.length) return rows;
+  const text = options.text ?? compareText;
   const fieldsByName = new Map(schema.fields.map((f) => [f.name, f]));
   const copy = rows.slice();
   copy.sort((a, b) => {
@@ -69,7 +82,7 @@ export function applySort(rows: Row[], sorts: ViewSort[], schema: TableSchema): 
       if (aMissing && bMissing) continue;
       if (aMissing) return 1;
       if (bMissing) return -1;
-      const cmp = compare(aVal, bVal, fieldsByName.get(s.field));
+      const cmp = compare(aVal, bVal, fieldsByName.get(s.field), text);
       if (cmp !== 0) return s.direction === "desc" ? -cmp : cmp;
     }
     return 0;
@@ -171,7 +184,7 @@ function matchesFilter(row: Row, f: ViewFilter): boolean {
   }
 }
 
-function compare(a: unknown, b: unknown, field: Field | undefined): number {
+function compare(a: unknown, b: unknown, field: Field | undefined, text: TextOrder): number {
   const order = enumValues(field);
   if (order.length > 0 && typeof a === "string" && typeof b === "string") {
     const ai = order.indexOf(a);
@@ -188,7 +201,10 @@ function compare(a: unknown, b: unknown, field: Field | undefined): number {
   }
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
-  return String(a).localeCompare(String(b));
+  // Different kinds in one field: numbers, then text, then true/false.
+  const kind = (v: unknown) => (typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : 1);
+  if (kind(a) !== kind(b)) return kind(a) - kind(b);
+  return text(String(a), String(b));
 }
 
 const isBlank = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
