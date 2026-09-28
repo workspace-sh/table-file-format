@@ -254,6 +254,7 @@ mround
 multinomial
 multiple.operations
 munit
+n
 na
 negbinomdist
 networkdays
@@ -350,6 +351,7 @@ sumx2my2
 sumx2py2
 sumxmy2
 syd
+t
 tan
 tanh
 tbilleq
