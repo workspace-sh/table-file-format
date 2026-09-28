@@ -12,14 +12,18 @@
  * What it accepts, and what it refuses, follows PRIOR-ART's "Authoring
  * syntaxes" notes: field references as a bare word, `[@x]`, `{x}`,
  * `prop("x")` or `$x`; `==` and `!=` for `=` and `<>`; function names in
- * any case (D29 stores them lowercase); anything outside D32's library,
- * or a cell address like `B7`, refused at entry and never stored.
+ * any case (D29 stores them lowercase); anything outside D32's library
+ * refused at entry. A cell address like `B7` needs a grid (D34): in a
+ * Sheet view's cell it reads relative to the row being edited, `$B$7`
+ * pins a row by id, and ranges and other sheets (`'By date'!B7`) are
+ * stored as `at` and `range` (D41). Coordinates themselves are never
+ * stored.
  *
  * Nothing here evaluates. It is pure text-to-tree-to-text, so it runs
  * wherever table-core does and any app's formula bar can share it.
  */
 
-import { FUNCTION_NAMES, parseExpr, type Expr } from "./expr.js";
+import { FUNCTION_NAMES, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
 import type { FieldType } from "./types.js";
 
 export type CompileResult =
@@ -80,6 +84,8 @@ type Token =
   | { t: "str"; v: string; at: number }
   | { t: "ref"; v: string; at: number } // a field reference in explicit syntax
   | { t: "ident"; v: string; at: number }
+  | { t: "cell"; v: string; at: number } // a cell with a $ in it: $C$6, C$6
+  | { t: "sheet"; v: string; at: number } // 'By date'! before a cell
   | { t: "op"; v: string; at: number }
   | { t: "end"; at: number };
 
@@ -92,9 +98,16 @@ class CompileError {
 
 const NUMBER = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
 const IDENT = /^[\p{L}_][\p{L}\p{N}_]*/u;
-const OPS = ["<=", ">=", "<>", "!=", "==", "=", "<", ">", "+", "-", "*", "/", "&", "(", ")", ","];
+const OPS = ["<=", ">=", "<>", "!=", "==", "=", "<", ">", "+", "-", "*", "/", "&", "(", ")", ",", ":"];
+/** A cell or a column as typed: `C6`, `$C$6`, `C$6`, `C`, `$C`. The row's `$` pins it (D41). */
+const CELL = /^(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)?$/;
+const DOLLAR_CELL = /^\$[A-Za-z]{1,3}\$?[0-9]*(?![\p{L}\p{N}_])/u;
 
-function tokenize(src: string, offset: number): Token[] {
+/**
+ * `cells`: the formula is typed into a grid, so `$C$6` is a cell. A field
+ * with that name (Grist's `$name`) still wins.
+ */
+function tokenize(src: string, offset: number, cells = false, fields?: Set<string>): Token[] {
   const out: Token[] = [];
   let i = 0;
   const at = () => offset + i;
@@ -145,6 +158,39 @@ function tokenize(src: string, offset: number): Token[] {
       i = end + 1;
       continue;
     }
+    if (c === "'") {
+      // 'By date'!C6: a sheet, as Excel quotes one ('' is a quote).
+      const start = at();
+      let v = "";
+      i++;
+      for (;;) {
+        if (i >= src.length) throw new CompileError("This sheet name is missing its closing '.", start);
+        if (src[i] === "'") {
+          if (src[i + 1] === "'") {
+            v += "'";
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        v += src[i];
+        i++;
+      }
+      if (src[i] !== "!") throw new CompileError(`A sheet name is followed by ! and a cell, as in '${v}'!C6.`, at());
+      i++;
+      out.push({ t: "sheet", v, at: start });
+      continue;
+    }
+    if (c === "$" && cells) {
+      const cell = DOLLAR_CELL.exec(src.slice(i));
+      const name = IDENT.exec(src.slice(i + 1))?.[0];
+      if (cell && !(name !== undefined && fields?.has(name))) {
+        out.push({ t: "cell", v: cell[0], at: at() });
+        i += cell[0].length;
+        continue;
+      }
+    }
     if (c === "$") {
       // $name (Grist).
       const id = IDENT.exec(src.slice(i + 1));
@@ -155,6 +201,19 @@ function tokenize(src: string, offset: number): Token[] {
     }
     const id = IDENT.exec(rest);
     if (id) {
+      // C$6: a column, then a pinned row.
+      const pinned = cells && /^[A-Za-z]{1,3}$/.test(id[0]) ? /^\$[0-9]+(?![\p{L}\p{N}_])/u.exec(src.slice(i + id[0].length)) : null;
+      if (pinned) {
+        out.push({ t: "cell", v: id[0] + pinned[0], at: at() });
+        i += id[0].length + pinned[0].length;
+        continue;
+      }
+      // Sheet1!C6: a sheet whose name needs no quotes.
+      if (src[i + id[0].length] === "!" && src[i + id[0].length + 1] !== "=") {
+        out.push({ t: "sheet", v: id[0], at: at() });
+        i += id[0].length + 1;
+        continue;
+      }
       out.push({ t: "ident", v: id[0], at: at() });
       i += id[0].length;
       continue;
@@ -203,6 +262,26 @@ export interface Grid {
   columns: readonly string[];
   rows: readonly string[];
   here?: string;
+  /**
+   * The Sheet view this grid is, by id. With it, a cell typed in a row
+   * reads relative to that row, `C6` in row 7 being the row above, and
+   * `$C$6` pins a row (D41). Without it, every coordinate pins.
+   */
+  sheet?: string;
+  /** Other Sheet views a formula may name, as `'By date'!C6`. */
+  sheets?: readonly SheetRef[];
+}
+
+/** A Sheet view a formula may name (D41): its name as typed and shown, and its grid. */
+export interface SheetRef {
+  /** `By date` for one of this table's; `Deals: Pipeline` for another table's. */
+  name: string;
+  /** The view's id. */
+  view: string;
+  /** Another table's name; absent for this table's. */
+  table?: string;
+  columns: readonly string[];
+  rows: readonly string[];
 }
 
 /** 0 → A, 25 → Z, 26 → AA, as spreadsheets letter their columns. */
@@ -319,7 +398,7 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
 
   let tokens: Token[];
   try {
-    tokens = tokenize(body, lead);
+    tokens = tokenize(body, lead, !!grid, fields);
   } catch (e) {
     const err = e as CompileError;
     return { ok: false, message: err.message, at: err.at };
@@ -339,6 +418,75 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
   const ref = (name: string): Expr => {
     if (fields && !fields.has(name)) warnings.add(`There is no field called “${name}”, so the result will show #NAME?.`);
     return fieldRef(name);
+  };
+
+  // ---- cells and ranges (D34, D41)
+
+  type Target = { columns: readonly string[]; rows: readonly string[]; view?: string; table?: string; other: boolean; label: string };
+
+  const sheetNamed = (name: string, at: number): Target => {
+    if (!grid) throw new CompileError(`'${name}'!… names a sheet, but this view doesn't number its cells.`, at);
+    const found = (grid.sheets ?? []).filter((s) => s.name.toLowerCase() === name.toLowerCase());
+    if (found.length === 0) throw new CompileError(`There's no sheet called '${name}'.`, at);
+    if (found.length > 1) throw new CompileError(`More than one sheet is called '${name}'. Rename one of them first.`, at);
+    const s = found[0]!;
+    if (s.table === undefined && s.view === grid.sheet) return { columns: grid.columns, rows: grid.rows, view: grid.sheet, other: false, label: "this sheet" };
+    return { columns: s.columns, rows: s.rows, view: s.view, ...(s.table === undefined ? {} : { table: s.table }), other: true, label: `'${s.name}'` };
+  };
+
+  const readCell = (text: string, at: number, target: Target) => {
+    const m = CELL.exec(text);
+    if (!m) throw new CompileError(`${text} isn't a cell.`, at);
+    const col = columnIndex(m[2]!);
+    const row = m[4] === undefined ? null : Number(m[4]) - 1;
+    const width = target.columns.length;
+    if (col >= width || (row !== null && (row < 0 || row >= target.rows.length))) {
+      throw new CompileError(
+        `${text.replace(/\$/g, "").toUpperCase()} is outside ${target.label}, which runs from A1 to ${columnLetter(width - 1)}${target.rows.length}.`,
+        at,
+      );
+    }
+    return { field: target.columns[col]!, row, pin: m[3] === "$" };
+  };
+
+  // In a Sheet view's cell, an unpinned row is relative to the row being edited.
+  const hereAt = grid?.sheet !== undefined && grid.here !== undefined ? grid.rows.indexOf(grid.here) : -1;
+
+  const addressed = (text: string, at: number, sheet: Target | null): Expr => {
+    const target = sheet ?? { columns: grid!.columns, rows: grid!.rows, ...(grid!.sheet === undefined ? {} : { view: grid!.sheet }), other: false, label: "this sheet" };
+    const a = readCell(text, at, target);
+    if (isOp(":")) {
+      next();
+      const t2 = next();
+      if (t2.t !== "ident" && t2.t !== "cell") throw new CompileError("A range runs between two cells, as in C2:C6.", t2.at);
+      const b = readCell(t2.v, t2.at, target);
+      if ((a.row === null) !== (b.row === null)) {
+        throw new CompileError("A range runs between two cells, like C2:C6, or two columns, like C:C.", at);
+      }
+      if (target.view === undefined) throw new CompileError("A range needs a Sheet view: turn on Sheet for this view first.", at);
+      if (!target.other) {
+        ref(a.field);
+        ref(b.field);
+      }
+      const corner = (c: { row: number | null; pin: boolean }): string | number | null => {
+        if (c.row === null) return null;
+        if (target.other || c.pin || hereAt === -1) return target.rows[c.row]!;
+        return c.row - hereAt;
+      };
+      return placeCall("range", [a.field, corner(a), b.field, corner(b), target.view, ...(target.table === undefined ? [] : [target.table])]);
+    }
+    if (a.row === null) throw new CompileError(`${text} is a whole column; write it as a range, like ${text}:${text}.`, at);
+    const rowId = target.rows[a.row]!;
+    // Another sheet: pinned, and named (D41).
+    if (target.other) return placeCall("at", [a.field, rowId, target.view!, ...(target.table === undefined ? [] : [target.table])]);
+    const name = ref(a.field);
+    if (hereAt === -1 || a.pin) {
+      // A header, or pinned: the row's id (D34). This row, unpinned, is the field itself.
+      if (!a.pin && rowId === grid!.here) return name;
+      return { kind: "call", fn: "field", args: [{ kind: "string", value: a.field }, { kind: "string", value: rowId }] };
+    }
+    const offset = a.row - hereAt;
+    return offset === 0 ? name : placeCall("at", [a.field, offset, grid!.sheet!]);
   };
 
   const call = (name: string, at: number): Expr => {
@@ -372,6 +520,18 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
       }
       return ref(a.value);
     }
+    // row and rows read where a cell is, so it's written as a place (D41).
+    if ((fn === "row" || fn === "rows") && grid?.sheet !== undefined) {
+      if (fn === "row" && args.length === 0 && grid.columns[0] !== undefined) {
+        args.push(placeCall("at", [grid.columns[0], 0, grid.sheet]));
+      }
+      args.forEach((a, i) => {
+        if (a.kind === "field") args[i] = placeCall("at", [a.name, 0, grid.sheet!]);
+        else if (a.kind === "call" && a.fn === "field" && a.args.length === 2 && a.args[0]?.kind === "string" && a.args[1]?.kind === "string") {
+          args[i] = placeCall("at", [a.args[0].value, a.args[1].value, grid.sheet!]);
+        }
+      });
+    }
     if (!CALLABLE.has(fn)) {
       throw new CompileError(
         `${name} isn't a function .table formulas have. They can use: ${[...CALLABLE]
@@ -392,6 +552,14 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         return { kind: "string", value: t.v };
       case "ref":
         return ref(t.v);
+      case "cell":
+        return addressed(t.v, t.at, null);
+      case "sheet": {
+        const target = sheetNamed(t.v, t.at);
+        const c = next();
+        if (c.t !== "ident" && c.t !== "cell") throw new CompileError(`'${t.v}'! needs a cell after it, as in '${t.v}'!C6.`, c.at);
+        return addressed(c.v, c.at, target);
+      }
       case "ident": {
         if (isOp("(")) {
           next();
@@ -399,6 +567,10 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         }
         const lower = t.v.toLowerCase();
         if (lower === "true" || lower === "false") return { kind: "boolean", value: lower === "true" };
+        if (lower === "nil" && !(fields?.has(t.v) ?? false)) return { kind: "nil" };
+        // C:C, a whole column.
+        if (grid && /^[A-Za-z]{1,3}$/.test(t.v) && isOp(":") && !(fields?.has(t.v) ?? false)) return addressed(t.v, t.at, null);
+        if (grid?.sheet !== undefined && CELL_ADDRESS.test(t.v) && !(fields?.has(t.v) ?? false)) return addressed(t.v, t.at, null);
         if (CELL_ADDRESS.test(t.v) && !(fields?.has(t.v) ?? false)) {
           if (!grid) {
             throw new CompileError(
@@ -500,6 +672,15 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
   return { ok: true, expr: clean, stored, warnings: [...warnings] };
 }
 
+/** An `at` or `range` form from its arguments: strings, offsets, and null for `nil`. */
+function placeCall(fn: "at" | "range", args: (string | number | null)[]): Expr {
+  return {
+    kind: "call",
+    fn,
+    args: args.map((a): Expr => (a === null ? { kind: "nil" } : typeof a === "number" ? { kind: "number", value: a } : { kind: "string", value: a })),
+  };
+}
+
 /** Drop the parser's bookkeeping marks, leaving a plain `Expr`. */
 function strip(e: Expr): Expr {
   if (e.kind !== "call") return e;
@@ -547,9 +728,62 @@ function printString(s: string): string {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
+/** A sheet's name as Excel writes it before a cell: always quoted, a quote doubled. */
+function printSheet(name: string): string {
+  return `'${name.replace(/'/g, "''")}'!`;
+}
+
+/**
+ * An `at` or `range` as coordinates, where the grid can show it (D41):
+ * `C6`, `$C$6`, `C2:C6`, `C:C`, `'By date'!C6`. Null when it can't, and
+ * it's shown as the function instead, which compiles back the same.
+ */
+function printPlace(p: Place, grid: Grid | undefined): string | null {
+  if (!grid) return null;
+  const hereAt = grid.sheet !== undefined && grid.here !== undefined ? grid.rows.indexOf(grid.here) : -1;
+  const current = p.table === undefined && p.view === grid.sheet;
+  const other = current ? undefined : grid.sheets?.find((s) => s.view === p.view && s.table === p.table);
+  if (!current && !other) return null;
+  const columns = current ? grid.columns : other!.columns;
+  const rows = current ? grid.rows : other!.rows;
+  const cell = (field: string, row: string | number | null): string | null => {
+    const col = columns.indexOf(field);
+    if (col === -1) return null;
+    const letters = columnLetter(col);
+    if (row === null) return letters;
+    if (typeof row === "string") {
+      const r = rows.indexOf(row);
+      if (r === -1) return null;
+      // In a cell of this sheet, a pinned row is written with $, as it's typed.
+      return current && hereAt !== -1 ? `$${letters}$${r + 1}` : `${letters}${r + 1}`;
+    }
+    if (!current || hereAt === -1) return null;
+    const r = hereAt + row;
+    return r < 0 || r >= rows.length ? null : `${letters}${r + 1}`;
+  };
+  const prefix = current ? "" : printSheet(other!.name);
+  if (p.single) {
+    // A pinned cell of this sheet is typed as $C$6, which stores the plain
+    // row reference; this form is kept as it's written.
+    if (current && typeof p.from.row === "string") return null;
+    if (!current && typeof p.from.row !== "string") return null;
+    const c = cell(p.from.field, p.from.row);
+    return c === null ? null : prefix + c;
+  }
+  if ((p.from.row === null) !== (p.to.row === null)) return null;
+  const a = cell(p.from.field, p.from.row);
+  const b = cell(p.to.field, p.to.row);
+  return a === null || b === null ? null : `${prefix}${a}:${b}`;
+}
+
 function printExpr(e: Expr, grid?: Grid): string {
-  const at = (name: string, rowId: string | undefined) =>
-    grid && rowId !== undefined ? coordinateOf(name, rowId, grid) : null;
+  const at = (name: string, rowId: string | undefined) => {
+    if (!grid || rowId === undefined) return null;
+    const shown = coordinateOf(name, rowId, grid);
+    // Another row, in a cell of a Sheet view: pinned, so written with $ (D41).
+    const inCell = grid.sheet !== undefined && grid.here !== undefined && grid.rows.includes(grid.here);
+    return shown && inCell && rowId !== grid.here ? shown.replace(/^([A-Z]+)/, "$$$1$$") : shown;
+  };
   switch (e.kind) {
     case "number":
       return String(e.value);
@@ -564,6 +798,11 @@ function printExpr(e: Expr, grid?: Grid): string {
     case "call": {
       if (e.fn === "field" && e.args.length === 1 && e.args[0]!.kind === "string") {
         return at(e.args[0]!.value, grid?.here) ?? printRef(e.args[0]!.value);
+      }
+      if (e.fn === "at" || e.fn === "range") {
+        const p = placeOf(e.fn, e.args);
+        const shown = p instanceof FormulaError ? null : printPlace(p, grid);
+        if (shown) return shown;
       }
       // Another row (D34): its coordinate where the grid shows it.
       if (e.fn === "field" && e.args.length === 2 && e.args[0]!.kind === "string" && e.args[1]!.kind === "string") {
@@ -625,7 +864,7 @@ export function printFormula(
 
 // ---- what a new formula field's values will be
 
-const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len", "count", "average"]);
+const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len", "count", "average", "row", "rows"]);
 /** What reads across rows as a list (D36). */
 const LIST_FNS = new Set(["column", "linked"]);
 const TEXT_FNS = new Set(["concat", "upper", "lower"]);
@@ -652,7 +891,9 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
       if (TEXT_FNS.has(expr.fn)) return "string";
       if (BOOLEAN_FNS.has(expr.fn)) return "boolean";
       if (NUMBER_FNS.has(expr.fn)) return "number";
-      if (LIST_FNS.has(expr.fn)) return "array";
+      if (LIST_FNS.has(expr.fn) || expr.fn === "range") return "array";
+      // A place reads one cell of a field, of whatever type it is (D41).
+      if (expr.fn === "at" && expr.args[0]?.kind === "string") return fieldTypes.get(expr.args[0].value) ?? "number";
       // A lookup is whatever it reads; not knowing, text is the safe guess.
       if (expr.fn === "lookup") return "string";
       if (expr.fn === "field" && expr.args[0]?.kind === "string") {
@@ -663,11 +904,13 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
   }
 }
 
-/** One cell a formula reads: a field of this row, or of another row by its id (D34). */
+/** One cell a formula reads: a field of this row, or of another row by its id (D34), or cells by place (D41). */
 export interface FormulaRef {
   field: string;
-  /** Absent: the row being computed. */
+  /** Absent: the row being computed, unless `place` says otherwise. */
   rowId?: string;
+  /** Read by place in a Sheet view: `field` is its first corner's field. */
+  place?: Place;
 }
 
 /**
@@ -686,6 +929,11 @@ export function formulaRefs(expr: Expr): FormulaRef[] {
       if (e.fn === "field" && a?.kind === "string" && e.args.length === 1) add({ field: a.value });
       else if (e.fn === "field" && a?.kind === "string" && b?.kind === "string" && e.args.length === 2) {
         add({ field: a.value, rowId: b.value });
+      } else if (e.fn === "at" || e.fn === "range") {
+        const p = placeOf(e.fn, e.args);
+        if (p instanceof FormulaError) return;
+        seen.push({ field: p.from.field, place: p });
+        if (p.to.field !== p.from.field) seen.push({ field: p.to.field, place: p });
       } else e.args.forEach(walk);
     }
   };
