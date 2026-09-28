@@ -10,7 +10,7 @@ import type {
 } from "./types.js";
 import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
-import { computeRows, type ComputeOptions } from "./expr.js";
+import { computeRows, type ComputeOptions } from "./workbook.js";
 
 export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
   if (!filters.length) return rows;

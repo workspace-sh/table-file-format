@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { computeRows } from "./expr.js";
+import { computeRows } from "./workbook.js";
 import { fixtureBundles } from "./test-fixtures.js";
 import type { ParsedTable, Row } from "./types.js";
 
