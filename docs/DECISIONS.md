@@ -1064,11 +1064,12 @@ in them, and a personal sort that doesn't disturb anyone. Naming the
 Sheet view in every place keeps answers independent of screens, and
 references by row `id` still never break when rows move.
 
-**Cost:** positions are one list of row ids per Sheet view that a
-formula reads, rebuilt when that grid changes. Measured on an M1 with
-8 GB at 1,000,000 rows: about 127 ms to rebuild it and 76 ms to
-recompute a running total after a row near the top moves. References by
-`id` never recompute on a move.
+**Cost:** positions are one list of rows per Sheet view that a formula
+reads, built when that grid changes. Measured with the reference code
+(`grid.bench.ts`) on an M1 with 8 GB, Node 22: at 50,000 rows, about
+30 ms to sort and number a grid and 60 ms to compute a running total
+down it; at 1,000,000 rows, about 0.8 s and 1.3 s. References by `id`
+never recompute on a move.
 
 **Amends** D21 and D29 (ranges and places are now allowed, counted in a
 Sheet view's grid), D34 (relative references in a Sheet view's cell),

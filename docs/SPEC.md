@@ -488,8 +488,10 @@ reader and doesn't depend on anyone's screen.
 - `(range "field" <from> "field" <to> "<view>")`: a block of cells, as a
   spreadsheet range. Each corner's row is an integer (an offset from this
   row), a string (a row `id`, pinned), or `nil` (an open end: `C:C`).
-  The fields between the two corners are the Sheet view's columns
-  between them.
+  The corners may come either way round. An open end runs to the edge
+  of the grid on its side, so `(range "c" nil "c" -1 "v")` is every row
+  above this one, and no rows in row 1. The fields between the two
+  corners are the Sheet view's columns between them.
 - A reference into another table's Sheet view adds the table's name
   last: `(range "value" nil "value" nil "pipeline" "deals")`. There, a
   single cell is always pinned by `id`.
