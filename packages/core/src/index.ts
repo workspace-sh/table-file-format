@@ -41,15 +41,14 @@ export {
 export { parseRowsText } from "./parse-text.js";
 export { serializeRows } from "./serialize.js";
 export {
-  computeRows,
   parseExpr,
   FUNCTION_NAMES,
   FormulaError,
   type Expr,
   type FormulaErrorCode,
   type ParseResult,
-  type ComputeOptions,
 } from "./expr.js";
+export { computeRows, type ComputeOptions } from "./workbook.js";
 export {
   compileFormula,
   printFormula,
