@@ -338,11 +338,16 @@ empty and reports it.
   may be used; a loop between computed fields is `#REF!`.
 - `(field "q1" "income")` is the field `q1` of the row whose system
   `id` is `"income"`: a reference to another row (DECISIONS D34). It is
-  how a coordinate typed as `=B7` is stored, so sorting or filtering
-  never changes what it reads.
+  how a coordinate typed in a column's header editor (`=B7`), or pinned
+  with `$` in a cell (`=$B$7`), is stored, so sorting or filtering never
+  changes what it reads.
+- `(at "q1" -1 "by-date")` reads by place: the field `q1` of whatever row
+  is one above this one in the Sheet view `by-date` (see "References by
+  place" below, and DECISIONS D41).
 - Function names are case-insensitive and stored lowercase; field
   names are case-sensitive.
-- A formula reads its own row and any other row it names by `id`.
+- A formula reads its own row, any other row it names by `id`, and any
+  row it names by its place in a Sheet view.
 - Reading across rows and tables (DECISIONS D36):
   - `(column "q1")` is every row's `q1`, as a list, in file order.
   - `(lookup "company" "industry")` follows this row's relation field
@@ -472,6 +477,36 @@ whose `share` field is `(/ q1 (field "q1" "income"))`:
 | `rent` | `(/ q1 (max (column "q1")))` | `0.25` |
 <!-- other-row-examples:end -->
 
+**References by place** (DECISIONS D41). A Sheet view (section 4)
+numbers its rows, and a formula may read a row by that number rather
+than by its `id`. Such a reference always names the Sheet view it
+counts in, by the view's `id`, so its answer is the same for every
+reader and doesn't depend on anyone's screen.
+
+- `(at "field" <offset> "<view>")`: the field of the row `<offset>` rows
+  from this one in that Sheet view: `-1` is the row above, `0` this row.
+- `(range "field" <from> "field" <to> "<view>")`: a block of cells, as a
+  spreadsheet range. Each corner's row is an integer (an offset from this
+  row), a string (a row `id`, pinned), or `nil` (an open end: `C:C`).
+  The fields between the two corners are the Sheet view's columns
+  between them.
+- A reference into another table's Sheet view adds the table's name
+  last: `(range "value" nil "value" nil "pipeline" "deals")`. There, a
+  single cell is always pinned by `id`.
+- `(row x)` and `(rows x)` take an `at` or `range` and give its position
+  or its number of rows in the grid, never its value.
+- A place above the first row or past the last reads as an empty cell;
+  `row` of such a place is `#REF!`.
+- A reference to a Sheet view that doesn't exist, or is no longer a
+  Sheet view, is `#REF!`.
+- A Sheet view whose saved sort or grouping depends on a place in that
+  same view is a loop: every reference by place into it is `#REF!`,
+  and it numbers its rows in file order.
+- How these are typed and shown: in a Sheet view's cell, `=C6` typed in
+  row 7 is "the row above" (`at`); `=$C$6` pins that row by `id`. Another
+  Sheet view is shown as `'By date'!C6`, another table's as
+  `'Deals: Pipeline'!C6`.
+
 Reference: `computeRows()` / `parseExpr()` in `@workspace.sh/table-core`;
 `applyView()` computes before filtering and sorting, so views can use
 computed fields. The Excel-style authoring surface D29 describes is
@@ -531,10 +566,12 @@ constraint over user-facing fields, not row identity.
 
 ### Row ordering
 
-Row order in `rows.ndjson` is **not** semantically meaningful. Display
-order belongs in views (`sort` and `group`). Append-friendly:
-appending a new row to the end MUST be a valid edit, even
-mid-document.
+Row order in `rows.ndjson` is the table's **file order**. It means
+something: `(column "x")` reads in it, and a Sheet view with no saved
+sort numbers its rows in it (DECISIONS D41). How rows are shown is
+still each view's business (`sort`, `group`, `order`). Appending a new
+row to the end MUST be a valid edit, and so is inserting one at a
+position.
 
 ### Reader error contract
 
@@ -558,10 +595,10 @@ does not have to.
 
 ### Canonical write order
 
-Readers MUST NOT assign meaning to row order, but writers SHOULD
-produce a **canonical serialisation**: rows in stable insertion order
-(new rows appended, existing rows keep their line position), and
-within each row, keys in schema declaration order with `id` first.
+Writers MUST keep file order: a row stays on its line unless someone
+moves it, and a new row goes where it was inserted (at the end, unless
+placed). Writers SHOULD produce a **canonical serialisation**: within
+each row, keys in schema declaration order with `id` first.
 
 Why this matters: two independent writers materialising the same
 logical state should produce **byte-identical** files. Without a
@@ -664,12 +701,29 @@ given list.
   `average`, `min` and `max` read the numbers and skip anything else;
   `count` counts values and `count_empty` blanks. Display-only: only the
   choice is stored, never a result (reference: `viewTotal()`).
-- `coordinates: true`: show a table layout as a sheet: columns
-  lettered `A, B, C…` and rows numbered `1, 2, 3…`, in this view's
-  order, so a formula can be typed as `=B7` and is shown that way.
-  Display-only: a typed coordinate is stored as the field and the row's
-  `id` (DECISIONS D34), so sorting or filtering the view renumbers the
-  grid without changing any formula.
+- `coordinates: true`: this table layout is a **Sheet view** (below).
+
+### Sheet views
+
+A Sheet view (`coordinates: true`, table layout) shows its columns
+lettered `A, B, C…` and its rows numbered `1, 2, 3…`: a grid, which
+formulas can read by place (section 2, "References by place";
+DECISIONS D41). A table may have several Sheet views, each its own grid.
+
+- **Its rows, in order:** its saved `group` (rows numbered group by
+  group, in "Group behaviour" order; group header lines aren't
+  numbered), within that its manual `order` if it has one, otherwise
+  its saved `sort` (section "Sort behaviour"), with rows that tie in
+  file order. With no sort or order, file order.
+- **Its columns, in order:** its `fields`, or the schema's fields when it
+  has none.
+- **Filters hide rows without renumbering them:** the grid keeps every
+  row, so a filtered Sheet view may show `7, 9, 12`.
+- Only what is saved in `views.json` makes the grid. An app MAY let a
+  reader sort, group or filter a view for themselves without saving it
+  (DECISIONS D4); that changes only their screen, never a grid or a
+  formula's answer, and a Sheet view shown that way keeps its grid's
+  numbers.
 
 ### Layout-specific fields
 

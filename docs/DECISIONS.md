@@ -341,6 +341,10 @@ justify. Same park-with-reserved-shape posture as D14's
 spreadsheet-style range references (`A1:A10`) — position-based
 addressing is wrong for an id-keyed row model.
 
+*Amended by D41:* ranges are now in scope, counted in a named Sheet
+view's grid rather than in cell addresses, and references by row `id`
+stay the default.
+
 ## D22: `schema-version` is single-writer scoped
 
 The `schema-version` counter is meaningful only without concurrent
@@ -593,6 +597,13 @@ an id-keyed row model. The same reasoning applies to a single
 coordinate, which is why one may be typed and displayed but never
 stored.
 
+*Amended by D41:* a coordinate typed in a column's header editor, or
+pinned with `$`, is still stored as a row `id`. One typed in a Sheet
+view's cell for another row is now a reference by place, `(at …)`,
+counted in that Sheet view's saved grid, and ranges are allowed. Letters
+and numbers still never reach disk: a place is a field, an offset or
+row id, and a Sheet view's `id`.
+
 **Row-local evaluation is a performance boundary, not only a scope
 decision:** while a computed field may reference only its own row
 (D21, issue #34), each row's evaluation is independent and there is no
@@ -796,7 +807,10 @@ coordinate against the grid it shows. One in the row being edited
 becomes a bare field, which means "this row" for every row: a
 spreadsheet's fill-down. One in another row becomes
 `(field "name" "<row id>")`, which is absolute. Relative offsets such
-as "the previous row" are not provided. On display the reference is
+as "the previous row" are not provided. *Amended by D41:* in a Sheet
+view's cell, a coordinate in another row is now relative ("the row
+above" is `(at "c" -1 "<view>")`), and `$` pins it by `id` as described
+here; the header editor still pins by `id`. On display the reference is
 shown at whatever coordinate its row now holds, or as
 `field("name", "<row id>")` when the row is not in view.
 
@@ -1000,3 +1014,67 @@ reason.
 
 **No version bump.** Pre-alpha (D26, D31): the one fixture using
 `"right"` now says `"end"`, and nothing reads the old values.
+
+## D41: Sheet views are grids, and formulas can read by place
+
+A formula can read a row in two ways. **By row** names the row itself,
+by its `id`, and follows it wherever it moves (D34). **By place** names
+a position, "the row above" or "rows 2 to 9", and reads whatever row is
+there. `.table` had only the first; spreadsheets have only the second.
+Running totals, ranges, `row`, `offset` and `indirect` need the second.
+
+**Where places come from: Sheet views.** A Sheet view (`coordinates:
+true`) is a grid, numbered by what is saved in `views.json`: its
+grouping, then its manual `order` or its sort, ties in file order, and
+file order when nothing is saved. Filters hide rows without renumbering
+them. A table may have several Sheet views, each its own grid (SPEC
+section 4, "Sheet views").
+
+**A place always names its Sheet view.** `(at "c" -1 "by-date")` is the
+row above in `by-date`, whatever view the formula is shown in, so every
+reader gets the same answer and sorting another view changes nothing.
+Views are named by `id`, so renaming one is safe; a deleted one is
+`#REF!` (SPEC section 2, "References by place").
+
+**Saved and personal arrangements.** Only a saved sort, grouping or
+filter changes a grid. A reader's own sort, which an app keeps outside
+the file (D4), changes only their screen; a Sheet view shown that way
+keeps its grid's numbers. Sorting a view to look at it differently never
+changes anyone's results; "Save for everyone" does, deliberately.
+
+**Typing.** In a Sheet view's cell, `=C6` in row 7 means the row above,
+and `=$C$6` pins that row by `id`, as Excel users expect when a formula
+fills down. In a column's header editor there is no current row, so a
+coordinate pins by `id` (D34). Another Sheet view typed in a cell is
+pinned too.
+
+**Rules at the edges.**
+- A place above the first row or past the last reads as an empty cell.
+- A Sheet view sorted or grouped by something that depends on its own
+  places is a loop: every place read in it is `#REF!`, and it numbers
+  its rows in file order.
+- The saved order of text is fixed (SPEC section 4, "Sort behaviour"),
+  so every device numbers a grid the same way.
+- File order is now meaningful (SPEC section 3): writers keep each row
+  on its line, and a row can be inserted at a position.
+
+**Why:** Leslie wanted both kinds of reference without losing what
+spreadsheets and Airtable already offer: several Sheet views, grouping
+in them, and a personal sort that doesn't disturb anyone. Naming the
+Sheet view in every place keeps answers independent of screens, and
+references by row `id` still never break when rows move.
+
+**Cost:** positions are one list of row ids per Sheet view that a
+formula reads, rebuilt when that grid changes. Measured on an M1 with
+8 GB at 1,000,000 rows: about 127 ms to rebuild it and 76 ms to
+recompute a running total after a row near the top moves. References by
+`id` never recompute on a move.
+
+**Amends** D21 and D29 (ranges and places are now allowed, counted in a
+Sheet view's grid), D34 (relative references in a Sheet view's cell),
+and SPEC section 3 (file order is meaningful). OpenFormula's `offset`,
+`index` and `indirect` read the same grids once the formula engine
+arrives (#124). A running total such as `(+ (at "b" -1 "v") amount)` is
+empty in the first row until that engine treats an empty cell as 0 in
+arithmetic, as OpenFormula does (section 6.3.5); `(sum …)` works now.
+
