@@ -856,8 +856,11 @@ its own row.
 
 **Tables are the app's to supply.** Which table `"deals"` is resolves as
 a relation does (SPEC section 10). A reader without the other table
-shows `#REF!`. A loop between tables (A looks up B, which looks up A) is
-broken by reading the table already being computed as stored.
+shows `#REF!`. Loops are caught field by field, as in a spreadsheet: a
+field that depends on itself, through any rows or tables, is `#REF!`.
+Tables that depend on each other without a field depending on itself
+compute (#123: this originally read the other table "as stored", which
+silently emptied a lookup of a rollup of the looking-up table).
 
 Reference: `computeRows(schema, rows, { tables, self })` and
 `applyView(table, view, { tables, self })` in `@workspace.sh/table-core`.

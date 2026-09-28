@@ -11,10 +11,9 @@
  * empty operand makes arithmetic empty, while `sum` / `min` / `max`
  * skip empties; failures are error values that show a spreadsheet code
  * (`#DIV/0!`) and pass through whatever uses them. Pure TypeScript,
- * no platform APIs — it runs wherever table-core does.
+ * no platform APIs — it runs wherever table-core does. Computing a
+ * table's rows, across rows and tables, is workbook.ts.
  */
-
-import type { Field, ParsedTable, Row, TableSchema, ValidationError } from "./types.js";
 
 export type FormulaErrorCode = "#DIV/0!" | "#VALUE!" | "#NAME?" | "#REF!" | "#NUM!";
 
@@ -110,9 +109,9 @@ export function parseExpr(src: string): ParseResult {
 
 type Scalar = number | string | boolean | undefined | FormulaError;
 /** A list comes from reading across rows: `column`, `linked`, or a many `lookup` (D36). */
-type Value = Scalar | Value[];
+export type Value = Scalar | Value[];
 
-const isEmpty = (v: unknown): v is undefined => v === undefined || v === null || v === "";
+export const isEmpty = (v: unknown): v is undefined => v === undefined || v === null || v === "";
 
 /** A list's items, lists within it opened out. */
 function flatten(vs: Value[]): Scalar[] {
@@ -124,7 +123,8 @@ function flatten(vs: Value[]): Scalar[] {
   return out;
 }
 
-interface Scope {
+/** What a formula can read: its row, other rows, and other tables (workbook.ts). */
+export interface Scope {
   /** A field of the row being computed. */
   field(name: string): Value;
   /** A field of another row, by its system id (D34). */
@@ -347,171 +347,4 @@ export function evaluate(expr: Expr, scope: Scope): Value {
       return fn(expr.args, scope);
     }
   }
-}
-
-// ---- computing a table's rows
-
-/** What computing a table can see beyond its own rows (D36). */
-export interface ComputeOptions {
-  /**
-   * The other tables `lookup` and `linked` read, keyed as a relation's
-   * `table` names them. Without them, those forms are #REF!.
-   */
-  tables?: Record<string, ParsedTable>;
-  /** This table's key in `tables`, so a loop back to it is caught. */
-  self?: string;
-  /** Tables already being computed further up (internal). */
-  visiting?: string[];
-}
-
-/**
- * Rows with their computed fields filled in, for display and querying.
- * Results are never stored (SPEC section 2): callers hand these to views,
- * not to a writer — and the writer drops computed fields regardless.
- * An `expr` that doesn't parse leaves its field empty and is reported
- * once. A table with no computed fields returns the same array.
- */
-export function computeRows(
-  schema: TableSchema,
-  rows: Row[],
-  options: ComputeOptions = {},
-): { rows: Row[]; diagnostics: ValidationError[] } {
-  const computed = schema.fields.filter((f) => f.computed);
-  if (computed.length === 0) return { rows, diagnostics: [] };
-
-  const diagnostics: ValidationError[] = [];
-  const known = new Map<string, Field>(schema.fields.map((f) => [f.name, f]));
-  const parsed = new Map<string, Expr | null>();
-  for (const f of computed) {
-    const { expr, dialect } = f.computed!;
-    if (dialect !== "table-expr-v1") {
-      diagnostics.push({ rowIndex: -1, field: f.name, message: `unknown formula dialect ${dialect}` });
-      parsed.set(f.name, null);
-      continue;
-    }
-    const r = parseExpr(expr);
-    if (!r.ok) {
-      diagnostics.push({
-        rowIndex: -1,
-        field: f.name,
-        message: `formula doesn't parse (${r.message} at ${r.at}): ${expr}`,
-      });
-      parsed.set(f.name, null);
-    } else {
-      parsed.set(f.name, r.expr);
-    }
-  }
-
-  // Keyed by row and field, not per row: a formula may read another row
-  // (D34), so a loop can run across rows, and a value computed for one row
-  // is reused when another row reads it.
-  const byId = new Map<string, Row>(rows.map((r) => [r.id, r]));
-  const results = new Map<string, Value>();
-  const inProgress = new Set<string>();
-  const valueOf = (row: Row, name: string): Value => {
-    const def = known.get(name);
-    if (!def) return new FormulaError("#NAME?", `no field named ${name}`);
-    if (!def.computed) return row[name] as Value;
-    const key = `${row.id}\u0000${name}`;
-    if (results.has(key)) return results.get(key);
-    if (inProgress.has(key)) return new FormulaError("#REF!", `${name} depends on itself`);
-    const expr = parsed.get(name);
-    if (!expr) return undefined;
-    inProgress.add(key);
-    const v = evaluate(expr, scopeFor(row));
-    inProgress.delete(key);
-    results.set(key, v);
-    return v;
-  };
-  // Across rows and tables (D36): each list is built once, and each
-  // relation indexed once, so a column of lookups costs O(rows), not the
-  // grid-wide recalculation D29 warns about.
-  const columns = new Map<string, Value[]>();
-  const columnOf = (name: string): Value => {
-    if (!known.has(name)) return new FormulaError("#NAME?", `no field named ${name}`);
-    let list = columns.get(name);
-    if (!list) {
-      list = rows.map((r) => valueOf(r, name));
-      columns.set(name, list);
-    }
-    return list;
-  };
-  const visiting = new Set([...(options.visiting ?? []), ...(options.self ? [options.self] : [])]);
-  const others = new Map<string, Map<string, Row> | null>();
-  /** Another table's rows by id, its own formulas computed, or null when it isn't there. */
-  const otherTable = (name: string): Map<string, Row> | null => {
-    if (others.has(name)) return others.get(name)!;
-    const t = options.tables?.[name];
-    let byId: Map<string, Row> | null = null;
-    if (t) {
-      // A table already being computed further up (A looks up B looks up A)
-      // is read as stored: its formulas aren't recomputed, so no loop.
-      const rowsThere = visiting.has(name)
-        ? t.rows
-        : computeRows(t.schema, t.rows, { tables: options.tables, self: name, visiting: [...visiting] }).rows;
-      byId = new Map(rowsThere.map((r) => [r.id, r]));
-    }
-    others.set(name, byId);
-    return byId;
-  };
-  const backlinks = new Map<string, Map<string, Row[]>>();
-  const linkedOf = (row: Row, table: string, relation: string, name: string): Value => {
-    const there = otherTable(table);
-    if (!there) return new FormulaError("#REF!", `no table ${table}`);
-    const key = `${table}\u0000${relation}`;
-    let index = backlinks.get(key);
-    if (!index) {
-      index = new Map();
-      for (const r of there.values()) {
-        const v = r[relation];
-        for (const id of Array.isArray(v) ? v : [v]) {
-          if (typeof id !== "string" || id === "") continue;
-          const list = index.get(id);
-          if (list) list.push(r);
-          else index.set(id, [r]);
-        }
-      }
-      backlinks.set(key, index);
-    }
-    return (index.get(row.id) ?? []).map((r) => r[name] as Value);
-  };
-  const lookupOf = (row: Row, relation: string, name: string): Value => {
-    const def = known.get(relation);
-    if (!def) return new FormulaError("#NAME?", `no field named ${relation}`);
-    if (!def.relation) return new FormulaError("#VALUE!", `${relation} doesn't link to another table`);
-    const there = otherTable(def.relation.table);
-    if (!there) return new FormulaError("#REF!", `no table ${def.relation.table}`);
-    const read = (id: unknown): Value => {
-      if (isEmpty(id)) return undefined;
-      const target = there.get(String(id));
-      return target ? (target[name] as Value) : new FormulaError("#REF!", `no row ${String(id)} in ${def.relation!.table}`);
-    };
-    const v = row[relation];
-    return Array.isArray(v) ? v.map(read) : read(v);
-  };
-
-  const scopeFor = (row: Row): Scope => ({
-    field: (name) => valueOf(row, name),
-    fieldOf: (rowId, name) => {
-      const other = byId.get(rowId);
-      // A reference to a row that isn't there (deleted, say) is broken,
-      // as a spreadsheet's is: shown, not silently empty.
-      return other ? valueOf(other, name) : new FormulaError("#REF!", `no row ${rowId}`);
-    },
-    column: columnOf,
-    lookup: (relation, name) => lookupOf(row, relation, name),
-    linked: (table, relation, name) => linkedOf(row, table, relation, name),
-  });
-
-  const out = rows.map((row) => {
-    const scope = scopeFor(row);
-    const next: Row = { ...row };
-    for (const f of computed) {
-      const v = scope.field(f.name);
-      if (v === undefined) delete next[f.name];
-      else next[f.name] = v;
-    }
-    return next;
-  });
-  return { rows: out, diagnostics };
 }

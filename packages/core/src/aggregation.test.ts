@@ -4,7 +4,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeRows, FormulaError } from "./expr.js";
+import { FormulaError } from "./expr.js";
+import { computeRows } from "./workbook.js";
 import { fixtureBundles, fixtureTable } from "./test-fixtures.js";
 import type { ParsedTable, Row, TableSchema } from "./types.js";
 
@@ -113,4 +114,84 @@ test("tables that look each other up don't loop", () => {
   const { rows } = computeRows(a.schema, a.rows, { tables, self: "a" });
   // b's formula reads a as stored (a is being computed), so it sees n = 5.
   assert.equal(rows[0]!.from_b, 5);
+});
+
+/** Two or three small tables, each a relation and some fields. */
+function table(path: string, fields: TableSchema["fields"], rows: Row[]): ParsedTable {
+  return { path, schema: { fields }, rows, views: [], meta: {} };
+}
+const f = (expr: string) => ({ computed: { expr, dialect: "table-expr-v1" } });
+
+test("a lookup of another table's rollup of this table computes (#123)", async () => {
+  // Deals looks up its company's open pipeline, which totals the open
+  // deals: Deals depends on Companies depends on Deals, field by field,
+  // but no field depends on itself.
+  const tables = await crm();
+  const { rows } = computeRows(tables.deals!.schema, tables.deals!.rows, { tables, self: "deals" });
+  assert.equal(byId(rows, "dl-1").company_pipeline, 430000);
+  assert.equal(byId(rows, "dl-4").company_pipeline, 104000);
+});
+
+test("a real loop across two tables is #REF!, not a hang", () => {
+  const a = table(
+    "a",
+    [
+      { name: "b", type: "string", relation: { table: "b", field: "id" } },
+      { name: "x", type: "number", ...f('(lookup "b" "y")') },
+    ],
+    [{ id: "a1", b: "b1" }],
+  );
+  const b = table(
+    "b",
+    [
+      { name: "a", type: "string", relation: { table: "a", field: "id" } },
+      { name: "y", type: "number", ...f('(lookup "a" "x")') },
+    ],
+    [{ id: "b1", a: "a1" }],
+  );
+  const { rows } = computeRows(a.schema, a.rows, { tables: { a, b }, self: "a" });
+  const v = rows[0]!.x;
+  assert.ok(v instanceof FormulaError, String(v));
+  assert.equal((v as FormulaError).code, "#REF!");
+});
+
+test("a three-table chain computes, each value once", () => {
+  // Orders total their lines; customers total their orders; each line
+  // reads its customer's lifetime value back: a long way round, no loop.
+  const lines = table(
+    "lines",
+    [
+      { name: "order", type: "string", relation: { table: "orders", field: "id" } },
+      { name: "amount", type: "number" },
+      { name: "customer_value", type: "number", ...f('(lookup "order" "customer_value")') },
+    ],
+    [
+      { id: "l1", order: "o1", amount: 10 },
+      { id: "l2", order: "o1", amount: 5 },
+      { id: "l3", order: "o2", amount: 7 },
+    ],
+  );
+  const orders = table(
+    "orders",
+    [
+      { name: "customer", type: "string", relation: { table: "customers", field: "id" } },
+      { name: "total", type: "number", ...f('(sum (linked "lines" "order" "amount"))') },
+      { name: "customer_value", type: "number", ...f('(lookup "customer" "value")') },
+    ],
+    [
+      { id: "o1", customer: "c1" },
+      { id: "o2", customer: "c1" },
+    ],
+  );
+  const customers = table(
+    "customers",
+    [{ name: "value", type: "number", ...f('(sum (linked "orders" "customer" "total"))') }],
+    [{ id: "c1" }],
+  );
+  const tables = { lines, orders, customers };
+  const { rows } = computeRows(lines.schema, lines.rows, { tables, self: "lines" });
+  assert.deepEqual(
+    rows.map((r) => r.customer_value),
+    [22, 22, 22],
+  );
 });

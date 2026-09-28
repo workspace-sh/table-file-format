@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { computeRows, FormulaError, parseExpr } from "./expr.js";
+import { FormulaError, parseExpr } from "./expr.js";
+import { computeRows } from "./workbook.js";
 import { compileFormula, formulaFields, formulaRefs, printFormula } from "./formula.js";
 import { applyView } from "./query.js";
 import type { ParsedTable, Row, TableSchema } from "./types.js";
