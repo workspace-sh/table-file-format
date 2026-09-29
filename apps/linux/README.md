@@ -5,9 +5,9 @@ The harness for `@workspace.sh/table-gtk`, as `apps/web` is for
 `.table` folders from disk with `table-app`'s loader.
 
 It shows the repo's fixtures, or the `.table` folders named on the command
-line. So far it draws table views (sheets, groups and totals included)
-read-only. Board, list, gallery and calendar views, editing and saving
-are next.
+line, with the open table's views listed under it in the sidebar. Every
+layout draws (table with sheets, groups and totals; board; gallery; list;
+calendar), read-only so far. Editing and saving are next.
 
 ## Run it
 

@@ -25,6 +25,25 @@ import {
   visibleFields,
 } from "./display";
 import type { ViewProps } from "./viewProps";
+import {
+  BOARD_GAP,
+  boardColumns,
+  canStep,
+  cardFields,
+  CALENDAR_CHIPS_PER_DAY,
+  columnOf,
+  columnValue,
+  dateKey,
+  galleryLayout,
+  initialMonth,
+  localDay,
+  monthGrid,
+  orderAfterDrop,
+  orderMovedTo,
+  orderSwapped,
+  rowsByDay,
+  rowTitle,
+} from "./cards";
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
@@ -34,7 +53,6 @@ import {
   completeSeconds,
   effectiveAlign,
   enumOptions,
-  enumValues,
   formulaRefs,
   columnLetter,
   parseExpr,
@@ -2975,13 +2993,9 @@ export function BoardView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
-  const groupField = view.board_field ?? "status";
-  const groupFieldDef = schema.fields.find((f) => f.name === groupField);
-  // Values only — board columns key on the stored value; display
-  // metadata (color/label) from the object enum form is not needed
-  // for column identity.
-  const groupEnumValues = enumValues(groupFieldDef);
-  const fields = visibleFields(view, schema).filter((f) => f !== groupField);
+  const board = boardColumns(view, rows, schema);
+  const groupField = board.field;
+  const fields = cardFields(view, schema, groupField);
   const fieldMap = fieldsByName(schema);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
@@ -3018,27 +3032,15 @@ export function BoardView({
     const id = hitTestCard(x, y);
     if (!id || id === dragged) return null;
     const target = rows.find((r) => r.id === id);
-    const key = target ? (target[groupField] === undefined || target[groupField] === null || target[groupField] === "" ? "(empty)" : String(target[groupField])) : null;
+    const key = target ? columnOf(target, groupField) : null;
     if (key !== column) return null;
     const r = cardRect(id);
     return { id, after: r ? y > r.y + r.height / 2 : false };
   };
 
   /** The whole view's row order with `dragged` moved into `column` at `slot`. */
-  const orderAfterDrop = (dragged: string, column: string, slot: { id: string; after: boolean } | null) => {
-    const ids = rows.map((r) => r.id).filter((id) => id !== dragged);
-    let at: number;
-    if (slot) {
-      at = ids.indexOf(slot.id) + (slot.after ? 1 : 0);
-    } else {
-      // Dropped on the column but not on a card: after the column's last card.
-      const inColumn = (groups[column] ?? []).map((r) => r.id).filter((id) => id !== dragged);
-      const last = inColumn[inColumn.length - 1];
-      at = last !== undefined ? ids.indexOf(last) + 1 : ids.length;
-    }
-    ids.splice(at, 0, dragged);
-    return ids;
-  };
+  const orderAfterDropHere = (dragged: string, column: string, slot: { id: string; after: boolean } | null) =>
+    orderAfterDrop(rows, board, dragged, column, slot);
 
   // Phone-shaped viewport → column carousel: each column is sized to
   // ~84% of the viewport so the next one peeks at the right edge, and
@@ -3062,20 +3064,10 @@ export function BoardView({
   // macOS (the moving card sat under the cursor and intercepted every
   // hover detection). Commit on release uses the cursor's final coords
   // via the release-position hit-test in onDragEnd.
-  const groups = applyGroup(rows, groupField, schema);
-
-  // Persistent columns: when the group field has an enum, show ALL
-  // enum values (even empty ones) so the user can drop into a column
-  // with no rows.
-  const columnKeys: string[] = groupEnumValues.length > 0
-    ? (() => {
-        const keys = [...groupEnumValues];
-        for (const k of Object.keys(groups)) {
-          if (!keys.includes(k)) keys.push(k);
-        }
-        return keys;
-      })()
-    : Object.keys(groups);
+  // Every choice is a column, even an empty one, so a card can be
+  // dropped into it (boardColumns).
+  const groups = board.groups;
+  const columnKeys = board.keys;
 
   const cardColumns = columnKeys.map((k) => (groups[k] ?? []).map((r) => r.id));
   const cards = useCardKeys({
@@ -3089,19 +3081,13 @@ export function BoardView({
       if (c < 0 || !onUpdateRow) return false;
       if (key === "ArrowLeft" || key === "ArrowRight") {
         const target = columnKeys[c + (key === "ArrowLeft" ? -1 : 1)];
-        if (target !== undefined) onUpdateRow(id, groupField, target === "(empty)" ? null : target);
+        if (target !== undefined) onUpdateRow(id, groupField, columnValue(target));
         return true;
       }
       if ((key === "ArrowUp" || key === "ArrowDown") && onUpdateView) {
         const col = cardColumns[c]!;
         const neighbour = col[col.indexOf(id) + (key === "ArrowUp" ? -1 : 1)];
-        if (neighbour !== undefined) {
-          const ids = rows.map((r) => r.id);
-          const a = ids.indexOf(id);
-          const b = ids.indexOf(neighbour);
-          [ids[a], ids[b]] = [ids[b]!, ids[a]!];
-          onUpdateView({ order: ids });
-        }
+        if (neighbour !== undefined) onUpdateView({ order: orderSwapped(rows, id, neighbour) });
         return true;
       }
       return false;
@@ -3159,17 +3145,13 @@ export function BoardView({
                     if (target && onUpdateRow) {
                       const source = rows.find((r) => r.id === row.id);
                       if (source && source[groupField] !== target) {
-                        onUpdateRow(
-                          row.id,
-                          groupField,
-                          target === "(empty)" ? null : target,
-                        );
+                        onUpdateRow(row.id, groupField, columnValue(target));
                       }
                       // Where in the column: saved as the view's manual
                       // order, as the list does (SPEC section 4, `order`).
                       if (onUpdateView) {
                         const slot = slotAt(e.pageX, e.pageY, target, row.id);
-                        onUpdateView({ order: orderAfterDrop(row.id, target, slot) });
+                        onUpdateView({ order: orderAfterDropHere(row.id, target, slot) });
                       }
                     }
                     setDraggedRowId(null);
@@ -3261,13 +3243,6 @@ export function BoardView({
   );
 }
 
-/** Gap between board columns. Must match `styles.board.gap`. */
-const BOARD_GAP = 12;
-
-/** Minimum readable gallery-card width before we wrap to the next row. */
-const MIN_GALLERY_CARD_WIDTH = 240;
-/** Gap between gallery cards. Must match `styles.gallery.gap`. */
-const GALLERY_GAP = 12;
 
 export function GalleryView({
   view,
@@ -3279,7 +3254,7 @@ export function GalleryView({
   onOpenRelation,
 }: ViewProps) {
   const galleryField = view.gallery_field;
-  const fields = visibleFields(view, schema).filter((f) => f !== galleryField);
+  const fields = cardFields(view, schema, galleryField);
   const fieldMap = fieldsByName(schema);
 
   // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
@@ -3292,22 +3267,7 @@ export function GalleryView({
   // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
   // cards (not trailing the last one in a row).
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const cardsPerRow =
-    containerWidth > 0
-      ? Math.max(
-          1,
-          Math.floor(
-            (containerWidth + GALLERY_GAP) /
-              (MIN_GALLERY_CARD_WIDTH + GALLERY_GAP),
-          ),
-        )
-      : 1;
-  const cardWidth =
-    containerWidth > 0
-      ? Math.floor(
-          (containerWidth - (cardsPerRow - 1) * GALLERY_GAP) / cardsPerRow,
-        )
-      : MIN_GALLERY_CARD_WIDTH;
+  const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
 
   const ids = rows.map((r) => r.id);
   const cards = useCardKeys({
@@ -3412,19 +3372,7 @@ export function ListView({
     remeasureRows();
   }, [rows, remeasureRows]);
 
-  const computeOrder = (
-    draggedId: string,
-    targetRowId: string,
-  ): string[] => {
-    const ids = rows.map((r) => r.id);
-    const from = ids.indexOf(draggedId);
-    const to = ids.indexOf(targetRowId);
-    if (from === -1 || to === -1) return ids;
-    const next = [...ids];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved!);
-    return next;
-  };
+  const computeOrder = (draggedId: string, targetRowId: string): string[] => orderMovedTo(rows, draggedId, targetRowId);
 
   const listed = groupedRows(view, rows, schema);
   const cards = useCardKeys({
@@ -3557,15 +3505,6 @@ export function ListView({
  * the evening of the 14th — so the day shown, and the month the
  * calendar opens on, came out a day early there.
  */
-function localDay(value: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** How many entries a day shows by title before "+N more". */
-const CALENDAR_CHIPS_PER_DAY = 3;
 
 /**
  * Minimal calendar view — month grid. Anchors rows on their
@@ -3621,47 +3560,8 @@ export function CalendarView({
   const dayColWidth = (colIndex: number) =>
     baseDayWidth + (colIndex < dayRemainder ? 1 : 0);
 
-  // Range bounds, normalised to first-of-month so we compare cursors
-  // at the same granularity as `cursor` (which is always first-of-month).
-  // Invalid dates in the range silently degrade to "no bound".
-  const rangeStart = (() => {
-    if (!range?.start) return null;
-    const d = localDay(range.start);
-    return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null;
-  })();
-  const rangeEnd = (() => {
-    if (!range?.end) return null;
-    const d = localDay(range.end);
-    return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null;
-  })();
-
-  // Anchor the cursor on the earliest date in the data so the calendar
-  // doesn't render an empty month when fixture dates are in the past
-  // relative to "today". Then clamp into the range if set.
-  const [cursor, setCursor] = useState(() => {
-    let initial: Date;
-    if (calField) {
-      const earliest = rows
-        .map((r) => r[calField])
-        .filter((v): v is string => typeof v === "string")
-        .map(localDay)
-        .filter((d): d is Date => d !== null)
-        .sort((a, b) => a.getTime() - b.getTime())[0];
-      if (earliest) {
-        initial = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
-      } else {
-        const now = new Date();
-        initial = new Date(now.getFullYear(), now.getMonth(), 1);
-      }
-    } else {
-      const now = new Date();
-      initial = new Date(now.getFullYear(), now.getMonth(), 1);
-    }
-    // Clamp to range bounds.
-    if (rangeStart && initial < rangeStart) initial = rangeStart;
-    if (rangeEnd && initial > rangeEnd) initial = rangeEnd;
-    return initial;
-  });
+  // Opens on the earliest dated row's month, inside `calendar_range`.
+  const [cursor, setCursor] = useState(() => initialMonth(view, rows));
 
   if (!calField) {
     return (
@@ -3682,52 +3582,19 @@ export function CalendarView({
   // figures this out from the runtime's locale; falls back to Sunday.
   const weekStart = firstDayOfWeek();
   const orderedWeekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
-  const dayOfMonth1 = new Date(year, month, 1).getDay();
-  const leadingBlanks = (dayOfMonth1 - weekStart + 7) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
+  // 6 weeks × 7 days, padded with the neighbouring months, whatever
+  // day of the week the 1st falls on in this locale.
+  const cells = monthGrid(cursor, weekStart);
 
-  // 6 weeks × 7 days = 42 cells. Fill leading + trailing with adjacent
-  // months so the grid is always rectangular regardless of which day
-  // of the week the 1st falls on (and regardless of the locale's first
-  // day of the week).
-  const cells: Array<{ date: Date; inMonth: boolean }> = [];
-  for (let i = leadingBlanks - 1; i >= 0; i--) {
-    cells.push({
-      date: new Date(year, month - 1, daysInPrevMonth - i),
-      inMonth: false,
-    });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ date: new Date(year, month, d), inMonth: true });
-  }
-  let tail = 1;
-  while (cells.length < 42) {
-    cells.push({ date: new Date(year, month + 1, tail++), inMonth: false });
-  }
-
-  // Bucket rows by YYYY-MM-DD.
-  const rowsByDate = new Map<string, Row[]>();
-  for (const row of rows) {
-    const value = row[calField];
-    if (typeof value !== "string" || value.length < 10) continue;
-    const key = value.slice(0, 10);
-    if (!rowsByDate.has(key)) rowsByDate.set(key, []);
-    rowsByDate.get(key)!.push(row);
-  }
+  const rowsByDate = rowsByDay(rows, calField);
 
   const titleField = schema.fields[0]?.name;
-  const labelOf = (row: Row) => (titleField ? formatValue(row[titleField]) : row.id);
+  const labelOf = (row: Row) => rowTitle(row, titleField);
   const today = new Date();
-  const dateKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate(),
-    ).padStart(2, "0")}`;
 
   // Range-aware navigation. When prev/next would step outside the
   // bounds (if any), the button disables visually + functionally.
-  const canGoPrev = !rangeStart || cursor > rangeStart;
-  const canGoNext = !rangeEnd || cursor < rangeEnd;
+  const { prev: canGoPrev, next: canGoNext } = canStep(view, cursor);
 
   return (
     <html.div {...measureProps} style={styles.calendar}>
