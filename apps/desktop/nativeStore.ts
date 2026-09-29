@@ -1,6 +1,9 @@
 // Where the macOS app keeps edits between launches: AsyncStorage (SQLite on
 // macOS), under the same keys the web keeps in localStorage.
 //
+// Only the keys passed to openStore are read at launch: a key the app
+// writes must be among them, or it's written but never read back.
+//
 // table-app's savers read and write synchronously (a KeyValueStore, like
 // localStorage), and AsyncStorage answers later. So the keys the app uses
 // are read once at launch into memory; reads come from there, and each
