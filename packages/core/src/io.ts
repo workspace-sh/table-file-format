@@ -208,6 +208,8 @@ export interface WriteBundleInput {
  *              observes a partially-written file. The commit phase is
  *              a handful of renames — the torn-window shrinks from
  *              "the whole serialisation" to microseconds.
+ *   Unchanged files are left alone: a file whose canonical text is
+ *              already on disk isn't staged, renamed or touched.
  *   Trim     — stale body files (and an emptied bodies/ dir) are
  *              removed only after every rename has landed, so a crash
  *              can never leave bodies deleted-but-not-rewritten.
@@ -219,8 +221,9 @@ export interface WriteBundleInput {
  * every adapter must replace atomically.
  */
 export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableInput | ParsedTable): Promise<void> {
+  // No attachments/: it's optional (SPEC section 6), and this writer puts
+  // nothing in it. One that's there is left as it is.
   await fs.mkdir(dir);
-  await fs.mkdir(joinPath(dir, "attachments"));
 
   // A table's meta.json carries only its own title and description:
   // `format`, `formatVersion` and `tables` describe the bundle.
@@ -231,8 +234,11 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   const haveBodies = Object.keys(bodies).length > 0;
 
   // ---- Stage: write everything to *.tmp; nothing existing is touched.
+  // A file whose text wouldn't change isn't staged at all, so saving one
+  // edit rewrites only the files it changed, and git sees only those.
   const staged: Array<{ tmp: string; target: string }> = [];
   const stage = async (target: string, content: string) => {
+    if ((await fs.readText(target)) === content) return;
     const tmp = target + ".tmp";
     await fs.writeText(tmp, content);
     staged.push({ tmp, target });
@@ -295,8 +301,11 @@ export async function writeBundleTo(fs: TableFs, dir: string, input: WriteBundle
   }
 
   const manifest = joinPath(dir, "meta.json");
-  await fs.writeText(manifest + ".tmp", pretty(stampMeta({ ...(input.meta ?? {}), tables: names })));
-  await fs.rename(manifest + ".tmp", manifest);
+  const manifestText = pretty(stampMeta({ ...(input.meta ?? {}), tables: names }));
+  if ((await fs.readText(manifest)) !== manifestText) {
+    await fs.writeText(manifest + ".tmp", manifestText);
+    await fs.rename(manifest + ".tmp", manifest);
+  }
 
   for (const entry of (await fs.list(tablesDir)) ?? []) {
     if (!entry.directory || names.includes(entry.name)) continue;

@@ -3,47 +3,85 @@
     "id": "v1",
     "name": "All projects",
     "layout": "table",
-    "fields": ["title", "status", "owner", "launched"]
+    "fields": [
+      "title",
+      "status",
+      "owner",
+      "launched"
+    ]
   },
   {
     "id": "v2",
     "name": "Active by owner",
     "layout": "table",
-    "filter": [{ "field": "status", "operator": "eq", "value": "active" }],
-    "sort": [{ "field": "owner", "direction": "asc" }]
+    "filter": [
+      {
+        "field": "status",
+        "operator": "eq",
+        "value": "active"
+      }
+    ],
+    "sort": [
+      {
+        "field": "owner",
+        "direction": "asc"
+      }
+    ]
   },
   {
     "id": "v3",
     "name": "Roadmap",
     "layout": "table",
-    "fields": ["title", "status", "launched"],
-    "sort": [{ "field": "launched", "direction": "asc" }]
+    "fields": [
+      "title",
+      "status",
+      "launched"
+    ],
+    "sort": [
+      {
+        "field": "launched",
+        "direction": "asc"
+      }
+    ]
   },
   {
     "id": "v4",
     "name": "By owner",
     "layout": "table",
-    "group": { "field": "owner" }
+    "group": {
+      "field": "owner"
+    }
   },
   {
     "id": "v5",
     "name": "Board by status",
     "layout": "board",
     "board_field": "status",
-    "fields": ["title", "owner", "budget"]
+    "fields": [
+      "title",
+      "owner",
+      "budget"
+    ]
   },
   {
     "id": "v6",
     "name": "Gallery",
     "layout": "gallery",
     "gallery_field": "summary",
-    "fields": ["title", "owner", "status"]
+    "fields": [
+      "title",
+      "owner",
+      "status"
+    ]
   },
   {
     "id": "v7",
     "name": "Quick list",
     "layout": "list",
-    "fields": ["title", "owner"]
+    "fields": [
+      "title",
+      "owner"
+    ]
   },
   {
     "id": "v8",
@@ -56,13 +94,26 @@
     "name": "Q1 2026",
     "layout": "calendar",
     "calendar_field": "launched",
-    "calendar_range": { "start": "2026-01-01", "end": "2026-03-31" }
+    "calendar_range": {
+      "start": "2026-01-01",
+      "end": "2026-03-31"
+    }
   },
   {
     "id": "v10",
     "name": "Budgets",
     "layout": "table",
-    "fields": ["title", "owner", "budget", "per_month"],
-    "sort": [{ "field": "per_month", "direction": "desc" }]
+    "fields": [
+      "title",
+      "owner",
+      "budget",
+      "per_month"
+    ],
+    "sort": [
+      {
+        "field": "per_month",
+        "direction": "desc"
+      }
+    ]
   }
 ]

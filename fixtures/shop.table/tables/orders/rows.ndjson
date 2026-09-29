@@ -1,14 +1,14 @@
-{"id": "or-1001", "number": "#1001", "customer": "cu-ada", "ordered": "2026-08-03", "status": "delivered", "shipping": 3.5}
-{"id": "or-1002", "number": "#1002", "customer": "cu-chloe", "ordered": "2026-08-05", "status": "delivered", "shipping": 0}
-{"id": "or-1003", "number": "#1003", "customer": "cu-ben", "ordered": "2026-08-11", "status": "delivered", "shipping": 3.5}
-{"id": "or-1004", "number": "#1004", "customer": "cu-ada", "ordered": "2026-08-17", "status": "refunded", "shipping": 3.5}
-{"id": "or-1005", "number": "#1005", "customer": "cu-dev", "ordered": "2026-08-24", "status": "delivered", "shipping": 3.5}
-{"id": "or-1006", "number": "#1006", "customer": "cu-ewa", "ordered": "2026-08-29", "status": "shipped", "shipping": 3.5}
-{"id": "or-1007", "number": "#1007", "customer": "cu-chloe", "ordered": "2026-09-02", "status": "delivered", "shipping": 0}
-{"id": "or-1008", "number": "#1008", "customer": "cu-finn", "ordered": "2026-09-06", "status": "shipped", "shipping": 4.5}
-{"id": "or-1009", "number": "#1009", "customer": "cu-grace", "ordered": "2026-09-10", "status": "paid", "shipping": 0}
-{"id": "or-1010", "number": "#1010", "customer": "cu-ada", "ordered": "2026-09-14", "status": "paid", "shipping": 3.5}
-{"id": "or-1011", "number": "#1011", "customer": "cu-hugo", "ordered": "2026-09-18", "status": "pending", "shipping": 3.5}
-{"id": "or-1012", "number": "#1012", "customer": "cu-ben", "ordered": "2026-09-20", "status": "paid", "shipping": 3.5}
-{"id": "or-1013", "number": "#1013", "customer": "cu-chloe", "ordered": "2026-09-23", "status": "pending", "shipping": 0}
-{"id": "or-1014", "number": "#1014", "customer": "cu-dev", "ordered": "2026-09-25", "status": "pending", "shipping": 3.5}
+{"id":"or-1001","number":"#1001","customer":"cu-ada","ordered":"2026-08-03","status":"delivered","shipping":3.5}
+{"id":"or-1002","number":"#1002","customer":"cu-chloe","ordered":"2026-08-05","status":"delivered","shipping":0}
+{"id":"or-1003","number":"#1003","customer":"cu-ben","ordered":"2026-08-11","status":"delivered","shipping":3.5}
+{"id":"or-1004","number":"#1004","customer":"cu-ada","ordered":"2026-08-17","status":"refunded","shipping":3.5}
+{"id":"or-1005","number":"#1005","customer":"cu-dev","ordered":"2026-08-24","status":"delivered","shipping":3.5}
+{"id":"or-1006","number":"#1006","customer":"cu-ewa","ordered":"2026-08-29","status":"shipped","shipping":3.5}
+{"id":"or-1007","number":"#1007","customer":"cu-chloe","ordered":"2026-09-02","status":"delivered","shipping":0}
+{"id":"or-1008","number":"#1008","customer":"cu-finn","ordered":"2026-09-06","status":"shipped","shipping":4.5}
+{"id":"or-1009","number":"#1009","customer":"cu-grace","ordered":"2026-09-10","status":"paid","shipping":0}
+{"id":"or-1010","number":"#1010","customer":"cu-ada","ordered":"2026-09-14","status":"paid","shipping":3.5}
+{"id":"or-1011","number":"#1011","customer":"cu-hugo","ordered":"2026-09-18","status":"pending","shipping":3.5}
+{"id":"or-1012","number":"#1012","customer":"cu-ben","ordered":"2026-09-20","status":"paid","shipping":3.5}
+{"id":"or-1013","number":"#1013","customer":"cu-chloe","ordered":"2026-09-23","status":"pending","shipping":0}
+{"id":"or-1014","number":"#1014","customer":"cu-dev","ordered":"2026-09-25","status":"pending","shipping":3.5}
