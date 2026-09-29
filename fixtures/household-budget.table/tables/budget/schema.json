@@ -74,7 +74,7 @@
       "type": "number",
       "title": "Share",
       "format": "percent",
-      "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/F7: F7 is the Income row, stored by its id, so sorting never breaks it.",
+      "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/$F$7: $F$7 pins the Income row by its id, so sorting never breaks it.",
       "computed": {
         "expr": "(/ quarter (field \"quarter\" \"income\"))",
         "dialect": "table-expr-v1"

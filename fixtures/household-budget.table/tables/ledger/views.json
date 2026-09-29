@@ -1,0 +1,43 @@
+[
+  {
+    "id": "by-date",
+    "name": "By date",
+    "layout": "table",
+    "coordinates": true,
+    "sort": [
+      {
+        "field": "date",
+        "direction": "asc"
+      }
+    ],
+    "fields": [
+      "date",
+      "item",
+      "amount",
+      "balance"
+    ],
+    "columnWidths": {
+      "date": 130,
+      "item": 160,
+      "amount": 130,
+      "balance": 130
+    }
+  },
+  {
+    "id": "as-entered",
+    "name": "As entered",
+    "layout": "table",
+    "fields": [
+      "date",
+      "item",
+      "amount",
+      "balance"
+    ],
+    "columnWidths": {
+      "date": 130,
+      "item": 160,
+      "amount": 130,
+      "balance": 130
+    }
+  }
+]

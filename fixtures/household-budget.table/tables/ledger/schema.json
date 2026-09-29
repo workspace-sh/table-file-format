@@ -1,0 +1,35 @@
+{
+  "fields": [
+    {
+      "name": "date",
+      "type": "date",
+      "title": "Date",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "item",
+      "type": "string",
+      "title": "Item"
+    },
+    {
+      "name": "amount",
+      "type": "number",
+      "title": "Amount",
+      "format": "currency:GBP",
+      "description": "Money in is positive, money out negative."
+    },
+    {
+      "name": "balance",
+      "type": "number",
+      "title": "Balance",
+      "format": "currency:GBP",
+      "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
+      "computed": {
+        "expr": "(sum (at \"balance\" -1 \"by-date\") amount)",
+        "dialect": "table-expr-v1"
+      }
+    }
+  ]
+}

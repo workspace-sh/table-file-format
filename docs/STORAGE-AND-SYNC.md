@@ -134,6 +134,14 @@ log, not as a parallel format. One event vocabulary, two transports
 - **Enum additions** are a set-union — also commutative. Enum
   *reorder* is not, which is consistent with it being the canonical
   example of a `schema-version` bump.
+- **Row order is meaningful now** (D41, SPEC section 3): a Sheet view
+  with no sort numbers its rows in file order, and "Insert row above"
+  puts a row on a particular line. Row edits commute; an insert at a
+  place doesn't on its own, since two peers inserting after the same
+  row must end in the same order everywhere. The log needs a
+  positional op (insert after a row id, ordered by the log's causal
+  order on ties) that materialises to the same line order on every
+  peer. Not designed yet: a follow-up, with the Workspace P2P work.
 - **`modified_at`** must only be stamped on user-initiated writes
   (SPEC section 5) — a sync engine touching it on every apply turns it into
   a permanent conflict generator.
