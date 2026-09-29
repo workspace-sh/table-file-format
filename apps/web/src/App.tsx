@@ -44,6 +44,17 @@ import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
+import {
+  arrange,
+  arrangedView,
+  forViews,
+  isArranged,
+  loadArrangements,
+  reset as resetArrangement,
+  saveArrangements,
+  savedPatch,
+  type Arrangements,
+} from "./arrangements";
 
 const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
@@ -448,6 +459,15 @@ export function App() {
   }, []);
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
+  // How this viewer has filtered, sorted or grouped each view for
+  // themselves (D4, D41), kept in this browser. A sort only they see
+  // follows their language; a saved one is the same on every device.
+  const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(browserStore()));
+  const viewerText = useMemo(() => new Intl.Collator(pageLocale || undefined, { numeric: true }).compare, [pageLocale]);
+  useEffect(() => {
+    // Only views that still exist: a deleted view's arrangement goes with it.
+    saveArrangements(browserStore(), forViews(arrangements, tables));
+  }, [arrangements, tables]);
   // A file of a .table, opened from the Files side of the sidebar, shown
   // in place of the view until a view or table is chosen again.
   const [shownFile, setShownFile] = useState<ShownFile | null>(null);
@@ -795,7 +815,15 @@ export function App() {
   // The bundle's tables by name, so lookups and rollups reach the ones
   // they name (D36), within this bundle (D37).
   const inBundle = bundleTables(tables, bundleOf(activeTablePath));
-  const viewRows = applyView(table, view, { tables: inBundle, self: tableNameOf(activeTablePath) });
+  // The view as this viewer arranged it. Formulas still read the views as
+  // saved: computing uses the table's own views, never this one.
+  const personal = arrangements[activeTablePath]?.[view.id];
+  const shownView = arrangedView(view, personal);
+  const viewRows = applyView(table, shownView, {
+    tables: inBundle,
+    self: tableNameOf(activeTablePath),
+    ...(personal?.sort ? { text: viewerText } : {}),
+  });
   const visibleRows = searchRows(viewRows, searchQuery, {
     schema: table.schema,
     bodies: table.bodies,
@@ -994,14 +1022,21 @@ export function App() {
         {showViewSettings && (
           <ViewSettings
             key={view.id}
-            view={view}
+            view={shownView}
             schema={table.schema}
             onChange={updateActiveView}
+            onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
+            personal={isArranged(personal)}
+            onSaveForEveryone={() => {
+              updateActiveView(savedPatch(personal));
+              setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
+            }}
+            onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
             onDelete={table.views.length > 1 ? deleteView : undefined}
             onClose={() => setShowViewSettings(false)}
           />
         )}
-        {renderView(view, visibleRows, table.schema, table.bodies, {
+        {renderView(shownView, visibleRows, table.schema, table.bodies, {
           onUpdateRow: updateRow,
           onUpdateField: updateField,
           onAddEnumValue: addEnumValue,
