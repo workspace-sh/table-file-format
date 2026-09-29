@@ -91,7 +91,7 @@ export function FieldHint({
 }
 
 const styles = css.create({
-  hinted: { display: "inline-flex", alignItems: "center" },
+  hinted: { display: "flex", alignItems: "center" },
   stack: { display: "flex", flexDirection: "column", gap: 4 },
   title: { fontSize: 13, fontWeight: "600" },
   facts: {
