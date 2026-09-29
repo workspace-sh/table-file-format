@@ -135,13 +135,13 @@ export function ViewSettings({
         )}
         {view.layout === "table" && (
           <FieldRow label="Sheet">
-            <html.label style={styles.check}>
-              <Checkbox
-                checked={view.coordinates === true}
-                onChange={(checked) => onChange({ coordinates: checked || undefined })}
-              />
-              <html.span>Letter the columns and number the rows, so formulas can use =B7</html.span>
-            </html.label>
+            <Checkbox
+              checked={view.coordinates === true}
+              onChange={(checked) => onChange({ coordinates: checked || undefined })}
+              style={styles.check}
+            >
+              Letter the columns and number the rows, so formulas can use =B7
+            </Checkbox>
           </FieldRow>
         )}
         {(view.layout === "table" || view.layout === "list") && (

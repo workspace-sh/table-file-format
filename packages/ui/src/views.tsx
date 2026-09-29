@@ -1491,10 +1491,15 @@ interface EditableCellProps {
   autoEdit?: boolean;
   /**
    * In a table with a selected cell: a click on an unselected cell only
-   * selects it (the table does that), and a click on the selected one edits.
+   * selects it, and a click on the selected one edits.
    * Absent outside a table, where a click edits as before.
    */
   selected?: boolean;
+  /**
+   * Select this cell. The cell calls it itself: on native a click reaches
+   * only the innermost pressable, never the table's own handler.
+   */
+  onSelect?: () => void;
   /** Start editing; `text` replaces the value (a key typed on the cell). */
   editRequest?: EditRequest;
   /** How editing ended from the keyboard, so the table can move on. */
@@ -1529,6 +1534,7 @@ function EditableCell({
   align,
   autoEdit,
   selected,
+  onSelect,
   editRequest,
   onEditEnd,
 }: EditableCellProps) {
@@ -1581,6 +1587,7 @@ function EditableCell({
   // table to select. Outside a table (no `selected`), a click edits.
   const clickToEdit = () => {
     if (selected !== false) startEdit();
+    else onSelect?.();
   };
 
   /**
@@ -1646,7 +1653,13 @@ function EditableCell({
   // Boolean: toggle on click, no draft state
   if (kind === "boolean") {
     return (
-      <Checkbox checked={value === true} onChange={(checked) => onCommit(checked)} />
+      <Checkbox
+        checked={value === true}
+        onChange={(checked) => {
+          onSelect?.();
+          onCommit(checked);
+        }}
+      />
     );
   }
 
@@ -1661,6 +1674,7 @@ function EditableCell({
         relatedTables={relatedTables}
         lines={lines}
         selected={selected}
+        onSelect={onSelect}
         editRequest={editRequest}
         onEditEnd={onEditEnd}
       />
@@ -1810,6 +1824,7 @@ function ListCell({
   relatedTables,
   lines,
   selected,
+  onSelect,
   editRequest,
   onEditEnd,
 }: {
@@ -1819,6 +1834,7 @@ function ListCell({
   relatedTables?: Record<string, ParsedTable>;
   lines?: number;
   selected?: boolean;
+  onSelect?: () => void;
   editRequest?: EditRequest;
   onEditEnd?: (how: EditEnd) => void;
 }) {
@@ -1872,6 +1888,7 @@ function ListCell({
       }}
       onClick={() => {
         if (selected !== false) void openPicker();
+        else onSelect?.();
       }}
       style={styles.cellEditableIdle}
     >
@@ -2441,6 +2458,7 @@ export function TableView({
             align={align}
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
+            onSelect={() => setSel({ rowId: row.id, name })}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
           />
