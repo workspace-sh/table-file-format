@@ -10,7 +10,9 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": [],
+    // Node's types: shared core code (writer.ts) uses node:fs, typechecked
+    // here from source even though the app never runs it.
+    "types": ["node"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["**/*.ts", "**/*.tsx"],

@@ -26,6 +26,7 @@
     "@react-native/babel-preset": "0.81.2",
     "@react-native/metro-config": "0.81.2",
     "@react-native/typescript-config": "0.81.2",
+    "@types/node": "^22.20.4",
     "@types/react": "^19.1.0",
     "react-dom": "19.1.4",
     "typescript": "^5.8.3"
