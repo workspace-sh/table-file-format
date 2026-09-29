@@ -7,14 +7,13 @@
  * `Portal`. The chosen option is ticked, a disabled one can't be
  * picked, and a click outside or Escape closes it.
  */
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ComponentProps } from "react";
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { measureAnchor, type AnchorRect } from "./measureAnchor";
 import { Portal } from "./Portal";
-import { useViewportHeight } from "./useViewportHeight";
-import { useViewportWidth } from "./useViewportWidth";
+import { ITEM_HEIGHT, placeMenu } from "./selectMenu";
 
 export interface SelectOption {
   value: string;
@@ -38,31 +37,30 @@ export interface SelectHandle {
   focus: () => void;
 }
 
-// One menu line: 13px text plus 6px above and below.
-const ITEM_HEIGHT = 28;
-const MENU_PADDING = 4;
-const MENU_MAX = 320;
-const GAP = 4;
-const EDGE = 8;
-
 export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
   { value, options, onChange, style, onKeyDown, onBlur },
   ref,
 ) {
   const [rect, setRect] = useState<AnchorRect | null>(null);
+  // The space overlays have, measured from the backdrop that fills it once
+  // the menu opens. (useWindowDimensions is the screen, not the window, on
+  // macOS.) The menu waits for it, so it's placed once, in the right place.
+  const [bounds, setBounds] = useState<AnchorRect | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anchor = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const optionRefs = useRef<any[]>([]);
-  const viewportWidth = useViewportWidth();
-  const viewportHeight = useViewportHeight();
+  const scroller = useRef<ScrollView>(null);
 
   const open = async () => {
     setRect(await measureAnchor(anchor.current));
   };
   useImperativeHandle(ref, () => ({ focus: () => void open() }));
 
-  const close = () => setRect(null);
+  const close = () => {
+    setRect(null);
+    setBounds(null);
+  };
   const choose = (next: string) => {
     close();
     onChange(next);
@@ -85,11 +83,26 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
   };
 
   const chosen = options.find((o) => o.value === value);
-  const height = Math.min(options.length * ITEM_HEIGHT + MENU_PADDING * 2, MENU_MAX, viewportHeight - EDGE * 2);
-  const width = Math.max(rect?.width ?? 0, 180);
-  const below = (rect?.top ?? 0) + (rect?.height ?? 0) + GAP;
-  const top = Math.max(EDGE, Math.min(below, viewportHeight - height - EDGE));
-  const left = Math.max(EDGE, Math.min(rect?.left ?? 0, viewportWidth - width - EDGE));
+  const { top, left, width, height } = placeMenu(
+    rect ?? { top: 0, left: 0, width: 0, height: 0 },
+    options.map((o) => o.label),
+    bounds ?? { width: 0, height: 0 },
+  );
+
+  // Opened: the chosen option is in view, near the middle of a long list,
+  // and has focus, so arrows and Enter work at once.
+  useEffect(() => {
+    if (!bounds) return;
+    const at = Math.max(0, options.findIndex((o) => o.value === value));
+    // After the list's first layout, or the scroll is ignored.
+    const frame = requestAnimationFrame(() => {
+      scroller.current?.scrollTo({ y: Math.max(0, at * ITEM_HEIGHT - height / 2 + ITEM_HEIGHT), animated: false });
+      optionRefs.current[at]?.focus?.();
+    });
+    return () => cancelAnimationFrame(frame);
+    // Only as the menu appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bounds]);
 
   return (
     <>
@@ -100,40 +113,49 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
         }}
         aria-haspopup="listbox"
         aria-expanded={rect !== null}
-          onClick={() => void open()}
+        onClick={() => void open()}
         style={[styles.button, style as never]}
       >
-        <html.span style={styles.buttonLabel}>
-          {chosen?.label ?? ""}
-        </html.span>
-        <html.span style={styles.chevron}>▾</html.span>
+        {/* One string, so it takes the caller's text style as a button's own label does. */}
+        {`${chosen?.label ?? ""}  ▾`}
       </html.button>
       {rect && (
         <Portal>
-          <html.div style={styles.backdrop} onClick={dismiss} />
-          <html.div role="listbox" onKeyDown={onMenuKey} style={[styles.menu, styles.menuAt(top, left, width, height)]}>
-            <ScrollView>
-              {options.map((o, i) => (
-                <html.button
-                  key={o.value}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  ref={(el: any) => {
-                    optionRefs.current[i] = el;
-                  }}
-                  role="option"
-                  aria-selected={o.value === value}
-                  disabled={o.disabled}
-                  onClick={() => choose(o.value)}
-                  style={[styles.item, o.disabled && styles.itemDisabled]}
-                >
-                  <html.span style={styles.tick}>{o.value === value ? "✓" : ""}</html.span>
-                  <html.span style={[styles.itemLabel, o.disabled && styles.itemLabelDisabled]}>
-                    {o.label}
-                  </html.span>
-                </html.button>
-              ))}
-            </ScrollView>
-          </html.div>
+          <html.div
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ref={(el: any) => {
+              if (el && !bounds) void measureAnchor(el).then(setBounds);
+            }}
+            style={styles.backdrop}
+            onClick={dismiss}
+          />
+          {bounds && (
+            <html.div
+              role="listbox"
+              onKeyDown={onMenuKey}
+              style={[styles.menu, styles.menuAt(top, left, width, height)]}
+            >
+              <ScrollView ref={scroller}>
+                {options.map((o, i) => (
+                  <html.button
+                    key={o.value}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    ref={(el: any) => {
+                      optionRefs.current[i] = el;
+                    }}
+                    role="option"
+                    aria-selected={o.value === value}
+                    disabled={o.disabled}
+                    onClick={() => choose(o.value)}
+                    style={[styles.item, o.disabled && styles.itemDisabled]}
+                  >
+                    <html.span style={styles.tick}>{o.value === value ? "✓" : ""}</html.span>
+                    <html.span style={[styles.itemLabel, o.disabled && styles.itemLabelDisabled]}>{o.label}</html.span>
+                  </html.button>
+                ))}
+              </ScrollView>
+            </html.div>
+          )}
         </Portal>
       )}
     </>
@@ -142,24 +164,14 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
 
 const styles = css.create({
   button: {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
     cursor: "pointer",
     textAlign: "start",
   },
-  buttonLabel: {
-    flex: 1,
-    fontSize: 13,
-    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
-  },
-  chevron: {
-    fontSize: 10,
-    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
-  },
+  // Above every other overlay (popovers 50, body editor 100, cell notes 1000):
+  // a select's menu is opened from inside them.
   backdrop: {
     position: "absolute",
+    zIndex: 1999,
     top: 0,
     left: 0,
     right: 0,
@@ -168,29 +180,46 @@ const styles = css.create({
   },
   menu: {
     position: "absolute",
-    paddingBlock: MENU_PADDING,
+    zIndex: 2000,
+    // selectMenu's MENU_PADDING: StyleX styles take literals, not imported constants.
+    paddingBlock: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderStyle: "solid",
     display: "flex",
     flexDirection: "column",
     boxShadow: "0 6px 24px rgba(0, 0, 0, 0.18)",
-    borderColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#2c2c31" },
-    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#2c2c31",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1f",
+    },
   },
-  menuAt: (top: number, left: number, width: number, height: number) => ({ top, left, width, height }),
+  menuAt: (top: number, left: number, width: number, height: number) => ({
+    top,
+    left,
+    width,
+    height,
+  }),
   item: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: ITEM_HEIGHT,
+    // selectMenu's ITEM_HEIGHT.
+    height: 28,
     paddingInline: 8,
     borderWidth: 0,
     cursor: "pointer",
     backgroundColor: {
       default: "transparent",
-      ":hover": { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#2a2a2e" },
+      ":hover": {
+        default: "#f2f2f7",
+        "@media (prefers-color-scheme: dark)": "#2a2a2e",
+      },
     },
   },
   itemDisabled: {
@@ -200,14 +229,23 @@ const styles = css.create({
   tick: {
     width: 14,
     fontSize: 12,
-    color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+    color: {
+      default: "#007aff",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
   },
   itemLabel: {
     flex: 1,
     fontSize: 13,
-    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
   },
   itemLabelDisabled: {
-    color: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#636366" },
+    color: {
+      default: "#aeaeb2",
+      "@media (prefers-color-scheme: dark)": "#636366",
+    },
   },
 });

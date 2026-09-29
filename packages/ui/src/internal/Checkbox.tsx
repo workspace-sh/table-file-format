@@ -41,16 +41,27 @@ const styles = css.create({
     borderWidth: 1,
     borderStyle: "solid",
     cursor: "pointer",
-    borderColor: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#636366" },
-    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#2c2c2e" },
+    borderColor: {
+      default: "#aeaeb2",
+      "@media (prefers-color-scheme: dark)": "#636366",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#2c2c2e",
+    },
   },
   checked: {
-    borderColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
-    backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+    borderColor: {
+      default: "#007aff",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
+    backgroundColor: {
+      default: "#007aff",
+      "@media (prefers-color-scheme: dark)": "#0a84ff",
+    },
   },
   tick: {
     fontSize: 10,
-    lineHeight: 12,
     fontWeight: "700",
     color: "#ffffff",
   },
