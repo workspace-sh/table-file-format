@@ -16,7 +16,9 @@ export function isDate(value: string): boolean {
   const m = DATE.exec(value);
   if (!m) return false;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const probe = new Date(Date.UTC(y, mo - 1, d));
+  // setUTCFullYear, not Date.UTC: Date.UTC reads years 0 to 99 as 1900 to 1999.
+  const probe = new Date(0);
+  probe.setUTCFullYear(y, mo - 1, d);
   return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
 }
 
