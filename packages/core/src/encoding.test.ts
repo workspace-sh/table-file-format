@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validate } from "./validator.js";
 import { applySort } from "./query.js";
-import { completeSeconds } from "./encoding.js";
+import { completeSeconds, isDate, isDateTime } from "./encoding.js";
 import type { Field, Row, TableSchema } from "./types.js";
 
 function errorsFor(field: Field, value: unknown): string[] {
@@ -108,4 +108,11 @@ test("what a browser's time and datetime-local inputs give back is completed to 
   assert.equal(completeSeconds("datetime", "2026-04-01T09:30:00Z"), "2026-04-01T09:30:00Z");
   assert.equal(completeSeconds("string", "09:30"), "09:30");
   assert.equal(completeSeconds("time", "half nine"), "half nine");
+});
+
+test("dates in the years 0000 to 0099 are dates too (RFC 3339 full-date)", () => {
+  // Date.UTC reads years 0 to 99 as 1900 to 1999; these must not.
+  for (const d of ["0000-01-01", "0025-12-10", "0099-02-28", "2024-02-29"]) assert.equal(isDate(d), true, d);
+  for (const d of ["0025-02-29", "0100-02-29", "2023-02-29", "2026-13-01"]) assert.equal(isDate(d), false, d);
+  assert.equal(isDateTime("0025-12-10T09:00:00Z"), true);
 });
