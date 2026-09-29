@@ -1,0 +1,10 @@
+{"id": "opening", "date": "2026-01-01", "item": "Opening balance", "amount": 1200}
+{"id": "salary-jan", "date": "2026-01-28", "item": "Salary", "amount": 3600}
+{"id": "rent-jan", "date": "2026-01-02", "item": "Rent", "amount": -1450}
+{"id": "groceries-jan", "date": "2026-01-10", "item": "Groceries", "amount": -410}
+{"id": "energy-jan", "date": "2026-01-15", "item": "Energy", "amount": -142}
+{"id": "rent-feb", "date": "2026-02-02", "item": "Rent", "amount": -1450}
+{"id": "salary-feb", "date": "2026-02-27", "item": "Salary", "amount": 3600}
+{"id": "transport-feb", "date": "2026-02-12", "item": "Transport", "amount": -165}
+{"id": "eating-feb", "date": "2026-02-20", "item": "Eating out", "amount": -95}
+{"id": "savings-feb", "date": "2026-02-28", "item": "To savings", "amount": -500}

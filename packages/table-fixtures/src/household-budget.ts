@@ -7,12 +7,13 @@ export const householdBudgetBundle: ParsedBundle = {
     "format": "table",
     "formatVersion": 1,
     "title": "Household budget",
-    "description": "A quarter's budget laid out as a sheet.",
+    "description": "A quarter's budget laid out as a sheet, and a ledger with a running balance.",
     "tables": [
-      "budget"
+      "budget",
+      "ledger"
     ],
     "created_at": "2026-09-26T00:00:00Z",
-    "modified_at": "2026-09-26T00:00:00Z",
+    "modified_at": "2026-09-29T00:00:00Z",
     "generator": "table-file-format fixture"
   },
   "tables": {
@@ -93,7 +94,7 @@ export const householdBudgetBundle: ParsedBundle = {
             "type": "number",
             "title": "Share",
             "format": "percent",
-            "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/F7: F7 is the Income row, stored by its id, so sorting never breaks it.",
+            "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/$F$7: $F$7 pins the Income row by its id, so sorting never breaks it.",
             "computed": {
               "expr": "(/ quarter (field \"quarter\" \"income\"))",
               "dialect": "table-expr-v1"
@@ -256,6 +257,155 @@ export const householdBudgetBundle: ParsedBundle = {
         "modified_at": "2026-09-26T00:00:00Z"
       },
       "path": "fixtures/household-budget.table/tables/budget"
+    },
+    "ledger": {
+      "schema": {
+        "fields": [
+          {
+            "name": "date",
+            "type": "date",
+            "title": "Date",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "item",
+            "type": "string",
+            "title": "Item"
+          },
+          {
+            "name": "amount",
+            "type": "number",
+            "title": "Amount",
+            "format": "currency:GBP",
+            "description": "Money in is positive, money out negative."
+          },
+          {
+            "name": "balance",
+            "type": "number",
+            "title": "Balance",
+            "format": "currency:GBP",
+            "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
+            "computed": {
+              "expr": "(sum (at \"balance\" -1 \"by-date\") amount)",
+              "dialect": "table-expr-v1"
+            }
+          }
+        ]
+      },
+      "rows": [
+        {
+          "id": "opening",
+          "date": "2026-01-01",
+          "item": "Opening balance",
+          "amount": 1200
+        },
+        {
+          "id": "salary-jan",
+          "date": "2026-01-28",
+          "item": "Salary",
+          "amount": 3600
+        },
+        {
+          "id": "rent-jan",
+          "date": "2026-01-02",
+          "item": "Rent",
+          "amount": -1450
+        },
+        {
+          "id": "groceries-jan",
+          "date": "2026-01-10",
+          "item": "Groceries",
+          "amount": -410
+        },
+        {
+          "id": "energy-jan",
+          "date": "2026-01-15",
+          "item": "Energy",
+          "amount": -142
+        },
+        {
+          "id": "rent-feb",
+          "date": "2026-02-02",
+          "item": "Rent",
+          "amount": -1450
+        },
+        {
+          "id": "salary-feb",
+          "date": "2026-02-27",
+          "item": "Salary",
+          "amount": 3600
+        },
+        {
+          "id": "transport-feb",
+          "date": "2026-02-12",
+          "item": "Transport",
+          "amount": -165
+        },
+        {
+          "id": "eating-feb",
+          "date": "2026-02-20",
+          "item": "Eating out",
+          "amount": -95
+        },
+        {
+          "id": "savings-feb",
+          "date": "2026-02-28",
+          "item": "To savings",
+          "amount": -500
+        }
+      ],
+      "views": [
+        {
+          "id": "by-date",
+          "name": "By date",
+          "layout": "table",
+          "coordinates": true,
+          "sort": [
+            {
+              "field": "date",
+              "direction": "asc"
+            }
+          ],
+          "fields": [
+            "date",
+            "item",
+            "amount",
+            "balance"
+          ],
+          "columnWidths": {
+            "date": 130,
+            "item": 160,
+            "amount": 130,
+            "balance": 130
+          }
+        },
+        {
+          "id": "as-entered",
+          "name": "As entered",
+          "layout": "table",
+          "fields": [
+            "date",
+            "item",
+            "amount",
+            "balance"
+          ],
+          "columnWidths": {
+            "date": 130,
+            "item": 160,
+            "amount": 130,
+            "balance": 130
+          }
+        }
+      ],
+      "meta": {
+        "title": "Ledger",
+        "description": "Money in and out, as entered, with a running balance down the By date sheet.",
+        "created_at": "2026-09-29T00:00:00Z",
+        "modified_at": "2026-09-29T00:00:00Z"
+      },
+      "path": "fixtures/household-budget.table/tables/ledger"
     }
   },
   "path": "fixtures/household-budget.table"
