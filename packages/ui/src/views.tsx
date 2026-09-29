@@ -81,6 +81,8 @@ import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { Checkbox } from "./internal/Checkbox";
+import { Select } from "./internal/Select";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { BottomSheet } from "./internal/BottomSheet";
 import {
@@ -1644,12 +1646,7 @@ function EditableCell({
   // Boolean: toggle on click, no draft state
   if (kind === "boolean") {
     return (
-      <html.input
-        dir="auto"
-        type="checkbox"
-        checked={value === true}
-        onChange={(e: { target: { checked: boolean } }) => onCommit(e.target.checked)}
-      />
+      <Checkbox checked={value === true} onChange={(checked) => onCommit(checked)} />
     );
   }
 
@@ -1688,12 +1685,13 @@ function EditableCell({
       );
     }
     return (
-      <html.select
+      <Select
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
-        onChange={(e: { target: { value: string } }) => {
-          commit(e.target.value);
+        options={[{ value: "", label: "—" }, ...enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }))]}
+        onChange={(next) => {
+          commit(next);
           onEditEnd?.("done");
         }}
         onKeyDown={(e: KeyEventLike) => {
@@ -1708,14 +1706,7 @@ function EditableCell({
         }}
         onBlur={cancel}
         style={styles.cellInput}
-      >
-        <html.option value="">—</html.option>
-        {enumOpts.map((opt) => (
-          <html.option key={opt.value} value={opt.value}>
-            {opt.label ?? opt.value}
-          </html.option>
-        ))}
-      </html.select>
+      />
     );
   }
 

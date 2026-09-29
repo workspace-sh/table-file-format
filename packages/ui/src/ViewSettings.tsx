@@ -8,6 +8,8 @@
 import { useState } from "react";
 import type React from "react";
 import { html, css } from "react-strict-dom";
+import { Checkbox } from "./internal/Checkbox";
+import { Select } from "./internal/Select";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -97,18 +99,18 @@ export function ViewSettings({
         </FieldRow>
 
         <FieldRow label="Layout">
-        <html.select
+        <Select
           value={view.layout}
-          onChange={(e: { target: { value: string } }) => setLayout(e.target.value as ViewLayout)}
+          options={LAYOUTS.map((l) => ({
+            value: l,
+            label:
+              LAYOUT_LABELS[l] +
+              (canUseLayout(l, schema) ? "" : l === "calendar" ? " (needs a date field)" : " (needs a text field)"),
+            disabled: !canUseLayout(l, schema),
+          }))}
+          onChange={(next) => setLayout(next as ViewLayout)}
           style={styles.input}
-        >
-          {LAYOUTS.map((l) => (
-            <html.option key={l} value={l} disabled={!canUseLayout(l, schema)}>
-              {LAYOUT_LABELS[l]}
-              {canUseLayout(l, schema) ? "" : l === "calendar" ? " (needs a date field)" : " (needs a text field)"}
-            </html.option>
-          ))}
-        </html.select>
+        />
         </FieldRow>
 
         {view.layout === "board" && (
@@ -134,10 +136,9 @@ export function ViewSettings({
         {view.layout === "table" && (
           <FieldRow label="Sheet">
             <html.label style={styles.check}>
-              <html.input
-                type="checkbox"
+              <Checkbox
                 checked={view.coordinates === true}
-                onChange={(e: { target: { checked: boolean } }) => onChange({ coordinates: e.target.checked || undefined })}
+                onChange={(checked) => onChange({ coordinates: checked || undefined })}
               />
               <html.span>Letter the columns and number the rows, so formulas can use =B7</html.span>
             </html.label>
@@ -186,16 +187,17 @@ export function ViewSettings({
             value={srt.field}
             onChange={(f) => f && setSorts(sorts.map((s, j) => (j === i ? { ...s, field: f } : s)))}
           />
-          <html.select
+          <Select
             value={srt.direction}
-            onChange={(e: { target: { value: string } }) =>
-              setSorts(sorts.map((s, j) => (j === i ? { ...s, direction: e.target.value as "asc" | "desc" } : s)))
+            options={[
+              { value: "asc", label: "Ascending" },
+              { value: "desc", label: "Descending" },
+            ]}
+            onChange={(next) =>
+              setSorts(sorts.map((s, j) => (j === i ? { ...s, direction: next as "asc" | "desc" } : s)))
             }
             style={styles.input}
-          >
-            <html.option value="asc">Ascending</html.option>
-            <html.option value="desc">Descending</html.option>
-          </html.select>
+          />
           <html.button style={styles.remove} aria-label="Remove sort" onClick={() => setSorts(sorts.filter((_, j) => j !== i))}>
             ×
           </html.button>
@@ -266,18 +268,15 @@ function FieldSelect({
   none?: string;
 }) {
   return (
-    <html.select
+    <Select
       value={value ?? ""}
-      onChange={(e: { target: { value: string } }) => onChange(e.target.value || undefined)}
+      options={[
+        ...(none !== undefined ? [{ value: "", label: none }] : []),
+        ...fields.map((f) => ({ value: f.name, label: f.title ?? f.name })),
+      ]}
+      onChange={(next) => onChange(next || undefined)}
       style={styles.input}
-    >
-      {none !== undefined && <html.option value="">{none}</html.option>}
-      {fields.map((f) => (
-        <html.option key={f.name} value={f.name}>
-          {f.title ?? f.name}
-        </html.option>
-      ))}
-    </html.select>
+    />
   );
 }
 
@@ -316,35 +315,27 @@ function FilterRow({
           onChange({ field: name, operator: ops.includes(filter.operator) ? filter.operator : ops[0]! });
         }}
       />
-      <html.select
+      <Select
         value={filter.operator}
-        onChange={(e: { target: { value: string } }) => {
-          const operator = e.target.value as FilterOperator;
+        options={operators.map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
+        onChange={(next) => {
+          const operator = next as FilterOperator;
           const value = takesValue(operator) ? filterValueFrom(field, operator, draft) : undefined;
           onChange({ field: filter.field, operator, ...(value === undefined ? {} : { value }) });
         }}
         style={styles.input}
-      >
-        {operators.map((op) => (
-          <html.option key={op} value={op}>
-            {OPERATOR_LABELS[op]}
-          </html.option>
-        ))}
-      </html.select>
+      />
       {takesValue(filter.operator) &&
         (pickChoice ? (
-          <html.select
+          <Select
             value={String(filter.value ?? "")}
-            onChange={(e: { target: { value: string } }) => onChange({ ...filter, value: e.target.value })}
+            options={[
+              { value: "", label: "Choose…" },
+              ...choices.map((c) => ({ value: c.value, label: c.label ?? c.value })),
+            ]}
+            onChange={(next) => onChange({ ...filter, value: next })}
             style={styles.input}
-          >
-            <html.option value="">Choose…</html.option>
-            {choices.map((c) => (
-              <html.option key={c.value} value={c.value}>
-                {c.label ?? c.value}
-              </html.option>
-            ))}
-          </html.select>
+          />
         ) : (
           <html.input
             type="text"

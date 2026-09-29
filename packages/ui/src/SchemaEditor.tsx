@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
+import { Checkbox } from "./internal/Checkbox";
+import { Select } from "./internal/Select";
 import type { CompileResult, ComputeOptions, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
@@ -627,42 +629,30 @@ function FormatPicker({
   return (
     <>
       <html.span style={styles.label}>Format</html.span>
-      <html.select
+      <Select
         value={kind}
-        onChange={(e: { target: { value: string } }) => choose(e.target.value)}
+        options={shown.map((o) => ({ value: o.value, label: o.label }))}
+        onChange={choose}
         style={styles.input}
-      >
-        {shown.map((o) => (
-          <html.option key={o.value || "default"} value={o.value}>
-            {o.label}
-          </html.option>
-        ))}
-      </html.select>
+      />
       {kind === "decimal" && (
-        <html.select
+        <Select
           value={String(digits)}
-          onChange={(e: { target: { value: string } }) => set(`decimal:${e.target.value}`)}
+          options={[0, 1, 2, 3, 4, 5, 6].map((d) => ({
+            value: String(d),
+            label: `${d} decimal place${d === 1 ? "" : "s"}`,
+          }))}
+          onChange={(next) => set(`decimal:${next}`)}
           style={styles.input}
-        >
-          {[0, 1, 2, 3, 4, 5, 6].map((d) => (
-            <html.option key={d} value={String(d)}>
-              {d} decimal place{d === 1 ? "" : "s"}
-            </html.option>
-          ))}
-        </html.select>
+        />
       )}
       {kind === "currency" && (
-        <html.select
+        <Select
           value={code}
-          onChange={(e: { target: { value: string } }) => set(`currency:${e.target.value}`)}
+          options={currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` }))}
+          onChange={(next) => set(`currency:${next}`)}
           style={styles.input}
-        >
-          {currencyCodes().map((c) => (
-            <html.option key={c} value={c}>
-              {c} · {currencyName(c)}
-            </html.option>
-          ))}
-        </html.select>
+        />
       )}
       {own && inherited && inherited !== "mixed" && own !== inherited && (
         <html.span style={styles.warnText}>
@@ -879,24 +869,12 @@ export function SchemaFieldEditor({
         <FormatPicker field={field} fields={fields ?? []} onUpdate={onUpdate} />
 
         <html.div style={styles.checkRow}>
-          <html.input
-        dir="auto"
-            type="checkbox"
-            checked={field.constraints?.required === true}
-            onChange={(e: { target: { checked: boolean } }) => setRequired(e.target.checked)}
-          />
+          <Checkbox checked={field.constraints?.required === true} onChange={setRequired} />
           <html.span>Required</html.span>
         </html.div>
 
         <html.div style={styles.checkRow}>
-          <html.input
-        dir="auto"
-            type="checkbox"
-            checked={field.deprecated === true}
-            onChange={(e: { target: { checked: boolean } }) =>
-              onUpdate({ deprecated: e.target.checked || undefined })
-            }
-          />
+          <Checkbox checked={field.deprecated === true} onChange={(checked) => onUpdate({ deprecated: checked || undefined })} />
           <html.span>Deprecated</html.span>
         </html.div>
 
