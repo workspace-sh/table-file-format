@@ -332,6 +332,16 @@ class Workbook {
   }
 
   place(sheet: Sheet, i: number, p: Place): Value {
+    // One cell, by offset, in this table: the running total's case, read
+    // without building anything.
+    if (p.single && typeof p.from.row === "number" && (p.table === undefined || p.table === sheet.name)) {
+      const grid = this.grid(sheet, p.view);
+      if (grid instanceof FormulaError) return grid;
+      if (grid.looped) return new FormulaError("#REF!", `the Sheet view ${p.view} is sorted by its own places`);
+      if (!sheet.known.has(p.from.field)) return new FormulaError("#NAME?", `no field named ${p.from.field}`);
+      const at = grid.place[i]! + p.from.row;
+      return at < 1 || at > grid.order.length ? undefined : this.value(sheet, grid.order[at - 1]!, p.from.field);
+    }
     const r = this.resolve(sheet, i, p);
     if (r instanceof FormulaError) return r;
     const size = r.grid.order.length;
