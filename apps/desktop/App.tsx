@@ -17,9 +17,17 @@ import {
   ListView,
   PortalHost,
   TableView,
+  ViewSettings,
   canInsertAt,
+  sheetDependents,
 } from "@workspace.sh/table-ui";
 import {
+  arrange,
+  isArranged,
+  reset as resetArrangement,
+  savedPatch,
+  withoutView,
+  type Arrangements,
   bundleOf,
   bundleTables,
   fromBundle,
@@ -278,6 +286,11 @@ export default function App() {
   );
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
+  const [showViewSettings, setShowViewSettings] = useState(false);
+  // This viewer's own filters, sorts and grouping, over the saved views
+  // (D4, D41), as on the web; a sort of their own follows their language.
+  const [arrangements, setArrangements] = useState<Arrangements>({});
+  const viewerText = useMemo(() => new Intl.Collator(undefined, { numeric: true }).compare, []);
 
   const table = tables[activeTablePath]!;
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
@@ -352,6 +365,28 @@ export default function App() {
     (patch: Partial<View>) => edit((t) => withViewPatch(t, activeViewId, patch)),
     [edit, activeViewId],
   );
+  const deleteView = useCallback(() => {
+    const viewId = activeViewId;
+    const readers = isSheet(table.views.find((v) => v.id === viewId)) ? sheetDependents(bundleTables(tables, bundleOf(activeTablePath)), tableNameOf(activeTablePath), viewId).length : 0;
+    const name = table.views.find((v) => v.id === viewId)?.name ?? viewId;
+    Alert.alert(
+      `Delete the view "${name}"?`,
+      `The rows stay; only this way of showing them goes.${readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : ""}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            const next = table.views.find((v) => v.id !== viewId)?.id ?? "";
+            edit((t) => withoutView(t, viewId));
+            setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: next }));
+            setShowViewSettings(false);
+          },
+        },
+      ],
+    );
+  }, [activeViewId, activeTablePath, edit, table, tables]);
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);
 
@@ -370,13 +405,26 @@ export default function App() {
         setActiveBodyRowId(null);
         return `showing ${key}${viewId ? ` / ${viewId}` : ""}`;
       },
+      settings: (open: boolean) => {
+        setShowViewSettings(open);
+        return open ? "settings open" : "settings closed";
+      },
+      arrange: (key: string, viewId: string, patch: Partial<View>) => {
+        setArrangements((all) => arrange(all, key, viewId, patch));
+        return "arranged";
+      },
     };
   }, [tables]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const sheet = useMemo(() => sheetShown(tables, activeTablePath, view), [tables, activeTablePath, view]);
-  const { view: shownView, rows: visibleRows, inView } = showView(tables, activeTablePath, view, { search: query });
+  const personal = arrangements[activeTablePath]?.[view.id];
+  const { view: shownView, rows: visibleRows, inView } = showView(tables, activeTablePath, view, {
+    arrangement: personal,
+    search: query,
+    viewerText,
+  });
   const inBundle = bundleTables(tables, bundleOf(activeTablePath));
   const errors = validate(table.schema, table.rows);
   const searching = query.trim().length > 0;
@@ -437,13 +485,54 @@ export default function App() {
               {table.views.map((v) => (
                 <html.button
                   key={v.id}
-                  onClick={() => setActiveViewId(v.id)}
+                  onClick={() => {
+                    setActiveViewId(v.id);
+                    setShowViewSettings(false);
+                  }}
                   style={[styles.tab, v.id === activeViewId && styles.tabActive]}
                 >
                   {v.name}
                 </html.button>
               ))}
+              <html.button
+                onClick={() => setShowViewSettings((open) => !open)}
+                style={[styles.tab, showViewSettings && styles.tabActive]}
+              >
+                View settings
+              </html.button>
             </html.div>
+            {showViewSettings && (
+              <ViewSettings
+                key={view.id}
+                view={shownView}
+                schema={table.schema}
+                onChange={(patch) => {
+                  // Turning a Sheet view into anything else loses its grid (D41).
+                  const readers =
+                    isSheet(view) && !isSheet({ ...view, ...patch })
+                      ? sheetDependents(inBundle, tableNameOf(activeTablePath), view.id).length
+                      : 0;
+                  if (readers === 0) return updateActiveView(patch);
+                  Alert.alert(
+                    `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
+                    "Stop showing it as a sheet?",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Stop", style: "destructive", onPress: () => updateActiveView(patch) },
+                    ],
+                  );
+                }}
+                onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
+                personal={isArranged(personal)}
+                onSaveForEveryone={() => {
+                  updateActiveView(savedPatch(personal));
+                  setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
+                }}
+                onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
+                onDelete={table.views.length > 1 ? deleteView : undefined}
+                onClose={() => setShowViewSettings(false)}
+              />
+            )}
             <html.input
               type="text"
               placeholder="Search..."
