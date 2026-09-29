@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native-file-access/ios/FileAccess.swift b/node_modules/react-native-file-access/ios/FileAccess.swift
+index cb39f3e..f0c8796 100644
+--- a/node_modules/react-native-file-access/ios/FileAccess.swift
++++ b/node_modules/react-native-file-access/ios/FileAccess.swift
+@@ -245,12 +245,16 @@ public class FileAccess : NSObject {
+     @objc(mv:withTarget:withResolver:withRejecter:)
+     public func mv(source: String, target: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) -> Void {
+         DispatchQueue.global().async {
+-            do {
+-                try? FileManager.default.removeItem(atPath: target.path())
+-                try FileManager.default.moveItem(atPath: source.path(), toPath: target.path())
++            // [table-file-format patch] One POSIX rename(2), which replaces an existing target
++            // atomically: a reader sees the old file or the new one, never neither. Upstream
++            // removes the target and then moves (two steps), and a crash between them loses the
++            // file. .table's writer stages each file as *.tmp and renames it over its target
++            // (core's TableFs contract, SPEC section 1, D24). No fallback: a failure is reported.
++            if Darwin.rename(source.path(), target.path()) == 0 {
+                 resolve(nil)
+-            } catch {
+-                reject("ERR", "Failed to rename '\(source)' to '\(target)'. \(error.localizedDescription)", error)
++            } else {
++                let reason = String(cString: strerror(errno))
++                reject("ERR", "Failed to rename '\(source)' to '\(target)'. \(reason)", nil)
+             }
+         }
+     }
