@@ -64,6 +64,39 @@ export function clearSaved(store: KeyValueStore | null): void {
   }
 }
 
+/**
+ * What was saved, plus any fixture table or bundle added to the demo
+ * since: a table added to a fixture (the household budget's ledger, say)
+ * appears in a browser that saved its edits before it existed. Saved
+ * tables and edits are kept as they are; the demo can't delete a table,
+ * so a fixture table missing from what's saved is always a new one.
+ */
+export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
+  const tables = { ...saved.tables };
+  const bundles = { ...saved.bundles };
+  let changed = false;
+  for (const [key, table] of Object.entries(fixtures.tables)) {
+    if (key in tables) continue;
+    const bundle = key.slice(0, key.indexOf("/"));
+    const name = key.slice(bundle.length + 1);
+    tables[key] = table;
+    changed = true;
+    const manifest = bundles[bundle];
+    if (!manifest) {
+      bundles[bundle] = fixtures.bundles[bundle]!;
+    } else if (Array.isArray(manifest.tables) && !manifest.tables.includes(name)) {
+      // Where the fixture puts it, so the sidebar's order matches the file's.
+      const order = fixtures.bundles[bundle]?.tables ?? [];
+      const at = order.indexOf(name);
+      const next = [...manifest.tables];
+      const before = order.slice(at + 1).map((t) => next.indexOf(t)).filter((i) => i !== -1);
+      next.splice(before.length ? Math.min(...before) : next.length, 0, name);
+      bundles[bundle] = { ...manifest, tables: next };
+    }
+  }
+  return changed ? { tables, bundles } : saved;
+}
+
 /** Bundles, and tables that each belong to one of them. */
 function isSaved(value: unknown): value is Saved {
   if (!isObject(value) || !isObject(value.bundles) || !isTables(value.tables)) return false;

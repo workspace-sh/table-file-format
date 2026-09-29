@@ -44,7 +44,7 @@ import { loadDisplay, saveDisplay } from "./displaySettings";
 import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "./bundles";
 import { tableKeyFor } from "./tableKey";
-import { browserStore, clearSaved, loadSaved, save } from "./savedTables";
+import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "./savedTables";
 import { Sidebar, type ShownFile } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
@@ -332,7 +332,12 @@ function bumpSchemaVersion(schema: TableSchema): TableSchema {
 export function App() {
   // Edits survive a reload (#86): what was saved, or the fixtures when
   // nothing usable was.
-  const [initial] = useState(() => loadSaved(browserStore()) ?? { tables: initialTables, bundles: initialBundles });
+  const [initial] = useState(() => {
+    const fixtures = { tables: initialTables, bundles: initialBundles };
+    const saved = loadSaved(browserStore());
+    // Fixture tables added since this browser saved its edits still appear.
+    return saved ? withNewFixtures(saved, fixtures) : fixtures;
+  });
   const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
   // Each bundle's manifest (D37): its title and the order of its tables.
   const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
