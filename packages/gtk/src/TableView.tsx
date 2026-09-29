@@ -9,9 +9,22 @@
 
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
-import { GtkAdjustment, GtkBox, GtkButton, GtkLabel, GtkScrolledWindow } from "@gtkx/jsx/gtk";
+import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
+import {
+  GtkAdjustment,
+  GtkBox,
+  GtkButton,
+  GtkGestureClick,
+  GtkImage,
+  GtkLabel,
+  GtkMenuButton,
+  GtkPopoverMenu,
+  GtkScrolledWindow,
+} from "@gtkx/jsx/gtk";
+import type { MenuItem } from "@gtkx/react/internal";
 import { columnLetter, effectiveAlign, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
 import {
+  canInsertAt,
   DEFAULT_ROW_HEIGHT,
   columnWidths,
   fieldsByName,
@@ -23,13 +36,16 @@ import {
   visibleFields,
   type ViewProps,
 } from "@workspace.sh/table-ui/shared";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
+import { EditableCell } from "./EditableCell.js";
 import { styles } from "./theme.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
 const TABLE_CHROME = 2;
 const HEADER_HEIGHT = 36;
+/** A row menu's circular button and its margin. */
+const ROW_MENU_WIDTH = 42;
 
 function xalignOf(align: FieldAlignment): number {
   return align === "center" ? 0.5 : align === "end" ? 1 : 0;
@@ -39,14 +55,92 @@ function xalignOf(align: FieldAlignment): number {
  * One cell, exactly `width` wide whatever it holds.
  *
  * `widthRequest` keeps a short value from narrowing the column, and
- * nothing in a cell asks for more: text ellipsizes (its natural width is a
+ * `hexpand={false}` stops a child's expanding from spreading the cell when
+ * its row is wider than another (a body row has its menu button, the
+ * header has none). Nothing in a cell asks for more: text ellipsizes (its natural width is a
  * character), and a row of pills clips (see `Clipped`). Every row's cells
  * then line up under the header with no grid to align them.
  */
 function Cell({ width, height, children, classes = [] }: { width: number; height: number; children: ReactNode; classes?: string[] }) {
   return (
-    <GtkBox widthRequest={width} heightRequest={height} cssClasses={[styles.cell, styles.columnRule, ...classes]}>
+    <GtkBox widthRequest={width} heightRequest={height} hexpand={false} cssClasses={[styles.cell, styles.columnRule, ...classes]}>
       {children}
+    </GtkBox>
+  );
+}
+
+/** The row menu's entries, by what the table was given to do. */
+function rowMenu(hasBody: boolean, canOpen: boolean, canInsert: boolean, canDelete: boolean): MenuItem[] {
+  return [
+    ...(canOpen && hasBody ? [{ section: [{ label: "Open Page", action: "row.open" }] }] : []),
+    ...(canInsert
+      ? [{ section: [{ label: "Insert Row Above", action: "row.above" }, { label: "Insert Row Below", action: "row.below" }] }]
+      : []),
+    ...(canDelete ? [{ section: [{ label: "Delete Row…", action: "row.delete" }] }] : []),
+  ];
+}
+
+/**
+ * A body row, with its menu. The menu is a button at the row's end as well
+ * as a right-click anywhere on the row: GNOME has no menu bar, and a
+ * right-click alone isn't discoverable. Its actions live on the row, so
+ * both reach the same items.
+ */
+function BodyRow({
+  rowId,
+  menu,
+  hasBody,
+  canInsert,
+  onOpenBody,
+  onDeleteRow,
+  onInsertRow,
+  children,
+}: {
+  rowId: string;
+  menu: boolean;
+  hasBody: boolean;
+  canInsert: boolean;
+  onOpenBody?: (rowId: string) => void;
+  onDeleteRow?: (rowId: string) => void;
+  onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  children: ReactNode;
+}) {
+  const button = useRef<Gtk.MenuButton | null>(null);
+  if (!menu) return <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+  return (
+    <GtkBox
+      cssClasses={[styles.bodyRow]}
+      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+      actionGroups={
+        <GSimpleActionGroup
+          prefix="row"
+          actions={
+            <>
+              <GSimpleAction name="open" enabled={hasBody && !!onOpenBody} onActivate={() => onOpenBody?.(rowId)} />
+              <GSimpleAction name="above" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "above")} />
+              <GSimpleAction name="below" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "below")} />
+              <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
+            </>
+          }
+        />
+      }
+    >
+      {children}
+      <GtkMenuButton
+        ref={button}
+        iconName="view-more-symbolic"
+        cssClasses={["flat", "circular"]}
+        valign={Gtk.Align.CENTER}
+        marginStart={4}
+        tooltipText="Row Actions"
+        popover={
+          <GtkPopoverMenu
+            flags={Gtk.PopoverMenuFlags.NESTED}
+            hasArrow={false}
+            menuModel={<GMenu items={rowMenu(hasBody, !!onOpenBody, canInsert, !!onDeleteRow)} />}
+          />
+        }
+      />
     </GtkBox>
   );
 }
@@ -57,10 +151,16 @@ export function TableView({
   schema,
   bodies,
   relatedTables,
+  onUpdateRow,
+  onAddRow,
+  onDeleteRow,
+  onInsertRow,
   onOpenBody,
   onOpenRelation,
   sheet,
 }: ViewProps) {
+  // The row just added from "New Row": its first cell opens for typing.
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const rowHeight = view.rowHeight ?? DEFAULT_ROW_HEIGHT;
@@ -73,7 +173,11 @@ export function TableView({
   // The visible width, from the scroller's own adjustment: its page size is
   // what's on screen, and it changes as the window or sidebar does.
   const [containerWidth, setContainerWidth] = useState(0);
-  const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0);
+  const canInsert = !!onInsertRow && canInsertAt(view);
+  const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert;
+  // The row menu's button sits after the last column: its room comes out
+  // of the columns' share, so it stays on screen.
+  const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
   const colWidth = columnWidths(fields, view.columnWidths ?? {}, containerWidth, chrome);
 
   const rowNumber = (row: Row, index: number): number => sheet?.position.get(row.id) ?? index + 1;
@@ -106,6 +210,8 @@ export function TableView({
     </GtkBox>
   );
 
+  const editable = !!onUpdateRow;
+
   const body = displayed.map(({ row, starts }, index) => (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
       {starts ? (
@@ -115,21 +221,43 @@ export function TableView({
           cssClasses={[styles.groupRow]}
         />
       ) : null}
-      <GtkBox cssClasses={[styles.bodyRow]}>
+      <BodyRow
+        rowId={row.id}
+        menu={hasMenu}
+        hasBody={bodies?.[row.id] !== undefined}
+        canInsert={canInsert}
+        onOpenBody={onOpenBody}
+        onDeleteRow={onDeleteRow}
+        onInsertRow={onInsertRow}
+      >
         {gutter(String(rowNumber(row, index)), rowHeight)}
         {fields.map((name, i) => {
           const field = fieldMap.get(name);
+          const xalign = xalignOf(effectiveAlign(field));
           return (
             <Cell key={name} width={colWidth(name)} height={rowHeight}>
-              <GtkBox spacing={6} valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER} marginTop={lines > 1 ? 10 : 0}>
-                <CellValue
-                  field={field}
-                  value={row[name]}
-                  relatedTables={relatedTables}
-                  onOpenRelation={onOpenRelation}
-                  lines={lines}
-                  xalign={xalignOf(effectiveAlign(field))}
-                />
+              <GtkBox spacing={6} hexpand valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER} marginTop={lines > 1 ? 10 : 0}>
+                {editable ? (
+                  <EditableCell
+                    field={field}
+                    value={row[name]}
+                    onCommit={(next) => onUpdateRow!(row.id, name, next)}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                    lines={lines}
+                    xalign={xalign}
+                    autoEdit={i === 0 && row.id === justAdded}
+                  />
+                ) : (
+                  <CellValue
+                    field={field}
+                    value={row[name]}
+                    relatedTables={relatedTables}
+                    onOpenRelation={onOpenRelation}
+                    lines={lines}
+                    xalign={xalign}
+                  />
+                )}
                 {i === 0 && bodies?.[row.id] !== undefined && onOpenBody ? (
                   <GtkButton
                     iconName="document-open-symbolic"
@@ -143,9 +271,26 @@ export function TableView({
             </Cell>
           );
         })}
-      </GtkBox>
+      </BodyRow>
     </GtkBox>
   ));
+
+  const addRow = onAddRow ? (
+    <GtkButton
+      halign={Gtk.Align.START}
+      cssClasses={["flat"]}
+      marginStart={coords ? ROW_NUMBER_WIDTH : 0}
+      onClicked={() => {
+        const id = onAddRow();
+        if (typeof id === "string") setJustAdded(id);
+      }}
+    >
+      <GtkBox spacing={6}>
+        <GtkImage iconName="list-add-symbolic" />
+        <GtkLabel label="New Row" />
+      </GtkBox>
+    </GtkButton>
+  ) : null;
 
   const footer = showTotals ? (
     <GtkBox cssClasses={[styles.totalsRow]}>
@@ -184,6 +329,7 @@ export function TableView({
       <GtkBox orientation={Gtk.Orientation.VERTICAL} halign={Gtk.Align.START} valign={Gtk.Align.START}>
         {header}
         {body}
+        {addRow}
         {footer}
       </GtkBox>
     </GtkScrolledWindow>

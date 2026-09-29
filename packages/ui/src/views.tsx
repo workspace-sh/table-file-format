@@ -25,6 +25,7 @@ import {
   visibleFields,
 } from "./display";
 import type { ViewProps } from "./viewProps";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind } from "./cellEdit";
 import {
   BOARD_GAP,
   boardColumns,
@@ -44,7 +45,7 @@ import {
   rowsByDay,
   rowTitle,
 } from "./cards";
-import { checkEntry, type CellCheck } from "./cellCheck";
+import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
@@ -1522,7 +1523,8 @@ function EditableCell({
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
   // what renders.)
-  const readOnly = field?.computed !== undefined;
+  const kind = editorKind(field);
+  const readOnly = kind === "readonly";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
   // Why the draft wasn't saved (D42), and which draft an early year was
@@ -1558,7 +1560,7 @@ function EditableCell({
   const startEdit = (text?: string) => {
     closed.current = false;
     caretAtEnd.current = text !== undefined;
-    setDraft(text ?? (value === undefined || value === null ? "" : String(value)));
+    setDraft(text ?? draftOf(value));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -1576,23 +1578,18 @@ function EditableCell({
    * year is kept, since it's a valid date.
    */
   const commit = (raw: string, how: "key" | "blur" = "key"): boolean => {
-    const check = checkEntry(field, raw, queried.current === raw || how === "blur");
-    if (!check.ok) {
-      if (how === "blur") {
-        closed.current = true;
-        setEditing(false);
-        setProblem(null);
-        return false;
-      }
-      if (check.confirmable) queried.current = raw;
-      setProblem(check);
+    const result = commitDraft(field, value, raw, how, queried.current);
+    if (result.kind === "problem") {
+      queried.current = result.queried;
+      setProblem(result.check);
       void measureAnchor(inputRef.current).then(setProblemAt);
       return false;
     }
     closed.current = true;
     setEditing(false);
     setProblem(null);
-    if (check.value !== value) onCommit(check.value);
+    if (result.kind === "dropped") return false;
+    if (result.kind === "save") onCommit(result.value);
     return true;
   };
 
@@ -1635,7 +1632,7 @@ function EditableCell({
   }
 
   // Boolean: toggle on click, no draft state
-  if (field?.type === "boolean") {
+  if (kind === "boolean") {
     return (
       <html.input
         dir="auto"
@@ -1648,7 +1645,7 @@ function EditableCell({
 
   // A list: a multi-select picks from its choices; a plain list is typed
   // as comma-separated text.
-  if (field?.type === "array" && !field.relation) {
+  if (kind === "list" && field) {
     return (
       <ListCell
         field={field}
@@ -1666,7 +1663,7 @@ function EditableCell({
   // Enum: select dropdown. Normalised via enumOptions() so both the
   // bare-string and { value, color, label } on-disk forms render.
   const enumOpts = enumOptions(field);
-  if (enumOpts.length > 0) {
+  if (kind === "choice") {
     if (!editing) {
       return (
         <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
@@ -1731,16 +1728,7 @@ function EditableCell({
   // swapped for @react-native-community/datetimepicker (or similar); the
   // RSD strict-subset purity is deliberately broken here in favour of
   // platform-native pickers — see PR description.
-  const inputType =
-    field?.type === "integer" || field?.type === "number"
-      ? "number"
-      : field?.type === "date"
-        ? "date"
-        : field?.type === "datetime"
-          ? "datetime-local"
-          : field?.type === "time"
-            ? "time"
-            : "text";
+  const inputType = inputKind(field);
   // The stored value is a plain number; a currency format only changes
   // how it's shown. While editing, show the symbol beside the input so
   // it's clear what the number is in.
@@ -1961,19 +1949,6 @@ function ListCell({
 }
 
 /** The symbol for a `currency:XXX` format, in the reader's locale, or null. */
-function currencySymbolOf(field: Field | undefined): string | null {
-  const format = field?.format;
-  if (!format?.startsWith("currency:")) return null;
-  try {
-    const parts = new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: format.slice("currency:".length),
-    }).formatToParts(0);
-    return parts.find((p) => p.type === "currency")?.value ?? null;
-  } catch {
-    return null; // unknown ISO 4217 code — show the plain input
-  }
-}
 
 
 

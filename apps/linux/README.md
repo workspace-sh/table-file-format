@@ -7,7 +7,11 @@ The harness for `@workspace.sh/table-gtk`, as `apps/web` is for
 It shows the repo's fixtures, or the `.table` folders named on the command
 line, with the open table's views listed under it in the sidebar. Every
 layout draws (table with sheets, groups and totals; board; gallery; list;
-calendar), read-only so far. Editing and saving are next.
+calendar). Table cells edit in place, rows are added and deleted, and
+every edit is saved to the `.table` folder a moment later. The examples
+are copies in `~/.local/share/table-demo/examples`, so the repo's fixtures
+never change; folders named on the command line are edited where they
+are.
 
 ## Run it
 

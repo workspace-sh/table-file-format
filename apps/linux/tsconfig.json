@@ -26,6 +26,7 @@
       "fflate": ["./node_modules/fflate"],
       "nanoid": ["./node_modules/nanoid"],
       "@gtkx/react": ["./node_modules/@gtkx/react/dist/index.d.ts"],
+      "@gtkx/react/internal": ["./node_modules/@gtkx/react/dist/internal.d.ts"],
       "@gtkx/css": ["./node_modules/@gtkx/css/dist/index.d.ts"],
       "@gtkx/runtime": ["./node_modules/@gtkx/runtime/dist/index.d.ts"]
     }

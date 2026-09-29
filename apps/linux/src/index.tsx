@@ -1,5 +1,7 @@
 import { createRoot } from "@gtkx/react";
-import { bundlesIn, loadLibrary } from "@workspace.sh/table-app/node";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { copiesOf, loadLibrary } from "@workspace.sh/table-app/node";
 import { App } from "./App.js";
 import { fixturesDir } from "./fixtures.js";
 
@@ -12,8 +14,12 @@ const named = args.filter((arg) => !arg.startsWith("-"));
 // first. How the headless screenshots reach a particular view.
 const open = args.find((arg) => arg.startsWith("--open="))?.slice("--open=".length);
 const [openTable, openView] = open ? open.split("#") : [];
+// Edits save as they're made. Folders named on the command line are
+// edited where they are; the examples are copies, made once in the data
+// folder, so the repo's fixtures never change.
+const examples = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "table-demo", "examples");
 const fixtures = fixturesDir();
-const paths = named.length > 0 ? named : fixtures ? bundlesIn(fixtures) : [];
+const paths = named.length > 0 ? named : fixtures ? copiesOf(fixtures, examples) : [];
 
 const library = await loadLibrary(paths);
 for (const [bundle, problems] of Object.entries(library.problems)) {
