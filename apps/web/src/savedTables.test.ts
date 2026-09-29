@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { clearSaved, loadSaved, save, STORAGE_KEY, type KeyValueStore } from "./savedTables.ts";
+import { clearSaved, loadSaved, save, STORAGE_KEY, withNewFixtures, type KeyValueStore } from "./savedTables.ts";
 import type { ParsedTable } from "@workspace.sh/table-core";
 
 function memory(initial: Record<string, string> = {}): KeyValueStore & { data: Record<string, string> } {
@@ -79,3 +79,39 @@ test("reset forgets what was saved", () => {
   clearSaved(store);
   assert.equal(loadSaved(store), null);
 });
+
+test("a fixture table added since the demo was saved appears, and edits stay", () => {
+  const edited = { ...table, rows: [{ id: "abc", title: "Edited" }] };
+  const fresh = { ...table, rows: [{ id: "abc", title: "Original" }] };
+  const saved = {
+    tables: { "home/budget": edited },
+    bundles: { home: { format: "table" as const, title: "Home", tables: ["budget"] } },
+  };
+  const fixtures = {
+    tables: { "home/budget": fresh, "home/ledger": fresh, "shop/orders": fresh },
+    bundles: {
+      home: { format: "table" as const, title: "Home", tables: ["budget", "ledger"] },
+      shop: { format: "table" as const, title: "Shop", tables: ["orders"] },
+    },
+  };
+  const merged = withNewFixtures(saved, fixtures);
+  assert.equal(merged.tables["home/budget"]!.rows[0]!.title, "Edited");
+  assert.ok(merged.tables["home/ledger"]);
+  assert.deepEqual(merged.bundles.home!.tables, ["budget", "ledger"]);
+  assert.deepEqual(merged.bundles.shop!.tables, ["orders"]);
+  // Nothing new: the very same object back.
+  assert.equal(withNewFixtures(merged, fixtures), merged);
+});
+
+test("a new fixture table goes where the fixture puts it", () => {
+  const saved = {
+    tables: { "b/one": table, "b/three": table },
+    bundles: { b: { format: "table" as const, tables: ["one", "three"] } },
+  };
+  const fixtures = {
+    tables: { "b/one": table, "b/two": table, "b/three": table },
+    bundles: { b: { format: "table" as const, tables: ["one", "two", "three"] } },
+  };
+  assert.deepEqual(withNewFixtures(saved, fixtures).bundles.b!.tables, ["one", "two", "three"]);
+});
+
