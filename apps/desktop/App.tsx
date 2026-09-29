@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
@@ -354,6 +354,24 @@ export default function App() {
   );
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);
+
+  // Development only: lets a script open a table and view through
+  // React Native's debugger connection, to check each layout without
+  // clicking. Not in release builds (__DEV__ is false there).
+  useEffect(() => {
+    if (!__DEV__) return;
+    (globalThis as { __tableDesktop?: unknown }).__tableDesktop = {
+      tables: () => Object.keys(tables),
+      show: (key: string, viewId?: string) => {
+        if (!tables[key]) return `no table ${key}`;
+        setActiveTablePath(key);
+        if (viewId) setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
+        setQuery("");
+        setActiveBodyRowId(null);
+        return `showing ${key}${viewId ? ` / ${viewId}` : ""}`;
+      },
+    };
+  }, [tables]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
