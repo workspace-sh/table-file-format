@@ -71,3 +71,18 @@ test("bodies read in name order, whatever order the file system lists them", asy
   const back = await readTable(backwards, "/t");
   assert.deepEqual(Object.keys(back.bodies!), ["a", "b"]);
 });
+
+test("saving again writes only what changed, and adds no attachments folder", async () => {
+  const fs = memoryFs();
+  const bundle = { tables: { a: table, b: table } };
+  await writeBundleTo(fs, "/b", bundle);
+  assert.equal((await fs.list("/b/tables/a"))!.some((e) => e.name === "attachments"), false);
+  let writes = 0;
+  const counting = { ...fs, writeText: async (p: string, c: string) => { writes++; return fs.writeText(p, c); } };
+  await writeBundleTo(counting, "/b", bundle);
+  assert.equal(writes, 0);
+  await writeBundleTo(counting, "/b", { tables: { a: { ...table, rows: [{ id: "r1", title: "Two" }] }, b: table } });
+  // Only a's rows: not its schema, views, meta or body, not table b, not the manifest.
+  assert.equal(writes, 1);
+  assert.equal((await fs.readText("/b/tables/b/rows.ndjson"))!.includes("One"), true);
+});

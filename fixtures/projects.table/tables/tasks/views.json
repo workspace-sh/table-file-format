@@ -3,7 +3,12 @@
     "id": "v1",
     "name": "All tasks by priority",
     "layout": "table",
-    "sort": [{ "field": "priority", "direction": "asc" }]
+    "sort": [
+      {
+        "field": "priority",
+        "direction": "asc"
+      }
+    ]
   },
   {
     "id": "v2",
