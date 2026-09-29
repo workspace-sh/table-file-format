@@ -6,5 +6,6 @@
 export { TableView } from "./TableView.js";
 export { BoardView, CalendarView, GalleryView, ListView } from "./cards.js";
 export { CellValue, type CellValueProps } from "./CellValue.js";
+export { EditableCell, type EditableCellProps } from "./EditableCell.js";
 export { useDark } from "./theme.js";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
