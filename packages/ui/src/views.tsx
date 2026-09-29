@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
+import { placeCells } from "./sheets";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
@@ -22,6 +23,7 @@ import {
   parseExpr,
 } from "@workspace.sh/table-core";
 import type {
+  SheetRef,
   ViewTotal,
   Field,
   FieldAlignment,
@@ -2024,6 +2026,14 @@ interface ViewProps {
   allRows?: Row[];
   /** This table's key in `relatedTables`, so lookups and linked rows preview (D36). */
   tableKey?: string;
+  /**
+   * A Sheet view's grid as saved (D41): every row in grid order, each
+   * row's number, and the Sheet views a formula may name. Row numbers
+   * and formulas follow it, whatever this reader's own sort or search.
+   */
+  sheet?: { order: string[]; position: Map<string, number>; sheets: SheetRef[] };
+  /** Add a row above or below another. Absent where a sort decides where rows go. */
+  onInsertRow?: (anchor: string, where: "above" | "below") => void;
 }
 
 function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
@@ -2095,6 +2105,8 @@ export function TableView({
   onUpdateView,
   allRows,
   tableKey,
+  sheet,
+  onInsertRow,
 }: ViewProps) {
   const rtl = useDirection() === "rtl";
   const fields = visibleFields(view, schema);
@@ -2183,7 +2195,22 @@ export function TableView({
   // In group order when the view groups; row numbers follow what's shown.
   const displayed = groupedRows(view, rows, schema);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
-  const grid = coords ? { columns: fields, rows: displayed.map((d) => d.row.id) } : undefined;
+  // Typed and shown against the grid as saved, so =C3 means the same row
+  // whatever this reader's sort or search (D41).
+  const grid = coords
+    ? sheet
+      ? { columns: fields, rows: sheet.order, sheet: view.id, sheets: sheet.sheets }
+      : { columns: fields, rows: displayed.map((d) => d.row.id) }
+    : undefined;
+  // The cells the open formula reads, outlined: by row id, this row, or by place (D41).
+  const inputCells = new Set<string>();
+  if (formulaCell) {
+    for (const r of openFormulaRefs) {
+      if (r.place) {
+        if (sheet) for (const c of placeCells(r, view.id, formulaCell.rowId, sheet.order, fields)) inputCells.add(`${c.rowId}\u0000${c.field}`);
+      } else inputCells.add(`${r.rowId ?? formulaCell.rowId}\u0000${r.field}`);
+    }
+  }
   const canAddField = !!onAddField;
   // A new field lands at the end of the row, often past the right edge:
   // bring its header into view once it has rendered.
@@ -2484,9 +2511,7 @@ export function TableView({
     const cellKey = `${row.id}\u0000${name}`;
     const inOpenColumn = formulaCell?.name === name;
     const isOpenCell = inOpenColumn && formulaCell?.rowId === row.id;
-    const isInputCell =
-      formulaCell !== null &&
-      openFormulaRefs.some((r) => r.field === name && (r.rowId ?? formulaCell.rowId) === row.id);
+    const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
@@ -2751,7 +2776,7 @@ export function TableView({
                     i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                   ]}
                 >
-                  {coords && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
+                  {coords && <html.span style={styles.rowNumber}>{sheet?.position.get(row.id) ?? i + 1}</html.span>}
                   {renderBodyCell(row, primaryName, 0, 1)}
                   {rowResizer}
                 </html.div>
@@ -2801,7 +2826,7 @@ export function TableView({
                       i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                     ]}
                   >
-                    {coords && !primaryName && <html.span style={styles.rowNumber}>{i + 1}</html.span>}
+                    {coords && !primaryName && <html.span style={styles.rowNumber}>{sheet?.position.get(row.id) ?? i + 1}</html.span>}
                     {restNames.map((name, idx) =>
                       renderBodyCell(row, name, idx, restNames.length),
                     )}
@@ -2918,7 +2943,7 @@ export function TableView({
             style={[
               styles.rowMenu,
               styles.rowMenuAt(
-                typeof window === "undefined" ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 90),
+                typeof window === "undefined" ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 180),
                 typeof window === "undefined" ? rowMenu.x : Math.min(rowMenu.x, window.innerWidth - 190),
               ),
             ]}
@@ -2936,6 +2961,21 @@ export function TableView({
                 Open document
               </html.button>
             )}
+            {onInsertRow &&
+              (["above", "below"] as const).map((where) => (
+                <html.button
+                  key={where}
+                  role="menuitem"
+                  style={styles.rowMenuItem}
+                  onClick={() => {
+                    const id = rowMenu.rowId;
+                    setRowMenu(null);
+                    onInsertRow(id, where);
+                  }}
+                >
+                  {where === "above" ? "Insert row above" : "Insert row below"}
+                </html.button>
+              ))}
             {onDeleteRow && (
               <html.button
                 role="menuitem"

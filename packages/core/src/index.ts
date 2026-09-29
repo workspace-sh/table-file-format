@@ -63,6 +63,7 @@ export {
   columnLetter,
   coordinateOf,
   type Grid,
+  type SheetRef,
   type FormulaSyntax,
   type CompileResult,
   type FormulaRef,
