@@ -2272,7 +2272,8 @@ export function TableView({
           ]}
         >
           {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
-          {field?.title ?? name}
+          {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
+          <html.span>{field?.title ?? name}</html.span>
           {columnResizer(name)}
         </Hinted>
       );
@@ -2308,7 +2309,8 @@ export function TableView({
           ]}
         >
           {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
-          {field?.title ?? name}
+          {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
+          <html.span>{field?.title ?? name}</html.span>
         </html.button>
         {isEditing && field && anchorRect && (
           <SchemaFieldEditor
