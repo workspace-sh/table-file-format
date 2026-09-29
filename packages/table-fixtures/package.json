@@ -18,8 +18,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "generate": "node --import tsx scripts/generate.ts",
-    "test": "node --import tsx scripts/generate.ts --check"
+    "generate": "node --conditions=source --import tsx scripts/generate.ts",
+    "test": "node --conditions=source --import tsx scripts/generate.ts --check"
   },
   "dependencies": {
     "@workspace.sh/table-core": "file:../core"
