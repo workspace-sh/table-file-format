@@ -8,6 +8,10 @@ A `.table/` is a directory that IS a file (like macOS `.app` bundles),
 holding one or more tables, as a spreadsheet holds sheets.
 Plain text inside, line-diffable, greppable, self-contained.
 
+**Try it:** the web demo runs at
+[workspace-sh.github.io/table-file-format](https://workspace-sh.github.io/table-file-format/),
+built from `develop` on every merge. Edits stay in your browser.
+
 > **Status:** format **frozen at `formatVersion: 1`** (tag
 > `format-v1`) — the on-disk format is stable and additive-only from
 > here; see docs/SPEC.md. The reference library works and is tested;
@@ -152,7 +156,7 @@ npm run core:typecheck
 # the repo, until that browser's data is cleared or you press Reset demo
 # data in the sidebar.
 npm run web:dev                   # vite at http://localhost:5173
-npm run web:build                 # production bundle
+npm run web:build                 # production bundle (PAGES_BASE=/table-file-format/ for GitHub Pages)
 npm run web:preview               # preview the built bundle
 npm run web:typecheck
 npm run test -w @workspace.sh/table-web   # the demo's own tests

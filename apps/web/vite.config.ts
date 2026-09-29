@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react";
 import babel from "vite-plugin-babel";
 
 export default defineConfig(() => ({
+  // Where the built demo is served from: "/" locally, and
+  // "/table-file-format/" on GitHub Pages (set by .github/workflows/pages.yml).
+  base: process.env.PAGES_BASE ?? "/",
   resolve: {
     // Workspace packages from their TypeScript source (the "source"
     // export condition), as Metro does on mobile and desktop. Without
