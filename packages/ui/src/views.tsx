@@ -907,6 +907,7 @@ const styles = css.create({
     backgroundColor: "transparent",
   },
   newRow: {
+    display: "flex",
     height: 36,
     alignItems: "center",
     cursor: "pointer",
@@ -921,6 +922,7 @@ const styles = css.create({
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
   totalCell: {
+    display: "flex",
     // Fits the 36px totals row. A cell's usual minimum of 40 hung below
     // it, and in the scrolling pane that overhang could be scrolled.
     minHeight: 0,
@@ -944,6 +946,7 @@ const styles = css.create({
   // A grouped table's band at the start of each group (fixed height, so
   // the frozen and scrolling panes stay in line).
   groupRow: {
+    display: "flex",
     height: 32,
     alignItems: "center",
     paddingInline: 16,
@@ -2344,7 +2347,7 @@ export function TableView({
     const kind = totals[name];
     const { value: shown, numeric } = kind ? totalFor(rows, name, kind) : { value: undefined, numeric: false };
     return (
-      <html.span
+      <html.div
         key={name}
         style={[
           styles.tableCell,
@@ -2377,7 +2380,7 @@ export function TableView({
         ) : onUpdateView ? (
           <html.span style={styles.totalPlaceholder}>Calculate</html.span>
         ) : null}
-      </html.span>
+      </html.div>
     );
   };
 
@@ -2398,7 +2401,7 @@ export function TableView({
     const isSelected = sel?.rowId === row.id && sel.name === name;
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
-      <html.span
+      <html.div
         key={name}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={(el: any) => {
@@ -2455,7 +2458,7 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
-      </html.span>
+      </html.div>
     );
   };
 
@@ -2637,7 +2640,7 @@ export function TableView({
         {primaryName && (
           <html.div style={styles.tableFrozenColumn}>
             <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-              {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+              {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
             {displayed.map(({ row, starts }, i) => (
@@ -2659,7 +2662,7 @@ export function TableView({
                     i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                   ]}
                 >
-                  {coords && <html.span style={styles.rowNumber}>{sheet?.position.get(row.id) ?? i + 1}</html.span>}
+                  {coords && <html.div style={styles.rowNumber}><html.span>{sheet?.position.get(row.id) ?? i + 1}</html.span></html.div>}
                   {renderBodyCell(row, primaryName, 0, 1)}
                   {rowResizer}
                 </html.div>
@@ -2668,7 +2671,7 @@ export function TableView({
             {addRow && newRowBand(true)}
             {showTotals && (
               <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
-                {coords && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {renderTotalCell(primaryName, 0, 1)}
               </html.div>
             )}
@@ -2681,7 +2684,7 @@ export function TableView({
           <HScroll>
             <html.div style={styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-                {coords && !primaryName && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   renderHeaderCell(name, idx, restNames.length),
                 )}
@@ -2709,7 +2712,7 @@ export function TableView({
                       i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                     ]}
                   >
-                    {coords && !primaryName && <html.span style={styles.rowNumber}>{sheet?.position.get(row.id) ?? i + 1}</html.span>}
+                    {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{sheet?.position.get(row.id) ?? i + 1}</html.span></html.div>}
                     {restNames.map((name, idx) =>
                       renderBodyCell(row, name, idx, restNames.length),
                     )}
@@ -2721,7 +2724,7 @@ export function TableView({
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
                 <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
-                  {coords && !primaryName && <html.span style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
                 </html.div>
               )}
