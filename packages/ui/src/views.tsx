@@ -877,6 +877,7 @@ const styles = css.create({
   },
 
   // Pill (for enum values)
+  pillAtStart: { alignSelf: "flex-start" },
   pill: {
     paddingInline: 10,
     paddingBlock: 3,
@@ -1332,9 +1333,15 @@ interface CellValueProps {
   onOpenRelation?: (address: string) => void;
   /** In a grid: the lines of text the row has room for; the rest is clipped. */
   lines?: number;
+  /**
+   * Shown in a column (a card's value), not a table row: a lone chip keeps
+   * its own width at the start instead of stretching across, as a native
+   * column stretches its children. On the web it's inline there already.
+   */
+  inColumn?: boolean;
 }
 
-function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellValueProps) {
+function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   const display = useDisplaySettings();
   const shown = describeCell(field, value, display, relatedTables);
@@ -1353,7 +1360,7 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
     case "pills":
       // A single choice is its pill; a list sits in a row of them.
-      if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} />;
+      if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} atStart={inColumn} />;
       return (
         <html.div style={styles.pillList}>
           {shown.pills.map((pill, i) => (
@@ -1398,9 +1405,9 @@ const PILL_COLORS = {
 } as const;
 
 /** A choice as the schema describes it: its label, in its colour. */
-function EnumPill({ pill }: { pill: Pill }) {
+function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
   const color = pill.color && pill.color in PILL_COLORS ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : null;
-  return <html.span style={[styles.pill, color]}>{pill.label}</html.span>;
+  return <html.span style={[styles.pill, color, atStart && styles.pillAtStart]}>{pill.label}</html.span>;
 }
 
 /** A board column's heading: the choice's label when it has one. */
@@ -3786,6 +3793,7 @@ function CardBody({
               value={row[name]}
               relatedTables={relatedTables}
               onOpenRelation={onOpenRelation}
+              inColumn
             />
           </html.div>
         </html.div>
