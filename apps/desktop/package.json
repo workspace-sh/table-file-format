@@ -5,7 +5,8 @@
   "scripts": {
     "start": "react-native start --port 8083",
     "macos": "react-native run-macos --port 8083",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@workspace.sh/table-app": "file:../../packages/app",
@@ -29,6 +30,7 @@
     "@react-native/typescript-config": "0.81.2",
     "@types/node": "^22.20.4",
     "@types/react": "^19.1.0",
+    "patch-package": "^8.0.1",
     "react-dom": "19.1.4",
     "typescript": "^5.8.3"
   },

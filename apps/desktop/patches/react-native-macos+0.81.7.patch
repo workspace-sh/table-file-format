@@ -1,0 +1,17 @@
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
+index 0dd5223..2a13675 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
+@@ -1035,7 +1035,11 @@ - (RCTUIView *)currentContainerView // [macOS]
+ {
+   if (_useCustomContainerView) {
+     if (!_containerView) {
+-      _containerView = [[RCTPlatformView alloc] initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)]; // [macOS]
++      // [table-file-format patch] Upstream creates this container as a plain RCTPlatformView (NSView), which has no
++      // -insertSubview:atIndex:, so mountChildComponentView: aborts with an unrecognized selector the first time a
++      // child mounts into a view with overflow:hidden plus a boxShadow or outline (styleWouldClipOverflowInk).
++      // RCTUIView has that method and is flipped like every other React view. Drop this patch once upstream does the same.
++      _containerView = [[RCTUIView alloc] initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)]; // [macOS]
+       for (RCTPlatformView *subview in self.subviews) { // [macOS]
+         [_containerView addSubview:subview];
+       }
