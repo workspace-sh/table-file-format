@@ -145,6 +145,13 @@ of the format, not a reader's choice (DECISIONS D30).
 
 Notes:
 
+- **Dates run from 0000-01-01 to 9999-12-31** (DECISIONS D42), as
+  RFC 3339 allows, so a `.table` can hold a historical listing. Years
+  before 1583 are counted in the Gregorian calendar extended backwards
+  (ISO 8601's convention), whatever calendar was in use at the time.
+  Dates before the Common Era aren't `date` values; hold them as text
+  or a `year`. Calculating with dates is the formula standard's
+  concern (OpenFormula section 4.3.3), not a limit on what a file holds.
 - **`datetime` offsets.** A value with an offset (`Z` or `±HH:MM`)
   names an instant, and writers SHOULD write instants in UTC (`Z`) —
   one spelling per instant keeps equal values byte-identical (section 3,
