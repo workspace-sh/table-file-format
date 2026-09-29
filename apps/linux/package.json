@@ -1,0 +1,44 @@
+{
+  "name": "@workspace.sh/table-linux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The .table demo on Linux: GTK4 and libadwaita through GTKX, rendering table-core with table-gtk.",
+  "scripts": {
+    "dev": "gtkx dev",
+    "build": "gtkx build",
+    "start": "node dist/bundle.mjs",
+    "codegen": "gtkx codegen",
+    "typecheck": "gtkx codegen && tsc -p .",
+    "lint": "oxlint -c .oxlintrc.json src tests && cd ../../packages/gtk && ../../apps/linux/node_modules/.bin/oxlint -c ../../apps/linux/.oxlintrc.json src",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "shot": "./scripts/headless-shot.sh"
+  },
+  "dependencies": {
+    "@gtkx/cairo": "^1.6.0",
+    "@gtkx/css": "^1.6.0",
+    "@gtkx/react": "^1.6.0",
+    "@gtkx/runtime": "^1.6.0",
+    "@workspace.sh/table-gtk": "file:../../packages/gtk",
+    "fflate": "^0.8.3",
+    "nanoid": "^5.0.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@gtkx/cli": "^1.6.0",
+    "@gtkx/config": "^1.6.0",
+    "@gtkx/mcp": "^1.6.0",
+    "@gtkx/testing": "^1.6.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "oxlint": "^1.81.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
+  },
+  "allowScripts": {
+    "@swc/core": true,
+    "esbuild": true
+  }
+}

@@ -10,6 +10,11 @@
       "react-native": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./shared": {
+      "source": "./src/shared.ts",
+      "react-native": "./src/shared.ts",
+      "default": "./src/shared.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [

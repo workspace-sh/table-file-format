@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "customConditions": ["source"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "lib": ["esnext"],
+    "types": ["node", "react"],
+    "noEmit": true,
+    "paths": {
+      "@gtkx/gi/*": ["./.gtkx/gi/*/index.d.ts", "./.gtkx/gi/*.d.ts", "./node_modules/.gtkx/gi/*/index.d.ts"],
+      "@gtkx/jsx/*": ["./.gtkx/jsx/*/index.d.ts", "./.gtkx/jsx/*.d.ts", "./node_modules/.gtkx/jsx/*/index.d.ts"],
+      "@workspace.sh/table-core": ["../../packages/core/src/index.ts"],
+      "@workspace.sh/table-core/*": ["../../packages/core/src/*.ts"],
+      "@workspace.sh/table-ui/shared": ["../../packages/ui/src/shared.ts"],
+      "@workspace.sh/table-app": ["../../packages/app/src/index.ts"],
+      "@workspace.sh/table-app/node": ["../../packages/app/src/node.ts"],
+      "@workspace.sh/table-gtk": ["../../packages/gtk/src/index.ts"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "fflate": ["./node_modules/fflate"],
+      "nanoid": ["./node_modules/nanoid"],
+      "@gtkx/react": ["./node_modules/@gtkx/react/dist/index.d.ts"],
+      "@gtkx/css": ["./node_modules/@gtkx/css/dist/index.d.ts"],
+      "@gtkx/runtime": ["./node_modules/@gtkx/runtime/dist/index.d.ts"]
+    }
+  },
+  // table-gtk is typechecked here, where GTKX and this machine's bindings
+  // are; it has no way to check itself.
+  "include": ["src/**/*", "tests/**/*", "../../packages/gtk/src/**/*"]
+}

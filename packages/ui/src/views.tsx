@@ -3,6 +3,28 @@ import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import { placeCells } from "./sheets";
+import {
+  bodyExcerpt,
+  describeCell,
+  DEFAULT_ROW_HEIGHT,
+  fieldsByName,
+  formatValue,
+  groupedRows,
+  pillFor,
+  type Pill,
+  type RelationLink,
+  linesFor,
+  columnWidths,
+  MIN_RESIZED_COLUMN_WIDTH,
+  ROW_NUMBER_WIDTH,
+  MAX_ROW_HEIGHT,
+  MIN_ROW_HEIGHT,
+  TOTAL_LABELS,
+  TOTAL_NAMES,
+  totalFor,
+  visibleFields,
+} from "./display";
+import type { ViewProps } from "./viewProps";
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
@@ -11,16 +33,10 @@ import {
   applyGroup,
   completeSeconds,
   effectiveAlign,
-  FormulaError,
-  formatValue as formatWithFieldFormat,
   enumOptions,
   enumValues,
-  stringFormatKind,
-  effectiveFormat,
-  formatAddress,
   formulaRefs,
   columnLetter,
-  viewTotal,
   parseExpr,
 } from "@workspace.sh/table-core";
 import type {
@@ -62,23 +78,7 @@ import {
  * compute `Math.max(MIN_CELL_WIDTH, viewport / ncols)` so columns fill
  * the available width Airtable-style instead of leaving empty space.
  */
-const MIN_CELL_WIDTH = 180;
-/** Narrowest a column can be dragged. */
-const MIN_RESIZED_COLUMN_WIDTH = 60;
-/**
- * Body row height when the view doesn't set one: one line of text plus
- * the cell's vertical padding. Every body row has the view's height, in
- * both panes, so the frozen title column can't drift out of line.
- */
-const DEFAULT_ROW_HEIGHT = 44;
-const MIN_ROW_HEIGHT = 36;
-const MAX_ROW_HEIGHT = 240;
-const CELL_LINE_HEIGHT = 20;
-const CELL_PADDING_BLOCK = 10;
-/** Lines of text a row of this height shows. */
-function linesFor(rowHeight: number): number {
-  return Math.max(1, Math.floor((rowHeight - 2 * CELL_PADDING_BLOCK) / CELL_LINE_HEIGHT));
-}
+const MIN_CELL_WIDTH = 180; // MIN_CELL_WIDTH in display.ts, restated for StyleX
 
 /**
  * Viewport breakpoint for touch-first UX. Below this width:
@@ -91,6 +91,10 @@ function linesFor(rowHeight: number): number {
  */
 const TOUCH_VIEWPORT_MAX = 720;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
+
+// CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
+// because StyleX compiles css.create from values in this file only.
+const CELL_LINE_HEIGHT = 20;
 
 const styles = css.create({
   // Table
@@ -1281,18 +1285,6 @@ const styles = css.create({
  * with no format of its own shows its inputs' currency (D33): a formula
  * over dollars is shown in dollars, never silently relabelled.
  */
-function fieldsByName(schema: TableSchema): Map<string, Field> {
-  return new Map(
-    schema.fields.map((f) => {
-      const format = effectiveFormat(f, schema);
-      return [f.name, format === f.format ? f : { ...f, format }];
-    }),
-  );
-}
-
-function visibleFields(view: View, schema: TableSchema): string[] {
-  return view.fields ?? schema.fields.map((f) => f.name);
-}
 
 function cellAlignStyle(align: FieldAlignment) {
   if (align === "center") return styles.tableCellAlignCenter;
@@ -1306,55 +1298,8 @@ function headerAlignStyle(align: FieldAlignment) {
   return false as const;
 }
 
-/**
- * Rows in the order a grouped view shows them (SPEC section 4, `group`),
- * each marked with the group it starts, if any. Ungrouped: as they are.
- */
-function groupedRows(
-  view: View,
-  rows: Row[],
-  schema: TableSchema,
-): { row: Row; starts?: { label: string; count: number } }[] {
-  const field = view.group?.field;
-  if (!field) return rows.map((row) => ({ row }));
-  const def = schema.fields.find((f) => f.name === field);
-  const options = enumOptions(def);
-  const out: { row: Row; starts?: { label: string; count: number } }[] = [];
-  for (const [key, members] of Object.entries(applyGroup(rows, field, schema))) {
-    if (members.length === 0) continue;
-    const label = key === "(empty)" ? "Empty" : (options.find((o) => o.value === key)?.label ?? key);
-    members.forEach((row, i) => out.push(i === 0 ? { row, starts: { label, count: members.length } } : { row }));
-  }
-  return out;
-}
 
-const TOTAL_LABELS: Record<ViewTotal, string> = {
-  sum: "Sum",
-  average: "Avg",
-  min: "Min",
-  max: "Max",
-  count: "Count",
-  count_empty: "Empty",
-};
-const TOTAL_NAMES: Record<ViewTotal, string> = {
-  sum: "Sum",
-  average: "Average",
-  min: "Smallest",
-  max: "Largest",
-  count: "Count values",
-  count_empty: "Count empty",
-};
 
-/** A sheet's row-number gutter (`coordinates`), which comes out of the columns' width. */
-const ROW_NUMBER_WIDTH = 32;
-
-function formatValue(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "—";
-  if (value instanceof FormulaError) return value.code;
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  return JSON.stringify(value);
-}
 
 interface CellValueProps {
   field: Field | undefined;
@@ -1370,95 +1315,53 @@ interface CellValueProps {
 function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   const display = useDisplaySettings();
-  // Relation field → resolve to related row, render as link (or
-  // broken-state when dangling).
-  if (field?.relation && typeof value === "string" && value.length > 0) {
-    return (
-      <RelationCellValue
-        relation={field.relation}
-        targetId={value}
-        relatedTables={relatedTables}
-        onOpenRelation={onOpenRelation}
-      />
-    );
+  const shown = describeCell(field, value, display, relatedTables);
+  switch (shown.kind) {
+    case "relations":
+      // One related row reads as itself; many sit in a row of links.
+      if (!Array.isArray(value)) return <RelationCellValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
+      return (
+        <html.span style={styles.relationList}>
+          {shown.links.map((link) => (
+            <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
+          ))}
+        </html.span>
+      );
+    case "error":
+      return <html.span style={styles.formulaError}>{shown.code}</html.span>;
+    case "pills":
+      // A single choice is its pill; a list sits in a row of them.
+      if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} />;
+      return (
+        <html.span style={styles.pillList}>
+          {shown.pills.map((pill, i) => (
+            <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
+          ))}
+        </html.span>
+      );
+    case "attachment":
+      return <AttachmentValue fileName={shown.fileName} />;
+    case "link":
+      return (
+        <html.a
+          href={shown.href}
+          target={shown.external ? "_blank" : undefined}
+          rel="noopener noreferrer"
+          onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+          style={[styles.link, clamp]}
+        >
+          {shown.text}
+        </html.a>
+      );
+    case "text": {
+      // An empty list is its dash, clamped like any text.
+      if (Array.isArray(value)) return <html.span style={clamp}>{shown.text}</html.span>;
+      const textStyle = shown.oneToken && lines !== undefined ? styles.oneLine : clamp;
+      // Each value reads in its own direction (D40): a Hebrew name in an
+      // English table, or an English one in an Arabic table.
+      return <html.span dir="auto" style={textStyle}>{shown.text}</html.span>;
+    }
   }
-
-  // A formula that failed shows its spreadsheet-style code (#DIV/0!).
-  if (value instanceof FormulaError) {
-    return <html.span style={styles.formulaError}>{value.code}</html.span>;
-  }
-
-  // A list: each item a pill, in its choice's colour for a multi-select (D35).
-  if (Array.isArray(value) && !field?.relation) {
-    if (value.length === 0) return <html.span style={clamp}>—</html.span>;
-    return (
-      <html.span style={styles.pillList}>
-        {value.map((item, i) => (
-          <EnumPill key={`${i}\u0000${String(item)}`} field={field} value={item} />
-        ))}
-      </html.span>
-    );
-  }
-
-  const isEnum = field?.constraints?.enum != null;
-  if (isEnum && value !== undefined && value !== null && value !== "") {
-    return <EnumPill field={field} value={value} />;
-  }
-
-  // Many related rows: one link each (cardinality "many", SPEC section 2).
-  if (field?.relation && Array.isArray(value)) {
-    return (
-      <html.span style={styles.relationList}>
-        {value.map((id) => (
-          <RelationCellValue
-            key={String(id)}
-            relation={field.relation!}
-            targetId={String(id)}
-            relatedTables={relatedTables}
-            onOpenRelation={onOpenRelation}
-          />
-        ))}
-      </html.span>
-    );
-  }
-
-  // An attachment: its filename, drawn as the image when the app can
-  // resolve it (SPEC section 6 leaves resolving to the app).
-  if (field?.attachment && typeof value === "string" && value !== "") {
-    return <AttachmentValue fileName={value} />;
-  }
-
-  // url / email / phone are links (SPEC "Field format").
-  const kind = stringFormatKind(field);
-  if ((kind === "url" || kind === "email" || kind === "phone") && typeof value === "string" && value !== "") {
-    const href = kind === "url" ? value : kind === "email" ? `mailto:${value}` : `tel:${value.replace(/[^+\d]/g, "")}`;
-    return (
-      <html.a
-        href={href}
-        target={kind === "url" ? "_blank" : undefined}
-        rel="noopener noreferrer"
-        onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-        style={[styles.link, clamp]}
-      >
-        {value}
-      </html.a>
-    );
-  }
-  // A declared display format (currency:USD, decimal:2, …) is honoured;
-  // the stored value is untouched (SPEC "Field format"). A date with no
-  // format of its own takes the app's default, in the app's locale.
-  const isDate = field?.type === "date" || field?.type === "datetime";
-  // A number or date is one token: in a narrow column it ends "US$18…"
-  // on one line, never wraps to a fragment the row clips away.
-  const oneToken =
-    isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
-  const textStyle = oneToken && lines !== undefined ? styles.oneLine : clamp;
-  if ((field?.format || isDate) && value !== undefined && value !== null && value !== "") {
-    return <html.span dir="auto" style={textStyle}>{formatWithFieldFormat(field, value, display)}</html.span>;
-  }
-  // Each value reads in its own direction (D40): a Hebrew name in an
-  // English table, or an English one in an Arabic table.
-  return <html.span dir="auto" style={textStyle}>{formatValue(value)}</html.span>;
 }
 
 const PILL_COLORS = {
@@ -1473,10 +1376,9 @@ const PILL_COLORS = {
 } as const;
 
 /** A choice as the schema describes it: its label, in its colour. */
-function EnumPill({ field, value }: { field: Field | undefined; value: unknown }) {
-  const option = enumOptions(field).find((o) => o.value === value);
-  const color = option?.color && option.color in PILL_COLORS ? PILL_COLORS[option.color as keyof typeof PILL_COLORS] : null;
-  return <html.span style={[styles.pill, color]}>{option?.label ?? String(value)}</html.span>;
+function EnumPill({ pill }: { pill: Pill }) {
+  const color = pill.color && pill.color in PILL_COLORS ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : null;
+  return <html.span style={[styles.pill, color]}>{pill.label}</html.span>;
 }
 
 /** A board column's heading: the choice's label when it has one. */
@@ -1508,38 +1410,18 @@ function GalleryHero({ field, value }: { field: Field | undefined; value: unknow
 }
 
 function RelationCellValue({
-  relation,
-  targetId,
-  relatedTables,
+  link,
   onOpenRelation,
 }: {
-  relation: { table: string; field: string };
-  targetId: string;
-  relatedTables?: Record<string, ParsedTable>;
+  link: RelationLink;
   onOpenRelation?: (address: string) => void;
 }) {
-  const target = relatedTables?.[relation.table];
-  const targetRow = target?.rows.find((r) => r.id === targetId);
-
-  // Display value: the related row's primary key when the table declares
-  // one, else its first text field (its title, in practice), else its id.
-  // Only a row that can't be found is broken.
-  const labelField =
-    target?.schema.primaryKey?.[0] ??
-    target?.schema.fields.find((f) => f.type === "string" && !f.relation && !f.deprecated)?.name;
-  const resolvedLabel = targetRow
-    ? String((labelField ? targetRow[labelField] : undefined) ?? targetId)
-    : null;
-
-  if (!resolvedLabel) {
+  if (link.label === null) {
     // Dangling — no related table loaded, OR table loaded but row not
     // in it. Render visibly rather than silently.
     return (
-      <html.span
-        style={styles.relationBroken}
-        aria-label={`Dangling: ${relation.table}#row=${targetId}`}
-      >
-        {targetId}
+      <html.span style={styles.relationBroken} aria-label={`Dangling: ${link.address}`}>
+        {link.id}
       </html.span>
     );
   }
@@ -1547,24 +1429,18 @@ function RelationCellValue({
   if (!onOpenRelation) {
     // Resolvable but no navigation callback wired up — render the label
     // as plain text (read-only consumer).
-    return <html.span>{resolvedLabel}</html.span>;
+    return <html.span>{link.label}</html.span>;
   }
 
-  // Compose the row address: <table-path>#row=<id>. The table-path
-  // here is the relation's declared `table` name; apps that need full
-  // paths resolve in their lookup. The format library's relation
-  // declaration is the structured form; this string is the
-  // serialisation.
-  const address = formatAddress({ tablePath: relation.table, rowId: targetId });
   return (
     <html.button
       style={styles.relationLink}
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
-        onOpenRelation(address);
+        onOpenRelation(link.address);
       }}
     >
-      {resolvedLabel}
+      {link.label}
     </html.button>
   );
 }
@@ -2057,7 +1933,7 @@ function ListCell({
               onClick={() => toggle(o.value)}
             >
               <html.span style={styles.choiceCheck}>{items.includes(o.value) ? "✓" : ""}</html.span>
-              <EnumPill field={field} value={o.value} />
+              <EnumPill pill={pillFor(field, o.value)} />
             </html.button>
           ))}
         </html.div>
@@ -2081,65 +1957,7 @@ function currencySymbolOf(field: Field | undefined): string | null {
   }
 }
 
-interface ViewProps {
-  view: View;
-  rows: Row[];
-  schema: TableSchema;
-  bodies?: Record<string, string>;
-  /**
-   * Sibling `.table/` directories indexed by their path (the value
-   * stored in a field's `relation.table` declaration). Provided by
-   * the consuming app so relation cells can resolve the target row's
-   * display value. Cells with no resolvable target render the raw id
-   * with a "broken" visual state.
-   */
-  relatedTables?: Record<string, ParsedTable>;
-  onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
-  onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
-  onAddEnumValue?: (fieldName: string, value: string) => void;
-  onMoveField?: (fieldName: string, delta: -1 | 1) => void;
-  onAddField?: (field: Field) => void;
-  /**
-   * Add an empty row. The app mints its id (D23) and may return it: the
-   * table then opens that row's first cell for typing.
-   */
-  onAddRow?: () => string | void;
-  /** Delete a row, and its body. The app confirms first if it wants to. */
-  onDeleteRow?: (rowId: string) => void;
-  onOpenBody?: (rowId: string) => void;
-  onUpdateView?: (patch: Partial<View>) => void;
-  /**
-   * Called when a relation cell is clicked. Address takes the form
-   * `<table-path>#row=<id>` (see docs/SPEC.md, "Addressing"). Apps
-   * implement to navigate to the target row.
-   */
-  onOpenRelation?: (address: string) => void;
-  /**
-   * Every row of the table as stored, not only those this view shows, so
-   * a formula reading another row (D34) can be previewed and explained.
-   */
-  allRows?: Row[];
-  /** This table's key in `relatedTables`, so lookups and linked rows preview (D36). */
-  tableKey?: string;
-  /**
-   * A Sheet view's grid as saved (D41): every row in grid order, each
-   * row's number, and the Sheet views a formula may name. Row numbers
-   * and formulas follow it, whatever this reader's own sort or search.
-   */
-  sheet?: { order: string[]; position: Map<string, number>; sheets: SheetRef[] };
-  /** Add a row above or below another. Absent where a sort decides where rows go. */
-  onInsertRow?: (anchor: string, where: "above" | "below") => void;
-}
 
-function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
-  if (!body) return undefined;
-  const stripped = body
-    .replace(/^#+\s+/gm, "") // drop leading markdown heading hashes
-    .replace(/\s+/g, " ")
-    .trim();
-  if (stripped.length <= max) return stripped;
-  return stripped.slice(0, max).replace(/\s+\S*$/, "") + "…";
-}
 
 /**
  * Floating ghost that follows the pointer during drag. Rendered via the
@@ -2373,30 +2191,7 @@ export function TableView({
   // "+ Field" sits under the table, not in a column of its own, so
   // it takes no width from the grid.
   const addFieldW = 0;
-  const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
-  const fixedWidth = (name: string) => {
-    const w = setWidths[name];
-    return typeof w === "number" ? Math.max(MIN_RESIZED_COLUMN_WIDTH, w) : undefined;
-  };
-  const flexible = fields.filter((name) => fixedWidth(name) === undefined);
-  const fixedTotal = fields.reduce((sum, name) => sum + (fixedWidth(name) ?? 0), 0);
-  const available = Math.max(0, containerWidth - chrome - addFieldW - fixedTotal);
-  const rawWidth =
-    flexible.length > 0 && containerWidth > 0
-      ? Math.floor(available / flexible.length)
-      : MIN_CELL_WIDTH;
-  // Below MIN_CELL_WIDTH the table overflows and the pane scrolls —
-  // uniform columns, nothing to distribute. At or above it the table
-  // fills the container and the remainder gets spread.
-  const fills = rawWidth >= MIN_CELL_WIDTH;
-  const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
-  const remainder = fills ? available - cellW * flexible.length : 0;
-  const colWidth = (name: string) => {
-    const fixed = fixedWidth(name);
-    if (fixed !== undefined) return fixed;
-    const i = flexible.indexOf(name);
-    return cellW + (i >= 0 && i < remainder ? 1 : 0);
-  };
+  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW);
 
   // A column's resize handle is on its end edge; in a right-to-left
   // layout that's the left, so dragging leftwards widens it.
@@ -2552,9 +2347,7 @@ export function TableView({
   const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
     const kind = totals[name];
-    const value = kind ? viewTotal(rows, name, kind) : undefined;
-    const numeric = kind === "sum" || kind === "average" || kind === "min" || kind === "max";
-    const shown = kind === "average" && typeof value === "number" ? Math.round(value * 100) / 100 : value;
+    const { value: shown, numeric } = kind ? totalFor(rows, name, kind) : { value: undefined, numeric: false };
     return (
       <html.span
         key={name}

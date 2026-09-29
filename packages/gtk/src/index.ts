@@ -1,0 +1,9 @@
+// The .table views for GTK4 and libadwaita, through GTKX. Same names and
+// props as @workspace.sh/table-ui, so an app wires the same callbacks to
+// either; what a cell shows comes from table-ui's shared logic, so both
+// show a table the same way.
+
+export { TableView } from "./TableView.js";
+export { CellValue, type CellValueProps } from "./CellValue.js";
+export { useDark } from "./theme.js";
+export { DisplaySettingsProvider, useDirection, useDisplaySettings, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";

@@ -3,7 +3,7 @@
 // Personal, kept in this browser, never in a table (SPEC section 4). Reset
 // demo data leaves it alone: it's the viewer's, not the demo's.
 
-import type { DisplaySettings } from "@workspace.sh/table-ui";
+import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
 import type { KeyValueStore } from "./savedTables.ts";
 
