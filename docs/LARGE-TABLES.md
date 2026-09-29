@@ -92,6 +92,21 @@ The options, in short:
 
 (a) keeps plain text, diffs and cheap edits. (b) and (c) give those up.
 
+## Sheet view grids (D41)
+
+A Sheet view numbers its rows by its saved grouping, order or sort, and formulas read by place in that grid: "the row above" for a running total, or a range. Measured with the reference code, `packages/core/src/grid.bench.ts`, on the same machine (29 Sep 2026). The data is a shuffled ledger sorted by a text date; the running total is `(sum (at "balance" -1 "by-date") amount)`.
+
+| Rows | Sort and number the grid | Running balance down it (grid included) |
+|---|---|---|
+| 10k | 7 ms | 20 ms |
+| 50k | 29 ms | 60 ms |
+| 1M | 0.79 s | 1.26 s |
+
+- **Sorting is most of the grid's cost.** Each row's sort key is worked out once, and a single sort over plain text or numbers compares natively; comparing text with a function on every comparison took 5.2 s at 1M rows.
+- **Reading a place is an array read.** Computed values, grid order and each row's position are arrays indexed by the row's place in the file, so a running total does no map lookups.
+- **A long chain doesn't overflow the stack.** A chain of places deeper than 400 formulas is worked out down its grid instead of by recursion, tested at 100k rows.
+- **Not yet measured:** peak memory for a 1M-row grid, and phones. Both are next.
+
 ## Sync
 
 Workspace today downloads and decrypts the whole data log on every change (`packages/workspace/src/index.ts:1733`, workspace repo). Only blobs are on demand. Holepunch is sparse by design: Hypercore fetches blocks on read, Hyperbee fetches only the path a query touches, and Hyperdrive fetches contents per folder.
