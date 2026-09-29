@@ -9,6 +9,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@workspace.sh/table-app": "file:../../packages/app",
     "@workspace.sh/table-core": "file:../../packages/core",
     "@workspace.sh/table-fixtures": "file:../../packages/table-fixtures",
