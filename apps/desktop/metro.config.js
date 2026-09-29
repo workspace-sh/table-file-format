@@ -1,3 +1,4 @@
+const fs = require("fs");
 const path = require("path");
 const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
 
@@ -62,6 +63,20 @@ const config = {
         ),
       ),
     ],
+    // Workspace packages are TypeScript written for Node's ESM rules, so
+    // they import siblings as "./expr.js" while the file is expr.ts.
+    // Metro doesn't map one to the other: try the .ts/.tsx file first.
+    resolveRequest: (context, moduleName, platform) => {
+      if (moduleName.startsWith(".") && moduleName.endsWith(".js")) {
+        const base = path.resolve(path.dirname(context.originModulePath), moduleName.slice(0, -3));
+        for (const ext of [".ts", ".tsx"]) {
+          if (fs.existsSync(base + ext)) {
+            return context.resolveRequest(context, moduleName.slice(0, -3) + ext, platform);
+          }
+        }
+      }
+      return context.resolveRequest(context, moduleName, platform);
+    },
     platforms: ["macos", "ios", "native"],
     unstable_enablePackageExports: true,
     unstable_conditionNames: [
