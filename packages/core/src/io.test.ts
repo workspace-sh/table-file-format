@@ -66,7 +66,8 @@ test("paths join with one separator", () => {
 test("bodies read in name order, whatever order the file system lists them", async () => {
   const fs = memoryFs();
   await writeTableTo(fs, "/t", { ...table, rows: [{ id: "b" }, { id: "a" }], bodies: { b: "B", a: "A" } });
-  const reversed = { ...fs, list: async (p: string) => ((await fs.list(p)) ?? []).reverse() };
-  const back = await readTable(reversed, "/t");
+  // Listed backwards by name, whatever order memoryFs keeps them in.
+  const backwards = { ...fs, list: async (p: string) => ((await fs.list(p)) ?? []).sort((x, y) => (x.name < y.name ? 1 : -1)) };
+  const back = await readTable(backwards, "/t");
   assert.deepEqual(Object.keys(back.bodies!), ["a", "b"]);
 });
