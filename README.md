@@ -77,13 +77,25 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │   ├── core/             @workspace.sh/table-core
 │   │                     pure-TS format library — parser/writer/validator/query/
 │   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
-│   └── ui/               @workspace.sh/table-ui
-│                         RSD/StyleX view components — TableView, BoardView,
-│                         GalleryView, ListView, CalendarView, SchemaEditor,
-│                         BodyEditor.
-│                         Cross-platform: the same components render on web,
-│                         iOS, Android and macOS. Every platform fork lives in
-│                         `src/internal/` — see "What is platform-specific".
+│   ├── ui/               @workspace.sh/table-ui
+│   │                     RSD/StyleX view components — TableView, BoardView,
+│   │                     GalleryView, ListView, CalendarView, SchemaEditor,
+│   │                     BodyEditor.
+│   │                     Cross-platform: the same components render on web,
+│   │                     iOS, Android and macOS. Every platform fork lives in
+│   │                     `src/internal/` — see "What is platform-specific".
+│   │                     `@workspace.sh/table-ui/shared` is its renderer-free
+│   │                     half: what a cell shows, column widths, grouping,
+│   │                     totals, the props every view takes.
+│   ├── gtk/              @workspace.sh/table-gtk
+│   │                     The same views for GTK4 + libadwaita on Linux,
+│   │                     through GTKX. Same names and props as table-ui;
+│   │                     built on table-ui/shared, so both show a table alike.
+│   └── app/              @workspace.sh/table-app
+│                         What an app around the views does, on any platform:
+│                         `bundle/table` keys, what a view shows (`showView`),
+│                         a viewer's own arrangements, display settings, saved
+│                         state, archives. `./node` opens `.table` folders.
 ├── apps/
 │   ├── web/              @workspace.sh/table-web
 │   │                     Vite 7 + React 19 + RSD 0.0.55 + StyleX (PostCSS).
@@ -92,14 +104,20 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 │   │                     Expo 55 — iOS + Android. Same five views, body
 │   │                     editor and search as web.
 │   │                     `npm run mobile:prebuild` to generate native projects.
-│   └── desktop/          @workspace.sh/table-desktop
-│                         Bare RN + react-native-macos 0.81. Same five views,
-│                         body editor and search as web.
-│                         `macos/` Xcode project inside (gitignored,
-│                         bootstrap per README).
-├── fixtures/
-│   ├── projects.table/   7 rows, 9 views, one body
-│   └── tasks.table/      8 rows, cross-table relation to projects
+│   ├── desktop/          @workspace.sh/table-desktop
+│   │                     Bare RN + react-native-macos 0.81. Same five views,
+│   │                     body editor and search as web.
+│   │                     `macos/` Xcode project inside (gitignored,
+│   │                     bootstrap per README).
+│   └── linux/            @workspace.sh/table-linux
+│                         GTKX (GTK4 + libadwaita): the harness for table-gtk,
+│                         reading `.table` folders from disk. Not a root
+│                         workspace member, like desktop. See its README.
+├── fixtures/             the .table files every demo and test uses (D37)
+│   ├── crm.table/        companies, contacts, deals, related to each other
+│   ├── household-budget.table/  a budget sheet and a ledger (D41)
+│   ├── projects.table/   projects and tasks
+│   └── shop.table/       orders, customers, products, order lines
 └── docs/
     ├── SPEC.md
     ├── ARCHITECTURE.md

@@ -3,14 +3,11 @@ import { html, css } from "react-strict-dom";
 import {
   textDirection,
   bundleFiles,
-  applyView,
   isSheet,
   newBundle,
   newId,
   newTable,
   parseAddress,
-  searchRows,
-  sheetOrder,
   validate,
 } from "@workspace.sh/table-core";
 import type {
@@ -36,23 +33,23 @@ import {
   canInsertAt,
   insertRowAt,
   sheetDependents,
-  sheetDirectory,
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
-import { loadDisplay, saveDisplay } from "./displaySettings";
-import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles";
-import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "./bundles";
-import { tableKeyFor } from "./tableKey";
-import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "./savedTables";
+import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
+import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
+import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
+import { tableKeyFor } from "@workspace.sh/table-app";
+import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "@workspace.sh/table-app";
 import { Sidebar, type ShownFile } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
-import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "./sidebarPrefs";
+import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "@workspace.sh/table-app";
 import {
   arrange,
-  arrangedView,
+  sheetShown,
+  showView,
   forViews,
   isArranged,
   loadArrangements,
@@ -60,7 +57,7 @@ import {
   saveArrangements,
   savedPatch,
   type Arrangements,
-} from "./arrangements";
+} from "@workspace.sh/table-app";
 
 const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
@@ -850,25 +847,14 @@ export function App() {
   // A Sheet view's grid as saved, for its row numbers and for formulas
   // typed in it (D41); and every Sheet view a formula may name.
   const selfName = tableNameOf(activeTablePath);
-  const sheet = useMemo(() => {
-    if (!isSheet(view)) return undefined;
-    const order = sheetOrder(table, view.id, { tables: inBundle, self: selfName });
-    if (!order) return undefined;
-    const position = new Map<string, number>();
-    order.ids.forEach((id, i) => position.set(id, i + 1));
-    return { order: order.ids, position, sheets: sheetDirectory(inBundle, selfName) };
-    // inBundle is rebuilt from `tables` each render; `tables` stands for it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tables, table, view, selfName]);
-  const shownView = arrangedView(view, personal);
-  const viewRows = applyView(table, shownView, {
-    tables: inBundle,
-    self: tableNameOf(activeTablePath),
-    ...(personal?.sort ? { text: viewerText } : {}),
-  });
-  const visibleRows = searchRows(viewRows, searchQuery, {
-    schema: table.schema,
-    bodies: table.bodies,
+  const sheet = useMemo(
+    () => sheetShown(tables, activeTablePath, view),
+    [tables, activeTablePath, view],
+  );
+  const { view: shownView, rows: visibleRows, inView } = showView(tables, activeTablePath, view, {
+    arrangement: personal,
+    search: searchQuery,
+    viewerText,
   });
   const errors = validate(table.schema, table.rows);
   const searching = searchQuery.trim().length > 0;
@@ -1028,7 +1014,7 @@ export function App() {
           <html.div style={styles.subtitle}>
             <html.span>
               {searching
-                ? `${visibleRows.length} of ${viewRows.length} matching`
+                ? `${visibleRows.length} of ${inView} matching`
                 : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
             </html.span>
             <html.span>·</html.span>
