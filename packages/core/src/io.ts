@@ -30,7 +30,7 @@ export interface TableFs {
   rename(from: string, to: string): Promise<void>;
   /** Make a directory and any missing parents. Not an error if it exists. */
   mkdir(path: string): Promise<void>;
-  /** A directory's entries, or null when there's no such directory. */
+  /** A directory's entries, in any order (the reader sorts), or null when there's no such directory. */
   list(path: string): Promise<{ name: string; directory: boolean }[] | null>;
   /** Remove a file, or a directory and everything in it. Not an error if absent. */
   remove(path: string): Promise<void>;
@@ -161,7 +161,9 @@ async function readBodies(fs: TableFs, dir: string): Promise<Record<string, stri
   const entries = await fs.list(dir);
   if (!entries) return undefined;
   const bodies: Record<string, string> = {};
-  for (const entry of entries) {
+  // By name, whatever order the file system lists them in, so a table
+  // reads the same from every platform.
+  for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
     if (entry.directory || !entry.name.endsWith(".md")) continue;
     const text = await fs.readText(joinPath(dir, entry.name));
     if (text !== null) bodies[entry.name.slice(0, -".md".length)] = text;

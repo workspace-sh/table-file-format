@@ -28,3 +28,10 @@ test("bundle keys come from the folder name, made unique", () => {
   assert.equal(bundleKey("/a/crm.table", taken), "crm-2");
   assert.equal(bundleKey("/a/Notes.TABLE/", new Set()), "Notes");
 });
+
+test("a folder named like a bundle already held gets its own key", async () => {
+  const fs = memoryFs();
+  await writeBundleTo(fs, "/else/projects.table", { tables: { tasks: tables["tasks"]! } });
+  const opened = await openLibrary(fs, ["/else/projects.table"], ["projects", "crm"]);
+  assert.deepEqual(Object.keys(opened.tables), ["projects-2/tasks"]);
+});

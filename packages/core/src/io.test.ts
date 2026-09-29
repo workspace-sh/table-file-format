@@ -62,3 +62,11 @@ test("paths join with one separator", () => {
   assert.equal(joinPath("/a/", "b", "/c.json"), "/a/b/c.json");
   assert.equal(joinPath("a", "", "b"), "a/b");
 });
+
+test("bodies read in name order, whatever order the file system lists them", async () => {
+  const fs = memoryFs();
+  await writeTableTo(fs, "/t", { ...table, rows: [{ id: "b" }, { id: "a" }], bodies: { b: "B", a: "A" } });
+  const reversed = { ...fs, list: async (p: string) => ((await fs.list(p)) ?? []).reverse() };
+  const back = await readTable(reversed, "/t");
+  assert.deepEqual(Object.keys(back.bodies!), ["a", "b"]);
+});

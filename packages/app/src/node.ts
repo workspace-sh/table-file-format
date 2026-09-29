@@ -20,9 +20,9 @@ export function bundlesIn(dir: string): string[] {
     .sort();
 }
 
-/** Read each `.table` folder in `paths` from disk (relative to the working directory). */
-export function loadLibrary(paths: string[]): Promise<Library> {
-  return openLibrary(nodeFs, paths.map((p) => resolve(p)));
+/** Read each `.table` folder in `paths` from disk (relative to the working directory). `held`: see openLibrary. */
+export function loadLibrary(paths: string[], held: Iterable<string> = []): Promise<Library> {
+  return openLibrary(nodeFs, paths.map((p) => resolve(p)), held);
 }
 
 /**
