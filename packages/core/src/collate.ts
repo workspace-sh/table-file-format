@@ -21,7 +21,8 @@ function unit(c: number): number {
   return c >= 0xe000 ? c - 0x800 : c + 0x2000;
 }
 
-function byCodePoint(a: string, b: string): number {
+/** Two strings in code point order: -1, 0 or 1. */
+export function byCodePoint(a: string, b: string): number {
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {
     const x = a.charCodeAt(i);

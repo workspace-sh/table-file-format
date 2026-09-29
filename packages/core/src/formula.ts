@@ -41,6 +41,7 @@ function isBareWord(name: string): boolean {
     /^[^\s()"]+$/.test(name) &&
     name !== "true" &&
     name !== "false" &&
+    name !== "nil" &&
     !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(name)
   );
 }
@@ -61,6 +62,8 @@ export function formatExpr(expr: Expr): string {
       return JSON.stringify(expr.value);
     case "boolean":
       return expr.value ? "true" : "false";
+    case "nil":
+      return "nil";
     case "field":
       return isBareWord(expr.name) ? expr.name : `(field ${JSON.stringify(expr.name)})`;
     case "call":
@@ -554,6 +557,8 @@ function printExpr(e: Expr, grid?: Grid): string {
       return printString(e.value);
     case "boolean":
       return e.value ? "true" : "false";
+    case "nil":
+      return "nil";
     case "field":
       return at(e.name, grid?.here) ?? printRef(e.name);
     case "call": {
@@ -639,6 +644,8 @@ export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new
       return "string";
     case "boolean":
       return "boolean";
+    case "nil":
+      return "number";
     case "field":
       return fieldTypes.get(expr.name) ?? "number";
     case "call":

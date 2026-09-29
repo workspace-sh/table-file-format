@@ -1,22 +1,9 @@
-import type {
-  ViewTotal,
-  Field,
-  ParsedTable,
-  Row,
-  TableSchema,
-  View,
-  ViewFilter,
-  ViewSort,
-} from "./types.js";
-import { enumValues } from "./types.js";
-import { instantOf } from "./encoding.js";
+import type { ViewTotal, ParsedTable, Row, TableSchema, View } from "./types.js";
 import { computeRows, type ComputeOptions } from "./workbook.js";
-import { compareText, type TextOrder } from "./collate.js";
+import { applyFilters, applyOrder, applySort } from "./arrange.js";
 
-export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
-  if (!filters.length) return rows;
-  return rows.filter((row) => filters.every((f) => matchesFilter(row, f)));
-}
+// How views arrange rows lives in arrange.ts, which Sheet view grids share.
+export { applyFilters, applySort, applyGroup, applyOrder } from "./arrange.js";
 
 /**
  * Browser-safe text search: case-insensitive substring match over every
@@ -56,100 +43,12 @@ export function searchRows(
   });
 }
 
-/**
- * Rows in a sort's order. Text is compared in the saved order
- * (`compareText`, the same on every device) unless `options.text` gives a
- * viewer's own, for a personal sort. Rows that tie keep the order they
- * came in (the sort is stable), which is file order for a table's rows.
- */
-export function applySort(
-  rows: Row[],
-  sorts: ViewSort[],
-  schema: TableSchema,
-  options: { text?: TextOrder } = {},
-): Row[] {
-  if (!sorts.length) return rows;
-  const text = options.text ?? compareText;
-  const fieldsByName = new Map(schema.fields.map((f) => [f.name, f]));
-  const copy = rows.slice();
-  copy.sort((a, b) => {
-    for (const s of sorts) {
-      const aVal = a[s.field];
-      const bVal = b[s.field];
-      // Absent, null and "" are all empty, and empties sort last (SPEC "Empty values").
-      const aMissing = aVal === undefined || aVal === null || aVal === "";
-      const bMissing = bVal === undefined || bVal === null || bVal === "";
-      if (aMissing && bMissing) continue;
-      if (aMissing) return 1;
-      if (bMissing) return -1;
-      const cmp = compare(aVal, bVal, fieldsByName.get(s.field), text);
-      if (cmp !== 0) return s.direction === "desc" ? -cmp : cmp;
-    }
-    return 0;
-  });
-  return copy;
-}
-
-export function applyGroup(
-  rows: Row[],
-  field: string,
-  schema?: TableSchema,
-): Record<string, Row[]> {
-  const buckets = new Map<string, Row[]>();
-  for (const row of rows) {
-    const value = row[field];
-    const key =
-      value === undefined || value === null || value === "" ? "(empty)" : String(value);
-    const bucket = buckets.get(key);
-    if (bucket) bucket.push(row);
-    else buckets.set(key, [row]);
-  }
-
-  const fieldDef = schema?.fields.find((f) => f.name === field);
-  const order = enumValues(fieldDef);
-  const result: Record<string, Row[]> = {};
-
-  if (order.length > 0) {
-    for (const e of order) {
-      if (buckets.has(e)) {
-        result[e] = buckets.get(e)!;
-        buckets.delete(e);
-      }
-    }
-  }
-  for (const [k, v] of buckets) {
-    if (k === "(empty)") continue;
-    result[k] = v;
-  }
-  if (buckets.has("(empty)")) {
-    result["(empty)"] = buckets.get("(empty)")!;
-  }
-  return result;
-}
-
-/**
- * Apply a manual row ordering. Rows mentioned in `order` come first, in
- * that sequence; rows not mentioned follow in the input's order. Stable
- * for both groups.
- */
-export function applyOrder(rows: Row[], order: string[] | undefined): Row[] {
-  if (!order || order.length === 0) return rows;
-  const orderIndex = new Map(order.map((id, i) => [id, i]));
-  const mentioned: Row[] = [];
-  const unmentioned: Row[] = [];
-  for (const row of rows) {
-    if (orderIndex.has(row.id)) mentioned.push(row);
-    else unmentioned.push(row);
-  }
-  mentioned.sort((a, b) => orderIndex.get(a.id)! - orderIndex.get(b.id)!);
-  return [...mentioned, ...unmentioned];
-}
-
 export function applyView(parsed: ParsedTable, view: View, options: ComputeOptions = {}): Row[] {
   // Computed fields first, so a view can filter and sort on them. The
   // results live only in the returned rows — never in parsed.rows.
-  // `options.tables` lets lookups and linked rows reach other tables (D36).
-  let rows = computeRows(parsed.schema, parsed.rows, options).rows;
+  // `options.tables` lets lookups and linked rows reach other tables (D36),
+  // and the table's own views let formulas read its Sheet views (D41).
+  let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...options }).rows;
   if (view.filter) rows = applyFilters(rows, view.filter);
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
@@ -160,51 +59,6 @@ export function applyView(parsed: ParsedTable, view: View, options: ComputeOptio
     rows = applySort(rows, view.sort, parsed.schema);
   }
   return rows;
-}
-
-function matchesFilter(row: Row, f: ViewFilter): boolean {
-  const v = row[f.field];
-  switch (f.operator) {
-    case "eq": return v === f.value;
-    case "neq": return v !== f.value;
-    case "gt": return (v as number) > (f.value as number);
-    case "gte": return (v as number) >= (f.value as number);
-    case "lt": return (v as number) < (f.value as number);
-    case "lte": return (v as number) <= (f.value as number);
-    // On an array (a multi-select, say) these ask about its items (D35).
-    case "contains": return Array.isArray(v) ? v.includes(f.value) : typeof v === "string" && v.includes(String(f.value));
-    case "not_contains": return Array.isArray(v) ? !v.includes(f.value) : typeof v === "string" && !v.includes(String(f.value));
-    case "starts_with": return typeof v === "string" && v.startsWith(String(f.value));
-    case "ends_with": return typeof v === "string" && v.endsWith(String(f.value));
-    case "empty": return v === undefined || v === null || v === "";
-    case "not_empty": return !(v === undefined || v === null || v === "");
-    // An array value is "in" the list when any of its items is.
-    case "in": return Array.isArray(f.value) && (Array.isArray(v) ? v.some((x) => (f.value as unknown[]).includes(x)) : f.value.includes(v));
-    case "not_in": return Array.isArray(f.value) && (Array.isArray(v) ? !v.some((x) => (f.value as unknown[]).includes(x)) : !f.value.includes(v));
-  }
-}
-
-function compare(a: unknown, b: unknown, field: Field | undefined, text: TextOrder): number {
-  const order = enumValues(field);
-  if (order.length > 0 && typeof a === "string" && typeof b === "string") {
-    const ai = order.indexOf(a);
-    const bi = order.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-  }
-  if (field?.type === "datetime" && typeof a === "string" && typeof b === "string") {
-    // By instant, not spelling: "10:00+02:00" is before "09:00Z" (SPEC "Value encodings").
-    const ai = instantOf(a);
-    const bi = instantOf(b);
-    if (!Number.isNaN(ai) && !Number.isNaN(bi) && ai !== bi) return ai - bi;
-  }
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
-  // Different kinds in one field: numbers, then text, then true/false.
-  const kind = (v: unknown) => (typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : 1);
-  if (kind(a) !== kind(b)) return kind(a) - kind(b);
-  return text(String(a), String(b));
 }
 
 const isBlank = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
