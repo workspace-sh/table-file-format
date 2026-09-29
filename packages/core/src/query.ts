@@ -1,6 +1,7 @@
 import type { ViewTotal, ParsedTable, Row, TableSchema, View } from "./types.js";
 import { computeRows, type ComputeOptions } from "./workbook.js";
 import { applyFilters, applyOrder, applySort } from "./arrange.js";
+import type { TextOrder } from "./collate.js";
 
 // How views arrange rows lives in arrange.ts, which Sheet view grids share.
 export { applyFilters, applySort, applyGroup, applyOrder } from "./arrange.js";
@@ -43,12 +44,22 @@ export function searchRows(
   });
 }
 
-export function applyView(parsed: ParsedTable, view: View, options: ComputeOptions = {}): Row[] {
+/**
+ * A view's rows: computed, filtered, then in its manual order or its sort.
+ * `text` sorts text in a viewer's own order, for a sort only they see
+ * (D41); a saved sort uses the saved order, the same on every device.
+ */
+export function applyView(
+  parsed: ParsedTable,
+  view: View,
+  options: ComputeOptions & { text?: TextOrder } = {},
+): Row[] {
+  const { text, ...compute } = options;
   // Computed fields first, so a view can filter and sort on them. The
   // results live only in the returned rows — never in parsed.rows.
   // `options.tables` lets lookups and linked rows reach other tables (D36),
   // and the table's own views let formulas read its Sheet views (D41).
-  let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...options }).rows;
+  let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...compute }).rows;
   if (view.filter) rows = applyFilters(rows, view.filter);
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
@@ -56,7 +67,7 @@ export function applyView(parsed: ParsedTable, view: View, options: ComputeOptio
   if (view.order && view.order.length > 0) {
     rows = applyOrder(rows, view.order);
   } else if (view.sort) {
-    rows = applySort(rows, view.sort, parsed.schema);
+    rows = applySort(rows, view.sort, parsed.schema, text ? { text } : {});
   }
   return rows;
 }
