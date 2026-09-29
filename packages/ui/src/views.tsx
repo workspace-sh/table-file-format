@@ -1343,11 +1343,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
       // One related row reads as itself; many sit in a row of links.
       if (!Array.isArray(value)) return <RelationCellValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
       return (
-        <html.span style={styles.relationList}>
+        <html.div style={styles.relationList}>
           {shown.links.map((link) => (
             <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
           ))}
-        </html.span>
+        </html.div>
       );
     case "error":
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
@@ -1355,11 +1355,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines }: CellV
       // A single choice is its pill; a list sits in a row of them.
       if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} />;
       return (
-        <html.span style={styles.pillList}>
+        <html.div style={styles.pillList}>
           {shown.pills.map((pill, i) => (
             <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
           ))}
-        </html.span>
+        </html.div>
       );
     case "attachment":
       return <AttachmentValue fileName={shown.fileName} />;
@@ -1669,7 +1669,7 @@ function EditableCell({
   if (kind === "choice") {
     if (!editing) {
       return (
-        <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
           <CellValue
             field={field}
             value={value}
@@ -1677,7 +1677,7 @@ function EditableCell({
             onOpenRelation={onOpenRelation}
             lines={lines}
           />
-        </html.span>
+        </html.div>
       );
     }
     return (
@@ -1715,7 +1715,7 @@ function EditableCell({
   // Text/number/integer: text input on click
   if (!editing) {
     return (
-      <html.span onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
         <CellValue
           field={field}
           value={value}
@@ -1723,7 +1723,7 @@ function EditableCell({
           onOpenRelation={onOpenRelation}
           lines={lines}
         />
-      </html.span>
+      </html.div>
     );
   }
 
@@ -1867,7 +1867,7 @@ function ListCell({
     }
   };
   const shown = (
-    <html.span
+    <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         anchor.current = el;
@@ -1878,7 +1878,7 @@ function ListCell({
       style={styles.cellEditableIdle}
     >
       <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
-    </html.span>
+    </html.div>
   );
   if (!open) return shown;
   if (options.length === 0) {
