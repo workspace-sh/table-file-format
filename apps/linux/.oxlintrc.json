@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "unicorn", "promise"],
+  "env": { "es2024": true, "node": true },
+  "ignorePatterns": ["dist", ".gtkx"],
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-unused-vars": "error",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "no-console": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          { "name": "react-native", "message": "GTK is not React Native. table-gtk and this demo draw GTK widgets only." },
+          { "name": "react-strict-dom", "message": "The web and native renderer. Share logic through @workspace.sh/table-ui/shared instead." },
+          { "name": "react-dom", "message": "The web renderer. GTK has no DOM." },
+          { "name": "@workspace.sh/table-ui", "message": "Pulls in the react-strict-dom views. Import @workspace.sh/table-ui/shared." }
+        ],
+        "patterns": ["react-native/*", "react-native-*"]
+      }
+    ]
+  }
+}

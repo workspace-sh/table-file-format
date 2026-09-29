@@ -25,6 +25,26 @@ it implements is spec-frozen.
   RN + RN-macOS. Consume it if you want the reference views;
   rendering your own on top of core is equally supported.
 
+- **`@workspace.sh/table-gtk`** (optional, Linux) — the same views for
+  GTK4 and libadwaita, through GTKX, with the same names and props
+  (`ViewProps`). An app wires one set of callbacks and hands them to
+  either library. It needs GTKX and the app's generated bindings, so it
+  is typechecked and tested inside a GTK app (`apps/linux`), and a GTK
+  app bundles it from source.
+
+- **`@workspace.sh/table-ui/shared`** — what every renderer shows,
+  with no renderer in it: `describeCell` (what a value shows as),
+  `columnWidths`, `groupedRows`, `totalFor`, the pill palette, cell
+  checks, and the `ViewProps` type. Rendering your own views on
+  another toolkit? Build on this, and a table shows the same there.
+
+- **`@workspace.sh/table-app`** — what an app around the views does:
+  tables held by `bundle/table` key, `showView` (the rows a view shows,
+  after a viewer's own sort and search, and a Sheet view's saved grid),
+  a viewer's arrangements, display settings, saved state over any
+  key-value store, and `.table.zip` files. `@workspace.sh/table-app/node`
+  opens `.table` folders from disk (`loadLibrary`).
+
 Resolution is verified on all three loaders: **Node ESM** (`default`
 condition → `dist/`, explicit `.js` specifiers), **Vite** (`source`
 condition → `src/*.ts`; production build green), **Metro**

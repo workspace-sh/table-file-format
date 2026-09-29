@@ -1,0 +1,38 @@
+{
+  "name": "@workspace.sh/table-gtk",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The .table views for GTK4 and libadwaita, through GTKX: the same views and props as table-ui, drawn as GTK widgets.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@workspace.sh/table-core": "file:../core",
+    "@workspace.sh/table-ui": "file:../ui"
+  },
+  "peerDependencies": {
+    "@gtkx/css": ">=1.6.0",
+    "@gtkx/react": ">=1.6.0",
+    "react": ">=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@gtkx/css": {
+      "optional": true,
+      "comment": "Optional only so `npm install` at the repo root (on a Mac, say) doesn't fetch GTK bindings. A GTK app that renders these views has them."
+    },
+    "@gtkx/react": {
+      "optional": true,
+      "comment": "As @gtkx/css."
+    }
+  },
+  "comment": "Typechecked and tested by apps/linux, which has GTKX and this machine's generated bindings; nothing here can check GTK code on its own."
+}
