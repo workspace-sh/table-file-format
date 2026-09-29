@@ -24,12 +24,14 @@ const ledger: ParsedTable = {
   rows,
   views: [plain, byDate],
   meta: { title: "Ledger" },
+  path: "ledger",
 };
 const deals: ParsedTable = {
   schema: { fields: [{ name: "value", type: "number" }, { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: '(sum (range "amount" nil "amount" nil "by-date" "ledger"))' } }] },
   rows: [{ id: "d1", value: 5 }],
   views: [{ id: "pipeline", name: "Pipeline", layout: "table", coordinates: true }],
   meta: {},
+  path: "deals",
 };
 const bundle = { ledger, deals };
 
