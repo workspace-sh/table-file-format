@@ -26,6 +26,19 @@ body,
   }
 }
 
+/* Mobile Safari zooms the page in when a text field smaller than 16px
+ * gets focus. On touch screens, text fields use 16px, so tapping one
+ * never zooms. Not maximum-scale=1 in the viewport tag: that also stops
+ * people zooming the page themselves in some browsers. !important because
+ * the components' own sizes are StyleX classes. */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 body {
   background-color: #ffffff;
   color: #1c1c1e;
