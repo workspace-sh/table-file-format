@@ -13,3 +13,4 @@ export * from "./tableFiles.ts";
 export * from "./tableKey.ts";
 export * from "./showView.ts";
 export * from "./edits.ts";
+export * from "./library.ts";

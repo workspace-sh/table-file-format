@@ -26,6 +26,17 @@
       "types": "./dist/archive.d.ts",
       "default": "./dist/archive.js"
     },
+    "./io": {
+      "source": "./src/io.ts",
+      "types": "./dist/io.d.ts",
+      "react-native": "./src/io.ts",
+      "default": "./dist/io.js"
+    },
+    "./node-fs": {
+      "source": "./src/node-fs.ts",
+      "types": "./dist/node-fs.d.ts",
+      "default": "./dist/node-fs.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

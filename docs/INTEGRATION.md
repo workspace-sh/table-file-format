@@ -73,6 +73,17 @@ const rows = applyView(table, view);
 const hits = searchRows(table.rows, query, { schema: table.schema, bodies: table.bodies });
 ```
 
+On a platform without node:fs (React Native, a browser with a file-system
+API), the same reader and writer run over a `TableFs` you supply: seven
+async file operations (`readText`, `writeText`, `rename`, `mkdir`, `list`,
+`remove`; see `@workspace.sh/table-core/io`). `readBundle(fs, dir)`,
+`readTable`, `writeBundleTo` and `writeTableTo` are what `parseBundle` and
+`writeBundle` run over node:fs. Your `rename` must replace an existing file
+atomically, as POSIX rename(2) does, or the writer loses its per-file
+guarantee. `memoryFs()` is one held in memory, for tests. table-app's
+`openLibrary(fs, paths)` and `writeLibraryBundle` do the same for an app's
+`bundle/table` map.
+
 In a browser (no filesystem), skip `parseTable` and build the
 `ParsedTable` yourself from fetched/bundled file contents — the demo
 web app does exactly this (`apps/web/src/loadFixture.ts`).
