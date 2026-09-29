@@ -1,7 +1,9 @@
 // A view's settings (#86 step 6): its name and layout, the field a board,
 // calendar or gallery is drawn from, whether a table is a sheet, and its
 // filters, sorts and grouping (SPEC section 4). Every change is a patch to
-// the view; the app keeps it with the table.
+// the view; the app keeps it with the table. With `onArrange`, filters,
+// sorts and grouping are the reader's own until they save them for
+// everyone (D4, D41): the app keeps those outside the table.
 
 import { useState } from "react";
 import type React from "react";
@@ -27,6 +29,12 @@ export interface ViewSettingsProps {
   /** Absent when this is the table's only view: a table always has one. */
   onDelete?: () => void;
   onClose: () => void;
+  /** Filters, sorts and grouping, as this reader's own. Absent: they change the view for everyone. */
+  onArrange?: (patch: Partial<View>) => void;
+  /** This reader's filters, sorts or grouping differ from the view as saved. */
+  personal?: boolean;
+  onSaveForEveryone?: () => void;
+  onReset?: () => void;
 }
 
 const LAYOUT_LABELS: Record<ViewLayout, string> = {
@@ -37,7 +45,18 @@ const LAYOUT_LABELS: Record<ViewLayout, string> = {
   calendar: "Calendar",
 };
 
-export function ViewSettings({ view, schema, onChange, onDelete, onClose }: ViewSettingsProps) {
+export function ViewSettings({
+  view,
+  schema,
+  onChange,
+  onDelete,
+  onClose,
+  onArrange,
+  personal,
+  onSaveForEveryone,
+  onReset,
+}: ViewSettingsProps) {
+  const arrange = onArrange ?? onChange;
   const live = schema.fields.filter((f) => !f.deprecated);
   const byName = new Map(schema.fields.map((f) => [f.name, f]));
   const label = (f: Field) => f.title ?? f.name;
@@ -50,10 +69,10 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose }: View
     if (layout === "calendar" && !view.calendar_field) patch.calendar_field = layoutFieldFor("calendar", schema) ?? undefined;
     onChange(patch);
   };
-  const setFilters = (next: ViewFilter[]) => onChange({ filter: next.length ? next : undefined });
+  const setFilters = (next: ViewFilter[]) => arrange({ filter: next.length ? next : undefined });
   // A sort replaces any order rows were dragged into: choosing one says how
   // rows should run, and a manual order would silently win (SPEC section 4).
-  const setSorts = (next: ViewSort[]) => onChange({ sort: next.length ? next : undefined, order: undefined });
+  const setSorts = (next: ViewSort[]) => arrange({ sort: next.length ? next : undefined, order: undefined });
 
   const dateFields = live.filter((f) => f.type === "date" || f.type === "datetime");
   const boardFields = live.filter((f) => f.type === "string" && !f.relation);
@@ -130,7 +149,7 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose }: View
               fields={live.filter((f) => !f.computed)}
               value={view.group?.field}
               none="No grouping"
-              onChange={(f) => onChange({ group: f ? { field: f } : undefined })}
+              onChange={(f) => arrange({ group: f ? { field: f } : undefined })}
             />
           </FieldRow>
         )}
@@ -194,6 +213,24 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose }: View
       </html.button>
       {view.order && view.order.length > 0 && sorts.length === 0 && (
         <html.span style={styles.note}>Rows are in the order they were dragged into. Adding a sort replaces it.</html.span>
+      )}
+
+      {onArrange && personal && (
+        <html.div style={styles.personal} role="status">
+          <html.span style={styles.personalText}>
+            Only you see this filter, sort and grouping.{view.coordinates === true ? " Row numbers and formulas follow the view as saved." : ""}
+          </html.span>
+          {onSaveForEveryone && (
+            <html.button style={styles.save} onClick={onSaveForEveryone}>
+              Save for everyone
+            </html.button>
+          )}
+          {onReset && (
+            <html.button style={styles.reset} onClick={onReset}>
+              Reset
+            </html.button>
+          )}
+        </html.div>
       )}
 
       {onDelete && (
@@ -388,6 +425,42 @@ const styles = css.create({
   },
   close: { fontSize: 16, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer", color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" } },
   note: { fontSize: 11, color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" } },
+  personal: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 6,
+    paddingInline: 10,
+    paddingBlock: 8,
+    borderRadius: 8,
+    backgroundColor: { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#222226" },
+  },
+  personalText: { flexGrow: 1, flexBasis: 220, fontSize: 12, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#d1d1d6" } },
+  save: {
+    fontSize: 12,
+    fontWeight: "600",
+    paddingInline: 10,
+    paddingBlock: 5,
+    borderRadius: 6,
+    borderWidth: 0,
+    cursor: "pointer",
+    color: "#ffffff",
+    backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+  },
+  reset: {
+    fontSize: 12,
+    paddingInline: 10,
+    paddingBlock: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#3a3a3f" },
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
   delete: {
     alignSelf: "flex-start",
     marginTop: 8,
