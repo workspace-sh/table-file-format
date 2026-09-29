@@ -3,8 +3,9 @@
  * section 2 "Computed fields"). A reader and a row-local evaluator.
  *
  * Grammar: `(function arg …)`; numbers and strings as in JSON; `true`,
- * `false`; a bare word is a field of the same row, and
- * `(field "any name")` reaches one whose name isn't a bare word.
+ * `false`; `nil`, an open end of a range (D41); a bare word is a field of
+ * the same row, and `(field "any name")` reaches one whose name isn't a
+ * bare word (`nil` among them).
  * Function names are read case-insensitively; field names are not.
  *
  * Values follow the spreadsheet conventions people already know: an
@@ -32,6 +33,7 @@ export type Expr =
   | { kind: "number"; value: number }
   | { kind: "string"; value: string }
   | { kind: "boolean"; value: boolean }
+  | { kind: "nil" }
   | { kind: "field"; name: string }
   | { kind: "call"; fn: string; args: Expr[] };
 
@@ -91,6 +93,7 @@ export function parseExpr(src: string): ParseResult {
     const word = WORD.exec(src.slice(pos))!;
     pos += word[0].length;
     if (word[0] === "true" || word[0] === "false") return { kind: "boolean", value: word[0] === "true" };
+    if (word[0] === "nil") return { kind: "nil" };
     return { kind: "field", name: word[0] };
   };
   try {
@@ -135,6 +138,92 @@ export interface Scope {
   lookup(relation: string, name: string): Value;
   /** A field of every row in `table` whose `relation` field points at this row (D36). */
   linked(table: string, relation: string, name: string): Value;
+  /** The cells a place names in its Sheet view (D41): one value for `at`, a list for `range`. */
+  place(p: Place): Value;
+  /** Where a place is in its Sheet view's grid: its top row's position (from 1), its height, and the grid's size. */
+  where(p: Place): { top: number; height: number; size: number } | FormulaError;
+}
+
+/** A row of a Sheet view: an offset from this row, a row id (pinned), or an open end (`nil`). */
+export type PlaceRow = number | string | null;
+
+/** Cells named by their place in a Sheet view (D41): what `at` and `range` read. */
+export interface Place {
+  /** The Sheet view's id. */
+  view: string;
+  /** Another table's name; absent for this row's table. */
+  table?: string;
+  from: { field: string; row: PlaceRow };
+  to: { field: string; row: PlaceRow };
+  /** An `at`: one cell, read as a value rather than a list. */
+  single: boolean;
+}
+
+const AT_USAGE = 'at takes a field, a row and a Sheet view: (at "balance" -1 "by-date")';
+const RANGE_USAGE = 'range takes two corners and a Sheet view: (range "c" nil "c" 0 "by-date")';
+
+function placeRow(e: Expr | undefined, open: boolean): PlaceRow | undefined {
+  if (e?.kind === "number" && Number.isInteger(e.value)) return e.value;
+  if (e?.kind === "string" && e.value !== "") return e.value;
+  if (open && e?.kind === "nil") return null;
+  return undefined;
+}
+
+/**
+ * The place an `at` or `range` form names, read from its arguments without
+ * evaluating them: they are always written out (D41).
+ */
+export function placeOf(fn: string, args: Expr[]): Place | FormulaError {
+  // Read once per formula, not once per row.
+  let p = places.get(args);
+  if (!p) places.set(args, (p = readPlace(fn, args)));
+  return p;
+}
+
+const places = new WeakMap<Expr[], Place | FormulaError>();
+
+function readPlace(fn: string, args: Expr[]): Place | FormulaError {
+  const str = (e: Expr | undefined) => (e?.kind === "string" && e.value !== "" ? e.value : undefined);
+  if (fn === "at") {
+    const [f, r, v, t] = args;
+    const field = str(f);
+    const row = placeRow(r, false);
+    const view = str(v);
+    if (args.length < 3 || args.length > 4 || field === undefined || row === undefined || view === undefined || (t !== undefined && str(t) === undefined)) {
+      return new FormulaError("#VALUE!", AT_USAGE);
+    }
+    const table = str(t);
+    return { view, ...(table === undefined ? {} : { table }), from: { field, row }, to: { field, row }, single: true };
+  }
+  const [f1, r1, f2, r2, v, t] = args;
+  const from = str(f1);
+  const to = str(f2);
+  const fromRow = placeRow(r1, true);
+  const toRow = placeRow(r2, true);
+  const view = str(v);
+  if (
+    args.length < 5 || args.length > 6 || from === undefined || to === undefined ||
+    fromRow === undefined || toRow === undefined || view === undefined || (t !== undefined && str(t) === undefined)
+  ) {
+    return new FormulaError("#VALUE!", RANGE_USAGE);
+  }
+  const table = str(t);
+  return {
+    view,
+    ...(table === undefined ? {} : { table }),
+    from: { field: from, row: fromRow },
+    to: { field: to, row: toRow },
+    single: false,
+  };
+}
+
+/** `row` and `rows` read where their argument is, never its value, so it must be written as an `at` or `range`. */
+function placeArg(name: string, args: Expr[]): Place | FormulaError {
+  const [a] = args;
+  if (args.length !== 1 || a?.kind !== "call" || (a.fn !== "at" && a.fn !== "range")) {
+    return new FormulaError("#VALUE!", `${name} takes an at or a range: (${name} (at "c" 0 "by-date"))`);
+  }
+  return placeOf(a.fn, a.args);
 }
 
 type Fn = (args: Expr[], scope: Scope) => Value;
@@ -312,6 +401,26 @@ const FUNCTIONS: Record<string, Fn> = {
     }
     return scope.linked(t.value, r.value, f.value);
   },
+  // Reading by place in a Sheet view (D41).
+  at: (args, scope) => {
+    const p = placeOf("at", args);
+    return p instanceof FormulaError ? p : scope.place(p);
+  },
+  range: (args, scope) => {
+    const p = placeOf("range", args);
+    return p instanceof FormulaError ? p : scope.place(p);
+  },
+  row: (args, scope) => {
+    const p = placeArg("row", args);
+    const w = p instanceof FormulaError ? p : scope.where(p);
+    if (w instanceof FormulaError) return w;
+    return w.height > 0 && w.top >= 1 && w.top <= w.size ? w.top : new FormulaError("#REF!", "that row is off the grid");
+  },
+  rows: (args, scope) => {
+    const p = placeArg("rows", args);
+    const w = p instanceof FormulaError ? p : scope.where(p);
+    return w instanceof FormulaError ? w : w.height;
+  },
   upper: text("upper", (s) => s.toUpperCase()),
   lower: text("lower", (s) => s.toLowerCase()),
   len: text("len", (s) => Array.from(s).length),
@@ -339,6 +448,8 @@ export function evaluate(expr: Expr, scope: Scope): Value {
     case "string":
     case "boolean":
       return expr.value;
+    case "nil":
+      return undefined;
     case "field":
       return scope.field(expr.name);
     case "call": {
