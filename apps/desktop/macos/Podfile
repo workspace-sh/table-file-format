@@ -31,6 +31,18 @@ target 'TableDesktop-macOS' do
   post_install do |installer|
     react_native_post_install(installer)
 
+    # Some pods (ZIPFoundation, under react-native-file-access) still ask
+    # for macOS 10.11, which current Xcode refuses. Build them for the
+    # app's own target instead.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        current = config.build_settings['MACOSX_DEPLOYMENT_TARGET']
+        if current && Gem::Version.new(current) < Gem::Version.new('14.0')
+          config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0'
+        end
+      end
+    end
+
     # Xcode 26 / Apple Clang 17 has a broken consteval implementation that
     # fails inside fmt. Insert a targeted #elif into base.h scoping
     # FMT_USE_CONSTEVAL=0 to that compiler version specifically.

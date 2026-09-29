@@ -61,6 +61,7 @@ import {
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
+import { checkFs } from "./fsCheck";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -454,6 +455,16 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       arrange: (key: string, viewId: string, patch: Partial<View>) => {
         setArrangements((all) => arrange(all, key, viewId, patch));
         return "arranged";
+      },
+      // Check the file adapter against core's contract; the lines land in
+      // globalThis.__fsCheck (the debugger connection can't await).
+      checkFs: () => {
+        (globalThis as { __fsCheck?: unknown }).__fsCheck = "running";
+        void checkFs().then(
+          (lines) => ((globalThis as { __fsCheck?: unknown }).__fsCheck = lines),
+          (error) => ((globalThis as { __fsCheck?: unknown }).__fsCheck = String(error)),
+        );
+        return "checking";
       },
       // Forget saved edits; the next launch starts from the fixtures.
       clearSaved: () => {
