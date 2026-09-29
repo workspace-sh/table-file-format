@@ -29,10 +29,15 @@ export function bundleKey(path: string, taken: Set<string>): string {
   return key;
 }
 
-/** Read each `.table` folder in `paths`. A folder that can't be read is a problem, not a throw. */
-export async function openLibrary(fs: TableFs, paths: string[]): Promise<Library> {
+/**
+ * Read each `.table` folder in `paths`. A folder that can't be read is a
+ * problem, not a throw. `held` is the bundle keys an app already has: a
+ * folder named like one gets a new key (`projects-2`) instead of replacing
+ * it when the two libraries are merged.
+ */
+export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<string> = []): Promise<Library> {
   const library: Library = { tables: {}, bundles: {}, paths: {}, problems: {} };
-  const taken = new Set<string>();
+  const taken = new Set<string>(held);
   for (const path of paths) {
     const key = bundleKey(path, taken);
     taken.add(key);
