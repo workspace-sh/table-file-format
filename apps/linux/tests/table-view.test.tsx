@@ -1,15 +1,16 @@
+import * as Gtk from "@gtkx/gi/gtk";
 import { render, screen } from "@gtkx/testing";
 import { fromBundle, showView } from "@workspace.sh/table-app";
 import type { ParsedTable } from "@workspace.sh/table-core";
 import { bundles } from "@workspace.sh/table-fixtures";
-import { DisplaySettingsProvider, TableView } from "@workspace.sh/table-gtk";
+import { BoardView, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView, type ViewProps } from "@workspace.sh/table-gtk";
 import { describe, expect, it } from "vitest";
 
 // The fixtures every demo and test shares, keyed `bundle/table` as an app
 // holds them.
 const held: Record<string, ParsedTable> = Object.assign({}, ...Object.entries(bundles).map(([key, b]) => fromBundle(key, b)));
 
-function renderView(key: string, viewId: string) {
+function renderView(key: string, viewId: string, View: (props: ViewProps) => React.ReactNode = TableView) {
   const table = held[key]!;
   const shown = showView(held, key, table.views.find((v) => v.id === viewId)!);
   const bundle = key.slice(0, key.indexOf("/"));
@@ -20,7 +21,7 @@ function renderView(key: string, viewId: string) {
   );
   return render(
     <DisplaySettingsProvider value={{ locale: "en-GB" }}>
-      <TableView view={shown.view} rows={shown.rows} schema={table.schema} relatedTables={related} sheet={shown.sheet} />
+      <View view={shown.view} rows={shown.rows} schema={table.schema} bodies={table.bodies} relatedTables={related} sheet={shown.sheet} />
     </DisplaySettingsProvider>,
   );
 }
@@ -58,5 +59,41 @@ describe("TableView on GTK", () => {
     expect((await screen.findAllByText("Northwind Traders")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("Negotiation")).length).toBeGreaterThan(0);
     expect(screen.queryByText("negotiation")).toBeNull();
+  });
+});
+
+describe("the card views on GTK", () => {
+  it("a board has a column per choice, by label, with its cards", async () => {
+    await renderView("crm/deals", "pipeline", BoardView);
+    expect(await screen.findByText("Negotiation")).toBeDefined();
+    expect(await screen.findByText("Qualified")).toBeDefined();
+    expect(await screen.findByText("Lumen: pilot")).toBeDefined();
+  });
+
+  it("a board's cards leave out the field their column already says", async () => {
+    // The tasks board lists no fields, so it shows them all, less status.
+    await renderView("projects/tasks", "v2", BoardView);
+    expect((await screen.findAllByText("PRIORITY")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("STATUS")).toBeNull();
+  });
+
+  it("a gallery leads each card with its hero field and shows a page's opening", async () => {
+    await renderView("projects/projects", "v6", GalleryView);
+    expect(await screen.findByText("Open .table format research")).toBeDefined();
+    expect((await screen.findAllByText(/^Table file format spike Open/)).length).toBe(1);
+  });
+
+  it("a list shows each row by its title, marking those with a page", async () => {
+    await renderView("projects/projects", "v7", ListView);
+    expect(await screen.findByText("Plugin SDK")).toBeDefined();
+    expect((await screen.findAllByText("DOC")).length).toBeGreaterThan(0);
+  });
+
+  it("a calendar opens on its first dated row's month, and keeps inside its range", async () => {
+    await renderView("projects/projects", "v9", CalendarView);
+    expect(await screen.findByText("January 2026")).toBeDefined();
+    expect(await screen.findByText("Workspace v1")).toBeDefined();
+    const previous = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Previous month" });
+    expect(previous.getSensitive()).toBe(false);
   });
 });

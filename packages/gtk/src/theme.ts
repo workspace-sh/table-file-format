@@ -33,6 +33,19 @@ export const styles = {
   relationLink: css({ padding: "0 4px", minHeight: "0", color: "@accent_color" }),
   pill: css({ borderRadius: "999px", padding: "2px 10px", fontSize: "smaller", fontWeight: "500" }),
   table: css({ backgroundColor: "@view_bg_color" }),
+  card: css({ padding: "10px 12px", borderRadius: "10px" }),
+  cardTitle: css({ fontWeight: "600" }),
+  cardFieldLabel: css({ fontSize: "x-small", fontWeight: "600", opacity: 0.55, letterSpacing: "0.04em" }),
+  bodyBadge: css({ fontSize: "x-small", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
+  boardColumn: css({ backgroundColor: "alpha(currentColor, 0.04)", borderRadius: "12px", padding: "10px" }),
+  galleryHero: css({ fontWeight: "500", opacity: 0.85 }),
+  excerpt: css({ fontSize: "smaller", opacity: 0.7, borderTop: `1px solid ${RULE}`, paddingTop: "6px" }),
+  calendar: css({ padding: "0" }),
+  calendarWeekdays: css({ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }),
+  calendarDay: css({ borderRadius: "0", padding: "6px", borderRight: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }),
+  calendarOther: css({ opacity: 0.45 }),
+  calendarToday: css({ color: "@accent_color", fontWeight: "700" }),
+  calendarChip: css({ fontSize: "smaller", padding: "1px 6px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
 } as const;
 
 const pillClasses = new Map<string, string>();
