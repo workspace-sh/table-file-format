@@ -2,8 +2,8 @@ import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
 import { useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
-import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "./displaySettings";
-import { bundleOf, tableKeysIn, toBundle } from "./bundles";
+import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "@workspace.sh/table-app";
+import { bundleOf, tableKeysIn, toBundle } from "@workspace.sh/table-app";
 
 const styles = css.create({
   root: {
