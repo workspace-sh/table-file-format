@@ -22,6 +22,16 @@ import {
   sheetDependents,
 } from "@workspace.sh/table-ui";
 import {
+  ARRANGEMENTS_KEY,
+  STORAGE_KEY,
+  clearSaved,
+  forViews,
+  loadArrangements,
+  loadSaved,
+  save,
+  saveArrangements,
+  withNewFixtures,
+  type KeyValueStore,
   arrange,
   isArranged,
   reset as resetArrangement,
@@ -50,6 +60,7 @@ import {
   type SheetGridShown,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
+import { openStore } from "./nativeStore";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -278,18 +289,49 @@ function renderView(
   }
 }
 
+/**
+ * Edits are kept between launches (#86), as the web keeps them between
+ * reloads: the saved tables are read before the first screen, and nothing
+ * shows until they are (a moment, from a local database).
+ */
 export default function App() {
-  const [tables, setTables] = useState<Record<string, ParsedTable>>(initialTables);
+  const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
+  useEffect(() => {
+    // No store (it failed to open) still runs, from the fixtures, unsaved.
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY]).then(setStore, () => setStore(null));
+  }, []);
+  return store === undefined ? null : <TableApp store={store} />;
+}
+
+function TableApp({ store }: { store: KeyValueStore | null }) {
+  // What was saved, or the fixtures when nothing usable was; fixture
+  // tables added since the last save still appear.
+  const [initial] = useState(() => {
+    const fixtures = { tables: initialTables, bundles: bundleMetas };
+    const saved = loadSaved(store);
+    return saved ? withNewFixtures(saved, fixtures) : fixtures;
+  });
+  const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
   const [activeTablePath, setActiveTablePath] = useState<string>(DEFAULT_TABLE_PATH);
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
-    Object.fromEntries(Object.entries(initialTables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
+    Object.fromEntries(Object.entries(initial.tables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
   );
+  // Saved after every change. The fixtures themselves are never saved, so
+  // an untouched app keeps following them as they change. This app doesn't
+  // change a bundle's manifest, so the fixtures' are saved alongside.
+  useEffect(() => {
+    if (tables !== initialTables) save(store, { tables, bundles: bundleMetas });
+  }, [store, tables]);
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
   // This viewer's own filters, sorts and grouping, over the saved views
   // (D4, D41), as on the web; a sort of their own follows their language.
-  const [arrangements, setArrangements] = useState<Arrangements>({});
+  const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(store));
+  useEffect(() => {
+    // Only views that still exist: a deleted view's arrangement goes with it.
+    saveArrangements(store, forViews(arrangements, tables));
+  }, [store, arrangements, tables]);
   const viewerText = useMemo(() => new Intl.Collator(undefined, { numeric: true }).compare, []);
 
   const table = tables[activeTablePath]!;
@@ -413,8 +455,13 @@ export default function App() {
         setArrangements((all) => arrange(all, key, viewId, patch));
         return "arranged";
       },
+      // Forget saved edits; the next launch starts from the fixtures.
+      clearSaved: () => {
+        clearSaved(store);
+        return "saved edits cleared";
+      },
     };
-  }, [tables]);
+  }, [store, tables]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
