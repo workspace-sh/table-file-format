@@ -18,7 +18,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@workspace\.sh\/table-core$/, replacement: here("../../packages/core/src/index.ts") },
-      { find: /^@workspace\.sh\/table-core\/(parser|writer|archive)$/, replacement: here("../../packages/core/src/$1.ts") },
+      { find: /^@workspace\.sh\/table-core\/(parser|writer|archive|io|node-fs)$/, replacement: here("../../packages/core/src/$1.ts") },
       { find: /^@workspace\.sh\/table-ui\/shared$/, replacement: here("../../packages/ui/src/shared.ts") },
       { find: /^@workspace\.sh\/table-app$/, replacement: here("../../packages/app/src/index.ts") },
       { find: /^@workspace\.sh\/table-app\/node$/, replacement: here("../../packages/app/src/node.ts") },
