@@ -62,6 +62,8 @@ import {
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
+import { OPENED_KEY, useFolders } from "./folders";
+import { chooseFolder } from "./panels";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -299,7 +301,7 @@ export default function App() {
   const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY]).then(setStore, () => setStore(null));
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY]).then(setStore, () => setStore(null));
   }, []);
   return store === undefined ? null : <TableApp store={store} />;
 }
@@ -313,16 +315,44 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     return saved ? withNewFixtures(saved, fixtures) : fixtures;
   });
   const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
+  // Each bundle's manifest (D37): the fixtures', and any folder opened.
+  const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
+  const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
+  const folders = useFolders({ store, tables, setTables, bundles, setBundles, onProblem: showProblem });
   const [activeTablePath, setActiveTablePath] = useState<string>(DEFAULT_TABLE_PATH);
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(initial.tables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
   );
   // Saved after every change. The fixtures themselves are never saved, so
-  // an untouched app keeps following them as they change. This app doesn't
-  // change a bundle's manifest, so the fixtures' are saved alongside.
+  // an untouched app keeps following them as they change. An opened
+  // folder's tables live in the folder (folders.ts), so they're left out.
   useEffect(() => {
-    if (tables !== initialTables) save(store, { tables, bundles: bundleMetas });
-  }, [store, tables]);
+    if (tables === initialTables) return;
+    const opened = new Set(Object.keys(folders.paths));
+    save(store, {
+      tables: Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
+      bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
+    });
+  }, [store, tables, bundles, folders.paths]);
+
+  // Open a .table folder and show its first table; one already open is shown again.
+  const openFolder = useCallback(
+    async (path: string | null) => {
+      if (!path) return;
+      const held = Object.entries(folders.paths).find(([, p]) => p === path)?.[0];
+      const library = held ? null : await folders.open([path]);
+      for (const [key, messages] of Object.entries(library?.problems ?? {}))
+        showProblem(`Problems reading ${key}.table`, messages.join("\n"));
+      const key = held ?? Object.keys(library?.paths ?? {})[0];
+      const first = key ? (library ? Object.keys(library.tables) : Object.keys(tables)).find((t) => bundleOf(t) === key) : undefined;
+      if (first) {
+        setActiveTablePath(first);
+        setQuery("");
+        setActiveBodyRowId(null);
+      }
+    },
+    [folders, showProblem, tables],
+  );
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
@@ -355,7 +385,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     (address: string) => {
       const addr = parseAddress(address);
       if (!addr) return;
-      const key = keyForAddress(addr, tables, bundleMetas, bundleOf(activeTablePath));
+      const key = keyForAddress(addr, tables, bundles, bundleOf(activeTablePath));
       if (!key) return;
       setActiveTablePath(key);
       if (addr.viewId) setActiveViewIds((prev) => ({ ...prev, [key]: addr.viewId! }));
@@ -466,13 +496,20 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         );
         return "checking";
       },
-      // Forget saved edits; the next launch starts from the fixtures.
+      // Open a folder without the panel, as the Open button does after it.
+      open: (path: string) => {
+        void openFolder(path);
+        return `opening ${path}`;
+      },
+      folders: () => folders.paths,
+      // Forget saved edits and opened folders; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
-        return "saved edits cleared";
+        store?.removeItem(OPENED_KEY);
+        return "saved edits and opened folders forgotten";
       },
     };
-  }, [store, tables]);
+  }, [store, tables, openFolder, folders.paths]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -487,6 +524,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const errors = validate(table.schema, table.rows);
   const searching = query.trim().length > 0;
   const tablePaths = Object.keys(tables);
+  // An opened folder's tables say which folder they're from.
+  const tabLabel = (path: string) => {
+    const title = tables[path]!.meta.title ?? tableNameOf(path);
+    const folder = folders.paths[bundleOf(path)];
+    return folder ? `${title} · ${folder.split("/").pop()}` : title;
+  };
   const showTablePicker = tablePaths.length > 1;
   const currentSchemaVersion = (table.schema["schema-version"] as number | undefined) ?? 1;
   const schemaBumped = currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
@@ -532,9 +575,15 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                       }}
                       style={[styles.tab, path === activeTablePath && styles.tabActive]}
                     >
-                      {tables[path]!.meta.title ?? tableNameOf(path)}
+                      {tabLabel(path)}
                     </html.button>
                   ))}
+                  <html.button
+                    onClick={() => void chooseFolder("Choose a .table folder to open").then(openFolder)}
+                    style={styles.tab}
+                  >
+                    Open .table…
+                  </html.button>
                 </html.div>
               </>
             )}
