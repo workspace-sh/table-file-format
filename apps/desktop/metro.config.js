@@ -66,7 +66,14 @@ const config = {
     // Workspace packages are TypeScript written for Node's ESM rules, so
     // they import siblings as "./expr.js" while the file is expr.ts.
     // Metro doesn't map one to the other: try the .ts/.tsx file first.
+    // A resolveRequest here replaces the React Native CLI's own, which
+    // sends "react-native" to "react-native-macos" on macOS; so that
+    // redirect is done here too.
     resolveRequest: (context, moduleName, platform) => {
+      if (platform === "macos") {
+        if (moduleName === "react-native") moduleName = "react-native-macos";
+        else if (moduleName.startsWith("react-native/")) moduleName = "react-native-macos/" + moduleName.slice("react-native/".length);
+      }
       if (moduleName.startsWith(".") && moduleName.endsWith(".js")) {
         const base = path.resolve(path.dirname(context.originModulePath), moduleName.slice(0, -3));
         for (const ext of [".ts", ".tsx"]) {
