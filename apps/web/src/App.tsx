@@ -4,11 +4,13 @@ import {
   textDirection,
   bundleFiles,
   applyView,
+  isSheet,
   newBundle,
   newId,
   newTable,
   parseAddress,
   searchRows,
+  sheetOrder,
   validate,
 } from "@workspace.sh/table-core";
 import type {
@@ -31,6 +33,10 @@ import {
   GalleryView,
   ListView,
   TableView,
+  canInsertAt,
+  insertRowAt,
+  sheetDependents,
+  sheetDirectory,
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
@@ -649,6 +655,22 @@ export function App() {
     return id;
   }, [activeTablePath]);
 
+  // A row at a place in a Sheet view (D41): file order is meaningful, so
+  // it goes on the line above or below, or into the manual order.
+  const insertRow = useCallback(
+    (anchor: string, where: "above" | "below") => {
+      setTables((all) => {
+        const t = all[activeTablePath]!;
+        const v = t.views.find((x) => x.id === activeViewId) ?? t.views[0]!;
+        const placed = insertRowAt(t.rows, v, anchor, where, { id: newId() });
+        if (!placed) return all;
+        const views = placed.order ? t.views.map((x) => (x.id === v.id ? { ...x, order: placed.order } : x)) : t.views;
+        return { ...all, [activeTablePath]: { ...t, rows: placed.rows, views } };
+      });
+    },
+    [activeTablePath, activeViewId],
+  );
+
   const deleteRow = useCallback(
     (rowId: string) => {
       const t = tables[activeTablePath]!;
@@ -805,12 +827,14 @@ export function App() {
   const deleteView = useCallback(() => {
     const t = tables[activeTablePath]!;
     if (t.views.length <= 1) return;
-    if (!window.confirm(`Delete the view "${view.name}"? The rows stay; only this way of showing them goes.`)) return;
+    const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(activeTablePath)), tableNameOf(activeTablePath), view.id).length : 0;
+    const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
+    if (!window.confirm(`Delete the view "${view.name}"? The rows stay; only this way of showing them goes.${losing}`)) return;
     const remaining = t.views.filter((v) => v.id !== activeViewId);
     setTables((all) => ({ ...all, [activeTablePath]: { ...all[activeTablePath]!, views: remaining } }));
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: remaining[0]!.id }));
     setShowViewSettings(false);
-  }, [tables, activeTablePath, activeViewId, view.name]);
+  }, [tables, activeTablePath, activeViewId, view]);
 
   // The bundle's tables by name, so lookups and rollups reach the ones
   // they name (D36), within this bundle (D37).
@@ -818,6 +842,19 @@ export function App() {
   // The view as this viewer arranged it. Formulas still read the views as
   // saved: computing uses the table's own views, never this one.
   const personal = arrangements[activeTablePath]?.[view.id];
+  // A Sheet view's grid as saved, for its row numbers and for formulas
+  // typed in it (D41); and every Sheet view a formula may name.
+  const selfName = tableNameOf(activeTablePath);
+  const sheet = useMemo(() => {
+    if (!isSheet(view)) return undefined;
+    const order = sheetOrder(table, view.id, { tables: inBundle, self: selfName });
+    if (!order) return undefined;
+    const position = new Map<string, number>();
+    order.ids.forEach((id, i) => position.set(id, i + 1));
+    return { order: order.ids, position, sheets: sheetDirectory(inBundle, selfName) };
+    // inBundle is rebuilt from `tables` each render; `tables` stands for it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tables, table, view, selfName]);
   const shownView = arrangedView(view, personal);
   const viewRows = applyView(table, shownView, {
     tables: inBundle,
@@ -1024,7 +1061,14 @@ export function App() {
             key={view.id}
             view={shownView}
             schema={table.schema}
-            onChange={updateActiveView}
+            onChange={(patch) => {
+              // Turning a Sheet view into anything else loses its grid (D41).
+              if (isSheet(view) && !isSheet({ ...view, ...patch })) {
+                const readers = sheetDependents(inBundle, selfName, view.id).length;
+                if (readers > 0 && !window.confirm(`${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!. Stop showing it as a sheet?`)) return;
+              }
+              updateActiveView(patch);
+            }}
             onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
             personal={isArranged(personal)}
             onSaveForEveryone={() => {
@@ -1050,6 +1094,8 @@ export function App() {
           onOpenRelation: openRelation,
           allRows: table.rows,
           tableKey: tableNameOf(activeTablePath),
+          sheet,
+          onInsertRow: isSheet(view) && canInsertAt(view) ? insertRow : undefined,
         })}
         </>
         )}
@@ -1098,6 +1144,8 @@ interface ViewCallbacks {
   allRows: Row[];
   /** This table's key among `relatedTables`. */
   tableKey: string;
+  sheet?: { order: string[]; position: Map<string, number>; sheets: import("@workspace.sh/table-core").SheetRef[] };
+  onInsertRow?: (anchor: string, where: "above" | "below") => void;
 }
 
 function renderView(
@@ -1177,6 +1225,8 @@ function renderView(
           onOpenBody={cb.onOpenBody}
           allRows={cb.allRows}
           tableKey={cb.tableKey}
+          sheet={cb.sheet}
+          onInsertRow={cb.onInsertRow}
           onUpdateView={cb.onUpdateView}
           {...common}
         />

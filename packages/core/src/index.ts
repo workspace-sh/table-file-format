@@ -51,7 +51,7 @@ export {
   type Place,
   type PlaceRow,
 } from "./expr.js";
-export { computeRows, sheetGrid, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { computeRows, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
   compileFormula,
@@ -63,6 +63,7 @@ export {
   columnLetter,
   coordinateOf,
   type Grid,
+  type SheetRef,
   type FormulaSyntax,
   type CompileResult,
   type FormulaRef,
