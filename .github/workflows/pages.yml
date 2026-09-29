@@ -28,6 +28,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # npm/cli#4828: a lockfile written on a Mac can leave out the Linux
+      # build of Rollup that Vite needs. Add it at the version the
+      # lockfile pins.
+      - name: Add Rollup's Linux build
+        run: npm install --no-save "@rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")"
       - name: Build the web demo for /table-file-format/
         run: npm run web:build
         env:
