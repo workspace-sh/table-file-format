@@ -31,7 +31,6 @@ import {
   ListView,
   TableView,
   canInsertAt,
-  insertRowAt,
   sheetDependents,
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
@@ -48,6 +47,20 @@ import { useNarrow } from "./useNarrow";
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "@workspace.sh/table-app";
 import {
   arrange,
+  onTable,
+  rowTitleFor,
+  withBody,
+  withCell,
+  withChoice,
+  withField,
+  withFieldMoved,
+  withFieldPatch,
+  withoutRow,
+  withoutView,
+  withRow,
+  withRowAt,
+  withView,
+  withViewPatch,
   sheetShown,
   showView,
   forViews,
@@ -321,10 +334,6 @@ function firstTablePath(tables: Record<string, ParsedTable>): string {
   return tables[DEFAULT_TABLE_PATH] ? DEFAULT_TABLE_PATH : Object.keys(tables)[0]!;
 }
 
-function bumpSchemaVersion(schema: TableSchema): TableSchema {
-  const current = (schema["schema-version"] as number | undefined) ?? 1;
-  return { ...schema, "schema-version": current + 1 };
-}
 
 export function App() {
   // Edits survive a reload (#86): what was saved, or the fixtures when
@@ -619,28 +628,14 @@ export function App() {
 
   const updateRow = useCallback(
     (rowId: string, fieldName: string, value: unknown) => {
-      setTables((all) => ({
-        ...all,
-        [activeTablePath]: {
-          ...all[activeTablePath]!,
-          rows: all[activeTablePath]!.rows.map((row) =>
-            row.id === rowId ? { ...row, [fieldName]: value } : row,
-          ),
-        },
-      }));
+      setTables((all) => onTable(all, activeTablePath, (t) => withCell(t, rowId, fieldName, value)));
     },
     [activeTablePath],
   );
 
   const updateBody = useCallback(
     (rowId: string, content: string) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const bodies = { ...(t.bodies ?? {}) };
-        if (content.length === 0) delete bodies[rowId];
-        else bodies[rowId] = content;
-        return { ...all, [activeTablePath]: { ...t, bodies } };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withBody(t, rowId, content)));
     },
     [activeTablePath],
   );
@@ -650,10 +645,7 @@ export function App() {
   // Returns the id, so the table can open the new row for typing.
   const addRow = useCallback(() => {
     const id = newId();
-    setTables((all) => {
-      const t = all[activeTablePath]!;
-      return { ...all, [activeTablePath]: { ...t, rows: [...t.rows, { id }] } };
-    });
+    setTables((all) => onTable(all, activeTablePath, (t) => withRow(t, id)));
     return id;
   }, [activeTablePath]);
 
@@ -661,14 +653,7 @@ export function App() {
   // it goes on the line above or below, or into the manual order.
   const insertRow = useCallback(
     (anchor: string, where: "above" | "below") => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const v = t.views.find((x) => x.id === activeViewId) ?? t.views[0]!;
-        const placed = insertRowAt(t.rows, v, anchor, where, { id: newId() });
-        if (!placed) return all;
-        const views = placed.order ? t.views.map((x) => (x.id === v.id ? { ...x, order: placed.order } : x)) : t.views;
-        return { ...all, [activeTablePath]: { ...t, rows: placed.rows, views } };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withRowAt(t, activeViewId, anchor, where, newId())));
     },
     [activeTablePath, activeViewId],
   );
@@ -678,19 +663,7 @@ export function App() {
       const t = tables[activeTablePath]!;
       const hasBody = t.bodies?.[rowId] !== undefined;
       if (!window.confirm(`Delete "${rowTitleFor(t, rowId)}"?${hasBody ? " Its document goes too." : ""}`)) return;
-      setTables((all) => {
-        const current = all[activeTablePath]!;
-        const bodies = { ...(current.bodies ?? {}) };
-        delete bodies[rowId];
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...current,
-            rows: current.rows.filter((r) => r.id !== rowId),
-            ...(current.bodies ? { bodies } : {}),
-          },
-        };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withoutRow(t, rowId)));
       setActiveBodyRowId((open) => (open === rowId ? null : open));
     },
     [tables, activeTablePath],
@@ -703,113 +676,35 @@ export function App() {
   // Structural edits (required, deprecated, enum add, add field, reorder) DO.
   const updateField = useCallback(
     (fieldName: string, patch: Partial<Field>) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const fields = t.schema.fields.map((f) =>
-          f.name === fieldName ? { ...f, ...patch } : f,
-        );
-        const isStructural =
-          "constraints" in patch ||
-          "deprecated" in patch ||
-          "relation" in patch ||
-          // A new formula changes what the column means for every row.
-          "computed" in patch;
-        const nextSchema: TableSchema = isStructural
-          ? bumpSchemaVersion({ ...t.schema, fields })
-          : { ...t.schema, fields };
-        return { ...all, [activeTablePath]: { ...t, schema: nextSchema } };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withFieldPatch(t, fieldName, patch)));
     },
     [activeTablePath],
   );
 
   const addEnumValue = useCallback(
     (fieldName: string, value: string) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const fields = t.schema.fields.map((f) => {
-          if (f.name !== fieldName) return f;
-          const existing = f.constraints?.enum ?? [];
-          if (existing.includes(value)) return f;
-          return {
-            ...f,
-            constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
-          };
-        });
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-          },
-        };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withChoice(t, fieldName, value)));
     },
     [activeTablePath],
   );
 
   const moveField = useCallback(
     (fieldName: string, delta: -1 | 1) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const from = t.schema.fields.findIndex((f) => f.name === fieldName);
-        if (from === -1) return all;
-        const to = from + delta;
-        if (to < 0 || to >= t.schema.fields.length) return all;
-        const fields = t.schema.fields.slice();
-        const [moved] = fields.splice(from, 1);
-        fields.splice(to, 0, moved!);
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-          },
-        };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withFieldMoved(t, fieldName, delta)));
     },
     [activeTablePath],
   );
 
   const addField = useCallback(
     (field: Field) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        if (t.schema.fields.some((f) => f.name === field.name)) return all;
-        const fields = [...t.schema.fields, field];
-        // A view that lists its fields shows only those, so a field added
-        // from it would otherwise never appear where it was added. It joins
-        // the view it was added from; other views are left as they are.
-        const views = t.views.map((v) =>
-          v.id === activeViewId && Array.isArray(v.fields) && !v.fields.includes(field.name)
-            ? { ...v, fields: [...v.fields, field.name] }
-            : v,
-        );
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-            views,
-          },
-        };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withField(t, field, activeViewId)));
     },
     [activeTablePath, activeViewId],
   );
 
   const updateActiveView = useCallback(
     (patch: Partial<View>) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            views: t.views.map((v) => (v.id === activeViewId ? { ...v, ...patch } : v)),
-          },
-        };
-      });
+      setTables((all) => onTable(all, activeTablePath, (t) => withViewPatch(t, activeViewId, patch)));
     },
     [activeTablePath, activeViewId],
   );
@@ -818,10 +713,7 @@ export function App() {
   // so it can be made into what's wanted straight away.
   const addView = useCallback(() => {
     const made: View = { id: newId(), name: "New view", layout: "table" };
-    setTables((all) => {
-      const t = all[activeTablePath]!;
-      return { ...all, [activeTablePath]: { ...t, views: [...t.views, made] } };
-    });
+    setTables((all) => onTable(all, activeTablePath, (t) => withView(t, made)));
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
     setShowViewSettings(true);
   }, [activeTablePath]);
@@ -833,7 +725,7 @@ export function App() {
     const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
     if (!window.confirm(`Delete the view "${view.name}"? The rows stay; only this way of showing them goes.${losing}`)) return;
     const remaining = t.views.filter((v) => v.id !== activeViewId);
-    setTables((all) => ({ ...all, [activeTablePath]: { ...all[activeTablePath]!, views: remaining } }));
+    setTables((all) => onTable(all, activeTablePath, (t) => withoutView(t, activeViewId)));
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: remaining[0]!.id }));
     setShowViewSettings(false);
   }, [tables, activeTablePath, activeViewId, view]);
@@ -1106,18 +998,6 @@ export function App() {
   );
 }
 
-function rowTitleFor(table: ParsedTable, rowId: string): string {
-  const row = table.rows.find((r) => r.id === rowId);
-  if (!row) return rowId;
-  // Prefer the first string-typed field; fall back to id.
-  for (const field of table.schema.fields) {
-    if (field.type === "string") {
-      const v = row[field.name];
-      if (typeof v === "string" && v.length > 0) return v;
-    }
-  }
-  return rowId;
-}
 
 interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;

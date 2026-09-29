@@ -6,20 +6,36 @@
 
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
+import * as Adw from "@gtkx/gi/adw";
 import {
+  AdwAlertDialog,
   AdwApplication,
   AdwApplicationWindow,
   AdwHeaderBar,
   AdwOverlaySplitView,
+  AdwSpinner,
   AdwStatusPage,
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { quit } from "@gtkx/react";
-import { bundleOf, bundleTables, showView, tableKeysIn, tableNameOf } from "@workspace.sh/table-app";
-import type { Library } from "@workspace.sh/table-app/node";
-import type { View } from "@workspace.sh/table-core";
+import {
+  bundleOf,
+  bundleTables,
+  onTable,
+  rowTitleFor,
+  showView,
+  tableKeysIn,
+  tableNameOf,
+  withCell,
+  withoutRow,
+  withRow,
+  withRowAt,
+  withViewPatch,
+} from "@workspace.sh/table-app";
+import { saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { newId, type BundleMeta, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   BoardView,
   CalendarView,
@@ -29,7 +45,7 @@ import {
   TableView,
   type ViewProps,
 } from "@workspace.sh/table-gtk";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const LAYOUT_NAMES: Record<View["layout"], string> = {
   table: "Table",
@@ -120,11 +136,34 @@ function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }
   }
 }
 
-function TablePane({ library, tableKey, view }: { library: Library; tableKey: string; view: View }) {
-  const table = library.tables[tableKey]!;
+/** What the views can ask the app to change, for one table. */
+interface Edits {
+  onUpdateRow: (rowId: string, field: string, value: unknown) => void;
+  onAddRow: () => string;
+  onInsertRow: (anchor: string, where: "above" | "below") => void;
+  onDeleteRow: (rowId: string) => void;
+  onUpdateView: (patch: Partial<View>) => void;
+}
+
+function TablePane({
+  tables,
+  bundles,
+  tableKey,
+  view,
+  edits,
+  saving,
+}: {
+  tables: Record<string, ParsedTable>;
+  bundles: Record<string, BundleMeta>;
+  tableKey: string;
+  view: View;
+  edits: Edits;
+  saving: SaveState;
+}) {
+  const table = tables[tableKey]!;
   const [search, setSearch] = useState("");
-  const shown = showView(library.tables, tableKey, view, { search });
-  const related = useMemo(() => bundleTables(library.tables, bundleOf(tableKey)), [library, tableKey]);
+  const shown = showView(tables, tableKey, view, { search });
+  const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
   const count = search.trim() ? `${shown.rows.length} of ${shown.inView} matching` : `${shown.rows.length} of ${table.rows.length} rows`;
 
   return (
@@ -134,9 +173,10 @@ function TablePane({ library, tableKey, view }: { library: Library; tableKey: st
           titleWidget={
             <AdwWindowTitle
               title={view.name}
-              subtitle={`${library.bundles[bundleOf(tableKey)]?.title ?? bundleOf(tableKey)} › ${table.meta.title ?? tableNameOf(tableKey)}`}
+              subtitle={`${bundles[bundleOf(tableKey)]?.title ?? bundleOf(tableKey)} › ${table.meta.title ?? tableNameOf(tableKey)}`}
             />
           }
+          end={<SaveStatus state={saving} />}
         />
       }
     >
@@ -156,19 +196,79 @@ function TablePane({ library, tableKey, view }: { library: Library; tableKey: st
           allRows={table.rows}
           tableKey={tableNameOf(tableKey)}
           sheet={shown.sheet}
+          {...edits}
         />
       </GtkBox>
     </AdwToolbarView>
   );
 }
 
+/** Whether the tables on screen are the ones on disk. */
+type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
+
+/**
+ * Where the files stand, in the header bar: nothing when they're saved (a
+ * document app that saves as you go says nothing when it has), a spinner
+ * while writing, and the reason when a write failed.
+ */
+function SaveStatus({ state }: { state: SaveState }) {
+  if (state.kind === "saved") return null;
+  if (state.kind === "saving") return <AdwSpinner widthRequest={16} heightRequest={16} tooltipText="Saving…" />;
+  return <GtkImage iconName="dialog-warning-symbolic" cssClasses={["error"]} tooltipText={`Not saved: ${state.message}`} />;
+}
+
+/** How long after the last edit its bundle is written. */
+const SAVE_DELAY_MS = 400;
+
 export function App({ library, initialTable, initialView }: { library: Library; initialTable?: string; initialView?: string }) {
+  const [tables, setTables] = useState(library.tables);
+  const [bundles] = useState(library.bundles);
+  const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
+  const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
+  // Bundles edited since they were last written.
+  const dirty = useRef(new Set<string>());
   const firstTable = Object.keys(library.bundles).flatMap((b) => tableKeysIn(library.tables, library.bundles, b))[0] ?? "";
   const [active, setActive] = useState(initialTable && library.tables[initialTable] ? initialTable : firstTable);
   const [viewIds, setViewIds] = useState<Record<string, string>>(initialTable && initialView ? { [initialTable]: initialView } : {});
-  const table = library.tables[active];
+  const table = tables[active];
   const view = table ? (table.views.find((v) => v.id === viewIds[active]) ?? table.views[0]) : undefined;
-  const entries = useMemo(() => sidebarEntries(library, active), [library, active]);
+  const entries = useMemo(() => sidebarEntries({ ...library, tables, bundles }, active), [library, tables, bundles, active]);
+
+  // Every edit goes through here: the table changes on screen now, and its
+  // bundle is written a moment after the last edit.
+  const edit = (key: string, change: (t: ParsedTable) => ParsedTable) => {
+    setTables((all) => onTable(all, key, change));
+    dirty.current.add(bundleOf(key));
+  };
+
+  useEffect(() => {
+    if (dirty.current.size === 0) return;
+    const timer = setTimeout(() => {
+      const which = [...dirty.current];
+      dirty.current.clear();
+      setSaving({ kind: "saving" });
+      Promise.all(which.map((b) => saveBundle(library, tables, bundles, b)))
+        .then(() => setSaving({ kind: "saved" }))
+        .catch((error: unknown) => {
+          which.forEach((b) => dirty.current.add(b));
+          setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+        });
+    }, SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [tables, bundles, library]);
+
+  const edits = (key: string, viewId: string): Edits => ({
+    onUpdateRow: (rowId, field, value) => edit(key, (t) => withCell(t, rowId, field, value)),
+    onAddRow: () => {
+      const id = newId();
+      edit(key, (t) => withRow(t, id));
+      return id;
+    },
+    onInsertRow: (anchor, where) => edit(key, (t) => withRowAt(t, viewId, anchor, where, newId())),
+    onDeleteRow: (rowId) => setConfirmDelete({ key, rowId }),
+    onUpdateView: (patch) => edit(key, (t) => withViewPatch(t, viewId, patch)),
+  });
+  const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
 
   return (
@@ -192,11 +292,39 @@ export function App({ library, initialTable, initialView }: { library: Library; 
             }
           >
             {table && view ? (
-              <TablePane key={active} library={library} tableKey={active} view={view} />
+              <TablePane
+                key={active}
+                tables={tables}
+                bundles={bundles}
+                tableKey={active}
+                view={view}
+                edits={edits(active, view.id)}
+                saving={saving}
+              />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {confirmDelete && deleting ? (
+            <AdwAlertDialog
+              heading={`Delete “${rowTitleFor(deleting, confirmDelete.rowId)}”?`}
+              body={
+                deleting.bodies?.[confirmDelete.rowId] !== undefined
+                  ? "The row and its page are removed from the file."
+                  : "The row is removed from the file."
+              }
+              closeResponse="cancel"
+              defaultResponse="cancel"
+              responses={[
+                { id: "cancel", label: "Cancel" },
+                { id: "delete", label: "Delete", appearance: Adw.ResponseAppearance.DESTRUCTIVE },
+              ]}
+              onResponse={(response) => {
+                if (response === "delete") edit(confirmDelete.key, (t) => withoutRow(t, confirmDelete.rowId));
+                setConfirmDelete(null);
+              }}
+            />
+          ) : null}
         </DisplaySettingsProvider>
       </AdwApplicationWindow>
     </AdwApplication>

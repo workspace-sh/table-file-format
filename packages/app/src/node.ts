@@ -3,12 +3,13 @@
 // what was wrong reading it. Node only (it reads the filesystem), so it's
 // a subpath, as core keeps its parser: `@workspace.sh/table-app/node`.
 
-import { readdirSync } from "node:fs";
+import { cpSync, existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parseBundle } from "@workspace.sh/table-core/parser";
+import { writeBundle } from "@workspace.sh/table-core/writer";
 import type { BundleMeta, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 
-import { fromBundle } from "./bundles.ts";
+import { fromBundle, toBundle } from "./bundles.ts";
 
 export interface Library {
   /** Every table, keyed `bundle/table` as table-app keys them. */
@@ -58,4 +59,28 @@ export async function loadLibrary(paths: string[]): Promise<Library> {
     if (messages.length > 0) library.problems[key] = messages;
   }
   return library;
+}
+
+/**
+ * Write one bundle of an app's tables back to where it was read from, by
+ * core's writer (atomic per file, SPEC section 1). An app calls it after
+ * edits; which bundles changed, and when to write, are the app's to say.
+ */
+export async function saveBundle(library: Library, tables: Record<string, ParsedTable>, bundles: Record<string, BundleMeta>, key: string): Promise<void> {
+  const path = library.paths[key];
+  if (!path) throw new Error(`no path for bundle ${JSON.stringify(key)}`);
+  await writeBundle(path, toBundle(tables, bundles, key));
+}
+
+/**
+ * Copies of the `.table` folders in `from`, in `to`, made once: a copy
+ * already there is left as it is, edits and all. For demos, which edit
+ * examples without touching the originals.
+ */
+export function copiesOf(from: string, to: string): string[] {
+  return bundlesIn(from).map((source) => {
+    const copy = join(to, basename(source));
+    if (!existsSync(copy)) cpSync(source, copy, { recursive: true });
+    return copy;
+  });
 }

@@ -1,0 +1,97 @@
+// Editing a cell, whatever draws the editor: which editor a field gets,
+// the text an edit starts from, and what saving a draft does (D42). The
+// web views and table-gtk both run these, so a value is refused, asked
+// about or saved the same way on every platform.
+
+import { enumOptions, type Field } from "@workspace.sh/table-core";
+
+import { checkEntry, type CellCheck } from "./cellCheck";
+
+/**
+ * The editor a field gets. A computed field is derived on read and never
+ * stored, so there's nothing to edit; a relation is picked, not typed.
+ */
+export type EditorKind = "readonly" | "boolean" | "list" | "choice" | "text";
+
+export function editorKind(field: Field | undefined): EditorKind {
+  if (field?.computed !== undefined) return "readonly";
+  if (field?.type === "boolean") return "boolean";
+  if (field?.type === "array" && !field.relation) return "list";
+  if (enumOptions(field).length > 0) return "choice";
+  return "text";
+}
+
+/** The kind of text input a field is typed in (the HTML input types; other toolkits map them). */
+export type InputKind = "number" | "date" | "datetime-local" | "time" | "text";
+
+export function inputKind(field: Field | undefined): InputKind {
+  switch (field?.type) {
+    case "integer":
+    case "number":
+      return "number";
+    case "date":
+      return "date";
+    case "datetime":
+      return "datetime-local";
+    case "time":
+      return "time";
+    default:
+      return "text";
+  }
+}
+
+/** The text an edit starts from: the stored value, or nothing. */
+export function draftOf(value: unknown): string {
+  return value === undefined || value === null ? "" : String(value);
+}
+
+/**
+ * A currency field's symbol, shown beside its input so it's clear what the
+ * number is in; the stored value is a plain number. Null for an unknown
+ * ISO 4217 code or a field without a currency format.
+ */
+export function currencySymbolOf(field: Field | undefined, locale?: string): string | null {
+  const format = field?.format;
+  if (!format?.startsWith("currency:")) return null;
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: "currency", currency: format.slice("currency:".length) }).formatToParts(0);
+    return parts.find((p) => p.type === "currency")?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** What saving a draft comes to. */
+export type Commit =
+  /** Saved: the value changed. */
+  | { kind: "save"; value: unknown }
+  /** Nothing to save: the draft is what's stored. The editor closes. */
+  | { kind: "unchanged" }
+  /**
+   * Not saved: the editor stays open with the reason. When `confirmable`,
+   * the same draft saved again is kept (an early year, D42): `queried`
+   * is the draft to pass back as `queried` next time.
+   */
+  | { kind: "problem"; check: CellCheck & { ok: false }; queried: string | null }
+  /** Left by moving away with a draft the column can't hold: dropped, as there's no one to ask. */
+  | { kind: "dropped" };
+
+/**
+ * Save `raw` into a cell holding `current`, from a key (Enter, Tab) or by
+ * leaving the editor (`blur`). `queried` is the draft already asked about.
+ * An early year is kept on leaving, being a valid date.
+ */
+export function commitDraft(
+  field: Field | undefined,
+  current: unknown,
+  raw: string,
+  how: "key" | "blur",
+  queried: string | null,
+): Commit {
+  const check = checkEntry(field, raw, queried === raw || how === "blur");
+  if (!check.ok) {
+    if (how === "blur") return { kind: "dropped" };
+    return { kind: "problem", check, queried: check.confirmable ? raw : queried };
+  }
+  return check.value !== current ? { kind: "save", value: check.value } : { kind: "unchanged" };
+}
