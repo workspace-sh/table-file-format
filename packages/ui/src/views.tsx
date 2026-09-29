@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import { placeCells } from "./sheets";
+import { checkEntry, type CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
@@ -1089,6 +1090,45 @@ const styles = css.create({
   // (cellEditableIdle) so swapping between display and edit doesn't shift
   // anything by even a pixel. Zero padding, zero border, transparent.
   // The focus indicator is on the parent tableCell via :focus-within.
+  // A cell whose draft wasn't saved (D42): the reason, just under it.
+  cellProblem: {
+    position: "fixed",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    width: "max-content",
+    maxWidth: 320,
+    paddingInline: 10,
+    paddingBlock: 6,
+    borderRadius: 8,
+    fontSize: 12,
+    lineHeight: 1.35,
+    whiteSpace: "normal",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+  },
+  cellProblemAt: (top: number, left: number) => ({ top, left }),
+  cellProblemRefused: {
+    color: "#ffffff",
+    backgroundColor: { default: "#c62828", "@media (prefers-color-scheme: dark)": "#b3261e" },
+  },
+  cellProblemAsk: {
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    backgroundColor: { default: "#fff4d6", "@media (prefers-color-scheme: dark)": "#3a3120" },
+  },
+  cellProblemFix: {
+    flexShrink: 0,
+    fontSize: 12,
+    fontWeight: "600",
+    paddingInline: 8,
+    paddingBlock: 3,
+    borderRadius: 6,
+    borderWidth: 0,
+    cursor: "pointer",
+    color: "#ffffff",
+    backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+  },
   cellInput: {
     width: "100%",
     paddingInline: 0,
@@ -1529,28 +1569,6 @@ function RelationCellValue({
   );
 }
 
-function coerceValue(field: Field | undefined, raw: string): unknown {
-  if (!field) return raw;
-  switch (field.type) {
-    case "integer": {
-      const n = Number(raw);
-      return Number.isInteger(n) ? n : raw === "" ? null : raw;
-    }
-    case "number": {
-      const n = Number(raw);
-      return Number.isNaN(n) ? (raw === "" ? null : raw) : n;
-    }
-    case "boolean":
-      return raw === "true";
-    case "time":
-    case "datetime":
-      // The native inputs omit seconds; the format stores them (SPEC "Value encodings").
-      return completeSeconds(field.type, raw);
-    default:
-      return raw;
-  }
-}
-
 interface EditableCellProps {
   field: Field | undefined;
   value: unknown;
@@ -1613,6 +1631,15 @@ function EditableCell({
   const readOnly = field?.computed !== undefined;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
+  // Why the draft wasn't saved (D42), and which draft an early year was
+  // already queried for, so Enter again keeps it.
+  const [problem, setProblem] = useState<(CellCheck & { ok: false }) | null>(null);
+  // Where to show it: over the table, which clips anything that leaves a cell.
+  const [problemAt, setProblemAt] = useState<AnchorRect | null>(null);
+  const queried = useRef<string | null>(null);
+  // Once the edit is saved or cancelled, the input's blur (which fires as
+  // it goes away) mustn't save the draft again over what was chosen.
+  const closed = useRef(false);
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
@@ -1635,8 +1662,11 @@ function EditableCell({
   }, [editing]);
 
   const startEdit = (text?: string) => {
+    closed.current = false;
     caretAtEnd.current = text !== undefined;
     setDraft(text ?? (value === undefined || value === null ? "" : String(value)));
+    setProblem(null);
+    queried.current = null;
     setEditing(true);
   };
   // A click edits the selected cell; an unselected one it leaves to the
@@ -1645,13 +1675,38 @@ function EditableCell({
     if (selected !== false) startEdit();
   };
 
-  const commit = (raw: string) => {
+  /**
+   * Save the draft if the column can hold it (D42). Returns false, and
+   * keeps the cell open with the reason, when it can't. On blur there's
+   * no one to ask: a value that can't be held is dropped, and an early
+   * year is kept, since it's a valid date.
+   */
+  const commit = (raw: string, how: "key" | "blur" = "key"): boolean => {
+    const check = checkEntry(field, raw, queried.current === raw || how === "blur");
+    if (!check.ok) {
+      if (how === "blur") {
+        closed.current = true;
+        setEditing(false);
+        setProblem(null);
+        return false;
+      }
+      if (check.confirmable) queried.current = raw;
+      setProblem(check);
+      void measureAnchor(inputRef.current).then(setProblemAt);
+      return false;
+    }
+    closed.current = true;
     setEditing(false);
-    const next = coerceValue(field, raw);
-    if (next !== value) onCommit(next);
+    setProblem(null);
+    if (check.value !== value) onCommit(check.value);
+    return true;
   };
 
-  const cancel = () => setEditing(false);
+  const cancel = () => {
+    closed.current = true;
+    setEditing(false);
+    setProblem(null);
+  };
 
   useEffect(() => {
     if (autoEdit && !readOnly) startEdit();
@@ -1669,12 +1724,10 @@ function EditableCell({
   // cancels; each hands the keyboard back to the table.
   const onEditKey = (e: KeyEventLike) => {
     if (e.key === "Enter") {
-      commit(draft);
-      onEditEnd?.("enter");
+      if (commit(draft)) onEditEnd?.("enter");
     } else if (e.key === "Tab") {
       e.preventDefault?.();
-      commit(draft);
-      onEditEnd?.(e.shiftKey ? "shift-tab" : "tab");
+      if (commit(draft)) onEditEnd?.(e.shiftKey ? "shift-tab" : "tab");
     } else if (e.key === "Escape") {
       cancel();
       onEditEnd?.("escape");
@@ -1805,18 +1858,60 @@ function EditableCell({
       ref={inputRef as any}
       type={inputType}
       value={draft}
-      onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
-      onBlur={() => commit(draft)}
+      onChange={(e: { target: { value: string } }) => {
+        setDraft(e.target.value);
+        setProblem(null);
+      }}
+      onBlur={() => {
+        if (!closed.current) commit(draft, "blur");
+      }}
       onKeyDown={onEditKey}
+      aria-invalid={problem && !problem.confirmable ? true : undefined}
       style={styles.cellInput}
     />
   );
-  if (!currencySymbol) return input;
-  return (
+  const field_ = currencySymbol ? (
     <html.span style={styles.cellInputAffixed}>
       <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
       {input}
     </html.span>
+  ) : (
+    input
+  );
+  if (!problem || !problemAt) return field_;
+  return (
+    <>
+      {field_}
+      <Portal>
+      <html.span
+        role="alert"
+        style={[
+          styles.cellProblem,
+          // Kept inside the window: a cell in the last column is near its edge.
+          styles.cellProblemAt(
+            problemAt.top + problemAt.height + 6,
+            typeof window === "undefined" ? problemAt.left - 8 : Math.max(8, Math.min(problemAt.left - 8, window.innerWidth - 348)),
+          ),
+          problem.confirmable ? styles.cellProblemAsk : styles.cellProblemRefused,
+        ]}
+      >
+        {problem.message}
+        {problem.suggestion && (
+          <html.button
+            style={styles.cellProblemFix}
+            // Keeps the input focused, so no blur saves the draft first.
+            onMouseDown={(e: { preventDefault?: () => void }) => e.preventDefault?.()}
+            onClick={() => {
+              setDraft(problem.suggestion!);
+              if (commit(problem.suggestion!)) onEditEnd?.("done");
+            }}
+          >
+            Use {problem.suggestion.slice(0, 4)}
+          </html.button>
+        )}
+      </html.span>
+      </Portal>
+    </>
   );
 }
 

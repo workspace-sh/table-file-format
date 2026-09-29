@@ -1079,3 +1079,24 @@ arrives (#124). A running total such as `(+ (at "b" -1 "v") amount)` is
 empty in the first row until that engine treats an empty cell as 0 in
 arithmetic, as OpenFormula does (section 6.3.5); `(sum …)` works now.
 
+## D42: Dates hold any year from 0000 to 9999; the editor refuses what a column can't hold
+
+**Decided (29 Sep 2026, Leslie: "go with your suggestion for now, document it also so we can revisit it"). Open to revisit.**
+
+A `date` is RFC 3339 `full-date`, so any year from 0000 to 9999: a `.table` can be a historical listing. Years before 1583 use the Gregorian calendar extended backwards (ISO 8601), whatever calendar was in use then. Dates before the Common Era stay out of `date`; text or a `year` holds them.
+
+**What others do** (checked 29 Sep 2026 against each vendor's own documentation):
+- **Excel** calculates with dates from 1 January 1900 (1904 in its older Mac date system) to 31 December 9999; earlier dates are kept as text ([Microsoft](https://support.microsoft.com/en-us/office/excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3)).
+- **Google Sheets** counts days from 30 December 1899, gives `#NUM!` for years below 0 or above 10,000, and its `DATE()` adds 1900 to any year from 0 to 1899 ([Google](https://support.google.com/docs/answer/3092969)).
+- **Airtable** date fields hold 1/1/0000 to 12/31/9999, with no BC dates ([Airtable](https://support.airtable.com/docs/date-and-time-field)).
+- **OpenFormula** (ODF 1.4 Part 4, sections 4.3.3 and 7.4): evaluators must calculate 1904-01-01 to 9999-12-31, should from 1899-12-30, and may go wider; the optional "Year 1583" feature calculates correctly from 1583, and earlier dates may use the extended Gregorian calendar, implementation-defined.
+- **Notion** and **LibreOffice**: no statement of their range found in their own documentation, so not counted.
+
+So `.table` stores what Airtable stores. Excel's and OpenFormula's limits are on calculation, which is the formula engine's concern (#124): date arithmetic before 1900 may not match Excel.
+
+**Entry.** A cell editor refuses a value its column can't hold, for the reasons the validator would give, with the reason shown and the cell kept open (reference: `checkEntry()` in `@workspace.sh/table-ui`). A date before the year 1000 is valid but is far more often a year typed short (a browser's date picker saves `0025` part-way through typing `2025`), so the editor asks once ("The year is 25. Did you mean 2025?") and keeps it if confirmed. Clearing a cell is always allowed.
+
+**Why:** Leslie wants a `.table` usable for historical dates; the widest range a date type commonly holds (Airtable's) serves that, while catching typos at entry rather than narrowing the format.
+
+**Revisit when:** the formula engine (#124) settles how dates before 1900 calculate, or if Excel round-trips need a narrower range.
+
