@@ -573,3 +573,15 @@ export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOp
   }
   return { view: viewId, columns: grid.columns, rows, position, hidden, groups: grid.groups, loop: grid.looped };
 }
+
+/**
+ * A Sheet view's row ids in grid order, without filling in the rows'
+ * computed fields: what an app numbers rows by, and what formulas typed
+ * in it count in (D41). Null when the view isn't a Sheet view.
+ */
+export function sheetOrder(table: ParsedTable, viewId: string, options: ComputeOptions = {}): { ids: string[]; loop: boolean } | null {
+  const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...options });
+  const grid = workbook.top(() => workbook.grid(sheet, viewId));
+  if (grid instanceof FormulaError) return null;
+  return { ids: grid.order.map((i) => sheet.rows[i]!.id), loop: grid.looped };
+}

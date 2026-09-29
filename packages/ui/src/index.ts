@@ -17,3 +17,4 @@ export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
 export { ViewSettings, type ViewSettingsProps } from "./ViewSettings";
+export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells } from "./sheets";
