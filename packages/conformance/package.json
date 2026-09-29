@@ -6,8 +6,8 @@
   "description": "OpenFormula conformance: public test cases written in EDN, and a runner that measures engines against them.",
   "scripts": {
     "list:functions": "node --import tsx scripts/list-openformula-functions.ts",
-    "run": "node --disable-warning=ExperimentalWarning --import tsx src/run.ts",
-    "test": "node --disable-warning=ExperimentalWarning --import tsx --test src/**/*.test.ts",
+    "run": "node --conditions=source --disable-warning=ExperimentalWarning --import tsx src/run.ts",
+    "test": "node --conditions=source --disable-warning=ExperimentalWarning --import tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
