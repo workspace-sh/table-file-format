@@ -8,7 +8,7 @@ import type {
   ValidationError,
   View,
 } from "./types.js";
-import type { WriteBundleInput } from "./writer.js";
+import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
