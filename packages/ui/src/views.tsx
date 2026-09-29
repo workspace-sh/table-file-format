@@ -3449,14 +3449,14 @@ export function ListView({
                 ) : null}
               </html.span>
               {secondaryFields.map((name) => (
-                <html.span key={name} style={styles.listItemSecondary}>
+                <html.div key={name} style={styles.listItemSecondary}>
                   <CellValue
                     field={fieldMap.get(name)}
                     value={row[name]}
                     relatedTables={relatedTables}
                     onOpenRelation={onOpenRelation}
                   />
-                </html.span>
+                </html.div>
               ))}
             </html.div>
           </DragHandle>
@@ -3780,14 +3780,14 @@ function CardBody({
       {fields.map((name) => (
         <html.div key={name} style={styles.cardField}>
           <html.span style={styles.cardFieldLabel}>{fieldMap.get(name)?.title ?? name}</html.span>
-          <html.span style={styles.cardFieldValue}>
+          <html.div style={styles.cardFieldValue}>
             <CellValue
               field={fieldMap.get(name)}
               value={row[name]}
               relatedTables={relatedTables}
               onOpenRelation={onOpenRelation}
             />
-          </html.span>
+          </html.div>
         </html.div>
       ))}
     </>
