@@ -18,6 +18,8 @@ prepare_react_native_project!
 target 'TableDesktop-macOS' do
   platform :macos, '14.0'
   use_native_modules!
+  # The app's own native module (native/TablePanels): the system Open panel.
+  pod 'TablePanels', :path => '../native/TablePanels'
 
   use_react_native!(
     :path => rn_macos_rel_path,
