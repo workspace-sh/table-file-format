@@ -109,9 +109,12 @@ Four rules live in the reducer, not in the apps:
 
 **Selectors** (pure): `derive(state, { platform, locale })` returns (with the platform's locale for `viewerLocale`, the direction and `viewerOrder`) what the drawing needs: `table`, `view`, the shown view (`showView`, with this viewer's arrangement and search), `viewSummary`, `tableBreadcrumb`, the sidebar entries (`sidebarTree` flattened, or `filesTree`), `appCommands` with their enabled state, the mode (from `sidebar.files`), and a `ViewProps`-shaped set of callbacks for the view on screen, each dispatching its named action.
 
-**React binding**: `@workspace.sh/table-app/react` exports `useTableApp(initial, adapter)`, which wraps `useReducer` plus the effects every app writes today:
-- saving `sidebar`, `arrangements` and `display` through `adapter.store`, a `KeyValueStore`;
-- calling `adapter.write(dirty)` a moment after the last edit, then dispatching `written`.
+**React binding**: `@workspace.sh/table-app/react` exports `useTableApp(init, adapter, locale?)`. It wraps `useReducer` and runs the effects every app wrote. The adapter is `{ store, write(bundles, tables, metas), delayMs }`. The hook:
+- saves `sidebar`, `arrangements` (of views that still exist) and `display` through `adapter.store`, a `KeyValueStore`;
+- calls `adapter.write` with the dirty bundles `delayMs` after the last edit, then dispatches `written` with the tables written. A rejection leaves them dirty and shows as `saving`'s failure. `false` means the app held the write back (Linux's reset), and leaves them dirty too.
+- returns `{ state, dispatch, display, saving }`, where `display` is the display settings with the direction the viewer's language reads.
+
+Each app still calls `derive` itself, since its options (attachments, file names) depend on its own state. The write scheduling is `scheduleWrite`, a plain function tested without a renderer.
 
 React becomes a peer dependency of that subpath only. The core stays renderer-free and React-free.
 
