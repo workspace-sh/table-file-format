@@ -49,6 +49,7 @@ import {
 } from "@workspace.sh/table-app";
 import { useTableApp } from "@workspace.sh/table-app/react";
 import { openStore } from "./store";
+import { TablesSheet } from "./TablesSheet";
 
 // Horizontal page padding. Used as positive padding on the scroll
 // container AND as negative margin on horizontally-scrolling sections
@@ -135,24 +136,6 @@ const styles = css.create({
       default: "#92400e",
       "@media (prefers-color-scheme: dark)": "#fbbf24",
     },
-  },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 4,
-    color: {
-      default: "#8e8e93",
-      "@media (prefers-color-scheme: dark)": "#6e6e73",
-    },
-  },
-  tabRow: {
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginBottom: 10,
   },
   tab: {
     paddingInline: 10,
@@ -246,13 +229,26 @@ const styles = css.create({
     flex: 1,
     marginBottom: 0,
   },
-  breadcrumb: {
-    fontSize: 12,
+  picker: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    minHeight: 32,
+    paddingInline: 0,
     marginBottom: 2,
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
+    borderWidth: 0,
+    backgroundColor: "transparent",
+  },
+  pickerText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+  },
+  pickerChevron: {
+    fontSize: 13,
+    color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
   },
 });
 
@@ -434,8 +430,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // The view on screen's callbacks, each an action (table-app's viewCallbacks).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, active]);
-  // Every table, file by file, in each file's order.
-  const tableList = derived.sidebarTree.flatMap((b) => b.tables);
+  // The sheet of files and tables, open or not.
+  const [tablesOpen, setTablesOpen] = useState(false);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -446,7 +442,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
           <html.div style={styles.root}>
             <Safe style={{ flex: 1 }}>
               <html.div style={styles.scroll}>
-                <html.span style={styles.breadcrumb}>{derived.breadcrumb.text}</html.span>
+                {/* Where this view is, and the way to the other tables: a sheet of files and tables. */}
+                <html.button onClick={() => setTablesOpen(true)} aria-label="Choose a table" style={styles.picker}>
+                  <html.span dir="auto" style={styles.pickerText}>{derived.breadcrumb.text}</html.span>
+                  <html.span style={styles.pickerChevron}>⌄</html.span>
+                </html.button>
                 <html.span dir="auto" style={styles.title}>{view.name}</html.span>
                 <html.div style={styles.subtitle}>
                   <html.span>{summary.count}</html.span>
@@ -455,24 +455,18 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
                   {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
                 </html.div>
-                <html.span style={styles.sectionLabel}>Tables</html.span>
-                <html.div style={styles.tabRow}>
-                  {tableList.map((t) => (
-                    <html.button
-                      key={t.key}
-                      onClick={() => dispatch({ type: "showTable", key: t.key })}
-                      style={[styles.tab, t.key === active && styles.tabActive]}
-                    >
-                      {t.title}
-                    </html.button>
-                  ))}
-                </html.div>
-                <html.span style={styles.sectionLabel}>Views</html.span>
-                <html.div style={styles.tabRow}>
+                {/* This table's views, one line that scrolls sideways to the screen's edges. */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ flexGrow: 0, marginHorizontal: -MOBILE_H_PADDING, marginBottom: 10 }}
+                  contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, gap: 6 }}
+                >
                   {table.views.map((v) => (
                     <html.button
                       key={v.id}
                       onClick={() => dispatch({ type: "showView", key: active, viewId: v.id })}
+                      aria-current={v.id === view.id ? true : undefined}
                       style={[styles.tab, v.id === view.id && styles.tabActive]}
                     >
                       {v.name}
@@ -481,7 +475,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   <html.button onClick={() => dispatch({ type: "addView", id: newId() })} style={styles.tab}>
                     + New view
                   </html.button>
-                </html.div>
+                </ScrollView>
                 <html.div style={styles.toolbar}>
                   <html.button
                     onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
@@ -524,6 +518,16 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 </ScrollView>
               </html.div>
             </Safe>
+            <TablesSheet
+              open={tablesOpen}
+              files={derived.sidebarTree}
+              active={active}
+              onChoose={(key) => {
+                dispatch({ type: "showTable", key });
+                setTablesOpen(false);
+              }}
+              onClose={() => setTablesOpen(false)}
+            />
             {state.openPage && (
               <BodyEditor
                 rowId={state.openPage}
