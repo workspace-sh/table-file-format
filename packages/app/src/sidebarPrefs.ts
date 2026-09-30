@@ -42,3 +42,13 @@ export function saveSidebarPrefs(store: KeyValueStore | null, prefs: SidebarPref
     // Not kept past a reload; still applied now.
   }
 }
+
+/**
+ * The prefs with `bundle`'s file unfolded, so the table on screen is never
+ * hidden in a folded file; the same prefs when it isn't folded. Folding it
+ * again afterwards is still the viewer's to do.
+ */
+export function withFileUnfolded(prefs: SidebarPrefs, bundle: string): SidebarPrefs {
+  const folded = prefs.foldedFiles ?? [];
+  return folded.includes(bundle) ? { ...prefs, foldedFiles: folded.filter((b) => b !== bundle) } : prefs;
+}

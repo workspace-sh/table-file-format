@@ -88,6 +88,10 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  DEFAULT_TABLE_KEY,
+  firstTableKey,
+  firstViews,
+  withFileUnfolded,
   type AppCommand,
   NO_HISTORY,
   addressLive,
@@ -131,7 +135,14 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
-const DEFAULT_TABLE_PATH = "projects/projects";
+/** Shown only if no table is held at all, which the examples prevent: a table with one view and nothing in it. */
+const NO_TABLE: ParsedTable = {
+  path: "",
+  schema: { fields: [] },
+  rows: [],
+  views: [{ id: "all", name: "All", layout: "table" }],
+  meta: {},
+};
 /** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
 const NARROW_AT_MOST = 760;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
@@ -456,10 +467,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
   const folders = useFolders({ store, tables, setTables, bundles, setBundles, onProblem: showProblem });
-  const [activeTablePath, setActiveTablePath] = useState<string>(DEFAULT_TABLE_PATH);
-  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() =>
-    Object.fromEntries(Object.entries(initial.tables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
-  );
+  const [activeTablePath, setActiveTablePath] = useState<string>(() => firstTableKey(initial.tables) ?? DEFAULT_TABLE_KEY);
+  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => firstViews(initial.tables));
   // Saved after every change. The fixtures themselves are never saved, so
   // an untouched app keeps following them as they change. An opened
   // folder's tables live in the folder (folders.ts), so they're left out.
@@ -482,10 +491,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     const after = afterReset(tables, bundles, { tables: initialTables, bundles: bundleMetas }, opened);
     setTables(after.tables);
     setBundles(after.bundles);
-    if (!opened.includes(bundleOf(activeTablePath))) setActiveTablePath(DEFAULT_TABLE_PATH);
+    if (!opened.includes(bundleOf(activeTablePath))) setActiveTablePath(firstTableKey(after.tables) ?? DEFAULT_TABLE_KEY);
     setActiveViewIds((prev) => ({
       ...Object.fromEntries(Object.entries(prev).filter(([key]) => opened.includes(bundleOf(key)))),
-      ...Object.fromEntries(Object.entries(initialTables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
+      ...firstViews(initialTables),
     }));
     setQuery("");
     setActiveBodyRowId(null);
@@ -721,7 +730,21 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // A sort of the viewer's own follows their language.
   const viewerText = useMemo(() => new Intl.Collator(locale, { numeric: true }).compare, [locale]);
 
-  const table = tables[activeTablePath]!;
+  // The table on screen; the first held when it's gone (NO_TABLE only if none is held at all).
+  const table = tables[activeTablePath] ?? tables[firstTableKey(tables) ?? ""] ?? NO_TABLE;
+  useEffect(() => {
+    const first = firstTableKey(tables);
+    if (!tables[activeTablePath] && first) setActiveTablePath(first);
+  }, [tables, activeTablePath]);
+  // Opening a table unfolds its file, so the sidebar always shows where you are.
+  const activeBundle = bundleOf(activeTablePath);
+  useEffect(() => {
+    setSidebarPrefs((prefs) => {
+      const next = withFileUnfolded(prefs, activeBundle);
+      if (next !== prefs) saveSidebarPrefs(store, next);
+      return next;
+    });
+  }, [activeBundle, store]);
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
   // Back and forward between views (table-app's history): each view shown is
   // recorded by its address; going back or forward skips ones since deleted.
@@ -1031,7 +1054,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     };
   }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown, history]);
 
-  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
+  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0] ?? NO_TABLE.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const sheet = useMemo(() => sheetShown(tables, activeTablePath, view), [tables, activeTablePath, view]);
   const personal = arrangements[activeTablePath]?.[view.id];
@@ -1125,9 +1148,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               </Hinted>
               {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
               {summary.schemaChanged && (
-                <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
-                  {summary.schemaChangedLabel}
-                </Hinted>
+                <>
+                  <html.span>·</html.span>
+                  <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
+                    {summary.schemaChangedLabel}
+                  </Hinted>
+                </>
               )}
             </html.div>
             {/* The view's own actions; the tables, views and files are in the sidebar. */}
@@ -1144,7 +1170,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             </html.div>
             <html.input
               type="text"
-              placeholder="Search..."
+              placeholder="Search…"
               value={query}
               onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
               style={styles.searchInput}
