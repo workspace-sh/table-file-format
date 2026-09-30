@@ -20,6 +20,7 @@
       "@workspace.sh/table-ui/shared": ["../../packages/ui/src/shared.ts"],
       "@workspace.sh/table-app": ["../../packages/app/src/index.ts"],
       "@workspace.sh/table-app/node": ["../../packages/app/src/node.ts"],
+      "@workspace.sh/table-app/react": ["../../packages/app/src/react.ts"],
       "@workspace.sh/table-gtk": ["../../packages/gtk/src/index.ts"],
       "react": ["./node_modules/@types/react"],
       "react/*": ["./node_modules/@types/react/*"],
