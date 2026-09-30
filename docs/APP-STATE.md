@@ -99,6 +99,8 @@ export function tableApp(state: AppState, action: AppAction): AppState;
 export function initialAppState(input: { tables; bundles; opened?; stored: StoredPrefs; start?: Address }): AppState;
 ```
 
+Pass `start` only for a link or address being followed (Linux's `--open`, the web's address on load), not to choose the default table. It lands as a followed link does, on the Tables side, so a bare launch that passes it loses a remembered Files side. The first table is `firstTableKey`'s, as it is with no `start`. The web passes its address on every load, since a reload keeps it, so it keeps the remembered side itself.
+
 Four rules live in the reducer, not in the apps:
 - **Leaving a view.** After every action, if `active` or its view changed (`leaving`), `search` clears and `settingsOpen` closes. That includes `reset` and `opened`, which change `active`, as the apps do today. `addView` is the one exception: it opens the new view's settings.
 - **Recording history.** After every action, the view on screen is passed to `visited`, and `back` and `forward` skip dead entries (`addressLive`). The apps stop recording views themselves.
