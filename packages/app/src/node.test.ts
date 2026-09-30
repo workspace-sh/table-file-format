@@ -39,3 +39,19 @@ test("attaching copies the file into the table's attachments folder under a free
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a table's attachments are listed from its folder, sorted; none without the folder", async () => {
+  const { attachmentsIn } = await import("./node.ts");
+  const dir = mkdtempSync(join(tmpdir(), "table-app-list-"));
+  try {
+    assert.deepEqual(attachmentsIn(dir), []);
+    const folder = join(dir, "attachments");
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(folder, "sub"), { recursive: true });
+    writeFileSync(join(folder, "b.png"), "");
+    writeFileSync(join(folder, "a.svg"), "");
+    assert.deepEqual(attachmentsIn(dir), ["a.svg", "b.png"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

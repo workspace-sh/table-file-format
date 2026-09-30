@@ -20,11 +20,15 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { quit } from "@gtkx/react";
 import {
+  attachmentAt,
   attachmentPath,
   bundleOf,
+  fileText,
+  filesTree,
+  flattenFilesTree,
   flattenSidebar,
   sidebarTree,
   type SidebarEntry,
@@ -57,7 +61,8 @@ import {
   withRowAt,
   withViewPatch,
 } from "@workspace.sh/table-app";
-import { attachFile, saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { attachFile, attachmentsIn, saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
 import { newId, textDirection, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
@@ -348,6 +353,11 @@ export function App({
   const [bundles, setBundles] = useState(library.bundles);
   // Where each bundle is kept: those opened, and new files, made in `newFilesIn`.
   const [paths, setPaths] = useState(library.paths);
+  // The sidebar's side (tables and views, or the files on disk), and on the
+  // Files side, the folders opened or closed and the file shown.
+  const [mode, setMode] = useState<"tables" | "files">("tables");
+  const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
+  const [shownFile, setShownFile] = useState<ShownFile | null>(null);
   // A name being asked for: a new table in a bundle, or a new .table file.
   const [naming, setNaming] = useState<{ kind: "table"; bundle: string } | { kind: "file" } | null>(null);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
@@ -466,6 +476,22 @@ export function App({
       })()
     : null;
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
+  const fileEntries = useMemo(
+    () =>
+      mode === "files"
+        ? flattenFilesTree(
+            filesTree(tables, bundles, {
+              activeTable: active,
+              opened: openedDirs,
+              attachmentsOf: (key) => (paths[bundleOf(key)] ? attachmentsIn(tableDir(key)) : []),
+            }),
+          )
+        : [],
+    // tableDir reads `paths`, listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, tables, bundles, active, openedDirs, paths],
+  );
+  const shownAttachment = shownFile ? attachmentAt(shownFile.bundle, shownFile.path) : null;
 
   return (
     <AdwApplication>
@@ -481,12 +507,25 @@ export function App({
                 topBar={
                   <AdwHeaderBar
                     showEndTitleButtons={false}
-                    titleWidget={<AdwWindowTitle title="Tables" />}
+                    titleWidget={
+                      <GtkBox cssClasses={["linked"]}>
+                        <GtkToggleButton label="Tables" active={mode === "tables"} onToggled={(b) => b.getActive() && setMode("tables")} />
+                        <GtkToggleButton label="Files" active={mode === "files"} onToggled={(b) => b.getActive() && setMode("files")} />
+                      </GtkBox>
+                    }
                     start={<GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => setNaming({ kind: "file" })} />}
                     end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
                   />
                 }
               >
+                {mode === "files" ? (
+                  <FilesSidebar
+                    entries={fileEntries}
+                    shown={shownFile}
+                    onToggleDir={(id, open) => setOpenedDirs((prev) => ({ ...prev, [id]: open }))}
+                    onShowFile={setShownFile}
+                  />
+                ) : (
                 <Sidebar
                   entries={entries}
                   selected={selected}
@@ -496,10 +535,17 @@ export function App({
                   }}
                   onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
                 />
+                )}
               </AdwToolbarView>
             }
           >
-            {table && view ? (
+            {mode === "files" && shownFile ? (
+              <AttachmentsProvider
+                value={(file) => (shownAttachment && tables[shownAttachment.tableKey] ? attachmentPath({ ...tables[shownAttachment.tableKey]!, path: tableDir(shownAttachment.tableKey) }, file) : undefined)}
+              >
+                <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path)} attachmentName={shownAttachment?.name} />
+              </AttachmentsProvider>
+            ) : table && view ? (
               <TablePane
                 key={active}
                 tables={tables}
