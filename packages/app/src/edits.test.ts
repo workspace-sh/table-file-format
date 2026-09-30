@@ -7,6 +7,7 @@ import {
   deleteViewPrompt,
   deletingRow,
   deletingView,
+  viewPatchPrompt,
   onTable,
   rowTitleFor,
   withBody,
@@ -139,4 +140,18 @@ test("deleting a row names it, says whether its document goes, and closes that d
   assert.equal(plain.closeBody, false);
   assert.equal(deletingRow(tasks, "t1", null).closeBody, false);
   assert.equal(plain.prompt.responses.at(-1)!.destructive, true);
+});
+
+test("turning a Sheet view that formulas read into anything else asks first", () => {
+  const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
+  const byDate = ledger.views.find((v) => v.id === "by-date")!;
+  const asked = viewPatchPrompt(held, "household-budget/ledger", byDate, { coordinates: undefined })!;
+  assert.match(asked.heading, /^(A formula reads|\d+ formulas read) this sheet by place and will show #REF!\.$/);
+  assert.equal(asked.body, "Stop showing it as a sheet?");
+  assert.deepEqual(asked.responses.map((r) => [r.id, r.destructive ?? false]), [["cancel", false], ["stop", true]]);
+  assert.equal(viewPatchPrompt(held, "household-budget/ledger", byDate, { layout: "board" })?.body, "Stop showing it as a sheet?");
+  // Anything that keeps it a sheet, or a sheet nothing reads, or a view that isn't one, just changes.
+  assert.equal(viewPatchPrompt(held, "household-budget/ledger", byDate, { name: "Dated" }), null);
+  assert.equal(viewPatchPrompt(held, "projects/tasks", { ...tasks.views[0]!, coordinates: true }, { coordinates: undefined }), null);
+  assert.equal(viewPatchPrompt(held, "projects/tasks", tasks.views[0]!, { layout: "board" }), null);
 });

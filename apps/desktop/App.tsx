@@ -23,7 +23,6 @@ import {
   TableView,
   ViewSettings,
   canInsertAt,
-  sheetDependents,
 } from "@workspace.sh/table-ui";
 import {
   ARRANGEMENTS_KEY,
@@ -66,6 +65,7 @@ import {
   withoutView,
   deletingRow,
   deletingView,
+  viewPatchPrompt,
   type Confirm,
   type Arrangements,
   bundleOf,
@@ -955,19 +955,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   schema={table.schema}
                   onChange={(patch) => {
                     // Turning a Sheet view into anything else loses its grid (D41).
-                    const readers =
-                      isSheet(view) && !isSheet({ ...view, ...patch })
-                        ? sheetDependents(inBundle, tableNameOf(activeTablePath), view.id).length
-                        : 0;
-                    if (readers === 0) return updateActiveView(patch);
-                    Alert.alert(
-                      `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
-                      "Stop showing it as a sheet?",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Stop", style: "destructive", onPress: () => updateActiveView(patch) },
-                      ],
-                    );
+                    const prompt = viewPatchPrompt(tables, activeTablePath, view, patch);
+                    if (!prompt) return updateActiveView(patch);
+                    ask(prompt, (response) => {
+                      if (response === "stop") updateActiveView(patch);
+                    });
                   }}
                   onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
                   personal={isArranged(personal)}
