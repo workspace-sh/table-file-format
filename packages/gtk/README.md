@@ -31,8 +31,9 @@ It has no build or checks of its own: GTK code can only be typechecked
 where GTKX and the machine's bindings are. `apps/linux` typechecks, lints
 and tests it (`npm run check` there).
 
-Lists, relations and attachments are shown but not yet edited, and cards
-don't drag yet. Saving is the app's: table-app's edits change a table,
+Lists edit in place (a multi-select's popover of choices, or a plain list
+typed as "a, b, c"). Relations and attachments are shown but not yet
+edited, and cards don't drag yet. Saving is the app's: table-app's edits change a table,
 and `table-app/node`'s `saveBundle` writes it. The look follows the GNOME
 HIG (libadwaita's cards, navigation sidebar, dialogs) rather than copying
 the web views pixel for pixel.

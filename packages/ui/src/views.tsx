@@ -24,7 +24,7 @@ import {
   visibleFields,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind } from "./cellEdit";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled } from "./cellEdit";
 import { formulaInputCells, viewGrid } from "./formulaCell";
 import {
   BOARD_GAP,
@@ -1845,7 +1845,7 @@ function ListCell({
   editRequest?: EditRequest;
   onEditEnd?: (how: EditEnd) => void;
 }) {
-  const items = Array.isArray(value) ? value.map(String) : [];
+  const items = listItems(value);
   const options = enumOptions(field);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -1855,7 +1855,7 @@ function ListCell({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const optionRefs = useRef<any[]>([]);
   const openPicker = async () => {
-    setText(items.join(", "));
+    setText(listText(value));
     setRect(await measureAnchor(anchor.current));
     setOpen(true);
   };
@@ -1906,8 +1906,7 @@ function ListCell({
   if (options.length === 0) {
     const commit = () => {
       setOpen(false);
-      const next = text.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
-      onCommit(next.length ? next : undefined);
+      onCommit(listFromText(text));
     };
     return (
       <html.input
@@ -1928,12 +1927,7 @@ function ListCell({
       />
     );
   }
-  const toggle = (choice: string) => {
-    const next = items.includes(choice) ? items.filter((i) => i !== choice) : [...items, choice];
-    // Kept in the choice list's order, so the same set is always written the same way.
-    const ordered = options.map((o) => o.value).filter((v) => next.includes(v));
-    onCommit(ordered.length ? ordered : undefined);
-  };
+  const toggle = (choice: string) => onCommit(listToggled(field, value, choice));
   return (
     <>
       {shown}
