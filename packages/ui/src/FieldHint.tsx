@@ -18,10 +18,16 @@ import { useHoverHint } from "./internal/useHoverHint";
  */
 export function Hinted({
   hint,
+  text,
   style,
   children,
 }: {
   hint: ReactNode;
+  /**
+   * The hint as plain text, for platforms whose tooltips take only text
+   * (macOS), when `hint` is richer than a string (a column's FieldHint).
+   */
+  text?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   style?: any;
   children: ReactNode;
@@ -30,7 +36,7 @@ export function Hinted({
   // Centres what it wraps, so a badge or button inside a row keeps the
   // alignment it had without the wrapper.
   return (
-    <Tooltip text={typeof hint === "string" ? hint : undefined}>
+    <Tooltip text={typeof hint === "string" ? hint : text}>
       <html.span {...props} style={[styles.hinted, style]}>
         {children}
         {element}
