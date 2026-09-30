@@ -38,6 +38,9 @@ import {
   visibleFields,
   type ViewProps,
   rowNumber,
+  fieldHint,
+  fieldHintText,
+  useDisplaySettings,
 } from "@workspace.sh/table-ui/shared";
 import { useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -207,6 +210,7 @@ export function TableView({
       <GtkLabel label={content} widthRequest={ROW_NUMBER_WIDTH} heightRequest={height} cssClasses={[styles.rowNumber]} />
     ) : null;
 
+  const { formulaSyntax } = useDisplaySettings();
   const header = (
     <GtkBox cssClasses={[styles.headerRow]}>
       {gutter("", HEADER_HEIGHT)}
@@ -222,7 +226,8 @@ export function TableView({
               ellipsize={Pango.EllipsizeMode.END}
               maxWidthChars={1}
               cssClasses={[styles.headerCell]}
-              tooltipText={schemaEditable ? `${field?.description ?? title} · Edit Field` : (field?.description ?? title)}
+              // What the column is, as the web's header hint says it (table-ui's fieldHint).
+              tooltipText={fieldHintText(fieldHint({ field, name, schema, editable: schemaEditable, formulaSyntax }))}
               // A header opens its field's editor, where the schema can be edited.
               controllers={schemaEditable ? <GtkGestureClick onReleased={() => setEditingField(name)} /> : undefined}
             />
