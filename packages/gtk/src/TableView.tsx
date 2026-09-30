@@ -76,7 +76,8 @@ function Cell({ width, height, children, classes = [] }: { width: number; height
 /** The row menu's entries, by what the table was given to do. */
 function rowMenu(hasBody: boolean, canOpen: boolean, canInsert: boolean, canDelete: boolean): MenuItem[] {
   return [
-    ...(canOpen && hasBody ? [{ section: [{ label: "Open Page", action: "row.open" }] }] : []),
+    // A row without a page can have one started from here.
+    ...(canOpen ? [{ section: [{ label: hasBody ? "Open Page" : "Add Page", action: "row.open" }] }] : []),
     ...(canInsert
       ? [{ section: [{ label: "Insert Row Above", action: "row.above" }, { label: "Insert Row Below", action: "row.below" }] }]
       : []),
@@ -120,7 +121,7 @@ function BodyRow({
           prefix="row"
           actions={
             <>
-              <GSimpleAction name="open" enabled={hasBody && !!onOpenBody} onActivate={() => onOpenBody?.(rowId)} />
+              <GSimpleAction name="open" enabled={!!onOpenBody} onActivate={() => onOpenBody?.(rowId)} />
               <GSimpleAction name="above" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "above")} />
               <GSimpleAction name="below" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "below")} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />

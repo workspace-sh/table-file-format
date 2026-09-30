@@ -28,6 +28,7 @@ import {
   showView,
   tableKeysIn,
   tableNameOf,
+  withBody,
   withCell,
   withChoice,
   withField,
@@ -49,6 +50,7 @@ import {
   DisplaySettingsProvider,
   GalleryView,
   ListView,
+  RowPage,
   TableView,
   ViewSettings,
   type ViewProps,
@@ -155,6 +157,7 @@ interface Edits {
   onAddEnumValue: (name: string, value: string) => void;
   onMoveField: (name: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
+  onOpenBody: (rowId: string) => void;
 }
 
 /** What the header can do to the table's views. */
@@ -263,6 +266,9 @@ export function App({ library, initialTable, initialView }: { library: Library; 
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
   const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
+  // A row's page open, by table and row.
+  const [openPage, setOpenPage] = useState<{ key: string; rowId: string } | null>(null);
+  const pageTable = openPage ? tables[openPage.key] : undefined;
   // Bundles edited since they were last written.
   const dirty = useRef(new Set<string>());
   const firstTable = Object.keys(library.bundles).flatMap((b) => tableKeysIn(library.tables, library.bundles, b))[0] ?? "";
@@ -309,6 +315,7 @@ export function App({ library, initialTable, initialView }: { library: Library; 
     onAddEnumValue: (name, value) => edit(key, (t) => withChoice(t, name, value)),
     onMoveField: (name, delta) => edit(key, (t) => withFieldMoved(t, name, delta)),
     onAddField: (field) => edit(key, (t) => withField(t, field, viewId)),
+    onOpenBody: (rowId) => setOpenPage({ key, rowId }),
   });
   const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
 
@@ -365,6 +372,16 @@ export function App({ library, initialTable, initialView }: { library: Library; 
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {openPage && pageTable ? (
+            <RowPage
+              key={`${openPage.key}#${openPage.rowId}`}
+              rowId={openPage.rowId}
+              rowTitle={rowTitleFor(pageTable, openPage.rowId)}
+              content={pageTable.bodies?.[openPage.rowId] ?? ""}
+              onSave={(content) => edit(openPage.key, (t) => withBody(t, openPage.rowId, content))}
+              onClose={() => setOpenPage(null)}
+            />
+          ) : null}
           {confirmViewDelete && viewPrompt ? (
             <AdwAlertDialog
               heading={viewPrompt.heading}
