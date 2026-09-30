@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
@@ -25,12 +25,11 @@ import {
   bundleOf,
   bundleTables,
   bundleToArchive,
+  derive,
   clearSaved,
   confirmText,
-  derive,
   exportFailedText,
   fileText,
-  forViews,
   fromBundle,
   hintWithShortcut,
   initialAppState,
@@ -42,11 +41,7 @@ import {
   openFailedText,
   rowTitleFor,
   save,
-  saveArrangements,
-  saveDisplay,
-  saveSidebarPrefs,
   schemaVersions,
-  tableApp,
   tableNameOf,
   TOOLBAR_HINTS,
   toBundle,
@@ -56,6 +51,7 @@ import {
   type AttachmentShown,
   type ShownFile,
 } from "@workspace.sh/table-app";
+import { useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
@@ -306,45 +302,38 @@ export function App() {
   // Everything the app holds is table-app's state (docs/APP-STATE.md):
   // edits survive a reload (#86), from what was saved or the fixtures, and
   // the viewer's own settings come from this browser.
-  const [state, dispatch] = useReducer(tableApp, undefined, () => {
-    const fixtures = { tables: initialTables, bundles: initialBundles };
-    const saved = loadSaved(browserStore());
-    // Fixture tables added since this browser saved its edits still appear.
-    const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
-    const store = browserStore();
-    const start = addressInHash();
-    const sidebar = loadSidebarPrefs(store);
-    const s = initialAppState({
-      ...initial,
-      stored: { sidebar, arrangements: loadArrangements(store), display: loadDisplay(store) },
-      ...(start ? { start } : {}),
-    });
-    return {
-      ...s,
-      // The page's address is where a reload left it more often than a link
-      // followed, so the side the viewer left the sidebar on stays.
-      sidebar: sidebar.files ? { ...s.sidebar, files: true } : s.sidebar,
-      // "Schema changed" is since the fixtures, as saved edits carry over a reload.
-      openedAt: INITIAL_SCHEMA_VERSIONS,
-    };
-  });
-  const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
   const browserLocale = typeof navigator === "undefined" ? undefined : navigator.language;
-  const derived = derive(state, { locale: browserLocale, attachmentsOf: attachmentsOf });
+  const { state, dispatch, display: shownDisplay } = useTableApp(
+    () => {
+      const fixtures = { tables: initialTables, bundles: initialBundles };
+      const saved = loadSaved(browserStore());
+      // Fixture tables added since this browser saved its edits still appear.
+      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const store = browserStore();
+      const start = addressInHash();
+      const sidebar = loadSidebarPrefs(store);
+      const s = initialAppState({
+        ...initial,
+        stored: { sidebar, arrangements: loadArrangements(store), display: loadDisplay(store) },
+        ...(start ? { start } : {}),
+      });
+      return {
+        ...s,
+        // The page's address is where a reload left it more often than a link
+        // followed, so the side the viewer left the sidebar on stays.
+        sidebar: sidebar.files ? { ...s.sidebar, files: true } : s.sidebar,
+        // "Schema changed" is since the fixtures, as saved edits carry over a reload.
+        openedAt: INITIAL_SCHEMA_VERSIONS,
+      };
+    },
+    // Saved after every edit, in this browser. The fixtures themselves are
+    // never saved, so an untouched demo keeps following them as they change.
+    { store: browserStore(), write: async (_edited, tables, bundles) => save(browserStore(), { tables, bundles }) },
+    browserLocale,
+  );
+  const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
+  const derived = derive(state, { locale: browserLocale, attachmentsOf });
   const { table, view, shown: shownArranged, summary } = derived;
-
-  // Saved after every change. The fixtures themselves are never saved, so
-  // an untouched demo keeps following them as they change.
-  useEffect(() => {
-    if (tables !== initialTables || bundles !== initialBundles) save(browserStore(), { tables, bundles });
-  }, [tables, bundles]);
-  useEffect(() => {
-    if (state.dirty.length > 0) dispatch({ type: "written", bundles: state.dirty, tables });
-  }, [state.dirty, tables]);
-  useEffect(() => saveSidebarPrefs(browserStore(), sidebarPrefs), [sidebarPrefs]);
-  useEffect(() => saveDisplay(browserStore(), display), [display]);
-  // Only views that still exist: a deleted view's arrangement goes with it.
-  useEffect(() => saveArrangements(browserStore(), forViews(state.arrangements, tables)), [state.arrangements, tables]);
 
   // Questions and messages, the browser's way.
   useEffect(() => {
@@ -412,7 +401,6 @@ export function App() {
   // language, or the browser's. The whole page takes it, so popovers and
   // menus outside the app's root mirror too.
   const { locale: pageLocale, direction } = derived;
-  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.documentElement.dir = direction;
