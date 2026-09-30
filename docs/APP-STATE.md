@@ -21,19 +21,22 @@ holds, and the rules that already live in table-app, applied in one place:
 | `tables`, `bundles` | three copies | `onTable`, the `with*` edits, `creating`, `openArchive`, `afterReset` |
 | `active`, `viewIds` | three copies | `firstTableKey`, `firstViews`, `applyTarget`, `leaving` |
 | `openPage` (row whose page is open) | three copies | `deletingRow.closeBody`, `applyTarget.openBody` |
-| `mode`, `shownFile`, `openedDirs` | three copies | `withFileUnfolded`, `withFileToggled` |
+| `opened` (bundle → where it came from on disk) | Mac (`useFolders`), Linux (`paths`) | reset keeps these; the breadcrumb names them; attachments come from disk |
+| `shownFile`, `openedDirs` (the Files side is `sidebar.files`) | three copies | `withFileUnfolded`, `withFileToggled` |
 | `sidebar` (prefs) | three copies | `sidebarPrefs` |
 | `history` | Mac, Linux | `visited`, `goBack`, `goForward` |
 | `arrangements` | three copies | `arrange`, `reset`, `savingForEveryone`, `forViews` |
 | `display` | three copies | `withDisplayChoice` |
 | `search`, `settingsOpen` | three copies, with `leaving` | cleared or closed by `leaving` |
 | `dirty` (bundles to write) | Linux (ref), web and Mac (effects) | every edit marks its bundle |
+| `asking`, `telling` | three copies, each its own way | `deletingRow`, `deletingView`, `viewPatchPrompt`, `resetPrompt`, `namePrompt`; `importSkippedText`, `openFailedText`, `exportFailedText` |
 
 **Out of it**, staying in each app:
 - **Drawing**: views, dialogs and the sidebar are table-ui and table-gtk.
-- **Asking**: an action that needs a question doesn't happen until the answer comes back. The reducer only holds the pending question as data (a `Confirm`, a `NamePrompt`), and the app shows it its own way: `window.confirm`, an `Alert`, an `AdwAlertDialog`.
-- **Storing and writing**: where prefs, arrangements and display settings are kept (browser storage, the Mac's native store, `settings.json`), and how dirty bundles are written (the web's saved tables, the Mac's store and folders, Linux's `saveBundle`).
-- **Choosing files**: file pickers, and reading or writing bytes on disk.
+- **Showing questions and messages**: the reducer holds the pending question (`asking`: a `Confirm` or a `NamePrompt`) and any one-way message (`telling`) as data. Each app shows them its own way (`window.confirm`, an `Alert`, an `AdwAlertDialog`) and dispatches `answer` or `told`.
+- **Storing and writing**: where prefs, arrangements and display settings are kept (browser storage, the Mac's native store, `settings.json`), and how dirty bundles are written (the web's saved tables, the Mac's store and folders, Linux's `saveBundle`). `opened` locations are opaque to the reducer; the adapter uses them.
+- **Choosing files**: file pickers, and reading or writing bytes on disk. What's read comes back as `opened`.
+- **Window-size policy**: the narrow layout (the web's drawer, the Mac's collapse when narrow). `toggleSidebar` is the app's to route: a narrow Mac flips its own shown-while-narrow flag instead of dispatching it.
 
 ## Shape
 
@@ -45,8 +48,8 @@ export interface AppState {
   active: string;                     // table key on screen
   viewIds: Record<string, string>;    // each table's view
   openPage: string | null;            // row id, in `active`
-  mode: "tables" | "files";
-  shownFile: ShownFile | null;
+  opened: Record<string, string>;     // bundle → its folder on disk; opaque here
+  shownFile: ShownFile | null;        // the Files side is sidebar.files
   openedDirs: Record<string, boolean>;
   sidebar: SidebarPrefs;
   history: History;
@@ -54,41 +57,55 @@ export interface AppState {
   display: DisplaySettings;
   search: string;
   settingsOpen: boolean;
-  asking: Asking | null;              // a question the app is to show
+  asking: Asking | null;              // a Confirm or NamePrompt, and what answering does
+  telling: { heading: string; body?: string } | null;  // a message the app is to show
   dirty: string[];                    // bundle keys to write
 }
 
 export type AppAction =
+  // Where you are
   | { type: "showTable"; key: string }
   | { type: "showView"; key: string; viewId: string }
   | { type: "follow"; target: AddressTarget }           // relation, address
   | { type: "back" } | { type: "forward" }
-  | { type: "edit"; key: string; change: (t: ParsedTable) => ParsedTable }
-  | { type: "addView"; key: string }                    // opens its settings
-  | { type: "ask"; asking: Asking } | { type: "answer"; response: string }
-  | { type: "made"; made: Made }                        // creating's result
-  | { type: "opened"; library: Library }                // a folder or archive
-  | { type: "reset"; fresh: Library; kept: string[] }
+  | { type: "openPage"; rowId: string | null }
+  | { type: "search"; text: string } | { type: "settings"; open: boolean }
+  // Edits: ViewProps' callbacks, one to one, as data (undo and sync can replay them)
+  | { type: "updateRow"; rowId: string; field: string; value: unknown }
+  | { type: "addRow"; id: string }                      // the adapter's newId
+  | { type: "insertRow"; anchor: string; where: "above" | "below"; id: string }
+  | { type: "deleteRow"; rowId: string }                // asks first
+  | { type: "updateBody"; rowId: string; content: string }
+  | { type: "updateField"; name: string; patch: Partial<Field> }
+  | { type: "addField"; field: Field } | { type: "moveField"; name: string; delta: -1 | 1 }
+  | { type: "addChoice"; name: string; value: string }
+  | { type: "updateView"; patch: Partial<View> }        // asks first when a sheet formulas read goes
+  | { type: "addView" } | { type: "deleteView" }        // addView opens its settings; deleteView asks
+  // This viewer's own
   | { type: "arrange"; patch: Partial<View> } | { type: "saveForEveryone" } | { type: "resetArrangement" }
-  | { type: "setMode"; mode: "tables" | "files" } | { type: "toggleFile"; bundle: string }
+  | { type: "display"; choice: DisplayChoice }
+  | { type: "setFilesSide"; files: boolean } | { type: "toggleFile"; bundle: string }
   | { type: "setSidebarCollapsed"; collapsed: boolean }
   | { type: "showFile"; file: ShownFile | null } | { type: "toggleDir"; id: string; open: boolean }
-  | { type: "search"; text: string } | { type: "settings"; open: boolean }
-  | { type: "openPage"; rowId: string | null }
-  | { type: "display"; choice: DisplayChoice }
+  // Files, and questions
+  | { type: "create"; making: Making }                  // asks for a name
+  | { type: "opened"; library: Library; skipped?: string[] }  // a folder or archive, read by the app
+  | { type: "reset"; fresh: Library }                   // asks first; `fresh`: the examples, read by the app
+  | { type: "answer"; response: string; text?: string } // a Confirm's response id, or a NamePrompt's text
+  | { type: "tell"; message: { heading: string; body?: string } } | { type: "told" }
   | { type: "written"; bundles: string[] };             // dirty bundles saved
 
 export function tableApp(state: AppState, action: AppAction): AppState;
-export function initialAppState(input: { tables; bundles; stored: StoredPrefs; start?: Address }): AppState;
+export function initialAppState(input: { tables; bundles; opened?; stored: StoredPrefs; start?: Address }): AppState;
 ```
 
 Four rules live in the reducer, not in the apps:
-- **Leaving a view.** After every action, if `active` or its view changed (`leaving`), `search` clears and `settingsOpen` closes. `addView` is the one exception: it opens the new view's settings.
+- **Leaving a view.** After every action, if `active` or its view changed (`leaving`), `search` clears and `settingsOpen` closes. That includes `reset` and `opened`, which change `active`, as the apps do today. `addView` is the one exception: it opens the new view's settings.
 - **Recording history.** After every action, the view on screen is passed to `visited`, and `back` and `forward` skip dead entries (`addressLive`). The apps stop recording views themselves.
 - **Unfolding the file on screen.** When `active` changes, its file unfolds (`withFileUnfolded`).
-- **Questions.** An action that needs one first sets `asking`, and the actual change waits for `answer`: deleting a row (`deletingRow`), deleting a view (`deletingView`), turning off a sheet (`viewPatchPrompt`), and resetting (`resetPrompt`).
+- **Questions.** An action that needs one first sets `asking`, and the actual change waits for `answer`: deleting a row (`deletingRow`, which then closes its open page), deleting a view (`deletingView`, which then shows the next view), turning off a sheet that formulas read (`viewPatchPrompt`), resetting (`resetPrompt`, keeping `opened` bundles), and naming what's created (`namePrompt`, then `creating` with the answer's text). The rules each edit already has apply here too: `insertRow` only where `canInsertAt`, and every edit marks its bundle `dirty`.
 
-**Selectors** (pure): `derive(state, platform)` returns what the drawing needs: `table`, `view`, the shown view (`showView`, with this viewer's arrangement and search), `viewSummary`, `tableBreadcrumb`, the sidebar entries (`sidebarTree` flattened, or `filesTree`), and `appCommands` with their enabled state.
+**Selectors** (pure): `derive(state, { platform, locale })` returns (with the platform's locale for `viewerLocale`, the direction and `viewerOrder`) what the drawing needs: `table`, `view`, the shown view (`showView`, with this viewer's arrangement and search), `viewSummary`, `tableBreadcrumb`, the sidebar entries (`sidebarTree` flattened, or `filesTree`), `appCommands` with their enabled state, the mode (from `sidebar.files`), and a `ViewProps`-shaped set of callbacks for the view on screen, each dispatching its named action.
 
 **React binding**: `@workspace.sh/table-app/react` exports `useTableApp(initial, adapter)`, which wraps `useReducer` plus the effects every app writes today:
 - saving `sidebar`, `arrangements` and `display` through `adapter.store`, a `KeyValueStore`;
