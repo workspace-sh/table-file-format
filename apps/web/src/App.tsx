@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import {
   textDirection,
-  bundleFiles,
   isSheet,
   newId,
   parseAddress,
@@ -35,6 +34,7 @@ import {
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
+import { attachmentAt, fileText } from "@workspace.sh/table-app";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
 import { newView, withNewFile, withNewTable } from "@workspace.sh/table-app";
 import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "@workspace.sh/table-app";
@@ -749,10 +749,9 @@ export function App() {
   // files as saving writes them, and fixture tables' attachments.
   const attachmentsOf = useCallback((key: string) => Object.keys(attachmentUrls[key] ?? {}).sort(), []);
   const shownFileContent = (file: ShownFile): { content?: string; imageUrl?: string } => {
-    const m = /^tables\/([^/]+)\/attachments\/(.+)$/.exec(file.path);
-    if (m) return { imageUrl: attachmentUrls[`${file.bundle}/${m[1]}`]?.[m[2]!] };
-    const found = bundleFiles(toBundle(tables, bundles, file.bundle)).find((f) => f.path === file.path);
-    return { content: found?.content ?? "" };
+    const attachment = attachmentAt(file.bundle, file.path);
+    if (attachment) return { imageUrl: attachmentUrls[attachment.tableKey]?.[attachment.name] };
+    return { content: fileText(tables, bundles, file.bundle, file.path) ?? "" };
   };
 
   // Built once, shown in the drawer or beside the page. Choosing closes the

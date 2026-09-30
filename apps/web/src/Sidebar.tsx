@@ -1,9 +1,9 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
 import { displayChoices, sidebarTree, withDisplayChoice } from "@workspace.sh/table-app";
-import { tableKeysIn, toBundle } from "@workspace.sh/table-app";
+import { filesTree, type FilesTreeDir } from "@workspace.sh/table-app";
 
 const styles = css.create({
   root: {
@@ -565,46 +565,10 @@ export function Sidebar({
   );
 }
 
-interface Dir {
-  name: string;
-  path: string;
-  dirs: Dir[];
-  files: { name: string; path: string }[];
-}
-
-function treeOf(paths: string[]): Dir {
-  const root: Dir = { name: "", path: "", dirs: [], files: [] };
-  for (const path of paths) {
-    const parts = path.split("/");
-    let dir = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const at = parts.slice(0, i + 1).join("/");
-      let next = dir.dirs.find((d) => d.path === at);
-      if (!next) {
-        next = { name: parts[i]!, path: at, dirs: [], files: [] };
-        dir.dirs.push(next);
-      }
-      dir = next;
-    }
-    dir.files.push({ name: parts[parts.length - 1]!, path });
-  }
-  return root;
-}
-
-/** What each file holds, in a word: `6 rows`, `9 fields`, `4 views`. */
-function noteFor(path: string, table: ParsedTable | undefined): string | undefined {
-  if (!table) return undefined;
-  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  if (path.endsWith("/rows.ndjson")) return plural(table.rows.length, "row");
-  if (path.endsWith("/schema.json")) return plural(table.schema.fields.length, "field");
-  if (path.endsWith("/views.json")) return plural(table.views.length, "view");
-  return undefined;
-}
-
 /**
- * Each .table as it is on disk: the folders and files the writer writes
- * (bundleFiles), plus attachments. Folders fold; a file opens in place
- * of the view.
+ * Each .table as it is on disk: the folders and files the writer writes,
+ * plus attachments (table-app's filesTree). Folders fold; a file opens in
+ * place of the view.
  */
 function FilesTree({
   tables,
@@ -626,59 +590,38 @@ function FilesTree({
   onShowFile: (file: ShownFile) => void;
 }) {
   const rtl = useDirection() === "rtl";
+  // Folders the viewer opened or closed; the rest follow filesTree's
+  // defaults, which open on what you're looking at.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
   const trees = useMemo(
-    () =>
-      Object.keys(bundles).map((bundle) => {
-        const files = bundleFiles(toBundle(tables, bundles, bundle)).map((f) => f.path);
-        for (const key of tableKeysIn(tables, bundles, bundle)) {
-          const name = key.slice(bundle.length + 1);
-          for (const file of attachmentsOf(key)) files.push(`tables/${name}/attachments/${file}`);
-        }
-        return { bundle, tree: treeOf(files) };
-      }),
-    [tables, bundles, attachmentsOf],
+    () => filesTree(tables, bundles, { folded: foldedFiles, activeTable: activeTablePath, opened, attachmentsOf }),
+    [tables, bundles, foldedFiles, activeTablePath, opened, attachmentsOf],
   );
-  // Folders other than the open table's start folded, and bodies/ and
-  // attachments/ always do: the tree opens on what you're looking at.
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  const isOpen = (bundle: string, dir: Dir) => {
-    const key = `${bundle}/${dir.path}`;
-    if (key in open) return open[key]!;
-    if (dir.name === "bodies" || dir.name === "attachments") return false;
-    if (dir.path.startsWith("tables/") && dir.path.split("/").length === 2) {
-      return `${bundle}/${dir.name}` === activeTablePath;
-    }
-    return true;
-  };
   const indent = (depth: number, file = false) => styles.indent(8 + depth * 14 + (file ? 18 : 0));
 
-  const renderDir = (bundle: string, dir: Dir, depth: number): ReactNode => {
-    const unfolded = isOpen(bundle, dir);
-    const tableKey = dir.path.startsWith("tables/") ? `${bundle}/${dir.path.split("/")[1]}` : undefined;
+  const renderDir = (bundle: string, dir: FilesTreeDir, depth: number): ReactNode => {
+    const unfolded = dir.open;
     return (
       <html.div key={dir.path} style={styles.list}>
         <html.div
           role="button"
           aria-expanded={unfolded}
           style={[styles.fileEntry, indent(depth)]}
-          onClick={() => setOpen((o) => ({ ...o, [`${bundle}/${dir.path}`]: !unfolded }))}
+          onClick={() => setOpened((o) => ({ ...o, [`${bundle}/${dir.path}`]: !unfolded }))}
         >
           <html.span style={[styles.groupChevron, styles.tableChevron, unfolded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
           <html.span dir="ltr" style={styles.fileName}>{dir.name}/</html.span>
-          {dir.name === "bodies" || dir.name === "attachments" ? (
-            <html.span style={styles.fileNote}>{dir.files.length}</html.span>
-          ) : null}
+          {dir.count !== undefined ? <html.span style={styles.fileNote}>{dir.count}</html.span> : null}
         </html.div>
-        {unfolded && renderEntries(bundle, dir, depth + 1, tableKey)}
+        {unfolded && renderEntries(bundle, dir, depth + 1)}
       </html.div>
     );
   };
 
-  const renderEntries = (bundle: string, dir: Dir, depth: number, tableKey?: string): ReactNode => (
+  const renderEntries = (bundle: string, dir: FilesTreeDir, depth: number): ReactNode => (
     <>
       {dir.files.map((f) => {
         const shown = shownFile?.bundle === bundle && shownFile.path === f.path;
-        const note = noteFor(f.path, tableKey ? tables[tableKey] : undefined);
         return (
           <html.div
             key={f.path}
@@ -688,7 +631,7 @@ function FilesTree({
             onClick={() => onShowFile({ bundle, path: f.path })}
           >
             <html.span dir="ltr" style={styles.fileName}>{f.name}</html.span>
-            {note ? <html.span style={styles.fileNote}>{note}</html.span> : null}
+            {f.note ? <html.span style={styles.fileNote}>{f.note}</html.span> : null}
           </html.div>
         );
       })}
@@ -698,8 +641,7 @@ function FilesTree({
 
   return (
     <html.div style={styles.list}>
-      {trees.map(({ bundle, tree }) => {
-        const folded = foldedFiles.includes(bundle);
+      {trees.map(({ bundle, name, folded, root }) => {
         return (
           <html.div key={bundle} style={styles.list}>
             <html.div
@@ -709,9 +651,9 @@ function FilesTree({
               style={[styles.fileEntry, styles.fileTitle, indent(0)]}
             >
               <html.span style={[styles.groupChevron, styles.tableChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
-              <html.span dir="ltr" style={styles.fileName}>{bundle}.table/</html.span>
+              <html.span dir="ltr" style={styles.fileName}>{name}</html.span>
             </html.div>
-            {!folded && renderEntries(bundle, tree, 1, undefined)}
+            {!folded && renderEntries(bundle, root, 1)}
           </html.div>
         );
       })}
