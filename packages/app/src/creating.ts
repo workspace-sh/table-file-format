@@ -60,3 +60,43 @@ export function withNewFile(
     viewId: made.tables[name]!.views[0]!.id,
   };
 }
+
+/** What's being made: a table in a bundle, or a `.table` file. */
+export type Making = { kind: "table"; bundle: string } | { kind: "file" };
+
+/** Asking for the new thing's name: each app shows it its own way. */
+export interface NamePrompt {
+  heading: string;
+  /** The button that makes it. */
+  action: string;
+  /** The name field's placeholder. */
+  placeholder: string;
+}
+
+export function namePrompt(making: Making, bundles: Record<string, BundleMeta>): NamePrompt {
+  return {
+    heading:
+      making.kind === "table" ? `New table in ${bundles[making.bundle]?.title ?? making.bundle}` : "New .table file",
+    action: "Create",
+    placeholder: "Name",
+  };
+}
+
+/**
+ * Making it with the name given: trimmed, and nothing made when it's empty
+ * or the prompt was cancelled (null). What's made shows at once, its first
+ * view, with the search cleared and no document open.
+ */
+export function creating(
+  tables: Record<string, ParsedTable>,
+  bundles: Record<string, BundleMeta>,
+  making: Making,
+  name: string | null | undefined,
+  now?: Date,
+): (Made & { search: ""; openBody: null }) | null {
+  const title = name?.trim();
+  if (!title) return null;
+  const made =
+    making.kind === "table" ? withNewTable(tables, bundles, making.bundle, title, now) : withNewFile(tables, bundles, title, now);
+  return { ...made, search: "", openBody: null };
+}

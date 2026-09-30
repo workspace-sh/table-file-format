@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
-import { newView, withNewFile, withNewTable } from "./creating.ts";
+import { creating, namePrompt, newView, withNewFile, withNewTable } from "./creating.ts";
 
 const now = new Date("2026-09-30T12:00:00Z");
 const table = (title: string): ParsedTable => ({
@@ -49,4 +49,24 @@ test("withNewFile: a new bundle, keyed apart from those held, holding one table"
   assert.equal(made.tables["budget-2/budget"]!.meta.title, "Budget");
   assert.equal(made.viewId, made.tables["budget-2/budget"]!.views[0]!.id);
   assert.equal(made.bundles.budget, bundles.budget);
+});
+
+test("the name prompt names the file a table goes into", () => {
+  const bundles: Record<string, BundleMeta> = { crm: { title: "CRM" }, bare: {} };
+  assert.deepEqual(namePrompt({ kind: "table", bundle: "crm" }, bundles), { heading: "New table in CRM", action: "Create", placeholder: "Name" });
+  assert.equal(namePrompt({ kind: "table", bundle: "bare" }, bundles).heading, "New table in bare");
+  assert.equal(namePrompt({ kind: "file" }, bundles).heading, "New .table file");
+});
+
+test("making with a name trims it, makes nothing without one, and shows what's made", () => {
+  const tables = { "crm/deals": table("Deals") };
+  const bundles: Record<string, BundleMeta> = { crm: { title: "CRM", tables: ["deals"] } };
+  for (const empty of [null, undefined, "", "   "]) assert.equal(creating(tables, bundles, { kind: "file" }, empty, now), null);
+  const t = creating(tables, bundles, { kind: "table", bundle: "crm" }, "  Leads ", now)!;
+  const direct = withNewTable(tables, bundles, "crm", "Leads", now);
+  assert.deepEqual([t.key, t.bundles, t.search, t.openBody], [direct.key, direct.bundles, "", null]);
+  assert.equal(t.viewId, t.tables[t.key]!.views[0]!.id);
+  assert.equal(t.tables[t.key]!.meta.title, "Leads");
+  const f = creating(tables, bundles, { kind: "file" }, "Notes", now)!;
+  assert.equal(f.key, withNewFile(tables, bundles, "Notes", now).key);
 });
