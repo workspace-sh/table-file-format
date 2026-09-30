@@ -37,6 +37,8 @@ import {
   takesValue,
   viewFieldChoices,
   type ViewSettingsProps,
+  sheetPatch,
+  orderNote,
 } from "@workspace.sh/table-ui/shared";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
@@ -221,7 +223,7 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
                 subtitle="Letter the columns and number the rows, so formulas can use =B7"
                 active={view.coordinates === true}
                 onNotifyActive={(active) => {
-                  if (active !== (view.coordinates === true)) onChange({ coordinates: active || undefined });
+                  if (active !== (view.coordinates === true)) onChange(sheetPatch(!!active));
                 }}
               />
             ) : null}
@@ -263,7 +265,7 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
 
           <AdwPreferencesGroup
             title="Sorts"
-            description={view.order && view.order.length > 0 && sorts.length === 0 ? "Rows are in the order they were dragged into. A sort replaces it." : undefined}
+            description={orderNote(view, sorts)}
             headerSuffix={
               <GtkButton
                 iconName="list-add-symbolic"

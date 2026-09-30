@@ -194,3 +194,13 @@ export interface ViewSettingsProps {
   onSaveForEveryone?: () => void;
   onReset?: () => void;
 }
+
+/** A table view made a Sheet view, or not (D41): off is no `coordinates` at all. */
+export function sheetPatch(on: boolean): Partial<View> {
+  return { coordinates: on || undefined };
+}
+
+/** Said under the sorts when rows are in a dragged order and no sort is set. */
+export function orderNote(view: View, sorts: ViewSort[]): string | undefined {
+  return view.order && view.order.length > 0 && sorts.length === 0 ? "Rows are in the order they were dragged into. Adding a sort replaces it." : undefined;
+}

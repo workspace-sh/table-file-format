@@ -37,6 +37,9 @@ import {
   useDisplaySettings,
   formulaDraftOf,
   type AddableChoice,
+  DECIMAL_PLACES,
+  deprecatedPatch,
+  formulaPlaceholder,
 } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
 import { StringList } from "./StringList.js";
@@ -148,7 +151,7 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
             {format?.kind === "decimal" ? (
               <Combo
                 title="Decimal Places"
-                options={[0, 1, 2, 3, 4, 5, 6].map((d) => ({ value: String(d), label: String(d) }))}
+                options={DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) }))}
                 value={String(format.digits)}
                 onChange={(v) => onUpdate(format.decimal(Number(v)))}
               />
@@ -190,7 +193,7 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
               subtitle="Hidden from new views; its values stay in the file"
               active={field.deprecated === true}
               onNotifyActive={(on) => {
-                if (!!on !== (field.deprecated === true)) onUpdate({ deprecated: on || undefined });
+                if (!!on !== (field.deprecated === true)) onUpdate(deprecatedPatch(!!on));
               }}
             />
           </AdwPreferencesGroup>
@@ -271,7 +274,7 @@ export function AddField({ existing, fields, onAdd, onClose, grid }: AddFieldPro
               <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
                 <GtkEntry
                   text={formulaDraft}
-                  placeholderText={formulaSyntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)"}
+                  placeholderText={formulaPlaceholder(formulaSyntax)}
                   cssClasses={["monospace", ...(made.compiled && !made.compiled.ok ? ["error"] : [])]}
                   onChanged={(e) => setFormulaDraft(e.getText())}
                   onActivate={add}

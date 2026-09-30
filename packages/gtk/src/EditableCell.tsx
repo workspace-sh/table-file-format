@@ -17,7 +17,7 @@ import {
   GtkLabel,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings } from "@workspace.sh/table-ui/shared";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -58,7 +58,7 @@ function ChoiceEditor({
 }) {
   const options = choices ?? enumOptions(field);
   const at = options.findIndex((o) => o.value === value) + 1;
-  const labels = ["—", ...options.map((o) => o.label ?? o.value)];
+  const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value)];
   const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
   return (
     <GtkDropDown
