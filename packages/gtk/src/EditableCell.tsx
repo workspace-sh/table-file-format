@@ -87,7 +87,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
+  // Why the typed text wasn't saved, and the date it probably meant.
+  const [problem, setProblem] = useState<{ message: string; suggestion?: string } | null>(null);
   // The draft already asked about (an early year, D42): saved if saved again.
   const queried = useRef<string | null>(null);
   // Once saved or cancelled, the focus leaving as the entry goes away
@@ -126,7 +127,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     const result = commitDraft(field, value, raw, how, queried.current);
     if (result.kind === "problem") {
       queried.current = result.queried;
-      setProblem(result.check.suggestion ? `${result.check.message} Did you mean ${result.check.suggestion}?` : result.check.message);
+      setProblem({ message: result.check.message, suggestion: result.check.suggestion });
       return;
     }
     close();
@@ -206,13 +207,22 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
       <GtkEntry
         ref={entry}
         hexpand
+        // Asks for no more than the column: GtkEntry's natural width is wider,
+        // and a row box hands spare room out by natural width.
         widthChars={1}
+        maxWidthChars={1}
         text={draft}
         xalign={xalign}
         cssClasses={problem ? ["error"] : []}
-        secondaryIconName={problem ? "dialog-warning-symbolic" : undefined}
-        secondaryIconTooltipText={problem ?? undefined}
-        tooltipText={problem ?? undefined}
+        // A year typed short: the icon is the fix, as the web's "Use 2026"
+        // button is, inside the entry so the cell keeps its width.
+        secondaryIconName={problem?.suggestion ? "object-select-symbolic" : problem ? "dialog-warning-symbolic" : undefined}
+        secondaryIconTooltipText={problem?.suggestion ? `Use ${problem.suggestion.slice(0, 4)}` : problem?.message}
+        secondaryIconActivatable={!!problem?.suggestion}
+        onIconPress={(position) => {
+          if (position === Gtk.EntryIconPosition.SECONDARY && problem?.suggestion) commit(problem.suggestion, "key");
+        }}
+        tooltipText={problem?.message}
         onChanged={(e) => {
           setDraft(e.getText());
           setProblem(null);
