@@ -40,7 +40,9 @@ export function Checkbox({ checked, onChange, label, children, style }: Checkbox
   return (
     <html.div style={[styles.row, style as never]}>
       {box}
-      <html.span onClick={() => onChange(!checked)}>{children}</html.span>
+      <html.span onClick={() => onChange(!checked)} style={styles.text}>
+        {children}
+      </html.span>
     </html.div>
   );
 }
@@ -51,12 +53,19 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  text: {
+    flexShrink: 1,
+  },
   box: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     width: 14,
     height: 14,
+    // Beside a long label, the box keeps its size and the text wraps: it
+    // was squeezed to a sliver (react-strict-dom shrinks by default, as
+    // the web does).
+    flexShrink: 0,
     padding: 0,
     borderRadius: 3,
     borderWidth: 1,
