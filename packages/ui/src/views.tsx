@@ -32,6 +32,7 @@ import { formulaInputCells, viewGrid } from "./formulaCell";
 import {
   BOARD_GAP,
   boardColumns,
+  boardCardMove,
   canStep,
   cardFields,
   CALENDAR_CHIPS_PER_DAY,
@@ -3059,20 +3060,11 @@ export function BoardView({
     // Option/Alt+←→ moves the card to the next column, Option/Alt+↑↓
     // within its column: what dragging does, from the keyboard.
     onAltKey: (id, key) => {
-      const c = cardColumns.findIndex((col) => col.includes(id));
-      if (c < 0 || !onUpdateRow) return false;
-      if (key === "ArrowLeft" || key === "ArrowRight") {
-        const target = columnKeys[c + (key === "ArrowLeft" ? -1 : 1)];
-        if (target !== undefined) onUpdateRow(id, groupField, columnValue(target));
-        return true;
-      }
-      if ((key === "ArrowUp" || key === "ArrowDown") && onUpdateView) {
-        const col = cardColumns[c]!;
-        const neighbour = col[col.indexOf(id) + (key === "ArrowUp" ? -1 : 1)];
-        if (neighbour !== undefined) onUpdateView({ order: orderSwapped(rows, id, neighbour) });
-        return true;
-      }
-      return false;
+      if (!onUpdateRow || !/^Arrow/.test(key) || (!onUpdateView && (key === "ArrowUp" || key === "ArrowDown"))) return false;
+      const moved = boardCardMove(cardColumns, columnKeys, id, key);
+      if (moved?.kind === "column") onUpdateRow(id, groupField, columnValue(moved.column));
+      if (moved?.kind === "swap") onUpdateView?.({ order: orderSwapped(rows, id, moved.with) });
+      return true;
     },
   });
 
