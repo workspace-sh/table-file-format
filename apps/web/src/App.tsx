@@ -27,12 +27,12 @@ import {
   ListView,
   TableView,
   canInsertAt,
-  sheetDependents,
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
+import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
 import { attachmentAt, fileText } from "@workspace.sh/table-app";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
@@ -722,7 +722,6 @@ export function App() {
   const personal = arrangements[activeTablePath]?.[view.id];
   // A Sheet view's grid as saved, for its row numbers and for formulas
   // typed in it (D41); and every Sheet view a formula may name.
-  const selfName = tableNameOf(activeTablePath);
   const sheet = useMemo(
     () => sheetShown(tables, activeTablePath, view),
     [tables, activeTablePath, view],
@@ -910,10 +909,8 @@ export function App() {
             schema={table.schema}
             onChange={(patch) => {
               // Turning a Sheet view into anything else loses its grid (D41).
-              if (isSheet(view) && !isSheet({ ...view, ...patch })) {
-                const readers = sheetDependents(inBundle, selfName, view.id).length;
-                if (readers > 0 && !window.confirm(`${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!. Stop showing it as a sheet?`)) return;
-              }
+              const prompt = viewPatchPrompt(tables, activeTablePath, view, patch);
+              if (prompt && !window.confirm(confirmText(prompt))) return;
               updateActiveView(patch);
             }}
             onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
