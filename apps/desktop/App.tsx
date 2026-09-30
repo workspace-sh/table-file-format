@@ -34,6 +34,10 @@ import {
   withNewFile,
   withNewTable,
   withView,
+  archiveFileName,
+  bundleToArchive,
+  openArchive,
+  toBundle,
   loadDisplay,
   saveDisplay,
   STORAGE_KEY,
@@ -77,7 +81,8 @@ import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { OPENED_KEY, useFolders } from "./folders";
-import { chooseFolder } from "./panels";
+import { chooseFile, chooseFolder, choosePath } from "./panels";
+import { readBytes, writeBytes } from "./bytes";
 import { attachmentUrl } from "./attachments";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
@@ -423,6 +428,48 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     [tables, bundles, showMade],
   );
 
+  // Export: the shown table's whole bundle as a real .table.zip (D27, D37),
+  // so the tables it links together travel together. `path` skips the panel.
+  const exportZip = useCallback(
+    async (path?: string) => {
+      const bundle = bundleOf(activeTablePath);
+      const where = path ?? (await choosePath("Export as a .table.zip", archiveFileName(bundle)));
+      if (!where) return;
+      try {
+        await writeBytes(where, await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
+      } catch (error) {
+        showProblem(`Couldn't export ${archiveFileName(bundle)}`, error instanceof Error ? error.message : String(error));
+      }
+    },
+    [activeTablePath, tables, bundles, showProblem],
+  );
+  // Import: a .table.zip becomes one more bundle here, saying what the reader
+  // skipped (D25). Only a file with no table in it is refused. `path` skips the panel.
+  const importZip = useCallback(
+    async (path?: string) => {
+      const where = path ?? (await chooseFile("Open a .table.zip", ["zip"]));
+      if (!where) return;
+      try {
+        const opened = await openArchive(await readBytes(where), Object.keys(bundles));
+        const entries = fromBundle(opened.key, opened.bundle);
+        setTables((all) => ({ ...all, ...entries }));
+        setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
+        const first = Object.keys(entries)[0]!;
+        showMade(first, entries[first]!.views[0]?.id ?? "");
+        if (opened.skipped.length > 0) {
+          const n = opened.skipped.length;
+          showProblem(
+            `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read`,
+            opened.skipped.join("\n"),
+          );
+        }
+      } catch (error) {
+        showProblem(`Couldn't open ${where.split("/").pop()}`, error instanceof Error ? error.message : String(error));
+      }
+    },
+    [bundles, showMade, showProblem],
+  );
+
   // Open a .table folder and show its first table; one already open is shown again.
   const openFolder = useCallback(
     async (path: string | null) => {
@@ -626,6 +673,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         createFile(title);
         return `made .table ${title}`;
       },
+      exportZip: (path: string) => {
+        void exportZip(path);
+        return `exporting to ${path}`;
+      },
+      importZip: (path: string) => {
+        void importZip(path);
+        return `importing ${path}`;
+      },
       newView: () => {
         addView();
         return "made view";
@@ -644,7 +699,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders and arrangements forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -720,6 +775,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                     style={styles.tab}
                   >
                     Open .table…
+                  </html.button>
+                  <html.button onClick={() => void importZip()} style={styles.tab}>
+                    Open .table.zip…
+                  </html.button>
+                  <html.button onClick={() => void exportZip()} style={styles.tab}>
+                    Export .table.zip…
                   </html.button>
                   <html.button onClick={() => askName("Name the new table", createTable)} style={styles.tab}>
                     + New table
