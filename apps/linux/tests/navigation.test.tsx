@@ -120,3 +120,32 @@ describe("the app's commands on Linux", () => {
     expect(files.getActive()).toBe(true);
   });
 });
+
+describe("leaving a view on Linux", () => {
+  it("another view of the same table starts with no search", async () => {
+    await openTasks();
+    const search = (await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry;
+    await userEvent.type(search, "fixtures");
+    await userEvent.click(await screen.findByText("Board by status"));
+    await waitFor(async () => expect(((await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry).getText()).toBe(""));
+  });
+
+  it("its settings close when Back leaves it", async () => {
+    await openTasks();
+    await userEvent.click(await screen.findByText("Board by status"));
+    await userEvent.click(await button("View Settings"));
+    await screen.findByText("Filters");
+    (await window()).activateAction("win.go-back", null);
+    await waitFor(() => expect(screen.queryByText("Filters")).toBeNull());
+  });
+
+  it("Copy Link to View carries the row whose page is open", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v7" />);
+    await userEvent.click(await screen.findByText("Table file format spike"));
+    await screen.findByText("bodies/p2.md");
+    (await window()).activateAction("win.copy-link", null);
+    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=p2&view=v7");
+  });
+});
+
