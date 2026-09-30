@@ -7,6 +7,7 @@
 // every row is built. Large tables (docs/LARGE-TABLES.md) will want the
 // recycling list instead; the cells stay as they are when that comes.
 
+import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
@@ -17,6 +18,8 @@ import {
   GtkEventControllerFocus,
   GtkEventControllerKey,
   GtkGestureClick,
+  GtkGestureDrag,
+  GtkOverlay,
   GtkImage,
   GtkLabel,
   GtkMenuButton,
@@ -42,6 +45,9 @@ import {
   rowNumber,
   fieldHint,
   fieldHintText,
+  resizedColumnWidth,
+  resizedRowHeight,
+  useDirection,
   afterEdit,
   cellPicks,
   editorKind,
@@ -192,6 +198,7 @@ export function TableView({
   bodies,
   relatedTables,
   onUpdateRow,
+  onUpdateView,
   onUpdateField,
   onAddEnumValue,
   onMoveField,
@@ -216,7 +223,13 @@ export function TableView({
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
-  const rowHeight = view.rowHeight ?? DEFAULT_ROW_HEIGHT;
+  // Resizing: live sizes while a handle is dragged, saved to the view
+  // (columnWidths, rowHeight; SPEC section 4) when it's let go, as on the web.
+  const rtl = useDirection() === "rtl";
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  const [liveRowHeight, setLiveRowHeight] = useState<number | null>(null);
+  const resizeFrom = useRef(0);
+  const rowHeight = liveRowHeight ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
   const lines = linesFor(rowHeight);
   const coords = view.coordinates === true;
   const displayed = groupedRows(view, rows, schema);
@@ -232,7 +245,51 @@ export function TableView({
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
   const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
-  const colWidth = columnWidths(fields, view.columnWidths ?? {}, containerWidth, chrome);
+  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome);
+
+  // A column's handle is on its end edge (the left, right to left, where
+  // dragging leftwards widens it); a row's is on its bottom edge.
+  const columnHandle = (name: string) =>
+    onUpdateView ? (
+      <GtkBox
+        name={`resize-column-${name}`}
+        widthRequest={6}
+        halign={Gtk.Align.END}
+        cursor={Gdk.Cursor.newFromName("col-resize", null)}
+        controllers={
+          <GtkGestureDrag
+            onDragBegin={() => {
+              resizeFrom.current = colWidth(name);
+            }}
+            onDragUpdate={(dx) => setLiveWidths((live) => ({ ...live, [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) }))}
+            onDragEnd={(dx) => {
+              onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) } });
+              setLiveWidths({});
+            }}
+          />
+        }
+      />
+    ) : null;
+  const rowHandle = onUpdateView ? (
+    <GtkBox
+      name="resize-rows"
+      heightRequest={5}
+      valign={Gtk.Align.END}
+      cursor={Gdk.Cursor.newFromName("row-resize", null)}
+      controllers={
+        <GtkGestureDrag
+          onDragBegin={() => {
+            resizeFrom.current = rowHeight;
+          }}
+          onDragUpdate={(_dx, dy) => setLiveRowHeight(resizedRowHeight(resizeFrom.current, dy))}
+          onDragEnd={(_dx, dy) => {
+            onUpdateView({ rowHeight: resizedRowHeight(resizeFrom.current, dy) });
+            setLiveRowHeight(null);
+          }}
+        />
+      }
+    />
+  ) : null;
 
   const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
 
@@ -249,7 +306,8 @@ export function TableView({
         const field: Field | undefined = fieldMap.get(name);
         const title = field?.title ?? name;
         return (
-          <Cell key={name} width={colWidth(name)} height={HEADER_HEIGHT}>
+          <GtkOverlay key={name} overlays={columnHandle(name)}>
+          <Cell width={colWidth(name)} height={HEADER_HEIGHT}>
             <GtkLabel
               label={coords ? `${columnLetter(i)}  ${title}` : title}
               xalign={xalignOf(effectiveAlign(field))}
@@ -263,6 +321,7 @@ export function TableView({
               controllers={schemaEditable ? <GtkGestureClick onReleased={() => setEditingField(name)} /> : undefined}
             />
           </Cell>
+          </GtkOverlay>
         );
       })}
       {onAddField ? (
@@ -353,6 +412,7 @@ export function TableView({
           cssClasses={[styles.groupRow]}
         />
       ) : null}
+      <GtkOverlay overlays={rowHandle}>
       <BodyRow
         rowId={row.id}
         menu={hasMenu}
@@ -435,6 +495,7 @@ export function TableView({
           );
         })}
       </BodyRow>
+      </GtkOverlay>
     </GtkBox>
   ));
 

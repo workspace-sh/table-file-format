@@ -14,6 +14,8 @@ import {
   type RelationLink,
   linesFor,
   columnWidths,
+  resizedColumnWidth,
+  resizedRowHeight,
   MIN_RESIZED_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
   MAX_ROW_HEIGHT,
@@ -2256,14 +2258,14 @@ export function TableView({
         onDragMove={(e) => {
           const start = resizeStart.current;
           if (!start) return;
-          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + widen(start, e.pageX)));
+          const w = resizedColumnWidth(start.size, widen(start, e.pageX));
           setLiveWidths((prev) => ({ ...prev, [name]: w }));
         }}
         onDragEnd={(e) => {
           const start = resizeStart.current;
           resizeStart.current = null;
           if (!start) return;
-          const w = Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(start.size + widen(start, e.pageX)));
+          const w = resizedColumnWidth(start.size, widen(start, e.pageX));
           onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: w } });
           setLiveWidths({});
         }}
@@ -2279,14 +2281,13 @@ export function TableView({
       onDragMove={(e) => {
         const start = resizeStart.current;
         if (!start) return;
-        const h = Math.round(start.size + e.pageY - start.at);
-        setLiveRowHeight(Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, h)));
+        setLiveRowHeight(resizedRowHeight(start.size, e.pageY - start.at));
       }}
       onDragEnd={(e) => {
         const start = resizeStart.current;
         resizeStart.current = null;
         if (!start) return;
-        const h = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, Math.round(start.size + e.pageY - start.at)));
+        const h = resizedRowHeight(start.size, e.pageY - start.at);
         onUpdateView({ rowHeight: h });
         setLiveRowHeight(null);
       }}
