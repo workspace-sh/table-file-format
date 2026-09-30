@@ -5,7 +5,6 @@ import {
   isSheet,
   newId,
   parseAddress,
-  validate,
 } from "@workspace.sh/table-core";
 import type {
   Address,
@@ -32,6 +31,7 @@ import {
   type DisplaySettings,
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
+import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
 import { attachmentAt, fileText } from "@workspace.sh/table-app";
@@ -72,12 +72,7 @@ import {
 } from "@workspace.sh/table-app";
 
 const DEFAULT_TABLE_PATH = "projects/projects";
-const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
-  Object.entries(initialTables).map(([key, t]) => [
-    key,
-    (t.schema["schema-version"] as number | undefined) ?? 1,
-  ]),
-);
+const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 /**
  * "Shop (shop.table) › Orders": the file and the table a view belongs
@@ -738,12 +733,12 @@ export function App() {
     search: searchQuery,
     viewerText,
   });
-  const errors = validate(table.schema, table.rows);
-  const searching = searchQuery.trim().length > 0;
-  const currentSchemaVersion =
-    (table.schema["schema-version"] as number | undefined) ?? 1;
-  const schemaBumped =
-    currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
+  const summary = viewSummary(table, {
+    shown: visibleRows.length,
+    inView,
+    searching: searchQuery.trim().length > 0,
+    openedAt: INITIAL_SCHEMA_VERSIONS[activeTablePath],
+  });
 
   // What the Files side of the sidebar lists and opens: each bundle's
   // files as saving writes them, and fixture tables' attachments.
@@ -893,36 +888,17 @@ export function App() {
             </html.div>
           </html.div>
           <html.div style={styles.subtitle}>
-            <html.span>
-              {searching
-                ? `${visibleRows.length} of ${inView} matching`
-                : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
-            </html.span>
+            <html.span>{summary.count}</html.span>
             <html.span>·</html.span>
-            <Hinted
-              hint={
-                errors.length === 0
-                  ? "Every row fits the schema: required fields are filled, choices are from their lists, and values are the right type."
-                  : errors
-                      .slice(0, 5)
-                      .map((e) => `${e.field ?? "row"}: ${e.message}`)
-                      .join("\n") + (errors.length > 5 ? `\n…and ${errors.length - 5} more` : "")
-              }
-              style={errors.length === 0 ? styles.validityOk : styles.validityBad}
-            >
-              {errors.length === 0
-                ? "schema valid"
-                : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
+            <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+              {summary.validity}
             </Hinted>
-            {schemaBumped && (
+            {summary.schemaChanged && (
               <>
                 <html.span>·</html.span>
                 {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-                <Hinted
-                  hint="A column was added, moved, retyped or given new rules since this table was opened. The table's schema-version goes up by one for each such change (D22)."
-                  style={styles.schemaBumpBadge}
-                >
-                  schema changed
+                <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
+                  {summary.schemaChangedLabel}
                 </Hinted>
               </>
             )}

@@ -6,7 +6,7 @@ import { ScrollView } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { newId, parseAddress, textDirection, validate } from "@workspace.sh/table-core";
+import { newId, parseAddress, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -86,6 +86,8 @@ import {
   withViewPatch,
   withoutRow,
   type SheetGridShown,
+  schemaVersions,
+  viewSummary,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
@@ -110,12 +112,7 @@ const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
 const DEFAULT_TABLE_PATH = "projects/projects";
-const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
-  Object.entries(initialTables).map(([key, t]) => [
-    key,
-    (t.schema["schema-version"] as number | undefined) ?? 1,
-  ]),
-);
+const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 const styles = css.create({
   root: {
@@ -854,10 +851,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     viewerText,
   });
   const inBundle = bundleTables(tables, bundleOf(activeTablePath));
-  const errors = validate(table.schema, table.rows);
-  const searching = query.trim().length > 0;
-  const currentSchemaVersion = (table.schema["schema-version"] as number | undefined) ?? 1;
-  const schemaBumped = currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
+  const summary = viewSummary(table, {
+    shown: visibleRows.length,
+    inView,
+    searching: query.trim().length > 0,
+    openedAt: INITIAL_SCHEMA_VERSIONS[activeTablePath],
+  });
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -912,25 +911,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             <>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.subtitle}>
-              <html.span>
-                {searching
-                  ? `${visibleRows.length} of ${inView} matching`
-                  : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
-              </html.span>
+              <html.span>{summary.count}</html.span>
               <html.span>·</html.span>
-              <html.span
-                style={errors.length === 0 ? styles.validityOk : styles.validityBad}
-              >
-                {errors.length === 0
-                  ? "schema valid"
-                  : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
-              </html.span>
+              <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
               {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-              {schemaBumped && (
-                <html.span style={styles.schemaBumpBadge}>
-                  schema changed
-                </html.span>
-              )}
+              {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
             </html.div>
             {/* The view's own actions; the tables, views and files are in the sidebar. */}
             <html.div style={styles.toolbar}>
