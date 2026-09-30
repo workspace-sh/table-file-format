@@ -20,7 +20,24 @@ for (const key of fixtureFiles.keys()) {
   const m = /^\.\/([^/]+)\.table\/tables\/([^/]+)\/attachments\/(.+)$/.exec(key);
   if (!m) continue;
   const uri = Image.resolveAssetSource(fixtureFiles(key))?.uri;
-  if (uri) (fixtureUrls[`${m[1]}/${m[2]}`] ??= {})[m[3]!] = uri;
+  if (uri) (fixtureUrls[`${m[1]}/${m[2]}`] ??= {})[m[3]!] = withoutDotSegments(uri);
+}
+
+/**
+ * The fixtures sit outside this app's folder, so Metro names their assets
+ * `/assets/../../fixtures/…`. Metro serves the collapsed path, but a fetch
+ * (react-native-svg's) sends the dots as they are and gets a 404. Collapse
+ * them, as a browser would.
+ */
+function withoutDotSegments(uri: string): string {
+  const m = /^([a-z]+:\/\/[^/]+)([^?#]*)(.*)$/i.exec(uri);
+  if (!m) return uri;
+  const out: string[] = [];
+  for (const part of m[2]!.split("/").filter((p) => p !== "")) {
+    if (part === "..") out.pop();
+    else if (part !== ".") out.push(part);
+  }
+  return `${m[1]}/${out.join("/")}${m[3]}`;
 }
 
 /**
