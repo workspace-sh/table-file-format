@@ -31,7 +31,7 @@ import {
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
-import { addressTarget, savingForEveryone } from "@workspace.sh/table-app";
+import { addressTarget, afterReset, savingForEveryone } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -438,13 +438,15 @@ export function App() {
 
   const resetDemo = useCallback(() => {
     clearSaved(browserStore());
-    setTables(initialTables);
-    setBundles(initialBundles);
+    // The web opens no folders from disk, so nothing is kept: the examples themselves.
+    const after = afterReset(tables, bundles, { tables: initialTables, bundles: initialBundles }, []);
+    setTables(after.tables);
+    setBundles(after.bundles);
     setActiveTablePath(firstTablePath(initialTables));
     setActiveViewIds(firstViews(initialTables));
     setSearchQuery("");
     setActiveBodyRowId(null);
-  }, []);
+  }, [tables, bundles]);
   const [searchQuery, setSearchQuery] = useState("");
   // This viewer's locale and default date format: theirs, not the tables'.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(browserStore()));

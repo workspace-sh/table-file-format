@@ -4,6 +4,7 @@ import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
 import { displayChoices, sidebarTree, withDisplayChoice } from "@workspace.sh/table-app";
 import { filesTree, type FilesTreeDir } from "@workspace.sh/table-app";
+import { confirmText, resetPrompt } from "@workspace.sh/table-app";
 
 const styles = css.create({
   root: {
@@ -554,7 +555,7 @@ export function Sidebar({
         <html.button
           style={styles.resetButton}
           onClick={() => {
-            if (window.confirm("Reset the demo data? Every edit you made here is lost.")) onReset();
+            if (window.confirm(confirmText(resetPrompt({ openedFolders: false })))) onReset();
           }}
         >
           Reset demo data

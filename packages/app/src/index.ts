@@ -20,3 +20,4 @@ export * from "./filesTree.ts";
 export * from "./viewSummary.ts";
 export * from "./confirm.ts";
 export * from "./commands.ts";
+export * from "./resetting.ts";
