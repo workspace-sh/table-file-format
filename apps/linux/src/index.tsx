@@ -29,4 +29,4 @@ for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
 
-createRoot().render(<App library={library} initialTable={openTable} initialView={openView} settings={settings} />);
+createRoot().render(<App library={library} initialTable={openTable} initialView={openView} settings={settings} newFilesIn={named.length > 0 ? undefined : examples} />);

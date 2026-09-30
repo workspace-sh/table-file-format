@@ -20,7 +20,7 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { quit } from "@gtkx/react";
 import {
   attachmentPath,
@@ -43,6 +43,10 @@ import {
   withFieldMoved,
   withFieldPatch,
   deleteViewPrompt,
+  newView,
+  withNewFile,
+  withNewTable,
+  type Made,
   withoutRow,
   withoutView,
   withRow,
@@ -96,7 +100,18 @@ function sidebarEntries(library: Library, active: string): Entry[] {
   ]);
 }
 
-function Sidebar({ entries, selected, onSelect }: { entries: Entry[]; selected: number; onSelect: (entry: Entry) => void }) {
+function Sidebar({
+  entries,
+  selected,
+  onSelect,
+  onNewTable,
+}: {
+  entries: Entry[];
+  selected: number;
+  onSelect: (entry: Entry) => void;
+  /** Start a new table in a bundle, as a new sheet in a workbook (D37). */
+  onNewTable: (bundle: string) => void;
+}) {
   return (
     <GtkScrolledWindow vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
       <GtkListBox
@@ -116,7 +131,15 @@ function Sidebar({ entries, selected, onSelect }: { entries: Entry[]; selected: 
             case "bundle":
               return (
                 <GtkListBoxRow key={`b:${entry.bundle}`} selectable={false} activatable={false}>
-                  <GtkLabel label={entry.title} xalign={0} cssClasses={["heading", "dim-label"]} marginTop={12} marginStart={6} />
+                  <GtkBox marginTop={12} marginStart={6}>
+                    <GtkLabel label={entry.title} xalign={0} hexpand cssClasses={["heading", "dim-label"]} />
+                    <GtkButton
+                      iconName="list-add-symbolic"
+                      cssClasses={["flat", "circular"]}
+                      tooltipText={`New Table in ${entry.title}`}
+                      onClicked={() => onNewTable(entry.bundle)}
+                    />
+                  </GtkBox>
                 </GtkListBoxRow>
               );
             case "table":
@@ -254,6 +277,28 @@ function TablePane({
   );
 }
 
+/** Ask for a name: what a new table or file is called. Empty is no name. */
+function NameDialog({ heading, action, onName, onClose }: { heading: string; action: string; onName: (name: string) => void; onClose: () => void }) {
+  const [name, setName] = useState("");
+  return (
+    <AdwAlertDialog
+      heading={heading}
+      closeResponse="cancel"
+      defaultResponse="create"
+      responses={[
+        { id: "cancel", label: "Cancel" },
+        { id: "create", label: action, appearance: Adw.ResponseAppearance.SUGGESTED },
+      ]}
+      onResponse={(response) => {
+        if (response === "create" && name.trim()) onName(name.trim());
+        onClose();
+      }}
+    >
+      <GtkEntry placeholderText="Name" activatesDefault onChanged={(e) => setName(e.getText())} />
+    </AdwAlertDialog>
+  );
+}
+
 /** Whether the tables on screen are the ones on disk. */
 type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
 
@@ -285,12 +330,15 @@ export function App({
   initialTable,
   initialView,
   settings,
+  newFilesIn,
 }: {
   library: Library;
   initialTable?: string;
   initialView?: string;
   /** Where this viewer's own settings are kept; absent, they last for this run only. */
   settings?: KeyValueStore;
+  /** The folder new .table files are made in; absent, none can be made. */
+  newFilesIn?: string;
 }) {
   // This viewer's locale, date format and formula syntax: theirs, not the tables'.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
@@ -304,7 +352,11 @@ export function App({
   }, [direction]);
   const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const [tables, setTables] = useState(library.tables);
-  const [bundles] = useState(library.bundles);
+  const [bundles, setBundles] = useState(library.bundles);
+  // Where each bundle is kept: those opened, and new files, made in `newFilesIn`.
+  const [paths, setPaths] = useState(library.paths);
+  // A name being asked for: a new table in a bundle, or a new .table file.
+  const [naming, setNaming] = useState<{ kind: "table"; bundle: string } | { kind: "file" } | null>(null);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
   const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
@@ -333,7 +385,7 @@ export function App({
       const which = [...dirty.current];
       dirty.current.clear();
       setSaving({ kind: "saving" });
-      Promise.all(which.map((b) => saveBundle(library, tables, bundles, b)))
+      Promise.all(which.map((b) => saveBundle({ ...library, paths }, tables, bundles, b)))
         .then(() => setSaving({ kind: "saved" }))
         .catch((error: unknown) => {
           which.forEach((b) => dirty.current.add(b));
@@ -341,7 +393,27 @@ export function App({
         });
     }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [tables, bundles, library]);
+  }, [tables, bundles, library, paths]);
+
+  // Something made (a table, a file): shown at once, and its bundle saved.
+  const made = (result: Made) => {
+    setTables(result.tables);
+    setBundles(result.bundles);
+    dirty.current.add(bundleOf(result.key));
+    setActive(result.key);
+    setViewIds((prev) => ({ ...prev, [result.key]: result.viewId }));
+  };
+  const create = (title: string) => {
+    if (!naming) return;
+    if (naming.kind === "table") {
+      made(withNewTable(tables, bundles, naming.bundle, title));
+    } else if (newFilesIn) {
+      const result = withNewFile(tables, bundles, title);
+      const bundle = bundleOf(result.key);
+      setPaths((prev) => ({ ...prev, [bundle]: `${newFilesIn}/${bundle}.table` }));
+      made(result);
+    }
+  };
 
   const edits = (key: string, viewId: string): Edits => ({
     onUpdateRow: (rowId, field, value) => edit(key, (t) => withCell(t, rowId, field, value)),
@@ -365,9 +437,9 @@ export function App({
     // A new view starts as a plain table of everything; its settings are
     // where it's made into what's wanted.
     onAddView: () => {
-      const made: View = { id: newId(), name: "New View", layout: "table" };
-      edit(key, (t) => withView(t, made));
-      setViewIds((prev) => ({ ...prev, [key]: made.id }));
+      const fresh = newView();
+      edit(key, (t) => withView(t, fresh));
+      setViewIds((prev) => ({ ...prev, [key]: fresh.id }));
     },
     ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
   });
@@ -394,6 +466,7 @@ export function App({
                   <AdwHeaderBar
                     showEndTitleButtons={false}
                     titleWidget={<AdwWindowTitle title="Tables" />}
+                    start={<GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => setNaming({ kind: "file" })} />}
                     end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
                   />
                 }
@@ -405,6 +478,7 @@ export function App({
                     if (entry.kind === "table") setActive(entry.key);
                     if (entry.kind === "view") setViewIds((prev) => ({ ...prev, [entry.key]: entry.view.id }));
                   }}
+                  onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
                 />
               </AdwToolbarView>
             }
@@ -424,6 +498,14 @@ export function App({
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {naming && (naming.kind === "table" || newFilesIn) ? (
+            <NameDialog
+              heading={naming.kind === "table" ? `New Table in ${bundles[naming.bundle]?.title ?? naming.bundle}` : "New .table File"}
+              action="Create"
+              onName={create}
+              onClose={() => setNaming(null)}
+            />
+          ) : null}
           {displayOpen ? (
             <AdwDialog title="Display" contentWidth={460} onClosed={() => setDisplayOpen(false)}>
               <AdwToolbarView topBar={<AdwHeaderBar />}>
