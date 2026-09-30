@@ -88,6 +88,16 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  type AppCommand,
+  NO_HISTORY,
+  addressLive,
+  canGoBack,
+  canGoForward,
+  goBack,
+  goForward,
+  viewAddress,
+  visited,
+  type History,
   tableBreadcrumb,
   afterReset,
   resetPrompt,
@@ -108,7 +118,7 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
-import { menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl, fixtureAttachments } from "./attachments";
 import { FileView } from "./FileView";
 
@@ -124,6 +134,13 @@ const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
 const DEFAULT_TABLE_PATH = "projects/projects";
 /** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
 const NARROW_AT_MOST = 760;
+/** Where each menu's commands go: before these items, or last (Go is made new). */
+const MENU_BEFORE: Record<AppCommand["menu"], string> = {
+  File: "Close",
+  Edit: "Paste",
+  View: "Enter Full Screen",
+  Go: "",
+};
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 const styles = css.create({
@@ -706,6 +723,26 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
 
   const table = tables[activeTablePath]!;
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
+  // Back and forward between views (table-app's history): each view shown is
+  // recorded by its address; going back or forward skips ones since deleted.
+  const [history, setHistory] = useState<History>(NO_HISTORY);
+  const shownViewId = table.views.some((v) => v.id === activeViewId) ? activeViewId : (table.views[0]?.id ?? "");
+  const here = viewAddress(activeTablePath, shownViewId);
+  useEffect(() => setHistory((h) => visited(h, here)), [here]);
+  const live = useCallback((address: string) => addressLive(address, tables, bundles), [tables, bundles]);
+  const go = useCallback(
+    (step: typeof goBack) => {
+      const moved = step(history, live);
+      const target = moved && addressTarget(moved.address, tables, bundles, "");
+      if (!moved || !target) return;
+      setHistory(moved.history);
+      setActiveTablePath(target.key);
+      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
+      setActiveBodyRowId(null);
+      setShownFile(null);
+    },
+    [history, live, tables, bundles],
+  );
 
   const setActiveViewId = useCallback(
     (viewId: string) => setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: viewId })),
@@ -840,7 +877,13 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     [setFilesMode],
   );
   useEffect(() => {
-    for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode })) {
+    const state = {
+      sidebarCollapsed: !sidebarShown,
+      filesMode,
+      canGoBack: canGoBack(history, live),
+      canGoForward: canGoForward(history, live),
+    };
+    for (const c of appCommands(state)) {
       setMenuItem({
         id: c.id,
         menu: c.menu,
@@ -848,12 +891,13 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         // AppKit's way to add Shift: the key in capitals (Redo is ⌘Z as "Z"), which
         // is what a typed ⇧⌘E matches; "e" with a Shift mask doesn't.
         key: c.shift ? c.key.toUpperCase() : c.key,
-        modifiers: ["command"],
-        before: c.menu === "File" ? "Close" : "Enter Full Screen",
+        modifiers: c.option ? ["command", "option"] : ["command"],
+        before: MENU_BEFORE[c.menu],
         checked: c.checked,
+        enabled: c.enabled,
       });
     }
-  }, [sidebarShown, filesMode]);
+  }, [sidebarShown, filesMode, history, live]);
   const commands: Record<AppCommandId, () => void> = {
     "new-file": () => askName(namePrompt({ kind: "file" }, bundles), createFile),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
@@ -862,6 +906,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     "toggle-sidebar": toggleSidebar,
     "tables-mode": () => chooseFilesMode(false),
     "files-mode": () => chooseFilesMode(true),
+    "go-back": () => go(goBack),
+    "go-forward": () => go(goForward),
+    // The view's address as text; opening one from outside the app waits on a link scheme.
+    "copy-link": () => copyText(here),
   };
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
@@ -948,6 +996,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `posted ${modifiers.join("+")}+${characters}`;
       },
       menuTitles,
+      history: () => history,
       // The window's width, as dragging its edge would set it; and what the sidebar is doing.
       resize: (width: number) => {
         resizeWindow(width);
@@ -980,7 +1029,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown, history]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).

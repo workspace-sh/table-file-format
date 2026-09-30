@@ -22,3 +22,4 @@ export * from "./confirm.ts";
 export * from "./commands.ts";
 export * from "./resetting.ts";
 export * from "./breadcrumb.ts";
+export * from "./history.ts";

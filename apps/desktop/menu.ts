@@ -6,7 +6,17 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 type Modifier = "command" | "shift" | "option" | "control";
 
 interface TableMenuModule {
-  setItem(id: string, menu: string, title: string, key: string, modifiers: Modifier[], before: string, checked: boolean): void;
+  setItem(
+    id: string,
+    menu: string,
+    title: string,
+    key: string,
+    modifiers: Modifier[],
+    before: string,
+    checked: boolean,
+    enabled: boolean,
+  ): void;
+  copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
@@ -29,11 +39,27 @@ export interface MenuItem {
   before?: string;
   /** Shown ticked. */
   checked?: boolean;
+  /** False greys it out. */
+  enabled?: boolean;
 }
 
 /** Add the item, or update its title and key. */
 export function setMenuItem(item: MenuItem): void {
-  TableMenu?.setItem(item.id, item.menu, item.title, item.key, item.modifiers, item.before ?? "", item.checked ?? false);
+  TableMenu?.setItem(
+    item.id,
+    item.menu,
+    item.title,
+    item.key,
+    item.modifiers,
+    item.before ?? "",
+    item.checked ?? false,
+    item.enabled ?? true,
+  );
+}
+
+/** Put text on the clipboard. */
+export function copyText(text: string): void {
+  TableMenu?.copyText(text);
 }
 
 /** Call `then` with an item's id when it's chosen. Returns the unsubscribe. */
