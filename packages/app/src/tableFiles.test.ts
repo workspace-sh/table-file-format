@@ -4,7 +4,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 
 import { newBundle, newTable } from "@workspace.sh/table-core";
 import type { ParsedBundle } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, importSkippedText, openArchive, openFailedText, type OpenedBundle } from "./tableFiles.ts";
+import { archiveFileName, bundleToArchive, importSkippedText, openArchive, openFailedText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
 
 const NOW = new Date("2026-09-25T20:00:00Z");
 
@@ -88,3 +88,8 @@ test("what opening says: the skipped lines under a count, nothing when it read c
   assert.equal(openFailedText("x.zip", new Error("not a zip")), "Couldn't open x.zip: not a zip");
 });
 
+
+test("an export that fails says which file and why", () => {
+  assert.equal(exportFailedText("crm.table.zip", new Error("disk full")), "Couldn't export crm.table.zip: disk full");
+  assert.equal(exportFailedText("crm.table.zip", "no"), "Couldn't export crm.table.zip: no");
+});

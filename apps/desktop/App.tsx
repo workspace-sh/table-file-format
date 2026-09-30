@@ -88,6 +88,8 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  NO_TABLE,
+  exportFailedText,
   importSkippedText,
   openFailedText,
   viewerLocale,
@@ -145,14 +147,6 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
-/** Shown only if no table is held at all, which the examples prevent: a table with one view and nothing in it. */
-const NO_TABLE: ParsedTable = {
-  path: "",
-  schema: { fields: [] },
-  rows: [],
-  views: [{ id: "all", name: "All", layout: "table" }],
-  meta: {},
-};
 /** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
 const NARROW_AT_MOST = 760;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
@@ -477,7 +471,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
   const folders = useFolders({ store, tables, setTables, bundles, setBundles, onProblem: showProblem });
-  const [activeTablePath, setActiveTablePath] = useState<string>(() => firstTableKey(initial.tables) ?? DEFAULT_TABLE_KEY);
+  const [chosenTablePath, setActiveTablePath] = useState<string>(() => firstTableKey(initial.tables) ?? DEFAULT_TABLE_KEY);
+  // The table on screen: the one chosen while it's held, else the first held
+  // (a table that went away, or a key that never was). Everything below reads
+  // this, so none of it meets a missing table; the effect keeps the choice in step.
+  const activeTablePath = tables[chosenTablePath] ? chosenTablePath : (firstTableKey(tables) ?? chosenTablePath);
+  useEffect(() => {
+    if (activeTablePath !== chosenTablePath) setActiveTablePath(activeTablePath);
+  }, [activeTablePath, chosenTablePath]);
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => firstViews(initial.tables));
   // Saved after every change. The fixtures themselves are never saved, so
   // an untouched app keeps following them as they change. An opened
@@ -557,7 +558,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       try {
         await writeBytes(where, await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
       } catch (error) {
-        showProblem(`Couldn't export ${archiveFileName(bundle)}`, error instanceof Error ? error.message : String(error));
+        showProblem(exportFailedText(archiveFileName(bundle), error), "");
       }
     },
     [activeTablePath, tables, bundles, showProblem],
@@ -744,12 +745,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // A sort of the viewer's own follows their language.
   const viewerText = useMemo(() => viewerOrder(locale), [locale]);
 
-  // The table on screen; the first held when it's gone (NO_TABLE only if none is held at all).
-  const table = tables[activeTablePath] ?? tables[firstTableKey(tables) ?? ""] ?? NO_TABLE;
-  useEffect(() => {
-    const first = firstTableKey(tables);
-    if (!tables[activeTablePath] && first) setActiveTablePath(first);
-  }, [tables, activeTablePath]);
+  // The table on screen (activeTablePath is always a held one; NO_TABLE only if none is held).
+  const table = tables[activeTablePath] ?? NO_TABLE;
   // Opening a table unfolds its file, so the sidebar always shows where you are.
   const activeBundle = bundleOf(activeTablePath);
   useEffect(() => {
