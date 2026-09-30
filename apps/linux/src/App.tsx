@@ -13,6 +13,7 @@ import {
   AdwAlertDialog,
   AdwApplication,
   AdwApplicationWindow,
+  AdwBreakpoint,
   AdwDialog,
   AdwPreferencesPage,
   AdwHeaderBar,
@@ -541,6 +542,9 @@ export function App({
   const mode: "tables" | "files" = sidebarPrefs.files ? "files" : "tables";
   const setMode = (next: "tables" | "files") => setSidebarPrefs((p) => ({ ...p, files: next === "files" || undefined }));
   const setCollapsed = (collapsed: boolean) => setSidebarPrefs((p) => ({ ...p, collapsed: collapsed || undefined }));
+  // A narrow window: the sidebar lays over the content, hidden until asked for.
+  const [narrow, setNarrow] = useState(false);
+  const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
   // Back and forward between the views shown (table-app's history).
   const [history, setHistory] = useState<History>(NO_HISTORY);
   const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
@@ -802,7 +806,8 @@ export function App({
     },
     "tables-mode": () => setMode("tables"),
     "files-mode": () => setMode("files"),
-    "toggle-sidebar": () => setCollapsed(!sidebarPrefs.collapsed),
+    // Narrow, Ctrl+B shows or hides the sidebar over the content, leaving the saved choice as it was.
+    "toggle-sidebar": () => (narrow ? setShownWhileNarrow(!shownWhileNarrow) : setCollapsed(!sidebarPrefs.collapsed)),
     "go-back": () => go(back),
     "go-forward": () => go(forward),
   };
@@ -819,11 +824,15 @@ export function App({
   const primaryMenu = (
     <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
   );
+  const sidebarShown = narrow ? shownWhileNarrow : sidebarPrefs.collapsed !== true;
   const navigation = (
+    <>
+    {sidebarShown ? null : <GtkButton iconName="sidebar-show-symbolic" tooltipText="Show Sidebar" onClicked={() => run["toggle-sidebar"]?.()} />}
     <GtkBox cssClasses={["linked"]}>
       <GtkButton iconName="go-previous-symbolic" tooltipText="Back" sensitive={back !== null} onClicked={() => go(back)} />
       <GtkButton iconName="go-next-symbolic" tooltipText="Forward" sensitive={forward !== null} onClicked={() => go(forward)} />
     </GtkBox>
+    </>
   );
 
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
@@ -851,6 +860,19 @@ export function App({
         defaultWidth={1280}
         defaultHeight={800}
         onCloseRequest={() => quit()}
+        // Narrow (the web's 760px), the sidebar lays over the content rather than beside it.
+        widthRequest={360}
+        heightRequest={294}
+        breakpoints={
+          <AdwBreakpoint
+            condition={Adw.BreakpointCondition.parse("max-width: 760sp")}
+            onApply={() => {
+              setNarrow(true);
+              setShownWhileNarrow(false);
+            }}
+            onUnapply={() => setNarrow(false)}
+          />
+        }
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
@@ -860,7 +882,12 @@ export function App({
           {/* An attachment is a file in its table's attachments/ folder. */}
           <AttachmentsProvider value={(file) => (tables[active] ? attachmentPath({ ...tables[active], path: tableDir(active) }, file) : undefined)}>
           <AdwOverlaySplitView
-            showSidebar={sidebarPrefs.collapsed !== true}
+            collapsed={narrow}
+            showSidebar={sidebarShown}
+            // Laid over the content, it closes when the content is clicked.
+            onNotifyShowSidebar={(shown) => {
+              if (narrow && !shown && shownWhileNarrow) setShownWhileNarrow(false);
+            }}
             minSidebarWidth={220}
             maxSidebarWidth={300}
             sidebar={
@@ -893,6 +920,8 @@ export function App({
                   onSelect={(entry) => {
                     if (entry.kind === "table") setActive(entry.table.key);
                     if (entry.kind === "view") setViewIds((prev) => ({ ...prev, [entry.key]: entry.view.id }));
+                    // Over the content, the sidebar gets out of the way of what was chosen.
+                    if (narrow) setShownWhileNarrow(false);
                   }}
                   onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
                   onToggleFile={(bundle) => setSidebarPrefs((p) => withFileToggled(p, bundle))}
