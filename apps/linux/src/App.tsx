@@ -624,6 +624,7 @@ export function App({
     : null;
   // Each view shown is recorded; going back or forward skips any since deleted.
   const here = view ? viewAddress(active, view.id) : null;
+
   useEffect(() => {
     if (here) setHistory((h) => visited(h, here));
   }, [here]);
@@ -648,8 +649,10 @@ export function App({
   const run: Partial<Record<AppCommandId, () => void>> = {
     ...(newFilesIn ? { "new-file": () => setNaming({ kind: "file" }) } : {}),
     "copy-link": () => {
-      if (!here) return;
-      Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(here));
+      if (!view) return;
+      // With the open page's row, as the web's address and the Mac's link have it.
+      const link = viewAddress(active, view.id, openPage?.key === active ? openPage.rowId : undefined);
+      Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(link));
     },
     "tables-mode": () => setMode("tables"),
     "files-mode": () => setMode("files"),
@@ -757,7 +760,9 @@ export function App({
               </AttachmentsProvider>
             ) : table && view ? (
               <TablePane
-                key={active}
+                // Drawn afresh for each view, so leaving one (table-app's
+                // leaving) takes its search and its open settings with it.
+                key={`${active}#${view.id}`}
                 tables={tables}
                 tableKey={active}
                 view={view}
