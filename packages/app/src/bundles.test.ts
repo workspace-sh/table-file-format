@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { ParsedTable } from "@workspace.sh/table-core";
-import { addressTarget, bundleTables, fromBundle, keyForAddress, tableKeysIn, toBundle } from "./bundles.ts";
+import { addressTarget, applyTarget, bundleTables, fromBundle, keyForAddress, tableKeysIn, toBundle } from "./bundles.ts";
 
 const t = (title: string): ParsedTable => ({
   path: title,
@@ -60,4 +60,19 @@ test("following an address: its table, its view, and the named row's document if
   assert.deepEqual(addressTarget({ tablePath: "deals" }, withDoc, bundles, "copy"), { key: "copy/deals", openBody: null });
   assert.equal(addressTarget("nowhere.table", withDoc, bundles, "crm"), null);
   assert.equal(addressTarget("", withDoc, bundles, "crm"), null);
+});
+
+test("applying a target: its table, its view over the others, its document, the view not a file", () => {
+  const current = { viewIds: { "crm/deals": "all", "crm/companies": "all" } };
+  const applied = applyTarget({ key: "crm/deals", viewId: "pipe", openBody: "d1" }, current);
+  assert.deepEqual(applied, {
+    activeKey: "crm/deals",
+    viewIds: { "crm/deals": "pipe", "crm/companies": "all" },
+    openBody: "d1",
+    mode: "tables",
+  });
+  assert.equal(current.viewIds["crm/deals"], "all", "the current views aren't changed");
+  const noView = applyTarget({ key: "crm/companies", openBody: null }, current);
+  assert.equal(noView.viewIds, current.viewIds, "no view named: the views as they were");
+  assert.equal(noView.openBody, null);
 });
