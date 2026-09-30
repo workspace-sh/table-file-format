@@ -5,7 +5,7 @@
 // settings with the direction the viewer's language reads (derive's own rule). React is a peer
 // of this subpath only: the rest of table-app stays renderer-free.
 
-import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 import { textDirection, type BundleMeta, type ParsedTable, type TextDirection } from "@workspace.sh/table-core";
 import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
@@ -34,6 +34,32 @@ export interface TableAppAdapter {
 export type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
 
 /**
+ * Write what's dirty now, and say it's written: true when it's all
+ * written (or nothing was dirty), false when the app held it back or it
+ * failed, and it stays to write. Plain, as scheduleWrite is.
+ */
+export async function writeNow(
+  state: Pick<AppState, "dirty" | "tables" | "bundles">,
+  adapter: Pick<TableAppAdapter, "write">,
+  dispatch: (action: AppAction) => void,
+  onSaving: (saving: SaveState) => void,
+): Promise<boolean> {
+  if (state.dirty.length === 0) return true;
+  const { dirty: which, tables, bundles } = state;
+  onSaving({ kind: "saving" });
+  try {
+    const done = await adapter.write(which, tables, bundles);
+    // `tables` as written: a bundle edited again meanwhile stays to write.
+    if (done !== false) dispatch({ type: "written", bundles: which, tables });
+    onSaving({ kind: "saved" });
+    return done !== false;
+  } catch (error) {
+    onSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
+
+/**
  * Write what's dirty `delayMs` after now, then say it's written. Returns
  * what cancels it, for an edit that comes first. Plain, so it's tested
  * without a renderer; useTableApp runs it after every edit.
@@ -45,18 +71,7 @@ export function scheduleWrite(
   onSaving: (saving: SaveState) => void,
 ): () => void {
   if (state.dirty.length === 0) return () => {};
-  const { dirty: which, tables, bundles } = state;
-  const timer = setTimeout(() => {
-    onSaving({ kind: "saving" });
-    adapter.write(which, tables, bundles).then(
-      (done) => {
-        // `tables` as written: a bundle edited again meanwhile stays to write.
-        if (done !== false) dispatch({ type: "written", bundles: which, tables });
-        onSaving({ kind: "saved" });
-      },
-      (error: unknown) => onSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) }),
-    );
-  }, adapter.delayMs ?? 0);
+  const timer = setTimeout(() => void writeNow(state, adapter, dispatch, onSaving), adapter.delayMs ?? 0);
   return () => clearTimeout(timer);
 }
 
@@ -66,6 +81,12 @@ export interface TableApp {
   /** The display settings, with the direction the viewer's language reads (D40): what DisplaySettingsProvider takes. */
   display: DisplaySettings & { direction: TextDirection };
   saving: SaveState;
+  /**
+   * Write what's dirty now, without waiting for the delay: before the app
+   * closes, or to try a failed write again. Resolves true once it's all
+   * written.
+   */
+  flush: () => Promise<boolean>;
 }
 
 /**
@@ -81,6 +102,8 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
   // The latest adapter, so a write that fires later uses it.
   const latest = useRef(adapter);
   latest.current = adapter;
+  const latestState = useRef(state);
+  latestState.current = state;
 
   // This viewer's own settings, kept as they change. Arrangements only of views that still exist.
   useEffect(() => saveSidebarPrefs(store, state.sidebar), [store, state.sidebar]);
@@ -98,5 +121,6 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
 
   const direction = textDirection(viewerLocale(state.display, locale));
   const display = useMemo(() => ({ ...state.display, direction }), [state.display, direction]);
-  return { state, dispatch, display, saving };
+  const flush = useCallback(() => writeNow(latestState.current, latest.current, dispatch, setSaving), []);
+  return { state, dispatch, display, saving, flush };
 }

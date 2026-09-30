@@ -23,7 +23,7 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkEntry, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
@@ -191,6 +191,7 @@ function TablePane({
   tableKey,
   callbacks,
   saving,
+  onRetrySave,
   viewActions,
   onSearch,
   settingsOpen,
@@ -206,6 +207,7 @@ function TablePane({
   /** What the views can ask the app to change: table-app's viewCallbacks, and attaching a file. */
   callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void };
   saving: SaveState;
+  onRetrySave: () => void;
   viewActions: ViewActions;
   onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
@@ -236,7 +238,7 @@ function TablePane({
             <>
               {menu}
               <GtkButton iconName="emblem-system-symbolic" tooltipText="View Settings" onClicked={() => onSettings(true)} />
-              <SaveStatus state={saving} />
+              <SaveStatus state={saving} onRetry={onRetrySave} />
             </>
           }
         />
@@ -364,10 +366,11 @@ function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (
  * document app that saves as you go says nothing when it has), a spinner
  * while writing, and the reason when a write failed.
  */
-function SaveStatus({ state }: { state: SaveState }) {
+function SaveStatus({ state, onRetry }: { state: SaveState; onRetry: () => void }) {
   if (state.kind === "saved") return null;
   if (state.kind === "saving") return <AdwSpinner widthRequest={16} heightRequest={16} tooltipText="Saving…" />;
-  return <GtkImage iconName="dialog-warning-symbolic" cssClasses={["error"]} tooltipText={`Not saved: ${state.message}`} />;
+  // Not written: says why, and tries again when pressed.
+  return <GtkButton iconName="dialog-warning-symbolic" cssClasses={["flat", "error"]} tooltipText={`Not saved: ${state.message}. Try Again`} onClicked={onRetry} />;
 }
 
 /** How long after the last edit its bundle is written. */
@@ -424,7 +427,9 @@ export function App({
   // Every change to it is written as the web and the Mac write theirs:
   // table-app's useTableApp, with Linux's own writer.
   const resetting = useRef(false);
-  const { state, dispatch, display: shownDisplay, saving } = useTableApp(() => {
+  // Closed once, and not everything could be written: a second close quits anyway.
+  const closing = useRef(false);
+  const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(() => {
     // The examples, in newFilesIn, are the demo's own, and a reset puts them
     // back; a folder named on the command line or opened is the viewer's.
     const inExamples = (path: string) => !!newFilesIn && path.startsWith(`${newFilesIn}/`);
@@ -597,7 +602,18 @@ export function App({
         title="Tables"
         defaultWidth={1280}
         defaultHeight={800}
-        onCloseRequest={() => quit()}
+        // What's still to write is written before the app goes, rather than
+        // lost with the delay. If it can't be, the window stays and says
+        // why; closing again quits anyway.
+        onCloseRequest={() => {
+          if (closing.current) return quit();
+          closing.current = true;
+          void flush().then((written) => {
+            if (written) quit();
+            else tell("Not everything could be saved", "Close the window again to quit anyway.");
+          });
+          return true;
+        }}
         // Narrow (the web's 760px), the sidebar lays over the content rather than beside it.
         widthRequest={360}
         heightRequest={294}
@@ -683,6 +699,7 @@ export function App({
                 tableKey={state.active}
                 callbacks={callbacks}
                 saving={saving}
+                onRetrySave={() => void flush()}
                 viewActions={viewActions}
                 onSearch={(text) => dispatch({ type: "search", text })}
                 settingsOpen={state.settingsOpen}
