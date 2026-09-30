@@ -65,8 +65,8 @@ describe("making tables and files on Linux", () => {
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
     await name("   ");
     // A table made would be shown at once; the one open is still open.
-    expect(await screen.findByText("Projects › Tasks")).toBeDefined();
-    expect(screen.queryByText(/^Projects › (?!Tasks$)/)).toBeNull();
+    expect(await screen.findByText("Projects (projects.table) › Tasks")).toBeDefined();
+    expect(screen.queryByText(/^Projects \(projects\.table\) › (?!Tasks$)/)).toBeNull();
   });
 
   it("a new view opens its settings, where it's made into what's wanted", async () => {

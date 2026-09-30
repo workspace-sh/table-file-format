@@ -60,3 +60,14 @@ export function appCommands(state: AppCommandState): AppCommand[] {
     { id: "go-forward", menu: "Go", label: "Forward", key: "]", gtkAccel: "<Alt>Right", enabled: state.canGoForward ?? false },
   ];
 }
+
+/**
+ * A command's accelerator in GTK's syntax (Gtk.acceleratorParse): its
+ * `gtkAccel` where GNOME's convention differs, else Control with the key,
+ * and Shift and Alt as the command says.
+ */
+export function gtkAccelOf(command: AppCommand): string {
+  if (command.gtkAccel) return command.gtkAccel;
+  return `<Control>${command.shift ? "<Shift>" : ""}${command.option ? "<Alt>" : ""}${command.key}`;
+}
+

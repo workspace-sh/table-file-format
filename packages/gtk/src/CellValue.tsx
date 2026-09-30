@@ -92,7 +92,8 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
       tooltipText={link.address}
       onClicked={() => onOpenRelation(link.address)}
     >
-      <GtkLabel label={link.label} ellipsize={Pango.EllipsizeMode.END} maxWidthChars={1} />
+      {/* Its own width, shrinking to "…" only where the cell is narrower: the cell's Clipped keeps it from widening the column. */}
+      <GtkLabel label={link.label} ellipsize={Pango.EllipsizeMode.END} />
     </GtkButton>
   );
 }
@@ -103,7 +104,15 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
   const shown = describeCell(field, value, display, relatedTables);
   switch (shown.kind) {
     case "relations":
-      if (shown.links.length === 1) return <RelationValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
+      if (shown.links.length === 1) {
+        return (
+          <Clipped>
+            <GtkBox halign={Gtk.Align.START}>
+              <RelationValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />
+            </GtkBox>
+          </Clipped>
+        );
+      }
       return (
         <Clipped>
           <GtkBox spacing={4}>
