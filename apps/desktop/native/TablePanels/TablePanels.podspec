@@ -1,4 +1,5 @@
-# The macOS app's own native module: the system Open and Save panels.
+# The macOS app's own native modules: the system Open and Save panels
+# (TablePanels), and its own items in the menu bar (TableMenu).
 # No published React Native module covers react-native-macos
 # (@react-native-documents/picker is iOS only), so it lives here.
 Pod::Spec.new do |s|
