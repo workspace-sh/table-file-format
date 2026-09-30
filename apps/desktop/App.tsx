@@ -30,6 +30,10 @@ import {
   DISPLAY_KEY,
   displayChoices,
   withDisplayChoice,
+  newView,
+  withNewFile,
+  withNewTable,
+  withView,
   loadDisplay,
   saveDisplay,
   STORAGE_KEY,
@@ -323,6 +327,32 @@ function renderView(
 }
 
 /**
+ * Ask for a name in the system's own text prompt (a sheet on the window);
+ * `then` gets it trimmed, unless it's empty or the prompt is cancelled.
+ * react-native-macos has Alert.promptMacOS, but not in its types.
+ */
+function askName(title: string, then: (name: string) => void) {
+  const alert = Alert as unknown as {
+    promptMacOS: (
+      title: string,
+      message: string | undefined,
+      buttons: { text: string; style?: string; onPress?: (value?: string) => void }[],
+      type?: string,
+    ) => void;
+  };
+  alert.promptMacOS(title, undefined, [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Create",
+      onPress: (value) => {
+        const name = (value ?? "").trim();
+        if (name) then(name);
+      },
+    },
+  ], "plain-text");
+}
+
+/**
  * Edits are kept between launches (#86), as the web keeps them between
  * reloads: the saved tables are read before the first screen, and nothing
  * shows until they are (a moment, from a local database).
@@ -364,6 +394,34 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
     });
   }, [store, tables, bundles, folders.paths]);
+
+  // Show what was just made: its first view, from the top.
+  const showMade = useCallback((key: string, viewId: string) => {
+    setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
+    setActiveTablePath(key);
+    setQuery("");
+    setActiveBodyRowId(null);
+  }, []);
+  // A new table goes into the bundle on show, as a new sheet into a workbook (D37).
+  const createTable = useCallback(
+    (title: string) => {
+      const made = withNewTable(tables, bundles, bundleOf(activeTablePath), title);
+      setTables(made.tables);
+      setBundles(made.bundles);
+      showMade(made.key, made.viewId);
+    },
+    [tables, bundles, activeTablePath, showMade],
+  );
+  // A new .table: a bundle holding one new table.
+  const createFile = useCallback(
+    (title: string) => {
+      const made = withNewFile(tables, bundles, title);
+      setTables(made.tables);
+      setBundles(made.bundles);
+      showMade(made.key, made.viewId);
+    },
+    [tables, bundles, showMade],
+  );
 
   // Open a .table folder and show its first table; one already open is shown again.
   const openFolder = useCallback(
@@ -485,6 +543,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     (patch: Partial<View>) => edit((t) => withViewPatch(t, activeViewId, patch)),
     [edit, activeViewId],
   );
+  // A new view starts as a plain table of everything, with its settings open.
+  const addView = useCallback(() => {
+    const made = newView();
+    edit((t) => withView(t, made));
+    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
+    setShowViewSettings(true);
+  }, [edit, activeTablePath]);
+
   const deleteView = useCallback(() => {
     const viewId = activeViewId;
     const view = table.views.find((v) => v.id === viewId);
@@ -551,6 +617,19 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `opening ${path}`;
       },
       folders: () => folders.paths,
+      // What the New buttons do once a name is given (the prompt can't be typed into from here).
+      newTable: (title: string) => {
+        createTable(title);
+        return `made table ${title}`;
+      },
+      newFile: (title: string) => {
+        createFile(title);
+        return `made .table ${title}`;
+      },
+      newView: () => {
+        addView();
+        return "made view";
+      },
       // Set display settings, as the Display controls will.
       display: (next: DisplaySettings) => {
         changeDisplay(next);
@@ -565,7 +644,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders and arrangements forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -642,6 +721,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   >
                     Open .table…
                   </html.button>
+                  <html.button onClick={() => askName("Name the new table", createTable)} style={styles.tab}>
+                    + New table
+                  </html.button>
+                  <html.button onClick={() => askName("Name the new .table file", createFile)} style={styles.tab}>
+                    New .table…
+                  </html.button>
                   <html.button
                     onClick={() => setShowDisplay((open) => !open)}
                     style={[styles.tab, showDisplay && styles.tabActive]}
@@ -665,6 +750,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   {v.name}
                 </html.button>
               ))}
+              <html.button onClick={addView} style={styles.tab}>
+                + New view
+              </html.button>
               <html.button
                 onClick={() => setShowViewSettings((open) => !open)}
                 style={[styles.tab, showViewSettings && styles.tabActive]}
