@@ -5,6 +5,8 @@ import type { ParsedTable } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 import {
   deleteViewPrompt,
+  deletingRow,
+  deletingView,
   onTable,
   rowTitleFor,
   withBody,
@@ -111,4 +113,30 @@ test("deleting a view asks first, and warns when formulas read a Sheet view by p
   const plain = deleteViewPrompt(held, "projects/tasks", tasks.views[0]!)!;
   assert.equal(plain.body, "The rows stay; only this way of showing them goes.");
   assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "v2") }, "projects/tasks", tasks.views[0]!), null);
+});
+
+test("a view's delete prompt carries its responses, Cancel first", () => {
+  const asked = deleteViewPrompt({ "projects/tasks": tasks }, "projects/tasks", tasks.views[0]!)!;
+  assert.deepEqual(asked.responses, [{ id: "cancel", label: "Cancel" }, { id: "delete", label: "Delete", destructive: true }]);
+});
+
+test("deleting a view shows the table's first other view after", () => {
+  const held = { "projects/tasks": tasks };
+  const [first, second] = tasks.views;
+  assert.equal(deletingView(held, "projects/tasks", first!)!.nextViewId, second!.id);
+  assert.equal(deletingView(held, "projects/tasks", second!)!.nextViewId, first!.id);
+  assert.equal(deletingView({ "projects/tasks": withoutView(tasks, second!.id) }, "projects/tasks", first!), null);
+});
+
+test("deleting a row names it, says whether its document goes, and closes that document if it's open", () => {
+  const projects = tables["projects"]!;
+  const withDoc = deletingRow(projects, "p2", "p2");
+  assert.equal(withDoc.prompt.heading, `Delete “${rowTitleFor(projects, "p2")}”?`);
+  assert.equal(withDoc.prompt.body, "The row and its document are removed from the file.");
+  assert.equal(withDoc.closeBody, true);
+  const plain = deletingRow(tasks, "t1", "p2");
+  assert.equal(plain.prompt.body, "The row is removed from the file.");
+  assert.equal(plain.closeBody, false);
+  assert.equal(deletingRow(tasks, "t1", null).closeBody, false);
+  assert.equal(plain.prompt.responses.at(-1)!.destructive, true);
 });

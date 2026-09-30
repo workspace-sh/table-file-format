@@ -8,6 +8,7 @@ import { isSheet } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
+import { CANCEL, type Confirm } from "./confirm.ts";
 
 /** Apply `edit` to the table at `key` in an app's `bundle/table` map. */
 export function onTable(
@@ -150,10 +151,45 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
  * place and will show #REF! (D41). Null when it's the table's last view,
  * which can't be deleted.
  */
-export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): { heading: string; body: string } | null {
+export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): Confirm | null {
   const table = tables[key];
   if (!table || table.views.length <= 1) return null;
   const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
   const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
-  return { heading: `Delete the view “${view.name}”?`, body: `The rows stay; only this way of showing them goes.${losing}` };
+  return {
+    heading: `Delete the view “${view.name}”?`,
+    body: `The rows stay; only this way of showing them goes.${losing}`,
+    responses: [CANCEL, { id: "delete", label: "Delete", destructive: true }],
+  };
+}
+
+/**
+ * Deleting a view: what to ask, and which view shows after (the table's
+ * first other view). Null when it's the table's last view, which can't be
+ * deleted.
+ */
+export function deletingView(
+  tables: Record<string, ParsedTable>,
+  key: string,
+  view: View,
+): { prompt: Confirm; nextViewId: string } | null {
+  const prompt = deleteViewPrompt(tables, key, view);
+  const next = tables[key]?.views.find((v) => v.id !== view.id);
+  return prompt && next ? { prompt, nextViewId: next.id } : null;
+}
+
+/**
+ * Deleting a row: what to ask (its document goes with it), and whether the
+ * document open now is that row's, so the app closes it once the row goes.
+ */
+export function deletingRow(table: ParsedTable, rowId: string, openBody: string | null): { prompt: Confirm; closeBody: boolean } {
+  const hasBody = table.bodies?.[rowId] !== undefined;
+  return {
+    prompt: {
+      heading: `Delete “${rowTitleFor(table, rowId)}”?`,
+      body: hasBody ? "The row and its document are removed from the file." : "The row is removed from the file.",
+      responses: [CANCEL, { id: "delete", label: "Delete", destructive: true }],
+    },
+    closeBody: openBody === rowId,
+  };
 }
