@@ -491,7 +491,15 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                     style={[styles.searchInput, styles.searchGrow]}
                   />
                 </html.div>
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  showsVerticalScrollIndicator={false}
+                  // The keyboard makes room rather than covering the cell being edited,
+                  // and a tap elsewhere while typing goes to what's tapped.
+                  automaticallyAdjustKeyboardInsets
+                  keyboardShouldPersistTaps="handled"
+                >
                   {state.settingsOpen && (
                     <ViewSettings
                       key={view.id}
