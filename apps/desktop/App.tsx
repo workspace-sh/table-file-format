@@ -103,6 +103,7 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
+import { menuTitles, onMenu, postKey, setMenuItem } from "./menu";
 import { attachmentUrl, fixtureAttachments } from "./attachments";
 import { FileView } from "./FileView";
 
@@ -135,6 +136,22 @@ const styles = css.create({
     flex: 1,
     paddingInline: 24,
     paddingBlock: 20,
+  },
+  titleRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sidebarTrigger: {
+    fontSize: 16,
+    paddingInline: 6,
+    paddingBlock: 2,
+    borderRadius: 6,
+    borderWidth: 0,
+    cursor: "pointer",
+    backgroundColor: "transparent",
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
   },
   title: {
     fontSize: 22,
@@ -535,6 +552,30 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       }),
     [store],
   );
+  // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
+  const sidebarCollapsed = sidebarPrefs.collapsed === true;
+  const toggleSidebar = useCallback(
+    () =>
+      setSidebarPrefs((prefs) => {
+        const { collapsed: _was, ...rest } = prefs;
+        const next = prefs.collapsed ? rest : { ...rest, collapsed: true };
+        saveSidebarPrefs(store, next);
+        return next;
+      }),
+    [store],
+  );
+  // View › Hide Sidebar (⌘B), the Mac's place for it: its key works wherever focus is.
+  useEffect(() => {
+    setMenuItem({
+      id: "sidebar",
+      menu: "View",
+      title: sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar",
+      key: "b",
+      modifiers: ["command"],
+      before: "Enter Full Screen",
+    });
+  }, [sidebarCollapsed]);
+  useEffect(() => onMenu((id) => id === "sidebar" && toggleSidebar()), [toggleSidebar]);
   const filesMode = sidebarPrefs.files === true;
   const setFilesMode = useCallback(
     (files: boolean) =>
@@ -821,6 +862,16 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "display set";
       },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
+      // The sidebar, as its button does; and a key pressed as if typed (⌘B is postKey("b", 11, ["command"])).
+      sidebar: () => {
+        toggleSidebar();
+        return "sidebar toggled";
+      },
+      postKey: (characters: string, keyCode: number, modifiers: ("command" | "shift" | "option" | "control")[]) => {
+        postKey(characters, keyCode, modifiers);
+        return `posted ${modifiers.join("+")}+${characters}`;
+      },
+      menuTitles,
       // Files mode, as the sidebar's switch, folders and files do.
       files: (on: boolean) => {
         if (!on) setShownFile(null);
@@ -844,7 +895,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -869,52 +920,66 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
-          <Sidebar
-            tree={sidebarTree(tables, bundles, {
-              folded: sidebarPrefs.foldedFiles ?? [],
-              expanded: [activeTablePath],
-              active: { key: activeTablePath, viewId: activeViewId },
-            }).map((file) => ({
-              ...file,
-              // A folder opened from disk goes by its own name.
-              file: folders.paths[file.bundle]?.split("/").pop() ?? file.file,
-            }))}
-            onToggleFile={toggleFile}
-            filesMode={filesMode}
-            onFilesMode={(on) => {
-              if (!on) setShownFile(null);
-              setFilesMode(on);
-            }}
-            files={flattenFilesTree(files)}
-            onToggleDir={(bundle, path, open) => setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }))}
-            shownFile={shownFile}
-            onShowFile={(bundle, path) => setShownFile({ bundle, path })}
-            onSelectTable={(key) => {
-              setShownFile(null);
-              setActiveTablePath(key);
-              setQuery("");
-              setActiveBodyRowId(null);
-            }}
-            onSelectView={(key, viewId) => {
-              setShownFile(null);
-              setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
-              setShowViewSettings(false);
-            }}
-            onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
-            onNewView={addView}
-            footer={[
-              { label: "New .table…", onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
-              { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
-              { label: "Open .table.zip…", onPress: () => void importZip() },
-              { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
-            ]}
-          />
+          {!sidebarCollapsed && (
+            <Sidebar
+              tree={sidebarTree(tables, bundles, {
+                folded: sidebarPrefs.foldedFiles ?? [],
+                expanded: [activeTablePath],
+                active: { key: activeTablePath, viewId: activeViewId },
+              }).map((file) => ({
+                ...file,
+                // A folder opened from disk goes by its own name.
+                file: folders.paths[file.bundle]?.split("/").pop() ?? file.file,
+              }))}
+              onToggleFile={toggleFile}
+              filesMode={filesMode}
+              onFilesMode={(on) => {
+                if (!on) setShownFile(null);
+                setFilesMode(on);
+              }}
+              files={flattenFilesTree(files)}
+              onToggleDir={(bundle, path, open) => setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }))}
+              shownFile={shownFile}
+              onShowFile={(bundle, path) => setShownFile({ bundle, path })}
+              onSelectTable={(key) => {
+                setShownFile(null);
+                setActiveTablePath(key);
+                setQuery("");
+                setActiveBodyRowId(null);
+              }}
+              onSelectView={(key, viewId) => {
+                setShownFile(null);
+                setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
+                setShowViewSettings(false);
+              }}
+              onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
+              onNewView={addView}
+              footer={[
+                { label: "New .table…", onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
+                { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
+                { label: "Open .table.zip…", onPress: () => void importZip() },
+                { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
+              ]}
+            />
+          )}
           <html.div style={styles.content}>
             {shown ? (
               <FileView {...shown} onClose={() => setShownFile(null)} />
             ) : (
             <>
-            <html.span style={styles.title}>{view.name}</html.span>
+            <html.div style={styles.titleRow}>
+              <Hinted hint={`${sidebarCollapsed ? "Show" : "Hide"} the sidebar (⌘B)`}>
+                <html.button
+                  aria-label={sidebarCollapsed ? "Show the sidebar" : "Hide the sidebar"}
+                  aria-expanded={!sidebarCollapsed}
+                  onClick={toggleSidebar}
+                  style={styles.sidebarTrigger}
+                >
+                  ◧
+                </html.button>
+              </Hinted>
+              <html.span style={styles.title}>{view.name}</html.span>
+            </html.div>
             <html.div style={styles.subtitle}>
               <html.span>{summary.count}</html.span>
               <html.span>·</html.span>
