@@ -61,13 +61,27 @@ describe("view settings on Linux", () => {
     });
   });
 
-  it("an added filter is saved, on the first field", async () => {
+  it("an added filter is this viewer's own until saved for everyone (D4)", async () => {
     await openSettings();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
+    // Shown at once, and only for this viewer: the file is as it was.
+    const save = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" });
+    expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.filter).toBeUndefined();
+    await userEvent.click(save);
     await waitFor(async () => {
       const t = await tasksOnDisk();
       expect(t.views.find((v) => v.id === "v1")?.filter?.[0]?.field).toBe("title");
     });
+    // Saved, it's no longer this viewer's own.
+    await waitFor(() => expect(screen.queryByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" })).toBeNull());
+  });
+
+  it("Reset drops this viewer's filter, and the file never had it", async () => {
+    await openSettings();
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Reset" }));
+    await waitFor(() => expect(screen.queryByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove Filter" })).toBeNull());
+    expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.filter).toBeUndefined();
   });
 
   it("deleting a view asks first, then removes it from the file", async () => {
