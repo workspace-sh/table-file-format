@@ -21,6 +21,7 @@ import {
 import { GtkBox, GtkButton, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { quit } from "@gtkx/react";
 import {
+  attachmentPath,
   bundleOf,
   bundleTables,
   onTable,
@@ -45,6 +46,7 @@ import {
 import { saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { newId, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
+  AttachmentsProvider,
   BoardView,
   CalendarView,
   DisplaySettingsProvider,
@@ -341,6 +343,8 @@ export function App({ library, initialTable, initialView }: { library: Library; 
     <AdwApplication>
       <AdwApplicationWindow title="Tables" defaultWidth={1280} defaultHeight={800} onCloseRequest={() => quit()}>
         <DisplaySettingsProvider value={{}}>
+          {/* An attachment is a file in its table's attachments/ folder. */}
+          <AttachmentsProvider value={(file) => attachmentPath(tables[active], file)}>
           <AdwOverlaySplitView
             minSidebarWidth={220}
             maxSidebarWidth={300}
@@ -426,6 +430,7 @@ export function App({ library, initialTable, initialView }: { library: Library; 
               }}
             />
           ) : null}
+          </AttachmentsProvider>
         </DisplaySettingsProvider>
       </AdwApplicationWindow>
     </AdwApplication>

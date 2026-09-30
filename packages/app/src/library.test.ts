@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { tables } from "@workspace.sh/table-fixtures";
-import { bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
+import { attachmentPath, bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
 import { withCell } from "./edits.ts";
 
 test("a library opens over any file system, keys bundles by folder, and saves back", async () => {
@@ -34,4 +34,11 @@ test("a folder named like a bundle already held gets its own key", async () => {
   await writeBundleTo(fs, "/else/projects.table", { tables: { tasks: tables["tasks"]! } });
   const opened = await openLibrary(fs, ["/else/projects.table"], ["projects", "crm"]);
   assert.deepEqual(Object.keys(opened.tables), ["projects-2/tasks"]);
+});
+
+test("an attachment is found in its table's attachments folder, and only by a plain filename", () => {
+  const t = { ...tables["companies"]!, path: "/docs/crm.table/tables/companies/" };
+  assert.equal(attachmentPath(t, "co-atlas.svg"), "/docs/crm.table/tables/companies/attachments/co-atlas.svg");
+  for (const bad of ["../schema.json", "a/b.png", "..", ".", "", "x\\y.png"]) assert.equal(attachmentPath(t, bad), undefined, bad);
+  assert.equal(attachmentPath(undefined, "a.png"), undefined);
 });
