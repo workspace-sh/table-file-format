@@ -90,6 +90,9 @@ import {
   appCommands,
   importSkippedText,
   openFailedText,
+  viewerLocale,
+  viewerOrder,
+  withFileToggled,
   hintWithShortcut,
   TOOLBAR_HINTS,
   leaving,
@@ -620,11 +623,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const toggleFile = useCallback(
     (bundle: string) =>
       setSidebarPrefs((prefs) => {
-        const folded = prefs.foldedFiles ?? [];
-        const next = {
-          ...prefs,
-          foldedFiles: folded.includes(bundle) ? folded.filter((b) => b !== bundle) : [...folded, bundle],
-        };
+        const next = withFileToggled(prefs, bundle);
         saveSidebarPrefs(store, next);
         return next;
       }),
@@ -731,7 +730,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // reads the way the language does (D40): the chosen one, or the system's.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(store));
   const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
-  const locale = display.locale ?? systemLocale;
+  const locale = viewerLocale(display, systemLocale);
   const direction = textDirection(locale);
   const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const changeDisplay = useCallback(
@@ -742,7 +741,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     [store],
   );
   // A sort of the viewer's own follows their language.
-  const viewerText = useMemo(() => new Intl.Collator(locale, { numeric: true }).compare, [locale]);
+  const viewerText = useMemo(() => viewerOrder(locale), [locale]);
 
   // The table on screen; the first held when it's gone (NO_TABLE only if none is held at all).
   const table = tables[activeTablePath] ?? tables[firstTableKey(tables) ?? ""] ?? NO_TABLE;
