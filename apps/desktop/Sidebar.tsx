@@ -1,11 +1,12 @@
 // The macOS app's sidebar: table-app's sidebarTree drawn as a Mac source
 // list. Each .table file folds; its tables list their row counts; the open
-// table lists its views (D37). The file actions sit at the foot, outside
-// the tree.
+// table lists its views (D37). Files mode shows the same .table files as
+// they are on disk instead (table-app's filesTree). The file actions sit at
+// the foot, outside the tree.
 
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { SidebarBundle } from "@workspace.sh/table-app";
+import type { FilesTreeEntry, SidebarBundle } from "@workspace.sh/table-app";
 
 export interface SidebarProps {
   tree: SidebarBundle[];
@@ -16,13 +17,92 @@ export interface SidebarProps {
   onNewView: () => void;
   /** The actions at the foot: new file, open folder, open zip, display. */
   footer: { label: string; onPress: () => void; active?: boolean }[];
+  /** Showing the files on disk rather than the tables and views. */
+  filesMode: boolean;
+  onFilesMode: (files: boolean) => void;
+  /** Files mode's lines, as flattenFilesTree gives them. */
+  files: FilesTreeEntry[];
+  onToggleDir: (bundle: string, path: string, open: boolean) => void;
+  /** The file shown in place of the view, if any. */
+  shownFile: { bundle: string; path: string } | null;
+  onShowFile: (bundle: string, path: string) => void;
 }
 
-export function Sidebar({ tree, onToggleFile, onSelectTable, onSelectView, onNewTable, onNewView, footer }: SidebarProps) {
+export function Sidebar({
+  tree,
+  onToggleFile,
+  onSelectTable,
+  onSelectView,
+  onNewTable,
+  onNewView,
+  footer,
+  filesMode,
+  onFilesMode,
+  files,
+  onToggleDir,
+  shownFile,
+  onShowFile,
+}: SidebarProps) {
   return (
     <html.div style={styles.sidebar}>
+      {/* The same files two ways: as tables and views, or as they are on disk. */}
+      <html.div role="group" aria-label="Show tables or files" style={styles.switch}>
+        {[false, true].map((files) => (
+          <html.button
+            key={String(files)}
+            aria-pressed={filesMode === files}
+            onClick={() => onFilesMode(files)}
+            style={[styles.switchButton, filesMode === files && styles.switchOn]}
+          >
+            {files ? "Files" : "Tables"}
+          </html.button>
+        ))}
+      </html.div>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBlock: 12 }}>
-        {tree.map((file) => (
+        {filesMode
+          ? files.map((line) => {
+              if (line.kind === "bundle") {
+                const b = line.bundle;
+                return (
+                  <html.button key={b.bundle} aria-expanded={!b.folded} onClick={() => onToggleFile(b.bundle)} style={styles.fileRow}>
+                    <html.span style={styles.chevron}>{b.folded ? "›" : "⌄"}</html.span>
+                    <html.span dir="ltr" style={styles.pathName}>{b.name}</html.span>
+                  </html.button>
+                );
+              }
+              const indent = styles.indent(10 + line.depth * 14);
+              if (line.kind === "dir") {
+                const d = line.dir;
+                return (
+                  <html.button
+                    key={`${line.bundle}/${d.path}/`}
+                    aria-expanded={d.open}
+                    onClick={() => onToggleDir(line.bundle, d.path, !d.open)}
+                    style={[styles.row, styles.fileEntry, indent]}
+                  >
+                    <html.div style={styles.entryName}>
+                      <html.span style={styles.chevron}>{d.open ? "⌄" : "›"}</html.span>
+                      <html.span dir="ltr" style={styles.pathName}>{`${d.name}/`}</html.span>
+                    </html.div>
+                    {d.count !== undefined && <html.span style={styles.count}>{String(d.count)}</html.span>}
+                  </html.button>
+                );
+              }
+              const f = line.file;
+              const shown = shownFile?.bundle === line.bundle && shownFile.path === f.path;
+              return (
+                <html.button
+                  key={`${line.bundle}/${f.path}`}
+                  aria-current={shown ? "page" : undefined}
+                  onClick={() => onShowFile(line.bundle, f.path)}
+                  style={[styles.row, styles.fileEntry, styles.indent(10 + line.depth * 14 + 18), shown && styles.rowActive]}
+                >
+                  <html.span dir="ltr" style={styles.pathName}>{f.name}</html.span>
+                  {f.note && <html.span style={styles.count}>{f.note}</html.span>}
+                </html.button>
+              );
+            })
+          : tree.map((file) => (
           <html.div key={file.bundle} style={styles.group}>
             <html.button aria-expanded={!file.folded} onClick={() => onToggleFile(file.bundle)} style={styles.fileRow}>
               <html.span style={styles.chevron}>{file.folded ? "›" : "⌄"}</html.span>
@@ -139,4 +219,29 @@ const styles = css.create({
     borderColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#2c2c31" },
   },
   footerRow: { fontSize: 12 },
+  switch: {
+    display: "flex",
+    flexDirection: "row",
+    marginInline: 12,
+    marginTop: 12,
+    padding: 2,
+    borderRadius: 7,
+    backgroundColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#2a2a2e" },
+  },
+  switchButton: {
+    flex: 1,
+    paddingBlock: 3,
+    borderRadius: 5,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    fontSize: 12,
+    textAlign: "center",
+    color: text,
+  },
+  switchOn: { backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#4a4a50" } },
+  fileEntry: { paddingInlineEnd: 10 },
+  indent: (start: number) => ({ paddingInlineStart: start }),
+  entryName: { display: "flex", flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
+  pathName: { flexShrink: 1, fontSize: 12, fontFamily: "Menlo", color: text },
 });

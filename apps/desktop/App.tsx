@@ -32,6 +32,10 @@ import {
   loadSidebarPrefs,
   saveSidebarPrefs,
   sidebarTree,
+  filesTree,
+  flattenFilesTree,
+  fileText,
+  attachmentAt,
   type SidebarPrefs,
   displayChoices,
   withDisplayChoice,
@@ -93,7 +97,8 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
-import { attachmentUrl } from "./attachments";
+import { attachmentUrl, fixtureAttachments } from "./attachments";
+import { FileView } from "./FileView";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -508,6 +513,72 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       }),
     [store],
   );
+  const filesMode = sidebarPrefs.files === true;
+  const setFilesMode = useCallback(
+    (files: boolean) =>
+      setSidebarPrefs((prefs) => {
+        const { files: _was, ...rest } = prefs;
+        const next = files ? { ...rest, files } : rest;
+        saveSidebarPrefs(store, next);
+        return next;
+      }),
+    [store],
+  );
+  // Files mode: the folders opened or closed by hand, and the file shown in place of the view.
+  const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
+  const [shownFile, setShownFile] = useState<{ bundle: string; path: string } | null>(null);
+  // Attachments of tables opened from disk, as their folders list them; fixtures' come with the app.
+  const [diskAttachments, setDiskAttachments] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    if (!filesMode) return;
+    let cancelled = false;
+    const keys = Object.keys(tables).filter((key) => folders.paths[bundleOf(key)]);
+    void Promise.all(
+      keys.map(async (key) => {
+        const dir = joinPath(folders.paths[bundleOf(key)]!, "tables", tableNameOf(key), "attachments");
+        const entries = await desktopFs.list(dir).catch(() => null);
+        return [key, (entries ?? []).filter((e) => !e.directory).map((e) => e.name)] as const;
+      }),
+    ).then((listed) => {
+      if (!cancelled) setDiskAttachments(Object.fromEntries(listed));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filesMode, tables, folders.paths]);
+  const attachmentsOf = useCallback(
+    (key: string) => (folders.paths[bundleOf(key)] ? diskAttachments[key] ?? [] : fixtureAttachments(key)),
+    [folders.paths, diskAttachments],
+  );
+  const files = useMemo(
+    () =>
+      filesMode
+        ? filesTree(tables, bundles, {
+            folded: sidebarPrefs.foldedFiles ?? [],
+            activeTable: activeTablePath,
+            opened: openedDirs,
+            attachmentsOf,
+          }).map((b) => ({ ...b, name: folders.paths[b.bundle] ? `${folders.paths[b.bundle]!.split("/").pop()}/` : b.name }))
+        : [],
+    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, openedDirs, attachmentsOf, folders.paths],
+  );
+  const shown = useMemo(() => {
+    if (!shownFile) return null;
+    const bundle = files.find((b) => b.bundle === shownFile.bundle);
+    const parts = shownFile.path.split("/");
+    let dir = bundle?.root;
+    for (const name of parts.slice(0, -1)) dir = dir?.dirs.find((d) => d.name === name);
+    const file = dir?.files.find((f) => f.path === shownFile.path);
+    if (!bundle || !file) return null;
+    const attachment = attachmentAt(shownFile.bundle, shownFile.path);
+    return {
+      file,
+      folder: `${bundle.name}${parts.slice(0, -1).map((p) => `${p}/`).join("")}`,
+      content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path),
+      url: attachment ? attachmentUrl(attachment.tableKey, attachment.name, folders.paths) : undefined,
+    };
+  }, [shownFile, files, tables, bundles, folders.paths]);
+
   // This viewer's own filters, sorts and grouping, over the saved views
   // (D4, D41), as on the web; a sort of their own follows their language.
   const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(store));
@@ -740,6 +811,20 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "display set";
       },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
+      // Files mode, as the sidebar's switch, folders and files do.
+      files: (on: boolean) => {
+        if (!on) setShownFile(null);
+        setFilesMode(on);
+        return `files mode ${on}`;
+      },
+      toggleDir: (bundle: string, path: string, open: boolean) => {
+        setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }));
+        return `${bundle}/${path} ${open ? "open" : "closed"}`;
+      },
+      showFile: (bundle: string | null, path?: string) => {
+        setShownFile(bundle && path ? { bundle, path } : null);
+        return bundle ? `showing ${bundle}/${path}` : "back to the view";
+      },
       // Forget saved edits, opened folders, arrangements and the sidebar's folds; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
@@ -749,7 +834,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -783,12 +868,23 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               file: folders.paths[file.bundle]?.split("/").pop() ?? file.file,
             }))}
             onToggleFile={toggleFile}
+            filesMode={filesMode}
+            onFilesMode={(on) => {
+              if (!on) setShownFile(null);
+              setFilesMode(on);
+            }}
+            files={flattenFilesTree(files)}
+            onToggleDir={(bundle, path, open) => setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }))}
+            shownFile={shownFile}
+            onShowFile={(bundle, path) => setShownFile({ bundle, path })}
             onSelectTable={(key) => {
+              setShownFile(null);
               setActiveTablePath(key);
               setQuery("");
               setActiveBodyRowId(null);
             }}
             onSelectView={(key, viewId) => {
+              setShownFile(null);
               setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
               setShowViewSettings(false);
             }}
@@ -802,6 +898,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             ]}
           />
           <html.div style={styles.content}>
+            {shown ? (
+              <FileView {...shown} onClose={() => setShownFile(null)} />
+            ) : (
+            <>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.subtitle}>
               <html.span>
@@ -909,6 +1009,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 onAttachFile: attachFile,
               })}
             </ScrollView>
+            </>
+            )}
           </html.div>
           {activeBodyRowId && (
             <BodyEditor

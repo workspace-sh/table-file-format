@@ -51,3 +51,8 @@ export function attachmentUrl(tableKey: string, fileName: string, folders: Recor
   if (folder) return `file://${encodeURI(joinPath(folder, "tables", tableNameOf(tableKey), "attachments", fileName))}`;
   return fixtureUrls[tableKey]?.[fileName];
 }
+
+/** A fixture table's attachment file names, by its `bundle/table` key, sorted. */
+export function fixtureAttachments(tableKey: string): string[] {
+  return Object.keys(fixtureUrls[tableKey] ?? {}).sort();
+}
