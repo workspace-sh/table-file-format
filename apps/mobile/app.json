@@ -25,7 +25,8 @@
             "newArchEnabled": true
           }
         }
-      ]
+      ],
+      "./plugins/with-pods-deployment-floor"
     ]
   }
 }
