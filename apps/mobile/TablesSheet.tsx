@@ -13,12 +13,18 @@ export interface TablesSheetProps {
   /** The table on screen, by `bundle/table` key. */
   active: string;
   onChoose: (key: string) => void;
+  /** Make a table in this file. */
+  onNewTable: (bundle: string) => void;
+  /** The file actions below the list (New .table File…, Open .table.zip…, Export …), worded by table-app's commands. */
+  actions: { label: string; onPress: () => void }[];
   onClose: () => void;
+  /** iOS: the sheet has finished closing, so another sheet (share, document picker) can open. */
+  onDismissed?: () => void;
 }
 
-export function TablesSheet({ open, files, active, onChoose, onClose }: TablesSheetProps) {
+export function TablesSheet({ open, files, active, onChoose, onNewTable, actions, onClose, onDismissed }: TablesSheetProps) {
   return (
-    <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} onDismiss={onDismissed}>
       <html.div style={styles.sheet}>
         <html.div style={styles.header}>
           <html.span style={styles.heading}>Tables</html.span>
@@ -45,9 +51,21 @@ export function TablesSheet({ open, files, active, onChoose, onClose }: TablesSh
                     <html.span style={styles.rowCount}>{t.key === active ? "✓" : String(t.rowCount)}</html.span>
                   </html.button>
                 ))}
+                <html.button onClick={() => onNewTable(file.bundle)} style={[styles.row, styles.rowRule]}>
+                  <html.span style={styles.rowAction}>+ New table</html.span>
+                </html.button>
               </html.div>
             </html.div>
           ))}
+          <html.div style={styles.file}>
+            <html.div style={styles.group}>
+              {actions.map((a, i) => (
+                <html.button key={a.label} onClick={a.onPress} style={[styles.row, i > 0 && styles.rowRule]}>
+                  <html.span style={styles.rowAction}>{a.label}</html.span>
+                </html.button>
+              ))}
+            </html.div>
+          </html.div>
         </ScrollView>
       </html.div>
     </Modal>
@@ -119,4 +137,5 @@ const styles = css.create({
   rowTitle: { fontSize: 17, color: text },
   rowTitleOn: { fontWeight: "600" },
   rowCount: { fontSize: 15, color: dim },
+  rowAction: { fontSize: 17, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
 });
