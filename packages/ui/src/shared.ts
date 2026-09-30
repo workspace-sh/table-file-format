@@ -15,3 +15,4 @@ export type { ViewProps } from "./viewProps";
 export * from "./cards";
 export { firstDayOfWeek, monthNameLong, rotateWeekdays, weekdayNamesShort } from "./internal/calendarLocale";
 export { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, type Commit, type EditorKind, type InputKind } from "./cellEdit";
+export { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaInputCells, formulaStatus, typeFamily, viewGrid, type FormulaExplained, type FormulaInput, type FormulaStatus } from "./formulaCell";

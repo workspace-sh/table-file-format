@@ -29,13 +29,14 @@ import {
   tableKeysIn,
   tableNameOf,
   withCell,
+  withFieldPatch,
   withoutRow,
   withRow,
   withRowAt,
   withViewPatch,
 } from "@workspace.sh/table-app";
 import { saveBundle, type Library } from "@workspace.sh/table-app/node";
-import { newId, type BundleMeta, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   BoardView,
   CalendarView,
@@ -143,6 +144,7 @@ interface Edits {
   onInsertRow: (anchor: string, where: "above" | "below") => void;
   onDeleteRow: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
+  onUpdateField: (name: string, patch: Partial<Field>) => void;
 }
 
 function TablePane({
@@ -267,6 +269,7 @@ export function App({ library, initialTable, initialView }: { library: Library; 
     onInsertRow: (anchor, where) => edit(key, (t) => withRowAt(t, viewId, anchor, where, newId())),
     onDeleteRow: (rowId) => setConfirmDelete({ key, rowId }),
     onUpdateView: (patch) => edit(key, (t) => withViewPatch(t, viewId, patch)),
+    onUpdateField: (name, patch) => edit(key, (t) => withFieldPatch(t, name, patch)),
   });
   const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
