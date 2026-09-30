@@ -27,6 +27,7 @@ import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
   appCommands,
+  applyTarget,
   addressLive,
   archiveFileName,
   bundleToArchive,
@@ -643,10 +644,7 @@ export function App({
     onOpenBody: (rowId) => setOpenPage({ key, rowId }),
     onOpenRelation: (address) => {
       const target = addressTarget(address, tables, bundles, bundleOf(key));
-      if (!target) return;
-      setActive(target.key);
-      if (target.viewId) setViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
-      setOpenPage(target.openBody ? { key: target.key, rowId: target.openBody } : null);
+      if (target) follow(target);
     },
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId, field) => {
@@ -702,15 +700,21 @@ export function App({
     const target = addressTarget(moved.address, tables, bundles, bundleOf(active));
     if (!target) return;
     setHistory(moved.history);
-    setActive(target.key);
-    if (target.viewId) setViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
-    // History is of views: a page open is left behind.
-    setOpenPage(null);
-    setMode("tables");
+    // History is of views: its addresses name no row, so a page open is left behind.
+    follow(target);
   };
   const back = goBack(history, live);
   const forward = goForward(history, live);
 
+  // Following an address (a relation's link, Back, Forward): table-app's
+  // applyTarget, the rule the web and the Mac follow too.
+  const follow = (target: { key: string; viewId?: string; openBody: string | null }) => {
+    const applied = applyTarget(target, { viewIds });
+    setActive(applied.activeKey);
+    setViewIds(applied.viewIds);
+    setOpenPage(applied.openBody ? { key: applied.activeKey, rowId: applied.openBody } : null);
+    setMode(applied.mode);
+  };
   // What's made or opened shows at once, on the Tables side.
   const show = (key: string | undefined) => {
     if (!key) return;
