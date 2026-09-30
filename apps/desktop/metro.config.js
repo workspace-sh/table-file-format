@@ -32,6 +32,11 @@ const blockExact = (p) => new RegExp(`^${escapeRe(p)}(\\/|$)`);
 
 const config = {
   watchFolders: [workspaceRoot],
+  // attachments.ts bundles every fixture attachment with require.context,
+  // as the web app does with import.meta.glob.
+  transformer: {
+    unstable_allowRequireContext: true,
+  },
   resolver: {
     nodeModulesPaths: [
       path.resolve(projectRoot, "node_modules"),
@@ -84,6 +89,8 @@ const config = {
       }
       return context.resolveRequest(context, moduleName, platform);
     },
+    // Fixture attachments are SVGs, bundled as assets (attachments.ts).
+    assetExts: [...baseConfig.resolver.assetExts, "svg"],
     platforms: ["macos", "ios", "native"],
     unstable_enablePackageExports: true,
     unstable_conditionNames: [
