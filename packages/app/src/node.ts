@@ -3,12 +3,12 @@
 // two things only a Node app does. A subpath, `@workspace.sh/table-app/node`,
 // as core keeps its node:fs adapter apart.
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 
-import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
+import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
@@ -82,4 +82,17 @@ export function jsonFileStore(path: string): KeyValueStore {
       write();
     },
   };
+}
+
+/**
+ * Copy `source` into the table folder `tableDir`'s attachments/, under a
+ * name no other attachment there has (attachmentName), and return that
+ * name, for the cell to store (SPEC section 6).
+ */
+export function attachFile(tableDir: string, source: string): string {
+  const folder = join(tableDir, "attachments");
+  mkdirSync(folder, { recursive: true });
+  const name = attachmentName(basename(source), readdirSync(folder));
+  copyFileSync(source, join(folder, name));
+  return name;
 }

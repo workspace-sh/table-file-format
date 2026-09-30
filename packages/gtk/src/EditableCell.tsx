@@ -7,6 +7,7 @@ import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import {
   GtkBox,
+  GtkButton,
   GtkCheckButton,
   GtkDropDown,
   GtkEntry,
@@ -33,6 +34,8 @@ export interface EditableCellProps {
   xalign?: number;
   /** Open for typing as it first appears: a row just added. */
   autoEdit?: boolean;
+  /** Choose a file for an attachment cell (the app copies it in). Absent: its name is typed. */
+  onAttach?: () => void;
 }
 
 /**
@@ -79,7 +82,7 @@ function ChoiceEditor({
   );
 }
 
-export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit }: EditableCellProps) {
+export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
@@ -133,6 +136,15 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const shown = <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />;
 
   if (kind === "readonly") return shown;
+  // An attachment: shown as it is, with a button that chooses the file.
+  if (kind === "attachment" && onAttach) {
+    return (
+      <GtkBox hexpand spacing={4}>
+        <GtkBox hexpand>{shown}</GtkBox>
+        <GtkButton iconName="document-open-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Choose File" onClicked={onAttach} />
+      </GtkBox>
+    );
+  }
   if (kind === "list") return <ListEditor field={field} value={value} onCommit={onCommit} relatedTables={relatedTables} lines={lines} xalign={xalign} />;
   // A relation to many rows is ticked on and off, as a multi-select is.
   if (kind === "relation" && relatesMany(field)) {

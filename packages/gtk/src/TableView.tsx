@@ -165,6 +165,7 @@ export function TableView({
   onDeleteRow,
   onInsertRow,
   onOpenBody,
+  onAttachFile,
   onOpenRelation,
   sheet,
   allRows,
@@ -300,6 +301,7 @@ export function TableView({
                     lines={lines}
                     xalign={xalign}
                     autoEdit={i === 0 && row.id === justAdded}
+                    onAttach={onAttachFile ? () => onAttachFile(row.id, name) : undefined}
                   />
                 ) : (
                   <CellValue

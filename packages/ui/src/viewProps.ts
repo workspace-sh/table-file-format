@@ -30,6 +30,12 @@ export interface ViewProps {
   /** Delete a row, and its body. The app confirms first if it wants to. */
   onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;
+  /**
+   * Choose a file for an attachment cell (SPEC section 6). The app asks
+   * for one, copies it into the table's attachments/ folder and sets the
+   * cell to its filename. Absent: an attachment's name is typed.
+   */
+  onAttachFile?: (rowId: string, fieldName: string) => void;
   onUpdateView?: (patch: Partial<View>) => void;
   /**
    * Called when a relation cell is clicked. Address takes the form

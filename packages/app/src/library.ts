@@ -84,3 +84,21 @@ export function attachmentPath(table: ParsedTable | undefined, fileName: string)
   if (!table?.path || !fileName || fileName === "." || fileName === ".." || /[/\\\u0000]/.test(fileName)) return undefined;
   return `${table.path.replace(/\/+$/, "")}/attachments/${fileName}`;
 }
+
+/**
+ * The filename an attached file is kept under: its own name, with anything
+ * that isn't a plain filename taken out, and a number before its
+ * extension when `taken` already has it (photo.png, photo-2.png).
+ */
+export function attachmentName(wanted: string, taken: Iterable<string>): string {
+  const base = wanted.split(/[/\\]/).pop()!.replace(/\u0000/g, "").replace(/^\.+/, "") || "file";
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : "";
+  for (let n = 2; ; n++) {
+    const next = `${stem}-${n}${ext}`;
+    if (!used.has(next)) return next;
+  }
+}
