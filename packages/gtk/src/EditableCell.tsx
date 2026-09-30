@@ -16,7 +16,7 @@ import {
   GtkLabel,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, useDisplaySettings } from "@workspace.sh/table-ui/shared";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -39,8 +39,21 @@ export interface EditableCellProps {
  * A choice cell being edited: a drop-down of the field's choices, and "—"
  * for none. Picking one saves it; leaving or Escape closes without.
  */
-function ChoiceEditor({ field, value, onClose, onCommit }: { field: Field | undefined; value: unknown; onClose: () => void; onCommit: (next: unknown) => void }) {
-  const options = enumOptions(field);
+function ChoiceEditor({
+  field,
+  value,
+  onClose,
+  onCommit,
+  choices,
+}: {
+  field: Field | undefined;
+  value: unknown;
+  onClose: () => void;
+  onCommit: (next: unknown) => void;
+  /** The choices, when they aren't the field's own (a relation's rows). */
+  choices?: { value: string; label?: string }[];
+}) {
+  const options = choices ?? enumOptions(field);
   const at = options.findIndex((o) => o.value === value) + 1;
   const labels = ["—", ...options.map((o) => o.label ?? o.value)];
   const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
@@ -121,6 +134,22 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
 
   if (kind === "readonly") return shown;
   if (kind === "list") return <ListEditor field={field} value={value} onCommit={onCommit} relatedTables={relatedTables} lines={lines} xalign={xalign} />;
+  // A relation to many rows is ticked on and off, as a multi-select is.
+  if (kind === "relation" && relatesMany(field)) {
+    return (
+      <ListEditor
+        field={field}
+        value={value}
+        onCommit={onCommit}
+        relatedTables={relatedTables}
+        lines={lines}
+        xalign={xalign}
+        choices={relationOptions(field, relatedTables)}
+        toggled={(id) => relationToggled(field, value, id, relatedTables)}
+        onOpenRelation={onOpenRelation}
+      />
+    );
+  }
 
   if (kind === "boolean") {
     return (
@@ -145,9 +174,16 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     );
   }
 
-  if (kind === "choice") {
+  // A relation to one row is picked the same way, from the related table's rows.
+  if (kind === "choice" || kind === "relation") {
     return (
-      <ChoiceEditor field={field} value={value} onClose={close} onCommit={onCommit} />
+      <ChoiceEditor
+        field={field}
+        value={value}
+        onClose={close}
+        onCommit={onCommit}
+        choices={kind === "relation" ? relationOptions(field, relatedTables) : undefined}
+      />
     );
   }
 

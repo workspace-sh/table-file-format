@@ -3,19 +3,21 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
-import { enumOptions, type Field } from "@workspace.sh/table-core";
+import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
+import { relationLabel } from "./display";
 
 /**
  * The editor a field gets. A computed field is derived on read and never
  * stored, so there's nothing to edit; a relation is picked, not typed.
  */
-export type EditorKind = "readonly" | "boolean" | "list" | "choice" | "text";
+export type EditorKind = "readonly" | "boolean" | "list" | "choice" | "relation" | "text";
 
 export function editorKind(field: Field | undefined): EditorKind {
   if (field?.computed !== undefined) return "readonly";
   if (field?.type === "boolean") return "boolean";
+  if (field?.relation) return "relation";
   if (field?.type === "array" && !field.relation) return "list";
   if (enumOptions(field).length > 0) return "choice";
   return "text";
@@ -122,5 +124,38 @@ export function listToggled(field: Field | undefined, value: unknown, choice: st
   const items = listItems(value);
   const next = items.includes(choice) ? items.filter((i) => i !== choice) : [...items, choice];
   const ordered = enumOptions(field).map((o) => o.value).filter((v) => next.includes(v));
+  return ordered.length ? ordered : undefined;
+}
+
+// ─── Relations ─────────────────────────────────────────────────────────
+
+/** Whether a relation holds many rows (an array of ids) rather than one. */
+export function relatesMany(field: Field | undefined): boolean {
+  return field?.relation?.cardinality === "many" || (field?.type === "array" && !!field?.relation);
+}
+
+/**
+ * The rows a relation cell can point at, in the related table's order,
+ * each labelled as a relation cell shows it (relationLabel). Empty when
+ * the related table isn't loaded.
+ */
+export function relationOptions(field: Field | undefined, relatedTables: Record<string, ParsedTable> | undefined): { value: string; label: string }[] {
+  const relation = field?.relation;
+  const target = relation ? relatedTables?.[relation.table] : undefined;
+  if (!relation || !target) return [];
+  return target.rows.map((r) => ({ value: r.id, label: relationLabel(relation, r.id, relatedTables) ?? r.id }));
+}
+
+/**
+ * A many-relation's value with row `id` added or taken away, kept in the
+ * related table's order so the same set is always written the same way.
+ * None left is no value.
+ */
+export function relationToggled(field: Field | undefined, value: unknown, id: string, relatedTables: Record<string, ParsedTable> | undefined): string[] | undefined {
+  const items = listItems(value);
+  const next = items.includes(id) ? items.filter((i) => i !== id) : [...items, id];
+  const order = relationOptions(field, relatedTables).map((o) => o.value);
+  // Ids the related table doesn't have (dangling) stay, after the rest.
+  const ordered = [...order.filter((v) => next.includes(v)), ...next.filter((v) => !order.includes(v))];
   return ordered.length ? ordered : undefined;
 }

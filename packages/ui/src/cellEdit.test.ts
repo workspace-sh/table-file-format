@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { Field } from "@workspace.sh/table-core";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listText, listToggled } from "./cellEdit";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 
 const count: Field = { name: "count", type: "integer" };
 const due: Field = { name: "due", type: "date" };
@@ -66,4 +66,30 @@ test("toggling a choice keeps the set in the schema's order; none left is no val
   assert.deepEqual(listToggled(tags, ["blue"], "red"), ["red", "blue"]);
   assert.deepEqual(listToggled(tags, ["red", "blue"], "red"), ["blue"]);
   assert.equal(listToggled(tags, ["red"], "red"), undefined);
+});
+
+test("a relation is picked from its related table's rows, by their titles", async () => {
+  const { tables } = await import("@workspace.sh/table-fixtures");
+  const company = tables["deals"]!.schema.fields.find((f) => f.name === "company")!;
+  const contacts = tables["deals"]!.schema.fields.find((f) => f.name === "contacts")!;
+  const related = { companies: tables["companies"]!, contacts: tables["contacts"]! };
+  assert.equal(editorKind(company), "relation");
+  assert.equal(relatesMany(company), false);
+  assert.equal(relatesMany(contacts), true);
+  // A list of ids with no cardinality said is many too.
+  assert.equal(relatesMany({ name: "x", type: "array", relation: { table: "t", field: "id" } }), true);
+  const options = relationOptions(company, related);
+  assert.equal(options.length, tables["companies"]!.rows.length);
+  assert.deepEqual(options[0], { value: "co-northwind", label: "Northwind Traders" });
+  assert.deepEqual(relationOptions(company, {}), []);
+});
+
+test("toggling a many-relation keeps the related table's order; dangling ids stay after", async () => {
+  const { tables } = await import("@workspace.sh/table-fixtures");
+  const contacts = tables["deals"]!.schema.fields.find((f) => f.name === "contacts")!;
+  const related = { contacts: tables["contacts"]! };
+  const ids = tables["contacts"]!.rows.map((r) => r.id);
+  assert.deepEqual(relationToggled(contacts, [ids[2]], ids[0]!, related), [ids[0], ids[2]]);
+  assert.deepEqual(relationToggled(contacts, [ids[0], "gone"], ids[1]!, related), [ids[0], ids[1], "gone"]);
+  assert.equal(relationToggled(contacts, [ids[0]], ids[0]!, related), undefined);
 });
