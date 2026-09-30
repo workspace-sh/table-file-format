@@ -844,7 +844,8 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
   useEffect(() => {
     if (!open) return;
     nameRef.current?.focus?.();
-    if (typeof window === "undefined") return;
+    // React Native has a `window` (its global), but no addEventListener.
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
