@@ -50,6 +50,28 @@ index 779480a..cdcc4cd 100644
    }
  #endif // macOS]
  }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
+index a14a864..a06a072 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
+@@ -348,9 +348,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
+         ? CGAffineTransformIdentity
+         : CGAffineTransformMakeScale(-1, 1);
+ 
+-    _containerView.transform = transform;
+ #if !TARGET_OS_OSX // [macOS]
++    _containerView.transform = transform;
+     _scrollView.transform = transform;
++#else
++    // [table-file-format patch] iOS flips the scroll view and its content
++    // both, and the two cancel. macOS leaves the scroll view unflipped, so
++    // flipping only the content mirrored everything in a right-to-left
++    // layout: text drawn backwards, and panes on the wrong side. Yoga has
++    // already laid the content out right to left, so it isn't flipped here.
++    (void)transform;
+ #endif // [macOS]
+   }
+ }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 index 0dd5223..2a13675 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
