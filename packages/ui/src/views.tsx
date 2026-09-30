@@ -1507,6 +1507,12 @@ interface EditableCellProps {
    * only the innermost pressable, never the table's own handler.
    */
   onSelect?: () => void;
+  /**
+   * For an attachment column: what editing does instead of typing a name,
+   * such as choosing a file to copy into the table's folder. Absent, the
+   * name is typed as before.
+   */
+  onAttach?: () => void;
   /** Start editing; `text` replaces the value (a key typed on the cell). */
   editRequest?: EditRequest;
   /** How editing ended from the keyboard, so the table can move on. */
@@ -1542,6 +1548,7 @@ function EditableCell({
   autoEdit,
   selected,
   onSelect,
+  onAttach,
   editRequest,
   onEditEnd,
 }: EditableCellProps) {
@@ -1593,8 +1600,9 @@ function EditableCell({
   // A click edits the selected cell; an unselected one it leaves to the
   // table to select. Outside a table (no `selected`), a click edits.
   const clickToEdit = () => {
-    if (selected !== false) startEdit();
-    else onSelect?.();
+    if (selected === false) onSelect?.();
+    else if (kind === "attachment" && onAttach) onAttach();
+    else startEdit();
   };
 
   /**
@@ -1632,7 +1640,10 @@ function EditableCell({
   }, []);
 
   useEffect(() => {
-    if (editRequest && !readOnly) startEdit(editRequest.text);
+    if (editRequest && !readOnly) {
+      if (kind === "attachment" && onAttach) onAttach();
+      else startEdit(editRequest.text);
+    }
     // Each request once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRequest?.n]);
@@ -2067,6 +2078,7 @@ export function TableView({
   tableKey,
   sheet,
   onInsertRow,
+  onAttachFile,
 }: ViewProps) {
   const rtl = useDirection() === "rtl";
   const fields = visibleFields(view, schema);
@@ -2480,6 +2492,7 @@ export function TableView({
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
             onSelect={() => setSel({ rowId: row.id, name })}
+            onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
           />
