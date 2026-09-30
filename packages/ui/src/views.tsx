@@ -51,6 +51,7 @@ import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
+import { AttachmentImage } from "./internal/AttachmentImage";
 import {
   applyGroup,
   completeSeconds,
@@ -1432,7 +1433,7 @@ function AttachmentValue({ fileName }: { fileName: string }) {
   if (!url) return <html.span>{fileName}</html.span>;
   return (
     <html.span style={styles.attachment}>
-      {isImageFile(fileName) ? <html.img src={url} alt="" style={styles.attachmentThumb} /> : null}
+      {isImageFile(fileName) ? <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} /> : null}
       <html.a href={url} target="_blank" rel="noopener noreferrer" style={styles.link}>
         {fileName}
       </html.a>
@@ -1444,7 +1445,7 @@ function AttachmentValue({ fileName }: { fileName: string }) {
 function GalleryHero({ field, value }: { field: Field | undefined; value: unknown }) {
   const url = useAttachmentUrl()(typeof value === "string" ? value : "");
   if (field?.attachment && typeof value === "string" && url && isImageFile(value)) {
-    return <html.img src={url} alt="" style={styles.galleryImage} />;
+    return <AttachmentImage src={url} name={value} fit="contain" style={styles.galleryImage} />;
   }
   return <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
 }

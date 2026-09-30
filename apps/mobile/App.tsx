@@ -17,8 +17,10 @@ import type {
   TableSchema,
   View,
 } from "@workspace.sh/table-core";
-import { tables as initialTables } from "@workspace.sh/table-fixtures";
+import { bundles as fixtureBundles, tables as initialTables } from "@workspace.sh/table-fixtures";
+import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
 import {
+  AttachmentsProvider,
   BodyEditor,
   BoardView,
   CalendarView,
@@ -277,6 +279,15 @@ const Safe = SafeAreaView as unknown as ComponentType<{
   children?: ReactNode;
 }>;
 
+/**
+ * The .table file a fixture table is in: this app holds tables by name, and
+ * an attachment is found by `bundle/table` (table-fixtures/native-attachments,
+ * shared with macOS), as the web finds it.
+ */
+function bundleOfTable(name: string): string {
+  return Object.entries(fixtureBundles).find(([, b]) => name in b.tables)?.[0] ?? "";
+}
+
 export default function App() {
   const [tables, setTables] =
     useState<Record<string, ParsedTable>>(initialTables);
@@ -485,6 +496,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
+        <AttachmentsProvider value={(file) => fixtureAttachmentUrls[`${bundleOfTable(activeTablePath)}/${activeTablePath}`]?.[file]}>
         <PortalHost>
           <html.div style={styles.root}>
             <Safe style={{ flex: 1 }}>
@@ -580,6 +592,7 @@ export default function App() {
             )}
           </html.div>
         </PortalHost>
+        </AttachmentsProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
