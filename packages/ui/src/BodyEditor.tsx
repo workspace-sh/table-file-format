@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
+import { useEscape } from "./internal/useEscape";
 
 const styles = css.create({
   /**
@@ -198,18 +199,12 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
   const dirty = draft !== content;
   const isNew = content.length === 0;
 
-  // Web-only: escape key dismisses when not dirty. Guarded by document
-  // check so the same code is a no-op on RN (where there's no keyboard
-  // escape key in the same sense — a hardware back button handler
-  // would be platform-specific work for native, deferred).
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !dirty) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+  // Escape closes it when there's nothing unsaved (internal/useEscape: the
+  // document on the web, the text input on macOS, nothing on touch screens).
+  const closeIfClean = useCallback(() => {
+    if (!dirty) onClose();
   }, [dirty, onClose]);
+  const escape = useEscape(closeIfClean);
 
   const save = () => {
     onSave(draft);
@@ -243,6 +238,7 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
             </html.button>
           </html.div>
           <html.textarea
+            {...escape.inputProps}
         dir="auto"
             value={draft}
             onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
