@@ -64,7 +64,9 @@ import {
   reset as resetArrangement,
   savedPatch,
   withoutView,
-  deleteViewPrompt,
+  deletingRow,
+  deletingView,
+  type Confirm,
   type Arrangements,
   bundleOf,
   bundleTables,
@@ -332,6 +334,19 @@ function renderView(
         />
       );
   }
+}
+
+/** Ask a table-app Confirm as a native alert; `then` gets the id of the response chosen. */
+function ask(prompt: Confirm, then: (response: string) => void) {
+  Alert.alert(
+    prompt.heading,
+    prompt.body,
+    prompt.responses.map((r) => ({
+      text: r.label,
+      style: r.id === "cancel" ? ("cancel" as const) : r.destructive ? ("destructive" as const) : ("default" as const),
+      onPress: () => then(r.id),
+    })),
+  );
 }
 
 /**
@@ -687,21 +702,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   );
   const deleteRow = useCallback(
     (rowId: string) => {
-      const hasBody = table.bodies?.[rowId] !== undefined;
-      Alert.alert(`Delete "${rowTitleFor(table, rowId)}"?`, hasBody ? "Its document goes too." : undefined, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            edit((t) => withoutRow(t, rowId));
-            // Its document goes with it, so an open editor for it closes.
-            setActiveBodyRowId((open) => (open === rowId ? null : open));
-          },
-        },
-      ]);
+      const { prompt, closeBody } = deletingRow(table, rowId, activeBodyRowId);
+      ask(prompt, (response) => {
+        if (response !== "delete") return;
+        edit((t) => withoutRow(t, rowId));
+        if (closeBody) setActiveBodyRowId(null);
+      });
     },
-    [edit, table],
+    [edit, table, activeBodyRowId],
   );
   const updateBody = useCallback(
     (rowId: string, content: string) => edit((t) => withBody(t, rowId, content)),
@@ -723,25 +731,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     const viewId = activeViewId;
     const view = table.views.find((v) => v.id === viewId);
     // The same question the web asks (table-app); null when it's the last view.
-    const prompt = view ? deleteViewPrompt(tables, activeTablePath, view) : null;
-    if (!prompt) return;
-    Alert.alert(
-      prompt.heading,
-      prompt.body,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            const next = table.views.find((v) => v.id !== viewId)?.id ?? "";
-            edit((t) => withoutView(t, viewId));
-            setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: next }));
-            setShowViewSettings(false);
-          },
-        },
-      ],
-    );
+    const deleting = view ? deletingView(tables, activeTablePath, view) : null;
+    if (!deleting) return;
+    ask(deleting.prompt, (response) => {
+      if (response !== "delete") return;
+      edit((t) => withoutView(t, viewId));
+      setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: deleting.nextViewId }));
+      setShowViewSettings(false);
+    });
   }, [activeViewId, activeTablePath, edit, table, tables]);
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);

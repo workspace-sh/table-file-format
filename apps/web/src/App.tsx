@@ -45,7 +45,9 @@ import { useNarrow } from "./useNarrow";
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "@workspace.sh/table-app";
 import {
   arrange,
-  deleteViewPrompt,
+  deletingRow,
+  deletingView,
+  confirmText,
   onTable,
   rowTitleFor,
   withBody,
@@ -647,13 +649,12 @@ export function App() {
 
   const deleteRow = useCallback(
     (rowId: string) => {
-      const t = tables[activeTablePath]!;
-      const hasBody = t.bodies?.[rowId] !== undefined;
-      if (!window.confirm(`Delete "${rowTitleFor(t, rowId)}"?${hasBody ? " Its document goes too." : ""}`)) return;
+      const { prompt, closeBody } = deletingRow(tables[activeTablePath]!, rowId, activeBodyRowId);
+      if (!window.confirm(confirmText(prompt))) return;
       setTables((all) => onTable(all, activeTablePath, (t) => withoutRow(t, rowId)));
-      setActiveBodyRowId((open) => (open === rowId ? null : open));
+      if (closeBody) setActiveBodyRowId(null);
     },
-    [tables, activeTablePath],
+    [tables, activeTablePath, activeBodyRowId],
   );
 
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
@@ -706,12 +707,10 @@ export function App() {
   }, [activeTablePath]);
 
   const deleteView = useCallback(() => {
-    const t = tables[activeTablePath]!;
-    const prompt = deleteViewPrompt(tables, activeTablePath, view);
-    if (!prompt || !window.confirm(`${prompt.heading} ${prompt.body}`)) return;
-    const remaining = t.views.filter((v) => v.id !== activeViewId);
-    setTables((all) => onTable(all, activeTablePath, (t) => withoutView(t, activeViewId)));
-    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: remaining[0]!.id }));
+    const deleting = deletingView(tables, activeTablePath, view);
+    if (!deleting || !window.confirm(confirmText(deleting.prompt))) return;
+    setTables((all) => onTable(all, activeTablePath, (t) => withoutView(t, view.id)));
+    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: deleting.nextViewId }));
     setShowViewSettings(false);
   }, [tables, activeTablePath, activeViewId, view]);
 
