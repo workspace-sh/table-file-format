@@ -31,7 +31,7 @@ import {
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
-import { addressTarget, afterReset, savingForEveryone } from "@workspace.sh/table-app";
+import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -75,15 +75,6 @@ import {
 
 const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
-
-/**
- * "Shop (shop.table) › Orders": the file and the table a view belongs
- * to. A file whose one table shares its title names it once.
- */
-function breadcrumb(fileTitle: string, fileName: string, tableTitle: string): string {
-  const file = `${fileTitle} (${fileName})`;
-  return tableTitle === fileTitle ? file : `${file} › ${tableTitle}`;
-}
 
 const styles = css.create({
   root: {
@@ -832,7 +823,7 @@ export function App() {
         <>
         <html.div style={styles.header}>
           <html.span style={styles.breadcrumb}>
-            {breadcrumb(bundles[activeBundle]?.title ?? activeBundle, `${activeBundle}.table`, table.meta.title ?? tableNameOf(activeTablePath))}
+            {tableBreadcrumb(activeTablePath, tables, bundles).text}
           </html.span>
           <html.div style={styles.headerTopRow}>
             <html.div style={styles.titleRow}>
