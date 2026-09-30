@@ -37,7 +37,7 @@ import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
 import { attachmentAt, fileText } from "@workspace.sh/table-app";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
-import { newView, withNewFile, withNewTable } from "@workspace.sh/table-app";
+import { creating, namePrompt, newView } from "@workspace.sh/table-app";
 import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "@workspace.sh/table-app";
 import { Sidebar, type ShownFile } from "./Sidebar";
 import { FileView } from "./FileView";
@@ -371,9 +371,9 @@ export function App() {
   // A new table goes into a bundle, as a new sheet goes into a workbook (D37).
   const createTable = useCallback(
     (bundle: string) => {
-      const title = window.prompt("Name the new table")?.trim();
-      if (!title) return;
-      const made = withNewTable(tables, bundles, bundle, title);
+      const making = { kind: "table", bundle } as const;
+      const made = creating(tables, bundles, making, window.prompt(namePrompt(making, bundles).heading));
+      if (!made) return;
       setTables(made.tables);
       setBundles(made.bundles);
       openKey(made.key, made.viewId);
@@ -383,9 +383,9 @@ export function App() {
 
   // A new `.table` file: a bundle holding one new table.
   const createFile = useCallback(() => {
-    const title = window.prompt("Name the new .table file")?.trim();
-    if (!title) return;
-    const made = withNewFile(tables, bundles, title);
+    const making = { kind: "file" } as const;
+    const made = creating(tables, bundles, making, window.prompt(namePrompt(making, bundles).heading));
+    if (!made) return;
     setTables(made.tables);
     setBundles(made.bundles);
     openKey(made.key, made.viewId);

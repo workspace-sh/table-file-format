@@ -39,8 +39,6 @@ import {
   displayChoices,
   withDisplayChoice,
   newView,
-  withNewFile,
-  withNewTable,
   withView,
   attachmentName,
   archiveFileName,
@@ -90,6 +88,9 @@ import {
   viewSummary,
   addressTarget,
   savingForEveryone,
+  creating,
+  namePrompt,
+  type NamePrompt,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
@@ -350,29 +351,32 @@ function ask(prompt: Confirm, then: (response: string) => void) {
 }
 
 /**
- * Ask for a name in the system's own text prompt (a sheet on the window);
- * `then` gets it trimmed, unless it's empty or the prompt is cancelled.
+ * Ask for a name in the system's own text prompt (a sheet on the window),
+ * worded by table-app's namePrompt; `then` gets what was typed, which
+ * table-app's creating trims (nothing is made when it's empty). Cancel
+ * calls nothing.
  * react-native-macos has Alert.promptMacOS, but not in its types.
  */
-function askName(title: string, then: (name: string) => void) {
+function askName(prompt: NamePrompt, then: (name: string) => void) {
   const alert = Alert as unknown as {
     promptMacOS: (
       title: string,
       message: string | undefined,
       buttons: { text: string; style?: string; onPress?: (value?: string) => void }[],
       type?: string,
+      defaultInputs?: { default?: string; placeholder?: string }[],
     ) => void;
   };
-  alert.promptMacOS(title, undefined, [
-    { text: "Cancel", style: "cancel" },
-    {
-      text: "Create",
-      onPress: (value) => {
-        const name = (value ?? "").trim();
-        if (name) then(name);
-      },
-    },
-  ], "plain-text");
+  alert.promptMacOS(
+    prompt.heading,
+    undefined,
+    [
+      { text: "Cancel", style: "cancel" },
+      { text: prompt.action, onPress: (value) => then(value ?? "") },
+    ],
+    "plain-text",
+    [{ placeholder: prompt.placeholder }],
+  );
 }
 
 /**
@@ -427,8 +431,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   }, []);
   // A new table goes into the bundle on show, as a new sheet into a workbook (D37).
   const createTable = useCallback(
-    (title: string) => {
-      const made = withNewTable(tables, bundles, bundleOf(activeTablePath), title);
+    (name: string) => {
+      const made = creating(tables, bundles, { kind: "table", bundle: bundleOf(activeTablePath) }, name);
+      if (!made) return;
       setTables(made.tables);
       setBundles(made.bundles);
       showMade(made.key, made.viewId);
@@ -437,8 +442,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   );
   // A new .table: a bundle holding one new table.
   const createFile = useCallback(
-    (title: string) => {
-      const made = withNewFile(tables, bundles, title);
+    (name: string) => {
+      const made = creating(tables, bundles, { kind: "file" }, name);
+      if (!made) return;
       setTables(made.tables);
       setBundles(made.bundles);
       showMade(made.key, made.viewId);
@@ -890,10 +896,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
               setShowViewSettings(false);
             }}
-            onNewTable={() => askName("Name the new table", createTable)}
+            onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
             onNewView={addView}
             footer={[
-              { label: "New .table…", onPress: () => askName("Name the new .table file", createFile) },
+              { label: "New .table…", onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
               { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
               { label: "Open .table.zip…", onPress: () => void importZip() },
               { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
