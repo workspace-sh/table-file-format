@@ -30,6 +30,16 @@
 #endif
 }
 
+/// Quitting (⌘Q, or closing the last window) waits for the app to write
+/// what's left of its edits: TableMenu tells JS, which writes and replies
+/// through TableMenu.replyToQuit. With no JS listening, it quits at once.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
+{
+  NSMutableDictionary *asked = [NSMutableDictionary dictionaryWithObject:@NO forKey:@"handled"];
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopShouldTerminate" object:nil userInfo:asked];
+  return [asked[@"handled"] boolValue] ? NSTerminateLater : NSTerminateNow;
+}
+
 /// This method controls whether the `concurrentRoot`feature of React18 is turned on or off.
 ///
 /// @see: https://reactjs.org/blog/2022/03/29/react-v18.html
