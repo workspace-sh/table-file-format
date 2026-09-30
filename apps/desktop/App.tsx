@@ -88,6 +88,7 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  tableBreadcrumb,
   afterReset,
   resetPrompt,
   type AppCommandId,
@@ -142,6 +143,11 @@ const styles = css.create({
     flex: 1,
     paddingInline: 24,
     paddingBlock: 20,
+  },
+  breadcrumb: {
+    fontSize: 12,
+    marginBottom: 2,
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
   },
   titleRow: {
     display: "flex",
@@ -1044,6 +1050,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               <FileView {...shown} onClose={() => setShownFile(null)} />
             ) : (
             <>
+            {/* Where this view is: its file and its table (D37); an opened folder by its own name. */}
+            <html.span style={styles.breadcrumb}>
+              {tableBreadcrumb(activeTablePath, tables, bundles, folders.paths[bundleOf(activeTablePath)]?.split("/").pop()).text}
+            </html.span>
             <html.div style={styles.titleRow}>
               <Hinted hint={`${sidebarShown ? "Hide" : "Show"} the sidebar (⌘B)`}>
                 <html.button
