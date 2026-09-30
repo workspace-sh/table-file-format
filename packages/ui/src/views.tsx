@@ -1903,6 +1903,9 @@ function ListCell({
   const options = choices ?? enumOptions(field);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  // Whether the text box was focused since it opened: once, not on every keystroke.
+  const textFocused = useRef(false);
+  if (!open) textFocused.current = false;
   const [rect, setRect] = useState<AnchorRect | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anchor = useRef<any>(null);
@@ -1967,10 +1970,12 @@ function ListCell({
         dir="auto"
         type="text"
         autoFocus
-        // RSD drops autoFocus on native, so it's focused here too (#281).
+        // RSD drops autoFocus on native, so it's focused here too, once (#281).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={(el: any) => {
-          if (el) focusInput(el);
+          if (!el || textFocused.current) return;
+          textFocused.current = true;
+          focusInput(el);
         }}
         value={text}
         placeholder="a, b, c"
