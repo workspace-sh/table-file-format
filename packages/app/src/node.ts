@@ -96,3 +96,15 @@ export function attachFile(tableDir: string, source: string): string {
   copyFileSync(source, join(folder, name));
   return name;
 }
+
+/** The files in a table folder's attachments/, sorted; none when it has no such folder. */
+export function attachmentsIn(tableDir: string): string[] {
+  try {
+    return readdirSync(join(tableDir, "attachments"), { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
