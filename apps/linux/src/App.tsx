@@ -27,101 +27,55 @@ import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkMenuButton, GtkPopo
 import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
-  appCommands,
-  applyTarget,
-  addressLive,
+  derive,
+  initialAppState,
+  tableApp,
+  viewCallbacks,
+  type Derived,
+  type ViewCallbacks,
   archiveFileName,
   bundleToArchive,
-  firstTableKey,
   fromBundle,
-  importSkippedText,
   exportFailedText,
-  withFileToggled,
-  withFileUnfolded,
   openArchive,
   openFailedText,
   resetPrompt,
   toBundle,
-  goBack,
-  goForward,
   gtkAccelOf,
   loadSidebarPrefs,
-  NO_HISTORY,
   saveSidebarPrefs,
-  tableBreadcrumb,
-  viewAddress,
-  visited,
   type AppCommand,
   type AppCommandId,
-  type History,
-  type SidebarPrefs,
   attachmentAt,
   attachmentPath,
   bundleOf,
   fileText,
-  filesTree,
   flattenFilesTree,
-  flattenSidebar,
-  sidebarTree,
   type SidebarEntry,
   displayChoices,
   loadDisplay,
   saveDisplay,
-  withDisplayChoice,
   type KeyValueStore,
   bundleTables,
-  onTable,
   rowTitleFor,
-  showView,
-  tableKeysIn,
   tableNameOf,
-  withBody,
-  withCell,
-  withChoice,
-  withField,
-  withFieldMoved,
-  withFieldPatch,
-  deletingRow,
-  deletingView,
-  schemaVersions,
-  viewPatchPrompt,
-  addressTarget,
-  arrange,
   forViews,
-  isArranged,
   loadArrangements,
-  reset as resetArrangement,
   saveArrangements,
-  savingForEveryone,
-  type Arrangement,
-  type Arrangements,
-  viewSummary,
   type Confirm,
-  newView,
-  creating,
-  namePrompt,
-  type Making,
   type NamePrompt,
-  type Made,
-  withoutRow,
-  withoutView,
-  withRow,
-  withView,
-  withRowAt,
-  withViewPatch,
 } from "@workspace.sh/table-app";
 import { attachFile, attachmentsIn, bundlesIn, loadLibrary, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
-import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
-import { newId, textDirection, type TextOrder, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { FilePane, FilesSidebar } from "./Files.js";
+import { newId, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
   BoardView,
   CalendarView,
   DisplayControls,
   DisplaySettingsProvider,
-  type DisplaySettings,
   GalleryView,
   ListView,
   RowPage,
@@ -129,7 +83,7 @@ import {
   ViewSettings,
   type ViewProps,
 } from "@workspace.sh/table-gtk";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 
 /** A line of the sidebar: table-app's tree, flattened for a ListBox. */
 type Entry = SidebarEntry;
@@ -223,90 +177,59 @@ function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }
   }
 }
 
-/** What the views can ask the app to change, for one table. */
-interface Edits {
-  onUpdateRow: (rowId: string, field: string, value: unknown) => void;
-  onAddRow: () => string;
-  onInsertRow: (anchor: string, where: "above" | "below") => void;
-  onDeleteRow: (rowId: string) => void;
-  onUpdateView: (patch: Partial<View>) => void;
-  onUpdateField: (name: string, patch: Partial<Field>) => void;
-  onAddEnumValue: (name: string, value: string) => void;
-  onMoveField: (name: string, delta: -1 | 1) => void;
-  onAddField: (field: Field) => void;
-  onOpenBody: (rowId: string) => void;
-  onAttachFile: (rowId: string, field: string) => void;
-  /** A relation's link followed: its table, its view, its row's page. */
-  onOpenRelation: (address: string) => void;
-}
-
-/** What the header can do to the table's views. */
+/** What the header can do to the table's views, and this viewer's own arrangement of it. */
 interface ViewActions {
   onAddView: () => void;
   /** Absent for the table's only view. */
   onDeleteView?: () => void;
-  /** This viewer's own filters, sorts and grouping of the view (D4), and changing them. */
-  arrangement: Arrangement | undefined;
+  /** This viewer's own filters, sorts and grouping of the view (D4). */
+  arranged: boolean;
   onArrange: (patch: Partial<View>) => void;
   onSaveForEveryone: () => void;
   onReset: () => void;
 }
 
 function TablePane({
+  derived,
   tables,
   tableKey,
-  view,
-  edits,
+  callbacks,
   saving,
   viewActions,
-  openedAt,
-  viewerText,
+  onSearch,
   settingsOpen,
   onSettings,
-  subtitle,
+  revision,
   navigation,
   menu,
 }: {
+  /** What table-app's derive gives for the view on screen. */
+  derived: Derived;
   tables: Record<string, ParsedTable>;
   tableKey: string;
-  view: View;
-  edits: Edits;
+  /** What the views can ask the app to change: table-app's viewCallbacks, and attaching a file. */
+  callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void };
   saving: SaveState;
   viewActions: ViewActions;
-  /** The table's schema-version when it was opened: "schema changed" is against it (D22). */
-  openedAt: number | undefined;
-  /** How this viewer's language orders text: a sort only they see follows it. */
-  viewerText: TextOrder;
+  onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
   settingsOpen: boolean;
   onSettings: (open: boolean) => void;
-  /** Where the view is: its file and table (table-app's tableBreadcrumb). */
-  subtitle: string;
+  /** Bumped when a settings change is refused, so its controls show the view as it still is. */
+  revision: number;
   /** Back and forward, at the header's start. */
   navigation: ReactNode;
   /** The primary menu, at the header's end. */
   menu: ReactNode;
 }) {
-  // A settings change that loses something, asked about first.
-  const [asking, setAsking] = useState<{ prompt: Confirm; patch: Partial<View> } | null>(null);
-  // Bumped when that's answered Cancel, so the settings show the view as it still is.
-  const [refused, setRefused] = useState(0);
-  const table = tables[tableKey]!;
-  const [search, setSearch] = useState("");
-  const shown = showView(tables, tableKey, view, { arrangement: viewActions.arrangement, search, viewerText });
+  const { table, view, shown, summary, breadcrumb } = derived;
   const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
-  const summary = viewSummary(table, { shown: shown.rows.length, inView: shown.inView, searching: search.trim().length > 0, openedAt });
 
   return (
     <AdwToolbarView
       topBar={
         <AdwHeaderBar
-          titleWidget={
-            <AdwWindowTitle
-              title={view.name}
-              subtitle={subtitle}
-            />
-          }
+          titleWidget={<AdwWindowTitle title={view.name} subtitle={breadcrumb.text} />}
           start={
             <>
               {navigation}
@@ -336,7 +259,7 @@ function TablePane({
               </>
             ) : null}
           </GtkBox>
-          <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => setSearch(entry.getText())} />
+          <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
         <LayoutView
           key={view.id}
@@ -349,35 +272,22 @@ function TablePane({
           allRows={table.rows}
           tableKey={tableNameOf(tableKey)}
           sheet={shown.sheet}
-          {...edits}
+          {...callbacks}
         />
       </GtkBox>
       {settingsOpen ? (
         <ViewSettings
           view={shown.view}
           schema={table.schema}
-          onChange={(patch) => {
-            const prompt = viewPatchPrompt(tables, tableKey, view, patch);
-            if (prompt) setAsking({ prompt, patch });
-            else edits.onUpdateView(patch);
-          }}
+          // The reducer asks first when a sheet that formulas read would go (viewPatchPrompt).
+          onChange={callbacks.onUpdateView}
           onDelete={viewActions.onDeleteView}
           onArrange={viewActions.onArrange}
-          personal={isArranged(viewActions.arrangement)}
+          personal={viewActions.arranged}
           onSaveForEveryone={viewActions.onSaveForEveryone}
           onReset={viewActions.onReset}
           onClose={() => onSettings(false)}
-          revision={refused}
-        />
-      ) : null}
-      {asking ? (
-        <ConfirmDialog
-          prompt={asking.prompt}
-          onResponse={(response) => {
-            if (response === "stop") edits.onUpdateView(asking.patch);
-            else setRefused((n) => n + 1);
-            setAsking(null);
-          }}
+          revision={revision}
         />
       ) : null}
     </AdwToolbarView>
@@ -496,7 +406,7 @@ export function App({
   initialView?: string;
   /** Where this viewer's own settings are kept; absent, they last for this run only. */
   settings?: KeyValueStore;
-  /** The folder new .table files are made in; absent, none can be made. */
+  /** The folder new .table files are made in (the examples' own); absent, none can be made. */
   newFilesIn?: string;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
@@ -512,238 +422,119 @@ export function App({
    */
   resetExamples?: (held: string[]) => Promise<Library>;
 }) {
-  // This viewer's locale, date format and formula syntax: theirs, not the tables'.
-  const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
-  const [displayOpen, setDisplayOpen] = useState(false);
   const ownLocale = systemLocale();
-  const viewerText = useMemo<TextOrder>(() => new Intl.Collator(display.locale ?? ownLocale, { numeric: true }).compare, [display.locale, ownLocale]);
-  // The layout reads the way the display language does (D40), the whole app
-  // included, so dialogs and menus mirror too.
-  const direction = textDirection(display.locale ?? ownLocale);
+  const store = settings ?? null;
+  // Everything the app holds, and every change to it: table-app's reducer
+  // (docs/APP-STATE.md), as the web and the Mac hold theirs. What's left
+  // here is Linux's own: where bundles are on disk, the file choosers, the
+  // window's narrow layout, and drawing.
+  const [state, dispatch] = useReducer(tableApp, undefined, () => {
+    // The examples, in newFilesIn, are the demo's own, and a reset puts them
+    // back; a folder named on the command line or opened is the viewer's.
+    const inExamples = (path: string) => !!newFilesIn && path.startsWith(`${newFilesIn}/`);
+    // `--open` names where to start (a link lands on the Tables side);
+    // otherwise table-app's first table, and the side the viewer left.
+    const startKey = initialTable && library.tables[initialTable] ? initialTable : undefined;
+    return initialAppState({
+      tables: library.tables,
+      bundles: library.bundles,
+      opened: Object.fromEntries(Object.entries(library.paths).filter(([, path]) => !inExamples(path))),
+      stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+      ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
+    });
+  });
+  const { tables, bundles } = state;
+
+  // Where a bundle is on disk: the folder it was opened from, else the new-files folder.
+  const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (newFilesIn ? `${newFilesIn}/${bundle}.table` : undefined);
+  // A table's own folder, where its attachments/ is.
+  const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
+
+  const derived = derive(state, {
+    locale: ownLocale,
+    newTableIn: "none",
+    attachmentsOf: (key) => (pathOf(bundleOf(key)) ? attachmentsIn(tableDir(key)) : []),
+    fileNameOf: (bundle) => pathOf(bundle)?.split("/").pop(),
+  });
+  // The layout reads the way the display language does (D40), the whole app included.
   useEffect(() => {
-    Gtk.Widget.setDefaultDirection(direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
-  }, [direction]);
-  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
-  const [tables, setTables] = useState(library.tables);
-  // How this viewer has filtered, sorted or grouped each view for
-  // themselves (D4), kept with their settings; a deleted view's goes with it.
-  const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(settings ?? null));
-  useEffect(() => saveArrangements(settings ?? null, forViews(arrangements, tables)), [arrangements, tables, settings]);
-  // Each table's schema-version as opened, for "schema changed" (D22).
-  const [openedAt] = useState(() => schemaVersions(library.tables));
-  const [bundles, setBundles] = useState(library.bundles);
-  // Where each bundle is kept: those opened, and new files, made in `newFilesIn`.
-  const [paths, setPaths] = useState(library.paths);
-  // The sidebar's side (tables and views, or the files on disk), and on the
-  // Files side, the folders opened or closed and the file shown.
-  // The sidebar: shown or collapsed (Ctrl+B), and its side, kept with this viewer's settings.
-  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(settings ?? null));
-  useEffect(() => saveSidebarPrefs(settings ?? null, sidebarPrefs), [sidebarPrefs, settings]);
-  const mode: "tables" | "files" = sidebarPrefs.files ? "files" : "tables";
-  const setMode = (next: "tables" | "files") => setSidebarPrefs((p) => ({ ...p, files: next === "files" || undefined }));
-  const setCollapsed = (collapsed: boolean) => setSidebarPrefs((p) => ({ ...p, collapsed: collapsed || undefined }));
+    Gtk.Widget.setDefaultDirection(derived.direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
+  }, [derived.direction]);
+  const shownDisplay = useMemo(() => ({ ...state.display, direction: derived.direction }), [state.display, derived.direction]);
+
+  // This viewer's own settings, kept as they change.
+  useEffect(() => saveSidebarPrefs(store, state.sidebar), [store, state.sidebar]);
+  useEffect(() => saveArrangements(store, forViews(state.arrangements, tables)), [store, state.arrangements, tables]);
+  useEffect(() => {
+    if (store) saveDisplay(store, state.display);
+  }, [store, state.display]);
+
+  // Edited bundles are written a moment after the last edit. A reset
+  // holds writing while it puts the examples back.
+  const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
+  const resetting = useRef(false);
+  useEffect(() => {
+    if (state.dirty.length === 0) return;
+    const timer = setTimeout(() => {
+      if (resetting.current) return;
+      const which = state.dirty;
+      const snapshot = tables;
+      const paths = Object.fromEntries(which.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
+      setSaving({ kind: "saving" });
+      Promise.all(which.map((b) => saveBundle({ ...library, paths }, snapshot, bundles, b)))
+        .then(() => {
+          dispatch({ type: "written", bundles: which, tables: snapshot });
+          setSaving({ kind: "saved" });
+        })
+        .catch((error: unknown) => setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) }));
+    }, SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+    // pathOf reads state.opened, which changes only with tables.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.dirty, tables, bundles, library]);
+
   // A narrow window: the sidebar lays over the content, hidden until asked for.
   const [narrow, setNarrow] = useState(false);
   const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
-  // Back and forward between the views shown (table-app's history).
-  const [history, setHistory] = useState<History>(NO_HISTORY);
-  const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
-  const [shownFile, setShownFile] = useState<ShownFile | null>(null);
-  // A name being asked for: a new table in a bundle, or a new .table file.
-  const [naming, setNaming] = useState<Making | null>(null);
-  const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
-  // Something to tell, once: what opening a file skipped, or why it couldn't.
-  const [notice, setNotice] = useState<{ heading: string; body?: string } | null>(null);
+  const [displayOpen, setDisplayOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
-  const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
-  // A row's page open, by table and row.
-  const [openPage, setOpenPage] = useState<{ key: string; rowId: string } | null>(null);
-  // The open view's settings shown.
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const pageTable = openPage ? tables[openPage.key] : undefined;
-  // Bundles edited since they were last written.
-  const dirty = useRef(new Set<string>());
-  const firstTable = Object.keys(library.bundles).flatMap((b) => tableKeysIn(library.tables, library.bundles, b))[0] ?? "";
-  const [active, setActive] = useState(initialTable && library.tables[initialTable] ? initialTable : firstTable);
-  const [viewIds, setViewIds] = useState<Record<string, string>>(initialTable && initialView ? { [initialTable]: initialView } : {});
-  // The table on screen is never hidden in a folded file: its file unfolds
-  // when it's opened. Folding it again afterwards is still the viewer's.
-  useEffect(() => setSidebarPrefs((p) => withFileUnfolded(p, bundleOf(active))), [active]);
-  const table = tables[active];
-  const view = table ? (table.views.find((v) => v.id === viewIds[active]) ?? table.views[0]) : undefined;
-  // The open table is expanded, its views listed; "+ New table" is on each heading.
-  const entries = useMemo(
-    () =>
-      flattenSidebar(
-        sidebarTree(tables, bundles, {
-          expanded: [active],
-          folded: sidebarPrefs.foldedFiles,
-          ...(viewIds[active] ? { active: { key: active, viewId: viewIds[active] } } : {}),
-          newTableIn: "none",
-        }),
-      ),
-    [tables, bundles, active, viewIds, sidebarPrefs.foldedFiles],
-  );
+  // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
+  const [refused, setRefused] = useState(0);
+  const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
 
-  // Every edit goes through here: the table changes on screen now, and its
-  // bundle is written a moment after the last edit.
-  const edit = (key: string, change: (t: ParsedTable) => ParsedTable) => {
-    setTables((all) => onTable(all, key, change));
-    dirty.current.add(bundleOf(key));
-  };
-
-  useEffect(() => {
-    if (dirty.current.size === 0) return;
-    const timer = setTimeout(() => {
-      const which = [...dirty.current];
-      dirty.current.clear();
-      setSaving({ kind: "saving" });
-      Promise.all(which.map((b) => saveBundle({ ...library, paths }, tables, bundles, b)))
-        .then(() => setSaving({ kind: "saved" }))
-        .catch((error: unknown) => {
-          which.forEach((b) => dirty.current.add(b));
-          setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
-        });
-    }, SAVE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [tables, bundles, library, paths]);
-
-  // A table's own folder, where its attachments/ is: in its bundle's folder,
-  // which a table made in this session hasn't been read from.
-  const tableDir = (key: string) => `${paths[bundleOf(key)]}/tables/${tableNameOf(key)}`;
-
-  // Something made (a table, a file): shown at once, and its bundle saved.
-  const made = (result: Made) => {
-    setTables(result.tables);
-    setBundles(result.bundles);
-    dirty.current.add(bundleOf(result.key));
-    setActive(result.key);
-    setViewIds((prev) => ({ ...prev, [result.key]: result.viewId }));
-    setOpenPage(null);
-  };
-  // Nothing is made from an empty name (table-app's creating trims it).
-  const create = (typed: string) => {
-    if (!naming || (naming.kind === "file" && !newFilesIn)) return;
-    const result = creating(tables, bundles, naming, typed);
-    if (!result) return;
-    if (naming.kind === "file") setPaths((prev) => ({ ...prev, [bundleOf(result.key)]: `${newFilesIn}/${bundleOf(result.key)}.table` }));
-    made(result);
-  };
-
-  const edits = (key: string, viewId: string): Edits => ({
-    onUpdateRow: (rowId, field, value) => edit(key, (t) => withCell(t, rowId, field, value)),
-    onAddRow: () => {
-      const id = newId();
-      edit(key, (t) => withRow(t, id));
-      return id;
-    },
-    onInsertRow: (anchor, where) => edit(key, (t) => withRowAt(t, viewId, anchor, where, newId())),
-    onDeleteRow: (rowId) => setConfirmDelete({ key, rowId }),
-    onUpdateView: (patch) => edit(key, (t) => withViewPatch(t, viewId, patch)),
-    onUpdateField: (name, patch) => edit(key, (t) => withFieldPatch(t, name, patch)),
-    onAddEnumValue: (name, value) => edit(key, (t) => withChoice(t, name, value)),
-    onMoveField: (name, delta) => edit(key, (t) => withFieldMoved(t, name, delta)),
-    onAddField: (field) => edit(key, (t) => withField(t, field, viewId)),
-    onOpenBody: (rowId) => setOpenPage({ key, rowId }),
-    onOpenRelation: (address) => {
-      const target = addressTarget(address, tables, bundles, bundleOf(key));
-      if (target) follow(target);
-    },
+  const callbacks = {
+    ...viewCallbacks(state, dispatch, newId),
     // The file is copied into the table's attachments/ and the cell set to its name.
-    onAttachFile: (rowId, field) => {
+    onAttachFile: (rowId: string, field: string) => {
       void chooseFile().then((source) => {
         if (!source) return;
         try {
-          const name = attachFile(tableDir(key), source);
-          edit(key, (t) => withCell(t, rowId, field, name));
+          dispatch({ type: "updateRow", rowId, field, value: attachFile(tableDir(state.active), source) });
         } catch (error) {
           setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
         }
       });
     },
-  });
-  // What deleting asks, and what it closes or shows after: table-app's, as the web's and macOS's.
-  const deleting = confirmDelete && tables[confirmDelete.key] ? deletingRow(tables[confirmDelete.key]!, confirmDelete.rowId, openPage?.key === confirmDelete.key ? openPage.rowId : null) : null;
-
-  const viewActions = (key: string, current: View): ViewActions => ({
-    // A new view starts as a plain table of everything; its settings are
-    // where it's made into what's wanted.
-    onAddView: () => {
-      const fresh = newView();
-      edit(key, (t) => withView(t, fresh));
-      setViewIds((prev) => ({ ...prev, [key]: fresh.id }));
-      // Its settings open, as on the web: that's where it's made into what's wanted.
-      setSettingsOpen(true);
-    },
-    ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
-    arrangement: arrangements[key]?.[current.id],
-    onArrange: (patch) => setArrangements((all) => arrange(all, key, current.id, patch)),
-    onSaveForEveryone: () => {
-      const saving = savingForEveryone(arrangements, key, current.id);
-      edit(key, (t) => withViewPatch(t, current.id, saving.patch));
-      setArrangements(saving.arrangements);
-    },
-    onReset: () => setArrangements((all) => resetArrangement(all, key, current.id)),
-  });
-  const viewDeleting = confirmViewDelete
-    ? (() => {
-        const v = tables[confirmViewDelete.key]?.views.find((x) => x.id === confirmViewDelete.viewId);
-        return v ? deletingView(tables, confirmViewDelete.key, v) : null;
-      })()
-    : null;
-  // Each view shown is recorded; going back or forward skips any since deleted.
-  const here = view ? viewAddress(active, view.id) : null;
-
-  useEffect(() => {
-    if (here) setHistory((h) => visited(h, here));
-  }, [here]);
-  const live = (address: string) => addressLive(address, tables, bundles);
-  const go = (moved: { history: History; address: string } | null) => {
-    if (!moved) return;
-    const target = addressTarget(moved.address, tables, bundles, bundleOf(active));
-    if (!target) return;
-    setHistory(moved.history);
-    // History is of views: its addresses name no row, so a page open is left behind.
-    follow(target);
   };
-  const back = goBack(history, live);
-  const forward = goForward(history, live);
+  const viewActions: ViewActions = {
+    onAddView: () => dispatch({ type: "addView", id: newId() }),
+    ...(derived.table.views.length > 1 ? { onDeleteView: () => dispatch({ type: "deleteView" }) } : {}),
+    arranged: derived.arranged,
+    onArrange: (patch) => dispatch({ type: "arrange", patch }),
+    onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
+    onReset: () => dispatch({ type: "resetArrangement" }),
+  };
 
-  // Following an address (a relation's link, Back, Forward): table-app's
-  // applyTarget, the rule the web and the Mac follow too.
-  const follow = (target: { key: string; viewId?: string; openBody: string | null }) => {
-    const applied = applyTarget(target, { viewIds });
-    setActive(applied.activeKey);
-    setViewIds(applied.viewIds);
-    setOpenPage(applied.openBody ? { key: applied.activeKey, rowId: applied.openBody } : null);
-    setMode(applied.mode);
-  };
-  // What's made or opened shows at once, on the Tables side.
-  const show = (key: string | undefined) => {
-    if (!key) return;
-    setActive(key);
-    setMode("tables");
-    setOpenPage(null);
-  };
   // A .table folder from disk, edited where it is.
   const openFolder = async () => {
     const path = await chooseFolder();
     if (!path) return;
     const opened = await loadLibrary([path], Object.keys(bundles));
-    const key = Object.keys(opened.bundles)[0];
     const problems = Object.values(opened.problems).flat();
-    if (!key || Object.keys(opened.tables).length === 0) {
-      setNotice({ heading: openFailedText(basename(path), problems.join("; ") || "there's no table in it") });
-      return;
-    }
-    setTables((all) => ({ ...all, ...opened.tables }));
-    setBundles((all) => ({ ...all, ...opened.bundles }));
-    setPaths((all) => ({ ...all, ...opened.paths }));
-    show(firstTableKey(opened.tables));
-    if (problems.length > 0) setNotice({ heading: `Opened ${basename(path)}, with problems:`, body: problems.join("\n") });
+    if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
+    dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
   };
-  // A .table.zip becomes a .table folder beside the new files, saved as it opens.
+  // A .table.zip becomes a .table folder beside the new files, written as it opens.
   const openZip = async () => {
     const path = await chooseZip();
     if (!path || !newFilesIn) return;
@@ -751,107 +542,81 @@ export function App({
       // Named apart from the tables held and from any folder already there.
       const onDisk = bundlesIn(newFilesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
       const opened = await openArchive(new Uint8Array(readFileSync(path)), [...Object.keys(bundles), ...onDisk]);
-      const entries = fromBundle(opened.key, opened.bundle);
-      setTables((all) => ({ ...all, ...entries }));
-      setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
-      setPaths((all) => ({ ...all, [opened.key]: `${newFilesIn}/${opened.key}.table` }));
-      dirty.current.add(opened.key);
-      show(Object.keys(entries)[0]);
-      const skipped = importSkippedText(opened);
-      if (skipped) setNotice(skipped);
+      const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      dispatch({ type: "opened", library, ...(opened.skipped.length > 0 ? { skipped: opened.skipped } : {}) });
     } catch (error) {
-      setNotice({ heading: openFailedText(basename(path), error) });
+      tell(openFailedText(basename(path), error));
     }
   };
   // The open table's .table, every table in it, as one .table.zip.
   const exportZip = async () => {
-    const key = bundleOf(active);
+    const key = bundleOf(state.active);
     const path = await chooseZipSaveAs(archiveFileName(key));
     if (!path) return;
     try {
       writeFileSync(path, await bundleToArchive(key, toBundle(tables, bundles, key)));
     } catch (error) {
-      setNotice({ heading: exportFailedText(basename(path), error) });
+      tell(exportFailedText(basename(path), error));
     }
   };
-  // The examples as they shipped; folders opened from elsewhere are left as they are.
-  const inExamples = (key: string) => !!newFilesIn && (paths[key] ?? "").startsWith(`${newFilesIn}/`);
+  // The examples as they shipped, once asked (resetPrompt): asked here, as
+  // putting them back rewrites their folder, and only then given to the reducer.
   const reset = async () => {
     if (!resetExamples) return;
-    const kept = Object.keys(bundles).filter((key) => !inExamples(key));
-    for (const key of Object.keys(bundles)) if (!kept.includes(key)) dirty.current.delete(key);
-    const fresh = await resetExamples(kept);
-    const keep = <T,>(all: Record<string, T>, keyOf: (k: string) => string) => Object.fromEntries(Object.entries(all).filter(([k]) => kept.includes(keyOf(k))));
-    setTables((all) => ({ ...keep(all, bundleOf), ...fresh.tables }));
-    setBundles((all) => ({ ...keep(all, (k) => k), ...fresh.bundles }));
-    setPaths((all) => ({ ...keep(all, (k) => k), ...fresh.paths }));
-    setViewIds({});
-    setHistory(NO_HISTORY);
-    setShownFile(null);
-    show(firstTableKey(fresh.tables));
+    resetting.current = true;
+    try {
+      const fresh = await resetExamples(Object.keys(state.opened));
+      dispatch({ type: "reset", fresh });
+      dispatch({ type: "answer", response: "reset" });
+    } finally {
+      resetting.current = false;
+    }
   };
 
   // The app's commands (table-app's appCommands), each an action on the
   // window with its accelerator, and in the primary menu. Those Linux
-  // doesn't do yet are left out.
+  // doesn't do are left out.
   const run: Partial<Record<AppCommandId, () => void>> = {
-    ...(newFilesIn ? { "new-file": () => setNaming({ kind: "file" }), "open-zip": () => void openZip() } : {}),
+    ...(newFilesIn ? { "new-file": () => dispatch({ type: "create", making: { kind: "file" } }), "open-zip": () => void openZip() } : {}),
     "open-folder": () => void openFolder(),
     "export-zip": () => void exportZip(),
-    "copy-link": () => {
-      if (!view) return;
-      // With the open page's row, as the web's address and the Mac's link have it.
-      const link = viewAddress(active, view.id, openPage?.key === active ? openPage.rowId : undefined);
-      Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(link));
-    },
-    "tables-mode": () => setMode("tables"),
-    "files-mode": () => setMode("files"),
+    // With the open page's row, as the web's address and the Mac's link have it.
+    "copy-link": () => Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(derived.address)),
+    "tables-mode": () => dispatch({ type: "setFilesSide", files: false }),
+    "files-mode": () => dispatch({ type: "setFilesSide", files: true }),
     // Narrow, Ctrl+B shows or hides the sidebar over the content, leaving the saved choice as it was.
-    "toggle-sidebar": () => (narrow ? setShownWhileNarrow(!shownWhileNarrow) : setCollapsed(!sidebarPrefs.collapsed)),
-    "go-back": () => go(back),
-    "go-forward": () => go(forward),
+    "toggle-sidebar": () =>
+      narrow ? setShownWhileNarrow(!shownWhileNarrow) : dispatch({ type: "setSidebarCollapsed", collapsed: state.sidebar.collapsed !== true }),
+    "go-back": () => dispatch({ type: "back" }),
+    "go-forward": () => dispatch({ type: "forward" }),
   };
-  const commands: AppCommand[] = appCommands({
-    sidebarCollapsed: sidebarPrefs.collapsed === true,
-    filesMode: mode === "files",
-    canGoBack: back !== null,
-    canGoForward: forward !== null,
-  }).filter((c) => run[c.id]);
-  const menuSections = ["File", "Edit", "View", "Go"].map((menu) => ({
-    section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })),
-  })).filter((s) => s.section.length > 0);
+  const commands: AppCommand[] = derived.commands.filter((c) => run[c.id]);
+  const menuSections = ["File", "Edit", "View", "Go"]
+    .map((menu) => ({ section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })) }))
+    .filter((s) => s.section.length > 0);
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
   const primaryMenu = (
     <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
   );
-  const sidebarShown = narrow ? shownWhileNarrow : sidebarPrefs.collapsed !== true;
+  const sidebarShown = narrow ? shownWhileNarrow : state.sidebar.collapsed !== true;
   const navigation = (
     <>
-    {sidebarShown ? null : <GtkButton iconName="sidebar-show-symbolic" tooltipText="Show Sidebar" onClicked={() => run["toggle-sidebar"]?.()} />}
-    <GtkBox cssClasses={["linked"]}>
-      <GtkButton iconName="go-previous-symbolic" tooltipText="Back" sensitive={back !== null} onClicked={() => go(back)} />
-      <GtkButton iconName="go-next-symbolic" tooltipText="Forward" sensitive={forward !== null} onClicked={() => go(forward)} />
-    </GtkBox>
+      {sidebarShown ? null : <GtkButton iconName="sidebar-show-symbolic" tooltipText="Show Sidebar" onClicked={() => run["toggle-sidebar"]?.()} />}
+      <GtkBox cssClasses={["linked"]}>
+        <GtkButton iconName="go-previous-symbolic" tooltipText="Back" sensitive={derived.canGoBack} onClicked={() => dispatch({ type: "back" })} />
+        <GtkButton iconName="go-next-symbolic" tooltipText="Forward" sensitive={derived.canGoForward} onClicked={() => dispatch({ type: "forward" })} />
+      </GtkBox>
     </>
   );
 
-  const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
-  const fileEntries = useMemo(
-    () =>
-      mode === "files"
-        ? flattenFilesTree(
-            filesTree(tables, bundles, {
-              activeTable: active,
-              opened: openedDirs,
-              attachmentsOf: (key) => (paths[bundleOf(key)] ? attachmentsIn(tableDir(key)) : []),
-            }),
-          )
-        : [],
-    // tableDir reads `paths`, listed here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mode, tables, bundles, active, openedDirs, paths],
-  );
+  const entries = derived.sidebarEntries;
+  const held = tables[state.active] !== undefined;
+  const selected = entries.findIndex((e) => e.kind === "view" && e.key === state.active && e.view.id === derived.view.id);
+  const fileEntries = useMemo(() => flattenFilesTree(derived.filesTree), [derived.filesTree]);
+  const shownFile = state.shownFile;
   const shownAttachment = shownFile ? attachmentAt(shownFile.bundle, shownFile.path) : null;
+  const asking = state.asking;
+  const pageTable = state.openPage !== null ? tables[state.active] : undefined;
 
   return (
     <AdwApplication actionAccels={commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] }))}>
@@ -880,7 +645,7 @@ export function App({
       >
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
-          <AttachmentsProvider value={(file) => (tables[active] ? attachmentPath({ ...tables[active], path: tableDir(active) }, file) : undefined)}>
+          <AttachmentsProvider value={(file) => (held ? attachmentPath({ ...tables[state.active]!, path: tableDir(state.active) }, file) : undefined)}>
           <AdwOverlaySplitView
             collapsed={narrow}
             showSidebar={sidebarShown}
@@ -897,61 +662,59 @@ export function App({
                     showEndTitleButtons={false}
                     titleWidget={
                       <GtkBox cssClasses={["linked"]}>
-                        <GtkToggleButton label="Tables" active={mode === "tables"} onToggled={(b) => b.getActive() && setMode("tables")} />
-                        <GtkToggleButton label="Files" active={mode === "files"} onToggled={(b) => b.getActive() && setMode("files")} />
+                        <GtkToggleButton label="Tables" active={derived.mode === "tables"} onToggled={(b) => b.getActive() && dispatch({ type: "setFilesSide", files: false })} />
+                        <GtkToggleButton label="Files" active={derived.mode === "files"} onToggled={(b) => b.getActive() && dispatch({ type: "setFilesSide", files: true })} />
                       </GtkBox>
                     }
-                    start={<GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => setNaming({ kind: "file" })} />}
+                    start={newFilesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
                     end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
                   />
                 }
               >
-                {mode === "files" ? (
+                {derived.mode === "files" ? (
                   <FilesSidebar
                     entries={fileEntries}
                     shown={shownFile}
-                    onToggleDir={(id, open) => setOpenedDirs((prev) => ({ ...prev, [id]: open }))}
-                    onShowFile={setShownFile}
+                    onToggleDir={(id, open) => dispatch({ type: "toggleDir", id, open })}
+                    onShowFile={(file) => dispatch({ type: "showFile", file })}
                   />
                 ) : (
-                <Sidebar
-                  entries={entries}
-                  selected={selected}
-                  onSelect={(entry) => {
-                    if (entry.kind === "table") setActive(entry.table.key);
-                    if (entry.kind === "view") setViewIds((prev) => ({ ...prev, [entry.key]: entry.view.id }));
-                    // Over the content, the sidebar gets out of the way of what was chosen.
-                    if (narrow) setShownWhileNarrow(false);
-                  }}
-                  onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
-                  onToggleFile={(bundle) => setSidebarPrefs((p) => withFileToggled(p, bundle))}
-                />
+                  <Sidebar
+                    entries={entries}
+                    selected={selected}
+                    onSelect={(entry) => {
+                      if (entry.kind === "table") dispatch({ type: "showTable", key: entry.table.key });
+                      if (entry.kind === "view") dispatch({ type: "showView", key: entry.key, viewId: entry.view.id });
+                      // Over the content, the sidebar gets out of the way of what was chosen.
+                      if (narrow) setShownWhileNarrow(false);
+                    }}
+                    onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
+                    onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
+                  />
                 )}
               </AdwToolbarView>
             }
           >
-            {mode === "files" && shownFile ? (
+            {derived.mode === "files" && shownFile ? (
               <AttachmentsProvider
                 value={(file) => (shownAttachment && tables[shownAttachment.tableKey] ? attachmentPath({ ...tables[shownAttachment.tableKey]!, path: tableDir(shownAttachment.tableKey) }, file) : undefined)}
               >
                 <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path)} attachmentName={shownAttachment?.name} />
               </AttachmentsProvider>
-            ) : table && view ? (
+            ) : held ? (
               <TablePane
-                // Drawn afresh for each view, so leaving one (table-app's
-                // leaving) takes its search and its open settings with it.
-                key={`${active}#${view.id}`}
+                // Drawn afresh for each view: its search entry starts empty, as leaving a view clears the search.
+                key={`${state.active}#${derived.view.id}`}
+                derived={derived}
                 tables={tables}
-                tableKey={active}
-                view={view}
-                edits={edits(active, view.id)}
+                tableKey={state.active}
+                callbacks={callbacks}
                 saving={saving}
-                viewActions={viewActions(active, view)}
-                openedAt={openedAt[active]}
-                viewerText={viewerText}
-                settingsOpen={settingsOpen}
-                onSettings={setSettingsOpen}
-                subtitle={tableBreadcrumb(active, tables, bundles, paths[bundleOf(active)]?.split("/").pop()).text}
+                viewActions={viewActions}
+                onSearch={(text) => dispatch({ type: "search", text })}
+                settingsOpen={state.settingsOpen}
+                onSettings={(open) => dispatch({ type: "settings", open })}
+                revision={refused}
                 navigation={navigation}
                 menu={primaryMenu}
               />
@@ -959,83 +722,62 @@ export function App({
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
-          {naming && (naming.kind === "table" || newFilesIn) ? (
-            <NameDialog
-              prompt={namePrompt(naming, bundles)}
-              onName={create}
-              onClose={() => setNaming(null)}
-            />
-          ) : null}
           {displayOpen ? (
             <AdwDialog title="Display" contentWidth={460} onClosed={() => setDisplayOpen(false)}>
               <AdwToolbarView topBar={<AdwHeaderBar />}>
                 <AdwPreferencesPage>
                   <DisplayControls
-                    rows={displayChoices(display, ownLocale, "System")}
-                    onChoose={(kind, value) => {
-                      const next = withDisplayChoice(display, kind, value);
-                      setDisplay(next);
-                      if (settings) saveDisplay(settings, next);
-                    }}
+                    rows={displayChoices(state.display, ownLocale, "System")}
+                    onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </AdwPreferencesPage>
               </AdwToolbarView>
             </AdwDialog>
           ) : null}
-          {openPage && pageTable ? (
+          {state.openPage !== null && pageTable ? (
             <RowPage
-              key={`${openPage.key}#${openPage.rowId}`}
-              rowId={openPage.rowId}
-              rowTitle={rowTitleFor(pageTable, openPage.rowId)}
-              content={pageTable.bodies?.[openPage.rowId] ?? ""}
-              onSave={(content) => edit(openPage.key, (t) => withBody(t, openPage.rowId, content))}
-              onClose={() => setOpenPage(null)}
+              key={`${state.active}#${state.openPage}`}
+              rowId={state.openPage}
+              rowTitle={rowTitleFor(pageTable, state.openPage)}
+              content={pageTable.bodies?.[state.openPage] ?? ""}
+              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+              onClose={() => dispatch({ type: "openPage", rowId: null })}
             />
           ) : null}
-          {confirmViewDelete && viewDeleting ? (
+          {asking?.kind === "confirm" ? (
             <ConfirmDialog
-              prompt={viewDeleting.prompt}
+              prompt={asking.confirm}
               onResponse={(response) => {
-                if (response === "delete") {
-                  const { key, viewId } = confirmViewDelete;
-                  edit(key, (t) => withoutView(t, viewId));
-                  setViewIds((prev) => ({ ...prev, [key]: viewDeleting.nextViewId }));
-                  setSettingsOpen(false);
-                }
-                setConfirmViewDelete(null);
+                // A settings change refused: its controls are drawn again from the view.
+                if (response === "cancel" && asking.on.type === "updateView") setRefused((n) => n + 1);
+                dispatch({ type: "answer", response });
               }}
             />
           ) : null}
-          {confirmDelete && deleting ? (
-            <ConfirmDialog
-              prompt={deleting.prompt}
-              onResponse={(response) => {
-                if (response === "delete") {
-                  edit(confirmDelete.key, (t) => withoutRow(t, confirmDelete.rowId));
-                  // Its page goes with it: saving it after would write a page for no row.
-                  if (deleting.closeBody) setOpenPage(null);
-                }
-                setConfirmDelete(null);
-              }}
+          {asking?.kind === "name" ? (
+            <NameDialog
+              prompt={asking.prompt}
+              onName={(text) => dispatch({ type: "answer", response: "create", text })}
+              onClose={() => dispatch({ type: "answer", response: "cancel" })}
             />
           ) : null}
           {confirmReset ? (
             <ConfirmDialog
-              prompt={resetPrompt({ openedFolders: Object.keys(bundles).some((key) => !inExamples(key)) })}
+              prompt={resetPrompt({ openedFolders: Object.keys(state.opened).length > 0 })}
               onResponse={(response) => {
                 setConfirmReset(false);
                 if (response === "reset") void reset();
               }}
             />
           ) : null}
-          {notice ? (
+          {state.telling ? (
             <AdwAlertDialog
-              heading={notice.heading}
-              body={notice.body}
+              heading={state.telling.heading}
+              body={state.telling.body}
               closeResponse="ok"
               defaultResponse="ok"
               responses={[{ id: "ok", label: "OK" }]}
-              onResponse={() => setNotice(null)}
+              onResponse={() => dispatch({ type: "told" })}
             />
           ) : null}
           </AttachmentsProvider>

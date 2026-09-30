@@ -115,7 +115,8 @@ describe("the app's commands on Linux", () => {
     await openTasks(settings);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Files" }));
     await cleanup();
-    await openTasks(settings);
+    // Opened again as the viewer would, not at a named table (which lands on Tables, as a link does).
+    await render(<App library={await loadLibrary([bundle])} settings={settings} />);
     const files = (await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Files" })) as Gtk.ToggleButton;
     expect(files.getActive()).toBe(true);
   });

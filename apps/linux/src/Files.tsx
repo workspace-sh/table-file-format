@@ -7,15 +7,11 @@ import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import { AdwHeaderBar, AdwStatusPage, AdwToolbarView, AdwWindowTitle } from "@gtkx/jsx/adw";
 import { GtkBox, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkTextBuffer, GtkTextView } from "@gtkx/jsx/gtk";
-import type { FilesTreeEntry } from "@workspace.sh/table-app";
+import type { FilesTreeEntry, ShownFile } from "@workspace.sh/table-app";
 import { AttachmentImage } from "@workspace.sh/table-gtk";
 
-/** A file on the Files side: which bundle, and its path inside it. */
-export interface ShownFile {
-  bundle: string;
-  path: string;
-  opens: "text" | "attachment";
-}
+/** A file on the Files side: which bundle, and its path inside it (table-app's). */
+export type { ShownFile };
 
 const INDENT = 14;
 
@@ -45,7 +41,7 @@ export function FilesSidebar({
         onRowSelected={(row) => {
           if (row === null || row.getIndex() === selected) return;
           const entry = entries[row.getIndex()];
-          if (entry?.kind === "file") onShowFile({ bundle: entry.bundle, path: entry.file.path, opens: entry.file.opens });
+          if (entry?.kind === "file") onShowFile({ bundle: entry.bundle, path: entry.file.path });
         }}
       >
         {entries.map((entry) => {
@@ -87,7 +83,7 @@ export function FilePane({ file, text, attachmentName }: { file: ShownFile; text
   const name = file.path.split("/").pop() ?? file.path;
   return (
     <AdwToolbarView topBar={<AdwHeaderBar titleWidget={<AdwWindowTitle title={name} subtitle={`${file.bundle}.table/${file.path}`} />} />}>
-      {file.opens === "attachment" && attachmentName ? (
+      {attachmentName ? (
         <GtkBox vexpand hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER}>
           <AttachmentImage fileName={attachmentName} width={360} height={360} />
         </GtkBox>
