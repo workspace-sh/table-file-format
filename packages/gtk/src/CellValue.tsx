@@ -8,6 +8,7 @@ import { GtkBox, GtkButton, GtkLabel, GtkScrolledWindow } from "@gtkx/jsx/gtk";
 import type { ReactNode } from "react";
 import type { Field, ParsedTable } from "@workspace.sh/table-core";
 import { describeCell, useDisplaySettings, type RelationLink } from "@workspace.sh/table-ui/shared";
+import { AttachmentImage } from "./AttachmentImage.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
 export interface CellValueProps {
@@ -129,7 +130,13 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
         </Clipped>
       );
     case "attachment":
-      return <CellText text={shown.fileName} xalign={xalign} />;
+      // The picture beside its name, when it's an image the app can find.
+      return (
+        <GtkBox spacing={6} hexpand>
+          <AttachmentImage fileName={shown.fileName} width={24} height={24} />
+          <CellText text={shown.fileName} xalign={xalign} />
+        </GtkBox>
+      );
     case "link":
       // GTK opens a markup link with the desktop's handler for it: the
       // browser for a URL, the mail app for mailto:, a dialler for tel:.

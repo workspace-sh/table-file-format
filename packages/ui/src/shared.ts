@@ -17,3 +17,4 @@ export { firstDayOfWeek, monthNameLong, rotateWeekdays, weekdayNamesShort } from
 export { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, type Commit, type EditorKind, type InputKind } from "./cellEdit";
 export { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaInputCells, formulaStatus, typeFamily, viewGrid, type FormulaExplained, type FormulaInput, type FormulaStatus } from "./formulaCell";
 export * from "./fieldEdit";
+export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl } from "./Attachments";
