@@ -601,9 +601,21 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
-  const [showDisplay, setShowDisplay] = useState(false);
   // Which files are folded in the sidebar, kept as the web keeps them.
   const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(store));
+  // The Display panel, open or not, kept with the sidebar prefs as the web keeps
+  // its Display group's fold. Open only when unfolded by choice: on the Mac it
+  // opens in the main area, so it starts closed.
+  const showDisplay = sidebarPrefs.foldedDisplay === false;
+  const toggleDisplay = useCallback(
+    () =>
+      setSidebarPrefs((prefs) => {
+        const next = { ...prefs, foldedDisplay: prefs.foldedDisplay !== false ? false : true };
+        saveSidebarPrefs(store, next);
+        return next;
+      }),
+    [store],
+  );
   const toggleFile = useCallback(
     (bundle: string) =>
       setSidebarPrefs((prefs) => {
@@ -1127,7 +1139,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 { label: "New .table…", onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
                 { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
                 { label: "Open .table.zip…", onPress: () => void importZip() },
-                { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
+                { label: "Display", onPress: toggleDisplay, active: showDisplay },
                 { label: "Reset demo data…", onPress: resetDemo },
               ]}
             />

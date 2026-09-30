@@ -27,7 +27,7 @@ export function loadSidebarPrefs(store: KeyValueStore | null): SidebarPrefs {
       ...(Array.isArray(foldedFiles) && foldedFiles.every((f) => typeof f === "string") && foldedFiles.length > 0
         ? { foldedFiles: foldedFiles as string[] }
         : {}),
-      ...(foldedDisplay === true ? { foldedDisplay } : {}),
+      ...(typeof foldedDisplay === "boolean" ? { foldedDisplay } : {}),
       ...(files === true ? { files } : {}),
     };
   } catch {
