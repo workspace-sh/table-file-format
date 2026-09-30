@@ -36,7 +36,9 @@ describe("making tables and files on Linux", () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
-    await name("Reading list");
+    // Asked in table-app's words, the same on the web and macOS; the name is trimmed.
+    expect(await screen.findByText("New table in Projects")).toBeDefined();
+    await name("  Reading list ");
     await waitFor(async () => {
       const b = await parseBundle(bundle);
       expect(b.meta.tables).toEqual(["projects", "tasks", "reading-list"]);
@@ -55,5 +57,23 @@ describe("making tables and files on Linux", () => {
       expect(b.meta.title).toBe("Garden");
       expect(Object.keys(b.tables)).toEqual(["garden"]);
     });
+  });
+
+  it("a blank name makes nothing", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
+    await name("   ");
+    // A table made would be shown at once; the one open is still open.
+    expect(await screen.findByText("Projects › Tasks")).toBeDefined();
+    expect(screen.queryByText(/^Projects › (?!Tasks$)/)).toBeNull();
+  });
+
+  it("a new view opens its settings, where it's made into what's wanted", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    expect(screen.queryByText("Filters")).toBeNull();
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New View" }));
+    expect(await screen.findByText("Filters")).toBeDefined();
   });
 });
