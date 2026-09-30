@@ -14,5 +14,7 @@ module.exports = function (api) {
         },
       ],
     ],
+    // FormatJS's Intl polyfills (intl.ts) use static class blocks.
+    plugins: ["@babel/plugin-transform-class-static-block"],
   };
 };
