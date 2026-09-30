@@ -1,5 +1,5 @@
-# The macOS app's own native module: the system Open panel, to choose a
-# .table folder. No published React Native module covers react-native-macos
+# The macOS app's own native module: the system Open and Save panels.
+# No published React Native module covers react-native-macos
 # (@react-native-documents/picker is iOS only), so it lives here.
 Pod::Spec.new do |s|
   s.name         = "TablePanels"
@@ -11,5 +11,6 @@ Pod::Spec.new do |s|
   s.source       = { :path => "." }
   s.platforms    = { :osx => "14.0" }
   s.source_files = "*.{h,m,mm}"
+  s.frameworks   = "UniformTypeIdentifiers"
   s.dependency "React-Core"
 end
