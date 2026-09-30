@@ -6,21 +6,18 @@ import type { CompileResult, ComputeOptions, Field, FieldAlignment, FieldType, G
 import type { ReactNode } from "react";
 import {
   compileFormula,
-  computeRows,
   currencyOf,
   inputCurrency,
   defaultAlignFor,
   enumOptions,
   enumValues,
-  formulaRefs,
-  coordinateOf,
   formulaType,
-  parseExpr,
   printFormula,
   formatValue,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { fieldKey } from "./fieldKey";
+import { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaStatus, typeFamily } from "./formulaCell";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportHeight } from "./internal/useViewportHeight";
@@ -481,12 +478,8 @@ const styles = css.create({
   },
 });
 
-const DIALECT = "table-expr-v1";
 
 /** numeric, text or true/false — what a formula's type change actually changes. */
-function typeFamily(t: FieldType): string {
-  return t === "integer" || t === "number" ? "number" : t;
-}
 
 /**
  * The line under a formula box: why it can't be saved, what might go
@@ -497,17 +490,16 @@ function typeFamily(t: FieldType): string {
  */
 function FormulaStatus({ result, typed }: { result: CompileResult | null; typed: string }) {
   if (result === null) return null;
-  if (!result.ok) return <html.span style={styles.errorText}>{result.message}</html.span>;
+  const status = formulaStatus(result, typed);
+  if (status.kind === "error") return <html.span style={styles.errorText}>{status.message}</html.span>;
   return (
     <>
-      {result.warnings.map((w) => (
+      {status.warnings.map((w) => (
         <html.span key={w} style={styles.warnText}>
           {w}
         </html.span>
       ))}
-      {typed.trim() === result.stored ? null : (
-        <html.span style={styles.hintText}>Stored as {result.stored}</html.span>
-      )}
+      {status.storedAs === undefined ? null : <html.span style={styles.hintText}>Stored as {status.storedAs}</html.span>}
     </>
   );
 }
@@ -758,7 +750,7 @@ export function SchemaFieldEditor({
     const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
     const produced = formulaType(formula.expr, types);
     onUpdate({
-      computed: { expr: formula.stored, dialect: DIALECT },
+      computed: { expr: formula.stored, dialect: FORMULA_DIALECT },
       // A formula rewritten from sums into text is a text column now.
       ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
     });
@@ -1030,7 +1022,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
         name: key,
         ...title,
         type: formulaType(formula.expr, types),
-        computed: { expr: formula.stored, dialect: DIALECT },
+        computed: { expr: formula.stored, dialect: FORMULA_DIALECT },
       });
     } else {
       onAdd({ name: key, ...title, type });
@@ -1212,42 +1204,11 @@ export function FormulaCellPanel({
   const { formulaSyntax } = useDisplaySettings();
   // Edited here, from any cell, as Grist does — but it is the column's
   // formula, so saving says "every row" and every row changes.
-  const [draft, setDraft] = useState(() => printFormula(stored, { grid, syntax: formulaSyntax }));
-  const compiled = onSave ? compileFormula(draft, { fields: fields.map((f) => f.name), grid }) : null;
-  const changed = compiled?.ok === true && compiled.stored !== stored;
-  const shownExpr = changed && compiled?.ok ? compiled.expr : null;
-  const parsed = parseExpr(stored);
-  const refs = shownExpr ? formulaRefs(shownExpr) : parsed.ok ? formulaRefs(parsed.expr) : [];
-  const title = (name: string) => fields.find((f) => f.name === name)?.title ?? name;
-  const rowId = String(row.id);
-  // The whole table, computed, so another row's value (computed or not)
-  // shows as its cell does.
-  const tableRows = allRows ?? [row as Row];
-  const computedAll = computeRows({ fields }, tableRows, computeOptions).rows;
-  const valueIn = (id: string, name: string) =>
-    id === rowId ? row[name] : computedAll.find((r) => r.id === id)?.[name];
-  const thisRow = refs.filter((r) => r.rowId === undefined || r.rowId === rowId);
-  const otherRows = refs.filter((r) => r.rowId !== undefined && r.rowId !== rowId);
-  const otherLabel = (r: { field: string; rowId?: string }) =>
-    (grid && coordinateOf(r.field, r.rowId!, grid)) ?? `${title(r.field)} of row ${r.rowId}`;
-  // What this row would show with the draft formula — the one thing the
-  // column editor can't tell you. Computed the same way the table is.
-  const preview = (() => {
-    if (!changed || !compiled?.ok) return undefined;
-    const trial = fields.map((f) =>
-      f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: DIALECT } } : f,
-    );
-    const { rows } = computeRows({ fields: trial }, tableRows, computeOptions);
-    return { value: rows.find((r) => r.id === rowId)?.[field.name] };
-  })();
+  const [draft, setDraft] = useState(() => formulaDraftOf(field, grid, formulaSyntax));
+  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions });
+  const { compiled, changed, thisRow, otherRows, preview } = explained;
   const save = () => {
-    if (!onSave || !changed || !compiled?.ok) return;
-    const types = new Map(fields.map((f) => [f.name, f.type] as const));
-    const produced = formulaType(compiled.expr, types);
-    onSave({
-      computed: { expr: compiled.stored, dialect: DIALECT },
-      ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
-    });
+    if (onSave && explained.save) onSave(explained.save);
   };
 
   return (
@@ -1295,10 +1256,10 @@ export function FormulaCellPanel({
         {thisRow.length > 0 && (
           <>
             <html.span style={styles.label}>In this row</html.span>
-            {thisRow.map(({ field: name }) => (
-              <html.div key={name} style={styles.inputRow}>
-                <html.span style={styles.inputName}>{title(name)}</html.span>
-                <html.span>{renderValue(name, row[name])}</html.span>
+            {thisRow.map((input) => (
+              <html.div key={input.field} style={styles.inputRow}>
+                <html.span style={styles.inputName}>{input.label}</html.span>
+                <html.span>{renderValue(input.field, input.value)}</html.span>
               </html.div>
             ))}
           </>
@@ -1308,8 +1269,8 @@ export function FormulaCellPanel({
             <html.span style={styles.label}>From other rows</html.span>
             {otherRows.map((r) => (
               <html.div key={`${r.rowId}\u0000${r.field}`} style={styles.inputRow}>
-                <html.span style={styles.inputName}>{otherLabel(r)}</html.span>
-                <html.span>{renderValue(r.field, valueIn(r.rowId!, r.field))}</html.span>
+                <html.span style={styles.inputName}>{r.label}</html.span>
+                <html.span>{renderValue(r.field, r.value)}</html.span>
               </html.div>
             ))}
           </>

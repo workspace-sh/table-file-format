@@ -33,6 +33,9 @@ export const styles = {
   relationLink: css({ padding: "0 4px", minHeight: "0", color: "@accent_color" }),
   pill: css({ borderRadius: "999px", padding: "2px 10px", fontSize: "smaller", fontWeight: "500" }),
   table: css({ backgroundColor: "@view_bg_color" }),
+  /** The open formula's column, tinted; the cells it read, outlined (as on the web). */
+  formulaColumn: css({ backgroundColor: "alpha(@accent_bg_color, 0.08)" }),
+  formulaInput: css({ boxShadow: "inset 0 0 0 2px alpha(@accent_bg_color, 0.7)" }),
   card: css({ padding: "10px 12px", borderRadius: "10px" }),
   cardTitle: css({ fontWeight: "600" }),
   cardFieldLabel: css({ fontSize: "x-small", fontWeight: "600", opacity: 0.55, letterSpacing: "0.04em" }),
