@@ -76,7 +76,7 @@ export function ViewSettings({
             type="text"
             value={view.name}
             onChange={(e: { target: { value: string } }) => onChange({ name: e.target.value })}
-            style={styles.input}
+            style={[styles.input, styles.textInput]}
           />
         </FieldRow>
 
@@ -317,7 +317,7 @@ function FilterRow({
               setDraft(e.target.value);
               onChange({ ...filter, value: filterValueFrom(field, filter.operator, e.target.value) });
             }}
-            style={styles.input}
+            style={[styles.input, styles.textInput]}
           />
         ))}
       <html.button style={styles.remove} aria-label="Remove filter" onClick={onRemove}>
@@ -365,6 +365,11 @@ const styles = css.create({
     backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
+  // Room for a few words. React Native sizes a text field to what's typed,
+  // so without it a name or a filter's value is cut short. A browser's text
+  // field is already wider: 125px inside its padding (min-width counts only
+  // that there, the whole box on native), so the web doesn't change.
+  textInput: { minWidth: 120 },
   check: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6, fontSize: 12 },
   add: {
     alignSelf: "flex-start",
