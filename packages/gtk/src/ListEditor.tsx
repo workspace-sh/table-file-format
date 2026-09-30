@@ -96,6 +96,7 @@ function TypedList({ field, value, onCommit, relatedTables, lines, xalign }: Lis
       ref={entry}
       hexpand
       widthChars={1}
+      maxWidthChars={1}
       text={listText(value)}
       placeholderText="a, b, c"
       onActivate={(e) => commit(e.getText())}
