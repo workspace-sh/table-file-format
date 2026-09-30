@@ -35,6 +35,8 @@ export interface AppCommand {
   enabled?: boolean;
   /** Shown ticked: one of a choice, and the one in force. */
   checked?: boolean;
+  /** What it does, for a tooltip on its button; add shortcutText where the button's platform has the key. */
+  hint?: string;
 }
 
 export interface AppCommandState {
@@ -51,11 +53,24 @@ export function appCommands(state: AppCommandState): AppCommand[] {
     { id: "new-file", menu: "File", label: "New .table File…", key: "n" },
     { id: "open-folder", menu: "File", label: "Open .table…", key: "o" },
     { id: "open-zip", menu: "File", label: "Open .table.zip…", key: "o", shift: true },
-    { id: "export-zip", menu: "File", label: "Export .table.zip…", key: "e", shift: true },
+    {
+      id: "export-zip",
+      menu: "File",
+      label: "Export .table.zip…",
+      key: "e",
+      shift: true,
+      hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, documents) that any .table reader opens.",
+    },
     { id: "copy-link", menu: "Edit", label: "Copy Link to View", key: "c", option: true },
     { id: "tables-mode", menu: "View", label: "Tables", key: "1", checked: !state.filesMode },
     { id: "files-mode", menu: "View", label: "Files", key: "2", checked: state.filesMode },
-    { id: "toggle-sidebar", menu: "View", label: state.sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar", key: "b" },
+    {
+      id: "toggle-sidebar",
+      menu: "View",
+      label: state.sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar",
+      key: "b",
+      hint: state.sidebarCollapsed ? "Show the sidebar" : "Hide the sidebar",
+    },
     { id: "go-back", menu: "Go", label: "Back", key: "[", gtkAccel: "<Alt>Left", enabled: state.canGoBack ?? false },
     { id: "go-forward", menu: "Go", label: "Forward", key: "]", gtkAccel: "<Alt>Right", enabled: state.canGoForward ?? false },
   ];
@@ -71,3 +86,31 @@ export function gtkAccelOf(command: AppCommand): string {
   return `<Control>${command.shift ? "<Shift>" : ""}${command.option ? "<Alt>" : ""}${command.key}`;
 }
 
+
+/** Tooltips for controls that aren't commands. */
+export const TOOLBAR_HINTS = {
+  viewSettings:
+    "Name, layout, filters, sorting and grouping for this view. Saved with the table, so everyone who opens it sees the same view.",
+} as const;
+
+/**
+ * A command's shortcut as a person reads it: "⌘B" on the Mac, "Ctrl+B"
+ * on GTK (its accelerator, so "Alt+Left" where GNOME's differs), and both
+ * on the web, which may run on either: "⌘B / Ctrl+B".
+ */
+export function shortcutText(command: AppCommand, platform: "mac" | "gtk" | "web"): string {
+  const key = command.key.length === 1 ? command.key.toUpperCase() : command.key;
+  const mac = `${command.option ? "⌥" : ""}${command.shift ? "⇧" : ""}⌘${key}`;
+  const ctrl = `Ctrl+${command.shift ? "Shift+" : ""}${command.option ? "Alt+" : ""}${key}`;
+  if (platform === "mac") return mac;
+  if (platform === "web") return `${mac} / ${ctrl}`;
+  if (!command.gtkAccel) return ctrl;
+  // GTK's own syntax, read out: "<Alt>Left" is "Alt+Left".
+  const mods = [...command.gtkAccel.matchAll(/<(\w+)>/g)].map((m) => (m[1] === "Control" || m[1] === "Primary" ? "Ctrl" : m[1]!));
+  return [...mods, command.gtkAccel.replace(/<\w+>/g, "")].join("+");
+}
+
+/** A command's hint with its shortcut, where the platform has one: "Hide the sidebar (⌘B)". */
+export function hintWithShortcut(command: AppCommand, platform: "mac" | "gtk" | "web"): string {
+  return `${command.hint ?? command.label} (${shortcutText(command, platform)})`;
+}

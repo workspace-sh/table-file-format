@@ -88,6 +88,8 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  hintWithShortcut,
+  TOOLBAR_HINTS,
   leaving,
   DEFAULT_TABLE_KEY,
   firstTableKey,
@@ -126,6 +128,7 @@ import { Sidebar } from "./Sidebar";
 import { copyText, menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl, fixtureAttachments } from "./attachments";
 import { FileView } from "./FileView";
+import { Tip } from "./Tip";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -1058,6 +1061,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown, history]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0] ?? NO_TABLE.views[0]!;
+  // Hint wording, shared with the web and Linux (table-app's commands).
+  const commandOf = (id: AppCommandId) =>
+    appCommands({ sidebarCollapsed: !sidebarShown, filesMode }).find((c) => c.id === id)!;
   // Whatever changes the view on screen (the sidebar, a relation, an
   // address, Back or Forward), its search and settings go with it (table-app's
   // leaving); choosing the view already there changes nothing. A new view
@@ -1142,7 +1148,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               {tableBreadcrumb(activeTablePath, tables, bundles, folders.paths[bundleOf(activeTablePath)]?.split("/").pop()).text}
             </html.span>
             <html.div style={styles.titleRow}>
-              <Hinted hint={`${sidebarShown ? "Hide" : "Show"} the sidebar (⌘B)`}>
+              <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "mac")}>
                 <html.button
                   aria-label={sidebarShown ? "Hide the sidebar" : "Show the sidebar"}
                   aria-expanded={sidebarShown}
@@ -1173,15 +1179,19 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             </html.div>
             {/* The view's own actions; the tables, views and files are in the sidebar. */}
             <html.div style={styles.toolbar}>
-              <html.button
-                onClick={() => setShowViewSettings((open) => !open)}
-                style={[styles.tab, showViewSettings && styles.tabActive]}
-              >
-                View settings
-              </html.button>
-              <html.button onClick={() => void exportZip()} style={styles.tab}>
-                Export .table.zip…
-              </html.button>
+              <Tip text={TOOLBAR_HINTS.viewSettings}>
+                <html.button
+                  onClick={() => setShowViewSettings((open) => !open)}
+                  style={[styles.tab, showViewSettings && styles.tabActive]}
+                >
+                  View settings
+                </html.button>
+              </Tip>
+              <Tip text={hintWithShortcut(commandOf("export-zip"), "mac")}>
+                <html.button onClick={() => void exportZip()} style={styles.tab}>
+                  Export .table.zip…
+                </html.button>
+              </Tip>
             </html.div>
             <html.input
               type="text"
