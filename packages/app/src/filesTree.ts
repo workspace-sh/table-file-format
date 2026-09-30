@@ -5,6 +5,7 @@
 // or opened is theirs to say, so it comes in as input.
 
 import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { isImageFile } from "@workspace.sh/table-ui/shared";
 
 import { tableKeysIn, toBundle } from "./bundles.ts";
 
@@ -168,4 +169,22 @@ function noteFor(kind: BundleFileKind, table: ParsedTable): string | undefined {
 function countFiles(dir: FilesTreeDir): void {
   if (dir.name === "bodies" || dir.name === "attachments") dir.count = dir.files.length;
   dir.dirs.forEach(countFiles);
+}
+
+/** What an attachment's file view shows: the image, or a note saying why not. */
+export type AttachmentShown = { image: string } | { note: string };
+
+/**
+ * `url`: where the app found the file; undefined when it didn't.
+ * `canDraw`: which file names the app can draw as an image; table-ui's
+ * isImageFile (what a browser draws) unless the platform draws more (the
+ * Mac's NSImage also reads HEIC and TIFF).
+ */
+export function attachmentShown(
+  name: string,
+  url: string | undefined,
+  canDraw: (name: string) => boolean = isImageFile,
+): AttachmentShown {
+  if (!url) return { note: "Not found." };
+  return canDraw(name) ? { image: url } : { note: "Not an image, so there's nothing to preview." };
 }

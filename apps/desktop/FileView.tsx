@@ -4,7 +4,8 @@
 
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { FilesTreeFile } from "@workspace.sh/table-app";
+import { attachmentShown, type FilesTreeFile } from "@workspace.sh/table-app";
+import { canDrawOnMac } from "./attachments";
 
 export interface FileViewProps {
   /** Where the file sits: `crm.table/tables/deals/`, or an opened folder's own name. */
@@ -19,6 +20,8 @@ export interface FileViewProps {
 
 export function FileView({ folder, file, content, url, onClose }: FileViewProps) {
   const attachment = file.opens === "attachment";
+  // Its image, or a note saying why there's none (table-app, as the web says it).
+  const shown = attachment ? attachmentShown(file.name, url, canDrawOnMac) : null;
   return (
     <html.div style={styles.root}>
       <html.span dir="ltr" style={styles.breadcrumb}>{folder}</html.span>
@@ -33,12 +36,10 @@ export function FileView({ folder, file, content, url, onClose }: FileViewProps)
           ? "An attachment: a file the table's rows name, kept beside them."
           : "As saving writes it. Export .table.zip carries the same files."}
       </html.span>
-      {attachment ? (
-        url && IMAGE.test(file.name) ? (
-          <html.img src={url} alt={file.name} style={styles.image} />
-        ) : (
-          <html.span style={styles.note}>{url ? "Not an image, so there's nothing to preview." : "Not found."}</html.span>
-        )
+      {shown && "image" in shown ? (
+        <html.img src={shown.image} alt={file.name} style={styles.image} />
+      ) : shown ? (
+        <html.span style={styles.note}>{shown.note}</html.span>
       ) : (
         // Long lines scroll sideways, as the web's <pre> does.
         <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
@@ -52,8 +53,6 @@ export function FileView({ folder, file, content, url, onClose }: FileViewProps)
     </html.div>
   );
 }
-
-const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif|heic|tiff?)$/i;
 
 const text = { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" };
 const dim = { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" };
