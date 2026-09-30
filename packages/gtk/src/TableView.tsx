@@ -22,7 +22,7 @@ import {
   GtkScrolledWindow,
 } from "@gtkx/jsx/gtk";
 import type { MenuItem } from "@gtkx/react/internal";
-import { columnLetter, effectiveAlign, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
+import { columnLetter, effectiveAlign, isSheet, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
 import {
   canInsertAt,
   DEFAULT_ROW_HEIGHT,
@@ -191,7 +191,8 @@ export function TableView({
   // The visible width, from the scroller's own adjustment: its page size is
   // what's on screen, and it changes as the window or sidebar does.
   const [containerWidth, setContainerWidth] = useState(0);
-  const canInsert = !!onInsertRow && canInsertAt(view);
+  // Rows go above or below another only in a sheet (D41), and not when a sort places them.
+  const canInsert = !!onInsertRow && isSheet(view) && canInsertAt(view);
   const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert;
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
