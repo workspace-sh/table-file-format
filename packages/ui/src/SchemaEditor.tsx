@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
 import { Checkbox } from "./internal/Checkbox";
 import { Select } from "./internal/Select";
@@ -842,6 +843,8 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
   const triggerRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nameRef = useRef<any>(null);
+  // Whether the name was focused since the editor opened.
+  const nameFocused = useRef(false);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
 
@@ -864,8 +867,11 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
 
   // Open: typing goes straight into the name, and Escape closes.
   useEffect(() => {
-    if (!open) return;
-    nameRef.current?.focus?.();
+    if (!open) {
+      nameFocused.current = false;
+      return;
+    }
+    focusInput(nameRef.current);
     // React Native has a `window` (its global), but no addEventListener.
     if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onKey = (e: KeyboardEvent) => {
@@ -929,6 +935,12 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               ref={(el: any) => {
                 nameRef.current = el;
+                // Focused once as it appears: in a popover it can mount
+                // after the effect below has run (on native, #281).
+                if (el && !nameFocused.current) {
+                  nameFocused.current = true;
+                  focusInput(el);
+                }
               }}
               type="text"
               value={name}
