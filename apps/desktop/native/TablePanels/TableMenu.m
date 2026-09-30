@@ -3,10 +3,10 @@
 // one (or pressing its key equivalent, wherever focus is) sends a "menu"
 // event with the item's id.
 //
-// setItem(id, menu, title, key, modifiers, before): add the item to the
-// top-level menu titled `menu`, before the item titled `before` (or last),
-// or update it if it's there already. modifiers: "command", "shift",
-// "option", "control".
+// setItem(id, menu, title, key, modifiers, before, checked): add the item
+// to the top-level menu titled `menu`, before the item titled `before` (or
+// last), or update it if it's there already. modifiers: "command",
+// "shift", "option", "control". `checked` shows it ticked.
 // Development only: postKey(characters, keyCode, modifiers) brings the app
 // forward (a typed key implies it's frontmost) and posts a key press to its
 // own event queue, so it goes where a typed one would; titles(menu)
@@ -76,7 +76,8 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
                   title:(NSString *)title
                   key:(NSString *)key
                   modifiers:(NSArray<NSString *> *)modifiers
-                  before:(NSString *)before)
+                  before:(NSString *)before
+                  checked:(BOOL)checked)
 {
   if (_items == nil) _items = [NSMutableDictionary new];
   NSMenuItem *item = _items[itemId];
@@ -93,6 +94,7 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
   item.title = title;
   item.keyEquivalent = key;
   item.keyEquivalentModifierMask = flagsFor(modifiers);
+  item.state = checked ? NSControlStateValueOn : NSControlStateValueOff;
 }
 
 - (void)chosen:(NSMenuItem *)item
@@ -127,7 +129,11 @@ RCT_EXPORT_METHOD(titles:(NSString *)menuTitle
     NSString *key = item.keyEquivalent.length > 0
       ? [NSString stringWithFormat:@" [%@%@]", (item.keyEquivalentModifierMask & NSEventModifierFlagCommand) ? @"⌘" : @"", item.keyEquivalent]
       : @"";
-    [out addObject:item.isSeparatorItem ? @"—" : [item.title stringByAppendingString:key]];
+    NSString *tick = [NSString stringWithFormat:@"%@%@%@",
+                                                item.state == NSControlStateValueOn ? @"✓ " : @"",
+                                                item.isHidden ? @"(hidden) " : @"",
+                                                item.isAlternate ? @"(alternate) " : @""];
+    [out addObject:item.isSeparatorItem ? @"—" : [[tick stringByAppendingString:item.title] stringByAppendingString:key]];
   }
   resolve(out);
 }
