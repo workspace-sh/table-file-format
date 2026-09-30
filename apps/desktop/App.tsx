@@ -88,6 +88,8 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  importSkippedText,
+  openFailedText,
   hintWithShortcut,
   TOOLBAR_HINTS,
   leaving,
@@ -569,15 +571,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
         const first = Object.keys(entries)[0]!;
         showMade(first, entries[first]!.views[0]?.id ?? "");
-        if (opened.skipped.length > 0) {
-          const n = opened.skipped.length;
-          showProblem(
-            `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read`,
-            opened.skipped.join("\n"),
-          );
-        }
+        // What was skipped, and a failure, in the words the web and Linux use (table-app).
+        const skipped = importSkippedText(opened);
+        if (skipped) showProblem(skipped.heading, skipped.body);
       } catch (error) {
-        showProblem(`Couldn't open ${where.split("/").pop()}`, error instanceof Error ? error.message : String(error));
+        showProblem(openFailedText(where.split("/").pop() ?? where, error), "");
       }
     },
     [bundles, showMade, showProblem],
