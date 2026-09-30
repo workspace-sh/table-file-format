@@ -133,10 +133,11 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are sixteen
+Every fork lives in `packages/ui/src/internal/`, and there are seventeen
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
-default that serves the rest, and `useEscape` has both:
+default that serves the rest, and `useEscape` and `AttachmentImage` have
+both:
 
 | Fork | Why it forks |
 |---|---|
@@ -147,6 +148,7 @@ default that serves the rest, and `useEscape` has both:
 | `useHoverHint` | A hint when the pointer rests on something. Native adds nothing, since touch screens don't hover. |
 | `Tooltip` | The system tooltip for a plain-text hint, on macOS: AppKit's own, through react-native-macos's `tooltip` View prop. Everywhere else it adds nothing, not even an element; the web has its own hover hint. |
 | `useEscape` | Escape as a way out (closing an editor with nothing unsaved). The web hears it on the document; macOS from the text input being typed in, which reports it as the escape character; touch screens have no Escape key, so there it adds nothing. |
+| `AttachmentImage` | An attachment drawn as an image. React Native's decoders on iOS and Android don't read SVG, so there an `.svg` is drawn by react-native-svg; the web and macOS draw every image themselves (macOS's decoder is patched to hand SVG to NSImage, and react-native-svg draws nothing on react-native-macos under the New Architecture). |
 | `measureAnchor`, `useContainerWidth`, `useViewportWidth`, `useViewportHeight` | Layout measurement, which has no shared primitive. |
 | `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. React Native has no select, so native is a button that opens a menu of the options in the `Portal`. |
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
