@@ -630,7 +630,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       if (addr.viewId) setActiveViewIds((prev) => ({ ...prev, [key]: addr.viewId! }));
       setActiveBodyRowId(addr.rowId && tables[key]?.bodies?.[addr.rowId] ? addr.rowId : null);
     },
-    [tables, activeTablePath],
+    [tables, bundles, activeTablePath],
   );
 
   const updateRow = useCallback(
@@ -693,7 +693,15 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       const hasBody = table.bodies?.[rowId] !== undefined;
       Alert.alert(`Delete "${rowTitleFor(table, rowId)}"?`, hasBody ? "Its document goes too." : undefined, [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => edit((t) => withoutRow(t, rowId)) },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            edit((t) => withoutRow(t, rowId));
+            // Its document goes with it, so an open editor for it closes.
+            setActiveBodyRowId((open) => (open === rowId ? null : open));
+          },
+        },
       ]);
     },
     [edit, table],
