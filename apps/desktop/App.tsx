@@ -128,7 +128,8 @@ import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
 import { copyText, menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
-import { attachmentUrl, fixtureAttachments } from "./attachments";
+import { attachmentUrl } from "./attachments";
+import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
 import { Tip } from "./Tip";
 
