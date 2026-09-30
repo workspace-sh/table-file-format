@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
@@ -87,6 +87,8 @@ import {
   type SheetGridShown,
   schemaVersions,
   viewSummary,
+  appCommands,
+  type AppCommandId,
   addressTarget,
   savingForEveryone,
   creating,
@@ -564,18 +566,6 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       }),
     [store],
   );
-  // View › Hide Sidebar (⌘B), the Mac's place for it: its key works wherever focus is.
-  useEffect(() => {
-    setMenuItem({
-      id: "sidebar",
-      menu: "View",
-      title: sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar",
-      key: "b",
-      modifiers: ["command"],
-      before: "Enter Full Screen",
-    });
-  }, [sidebarCollapsed]);
-  useEffect(() => onMenu((id) => id === "sidebar" && toggleSidebar()), [toggleSidebar]);
   const filesMode = sidebarPrefs.files === true;
   const setFilesMode = useCallback(
     (files: boolean) =>
@@ -792,6 +782,45 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
   const closeBody = useCallback(() => setActiveBodyRowId(null), []);
 
+  // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
+  // File before Close and in View before Enter Full Screen. Choosing one,
+  // or pressing its key wherever focus is, does what its button does.
+  const chooseFilesMode = useCallback(
+    (on: boolean) => {
+      if (!on) setShownFile(null);
+      setFilesMode(on);
+    },
+    [setFilesMode],
+  );
+  useEffect(() => {
+    for (const c of appCommands({ sidebarCollapsed, filesMode })) {
+      setMenuItem({
+        id: c.id,
+        menu: c.menu,
+        title: c.label,
+        // AppKit's way to add Shift: the key in capitals (Redo is ⌘Z as "Z"), which
+        // is what a typed ⇧⌘E matches; "e" with a Shift mask doesn't.
+        key: c.shift ? c.key.toUpperCase() : c.key,
+        modifiers: ["command"],
+        before: c.menu === "File" ? "Close" : "Enter Full Screen",
+        checked: c.checked,
+      });
+    }
+  }, [sidebarCollapsed, filesMode]);
+  const commands: Record<AppCommandId, () => void> = {
+    "new-file": () => askName(namePrompt({ kind: "file" }, bundles), createFile),
+    "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
+    "open-zip": () => void importZip(),
+    "export-zip": () => void exportZip(),
+    "toggle-sidebar": toggleSidebar,
+    "tables-mode": () => chooseFilesMode(false),
+    "files-mode": () => chooseFilesMode(true),
+  };
+  // The latest handlers, so the subscription is made once.
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
+  useEffect(() => onMenu((id) => commandsRef.current[id as AppCommandId]?.()), []);
+
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without
   // clicking. Not in release builds (__DEV__ is false there).
@@ -933,10 +962,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               }))}
               onToggleFile={toggleFile}
               filesMode={filesMode}
-              onFilesMode={(on) => {
-                if (!on) setShownFile(null);
-                setFilesMode(on);
-              }}
+              onFilesMode={chooseFilesMode}
               files={flattenFilesTree(files)}
               onToggleDir={(bundle, path, open) => setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }))}
               shownFile={shownFile}
