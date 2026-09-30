@@ -36,7 +36,7 @@ import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded
 import { appCommands, hintWithShortcut, TOOLBAR_HINTS, type AppCommandId } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
-import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
+import { archiveFileName, bundleToArchive, importSkippedText, openArchive, openFailedText } from "@workspace.sh/table-app";
 import { attachmentAt, fileText } from "@workspace.sh/table-app";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
 import { creating, namePrompt, newView } from "@workspace.sh/table-app";
@@ -403,14 +403,10 @@ export function App() {
         setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
         const first = Object.keys(entries)[0]!;
         openKey(first, entries[first]!.views[0]?.id ?? "");
-        if (opened.skipped.length > 0) {
-          const n = opened.skipped.length;
-          window.alert(
-            `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:\n\n${opened.skipped.join("\n")}`,
-          );
-        }
+        const skipped = importSkippedText(opened);
+        if (skipped) window.alert(`${skipped.heading}\n\n${skipped.body}`);
       } catch (error) {
-        window.alert(`Couldn't open ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+        window.alert(openFailedText(file.name, error));
       }
     });
     document.body.appendChild(input);

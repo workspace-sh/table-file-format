@@ -4,7 +4,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 
 import { newBundle, newTable } from "@workspace.sh/table-core";
 import type { ParsedBundle } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, openArchive } from "./tableFiles.ts";
+import { archiveFileName, bundleToArchive, importSkippedText, openArchive, openFailedText, type OpenedBundle } from "./tableFiles.ts";
 
 const NOW = new Date("2026-09-25T20:00:00Z");
 
@@ -76,3 +76,15 @@ test("what a file was read with is never written back", async () => {
   const opened = await openArchive(await bundleToArchive("reading-list", withNotes), []);
   assert.deepEqual(opened.skipped, []);
 });
+
+test("what opening says: the skipped lines under a count, nothing when it read cleanly", () => {
+  const opened = (skipped: string[]): OpenedBundle => ({ key: "crm", bundle: { path: "crm", meta: { title: "CRM" }, tables: {} }, skipped });
+  assert.equal(importSkippedText(opened([])), null);
+  assert.deepEqual(importSkippedText(opened(["deals: rows.ndjson line 3: bad"])), {
+    heading: `Opened "CRM", but skipped 1 thing it couldn't read:`,
+    body: "deals: rows.ndjson line 3: bad",
+  });
+  assert.match(importSkippedText(opened(["a", "b"]))!.heading, /skipped 2 things/);
+  assert.equal(openFailedText("x.zip", new Error("not a zip")), "Couldn't open x.zip: not a zip");
+});
+
