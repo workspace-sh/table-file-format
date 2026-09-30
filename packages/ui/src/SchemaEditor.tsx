@@ -345,9 +345,22 @@ const styles = css.create({
     fontSize: 14,
   },
   typeGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    display: "flex",
+    flexDirection: "column",
     gap: 4,
+  },
+  typeRow: {
+    display: "flex",
+    flexDirection: "row",
+    gap: 4,
+  },
+  typeSpacer: { opacity: 0, cursor: "default" },
+  // An equal share whatever the padding: the basis counts the whole box.
+  typeCell: {
+    boxSizing: "border-box",
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 0,
   },
   typeChoice: {
     paddingInline: 8,
@@ -806,6 +819,13 @@ interface AddFieldButtonProps {
 }
 
 
+/** `items` two at a time; the last pair may have one. */
+function pairsOf<T>(items: T[]): T[][] {
+  const pairs: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) pairs.push(items.slice(i, i + 2));
+  return pairs;
+}
+
 export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -924,16 +944,28 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
 
             <html.span style={styles.label}>Type</html.span>
             <html.div role="radiogroup" aria-label="Field type" style={styles.typeGrid}>
-              {choices.map((c) => (
-                <html.button
-                  key={c.value}
-                  role="radio"
-                  aria-checked={type === c.value}
-                  onClick={() => setType(c.value)}
-                  style={[styles.typeChoice, type === c.value && styles.typeChoiceOn]}
-                >
-                  {c.label}
-                </html.button>
+              {/* Two to a row, each an equal share: the same as a two-column
+                  grid, which React Native doesn't have. A lone last choice
+                  keeps its half beside an empty one. */}
+              {pairsOf(choices).map((pair) => (
+                <html.div key={pair[0]!.value} style={styles.typeRow}>
+                  {pair.map((c) => (
+                    <html.button
+                      key={c.value}
+                      role="radio"
+                      aria-checked={type === c.value}
+                      onClick={() => setType(c.value)}
+                      style={[styles.typeChoice, styles.typeCell, type === c.value && styles.typeChoiceOn]}
+                    >
+                      {c.label}
+                    </html.button>
+                  ))}
+                  {pair.length === 1 && (
+                    // The same box as a choice (its padding and border count
+                    // in the share), unseen.
+                    <html.div aria-hidden={true} style={[styles.typeChoice, styles.typeCell, styles.typeSpacer]} />
+                  )}
+                </html.div>
               ))}
             </html.div>
 
