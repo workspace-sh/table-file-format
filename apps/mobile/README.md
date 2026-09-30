@@ -1,50 +1,54 @@
 # `@workspace.sh/table-mobile`
 
-Expo **56 preview** consumer of `@workspace.sh/table-core` for iOS and Android.
+The `.table` demo for iOS and Android: Expo SDK 55 (React Native 0.83,
+React 19.2, react-strict-dom 0.0.55), drawing the same views as the web,
+macOS and Linux apps from `@workspace.sh/table-ui`.
 
-(Originally planned to target Expo 57 beta — that doesn't exist yet,
-newest published is `expo@next` = `56.0.0-preview.11`. Falling back to
-56 preview matches the user's "use the newest beta" intent and pairs
-with RN 0.85.)
+Its state is table-app's reducer, as in the other apps
+(`docs/APP-STATE.md`): `useTableApp` from `@workspace.sh/table-app/react`,
+`derive` for what's drawn, and `viewCallbacks` for the views' edits.
+What's its own:
+- **Storage:** edits and the viewer's settings are kept on the phone in
+  AsyncStorage (`store.ts`), under the keys the web uses in localStorage.
+  It works in Expo Go as well as in a development build.
+- **Questions:** native alerts. The name prompt is iOS's text alert;
+  Android has none yet.
+- **Leaving:** going to the background writes what's left at once.
 
-## Status
+## Running it
 
-Verified clean as of restructure:
-- `npm run typecheck` — passes
-- `npx expo prebuild --clean --no-install` — generates `ios/` + `android/`
-- `npx expo export --platform ios` — Metro bundles 584 modules
-  (1.7MB Hermes bytecode) without errors
+- **iOS Simulator:** `npm run mobile:ios` from the repo root. It generates
+  `ios/` (never edited by hand), builds, installs and starts Metro on 8082.
+- **Physical devices:** Leslie runs the device builds. They pass
+  `-allowProvisioningUpdates`, which agents must not use.
+- **Android:** `npm run mobile:android`, or Expo Go against
+  `npm run mobile:start`.
+- If Expo's CLI fails with "Unexpected server error: No returned query
+  result", run it offline: `EXPO_OFFLINE=1`, or `--offline` on
+  `expo start`.
+- A new native dependency (one Expo Go doesn't include) needs a rebuild,
+  not just a reload. Install it with `npx expo install` so its version
+  matches SDK 55.
 
-Not yet attempted on a real device or simulator. Once you have a
-simulator handy:
+Checks: `npm run mobile:typecheck`, and
+`npx expo export --platform ios|android` in this folder to bundle each
+platform without a device.
 
-```sh
-npm run prebuild -w @workspace.sh/table-mobile      # generates ios/ and android/
-npm run ios -w @workspace.sh/table-mobile           # or `android` / `start`
-```
+## Xcode 27
 
-The current `App.tsx` is a minimal list viewer that imports
-`@workspace.sh/table-core` and renders rows from an inline fixture. It does
-not yet use `@workspace.sh/table-ui` because that package currently uses
-web-only APIs (`react-dom/createPortal`, web-only `:focus-within`,
-`document.pointermove`). Lifting those to be cross-platform is the next
-iteration.
+- `patches/@expo+cli+…patch` backports Expo CLI's DeviceHub handling
+  (Xcode 27 has no Simulator.app), applied by `postinstall`.
+- `plugins/with-pods-deployment-floor.js` lifts every pod to the app's
+  16.0 target, since Xcode 27 rejects anything under 15.0.
 
 ## Metro monorepo notes
 
 Two non-default bits in `metro.config.js`:
 
-1. **`watchFolders`** includes the monorepo root so changes in
+1. **`watchFolders`** includes the monorepo root, so changes in
    `packages/*` live-reload.
-2. **Custom `resolveRequest`** maps `.js` extensions in relative imports
-   to `.ts`/`.tsx` source files. `packages/core` is TypeScript using
-   `.js` extensions (NodeNext convention required for `tsc` + Node ESM),
-   but Metro doesn't try `.ts` when it sees an explicit `.js` request.
-   Without the shim, every `import "./types.js"` inside the core package
-   fails to resolve at bundle time.
-
-## Reference
-
-Structure mirrors `react-strict-dom-markdown`'s `example/ios-app`. Pinned
-versions match the latest equivalent: Expo 56 preview, RN 0.85, React 19.2,
-RSD 0.0.55, `react-native-safe-area-context` 5.6.x.
+2. **A custom `resolveRequest`** (the repo root's `metro-resolver.js`,
+   shared with macOS) maps `.js` imports to their `.ts`/`.tsx` sources.
+   `packages/core` uses `.js` extensions (the NodeNext convention for
+   `tsc` and Node ESM), and Metro doesn't try `.ts` for an explicit `.js`
+   request.
