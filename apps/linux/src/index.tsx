@@ -1,7 +1,7 @@
 import { createRoot } from "@gtkx/react";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { copiesOf, loadLibrary } from "@workspace.sh/table-app/node";
+import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
 import { App } from "./App.js";
 import { fixturesDir } from "./fixtures.js";
 
@@ -17,7 +17,10 @@ const [openTable, openView] = open ? open.split("#") : [];
 // Edits save as they're made. Folders named on the command line are
 // edited where they are; the examples are copies, made once in the data
 // folder, so the repo's fixtures never change.
-const examples = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "table-demo", "examples");
+const dataHome = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", "share"), "table-demo");
+const examples = join(dataHome, "examples");
+// This viewer's own settings (display language, dates, formula syntax).
+const settings = jsonFileStore(join(dataHome, "settings.json"));
 const fixtures = fixturesDir();
 const paths = named.length > 0 ? named : fixtures ? copiesOf(fixtures, examples) : [];
 
@@ -26,4 +29,4 @@ for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
 
-createRoot().render(<App library={library} initialTable={openTable} initialView={openView} />);
+createRoot().render(<App library={library} initialTable={openTable} initialView={openView} settings={settings} />);

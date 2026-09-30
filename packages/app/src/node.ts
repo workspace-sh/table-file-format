@@ -3,12 +3,13 @@
 // two things only a Node app does. A subpath, `@workspace.sh/table-app/node`,
 // as core keeps its node:fs adapter apart.
 
-import { cpSync, existsSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 
 import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
+import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
 
@@ -45,4 +46,40 @@ export function copiesOf(from: string, to: string): string[] {
     if (!existsSync(copy)) cpSync(source, copy, { recursive: true });
     return copy;
   });
+}
+
+/**
+ * A KeyValueStore kept in one JSON file (the web keeps its in the
+ * browser): for a desktop app's personal settings, such as display
+ * choices. Read once, written on every change; a missing or unreadable
+ * file is an empty store, and a failed write only loses the setting.
+ */
+export function jsonFileStore(path: string): KeyValueStore {
+  let data: Record<string, string> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (parsed && typeof parsed === "object") data = parsed as Record<string, string>;
+  } catch {
+    // Nothing kept yet.
+  }
+  const write = () => {
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
+    } catch {
+      // Not kept past this run; still applied now.
+    }
+  };
+  return {
+    getItem: (key) => (typeof data[key] === "string" ? data[key] : null),
+    setItem: (key, value) => {
+      data = { ...data, [key]: value };
+      write();
+    },
+    removeItem: (key) => {
+      const { [key]: _gone, ...rest } = data;
+      data = rest;
+      write();
+    },
+  };
 }

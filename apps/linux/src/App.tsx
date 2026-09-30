@@ -11,6 +11,8 @@ import {
   AdwAlertDialog,
   AdwApplication,
   AdwApplicationWindow,
+  AdwDialog,
+  AdwPreferencesPage,
   AdwHeaderBar,
   AdwOverlaySplitView,
   AdwSpinner,
@@ -23,6 +25,11 @@ import { quit } from "@gtkx/react";
 import {
   attachmentPath,
   bundleOf,
+  displayChoices,
+  loadDisplay,
+  saveDisplay,
+  withDisplayChoice,
+  type KeyValueStore,
   bundleTables,
   onTable,
   rowTitleFor,
@@ -44,12 +51,14 @@ import {
   withViewPatch,
 } from "@workspace.sh/table-app";
 import { saveBundle, type Library } from "@workspace.sh/table-app/node";
-import { newId, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, textDirection, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
   BoardView,
   CalendarView,
+  DisplayControls,
   DisplaySettingsProvider,
+  type DisplaySettings,
   GalleryView,
   ListView,
   RowPage,
@@ -262,7 +271,38 @@ function SaveStatus({ state }: { state: SaveState }) {
 /** How long after the last edit its bundle is written. */
 const SAVE_DELAY_MS = 400;
 
-export function App({ library, initialTable, initialView }: { library: Library; initialTable?: string; initialView?: string }) {
+/** The system's locale, as the platform resolves it (LANG and friends on Linux). */
+function systemLocale(): string {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().locale;
+  } catch {
+    return "en-US";
+  }
+}
+
+export function App({
+  library,
+  initialTable,
+  initialView,
+  settings,
+}: {
+  library: Library;
+  initialTable?: string;
+  initialView?: string;
+  /** Where this viewer's own settings are kept; absent, they last for this run only. */
+  settings?: KeyValueStore;
+}) {
+  // This viewer's locale, date format and formula syntax: theirs, not the tables'.
+  const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const ownLocale = systemLocale();
+  // The layout reads the way the display language does (D40), the whole app
+  // included, so dialogs and menus mirror too.
+  const direction = textDirection(display.locale ?? ownLocale);
+  useEffect(() => {
+    Gtk.Widget.setDefaultDirection(direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
+  }, [direction]);
+  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const [tables, setTables] = useState(library.tables);
   const [bundles] = useState(library.bundles);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
@@ -342,14 +382,22 @@ export function App({ library, initialTable, initialView }: { library: Library; 
   return (
     <AdwApplication>
       <AdwApplicationWindow title="Tables" defaultWidth={1280} defaultHeight={800} onCloseRequest={() => quit()}>
-        <DisplaySettingsProvider value={{}}>
+        <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
           <AttachmentsProvider value={(file) => attachmentPath(tables[active], file)}>
           <AdwOverlaySplitView
             minSidebarWidth={220}
             maxSidebarWidth={300}
             sidebar={
-              <AdwToolbarView topBar={<AdwHeaderBar showEndTitleButtons={false} titleWidget={<AdwWindowTitle title="Tables" />} />}>
+              <AdwToolbarView
+                topBar={
+                  <AdwHeaderBar
+                    showEndTitleButtons={false}
+                    titleWidget={<AdwWindowTitle title="Tables" />}
+                    end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
+                  />
+                }
+              >
                 <Sidebar
                   entries={entries}
                   selected={selected}
@@ -376,6 +424,22 @@ export function App({ library, initialTable, initialView }: { library: Library; 
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {displayOpen ? (
+            <AdwDialog title="Display" contentWidth={460} onClosed={() => setDisplayOpen(false)}>
+              <AdwToolbarView topBar={<AdwHeaderBar />}>
+                <AdwPreferencesPage>
+                  <DisplayControls
+                    rows={displayChoices(display, ownLocale, "System")}
+                    onChoose={(kind, value) => {
+                      const next = withDisplayChoice(display, kind, value);
+                      setDisplay(next);
+                      if (settings) saveDisplay(settings, next);
+                    }}
+                  />
+                </AdwPreferencesPage>
+              </AdwToolbarView>
+            </AdwDialog>
+          ) : null}
           {openPage && pageTable ? (
             <RowPage
               key={`${openPage.key}#${openPage.rowId}`}

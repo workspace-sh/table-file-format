@@ -15,3 +15,4 @@ export { AddField, FieldEditor, type AddFieldProps, type FieldEditorProps } from
 export { RowPage, type RowPageProps } from "./RowPage.js";
 export { AttachmentImage } from "./AttachmentImage.js";
 export { AttachmentsProvider, type AttachmentUrl } from "@workspace.sh/table-ui/shared";
+export { DisplayControls, type DisplayControlsProps } from "./DisplayControls.js";
