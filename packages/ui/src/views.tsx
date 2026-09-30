@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
@@ -1585,7 +1586,7 @@ function EditableCell({
     if (editing) {
       const el = inputRef.current;
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
-        el.focus();
+        focusInput(el);
         const end = el.value.length;
         try {
           el.setSelectionRange(end, end);
@@ -1593,7 +1594,7 @@ function EditableCell({
           // number and date inputs have no caret to place
         }
       } else if (el && "select" in el && typeof el.select === "function") el.select();
-      else el?.focus?.();
+      else focusInput(el);
     }
   }, [editing]);
 
@@ -1966,6 +1967,11 @@ function ListCell({
         dir="auto"
         type="text"
         autoFocus
+        // RSD drops autoFocus on native, so it's focused here too (#281).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={(el: any) => {
+          if (el) focusInput(el);
+        }}
         value={text}
         placeholder="a, b, c"
         onChange={(e: { target: { value: string } }) => setText(e.target.value)}
