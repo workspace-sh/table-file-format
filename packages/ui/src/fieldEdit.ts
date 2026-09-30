@@ -296,3 +296,11 @@ export function newField(options: {
     field: { name: key, ...title, type: formulaType(compiled.expr, types), computed: { expr: compiled.stored, dialect: FORMULA_DIALECT } },
   };
 }
+
+/** The decimal places a "Decimal places…" format offers. */
+export const DECIMAL_PLACES = [0, 1, 2, 3, 4, 5, 6] as const;
+
+/** A field deprecated, or not: off is no `deprecated` at all. */
+export function deprecatedPatch(on: boolean): Partial<Field> {
+  return { deprecated: on || undefined };
+}

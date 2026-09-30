@@ -29,6 +29,8 @@ import {
   sortsPatch,
   takesValue,
   viewFieldChoices,
+  sheetPatch,
+  orderNote,
 } from "./viewEdit";
 
 export type { ViewSettingsProps } from "./viewEdit";
@@ -113,7 +115,7 @@ export function ViewSettings({
           <FieldRow label="Sheet">
             <Checkbox
               checked={view.coordinates === true}
-              onChange={(checked) => onChange({ coordinates: checked || undefined })}
+              onChange={(checked) => onChange(sheetPatch(checked))}
               style={styles.check}
             >
               Letter the columns and number the rows, so formulas can use =B7
@@ -188,9 +190,7 @@ export function ViewSettings({
       >
         + Add sort
       </html.button>
-      {view.order && view.order.length > 0 && sorts.length === 0 && (
-        <html.span style={styles.note}>Rows are in the order they were dragged into. Adding a sort replaces it.</html.span>
-      )}
+      {orderNote(view, sorts) && <html.span style={styles.note}>{orderNote(view, sorts)}</html.span>}
 
       {onArrange && personal && (
         <html.div style={styles.personal} role="status">

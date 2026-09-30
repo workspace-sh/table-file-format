@@ -10,7 +10,7 @@ import {
   printFormula,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
-import { explainFormula, formulaDraftOf, formulaStatus } from "./formulaCell";
+import { explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -26,6 +26,8 @@ import {
   requiredPatch,
   takesChoices,
   type AddableChoice,
+  DECIMAL_PLACES,
+  deprecatedPatch,
 } from "./fieldEdit";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
@@ -531,7 +533,7 @@ function FormatPicker({
       {kind === "decimal" && (
         <Select
           value={String(digits)}
-          options={[0, 1, 2, 3, 4, 5, 6].map((d) => ({
+          options={DECIMAL_PLACES.map((d) => ({
             value: String(d),
             label: `${d} decimal place${d === 1 ? "" : "s"}`,
           }))}
@@ -734,7 +736,7 @@ export function SchemaFieldEditor({
         </html.div>
 
         <html.div style={styles.checkRow}>
-          <Checkbox checked={field.deprecated === true} onChange={(checked) => onUpdate({ deprecated: checked || undefined })} />
+          <Checkbox checked={field.deprecated === true} onChange={(checked) => onUpdate(deprecatedPatch(checked))} />
           <html.span>Deprecated</html.span>
         </html.div>
 
@@ -976,7 +978,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
         dir="auto"
                   type="text"
                   value={formulaDraft}
-                  placeholder={formulaSyntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)"}
+                  placeholder={formulaPlaceholder(formulaSyntax)}
                   onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
                   onKeyDown={(e: { key: string }) => {
                     if (e.key === "Enter") submit();

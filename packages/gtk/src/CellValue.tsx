@@ -7,7 +7,7 @@ import * as Pango from "@gtkx/gi/pango";
 import { GtkBox, GtkButton, GtkLabel, GtkScrolledWindow } from "@gtkx/jsx/gtk";
 import type { ReactNode } from "react";
 import type { Field, ParsedTable } from "@workspace.sh/table-core";
-import { describeCell, useDisplaySettings, type RelationLink } from "@workspace.sh/table-ui/shared";
+import { describeCell, useDisplaySettings, type RelationLink, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { AttachmentImage } from "./AttachmentImage.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
@@ -158,7 +158,7 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
           // rather than wrapping to a fragment the row clips away.
           lines={shown.oneToken ? 1 : lines}
           xalign={xalign}
-          cssClasses={[...(shown.text === "—" ? [styles.empty] : []), ...(shown.oneToken ? [styles.tabular] : [])]}
+          cssClasses={[...(shown.text === EMPTY_TEXT ? [styles.empty] : []), ...(shown.oneToken ? [styles.tabular] : [])]}
         />
       );
   }

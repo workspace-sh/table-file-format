@@ -36,6 +36,7 @@ import {
   visibleFields,
   weekdayNamesShort,
   type ViewProps,
+  columnLabel,
 } from "@workspace.sh/table-ui/shared";
 import { useState, type ReactNode } from "react";
 import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
@@ -151,7 +152,7 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
       <GtkBox spacing={BOARD_GAP} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12} valign={Gtk.Align.START}>
         {board.keys.map((key) => {
           const members = board.groups[key] ?? [];
-          const pill = key === "(empty)" ? { label: "Empty", color: undefined } : pillFor(groupField, key);
+          const pill = key === "(empty)" ? { label: columnLabel(groupField, key), color: undefined } : pillFor(groupField, key);
           return (
             <GtkBox
               key={key}
