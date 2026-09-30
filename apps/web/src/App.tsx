@@ -31,7 +31,7 @@ import {
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
-import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
+import { addressTarget, afterReset, applyTarget, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
 import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, NO_TABLE, withFileUnfolded } from "@workspace.sh/table-app";
 import { exportFailedText } from "@workspace.sh/table-app";
 import { viewerLocale, viewerOrder, withFileToggled } from "@workspace.sh/table-app";
@@ -577,13 +577,16 @@ export function App() {
       const target = addressTarget(addr, tables, bundles, bundleOf(activeTablePath));
       // Not here: visible-broken at the cell level already; nothing more to do.
       if (!target) return;
-      setActiveTablePath(target.key);
-      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
-      // A named row's document opens as a quick "row detail" surface; a row
-      // without one just switches table (scroll-to is deferred).
-      setActiveBodyRowId(target.openBody);
+      // table-app's one rule for following an address: a named row's document
+      // opens as a quick "row detail" surface; a row without one just switches
+      // table (scroll-to is deferred); the view shows, not a file.
+      const applied = applyTarget(target, { viewIds: activeViewIds });
+      setActiveTablePath(applied.activeKey);
+      setActiveViewIds(applied.viewIds);
+      setActiveBodyRowId(applied.openBody);
+      if (applied.mode === "tables") setShownFile(null);
     },
-    [tables, bundles, activeTablePath],
+    [tables, bundles, activeTablePath, activeViewIds],
   );
 
   // Relation click → parse + apply.

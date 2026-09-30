@@ -90,6 +90,7 @@ import {
   appCommands,
   NO_TABLE,
   exportFailedText,
+  applyTarget,
   importSkippedText,
   openFailedText,
   viewerLocale,
@@ -764,18 +765,27 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const here = viewAddress(activeTablePath, shownViewId);
   useEffect(() => setHistory((h) => visited(h, here)), [here]);
   const live = useCallback((address: string) => addressLive(address, tables, bundles), [tables, bundles]);
+  // Following an address (a relation, Back or Forward): table-app's one rule.
+  const follow = useCallback(
+    (target: { key: string; viewId?: string; openBody: string | null }) => {
+      const applied = applyTarget(target, { viewIds: activeViewIds });
+      setActiveTablePath(applied.activeKey);
+      setActiveViewIds(applied.viewIds);
+      setActiveBodyRowId(applied.openBody);
+      if (applied.mode === "tables") setShownFile(null);
+    },
+    [activeViewIds],
+  );
   const go = useCallback(
     (step: typeof goBack) => {
       const moved = step(history, live);
       const target = moved && addressTarget(moved.address, tables, bundles, "");
       if (!moved || !target) return;
       setHistory(moved.history);
-      setActiveTablePath(target.key);
-      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
-      setActiveBodyRowId(null);
-      setShownFile(null);
+      // A history entry names no row, so any open document closes.
+      follow(target);
     },
-    [history, live, tables, bundles],
+    [history, live, tables, bundles, follow],
   );
 
   const setActiveViewId = useCallback(
@@ -795,11 +805,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     (address: string) => {
       const target = addressTarget(address, tables, bundles, bundleOf(activeTablePath));
       if (!target) return;
-      setActiveTablePath(target.key);
-      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
-      setActiveBodyRowId(target.openBody);
+      follow(target);
     },
-    [tables, bundles, activeTablePath],
+    [tables, bundles, activeTablePath, follow],
   );
 
   const updateRow = useCallback(
