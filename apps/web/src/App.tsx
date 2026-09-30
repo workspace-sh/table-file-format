@@ -32,6 +32,7 @@ import {
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
+import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, withFileUnfolded } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -73,7 +74,6 @@ import {
   type Arrangements,
 } from "@workspace.sh/table-app";
 
-const DEFAULT_TABLE_PATH = "projects/projects";
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 const styles = css.create({
@@ -312,15 +312,6 @@ const styles = css.create({
 });
 
 /** The first view of each table, as the demo opens it. */
-function firstViews(tables: Record<string, ParsedTable>): Record<string, string> {
-  return Object.fromEntries(Object.entries(tables).map(([key, t]) => [key, t.views[0]?.id ?? ""]));
-}
-
-/** The table to show first: the default one when it exists, otherwise any. */
-function firstTablePath(tables: Record<string, ParsedTable>): string {
-  return tables[DEFAULT_TABLE_PATH] ? DEFAULT_TABLE_PATH : Object.keys(tables)[0]!;
-}
-
 
 export function App() {
   // Edits survive a reload (#86): what was saved, or the fixtures when
@@ -340,7 +331,7 @@ export function App() {
     const key = addr ? keyForAddress(addr, initial.tables, initial.bundles, "") : null;
     return key ? { key, viewId: addr!.viewId } : null;
   });
-  const [activeTablePath, setActiveTablePath] = useState<string>(() => start?.key ?? firstTablePath(tables));
+  const [activeTablePath, setActiveTablePath] = useState<string>(() => start?.key ?? firstTableKey(tables) ?? DEFAULT_TABLE_KEY);
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => ({
     ...firstViews(tables),
     ...(start?.viewId ? { [start.key]: start.viewId } : {}),
@@ -433,8 +424,9 @@ export function App() {
     const after = afterReset(tables, bundles, { tables: initialTables, bundles: initialBundles }, []);
     setTables(after.tables);
     setBundles(after.bundles);
-    setActiveTablePath(firstTablePath(initialTables));
+    setActiveTablePath(firstTableKey(initialTables) ?? DEFAULT_TABLE_KEY);
     setActiveViewIds(firstViews(initialTables));
+    setShownFile(null);
     setSearchQuery("");
     setActiveBodyRowId(null);
   }, [tables, bundles]);
@@ -503,8 +495,8 @@ export function App() {
   // you are. Folding it again afterwards is still yours to do.
   const activeBundle = bundleOf(activeTablePath);
   useEffect(() => {
-    const folded = sidebarPrefs.foldedFiles ?? [];
-    if (folded.includes(activeBundle)) updateSidebar({ foldedFiles: folded.filter((b) => b !== activeBundle) });
+    const unfolded = withFileUnfolded(sidebarPrefs, activeBundle);
+    if (unfolded !== sidebarPrefs) updateSidebar({ foldedFiles: unfolded.foldedFiles });
     // Only when the table on screen changes, not whenever a file is folded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBundle]);
