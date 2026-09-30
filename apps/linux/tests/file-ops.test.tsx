@@ -46,6 +46,19 @@ describe("the File menu on Linux", () => {
     await openExamples({ chooseFolder: async () => crm });
     await run("open-folder");
     expect(await screen.findByText("CRM (crm.table) › Companies")).toBeDefined();
+    // An edit to it is written where it is, not beside the examples.
+    await userEvent.click(await screen.findByText("Northwind Traders"));
+    const entry = (await screen.findByDisplayValue("Northwind Traders")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Northwind Ltd");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => {
+      const companies = await parseTable(join(crm, "tables", "companies"));
+      expect(companies.rows.some((r) => r.name === "Northwind Ltd")).toBe(true);
+    });
+    // The examples' own crm.table, which wasn't the one opened, is as it was.
+    const example = await parseTable(join(examples, "crm.table", "tables", "companies"));
+    expect(example.rows.some((r) => r.name === "Northwind Ltd")).toBe(false);
   });
 
   it("Open .table.zip… opens an archive as a new .table beside the examples", async () => {
