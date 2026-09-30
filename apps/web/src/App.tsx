@@ -32,6 +32,7 @@ import {
 } from "@workspace.sh/table-ui";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
+import { addressTarget, savingForEveryone } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
 import { attachmentAt, fileText } from "@workspace.sh/table-app";
@@ -69,7 +70,6 @@ import {
   loadArrangements,
   reset as resetArrangement,
   saveArrangements,
-  savedPatch,
   type Arrangements,
 } from "@workspace.sh/table-app";
 
@@ -567,26 +567,14 @@ export function App() {
     (addr: Address) => {
       // A relation names a table alone, within its own bundle (D37); the
       // URL uses the spec's `crm.table#table=deals` form.
-      const key = keyForAddress(addr, tables, bundles, bundleOf(activeTablePath));
+      const target = addressTarget(addr, tables, bundles, bundleOf(activeTablePath));
       // Not here: visible-broken at the cell level already; nothing more to do.
-      if (!key) return;
-      setActiveTablePath(key);
-      if (addr.viewId) {
-        setActiveViewIds((prev) => ({ ...prev, [key]: addr.viewId! }));
-      }
-      // If the row has a body and the target table tracks bodies, open
-      // the body editor as a quick "row detail" surface. Tables without
-      // bodies just switch + scroll-to (deferred).
-      if (addr.rowId) {
-        const target = tables[key];
-        if (target?.bodies?.[addr.rowId]) {
-          setActiveBodyRowId(addr.rowId);
-        } else {
-          setActiveBodyRowId(null);
-        }
-      } else {
-        setActiveBodyRowId(null);
-      }
+      if (!target) return;
+      setActiveTablePath(target.key);
+      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
+      // A named row's document opens as a quick "row detail" surface; a row
+      // without one just switches table (scroll-to is deferred).
+      setActiveBodyRowId(target.openBody);
     },
     [tables, bundles, activeTablePath],
   );
@@ -919,8 +907,9 @@ export function App() {
             onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
             personal={isArranged(personal)}
             onSaveForEveryone={() => {
-              updateActiveView(savedPatch(personal));
-              setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
+              const saving = savingForEveryone(arrangements, activeTablePath, view.id);
+              updateActiveView(saving.patch);
+              setArrangements(saving.arrangements);
             }}
             onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
             onDelete={table.views.length > 1 ? deleteView : undefined}
