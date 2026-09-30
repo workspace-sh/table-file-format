@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { Field, TableSchema } from "@workspace.sh/table-core";
-import { fieldHint, fieldHintText } from "./fieldHint";
+import { fieldHint, fieldHintText } from "./fieldHintFacts";
 
 const amount: Field = { name: "amount", title: "Amount", type: "number", format: "currency:GBP", description: "Money in is positive.", constraints: { required: true } };
 const total: Field = { name: "total", type: "number", computed: { expr: "(* amount 2)", dialect: "table-expr-v1" } };

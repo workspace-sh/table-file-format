@@ -8,7 +8,7 @@ import { html, css } from "react-strict-dom";
 import type { Field, TableSchema } from "@workspace.sh/table-core";
 
 import { useDisplaySettings } from "./DisplaySettings";
-import { fieldHint } from "./fieldHint";
+import { fieldHint } from "./fieldHintFacts";
 import { Tooltip } from "./internal/Tooltip";
 import { useHoverHint } from "./internal/useHoverHint";
 
