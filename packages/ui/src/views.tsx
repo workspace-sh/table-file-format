@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
-import { placeCells } from "./sheets";
 import {
   bodyExcerpt,
   describeCell,
@@ -26,6 +25,7 @@ import {
 } from "./display";
 import type { ViewProps } from "./viewProps";
 import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind } from "./cellEdit";
+import { formulaInputCells, viewGrid } from "./formulaCell";
 import {
   BOARD_GAP,
   boardColumns,
@@ -54,9 +54,7 @@ import {
   completeSeconds,
   effectiveAlign,
   enumOptions,
-  formulaRefs,
   columnLetter,
-  parseExpr,
 } from "@workspace.sh/table-core";
 import type {
   SheetRef,
@@ -2106,13 +2104,6 @@ export function TableView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cellRefs = useRef<Record<string, any>>({});
   const openFormulaField = formulaCell ? fieldMap.get(formulaCell.name) : undefined;
-  // The cells the open formula reads: in its own row, or another (D34).
-  const openFormulaRefs = (() => {
-    const expr = openFormulaField?.computed?.expr;
-    if (!expr) return [];
-    const r = parseExpr(expr);
-    return r.ok ? formulaRefs(r.expr) : [];
-  })();
   // A sheet (SPEC section 4, `coordinates`): lettered columns, numbered
   // rows, in this view's order, and formulas typed and shown as =B7.
   const coords = view.coordinates === true;
@@ -2121,20 +2112,11 @@ export function TableView({
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
-  const grid = coords
-    ? sheet
-      ? { columns: fields, rows: sheet.order, sheet: view.id, sheets: sheet.sheets }
-      : { columns: fields, rows: displayed.map((d) => d.row.id) }
-    : undefined;
+  const grid = viewGrid(view, fields, displayed.map((d) => d.row.id), sheet);
   // The cells the open formula reads, outlined: by row id, this row, or by place (D41).
-  const inputCells = new Set<string>();
-  if (formulaCell) {
-    for (const r of openFormulaRefs) {
-      if (r.place) {
-        if (sheet) for (const c of placeCells(r, view.id, formulaCell.rowId, sheet.order, fields)) inputCells.add(`${c.rowId}\u0000${c.field}`);
-      } else inputCells.add(`${r.rowId ?? formulaCell.rowId}\u0000${r.field}`);
-    }
-  }
+  const inputCells = formulaCell
+    ? formulaInputCells(openFormulaField, formulaCell.rowId, view, fields, sheet?.order)
+    : new Set<string>();
   const canAddField = !!onAddField;
   // A new field lands at the end of the row, often past the right edge:
   // bring its header into view once it has rendered.

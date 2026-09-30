@@ -26,6 +26,8 @@ import { columnLetter, effectiveAlign, type Field, type FieldAlignment, type Row
 import {
   canInsertAt,
   DEFAULT_ROW_HEIGHT,
+  formulaInputCells,
+  viewGrid,
   columnWidths,
   fieldsByName,
   groupedRows,
@@ -39,6 +41,7 @@ import {
 import { useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
 import { EditableCell } from "./EditableCell.js";
+import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
@@ -152,13 +155,18 @@ export function TableView({
   bodies,
   relatedTables,
   onUpdateRow,
+  onUpdateField,
   onAddRow,
   onDeleteRow,
   onInsertRow,
   onOpenBody,
   onOpenRelation,
   sheet,
+  allRows,
+  tableKey,
 }: ViewProps) {
+  // A formula cell opened to see how it was worked out (FormulaPanel).
+  const [openFormula, setOpenFormula] = useState<{ rowId: string; name: string } | null>(null);
   // The row just added from "New Row": its first cell opens for typing.
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const fields = visibleFields(view, schema);
@@ -211,6 +219,12 @@ export function TableView({
   );
 
   const editable = !!onUpdateRow;
+  // Typed and shown against the grid as saved, so =C3 means the same row
+  // whatever this reader's sort or search (D41).
+  const grid = viewGrid(view, fields, displayed.map((d) => d.row.id), sheet);
+  const openField = openFormula ? fieldMap.get(openFormula.name) : undefined;
+  // While a formula is open: its column tinted, the cells it read outlined.
+  const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
 
   const body = displayed.map(({ row, starts }, index) => (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
@@ -235,8 +249,26 @@ export function TableView({
           const field = fieldMap.get(name);
           const xalign = xalignOf(effectiveAlign(field));
           return (
-            <Cell key={name} width={colWidth(name)} height={rowHeight}>
-              <GtkBox spacing={6} hexpand valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER} marginTop={lines > 1 ? 10 : 0}>
+            <Cell
+              key={name}
+              width={colWidth(name)}
+              height={rowHeight}
+              classes={[
+                ...(openFormula?.name === name ? [styles.formulaColumn] : []),
+                ...(inputCells.has(`${row.id}\u0000${name}`) ? [styles.formulaInput] : []),
+              ]}
+            >
+              <GtkBox
+                spacing={6}
+                hexpand
+                valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER}
+                marginTop={lines > 1 ? 10 : 0}
+                // A formula cell opens how it was worked out; its value isn't typed.
+                controllers={
+                  field?.computed ? <GtkGestureClick onReleased={() => setOpenFormula({ rowId: row.id, name })} /> : undefined
+                }
+                tooltipText={field?.computed ? "How This Was Worked Out" : undefined}
+              >
                 {editable ? (
                   <EditableCell
                     field={field}
@@ -332,6 +364,24 @@ export function TableView({
         {addRow}
         {footer}
       </GtkBox>
+      {openFormula && openField ? (() => {
+        const openRow = rows.find((r) => r.id === openFormula.rowId);
+        if (!openRow) return null;
+        return (
+          <FormulaPanel
+            key={`${openFormula.rowId}\u0000${openFormula.name}`}
+            field={openField}
+            row={openRow}
+            fields={schema.fields}
+            relatedTables={relatedTables}
+            onSave={onUpdateField ? (patch) => onUpdateField(openFormula.name, patch) : undefined}
+            onClose={() => setOpenFormula(null)}
+            grid={grid ? { ...grid, here: openFormula.rowId } : undefined}
+            allRows={allRows}
+            computeOptions={{ tables: relatedTables, self: tableKey }}
+          />
+        );
+      })() : null}
     </GtkScrolledWindow>
   );
 }
