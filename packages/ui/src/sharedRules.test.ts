@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { Field, View } from "@workspace.sh/table-core";
 import { columnLabel } from "./cards";
-import { EMPTY_GROUP, EMPTY_TEXT, describeCell } from "./display";
+import { EMPTY_GROUP, EMPTY_TEXT, describeCell, resizedColumnWidth, resizedRowHeight } from "./display";
 import { DECIMAL_PLACES, deprecatedPatch } from "./fieldEdit";
 import { formulaPlaceholder } from "./formulaCell";
 import { rowNumber } from "./sheets";
@@ -52,3 +52,12 @@ test("decimal places run 0 to 6; the formula example is in the reader's syntax",
   assert.equal(formulaPlaceholder("excel"), "=round(budget / 12, 0)");
   assert.equal(formulaPlaceholder(undefined), "=round(budget / 12, 0)");
 });
+
+test("a dragged column keeps whole pixels, never under 60; rows stay between 36 and 240", () => {
+  assert.equal(resizedColumnWidth(180, 20.4), 200);
+  assert.equal(resizedColumnWidth(180, -500), 60);
+  assert.equal(resizedRowHeight(44, 30), 74);
+  assert.equal(resizedRowHeight(44, -100), 36);
+  assert.equal(resizedRowHeight(44, 1000), 240);
+});
+

@@ -290,3 +290,14 @@ export const EMPTY_TEXT = "—";
 
 /** A group, or board column, of rows with no value. */
 export const EMPTY_GROUP = "Empty";
+
+/** A column dragged `delta` wider (narrower when negative) from `size`: whole pixels, never below MIN_RESIZED_COLUMN_WIDTH. */
+export function resizedColumnWidth(size: number, delta: number): number {
+  return Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(size + delta));
+}
+
+/** Rows dragged `delta` taller from `size`: whole pixels, between MIN_ROW_HEIGHT and MAX_ROW_HEIGHT. */
+export function resizedRowHeight(size: number, delta: number): number {
+  return Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, Math.round(size + delta)));
+}
+
