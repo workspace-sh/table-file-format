@@ -98,3 +98,17 @@ export function saveDisplay(store: KeyValueStore | null, display: DisplaySetting
     // Not kept past a reload; still applied now.
   }
 }
+
+/** The viewer's language: the one they chose, else the platform's (the browser's, the system's). */
+export function viewerLocale(display: DisplaySettings, platformLocale: string | undefined): string | undefined {
+  return display.locale ?? platformLocale;
+}
+
+/**
+ * How the viewer's own sorts order text: their language's collation, with
+ * numbers in number order (D41: saved sorts use the fixed saved text order
+ * instead, the same on every device).
+ */
+export function viewerOrder(locale: string | undefined): (a: string, b: string) => number {
+  return new Intl.Collator(locale || undefined, { numeric: true }).compare;
+}

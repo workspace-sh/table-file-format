@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, withDisplayChoice, LOCALES } from "./displaySettings.ts";
+import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, withDisplayChoice, LOCALES, viewerLocale, viewerOrder } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 function memory(initial: Record<string, string> = {}): KeyValueStore {
@@ -68,4 +68,17 @@ test("withDisplayChoice: a default is stored as absent", () => {
     dateFormat: "short",
     formulaSyntax: "stored",
   });
+});
+
+test("the viewer's language: their choice, else the platform's", () => {
+  assert.equal(viewerLocale({ locale: "fr-FR" }, "en-GB"), "fr-FR");
+  assert.equal(viewerLocale({}, "en-GB"), "en-GB");
+  assert.equal(viewerLocale({}, undefined), undefined);
+});
+
+test("the viewer's own sorts put numbers in number order and follow their language", () => {
+  const sorted = (locale: string | undefined, xs: string[]) => [...xs].sort(viewerOrder(locale));
+  assert.deepEqual(sorted("en", ["item 10", "item 9", "item 1"]), ["item 1", "item 9", "item 10"]);
+  assert.deepEqual(sorted("sv", ["ö", "z", "a"]), ["a", "z", "ö"]);
+  assert.deepEqual(sorted("de", ["ö", "z", "a"]), ["a", "ö", "z"]);
 });
