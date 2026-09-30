@@ -72,36 +72,38 @@ export function stringFormatKind(
   }
 }
 
+/**
+ * An Intl formatter, or null when the platform doesn't have it (Hermes, for
+ * one, has no Intl.RelativeTimeFormat) or refuses the options (an unknown
+ * currency code or locale). A missing platform piece must never blank an
+ * app: each use falls back to a plainer form.
+ */
+export function tryIntl<T>(make: () => T): T | null {
+  try {
+    return make();
+  } catch {
+    return null;
+  }
+}
+
 function formatNumber(format: string, value: unknown, locale: string | undefined): string {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
+  // The format asked for, else the locale's plain number, else the bare number.
+  const shown = (options?: Intl.NumberFormatOptions): string =>
+    tryIntl(() => new Intl.NumberFormat(locale, options).format(n)) ??
+    tryIntl(() => new Intl.NumberFormat(locale).format(n)) ??
+    String(n);
 
-  if (format === "integer") {
-    return new Intl.NumberFormat(locale, {
-      maximumFractionDigits: 0,
-    }).format(n);
-  }
-  if (format === "percent") {
-    return new Intl.NumberFormat(locale, { style: "percent" }).format(n);
-  }
+  if (format === "integer") return shown({ maximumFractionDigits: 0 });
+  if (format === "percent") return shown({ style: "percent" });
   if (format.startsWith("decimal:")) {
     const digits = clampDigits(format.slice("decimal:".length));
-    return new Intl.NumberFormat(locale, {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    }).format(n);
+    return shown({ minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
   if (format.startsWith("currency:")) {
-    const code = format.slice("currency:".length).toUpperCase();
-    try {
-      return new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: code,
-      }).format(n);
-    } catch {
-      // Unknown ISO 4217 code → plain number rather than throwing.
-      return new Intl.NumberFormat(locale).format(n);
-    }
+    // An unknown ISO 4217 code shows the plain number rather than throwing.
+    return shown({ style: "currency", currency: format.slice("currency:".length).toUpperCase() });
   }
   if (format.startsWith("duration:")) {
     // Only `duration:seconds` defined so far — value is a second count.
@@ -109,7 +111,7 @@ function formatNumber(format: string, value: unknown, locale: string | undefined
       return formatDurationSeconds(n);
     }
   }
-  return new Intl.NumberFormat(locale).format(n);
+  return shown();
 }
 
 function formatDate(format: string, value: unknown, { locale, now }: DisplayOptions): string {
@@ -118,27 +120,21 @@ function formatDate(format: string, value: unknown, { locale, now }: DisplayOpti
   const d = new Date(raw.length === 10 ? raw + "T00:00:00" : raw);
   if (Number.isNaN(d.getTime())) return raw;
 
+  // Where the platform can't say it the asked-for way, the plain date.
+  const plain = raw.slice(0, 10);
   switch (format) {
     case "iso":
-      return raw.slice(0, 10);
+      return plain;
     case "short":
-      return d.toLocaleDateString(locale, {
-        year: "2-digit",
-        month: "numeric",
-        day: "numeric",
-      });
+      return tryIntl(() => d.toLocaleDateString(locale, { year: "2-digit", month: "numeric", day: "numeric" })) ?? plain;
     case "long":
-      return d.toLocaleDateString(locale, {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      return tryIntl(() => d.toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" })) ?? plain;
     case "weekday":
-      return d.toLocaleDateString(locale, { weekday: "long" });
+      return tryIntl(() => d.toLocaleDateString(locale, { weekday: "long" })) ?? plain;
     case "relative":
-      return formatRelativeDate(d, locale, now ?? new Date());
+      return formatRelativeDate(d, locale, now ?? new Date()) ?? plain;
     default:
-      return raw.slice(0, 10);
+      return plain;
   }
 }
 
@@ -165,13 +161,15 @@ function formatDurationSeconds(totalSeconds: number): string {
 /**
  * Coarse relative date — "today", "yesterday", "3 days ago", "in 2
  * weeks". Uses `Intl.RelativeTimeFormat` for the phrasing so it
- * localises; day-granularity to match the format's `date` type.
+ * localises; day-granularity to match the format's `date` type. Null where
+ * the platform has no RelativeTimeFormat.
  */
-function formatRelativeDate(d: Date, locale: string | undefined, now: Date): string {
+function formatRelativeDate(d: Date, locale: string | undefined, now: Date): string | null {
   const startOf = (x: Date) =>
     Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
   const days = Math.round((startOf(d) - startOf(now)) / 86_400_000);
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const rtf = tryIntl(() => new Intl.RelativeTimeFormat(locale, { numeric: "auto" }));
+  if (!rtf) return null;
   if (Math.abs(days) >= 365) return rtf.format(Math.trunc(days / 365), "year");
   if (Math.abs(days) >= 30) return rtf.format(Math.trunc(days / 30), "month");
   if (Math.abs(days) >= 7) return rtf.format(Math.trunc(days / 7), "week");
