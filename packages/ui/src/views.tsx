@@ -115,6 +115,15 @@ const TOUCH_DRAG_LONGPRESS_MS = 300;
 // because StyleX compiles css.create from values in this file only.
 const CELL_LINE_HEIGHT = 20;
 
+/**
+ * Whether the browser's window size can be read, to keep a popover on
+ * screen. React Native has a `window` (its global) without innerWidth, so
+ * a popover there keeps its unclamped position rather than NaN.
+ */
+function hasWindowSize(): boolean {
+  return typeof window !== "undefined" && typeof window.innerWidth === "number";
+}
+
 const styles = css.create({
   // Table
   tableWithAdd: {
@@ -1785,7 +1794,7 @@ function EditableCell({
           // Kept inside the window: a cell in the last column is near its edge.
           styles.cellProblemAt(
             problemAt.top + problemAt.height + 6,
-            typeof window === "undefined" ? problemAt.left - 8 : Math.max(8, Math.min(problemAt.left - 8, window.innerWidth - 348)),
+            !hasWindowSize() ? problemAt.left - 8 : Math.max(8, Math.min(problemAt.left - 8, window.innerWidth - 348)),
           ),
           problem.confirmable ? styles.cellProblemAsk : styles.cellProblemRefused,
         ]}
@@ -1938,7 +1947,7 @@ function ListCell({
             styles.rowMenu,
             styles.rowMenuAt(
               (rect?.top ?? 0) + (rect?.height ?? 0) + 4,
-              typeof window === "undefined" ? (rect?.left ?? 0) : Math.min(rect?.left ?? 0, window.innerWidth - 200),
+              !hasWindowSize() ? (rect?.left ?? 0) : Math.min(rect?.left ?? 0, window.innerWidth - 200),
             ),
           ]}
         >
@@ -2094,7 +2103,8 @@ export function TableView({
     setRowMenu({ rowId, x: e.clientX, y: e.clientY });
   };
   useEffect(() => {
-    if (!rowMenu || typeof window === "undefined") return;
+    // React Native has a `window` (its global), but no addEventListener.
+    if (!rowMenu || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setRowMenu(null);
     };
@@ -2359,8 +2369,8 @@ export function TableView({
                 // The menu is fixed to the window: page coordinates less the scroll.
                 setTotalsMenu({
                   name,
-                  x: e.pageX - (typeof window === "undefined" ? 0 : window.scrollX),
-                  y: e.pageY - (typeof window === "undefined" ? 0 : window.scrollY),
+                  x: e.pageX - (!hasWindowSize() ? 0 : window.scrollX),
+                  y: e.pageY - (!hasWindowSize() ? 0 : window.scrollY),
                 })
             : undefined
         }
@@ -2802,8 +2812,8 @@ export function TableView({
               style={[
                 styles.rowMenu,
                 styles.rowMenuAt(
-                  typeof window === "undefined" ? totalsMenu.y : Math.min(totalsMenu.y, window.innerHeight - 40 * (kinds.length + 1)),
-                  typeof window === "undefined" ? totalsMenu.x : Math.min(totalsMenu.x, window.innerWidth - 190),
+                  !hasWindowSize() ? totalsMenu.y : Math.min(totalsMenu.y, window.innerHeight - 40 * (kinds.length + 1)),
+                  !hasWindowSize() ? totalsMenu.x : Math.min(totalsMenu.x, window.innerWidth - 190),
                 ),
               ]}
             >
@@ -2827,8 +2837,8 @@ export function TableView({
             style={[
               styles.rowMenu,
               styles.rowMenuAt(
-                typeof window === "undefined" ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 180),
-                typeof window === "undefined" ? rowMenu.x : Math.min(rowMenu.x, window.innerWidth - 190),
+                !hasWindowSize() ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 180),
+                !hasWindowSize() ? rowMenu.x : Math.min(rowMenu.x, window.innerWidth - 190),
               ),
             ]}
           >
