@@ -81,7 +81,7 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
-import { copyText, menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, menuTitles, onMenu, onQuit, postKey, pressAlertButton, setUnsaved, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -423,7 +423,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // Edited bundles are written a moment after the last edit: an opened
   // folder's back to the folder (folders.ts), the rest to this Mac's store.
   const writeRef = useRef<TableAppAdapter["write"]>(async () => {});
-  const { state, dispatch, display: shownDisplay } = useTableApp(
+  const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: bundleMetas };
       const saved = loadSaved(store);
@@ -444,7 +444,32 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const stateRef = useRef(state);
   stateRef.current = state;
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
-  const folders = useFolders({ store, bundles, paths: folderPaths, onProblem: showProblem });
+  const folders = useFolders({ store, bundles, paths: folderPaths });
+  // A quit that couldn't write: the next quits whatever happens, until a write succeeds.
+  const quitFailed = useRef(false);
+  // A write that failed: said once, with Try Again, which writes what's left now.
+  useEffect(() => {
+    if (saving.kind === "saved") quitFailed.current = false;
+    if (saving.kind !== "failed") return;
+    Alert.alert("Couldn't save", saving.message, [
+      { text: "OK", style: "cancel" },
+      { text: "Try Again", onPress: () => void flush() },
+    ]);
+  }, [saving, flush]);
+  // macOS may end an app at once (sudden termination) unless it says it has
+  // unsaved work; while anything is left to write, it says so.
+  useEffect(() => setUnsaved(state.dirty.length > 0), [state.dirty]);
+  // Quitting writes what's left first. If that fails, the app stays open
+  // and says so; quitting again tries once more, then quits whatever happens.
+  useEffect(
+    () =>
+      onQuit(async () => {
+        if ((await flush()) || quitFailed.current) return true;
+        quitFailed.current = true;
+        return false;
+      }),
+    [flush],
+  );
   // The fixtures themselves are never saved, so an untouched app keeps
   // following them as they change; an opened folder's tables live in the folder.
   writeRef.current = async (edited, all, metas) => {
@@ -765,6 +790,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         return `posted ${modifiers.join("+")}+${characters}`;
       },
       menuTitles,
+      // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.
+      pressAlert: (title: string) => {
+        void pressAlertButton(title).then((pressed) => ((globalThis as { __pressed?: unknown }).__pressed = pressed));
+        return `pressing ${title}`;
+      },
       history: () => stateRef.current.history,
       state: () => stateRef.current,
       // Any of table-app's actions, as the app's own handlers dispatch them.

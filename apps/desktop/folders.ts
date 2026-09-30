@@ -31,7 +31,7 @@ export async function reopenFolders(store: KeyValueStore | null, held: Iterable<
 export interface Folders {
   /** Read these folders, named apart from what's held; the app takes in what comes back. */
   open: (paths: string[]) => Promise<Library>;
-  /** Write these opened folders' bundles, one write at a time per folder. Rejects with the first that couldn't be written. */
+  /** Write these opened folders' bundles, one write at a time per folder. Rejects with the first that couldn't be written, named. */
   write: (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void>;
 }
 
@@ -43,14 +43,11 @@ export function useFolders({
   store,
   bundles,
   paths,
-  onProblem,
 }: {
   store: KeyValueStore | null;
   bundles: Record<string, BundleMeta>;
   /** Each opened folder's path, by bundle key. */
   paths: Record<string, string>;
-  /** A folder that couldn't be written, and why. */
-  onProblem: (title: string, message: string) => void;
 }): Folders {
   // The latest of each, for writes and opens that finish later.
   const latest = useRef({ bundles, paths });
@@ -71,15 +68,15 @@ export function useFolders({
             .catch(() => {})
             .then(() => writeLibraryBundle(desktopFs, library, tables, metas, key))
             .catch((error: unknown) => {
-              onProblem(`Couldn't save ${key}.table`, error instanceof Error ? error.message : String(error));
-              throw error;
+              // Shown by the app, from useTableApp's `saving`, with Try Again.
+              throw new Error(`${key}.table: ${error instanceof Error ? error.message : String(error)}`);
             });
           queues.current[key] = next;
           return next;
         }),
       );
     },
-    [onProblem],
+    [],
   );
 
   useEffect(() => {

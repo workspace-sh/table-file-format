@@ -9,11 +9,19 @@
 // if it's there already. modifiers: "command", "shift", "option",
 // "control". `checked` shows it ticked; `enabled` false greys it.
 // copyText(text): put text on the clipboard.
+// Quitting: the app delegate's applicationShouldTerminate posts
+// TableDesktopShouldTerminate; while JS listens, this sends it a "quit"
+// event and the app waits (NSTerminateLater) until replyToQuit(yes) quits
+// or replyToQuit(no) stays. setUnsaved(yes) turns off sudden and automatic
+// termination while edits are left to write (Info.plist allows both), so
+// macOS asks before ending the app.
 // Development only: postKey(characters, keyCode, modifiers) brings the app
 // forward (a typed key implies it's frontmost) and posts a key press to its
 // own event queue, so it goes where a typed one would; titles(menu)
 // resolves with a menu's item titles; setWindowWidth(width) resizes the
-// main window, as dragging its edge would.
+// main window, as dragging its edge would; pressAlertButton(title) clicks
+// the button titled so in a sheet shown on a window (an alert), resolving
+// whether there was one.
 
 #import <AppKit/AppKit.h>
 #import <React/RCTBridgeModule.h>
@@ -26,6 +34,7 @@
   NSMutableDictionary<NSString *, NSMenuItem *> *_items;
   NSMutableSet<NSString *> *_disabled;
   BOOL _observed;
+  BOOL _unsaved;
 }
 
 RCT_EXPORT_MODULE();
@@ -42,17 +51,74 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"menu" ];
+  return @[ @"menu", @"quit" ];
 }
 
 - (void)startObserving
 {
   _observed = YES;
+  [[NSNotificationCenter defaultCenter] addObserver:self
+                                           selector:@selector(shouldTerminate:)
+                                               name:@"TableDesktopShouldTerminate"
+                                             object:nil];
 }
 
 - (void)stopObserving
 {
   _observed = NO;
+  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopShouldTerminate" object:nil];
+}
+
+- (void)shouldTerminate:(NSNotification *)notification
+{
+  if (!_observed) return;
+  ((NSMutableDictionary *)notification.userInfo)[@"handled"] = @YES;
+  [self sendEventWithName:@"quit" body:@{}];
+}
+
+static NSButton *buttonTitled(NSView *view, NSString *title)
+{
+  if ([view isKindOfClass:NSButton.class] && [((NSButton *)view).title isEqualToString:title]) return (NSButton *)view;
+  for (NSView *sub in view.subviews) {
+    NSButton *found = buttonTitled(sub, title);
+    if (found != nil) return found;
+  }
+  return nil;
+}
+
+RCT_EXPORT_METHOD(pressAlertButton:(NSString *)title
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  for (NSWindow *window in NSApp.windows) {
+    NSWindow *sheet = window.attachedSheet;
+    NSButton *button = sheet ? buttonTitled(sheet.contentView, title) : nil;
+    if (button != nil) {
+      [button performClick:nil];
+      resolve(@YES);
+      return;
+    }
+  }
+  resolve(@NO);
+}
+
+RCT_EXPORT_METHOD(setUnsaved:(BOOL)unsaved)
+{
+  if (unsaved == _unsaved) return;
+  _unsaved = unsaved;
+  NSProcessInfo *process = NSProcessInfo.processInfo;
+  if (unsaved) {
+    [process disableSuddenTermination];
+    [process disableAutomaticTermination:@"Edits not yet written"];
+  } else {
+    [process enableSuddenTermination];
+    [process enableAutomaticTermination:@"Edits not yet written"];
+  }
+}
+
+RCT_EXPORT_METHOD(replyToQuit:(BOOL)quit)
+{
+  [NSApp replyToApplicationShouldTerminate:quit];
 }
 
 static NSEventModifierFlags flagsFor(NSArray<NSString *> *modifiers)
