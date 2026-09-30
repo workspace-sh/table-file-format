@@ -194,6 +194,29 @@ test("formatValue: an app's default date format fills in only where the table ha
   assert.equal(formatValue({ name: "t", type: "string" }, "2026-04-20", opts), "2026-04-20");
 });
 
+test("formatValue: without Intl.RelativeTimeFormat (Hermes), a relative date is the plain date", () => {
+  const now = new Date("2026-09-26T12:00:00");
+  const intl = Intl as unknown as Record<string, unknown>;
+  const kept = intl.RelativeTimeFormat;
+  delete intl.RelativeTimeFormat;
+  try {
+    assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "en-GB", now }), "2026-09-25");
+    // The app-wide default, too: every date field would otherwise have thrown.
+    assert.equal(formatValue(launched(), "2026-04-20", { dateFormat: "relative", now }), "2026-04-20");
+  } finally {
+    intl.RelativeTimeFormat = kept;
+  }
+  assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "en-GB", now }), "yesterday");
+});
+
+test("formatValue: a locale or currency the platform refuses gives the plainer form", () => {
+  const money = { name: "m", type: "number", format: "currency:NOPE" } as const;
+  assert.equal(formatValue(money, 1234.5, { locale: "en-GB" }), "1,234.5");
+  const pct = { name: "p", type: "number", format: "percent" } as const;
+  assert.equal(formatValue(pct, 0.25, { locale: "not a locale!" }), "0.25");
+  assert.equal(formatValue(launched("long"), "2026-04-20", { locale: "not a locale!" }), "2026-04-20");
+});
+
 test("formatValue: relative dates follow the app's locale and clock", () => {
   const now = new Date("2026-09-26T12:00:00");
   assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "en-GB", now }), "yesterday");
