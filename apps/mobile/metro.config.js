@@ -1,5 +1,6 @@
 const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
+const { resolveTsForJs } = require("../../metro-resolver");
 
 /**
  * Metro config for the Expo mobile app inside an npm-workspaces monorepo.
@@ -55,5 +56,12 @@ config.resolver.unstable_conditionNames = [
   "require",
   "default",
 ];
+
+// Workspace packages import siblings as "./x.js" while the file is x.ts
+// (Node's ESM rules, core since #54); map them, then resolve as Expo would.
+// Without this the bundle has failed since #54 (20 Jul 2026).
+const upstream = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) =>
+  resolveTsForJs(context, moduleName, platform, upstream ?? context.resolveRequest);
 
 module.exports = config;
