@@ -9,6 +9,9 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@formatjs/intl-locale": "^5.3.12",
+    "@formatjs/intl-pluralrules": "^6.3.15",
+    "@formatjs/intl-relativetimeformat": "^12.3.15",
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@workspace.sh/table-app": "file:../../packages/app",
     "@workspace.sh/table-core": "file:../../packages/core",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@babel/plugin-transform-class-static-block": "^7.29.7",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
     "@react-native-community/cli": "20.0.0",

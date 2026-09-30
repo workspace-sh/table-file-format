@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@formatjs/intl-locale": "^5.3.12",
+    "@formatjs/intl-pluralrules": "^6.3.15",
+    "@formatjs/intl-relativetimeformat": "^12.3.15",
     "@workspace.sh/table-core": "*",
     "@workspace.sh/table-fixtures": "*",
     "@workspace.sh/table-ui": "*",
@@ -25,6 +28,7 @@
     "react-strict-dom": "0.0.55"
   },
   "devDependencies": {
+    "@babel/plugin-transform-class-static-block": "^7.28.3",
     "@types/react": "~19.2.2",
     "typescript": "~5.9.2"
   }
