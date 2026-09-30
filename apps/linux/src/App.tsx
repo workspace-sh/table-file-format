@@ -33,6 +33,9 @@ import {
   firstTableKey,
   fromBundle,
   importSkippedText,
+  exportFailedText,
+  withFileToggled,
+  withFileUnfolded,
   openArchive,
   openFailedText,
   resetPrompt,
@@ -134,12 +137,15 @@ function Sidebar({
   selected,
   onSelect,
   onNewTable,
+  onToggleFile,
 }: {
   entries: Entry[];
   selected: number;
   onSelect: (entry: Entry) => void;
   /** Start a new table in a bundle, as a new sheet in a workbook (D37). */
   onNewTable: (bundle: string) => void;
+  /** Fold a .table file's tables away, or show them again. */
+  onToggleFile: (bundle: string) => void;
 }) {
   return (
     <GtkScrolledWindow vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
@@ -160,7 +166,13 @@ function Sidebar({
             case "bundle":
               return (
                 <GtkListBoxRow key={`b:${entry.bundle.bundle}`} selectable={false} activatable={false}>
-                  <GtkBox marginTop={12} marginStart={6}>
+                  <GtkBox marginTop={12} spacing={2}>
+                    <GtkButton
+                      iconName={entry.bundle.folded ? "pan-end-symbolic" : "pan-down-symbolic"}
+                      cssClasses={["flat", "circular"]}
+                      tooltipText={`${entry.bundle.folded ? "Show" : "Hide"} Tables in ${entry.bundle.title}`}
+                      onClicked={() => onToggleFile(entry.bundle.bundle)}
+                    />
                     <GtkLabel label={entry.bundle.title} xalign={0} hexpand cssClasses={["heading", "dim-label"]} />
                     <GtkButton
                       iconName="list-add-symbolic"
@@ -550,15 +562,23 @@ export function App({
   const firstTable = Object.keys(library.bundles).flatMap((b) => tableKeysIn(library.tables, library.bundles, b))[0] ?? "";
   const [active, setActive] = useState(initialTable && library.tables[initialTable] ? initialTable : firstTable);
   const [viewIds, setViewIds] = useState<Record<string, string>>(initialTable && initialView ? { [initialTable]: initialView } : {});
+  // The table on screen is never hidden in a folded file: its file unfolds
+  // when it's opened. Folding it again afterwards is still the viewer's.
+  useEffect(() => setSidebarPrefs((p) => withFileUnfolded(p, bundleOf(active))), [active]);
   const table = tables[active];
   const view = table ? (table.views.find((v) => v.id === viewIds[active]) ?? table.views[0]) : undefined;
   // The open table is expanded, its views listed; "+ New table" is on each heading.
   const entries = useMemo(
     () =>
       flattenSidebar(
-        sidebarTree(tables, bundles, { expanded: [active], ...(viewIds[active] ? { active: { key: active, viewId: viewIds[active] } } : {}), newTableIn: "none" }),
+        sidebarTree(tables, bundles, {
+          expanded: [active],
+          folded: sidebarPrefs.foldedFiles,
+          ...(viewIds[active] ? { active: { key: active, viewId: viewIds[active] } } : {}),
+          newTableIn: "none",
+        }),
       ),
-    [tables, bundles, active, viewIds],
+    [tables, bundles, active, viewIds, sidebarPrefs.foldedFiles],
   );
 
   // Every edit goes through here: the table changes on screen now, and its
@@ -743,7 +763,7 @@ export function App({
     try {
       writeFileSync(path, await bundleToArchive(key, toBundle(tables, bundles, key)));
     } catch (error) {
-      setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+      setNotice({ heading: exportFailedText(basename(path), error) });
     }
   };
   // The examples as they shipped; folders opened from elsewhere are left as they are.
@@ -871,6 +891,7 @@ export function App({
                     if (entry.kind === "view") setViewIds((prev) => ({ ...prev, [entry.key]: entry.view.id }));
                   }}
                   onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
+                  onToggleFile={(bundle) => setSidebarPrefs((p) => withFileToggled(p, bundle))}
                 />
                 )}
               </AdwToolbarView>
