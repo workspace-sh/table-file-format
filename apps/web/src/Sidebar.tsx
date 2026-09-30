@@ -2,8 +2,8 @@ import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
 import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
-import { displayChoices, withDisplayChoice } from "@workspace.sh/table-app";
-import { bundleOf, tableKeysIn, toBundle } from "@workspace.sh/table-app";
+import { displayChoices, sidebarTree, withDisplayChoice } from "@workspace.sh/table-app";
+import { tableKeysIn, toBundle } from "@workspace.sh/table-app";
 
 const styles = css.create({
   root: {
@@ -455,9 +455,11 @@ export function Sidebar({
       // table as part of its file (D37). Only what's on screen is
       // highlighted; its table is bold.
       <html.div style={styles.list}>
-        {Object.keys(bundles).map((bundle) => {
-          const keys = tableKeysIn(tables, bundles, bundle);
-          const folded = foldedFiles.includes(bundle);
+        {sidebarTree(tables, bundles, {
+          folded: foldedFiles,
+          expanded: [activeTablePath],
+          active: { key: activeTablePath, viewId: activeViewId },
+        }).map(({ bundle, title: bundleTitle, file, folded, tables: rows, offersNewTable }) => {
           return (
             <html.div key={bundle} style={styles.list}>
               {/* A file folds its tables away, as a shadcn/ui group does. */}
@@ -468,13 +470,10 @@ export function Sidebar({
                 style={styles.fileRow}
               >
                 <html.span style={[styles.groupChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
-                <html.span dir="auto" style={styles.fileTitle}>{bundles[bundle]?.title ?? bundle}</html.span>
-                <html.span dir="ltr" style={[styles.itemKey, styles.bundleFile]}>{bundle}.table</html.span>
+                <html.span dir="auto" style={styles.fileTitle}>{bundleTitle}</html.span>
+                <html.span dir="ltr" style={[styles.itemKey, styles.bundleFile]}>{file}</html.span>
               </html.div>
-              {!folded && keys.map((path) => {
-                const t = tables[path]!;
-                const open = path === activeTablePath;
-                const title = t.meta.title ?? path;
+              {rows.map(({ key: path, title, folder, rowCount, expanded: open, views }) => {
                 return (
                   <html.div key={path} style={styles.list}>
                     <html.div
@@ -487,26 +486,26 @@ export function Sidebar({
                       <html.span style={[styles.itemName, styles.titleAndName, open && styles.itemNameOpen]}>
                         <html.span dir="auto" style={styles.titleText}>{title}</html.span>
                         {/* Its folder under tables/, as the address bar names it. */}
-                        <html.span dir="ltr" style={styles.diskName}>{path.slice(bundle.length + 1)}/</html.span>
+                        <html.span dir="ltr" style={styles.diskName}>{folder}</html.span>
                       </html.span>
-                      <html.span style={styles.itemCount}>{t.rows.length}</html.span>
+                      <html.span style={styles.itemCount}>{rowCount}</html.span>
                     </html.div>
                     {open && (
                       <html.div style={styles.list}>
-                        {table.views.map((view) => (
+                        {views.map(({ id, name, layout, active }) => (
                           <html.div
-                            key={view.id}
+                            key={id}
                             role="button"
-                            aria-current={view.id === activeViewId ? "page" : undefined}
-                            style={[styles.item, styles.viewItem, view.id === activeViewId && styles.itemActive]}
-                            onClick={() => onSelect(view.id)}
+                            aria-current={active ? "page" : undefined}
+                            style={[styles.item, styles.viewItem, active && styles.itemActive]}
+                            onClick={() => onSelect(id)}
                           >
                             <html.span style={[styles.itemName, styles.titleAndName]}>
-                              <html.span dir="auto" style={styles.titleText}>{view.name}</html.span>
+                              <html.span dir="auto" style={styles.titleText}>{name}</html.span>
                               {/* Its id in views.json, as the address bar names it. */}
-                              <html.span dir="ltr" style={styles.diskName}>{view.id}</html.span>
+                              <html.span dir="ltr" style={styles.diskName}>{id}</html.span>
                             </html.span>
-                            <html.span style={styles.itemLayout}>{view.layout}</html.span>
+                            <html.span style={styles.itemLayout}>{layout}</html.span>
                           </html.div>
                         ))}
                         <html.button style={[styles.item, styles.viewItem, styles.newTable]} onClick={onNewView}>
@@ -517,7 +516,7 @@ export function Sidebar({
                   </html.div>
                 );
               })}
-              {bundle === bundleOf(activeTablePath) && !folded && (
+              {offersNewTable && (
                 <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
                   + New table
                 </html.button>

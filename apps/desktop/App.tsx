@@ -28,6 +28,11 @@ import {
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  SIDEBAR_KEY,
+  loadSidebarPrefs,
+  saveSidebarPrefs,
+  sidebarTree,
+  type SidebarPrefs,
   displayChoices,
   withDisplayChoice,
   newView,
@@ -83,6 +88,7 @@ import { checkFs } from "./fsCheck";
 import { OPENED_KEY, useFolders } from "./folders";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
+import { Sidebar } from "./Sidebar";
 import { attachmentUrl } from "./attachments";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
@@ -105,7 +111,7 @@ const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
 const styles = css.create({
   root: {
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "row",
     width: "100%",
     height: "100%",
     backgroundColor: {
@@ -169,6 +175,13 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#fbbf24",
     },
   },
+  toolbar: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 12,
+  },
   displayPanel: {
     display: "flex",
     flexDirection: "column",
@@ -187,24 +200,6 @@ const styles = css.create({
       default: "#ffffff",
       "@media (prefers-color-scheme: dark)": "#17171a",
     },
-  },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 4,
-    color: {
-      default: "#8e8e93",
-      "@media (prefers-color-scheme: dark)": "#6e6e73",
-    },
-  },
-  tabRow: {
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginBottom: 12,
   },
   tab: {
     paddingInline: 12,
@@ -366,7 +361,7 @@ export default function App() {
   const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY]).then(setStore, () => setStore(null));
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY]).then(setStore, () => setStore(null));
   }, []);
   return store === undefined ? null : <TableApp store={store} />;
 }
@@ -492,6 +487,21 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
   const [showDisplay, setShowDisplay] = useState(false);
+  // Which files are folded in the sidebar, kept as the web keeps them.
+  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(store));
+  const toggleFile = useCallback(
+    (bundle: string) =>
+      setSidebarPrefs((prefs) => {
+        const folded = prefs.foldedFiles ?? [];
+        const next = {
+          ...prefs,
+          foldedFiles: folded.includes(bundle) ? folded.filter((b) => b !== bundle) : [...folded, bundle],
+        };
+        saveSidebarPrefs(store, next);
+        return next;
+      }),
+    [store],
+  );
   // This viewer's own filters, sorts and grouping, over the saved views
   // (D4, D41), as on the web; a sort of their own follows their language.
   const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(store));
@@ -691,12 +701,13 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "display set";
       },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
-      // Forget saved edits, opened folders and arrangements; the next launch starts from the fixtures.
+      // Forget saved edits, opened folders, arrangements and the sidebar's folds; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
         store?.removeItem(OPENED_KEY);
         store?.removeItem(ARRANGEMENTS_KEY);
-        return "saved edits, opened folders and arrangements forgotten";
+        store?.removeItem(SIDEBAR_KEY);
+        return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
   }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip]);
@@ -713,14 +724,6 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const inBundle = bundleTables(tables, bundleOf(activeTablePath));
   const errors = validate(table.schema, table.rows);
   const searching = query.trim().length > 0;
-  const tablePaths = Object.keys(tables);
-  // An opened folder's tables say which folder they're from.
-  const tabLabel = (path: string) => {
-    const title = tables[path]!.meta.title ?? tableNameOf(path);
-    const folder = folders.paths[bundleOf(path)];
-    return folder ? `${title} · ${folder.split("/").pop()}` : title;
-  };
-  const showTablePicker = tablePaths.length > 1;
   const currentSchemaVersion = (table.schema["schema-version"] as number | undefined) ?? 1;
   const schemaBumped = currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
 
@@ -730,6 +733,35 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
+          <Sidebar
+            tree={sidebarTree(tables, bundles, {
+              folded: sidebarPrefs.foldedFiles ?? [],
+              expanded: [activeTablePath],
+              active: { key: activeTablePath, viewId: activeViewId },
+            }).map((file) => ({
+              ...file,
+              // A folder opened from disk goes by its own name.
+              file: folders.paths[file.bundle]?.split("/").pop() ?? file.file,
+            }))}
+            onToggleFile={toggleFile}
+            onSelectTable={(key) => {
+              setActiveTablePath(key);
+              setQuery("");
+              setActiveBodyRowId(null);
+            }}
+            onSelectView={(key, viewId) => {
+              setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
+              setShowViewSettings(false);
+            }}
+            onNewTable={() => askName("Name the new table", createTable)}
+            onNewView={addView}
+            footer={[
+              { label: "New .table…", onPress: () => askName("Name the new .table file", createFile) },
+              { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
+              { label: "Open .table.zip…", onPress: () => void importZip() },
+              { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
+            ]}
+          />
           <html.div style={styles.content}>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.subtitle}>
@@ -753,72 +785,16 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 </html.span>
               )}
             </html.div>
-            {showTablePicker && (
-              <>
-                <html.span style={styles.sectionLabel}>Tables</html.span>
-                <html.div style={styles.tabRow}>
-                  {tablePaths.map((path) => (
-                    <html.button
-                      key={path}
-                      onClick={() => {
-                        setActiveTablePath(path);
-                        setQuery("");
-                        setActiveBodyRowId(null);
-                      }}
-                      style={[styles.tab, path === activeTablePath && styles.tabActive]}
-                    >
-                      {tabLabel(path)}
-                    </html.button>
-                  ))}
-                  <html.button
-                    onClick={() => void chooseFolder("Choose a .table folder to open").then(openFolder)}
-                    style={styles.tab}
-                  >
-                    Open .table…
-                  </html.button>
-                  <html.button onClick={() => void importZip()} style={styles.tab}>
-                    Open .table.zip…
-                  </html.button>
-                  <html.button onClick={() => void exportZip()} style={styles.tab}>
-                    Export .table.zip…
-                  </html.button>
-                  <html.button onClick={() => askName("Name the new table", createTable)} style={styles.tab}>
-                    + New table
-                  </html.button>
-                  <html.button onClick={() => askName("Name the new .table file", createFile)} style={styles.tab}>
-                    New .table…
-                  </html.button>
-                  <html.button
-                    onClick={() => setShowDisplay((open) => !open)}
-                    style={[styles.tab, showDisplay && styles.tabActive]}
-                  >
-                    Display
-                  </html.button>
-                </html.div>
-              </>
-            )}
-            <html.span style={styles.sectionLabel}>Views</html.span>
-            <html.div style={styles.tabRow}>
-              {table.views.map((v) => (
-                <html.button
-                  key={v.id}
-                  onClick={() => {
-                    setActiveViewId(v.id);
-                    setShowViewSettings(false);
-                  }}
-                  style={[styles.tab, v.id === activeViewId && styles.tabActive]}
-                >
-                  {v.name}
-                </html.button>
-              ))}
-              <html.button onClick={addView} style={styles.tab}>
-                + New view
-              </html.button>
+            {/* The view's own actions; the tables, views and files are in the sidebar. */}
+            <html.div style={styles.toolbar}>
               <html.button
                 onClick={() => setShowViewSettings((open) => !open)}
                 style={[styles.tab, showViewSettings && styles.tabActive]}
               >
                 View settings
+              </html.button>
+              <html.button onClick={() => void exportZip()} style={styles.tab}>
+                Export .table.zip…
               </html.button>
             </html.div>
             <html.input
