@@ -6,7 +6,7 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 type Modifier = "command" | "shift" | "option" | "control";
 
 interface TableMenuModule {
-  setItem(id: string, menu: string, title: string, key: string, modifiers: Modifier[], before: string): void;
+  setItem(id: string, menu: string, title: string, key: string, modifiers: Modifier[], before: string, checked: boolean): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
   titles(menu: string): Promise<string[]>;
   addListener(event: string): void;
@@ -26,11 +26,13 @@ export interface MenuItem {
   modifiers: Modifier[];
   /** Put it before the item with this title; last when absent. */
   before?: string;
+  /** Shown ticked. */
+  checked?: boolean;
 }
 
 /** Add the item, or update its title and key. */
 export function setMenuItem(item: MenuItem): void {
-  TableMenu?.setItem(item.id, item.menu, item.title, item.key, item.modifiers, item.before ?? "");
+  TableMenu?.setItem(item.id, item.menu, item.title, item.key, item.modifiers, item.before ?? "", item.checked ?? false);
 }
 
 /** Call `then` with an item's id when it's chosen. Returns the unsubscribe. */
