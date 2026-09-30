@@ -39,6 +39,7 @@ import {
   withNewFile,
   withNewTable,
   withView,
+  attachmentName,
   archiveFileName,
   bundleToArchive,
   openArchive,
@@ -88,6 +89,9 @@ import { checkFs } from "./fsCheck";
 import { OPENED_KEY, useFolders } from "./folders";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
+import { desktopFs } from "./desktopFs";
+import { FileSystem } from "react-native-file-access";
+import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
 import { attachmentUrl } from "./attachments";
 
@@ -276,6 +280,7 @@ interface ViewCallbacks {
   tableKey: string;
   sheet?: SheetGridShown;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  onAttachFile?: (rowId: string, fieldName: string) => void;
 }
 
 function renderView(
@@ -321,6 +326,7 @@ function renderView(
           tableKey={cb.tableKey}
           sheet={cb.sheet}
           onInsertRow={cb.onInsertRow}
+          onAttachFile={cb.onAttachFile}
         />
       );
   }
@@ -560,6 +566,35 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     (rowId: string, fieldName: string, value: unknown) => edit((t) => withCell(t, rowId, fieldName, value)),
     [edit],
   );
+  // An attachment is a file in its table's attachments/ (SPEC section 6),
+  // so a table needs a folder on disk to take one: the file chosen is copied
+  // there under a name no other attachment has, and the cell names it.
+  // `source` skips the panel.
+  const attachFile = useCallback(
+    async (rowId: string, fieldName: string, source?: string) => {
+      const folder = folders.paths[bundleOf(activeTablePath)];
+      if (!folder) {
+        showProblem(
+          "Attach files to a table on disk",
+          "An attachment is copied into its table's folder. Open a .table folder (Open .table…) to attach files to it.",
+        );
+        return;
+      }
+      const from = source ?? (await chooseFile("Choose a file to attach", []));
+      if (!from) return;
+      const dir = joinPath(folder, "tables", tableNameOf(activeTablePath), "attachments");
+      try {
+        await desktopFs.mkdir(dir);
+        const taken = ((await desktopFs.list(dir)) ?? []).map((e) => e.name);
+        const name = attachmentName(from.split("/").pop() ?? "file", taken);
+        await FileSystem.cp(from, joinPath(dir, name));
+        updateRow(rowId, fieldName, name);
+      } catch (error) {
+        showProblem("Couldn't attach the file", error instanceof Error ? error.message : String(error));
+      }
+    },
+    [folders.paths, activeTablePath, showProblem, updateRow],
+  );
   const updateField = useCallback(
     (fieldName: string, patch: Partial<Field>) => edit((t) => withFieldPatch(t, fieldName, patch)),
     [edit],
@@ -683,6 +718,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         createFile(title);
         return `made .table ${title}`;
       },
+      attach: (rowId: string, fieldName: string, source: string) => {
+        void attachFile(rowId, fieldName, source);
+        return `attaching ${source}`;
+      },
       exportZip: (path: string) => {
         void exportZip(path);
         return `exporting to ${path}`;
@@ -710,7 +749,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -867,6 +906,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 tableKey: tableNameOf(activeTablePath),
                 sheet,
                 onInsertRow: isSheet(view) && canInsertAt(view) ? insertRow : undefined,
+                onAttachFile: attachFile,
               })}
             </ScrollView>
           </html.div>
