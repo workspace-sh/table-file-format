@@ -146,6 +146,28 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
 }
 
 /**
+ * What to ask before changing a view's settings, or null when nothing is
+ * lost and the change can simply be made. Turning a Sheet view into
+ * anything else loses its grid, so formulas that read it by place will
+ * show #REF! (D41); the answer to go ahead is `stop`.
+ */
+export function viewPatchPrompt(
+  tables: Record<string, ParsedTable>,
+  key: string,
+  view: View,
+  patch: Partial<View>,
+): Confirm | null {
+  if (!isSheet(view) || isSheet({ ...view, ...patch })) return null;
+  const readers = sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length;
+  if (readers === 0) return null;
+  return {
+    heading: `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
+    body: "Stop showing it as a sheet?",
+    responses: [CANCEL, { id: "stop", label: "Stop", destructive: true }],
+  };
+}
+
+/**
  * What to ask before deleting a view: the rows stay, only this way of
  * showing them goes; and, for a Sheet view, how many formulas read it by
  * place and will show #REF! (D41). Null when it's the table's last view,
