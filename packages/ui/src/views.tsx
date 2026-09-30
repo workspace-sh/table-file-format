@@ -386,6 +386,11 @@ const styles = css.create({
   // viewport so the next column peeks. min/max from `boardColumn`
   // would clamp this to 240-280 which defeats the purpose; override.
   boardColumnCarouselWidth: (w: number) => ({
+    // The width includes the padding and border, so a column is as wide
+    // as the snap step expects and the next one peeks. Measured on iOS,
+    // content-box made each column 28pt wider: the next never showed, and
+    // each swipe landed further off its column.
+    boxSizing: "border-box",
     minWidth: w,
     maxWidth: w,
     width: w,
