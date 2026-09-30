@@ -10,7 +10,7 @@ export { fieldKey } from "./fieldKey";
 export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells } from "./sheets";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
 export type { DisplaySettings } from "./DisplaySettings";
-export { OPERATOR_LABELS, operatorsFor, takesValue, filterValueFrom, filterValueText, layoutFieldFor, LAYOUTS, canUseLayout } from "./viewEdit";
+export * from "./viewEdit";
 export type { ViewProps } from "./viewProps";
 export * from "./cards";
 export { firstDayOfWeek, monthNameLong, rotateWeekdays, weekdayNamesShort } from "./internal/calendarLocale";

@@ -14,38 +14,26 @@ import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, 
 import { enumOptions } from "@workspace.sh/table-core";
 
 import {
-  LAYOUTS,
   OPERATOR_LABELS,
-  canUseLayout,
+  filterOnField,
+  filtersPatch,
   filterValueFrom,
   filterValueText,
-  layoutFieldFor,
+  filterWithOperator,
+  layoutOptions,
+  layoutPatch,
+  newFilter,
+  newSort,
   operatorsFor,
+  picksChoice,
+  sortsPatch,
   takesValue,
+  viewFieldChoices,
 } from "./viewEdit";
 
-export interface ViewSettingsProps {
-  view: View;
-  schema: TableSchema;
-  onChange: (patch: Partial<View>) => void;
-  /** Absent when this is the table's only view: a table always has one. */
-  onDelete?: () => void;
-  onClose: () => void;
-  /** Filters, sorts and grouping, as this reader's own. Absent: they change the view for everyone. */
-  onArrange?: (patch: Partial<View>) => void;
-  /** This reader's filters, sorts or grouping differ from the view as saved. */
-  personal?: boolean;
-  onSaveForEveryone?: () => void;
-  onReset?: () => void;
-}
+export type { ViewSettingsProps } from "./viewEdit";
+import type { ViewSettingsProps } from "./viewEdit";
 
-const LAYOUT_LABELS: Record<ViewLayout, string> = {
-  table: "Table",
-  board: "Board",
-  list: "List",
-  gallery: "Gallery",
-  calendar: "Calendar",
-};
 
 export function ViewSettings({
   view,
@@ -59,25 +47,19 @@ export function ViewSettings({
   onReset,
 }: ViewSettingsProps) {
   const arrange = onArrange ?? onChange;
-  const live = schema.fields.filter((f) => !f.deprecated);
+  const choices = viewFieldChoices(schema);
+  const live = choices.live;
   const byName = new Map(schema.fields.map((f) => [f.name, f]));
   const label = (f: Field) => f.title ?? f.name;
   const filters = view.filter ?? [];
   const sorts = view.sort ?? [];
 
-  const setLayout = (layout: ViewLayout) => {
-    const patch: Partial<View> = { layout };
-    if (layout === "board" && !view.board_field) patch.board_field = layoutFieldFor("board", schema) ?? undefined;
-    if (layout === "calendar" && !view.calendar_field) patch.calendar_field = layoutFieldFor("calendar", schema) ?? undefined;
-    onChange(patch);
-  };
-  const setFilters = (next: ViewFilter[]) => arrange({ filter: next.length ? next : undefined });
-  // A sort replaces any order rows were dragged into: choosing one says how
-  // rows should run, and a manual order would silently win (SPEC section 4).
-  const setSorts = (next: ViewSort[]) => arrange({ sort: next.length ? next : undefined, order: undefined });
+  const setLayout = (layout: ViewLayout) => onChange(layoutPatch(view, schema, layout));
+  const setFilters = (next: ViewFilter[]) => arrange(filtersPatch(next));
+  const setSorts = (next: ViewSort[]) => arrange(sortsPatch(next));
 
-  const dateFields = live.filter((f) => f.type === "date" || f.type === "datetime");
-  const boardFields = live.filter((f) => f.type === "string" && !f.relation);
+  const dateFields = choices.date;
+  const boardFields = choices.board;
 
   return (
     <html.div style={styles.panel} role="dialog" aria-label="View settings">
@@ -101,13 +83,7 @@ export function ViewSettings({
         <FieldRow label="Layout">
         <Select
           value={view.layout}
-          options={LAYOUTS.map((l) => ({
-            value: l,
-            label:
-              LAYOUT_LABELS[l] +
-              (canUseLayout(l, schema) ? "" : l === "calendar" ? " (needs a date field)" : " (needs a text field)"),
-            disabled: !canUseLayout(l, schema),
-          }))}
+          options={layoutOptions(schema)}
           onChange={(next) => setLayout(next as ViewLayout)}
           style={styles.input}
         />
@@ -147,7 +123,7 @@ export function ViewSettings({
         {(view.layout === "table" || view.layout === "list") && (
           <FieldRow label="Group by">
             <FieldSelect
-              fields={live.filter((f) => !f.computed)}
+              fields={choices.group}
               value={view.group?.field}
               none="No grouping"
               onChange={(f) => arrange({ group: f ? { field: f } : undefined })}
@@ -171,8 +147,8 @@ export function ViewSettings({
       <html.button
         style={styles.add}
         onClick={() => {
-          const first = live[0];
-          if (first) setFilters([...filters, { field: first.name, operator: operatorsFor(first)[0]! }]);
+          const made = newFilter(live);
+          if (made) setFilters([...filters, made]);
         }}
       >
         + Add filter
@@ -206,9 +182,8 @@ export function ViewSettings({
       <html.button
         style={styles.add}
         onClick={() => {
-          const used = new Set(sorts.map((s) => s.field));
-          const next = live.find((f) => !used.has(f.name));
-          if (next) setSorts([...sorts, { field: next.name, direction: "asc" }]);
+          const made = newSort(live, sorts);
+          if (made) setSorts([...sorts, made]);
         }}
       >
         + Add sort
@@ -300,8 +275,7 @@ function FilterRow({
   // tidied away under the cursor. The stored value follows it.
   const [draft, setDraft] = useState(() => filterValueText(filter.value));
   // One choice from the list: equal to it, or (for a multi-select) having it.
-  const pickChoice =
-    choices.length > 0 && ["eq", "neq", "contains", "not_contains"].includes(filter.operator);
+  const pickChoice = picksChoice(field, filter.operator);
   return (
     <html.div style={styles.row}>
       <FieldSelect
@@ -310,18 +284,16 @@ function FilterRow({
         onChange={(name) => {
           if (!name) return;
           const next = fields.find((f) => f.name === name);
-          const ops = operatorsFor(next);
+          if (!next) return;
           setDraft("");
-          onChange({ field: name, operator: ops.includes(filter.operator) ? filter.operator : ops[0]! });
+          onChange(filterOnField(filter, next));
         }}
       />
       <Select
         value={filter.operator}
         options={operators.map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
         onChange={(next) => {
-          const operator = next as FilterOperator;
-          const value = takesValue(operator) ? filterValueFrom(field, operator, draft) : undefined;
-          onChange({ field: filter.field, operator, ...(value === undefined ? {} : { value }) });
+          onChange(filterWithOperator(filter, field, next as FilterOperator, draft));
         }}
         style={styles.input}
       />

@@ -3,7 +3,7 @@
 // use, how a typed filter value becomes a stored one, and which field a
 // layout starts from. Views are SPEC section 4.
 
-import type { Field, FieldType, FilterOperator, TableSchema, ViewLayout } from "@workspace.sh/table-core";
+import { enumOptions, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
 
 export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   eq: "is",
@@ -97,4 +97,100 @@ export const LAYOUTS: ViewLayout[] = ["table", "board", "list", "gallery", "cale
 export function canUseLayout(layout: ViewLayout, schema: TableSchema): boolean {
   if (layout === "board" || layout === "calendar") return layoutFieldFor(layout, schema) !== null;
   return true;
+}
+
+export const LAYOUT_LABELS: Record<ViewLayout, string> = {
+  table: "Table",
+  board: "Board",
+  list: "List",
+  gallery: "Gallery",
+  calendar: "Calendar",
+};
+
+/** Every layout, each marked when the table can't use it and why. */
+export function layoutOptions(schema: TableSchema): { value: ViewLayout; label: string; disabled: boolean }[] {
+  return LAYOUTS.map((l) => {
+    const usable = canUseLayout(l, schema);
+    const why = usable ? "" : l === "calendar" ? " (needs a date field)" : " (needs a text field)";
+    return { value: l, label: LAYOUT_LABELS[l] + why, disabled: !usable };
+  });
+}
+
+/** Changing layout: a board or calendar starts from a field it can use when it has none yet. */
+export function layoutPatch(view: View, schema: TableSchema, layout: ViewLayout): Partial<View> {
+  const patch: Partial<View> = { layout };
+  if (layout === "board" && !view.board_field) patch.board_field = layoutFieldFor("board", schema) ?? undefined;
+  if (layout === "calendar" && !view.calendar_field) patch.calendar_field = layoutFieldFor("calendar", schema) ?? undefined;
+  return patch;
+}
+
+/** The fields a view's pickers offer: none deprecated, and each picker only what it can use. */
+export function viewFieldChoices(schema: TableSchema): { live: Field[]; board: Field[]; date: Field[]; group: Field[] } {
+  const live = schema.fields.filter((f) => !f.deprecated);
+  return {
+    live,
+    board: live.filter((f) => f.type === "string" && !f.relation),
+    date: live.filter((f) => f.type === "date" || f.type === "datetime"),
+    group: live.filter((f) => !f.computed),
+  };
+}
+
+/** Filters set; none at all is no filter. */
+export function filtersPatch(next: ViewFilter[]): Partial<View> {
+  return { filter: next.length ? next : undefined };
+}
+
+/**
+ * Sorts set. A sort replaces any order rows were dragged into: choosing
+ * one says how rows should run, and a manual order would silently win
+ * (SPEC section 4).
+ */
+export function sortsPatch(next: ViewSort[]): Partial<View> {
+  return { sort: next.length ? next : undefined, order: undefined };
+}
+
+/** A new filter: on the first field, with its first operator. Null when there's no field. */
+export function newFilter(live: Field[]): ViewFilter | null {
+  const first = live[0];
+  return first ? { field: first.name, operator: operatorsFor(first)[0]! } : null;
+}
+
+/** A new sort: ascending, on the first field not already sorted by. Null when every field is. */
+export function newSort(live: Field[], sorts: ViewSort[]): ViewSort | null {
+  const used = new Set(sorts.map((s) => s.field));
+  const next = live.find((f) => !used.has(f.name));
+  return next ? { field: next.name, direction: "asc" } : null;
+}
+
+/** A filter moved to another field: its operator kept if that field has it, its value dropped. */
+export function filterOnField(filter: ViewFilter, field: Field | undefined): ViewFilter {
+  const ops = operatorsFor(field);
+  return { field: field?.name ?? filter.field, operator: ops.includes(filter.operator) ? filter.operator : ops[0]! };
+}
+
+/** A filter's operator changed: the value typed so far, `draft`, carried over when the operator takes one. */
+export function filterWithOperator(filter: ViewFilter, field: Field | undefined, operator: FilterOperator, draft: string): ViewFilter {
+  const value = takesValue(operator) ? filterValueFrom(field, operator, draft) : undefined;
+  return { field: filter.field, operator, ...(value === undefined ? {} : { value }) };
+}
+
+/** Whether a filter's value is one of the field's choices, picked, rather than typed. */
+export function picksChoice(field: Field | undefined, operator: FilterOperator): boolean {
+  return enumOptions(field).length > 0 && ["eq", "neq", "contains", "not_contains"].includes(operator);
+}
+
+/** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */
+export interface ViewSettingsProps {
+  view: View;
+  schema: TableSchema;
+  onChange: (patch: Partial<View>) => void;
+  /** Absent when this is the table's only view: a table always has one. */
+  onDelete?: () => void;
+  onClose: () => void;
+  /** Filters, sorts and grouping, as this reader's own. Absent: they change the view for everyone. */
+  onArrange?: (patch: Partial<View>) => void;
+  /** This reader's filters, sorts or grouping differ from the view as saved. */
+  personal?: boolean;
+  onSaveForEveryone?: () => void;
+  onReset?: () => void;
 }
