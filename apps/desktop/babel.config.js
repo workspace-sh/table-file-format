@@ -13,4 +13,7 @@ module.exports = {
       },
     ],
   ],
+  // FormatJS's Intl polyfills (intl.ts) use static class blocks, which
+  // the React Native preset doesn't transform.
+  plugins: ["@babel/plugin-transform-class-static-block"],
 };
