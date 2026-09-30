@@ -17,3 +17,4 @@ export * from "./creating.ts";
 export * from "./sidebar.ts";
 export * from "./library.ts";
 export * from "./filesTree.ts";
+export * from "./viewSummary.ts";
