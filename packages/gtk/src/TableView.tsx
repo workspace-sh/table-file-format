@@ -41,6 +41,7 @@ import {
 import { useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
 import { EditableCell } from "./EditableCell.js";
+import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
 
@@ -156,6 +157,9 @@ export function TableView({
   relatedTables,
   onUpdateRow,
   onUpdateField,
+  onAddEnumValue,
+  onMoveField,
+  onAddField,
   onAddRow,
   onDeleteRow,
   onInsertRow,
@@ -165,6 +169,10 @@ export function TableView({
   allRows,
   tableKey,
 }: ViewProps) {
+  // A field's editor open, by name, and "add a field" open.
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [addingField, setAddingField] = useState(false);
+  const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   // A formula cell opened to see how it was worked out (FormulaPanel).
   const [openFormula, setOpenFormula] = useState<{ rowId: string; name: string } | null>(null);
   // The row just added from "New Row": its first cell opens for typing.
@@ -210,11 +218,23 @@ export function TableView({
               ellipsize={Pango.EllipsizeMode.END}
               maxWidthChars={1}
               cssClasses={[styles.headerCell]}
-              tooltipText={field?.description ?? title}
+              tooltipText={schemaEditable ? `${field?.description ?? title} · Edit Field` : (field?.description ?? title)}
+              // A header opens its field's editor, where the schema can be edited.
+              controllers={schemaEditable ? <GtkGestureClick onReleased={() => setEditingField(name)} /> : undefined}
             />
           </Cell>
         );
       })}
+      {onAddField ? (
+        <GtkButton
+          iconName="list-add-symbolic"
+          cssClasses={["flat", "circular"]}
+          valign={Gtk.Align.CENTER}
+          marginStart={4}
+          tooltipText="Add Field"
+          onClicked={() => setAddingField(true)}
+        />
+      ) : null}
     </GtkBox>
   );
 
@@ -382,6 +402,33 @@ export function TableView({
           />
         );
       })() : null}
+      {editingField && schemaEditable ? (() => {
+        const field = schema.fields.find((f) => f.name === editingField);
+        if (!field) return null;
+        return (
+          <FieldEditor
+            key={editingField}
+            field={field}
+            fieldIndex={schema.fields.indexOf(field)}
+            totalFields={schema.fields.length}
+            fields={schema.fields}
+            grid={grid}
+            onUpdate={(patch) => onUpdateField!(editingField, patch)}
+            onAddChoice={(value) => onAddEnumValue!(editingField, value)}
+            onMove={(delta) => onMoveField!(editingField, delta)}
+            onClose={() => setEditingField(null)}
+          />
+        );
+      })() : null}
+      {addingField && onAddField ? (
+        <AddField
+          existing={new Set(schema.fields.map((f) => f.name))}
+          fields={schema.fields}
+          grid={grid}
+          onAdd={onAddField}
+          onClose={() => setAddingField(false)}
+        />
+      ) : null}
     </GtkScrolledWindow>
   );
 }

@@ -29,6 +29,9 @@ import {
   tableKeysIn,
   tableNameOf,
   withCell,
+  withChoice,
+  withField,
+  withFieldMoved,
   withFieldPatch,
   deleteViewPrompt,
   withoutRow,
@@ -149,6 +152,9 @@ interface Edits {
   onDeleteRow: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
   onUpdateField: (name: string, patch: Partial<Field>) => void;
+  onAddEnumValue: (name: string, value: string) => void;
+  onMoveField: (name: string, delta: -1 | 1) => void;
+  onAddField: (field: Field) => void;
 }
 
 /** What the header can do to the table's views. */
@@ -300,6 +306,9 @@ export function App({ library, initialTable, initialView }: { library: Library; 
     onDeleteRow: (rowId) => setConfirmDelete({ key, rowId }),
     onUpdateView: (patch) => edit(key, (t) => withViewPatch(t, viewId, patch)),
     onUpdateField: (name, patch) => edit(key, (t) => withFieldPatch(t, name, patch)),
+    onAddEnumValue: (name, value) => edit(key, (t) => withChoice(t, name, value)),
+    onMoveField: (name, delta) => edit(key, (t) => withFieldMoved(t, name, delta)),
+    onAddField: (field) => edit(key, (t) => withField(t, field, viewId)),
   });
   const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
 

@@ -11,3 +11,4 @@ export { useDark } from "./theme.js";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings, type DisplaySettings, type ViewProps, type ViewSettingsProps } from "@workspace.sh/table-ui/shared";
 export { FormulaPanel, type FormulaPanelProps } from "./FormulaPanel.js";
 export { ViewSettings } from "./ViewSettings.js";
+export { AddField, FieldEditor, type AddFieldProps, type FieldEditorProps } from "./FieldEditor.js";
