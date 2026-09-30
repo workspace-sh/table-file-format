@@ -8,5 +8,6 @@ export { BoardView, CalendarView, GalleryView, ListView } from "./cards.js";
 export { CellValue, type CellValueProps } from "./CellValue.js";
 export { EditableCell, type EditableCellProps } from "./EditableCell.js";
 export { useDark } from "./theme.js";
-export { DisplaySettingsProvider, useDirection, useDisplaySettings, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
+export { DisplaySettingsProvider, useDirection, useDisplaySettings, type DisplaySettings, type ViewProps, type ViewSettingsProps } from "@workspace.sh/table-ui/shared";
 export { FormulaPanel, type FormulaPanelProps } from "./FormulaPanel.js";
+export { ViewSettings } from "./ViewSettings.js";

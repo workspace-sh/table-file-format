@@ -9,6 +9,7 @@ export default mergeConfig(
     test: {
       include: ["tests/**/*.test.{ts,tsx}"],
       bail: 1,
+      setupFiles: ["tests/setup.ts"],
     },
   }),
 );

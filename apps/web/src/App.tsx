@@ -47,6 +47,7 @@ import { useNarrow } from "./useNarrow";
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from "@workspace.sh/table-app";
 import {
   arrange,
+  deleteViewPrompt,
   onTable,
   rowTitleFor,
   withBody,
@@ -720,10 +721,8 @@ export function App() {
 
   const deleteView = useCallback(() => {
     const t = tables[activeTablePath]!;
-    if (t.views.length <= 1) return;
-    const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(activeTablePath)), tableNameOf(activeTablePath), view.id).length : 0;
-    const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
-    if (!window.confirm(`Delete the view "${view.name}"? The rows stay; only this way of showing them goes.${losing}`)) return;
+    const prompt = deleteViewPrompt(tables, activeTablePath, view);
+    if (!prompt || !window.confirm(`${prompt.heading} ${prompt.body}`)) return;
     const remaining = t.views.filter((v) => v.id !== activeViewId);
     setTables((all) => onTable(all, activeTablePath, (t) => withoutView(t, activeViewId)));
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: remaining[0]!.id }));

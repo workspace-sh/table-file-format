@@ -4,7 +4,10 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
-import { insertRowAt } from "@workspace.sh/table-ui/shared";
+import { isSheet } from "@workspace.sh/table-core";
+import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
+
+import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 
 /** Apply `edit` to the table at `key` in an app's `bundle/table` map. */
 export function onTable(
@@ -139,4 +142,18 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
     }
   }
   return rowId;
+}
+
+/**
+ * What to ask before deleting a view: the rows stay, only this way of
+ * showing them goes; and, for a Sheet view, how many formulas read it by
+ * place and will show #REF! (D41). Null when it's the table's last view,
+ * which can't be deleted.
+ */
+export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): { heading: string; body: string } | null {
+  const table = tables[key];
+  if (!table || table.views.length <= 1) return null;
+  const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+  const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
+  return { heading: `Delete the view “${view.name}”?`, body: `The rows stay; only this way of showing them goes.${losing}` };
 }

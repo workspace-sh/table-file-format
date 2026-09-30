@@ -14,12 +14,13 @@ import {
   GtkEventControllerKey,
   GtkGestureClick,
   GtkLabel,
-  GtkStringList,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { commitDraft, currencySymbolOf, draftOf, editorKind, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
+import { StringList } from "./StringList.js";
+import { useSelected } from "./useSelected.js";
 
 export interface EditableCellProps {
   field: Field | undefined;
@@ -31,6 +32,37 @@ export interface EditableCellProps {
   xalign?: number;
   /** Open for typing as it first appears: a row just added. */
   autoEdit?: boolean;
+}
+
+/**
+ * A choice cell being edited: a drop-down of the field's choices, and "—"
+ * for none. Picking one saves it; leaving or Escape closes without.
+ */
+function ChoiceEditor({ field, value, onClose, onCommit }: { field: Field | undefined; value: unknown; onClose: () => void; onCommit: (next: unknown) => void }) {
+  const options = enumOptions(field);
+  const at = options.findIndex((o) => o.value === value) + 1;
+  const labels = ["—", ...options.map((o) => o.label ?? o.value)];
+  const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
+  return (
+    <GtkDropDown
+      ref={ref}
+      hexpand
+      selected={at}
+      model={<StringList strings={labels} />}
+      onNotifySelected={(index) => {
+        if (index === null || index === at) return;
+        onClose();
+        const next = index === 0 ? null : options[index - 1]!.value;
+        if (next !== value) onCommit(next);
+      }}
+      controllers={
+        <>
+          <GtkEventControllerFocus onLeave={onClose} />
+          <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose(), true) : false)} />
+        </>
+      }
+    />
+  );
 }
 
 export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit }: EditableCellProps) {
@@ -112,26 +144,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   }
 
   if (kind === "choice") {
-    const options = enumOptions(field);
-    const at = options.findIndex((o) => o.value === value);
     return (
-      <GtkDropDown
-        hexpand
-        selected={at + 1}
-        model={<GtkStringList strings={["—", ...options.map((o) => o.label ?? o.value)]} />}
-        onNotifySelected={(index) => {
-          if (index === null || index === at + 1) return;
-          close();
-          const next = index === 0 ? null : options[index - 1]!.value;
-          if (next !== value) onCommit(next);
-        }}
-        controllers={
-          <>
-            <GtkEventControllerFocus onLeave={() => close()} />
-            <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (close(), true) : false)} />
-          </>
-        }
-      />
+      <ChoiceEditor field={field} value={value} onClose={close} onCommit={onCommit} />
     );
   }
 

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type { ParsedTable } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 import {
+  deleteViewPrompt,
   onTable,
   rowTitleFor,
   withBody,
@@ -99,4 +100,15 @@ test("onTable edits one table in an app's map and leaves the rest", () => {
 test("a row is named by its first text field", () => {
   assert.equal(rowTitleFor(tasks, "t1"), "Land .table extension");
   assert.equal(rowTitleFor(tasks, "missing"), "missing");
+});
+
+test("deleting a view asks first, and warns when formulas read a Sheet view by place", () => {
+  const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
+  const byDate = ledger.views.find((v) => v.id === "by-date")!;
+  const asked = deleteViewPrompt(held, "household-budget/ledger", byDate)!;
+  assert.equal(asked.heading, "Delete the view “By date”?");
+  assert.match(asked.body, /formula.* by place and will show #REF!/);
+  const plain = deleteViewPrompt(held, "projects/tasks", tasks.views[0]!)!;
+  assert.equal(plain.body, "The rows stay; only this way of showing them goes.");
+  assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "v2") }, "projects/tasks", tasks.views[0]!), null);
 });

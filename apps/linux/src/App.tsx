@@ -18,7 +18,7 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkImage, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { quit } from "@gtkx/react";
 import {
   bundleOf,
@@ -30,8 +30,11 @@ import {
   tableNameOf,
   withCell,
   withFieldPatch,
+  deleteViewPrompt,
   withoutRow,
+  withoutView,
   withRow,
+  withView,
   withRowAt,
   withViewPatch,
 } from "@workspace.sh/table-app";
@@ -44,6 +47,7 @@ import {
   GalleryView,
   ListView,
   TableView,
+  ViewSettings,
   type ViewProps,
 } from "@workspace.sh/table-gtk";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -147,6 +151,13 @@ interface Edits {
   onUpdateField: (name: string, patch: Partial<Field>) => void;
 }
 
+/** What the header can do to the table's views. */
+interface ViewActions {
+  onAddView: () => void;
+  /** Absent for the table's only view. */
+  onDeleteView?: () => void;
+}
+
 function TablePane({
   tables,
   bundles,
@@ -154,6 +165,7 @@ function TablePane({
   view,
   edits,
   saving,
+  viewActions,
 }: {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -161,7 +173,9 @@ function TablePane({
   view: View;
   edits: Edits;
   saving: SaveState;
+  viewActions: ViewActions;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const table = tables[tableKey]!;
   const [search, setSearch] = useState("");
   const shown = showView(tables, tableKey, view, { search });
@@ -178,7 +192,13 @@ function TablePane({
               subtitle={`${bundles[bundleOf(tableKey)]?.title ?? bundleOf(tableKey)} › ${table.meta.title ?? tableNameOf(tableKey)}`}
             />
           }
-          end={<SaveStatus state={saving} />}
+          start={<GtkButton iconName="list-add-symbolic" tooltipText="New View" onClicked={viewActions.onAddView} />}
+          end={
+            <>
+              <GtkButton iconName="emblem-system-symbolic" tooltipText="View Settings" onClicked={() => setSettingsOpen(true)} />
+              <SaveStatus state={saving} />
+            </>
+          }
         />
       }
     >
@@ -201,6 +221,15 @@ function TablePane({
           {...edits}
         />
       </GtkBox>
+      {settingsOpen ? (
+        <ViewSettings
+          view={view}
+          schema={table.schema}
+          onChange={edits.onUpdateView}
+          onDelete={viewActions.onDeleteView}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
     </AdwToolbarView>
   );
 }
@@ -227,6 +256,7 @@ export function App({ library, initialTable, initialView }: { library: Library; 
   const [bundles] = useState(library.bundles);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
+  const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
   // Bundles edited since they were last written.
   const dirty = useRef(new Set<string>());
   const firstTable = Object.keys(library.bundles).flatMap((b) => tableKeysIn(library.tables, library.bundles, b))[0] ?? "";
@@ -272,6 +302,23 @@ export function App({ library, initialTable, initialView }: { library: Library; 
     onUpdateField: (name, patch) => edit(key, (t) => withFieldPatch(t, name, patch)),
   });
   const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
+
+  const viewActions = (key: string, current: View): ViewActions => ({
+    // A new view starts as a plain table of everything; its settings are
+    // where it's made into what's wanted.
+    onAddView: () => {
+      const made: View = { id: newId(), name: "New View", layout: "table" };
+      edit(key, (t) => withView(t, made));
+      setViewIds((prev) => ({ ...prev, [key]: made.id }));
+    },
+    ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
+  });
+  const viewPrompt = confirmViewDelete
+    ? (() => {
+        const v = tables[confirmViewDelete.key]?.views.find((x) => x.id === confirmViewDelete.viewId);
+        return v ? deleteViewPrompt(tables, confirmViewDelete.key, v) : null;
+      })()
+    : null;
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
 
   return (
@@ -303,11 +350,36 @@ export function App({ library, initialTable, initialView }: { library: Library; 
                 view={view}
                 edits={edits(active, view.id)}
                 saving={saving}
+                viewActions={viewActions(active, view)}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {confirmViewDelete && viewPrompt ? (
+            <AdwAlertDialog
+              heading={viewPrompt.heading}
+              body={viewPrompt.body}
+              closeResponse="cancel"
+              defaultResponse="cancel"
+              responses={[
+                { id: "cancel", label: "Cancel" },
+                { id: "delete", label: "Delete", appearance: Adw.ResponseAppearance.DESTRUCTIVE },
+              ]}
+              onResponse={(response) => {
+                if (response === "delete") {
+                  const { key, viewId } = confirmViewDelete;
+                  edit(key, (t) => withoutView(t, viewId));
+                  setViewIds((prev) => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  });
+                }
+                setConfirmViewDelete(null);
+              }}
+            />
+          ) : null}
           {confirmDelete && deleting ? (
             <AdwAlertDialog
               heading={`Delete “${rowTitleFor(deleting, confirmDelete.rowId)}”?`}
