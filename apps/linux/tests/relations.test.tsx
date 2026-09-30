@@ -36,7 +36,10 @@ describe("relations on Linux", () => {
   it("a deal's company is picked from the companies, by name, and saved as its id", async () => {
     await openDeals();
     // Deal 1 (Atlas: 3-year renewal) is Atlas Freight's.
-    await userEvent.click((await screen.findAllByText("Atlas Freight"))[0]!);
+    // The name is a link; the cell around it is what edits, as on the web.
+    const link = (await screen.findAllByText("Atlas Freight"))[0]!.getParent()!;
+    expect(link).toBeInstanceOf(Gtk.Button);
+    await userEvent.click(link.getParent()!);
     let picker: Gtk.DropDown | undefined;
     await waitFor(async () => {
       picker = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).find((w) => w instanceof Gtk.DropDown) as Gtk.DropDown | undefined;
@@ -53,5 +56,16 @@ describe("relations on Linux", () => {
     await userEvent.click(pickers[0]!);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.CHECKBOX, { name: "Priya Nair" }));
     await waitFor(async () => expect((await dealsOnDisk()).rows.find((r) => r.id === "dl-1")?.contacts).toEqual(["ct-maya", "ct-jonas", "ct-priya"]));
+  });
+
+  it("a related row's link opens its table, and its page when it has one", async () => {
+    await openDeals();
+    // Atlas Freight has a page (bodies/co-atlas.md): following the link opens it.
+    const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b.getTooltipText()?.includes("co-atlas"))!;
+    expect(link).toBeDefined();
+    await userEvent.click(link);
+    expect(await screen.findByText("bodies/co-atlas.md")).toBeDefined();
+    // Behind it, the companies table is the one shown.
+    expect(await screen.findByText("Companies")).toBeDefined();
   });
 });
