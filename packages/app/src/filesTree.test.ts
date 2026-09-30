@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
-import { attachmentAt, fileKind, fileText, filesTree, flattenFilesTree, type FilesTreeDir } from "./filesTree.ts";
+import { attachmentAt, attachmentShown, fileKind, fileText, filesTree, flattenFilesTree, type FilesTreeDir } from "./filesTree.ts";
 
 const table = (title: string, rows: number, bodies: Record<string, string> = {}): ParsedTable => ({
   path: "x",
@@ -99,4 +99,16 @@ test("kinds, attachments and text by path", () => {
   assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/r0.md"), "# Notes\n");
   assert.match(fileText(tables, bundles, "crm", "meta.json") ?? "", /"deals",\s*"companies"/);
   assert.equal(fileText(tables, bundles, "crm", "tables/nope/rows.ndjson"), undefined);
+});
+
+test("an attachment shows as its image, or a note when it isn't one or isn't there", () => {
+  assert.deepEqual(attachmentShown("logo.svg", "file:///a/logo.svg"), { image: "file:///a/logo.svg" });
+  assert.deepEqual(attachmentShown("photo.JPG", "x"), { image: "x" });
+  assert.deepEqual(attachmentShown("notes.pdf", "x"), { note: "Not an image, so there's nothing to preview." });
+  assert.deepEqual(attachmentShown("logo.svg", undefined), { note: "Not found." });
+});
+
+test("what counts as drawable is the platform's: a HEIC is a note in a browser, an image where it can be drawn", () => {
+  assert.deepEqual(attachmentShown("scan.heic", "x"), { note: "Not an image, so there's nothing to preview." });
+  assert.deepEqual(attachmentShown("scan.heic", "x", (n) => /\.(heic|tiff?)$/i.test(n)), { image: "x" });
 });

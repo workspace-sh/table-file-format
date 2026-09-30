@@ -34,6 +34,7 @@ import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
 import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded } from "@workspace.sh/table-app";
 import { appCommands, hintWithShortcut, TOOLBAR_HINTS, type AppCommandId } from "@workspace.sh/table-app";
+import { attachmentShown, type AttachmentShown } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -731,9 +732,9 @@ export function App() {
   // What the Files side of the sidebar lists and opens: each bundle's
   // files as saving writes them, and fixture tables' attachments.
   const attachmentsOf = useCallback((key: string) => Object.keys(attachmentUrls[key] ?? {}).sort(), []);
-  const shownFileContent = (file: ShownFile): { content?: string; imageUrl?: string } => {
+  const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } => {
     const attachment = attachmentAt(file.bundle, file.path);
-    if (attachment) return { imageUrl: attachmentUrls[attachment.tableKey]?.[attachment.name] };
+    if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrls[attachment.tableKey]?.[attachment.name]) };
     return { content: fileText(tables, bundles, file.bundle, file.path) ?? "" };
   };
 
