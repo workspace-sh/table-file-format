@@ -4,9 +4,7 @@ import {
   textDirection,
   bundleFiles,
   isSheet,
-  newBundle,
   newId,
-  newTable,
   parseAddress,
   validate,
 } from "@workspace.sh/table-core";
@@ -38,7 +36,7 @@ import { attachmentUrls, bundles as initialBundles, tables as initialTables } fr
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
 import { bundleOf, bundleTables, fromBundle, keyForAddress, tableNameOf, toBundle } from "@workspace.sh/table-app";
-import { tableKeyFor } from "@workspace.sh/table-app";
+import { newView, withNewFile, withNewTable } from "@workspace.sh/table-app";
 import { browserStore, clearSaved, loadSaved, save, withNewFixtures } from "@workspace.sh/table-app";
 import { Sidebar, type ShownFile } from "./Sidebar";
 import { FileView } from "./FileView";
@@ -378,30 +376,23 @@ export function App() {
     (bundle: string) => {
       const title = window.prompt("Name the new table")?.trim();
       if (!title) return;
-      const name = tableKeyFor(title, Object.keys(bundleTables(tables, bundle)));
-      const made = newTable(title, `${bundle}.table/tables/${name}`);
-      setTables((all) => ({ ...all, [`${bundle}/${name}`]: made }));
-      setBundles((all) => {
-        const meta = all[bundle] ?? {};
-        const order = meta.tables ?? Object.keys(bundleTables(tables, bundle));
-        return { ...all, [bundle]: { ...meta, tables: [...order, name] } };
-      });
-      openKey(`${bundle}/${name}`, made.views[0]!.id);
+      const made = withNewTable(tables, bundles, bundle, title);
+      setTables(made.tables);
+      setBundles(made.bundles);
+      openKey(made.key, made.viewId);
     },
-    [tables],
+    [tables, bundles],
   );
 
   // A new `.table` file: a bundle holding one new table.
   const createFile = useCallback(() => {
     const title = window.prompt("Name the new .table file")?.trim();
     if (!title) return;
-    const key = tableKeyFor(title, Object.keys(bundles));
-    const name = tableKeyFor(title, []);
-    const made = newBundle(title, `${key}.table`, name);
-    setTables((all) => ({ ...all, ...fromBundle(key, made) }));
-    setBundles((all) => ({ ...all, [key]: made.meta }));
-    openKey(`${key}/${name}`, made.tables[name]!.views[0]!.id);
-  }, [bundles]);
+    const made = withNewFile(tables, bundles, title);
+    setTables(made.tables);
+    setBundles(made.bundles);
+    openKey(made.key, made.viewId);
+  }, [tables, bundles]);
 
   // Download: the whole bundle as a real `.table.zip` (D27, D37), so the
   // tables it links together travel together.
@@ -713,7 +704,7 @@ export function App() {
   // A new view starts as a plain table of everything; its settings open
   // so it can be made into what's wanted straight away.
   const addView = useCallback(() => {
-    const made: View = { id: newId(), name: "New view", layout: "table" };
+    const made = newView();
     setTables((all) => onTable(all, activeTablePath, (t) => withView(t, made)));
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
     setShowViewSettings(true);
