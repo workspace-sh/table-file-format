@@ -6,6 +6,7 @@ import { bundles as fixtures } from "@workspace.sh/table-fixtures";
 
 import { derive, initialAppState, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
 import { fromBundle } from "./bundles.ts";
+import { newView } from "./creating.ts";
 import { viewAddress } from "./history.ts";
 import type { Library } from "./library.ts";
 
@@ -138,6 +139,7 @@ test("leaving: back and forward clear them too", () => {
 test("leaving: a new view is the exception, opening on its settings", () => {
   const s = run(start(), { type: "search", text: "ship" }, { type: "addView", id: "new-1" });
   assert.equal(viewOf(s), "new-1");
+  assert.deepEqual(s.tables["projects/projects"]!.views.at(-1), newView("new-1"));
   assert.equal(s.settingsOpen, true);
   assert.equal(s.search, "");
 });
@@ -245,6 +247,29 @@ test("insertRow goes where the sheet says, and nowhere a sort decides", () => {
   assert.deepEqual(rowIds(s).slice(0, 3), [before[0], "r-new", before[1]]);
   const sorted = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "by-date" });
   assert.equal(tableApp(sorted, { type: "insertRow", anchor: "opening", where: "below", id: "x" }), sorted);
+});
+
+test("insertRow is refused outside a Sheet view, even an unsorted one", () => {
+  const s = start();
+  assert.equal(tableApp(s, { type: "insertRow", anchor: "p1", where: "below", id: "x" }), s);
+});
+
+test("a page open closes when another table shows, even one with a row of the same id", () => {
+  const { tables } = examples();
+  const copy: Library = {
+    tables: { "crm-2/companies": { ...tables["crm/companies"]!, path: "crm-2.table/tables/companies" } },
+    bundles: { "crm-2": { title: "CRM", tables: ["companies"] } },
+    paths: { "crm-2": "/x/crm-2.table" },
+    problems: {},
+  };
+  const open = run(start(), { type: "showTable", key: "crm/companies" }, { type: "openPage", rowId: "co-atlas" });
+  assert.equal(open.openPage, "co-atlas");
+  const s = run(open, { type: "opened", library: copy });
+  assert.equal(s.active, "crm-2/companies");
+  assert.equal(s.openPage, null);
+  const back = run(s, { type: "openPage", rowId: "co-atlas" }, { type: "back" });
+  assert.equal(back.active, "crm/companies");
+  assert.equal(back.openPage, null);
 });
 
 test("deleteRow asks first; cancel keeps the row, delete removes it and closes its page", () => {
@@ -439,6 +464,11 @@ test("derive: the view on screen as this viewer sees it, with its summary and br
   assert.equal(d.direction, "ltr");
   assert.equal(d.mode, "tables");
   assert.deepEqual(d.filesTree, []);
+});
+
+test("derive: a search of only spaces isn't searching", () => {
+  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "all" }, { type: "search", text: "  " }));
+  assert.equal(d.summary.count, "8 of 8 rows");
 });
 
 test("derive: the viewer's language sets the direction; the platform's when they chose none", () => {

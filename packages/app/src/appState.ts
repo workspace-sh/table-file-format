@@ -6,15 +6,15 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
-import { type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
+import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
 import { addressTarget, applyTarget, bundleOf, type AddressTarget } from "./bundles.ts";
 import { appCommands, type AppCommand } from "./commands.ts";
 import { CANCEL, type Confirm } from "./confirm.ts";
-import { creating, namePrompt, type Making, type NamePrompt } from "./creating.ts";
+import { creating, namePrompt, newView, type Making, type NamePrompt } from "./creating.ts";
 import { viewerLocale, viewerOrder, withDisplayChoice } from "./displaySettings.ts";
 import {
   deletingRow,
@@ -214,8 +214,15 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   let next = state;
   if (!next.tables[next.active]) next = { ...next, active: firstTableKey(next.tables) ?? next.active };
   const tableChanged = next.active !== prev.active;
-  // A page open is of a row in the table on screen: gone with the row.
-  if (next.openPage !== null && !next.tables[next.active]?.rows.some((r) => r.id === next.openPage)) next = { ...next, openPage: null };
+  // A page open is of a row in the table on screen: it closes when the row
+  // goes, or when another table shows, unless following an address opened it
+  // (row ids are only unique within a table).
+  if (
+    next.openPage !== null &&
+    ((tableChanged && action.type !== "follow") || !next.tables[next.active]?.rows.some((r) => r.id === next.openPage))
+  ) {
+    next = { ...next, openPage: null };
+  }
   const fromView = viewIdOf(prev, prev.active);
   const toView = viewIdOf(next, next.active);
   const left = leaving(prev.active, fromView, next.active, toView);
@@ -307,9 +314,10 @@ function step(state: AppState, action: AppAction): AppState {
     case "addRow":
       return edit(state, (t) => withRow(t, action.id));
     case "insertRow": {
-      // Only where the sheet decides order (canInsertAt): withRowAt changes nothing elsewhere.
+      // Only in a Sheet view whose order isn't decided by a sort (D41).
       const view = currentView(state);
-      return view ? edit(state, (t) => withRowAt(t, view.id, action.anchor, action.where, action.id)) : state;
+      if (!view || !isSheet(view) || !canInsertAt(view)) return state;
+      return edit(state, (t) => withRowAt(t, view.id, action.anchor, action.where, action.id));
     }
     case "deleteRow": {
       const table = state.tables[state.active];
@@ -338,7 +346,7 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "addView": {
       // A plain table of everything; its settings open, where it's made into what's wanted.
-      const edited = edit(state, (t) => withView(t, { id: action.id, name: "New view", layout: "table" }));
+      const edited = edit(state, (t) => withView(t, newView(action.id)));
       if (edited === state) return state;
       return { ...edited, viewIds: { ...edited.viewIds, [state.active]: action.id }, settingsOpen: true };
     }
@@ -547,7 +555,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     summary: viewSummary(table, {
       shown: shown.rows.length,
       inView: shown.inView,
-      searching: state.search.length > 0,
+      searching: state.search.trim().length > 0,
       openedAt: state.openedAt[state.active],
     }),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
