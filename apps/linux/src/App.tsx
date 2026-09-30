@@ -29,7 +29,6 @@ import { quit } from "@gtkx/react";
 import {
   derive,
   initialAppState,
-  tableApp,
   viewCallbacks,
   type Derived,
   type ViewCallbacks,
@@ -43,7 +42,6 @@ import {
   toBundle,
   gtkAccelOf,
   loadSidebarPrefs,
-  saveSidebarPrefs,
   type AppCommand,
   type AppCommandId,
   attachmentAt,
@@ -54,17 +52,15 @@ import {
   type SidebarEntry,
   displayChoices,
   loadDisplay,
-  saveDisplay,
   type KeyValueStore,
   bundleTables,
   rowTitleFor,
   tableNameOf,
-  forViews,
   loadArrangements,
-  saveArrangements,
   type Confirm,
   type NamePrompt,
 } from "@workspace.sh/table-app";
+import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { attachFile, attachmentsIn, bundlesIn, loadLibrary, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -83,7 +79,7 @@ import {
   ViewSettings,
   type ViewProps,
 } from "@workspace.sh/table-gtk";
-import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /** A line of the sidebar: table-app's tree, flattened for a ListBox. */
 type Entry = SidebarEntry;
@@ -363,9 +359,6 @@ function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (
   );
 }
 
-/** Whether the tables on screen are the ones on disk. */
-type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
-
 /**
  * Where the files stand, in the header bar: nothing when they're saved (a
  * document app that saves as you go says nothing when it has), a spinner
@@ -428,7 +421,10 @@ export function App({
   // (docs/APP-STATE.md), as the web and the Mac hold theirs. What's left
   // here is Linux's own: where bundles are on disk, the file choosers, the
   // window's narrow layout, and drawing.
-  const [state, dispatch] = useReducer(tableApp, undefined, () => {
+  // Every change to it is written as the web and the Mac write theirs:
+  // table-app's useTableApp, with Linux's own writer.
+  const resetting = useRef(false);
+  const { state, dispatch, display: shownDisplay, saving } = useTableApp(() => {
     // The examples, in newFilesIn, are the demo's own, and a reset puts them
     // back; a folder named on the command line or opened is the viewer's.
     const inExamples = (path: string) => !!newFilesIn && path.startsWith(`${newFilesIn}/`);
@@ -442,7 +438,16 @@ export function App({
       stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
       ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
     });
-  });
+  }, {
+    store,
+    delayMs: SAVE_DELAY_MS,
+    // Each bundle to where it is on disk. A reset holds writing while it puts the examples back.
+    write: async (bundles, tables, metas) => {
+      if (resetting.current) return false;
+      const paths = Object.fromEntries(bundles.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
+      await Promise.all(bundles.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
+    },
+  }, ownLocale);
   const { tables, bundles } = state;
 
   // Where a bundle is on disk: the folder it was opened from, else the new-files folder.
@@ -460,38 +465,6 @@ export function App({
   useEffect(() => {
     Gtk.Widget.setDefaultDirection(derived.direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
   }, [derived.direction]);
-  const shownDisplay = useMemo(() => ({ ...state.display, direction: derived.direction }), [state.display, derived.direction]);
-
-  // This viewer's own settings, kept as they change.
-  useEffect(() => saveSidebarPrefs(store, state.sidebar), [store, state.sidebar]);
-  useEffect(() => saveArrangements(store, forViews(state.arrangements, tables)), [store, state.arrangements, tables]);
-  useEffect(() => {
-    if (store) saveDisplay(store, state.display);
-  }, [store, state.display]);
-
-  // Edited bundles are written a moment after the last edit. A reset
-  // holds writing while it puts the examples back.
-  const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
-  const resetting = useRef(false);
-  useEffect(() => {
-    if (state.dirty.length === 0) return;
-    const timer = setTimeout(() => {
-      if (resetting.current) return;
-      const which = state.dirty;
-      const snapshot = tables;
-      const paths = Object.fromEntries(which.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
-      setSaving({ kind: "saving" });
-      Promise.all(which.map((b) => saveBundle({ ...library, paths }, snapshot, bundles, b)))
-        .then(() => {
-          dispatch({ type: "written", bundles: which, tables: snapshot });
-          setSaving({ kind: "saved" });
-        })
-        .catch((error: unknown) => setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) }));
-    }, SAVE_DELAY_MS);
-    return () => clearTimeout(timer);
-    // pathOf reads state.opened, which changes only with tables.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.dirty, tables, bundles, library]);
 
   // A narrow window: the sidebar lays over the content, hidden until asked for.
   const [narrow, setNarrow] = useState(false);
@@ -511,7 +484,7 @@ export function App({
         try {
           dispatch({ type: "updateRow", rowId, field, value: attachFile(tableDir(state.active), source) });
         } catch (error) {
-          setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+          tell(`Couldn't attach ${basename(source)}`, error instanceof Error ? error.message : String(error));
         }
       });
     },
