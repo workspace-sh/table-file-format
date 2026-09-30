@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
@@ -29,104 +29,56 @@ import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
   SIDEBAR_KEY,
-  loadSidebarPrefs,
-  saveSidebarPrefs,
-  sidebarTree,
-  filesTree,
-  flattenFilesTree,
-  fileText,
-  attachmentAt,
-  type SidebarPrefs,
-  displayChoices,
-  withDisplayChoice,
-  newView,
-  withView,
-  attachmentName,
-  archiveFileName,
-  bundleToArchive,
-  openArchive,
-  toBundle,
-  loadDisplay,
-  saveDisplay,
   STORAGE_KEY,
-  clearSaved,
-  forViews,
-  loadArrangements,
-  loadSaved,
-  save,
-  saveArrangements,
-  withNewFixtures,
-  type KeyValueStore,
-  arrange,
-  isArranged,
-  reset as resetArrangement,
-  withoutView,
-  deletingRow,
-  deletingView,
-  viewPatchPrompt,
-  type Confirm,
-  type Arrangements,
+  TOOLBAR_HINTS,
+  appCommands,
+  archiveFileName,
+  attachmentAt,
+  attachmentName,
   bundleOf,
   bundleTables,
-  fromBundle,
-  onTable,
-  rowTitleFor,
-  sheetShown,
-  showView,
-  tableNameOf,
-  withBody,
-  withCell,
-  withChoice,
-  withField,
-  withFieldMoved,
-  withFieldPatch,
-  withRow,
-  withRowAt,
-  withViewPatch,
-  withoutRow,
-  type SheetGridShown,
-  schemaVersions,
-  viewSummary,
-  appCommands,
-  NO_TABLE,
+  bundleToArchive,
+  clearSaved,
+  derive,
+  displayChoices,
   exportFailedText,
-  applyTarget,
-  importSkippedText,
-  openFailedText,
-  viewerLocale,
-  viewerOrder,
-  withFileToggled,
+  fileText,
+  flattenFilesTree,
+  forViews,
+  fromBundle,
   hintWithShortcut,
-  TOOLBAR_HINTS,
-  leaving,
-  DEFAULT_TABLE_KEY,
-  firstTableKey,
-  firstViews,
-  withFileUnfolded,
+  initialAppState,
+  loadArrangements,
+  loadDisplay,
+  loadSaved,
+  loadSidebarPrefs,
+  openArchive,
+  openFailedText,
+  rowTitleFor,
+  save,
+  saveArrangements,
+  saveDisplay,
+  saveSidebarPrefs,
+  schemaVersions,
+  tableApp,
+  tableNameOf,
+  toBundle,
+  viewCallbacks,
+  withNewFixtures,
   type AppCommand,
-  NO_HISTORY,
-  addressLive,
-  canGoBack,
-  canGoForward,
-  goBack,
-  goForward,
-  viewAddress,
-  visited,
-  type History,
-  tableBreadcrumb,
-  afterReset,
-  resetPrompt,
+  type AppAction,
   type AppCommandId,
-  addressTarget,
-  savingForEveryone,
-  creating,
-  namePrompt,
+  type Confirm,
+  type KeyValueStore,
+  type Library,
+  type Making,
   type NamePrompt,
+  type SheetGridShown,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
-import { OPENED_KEY, useFolders } from "./folders";
+import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
@@ -339,7 +291,7 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
-  onAddRow: () => string;
+  onAddRow: () => string | void;
   onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
@@ -419,11 +371,11 @@ function ask(prompt: Confirm, then: (response: string) => void) {
 /**
  * Ask for a name in the system's own text prompt (a sheet on the window),
  * worded by table-app's namePrompt; `then` gets what was typed, which
- * table-app's creating trims (nothing is made when it's empty). Cancel
- * calls nothing.
+ * table-app's creating trims (nothing is made when it's empty); `cancel`
+ * when it's cancelled.
  * react-native-macos has Alert.promptMacOS, but not in its types.
  */
-function askName(prompt: NamePrompt, then: (name: string) => void) {
+function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () => void) {
   const alert = Alert as unknown as {
     promptMacOS: (
       title: string,
@@ -437,7 +389,7 @@ function askName(prompt: NamePrompt, then: (name: string) => void) {
     prompt.heading,
     undefined,
     [
-      { text: "Cancel", style: "cancel" },
+      { text: "Cancel", style: "cancel", onPress: cancel },
       { text: prompt.action, onPress: (value) => then(value ?? "") },
     ],
     "plain-text",
@@ -447,107 +399,91 @@ function askName(prompt: NamePrompt, then: (name: string) => void) {
 
 /**
  * Edits are kept between launches (#86), as the web keeps them between
- * reloads: the saved tables are read before the first screen, and nothing
- * shows until they are (a moment, from a local database).
+ * reloads: the saved tables and the folders opened last time are read
+ * before the first screen, and nothing shows until they are (a moment,
+ * from a local database and the disk).
  */
 export default function App() {
-  const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
+  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: Library } | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY]).then(setStore, () => setStore(null));
+    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY])
+      .catch(() => null)
+      .then(async (store) => ({ store, folders: await reopenFolders(store, Object.keys(bundleMetas)) }))
+      .then(setLoaded);
   }, []);
-  return store === undefined ? null : <TableApp store={store} />;
+  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders} />;
 }
 
-function TableApp({ store }: { store: KeyValueStore | null }) {
-  // What was saved, or the fixtures when nothing usable was; fixture
-  // tables added since the last save still appear.
-  const [initial] = useState(() => {
+function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: Library }) {
+  // Everything the app holds is table-app's state (docs/APP-STATE.md): what
+  // was saved, or the fixtures when nothing usable was (fixture tables
+  // added since the last save still appear), the folders opened last time,
+  // and the viewer's own settings.
+  const [state, dispatch] = useReducer(tableApp, undefined, () => {
     const fixtures = { tables: initialTables, bundles: bundleMetas };
     const saved = loadSaved(store);
-    return saved ? withNewFixtures(saved, fixtures) : fixtures;
+    const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+    const s = initialAppState({
+      tables: { ...initial.tables, ...reopened.tables },
+      bundles: { ...initial.bundles, ...reopened.bundles },
+      opened: reopened.paths,
+      stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+    });
+    // "Schema changed" is since the fixtures, as saved edits carry over a launch.
+    return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
   });
-  const [tables, setTables] = useState<Record<string, ParsedTable>>(initial.tables);
-  // Each bundle's manifest (D37): the fixtures', and any folder opened.
-  const [bundles, setBundles] = useState<Record<string, BundleMeta>>(initial.bundles);
+  const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
-  const folders = useFolders({ store, tables, setTables, bundles, setBundles, onProblem: showProblem });
-  const [chosenTablePath, setActiveTablePath] = useState<string>(() => firstTableKey(initial.tables) ?? DEFAULT_TABLE_KEY);
-  // The table on screen: the one chosen while it's held, else the first held
-  // (a table that went away, or a key that never was). Everything below reads
-  // this, so none of it meets a missing table; the effect keeps the choice in step.
-  const activeTablePath = tables[chosenTablePath] ? chosenTablePath : (firstTableKey(tables) ?? chosenTablePath);
+  const folders = useFolders({ store, tables, bundles, paths: folderPaths, onProblem: showProblem });
+  // What reading last time's folders found wrong, once.
   useEffect(() => {
-    if (activeTablePath !== chosenTablePath) setActiveTablePath(activeTablePath);
-  }, [activeTablePath, chosenTablePath]);
-  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => firstViews(initial.tables));
-  // Saved after every change. The fixtures themselves are never saved, so
+    for (const [key, messages] of Object.entries(reopened.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
+    // Once, at launch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Saved after every edit. The fixtures themselves are never saved, so
   // an untouched app keeps following them as they change. An opened
   // folder's tables live in the folder (folders.ts), so they're left out.
   useEffect(() => {
-    if (tables === initialTables) return;
-    const opened = new Set(Object.keys(folders.paths));
+    if (state.dirty.length === 0) return;
+    const opened = new Set(Object.keys(folderPaths));
     save(store, {
       tables: Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
       bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
     });
-  }, [store, tables, bundles, folders.paths]);
+    dispatch({ type: "written", bundles: state.dirty, tables });
+  }, [store, state.dirty, tables, bundles, folderPaths]);
+  useEffect(() => saveSidebarPrefs(store, sidebarPrefs), [store, sidebarPrefs]);
+  useEffect(() => saveDisplay(store, display), [store, display]);
+  // Only views that still exist: a deleted view's arrangement goes with it.
+  useEffect(() => saveArrangements(store, forViews(state.arrangements, tables)), [store, state.arrangements, tables]);
 
-  // Start again from the example tables (table-app's resetPrompt and
-  // afterReset): edits to them go, and so do tables made or imported here;
-  // a .table folder opened from disk is the person's own, and stays open as
-  // it is. What's on screen stays if it's in one of those folders.
-  const doReset = useCallback(() => {
-    const opened = Object.keys(folders.paths);
-    clearSaved(store);
-    const after = afterReset(tables, bundles, { tables: initialTables, bundles: bundleMetas }, opened);
-    setTables(after.tables);
-    setBundles(after.bundles);
-    if (!opened.includes(bundleOf(activeTablePath))) setActiveTablePath(firstTableKey(after.tables) ?? DEFAULT_TABLE_KEY);
-    setActiveViewIds((prev) => ({
-      ...Object.fromEntries(Object.entries(prev).filter(([key]) => opened.includes(bundleOf(key)))),
-      ...firstViews(initialTables),
-    }));
-    setQuery("");
-    setActiveBodyRowId(null);
-    setShownFile(null);
-    return opened;
-  }, [folders.paths, store, tables, bundles, activeTablePath]);
-  const resetDemo = useCallback(() => {
-    ask(resetPrompt({ openedFolders: Object.keys(folders.paths).length > 0 }), (response) => {
-      if (response === "reset") doReset();
+  // Questions, as native alerts and the system's own text prompt; messages as alerts.
+  useEffect(() => {
+    const asking = state.asking;
+    if (!asking) return;
+    if (asking.kind === "name") {
+      askName(asking.prompt, (text) => dispatch({ type: "answer", response: "create", text }), () =>
+        dispatch({ type: "answer", response: "cancel" }),
+      );
+      return;
+    }
+    ask(asking.confirm, (response) => {
+      // Starting again from the examples: what this Mac saved goes too; opened folders stay.
+      if (asking.on.type === "reset" && response === "reset") clearSaved(store);
+      dispatch({ type: "answer", response });
     });
-  }, [folders.paths, doReset]);
-
-  // Show what was just made: its first view, from the top.
-  const showMade = useCallback((key: string, viewId: string) => {
-    setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
-    setActiveTablePath(key);
-    setQuery("");
-    setActiveBodyRowId(null);
-  }, []);
-  // A new table goes into the bundle on show, as a new sheet into a workbook (D37).
-  const createTable = useCallback(
-    (name: string) => {
-      const made = creating(tables, bundles, { kind: "table", bundle: bundleOf(activeTablePath) }, name);
-      if (!made) return;
-      setTables(made.tables);
-      setBundles(made.bundles);
-      showMade(made.key, made.viewId);
-    },
-    [tables, bundles, activeTablePath, showMade],
-  );
-  // A new .table: a bundle holding one new table.
-  const createFile = useCallback(
-    (name: string) => {
-      const made = creating(tables, bundles, { kind: "file" }, name);
-      if (!made) return;
-      setTables(made.tables);
-      setBundles(made.bundles);
-      showMade(made.key, made.viewId);
-    },
-    [tables, bundles, showMade],
-  );
+  }, [state.asking, store]);
+  useEffect(() => {
+    if (!state.telling) return;
+    showProblem(state.telling.heading, state.telling.body ?? "");
+    dispatch({ type: "told" });
+  }, [state.telling, showProblem]);
+  const fresh: Library = { tables: initialTables, bundles: bundleMetas, paths: {}, problems: {} };
 
   // Export: the shown table's whole bundle as a real .table.zip (D27, D37),
   // so the tables it links together travel together. `path` skips the panel.
@@ -559,79 +495,48 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       try {
         await writeBytes(where, await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
       } catch (error) {
-        showProblem(exportFailedText(archiveFileName(bundle), error), "");
+        dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       }
     },
-    [activeTablePath, tables, bundles, showProblem],
+    [activeTablePath, tables, bundles],
   );
   // Import: a .table.zip becomes one more bundle here, saying what the reader
   // skipped (D25). Only a file with no table in it is refused. `path` skips the panel.
-  const importZip = useCallback(
-    async (path?: string) => {
-      const where = path ?? (await chooseFile("Open a .table.zip", ["zip"]));
-      if (!where) return;
-      try {
-        const opened = await openArchive(await readBytes(where), Object.keys(bundles));
-        const entries = fromBundle(opened.key, opened.bundle);
-        setTables((all) => ({ ...all, ...entries }));
-        setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
-        const first = Object.keys(entries)[0]!;
-        showMade(first, entries[first]!.views[0]?.id ?? "");
-        // What was skipped, and a failure, in the words the web and Linux use (table-app).
-        const skipped = importSkippedText(opened);
-        if (skipped) showProblem(skipped.heading, skipped.body);
-      } catch (error) {
-        showProblem(openFailedText(where.split("/").pop() ?? where, error), "");
-      }
-    },
-    [bundles, showMade, showProblem],
-  );
+  const importZip = useCallback(async (path?: string) => {
+    const where = path ?? (await chooseFile("Open a .table.zip", ["zip"]));
+    if (!where) return;
+    try {
+      const opened = await openArchive(await readBytes(where), Object.keys(stateRef.current.bundles));
+      const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      dispatch({ type: "opened", library, skipped: opened.skipped });
+    } catch (error) {
+      dispatch({ type: "tell", message: { heading: openFailedText(where.split("/").pop() ?? where, error) } });
+    }
+  }, []);
 
   // Open a .table folder and show its first table; one already open is shown again.
   const openFolder = useCallback(
     async (path: string | null) => {
       if (!path) return;
-      const held = Object.entries(folders.paths).find(([, p]) => p === path)?.[0];
-      const library = held ? null : await folders.open([path]);
-      for (const [key, messages] of Object.entries(library?.problems ?? {}))
-        showProblem(`Problems reading ${key}.table`, messages.join("\n"));
-      const key = held ?? Object.keys(library?.paths ?? {})[0];
-      const first = key ? (library ? Object.keys(library.tables) : Object.keys(tables)).find((t) => bundleOf(t) === key) : undefined;
-      if (first) {
-        setActiveTablePath(first);
-        setQuery("");
-        setActiveBodyRowId(null);
+      const { opened, tables: held } = stateRef.current;
+      const heldKey = Object.entries(opened).find(([, p]) => p === path)?.[0];
+      if (heldKey) {
+        const first = Object.keys(held).find((t) => bundleOf(t) === heldKey);
+        if (first) dispatch({ type: "showTable", key: first });
+        return;
       }
+      const library = await folders.open([path]);
+      for (const [key, messages] of Object.entries(library.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
+      if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
     },
-    [folders, showProblem, tables],
+    [folders, showProblem],
   );
-  const [query, setQuery] = useState<string>("");
-  const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
-  const [showViewSettings, setShowViewSettings] = useState(false);
-  // Which files are folded in the sidebar, kept as the web keeps them.
-  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(store));
+
   // The Display panel, open or not, kept with the sidebar prefs as the web keeps
   // its Display group's fold. Open only when unfolded by choice: on the Mac it
   // opens in the main area, so it starts closed.
   const showDisplay = sidebarPrefs.foldedDisplay === false;
-  const toggleDisplay = useCallback(
-    () =>
-      setSidebarPrefs((prefs) => {
-        const next = { ...prefs, foldedDisplay: prefs.foldedDisplay !== false ? false : true };
-        saveSidebarPrefs(store, next);
-        return next;
-      }),
-    [store],
-  );
-  const toggleFile = useCallback(
-    (bundle: string) =>
-      setSidebarPrefs((prefs) => {
-        const next = withFileToggled(prefs, bundle);
-        saveSidebarPrefs(store, next);
-        return next;
-      }),
-    [store],
-  );
+  const toggleDisplay = useCallback(() => dispatch({ type: "setDisplayFolded", folded: showDisplay }), [showDisplay]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
   // A narrow window (the web's breakpoint) hides the sidebar on its own, as
@@ -648,36 +553,19 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const sidebarShown = narrow ? shownWhileNarrow : !sidebarCollapsed;
   const toggleSidebar = useCallback(() => {
     if (narrow) return setShownWhileNarrow((shown) => !shown);
-    setSidebarPrefs((prefs) => {
-      const { collapsed: _was, ...rest } = prefs;
-      const next = prefs.collapsed ? rest : { ...rest, collapsed: true };
-      saveSidebarPrefs(store, next);
-      return next;
-    });
-  }, [store, narrow]);
+    dispatch({ type: "setSidebarCollapsed", collapsed: !sidebarCollapsed });
+  }, [narrow, sidebarCollapsed]);
   const filesMode = sidebarPrefs.files === true;
-  const setFilesMode = useCallback(
-    (files: boolean) =>
-      setSidebarPrefs((prefs) => {
-        const { files: _was, ...rest } = prefs;
-        const next = files ? { ...rest, files } : rest;
-        saveSidebarPrefs(store, next);
-        return next;
-      }),
-    [store],
-  );
-  // Files mode: the folders opened or closed by hand, and the file shown in place of the view.
-  const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
-  const [shownFile, setShownFile] = useState<{ bundle: string; path: string } | null>(null);
+  const chooseFilesMode = useCallback((files: boolean) => dispatch({ type: "setFilesSide", files }), []);
   // Attachments of tables opened from disk, as their folders list them; fixtures' come with the app.
   const [diskAttachments, setDiskAttachments] = useState<Record<string, string[]>>({});
   useEffect(() => {
     if (!filesMode) return;
     let cancelled = false;
-    const keys = Object.keys(tables).filter((key) => folders.paths[bundleOf(key)]);
+    const keys = Object.keys(tables).filter((key) => folderPaths[bundleOf(key)]);
     void Promise.all(
       keys.map(async (key) => {
-        const dir = joinPath(folders.paths[bundleOf(key)]!, "tables", tableNameOf(key), "attachments");
+        const dir = joinPath(folderPaths[bundleOf(key)]!, "tables", tableNameOf(key), "attachments");
         const entries = await desktopFs.list(dir).catch(() => null);
         return [key, (entries ?? []).filter((e) => !e.directory).map((e) => e.name)] as const;
       }),
@@ -687,23 +575,27 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     return () => {
       cancelled = true;
     };
-  }, [filesMode, tables, folders.paths]);
+  }, [filesMode, tables, folderPaths]);
   const attachmentsOf = useCallback(
-    (key: string) => (folders.paths[bundleOf(key)] ? diskAttachments[key] ?? [] : fixtureAttachments(key)),
-    [folders.paths, diskAttachments],
+    (key: string) => (folderPaths[bundleOf(key)] ? diskAttachments[key] ?? [] : fixtureAttachments(key)),
+    [folderPaths, diskAttachments],
   );
+  // This viewer's language: the chosen one, or the system's. The layout reads
+  // the way it does (D40).
+  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
+  // A folder opened from disk goes by its own name.
+  const folderName = (bundle: string) => folderPaths[bundle]?.split("/").pop();
+  const derived = derive(state, { locale: systemLocale, attachmentsOf, fileNameOf: folderName });
+  const { table, view, summary, direction } = derived;
+  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const files = useMemo(
-    () =>
-      filesMode
-        ? filesTree(tables, bundles, {
-            folded: sidebarPrefs.foldedFiles ?? [],
-            activeTable: activeTablePath,
-            opened: openedDirs,
-            attachmentsOf,
-          }).map((b) => ({ ...b, name: folders.paths[b.bundle] ? `${folders.paths[b.bundle]!.split("/").pop()}/` : b.name }))
-        : [],
-    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, openedDirs, attachmentsOf, folders.paths],
+    () => derived.filesTree.map((b) => ({ ...b, name: folderPaths[b.bundle] ? `${folderName(b.bundle)}/` : b.name })),
+    // derived.filesTree is made anew each render; it follows these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, state.openedDirs, attachmentsOf, folderPaths],
   );
+  // The file shown from the Files side, in place of the view.
+  const shownFile = filesMode ? state.shownFile : null;
   const shown = useMemo(() => {
     if (!shownFile) return null;
     const bundle = files.find((b) => b.bundle === shownFile.bundle);
@@ -717,110 +609,17 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       file,
       folder: `${bundle.name}${parts.slice(0, -1).map((p) => `${p}/`).join("")}`,
       content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path),
-      url: attachment ? attachmentUrl(attachment.tableKey, attachment.name, folders.paths) : undefined,
+      url: attachment ? attachmentUrl(attachment.tableKey, attachment.name, folderPaths) : undefined,
     };
-  }, [shownFile, files, tables, bundles, folders.paths]);
+  }, [shownFile, files, tables, bundles, folderPaths]);
 
-  // This viewer's own filters, sorts and grouping, over the saved views
-  // (D4, D41), as on the web; a sort of their own follows their language.
-  const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(store));
-  useEffect(() => {
-    // Only views that still exist: a deleted view's arrangement goes with it.
-    saveArrangements(store, forViews(arrangements, tables));
-  }, [store, arrangements, tables]);
-  // This viewer's language, default date format and formula syntax: theirs,
-  // not the tables' (SPEC section 4), kept as the web keeps them. The layout
-  // reads the way the language does (D40): the chosen one, or the system's.
-  const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(store));
-  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
-  const locale = viewerLocale(display, systemLocale);
-  const direction = textDirection(locale);
-  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
-  const changeDisplay = useCallback(
-    (next: DisplaySettings) => {
-      setDisplay(next);
-      saveDisplay(store, next);
-    },
-    [store],
-  );
-  // A sort of the viewer's own follows their language.
-  const viewerText = useMemo(() => viewerOrder(locale), [locale]);
-
-  // The table on screen (activeTablePath is always a held one; NO_TABLE only if none is held).
-  const table = tables[activeTablePath] ?? NO_TABLE;
-  // Opening a table unfolds its file, so the sidebar always shows where you are.
-  const activeBundle = bundleOf(activeTablePath);
-  useEffect(() => {
-    setSidebarPrefs((prefs) => {
-      const next = withFileUnfolded(prefs, activeBundle);
-      if (next !== prefs) saveSidebarPrefs(store, next);
-      return next;
-    });
-  }, [activeBundle, store]);
-  const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
-  // Back and forward between views (table-app's history): each view shown is
-  // recorded by its address; going back or forward skips ones since deleted.
-  const [history, setHistory] = useState<History>(NO_HISTORY);
-  const shownViewId = table.views.some((v) => v.id === activeViewId) ? activeViewId : (table.views[0]?.id ?? "");
-  const here = viewAddress(activeTablePath, shownViewId);
-  useEffect(() => setHistory((h) => visited(h, here)), [here]);
-  const live = useCallback((address: string) => addressLive(address, tables, bundles), [tables, bundles]);
-  // Following an address (a relation, Back or Forward): table-app's one rule.
-  const follow = useCallback(
-    (target: { key: string; viewId?: string; openBody: string | null }) => {
-      const applied = applyTarget(target, { viewIds: activeViewIds });
-      setActiveTablePath(applied.activeKey);
-      setActiveViewIds(applied.viewIds);
-      setActiveBodyRowId(applied.openBody);
-      if (applied.mode === "tables") setShownFile(null);
-    },
-    [activeViewIds],
-  );
-  const go = useCallback(
-    (step: typeof goBack) => {
-      const moved = step(history, live);
-      const target = moved && addressTarget(moved.address, tables, bundles, "");
-      if (!moved || !target) return;
-      setHistory(moved.history);
-      // A history entry names no row, so any open document closes.
-      follow(target);
-    },
-    [history, live, tables, bundles, follow],
-  );
-
-  const setActiveViewId = useCallback(
-    (viewId: string) => setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: viewId })),
-    [activeTablePath],
-  );
-
-  // Every change goes through the shared edits (table-app), as on the web
-  // and Linux, so a .table is changed the same way on every platform.
-  const edit = useCallback(
-    (change: (t: ParsedTable) => ParsedTable) => setTables((all) => onTable(all, activeTablePath, change)),
-    [activeTablePath],
-  );
-
-  // A relation click or deep link: the same resolution as the web app.
-  const openRelation = useCallback(
-    (address: string) => {
-      const target = addressTarget(address, tables, bundles, bundleOf(activeTablePath));
-      if (!target) return;
-      follow(target);
-    },
-    [tables, bundles, activeTablePath, follow],
-  );
-
-  const updateRow = useCallback(
-    (rowId: string, fieldName: string, value: unknown) => edit((t) => withCell(t, rowId, fieldName, value)),
-    [edit],
-  );
   // An attachment is a file in its table's attachments/ (SPEC section 6),
   // so a table needs a folder on disk to take one: the file chosen is copied
   // there under a name no other attachment has, and the cell names it.
   // `source` skips the panel.
   const attachFile = useCallback(
     async (rowId: string, fieldName: string, source?: string) => {
-      const folder = folders.paths[bundleOf(activeTablePath)];
+      const folder = folderPaths[bundleOf(activeTablePath)];
       if (!folder) {
         showProblem(
           "Attach files to a table on disk",
@@ -836,97 +635,22 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         const taken = ((await desktopFs.list(dir)) ?? []).map((e) => e.name);
         const name = attachmentName(from.split("/").pop() ?? "file", taken);
         await FileSystem.cp(from, joinPath(dir, name));
-        updateRow(rowId, fieldName, name);
+        dispatch({ type: "updateRow", rowId, field: fieldName, value: name });
       } catch (error) {
         showProblem("Couldn't attach the file", error instanceof Error ? error.message : String(error));
       }
     },
-    [folders.paths, activeTablePath, showProblem, updateRow],
+    [folderPaths, activeTablePath, showProblem],
   );
-  const updateField = useCallback(
-    (fieldName: string, patch: Partial<Field>) => edit((t) => withFieldPatch(t, fieldName, patch)),
-    [edit],
-  );
-  const addEnumValue = useCallback(
-    (fieldName: string, value: string) => edit((t) => withChoice(t, fieldName, value)),
-    [edit],
-  );
-  const moveField = useCallback(
-    (fieldName: string, delta: -1 | 1) => edit((t) => withFieldMoved(t, fieldName, delta)),
-    [edit],
-  );
-  const addField = useCallback((field: Field) => edit((t) => withField(t, field, activeViewId)), [edit, activeViewId]);
-  const addRow = useCallback(() => {
-    const id = newId();
-    edit((t) => withRow(t, id));
-    return id;
-  }, [edit]);
-  const insertRow = useCallback(
-    (anchor: string, where: "above" | "below") => edit((t) => withRowAt(t, activeViewId, anchor, where, newId())),
-    [edit, activeViewId],
-  );
-  const deleteRow = useCallback(
-    (rowId: string) => {
-      const { prompt, closeBody } = deletingRow(table, rowId, activeBodyRowId);
-      ask(prompt, (response) => {
-        if (response !== "delete") return;
-        edit((t) => withoutRow(t, rowId));
-        if (closeBody) setActiveBodyRowId(null);
-      });
-    },
-    [edit, table, activeBodyRowId],
-  );
-  const updateBody = useCallback(
-    (rowId: string, content: string) => edit((t) => withBody(t, rowId, content)),
-    [edit],
-  );
-  const updateActiveView = useCallback(
-    (patch: Partial<View>) => edit((t) => withViewPatch(t, activeViewId, patch)),
-    [edit, activeViewId],
-  );
-  // A new view starts as a plain table of everything, with its settings open.
-  const addView = useCallback(() => {
-    const made = newView();
-    edit((t) => withView(t, made));
-    keepSettingsOpen.current = true;
-    setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
-    setShowViewSettings(true);
-  }, [edit, activeTablePath]);
-
-  const deleteView = useCallback(() => {
-    const viewId = activeViewId;
-    const view = table.views.find((v) => v.id === viewId);
-    // The same question the web asks (table-app); null when it's the last view.
-    const deleting = view ? deletingView(tables, activeTablePath, view) : null;
-    if (!deleting) return;
-    ask(deleting.prompt, (response) => {
-      if (response !== "delete") return;
-      edit((t) => withoutView(t, viewId));
-      setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: deleting.nextViewId }));
-      setShowViewSettings(false);
-    });
-  }, [activeViewId, activeTablePath, edit, table, tables]);
-  const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
-  const closeBody = useCallback(() => setActiveBodyRowId(null), []);
+  // The view on screen's callbacks, each an action (table-app's viewCallbacks).
+  const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, activeTablePath]);
 
   // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
   // File before Close and in View before Enter Full Screen. Choosing one,
   // or pressing its key wherever focus is, does what its button does.
-  const chooseFilesMode = useCallback(
-    (on: boolean) => {
-      if (!on) setShownFile(null);
-      setFilesMode(on);
-    },
-    [setFilesMode],
-  );
+  const { canGoBack, canGoForward } = derived;
   useEffect(() => {
-    const state = {
-      sidebarCollapsed: !sidebarShown,
-      filesMode,
-      canGoBack: canGoBack(history, live),
-      canGoForward: canGoForward(history, live),
-    };
-    for (const c of appCommands(state)) {
+    for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode, canGoBack, canGoForward })) {
       setMenuItem({
         id: c.id,
         menu: c.menu,
@@ -940,20 +664,20 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         enabled: c.enabled,
       });
     }
-  }, [sidebarShown, filesMode, history, live]);
+  }, [sidebarShown, filesMode, canGoBack, canGoForward]);
   const commands: Record<AppCommandId, () => void> = {
-    "new-file": () => askName(namePrompt({ kind: "file" }, bundles), createFile),
+    "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
     "open-zip": () => void importZip(),
     "export-zip": () => void exportZip(),
     "toggle-sidebar": toggleSidebar,
     "tables-mode": () => chooseFilesMode(false),
     "files-mode": () => chooseFilesMode(true),
-    "go-back": () => go(goBack),
-    "go-forward": () => go(goForward),
+    "go-back": () => dispatch({ type: "back" }),
+    "go-forward": () => dispatch({ type: "forward" }),
     // The view's address as text, with the open document's row as the web's address has it;
     // opening one from outside the app waits on a link scheme.
-    "copy-link": () => copyText(viewAddress(activeTablePath, shownViewId, activeBodyRowId ?? undefined)),
+    "copy-link": () => copyText(derived.address),
   };
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
@@ -965,22 +689,25 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // clicking. Not in release builds (__DEV__ is false there).
   useEffect(() => {
     if (!__DEV__) return;
+    const named = (making: Making, title: string) => {
+      dispatch({ type: "create", making });
+      dispatch({ type: "answer", response: "create", text: title });
+    };
     (globalThis as { __tableDesktop?: unknown }).__tableDesktop = {
-      tables: () => Object.keys(tables),
+      tables: () => Object.keys(stateRef.current.tables),
       show: (key: string, viewId?: string) => {
-        if (!tables[key]) return `no table ${key}`;
-        setActiveTablePath(key);
-        if (viewId) setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
-        setQuery("");
-        setActiveBodyRowId(null);
+        if (!stateRef.current.tables[key]) return `no table ${key}`;
+        dispatch(viewId ? { type: "showView", key, viewId } : { type: "showTable", key });
         return `showing ${key}${viewId ? ` / ${viewId}` : ""}`;
       },
       settings: (open: boolean) => {
-        setShowViewSettings(open);
+        dispatch({ type: "settings", open });
         return open ? "settings open" : "settings closed";
       },
+      // Arranging is of the view on screen, so it shows first.
       arrange: (key: string, viewId: string, patch: Partial<View>) => {
-        setArrangements((all) => arrange(all, key, viewId, patch));
+        dispatch({ type: "showView", key, viewId });
+        dispatch({ type: "arrange", patch });
         return "arranged";
       },
       // Check the file adapter against core's contract; the lines land in
@@ -998,14 +725,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         void openFolder(path);
         return `opening ${path}`;
       },
-      folders: () => folders.paths,
+      folders: () => stateRef.current.opened,
       // What the New buttons do once a name is given (the prompt can't be typed into from here).
       newTable: (title: string) => {
-        createTable(title);
+        named({ kind: "table", bundle: bundleOf(stateRef.current.active) }, title);
         return `made table ${title}`;
       },
       newFile: (title: string) => {
-        createFile(title);
+        named({ kind: "file" }, title);
         return `made .table ${title}`;
       },
       attach: (rowId: string, fieldName: string, source: string) => {
@@ -1021,15 +748,17 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `importing ${path}`;
       },
       newView: () => {
-        addView();
+        dispatch({ type: "addView", id: newId() });
         return "made view";
       },
       // Set display settings, as the Display controls will.
       display: (next: DisplaySettings) => {
-        changeDisplay(next);
+        dispatch({ type: "display", choice: { kind: "locale", value: next.locale ?? "" } });
+        dispatch({ type: "display", choice: { kind: "dateFormat", value: next.dateFormat ?? "iso" } });
+        dispatch({ type: "display", choice: { kind: "formulaSyntax", value: next.formulaSyntax ?? "excel" } });
         return "display set";
       },
-      attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
+      attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, stateRef.current.opened) ?? null,
       // The sidebar, as its button does; and a key pressed as if typed (⌘B is postKey("b", 11, ["command"])).
       sidebar: () => {
         toggleSidebar();
@@ -1040,7 +769,13 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `posted ${modifiers.join("+")}+${characters}`;
       },
       menuTitles,
-      history: () => history,
+      history: () => stateRef.current.history,
+      state: () => stateRef.current,
+      // Any of table-app's actions, as the app's own handlers dispatch them.
+      dispatch: (action: AppAction) => {
+        dispatch(action);
+        return action.type;
+      },
       // The window's width, as dragging its edge would set it; and what the sidebar is doing.
       resize: (width: number) => {
         resizeWindow(width);
@@ -1048,20 +783,24 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       },
       sidebarState: () => ({ windowWidth, narrow, shownWhileNarrow, chosenCollapsed: sidebarCollapsed, shown: sidebarShown }),
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
-      reset: () => `reset; kept ${doReset().join(", ") || "no folders"}`,
-      resetPrompt: () => resetDemo(),
+      reset: () => {
+        clearSaved(store);
+        dispatch({ type: "reset", fresh });
+        dispatch({ type: "answer", response: "reset" });
+        return `reset; kept ${Object.keys(stateRef.current.opened).join(", ") || "no folders"}`;
+      },
+      resetPrompt: () => dispatch({ type: "reset", fresh }),
       // Files mode, as the sidebar's switch, folders and files do.
       files: (on: boolean) => {
-        if (!on) setShownFile(null);
-        setFilesMode(on);
+        chooseFilesMode(on);
         return `files mode ${on}`;
       },
       toggleDir: (bundle: string, path: string, open: boolean) => {
-        setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }));
+        dispatch({ type: "toggleDir", id: `${bundle}/${path}`, open });
         return `${bundle}/${path} ${open ? "open" : "closed"}`;
       },
       showFile: (bundle: string | null, path?: string) => {
-        setShownFile(bundle && path ? { bundle, path } : null);
+        dispatch({ type: "showFile", file: bundle && path ? { bundle, path } : null });
         return bundle ? `showing ${bundle}/${path}` : "back to the view";
       },
       // Forget saved edits, opened folders, arrangements and the sidebar's folds; the next launch starts from the fixtures.
@@ -1073,96 +812,53 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown, history]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, openFolder, exportZip, importZip, attachFile, chooseFilesMode, toggleSidebar, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown]);
 
-  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0] ?? NO_TABLE.views[0]!;
   // Hint wording, shared with the web and Linux (table-app's commands).
-  const commandOf = (id: AppCommandId) =>
-    appCommands({ sidebarCollapsed: !sidebarShown, filesMode }).find((c) => c.id === id)!;
-  // Whatever changes the view on screen (the sidebar, a relation, an
-  // address, Back or Forward), its search and settings go with it (table-app's
-  // leaving); choosing the view already there changes nothing. A new view
-  // is the exception: it opens on its settings.
-  const onScreen = useRef({ key: activeTablePath, viewId: view.id });
-  const keepSettingsOpen = useRef(false);
-  useEffect(() => {
-    const from = onScreen.current;
-    onScreen.current = { key: activeTablePath, viewId: view.id };
-    const left = leaving(from.key, from.viewId, activeTablePath, view.id);
-    if (left.clearSearch) setQuery("");
-    if (left.closeSettings && !keepSettingsOpen.current) setShowViewSettings(false);
-    keepSettingsOpen.current = false;
-  }, [activeTablePath, view.id]);
+  const commandOf = (id: AppCommandId) => derived.commands.find((c) => c.id === id)!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
-  const sheet = useMemo(() => sheetShown(tables, activeTablePath, view), [tables, activeTablePath, view]);
-  const personal = arrangements[activeTablePath]?.[view.id];
-  const { view: shownView, rows: visibleRows, inView } = showView(tables, activeTablePath, view, {
-    arrangement: personal,
-    search: query,
-    viewerText,
-  });
-  const inBundle = bundleTables(tables, bundleOf(activeTablePath));
-  const summary = viewSummary(table, {
-    shown: visibleRows.length,
-    inView,
-    searching: query.trim().length > 0,
-    openedAt: INITIAL_SCHEMA_VERSIONS[activeTablePath],
-  });
+  const { view: shownView, rows: visibleRows, sheet } = derived.shown;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
-      <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folders.paths)}>
+      <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
           {sidebarShown && (
             <Sidebar
-              tree={sidebarTree(tables, bundles, {
-                folded: sidebarPrefs.foldedFiles ?? [],
-                expanded: [activeTablePath],
-                active: { key: activeTablePath, viewId: activeViewId },
-              }).map((file) => ({
-                ...file,
-                // A folder opened from disk goes by its own name.
-                file: folders.paths[file.bundle]?.split("/").pop() ?? file.file,
-              }))}
-              onToggleFile={toggleFile}
+              tree={derived.sidebarTree.map((file) => ({ ...file, file: folderName(file.bundle) ?? file.file }))}
+              onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
               filesMode={filesMode}
               onFilesMode={chooseFilesMode}
               files={flattenFilesTree(files)}
-              onToggleDir={(bundle, path, open) => setOpenedDirs((o) => ({ ...o, [`${bundle}/${path}`]: open }))}
+              onToggleDir={(bundle, path, open) => dispatch({ type: "toggleDir", id: `${bundle}/${path}`, open })}
               shownFile={shownFile}
-              onShowFile={(bundle, path) => setShownFile({ bundle, path })}
-              onSelectTable={(key) => {
-                setShownFile(null);
-                setActiveTablePath(key);
-                setActiveBodyRowId(null);
-              }}
-              onSelectView={(key, viewId) => {
-                setShownFile(null);
-                setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
-              }}
-              onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
-              onNewView={addView}
+              onShowFile={(bundle, path) => dispatch({ type: "showFile", file: { bundle, path } })}
+              onSelectTable={(key) => dispatch({ type: "showTable", key })}
+              onSelectView={(key, viewId) => dispatch({ type: "showView", key, viewId })}
+              onNewTable={() => dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeTablePath) } })}
+              onNewView={() => dispatch({ type: "addView", id: newId() })}
               footer={[
                 // Worded as the menu bar words them (table-app's appCommands).
-                { label: commandOf("new-file").label, onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
+                { label: commandOf("new-file").label, onPress: commands["new-file"] },
                 { label: commandOf("open-folder").label, onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
                 { label: commandOf("open-zip").label, onPress: () => void importZip() },
                 { label: "Display", onPress: toggleDisplay, active: showDisplay },
-                { label: "Reset demo data…", onPress: resetDemo },
+                { label: "Reset demo data…", onPress: () => dispatch({ type: "reset", fresh }) },
               ]}
               footerNote="Edits are kept on this Mac."
             />
           )}
           <html.div style={styles.content}>
             {shown ? (
-              <FileView {...shown} onClose={() => setShownFile(null)} />
+              <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
             ) : (
             <>
             {/* Where this view is: its file and its table (D37); an opened folder by its own name. */}
             <html.span style={styles.breadcrumb}>
-              {tableBreadcrumb(activeTablePath, tables, bundles, folders.paths[bundleOf(activeTablePath)]?.split("/").pop()).text}
+              {derived.breadcrumb.text}
             </html.span>
             <html.div style={styles.titleRow}>
               <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "mac")}>
@@ -1198,8 +894,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             <html.div style={styles.toolbar}>
               <Tip text={TOOLBAR_HINTS.viewSettings}>
                 <html.button
-                  onClick={() => setShowViewSettings((open) => !open)}
-                  style={[styles.tab, showViewSettings && styles.tabActive]}
+                  onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
+                  style={[styles.tab, state.settingsOpen && styles.tabActive]}
                 >
                   View settings
                 </html.button>
@@ -1213,8 +909,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             <html.input
               type="text"
               placeholder="Search…"
-              value={query}
-              onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
+              value={state.search}
+              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
               style={styles.searchInput}
             />
             <ScrollView
@@ -1227,65 +923,46 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 <html.div style={styles.displayPanel}>
                   <DisplayControls
                     rows={displayChoices(display, systemLocale, "System")}
-                    onChoose={(kind, value) => changeDisplay(withDisplayChoice(display, kind, value))}
+                    onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </html.div>
               )}
               {/* Scrolls with the view: above it, a tall panel squeezed every control into the window. */}
-              {showViewSettings && (
+              {state.settingsOpen && (
                 <ViewSettings
                   key={view.id}
                   view={shownView}
                   schema={table.schema}
-                  onChange={(patch) => {
-                    // Turning a Sheet view into anything else loses its grid (D41).
-                    const prompt = viewPatchPrompt(tables, activeTablePath, view, patch);
-                    if (!prompt) return updateActiveView(patch);
-                    ask(prompt, (response) => {
-                      if (response === "stop") updateActiveView(patch);
-                    });
-                  }}
-                  onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
-                  personal={isArranged(personal)}
-                  onSaveForEveryone={() => {
-                    const saving = savingForEveryone(arrangements, activeTablePath, view.id);
-                    updateActiveView(saving.patch);
-                    setArrangements(saving.arrangements);
-                  }}
-                  onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
-                  onDelete={table.views.length > 1 ? deleteView : undefined}
-                  onClose={() => setShowViewSettings(false)}
+                  // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+                  onChange={(patch) => dispatch({ type: "updateView", patch })}
+                  onArrange={(patch) => dispatch({ type: "arrange", patch })}
+                  personal={derived.arranged}
+                  onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
+                  onReset={() => dispatch({ type: "resetArrangement" })}
+                  onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
+                  onClose={() => dispatch({ type: "settings", open: false })}
                 />
               )}
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
-                onUpdateRow: updateRow,
-                onUpdateField: updateField,
-                onAddEnumValue: addEnumValue,
-                onMoveField: moveField,
-                onAddField: addField,
-                onAddRow: addRow,
-                onDeleteRow: deleteRow,
-                onOpenBody: openBody,
-                onUpdateView: updateActiveView,
-                relatedTables: inBundle,
-                onOpenRelation: openRelation,
+                ...callbacks,
+                relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
                 allRows: table.rows,
                 tableKey: tableNameOf(activeTablePath),
                 sheet,
-                onInsertRow: isSheet(view) && canInsertAt(view) ? insertRow : undefined,
+                onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                 onAttachFile: attachFile,
               })}
             </ScrollView>
             </>
             )}
           </html.div>
-          {activeBodyRowId && (
+          {state.openPage && (
             <BodyEditor
-              rowId={activeBodyRowId}
-              rowTitle={rowTitleFor(table, activeBodyRowId)}
-              content={table.bodies?.[activeBodyRowId] ?? ""}
-              onSave={(content) => updateBody(activeBodyRowId, content)}
-              onClose={closeBody}
+              rowId={state.openPage}
+              rowTitle={rowTitleFor(table, state.openPage)}
+              content={table.bodies?.[state.openPage] ?? ""}
+              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+              onClose={() => dispatch({ type: "openPage", rowId: null })}
             />
           )}
         </html.div>
