@@ -508,11 +508,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       },
       folders: () => folders.paths,
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
-      // Forget saved edits and opened folders; the next launch starts from the fixtures.
+      // Forget saved edits, opened folders and arrangements; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
         store?.removeItem(OPENED_KEY);
-        return "saved edits and opened folders forgotten";
+        store?.removeItem(ARRANGEMENTS_KEY);
+        return "saved edits, opened folders and arrangements forgotten";
       },
     };
   }, [store, tables, openFolder, folders.paths]);
@@ -615,38 +616,6 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 View settings
               </html.button>
             </html.div>
-            {showViewSettings && (
-              <ViewSettings
-                key={view.id}
-                view={shownView}
-                schema={table.schema}
-                onChange={(patch) => {
-                  // Turning a Sheet view into anything else loses its grid (D41).
-                  const readers =
-                    isSheet(view) && !isSheet({ ...view, ...patch })
-                      ? sheetDependents(inBundle, tableNameOf(activeTablePath), view.id).length
-                      : 0;
-                  if (readers === 0) return updateActiveView(patch);
-                  Alert.alert(
-                    `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
-                    "Stop showing it as a sheet?",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "Stop", style: "destructive", onPress: () => updateActiveView(patch) },
-                    ],
-                  );
-                }}
-                onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
-                personal={isArranged(personal)}
-                onSaveForEveryone={() => {
-                  updateActiveView(savedPatch(personal));
-                  setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
-                }}
-                onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
-                onDelete={table.views.length > 1 ? deleteView : undefined}
-                onClose={() => setShowViewSettings(false)}
-              />
-            )}
             <html.input
               type="text"
               placeholder="Search..."
@@ -659,6 +628,39 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               contentContainerStyle={{ paddingBottom: 24 }}
               showsVerticalScrollIndicator
             >
+              {/* Scrolls with the view: above it, a tall panel squeezed every control into the window. */}
+              {showViewSettings && (
+                <ViewSettings
+                  key={view.id}
+                  view={shownView}
+                  schema={table.schema}
+                  onChange={(patch) => {
+                    // Turning a Sheet view into anything else loses its grid (D41).
+                    const readers =
+                      isSheet(view) && !isSheet({ ...view, ...patch })
+                        ? sheetDependents(inBundle, tableNameOf(activeTablePath), view.id).length
+                        : 0;
+                    if (readers === 0) return updateActiveView(patch);
+                    Alert.alert(
+                      `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
+                      "Stop showing it as a sheet?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Stop", style: "destructive", onPress: () => updateActiveView(patch) },
+                      ],
+                    );
+                  }}
+                  onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
+                  personal={isArranged(personal)}
+                  onSaveForEveryone={() => {
+                    updateActiveView(savedPatch(personal));
+                    setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
+                  }}
+                  onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
+                  onDelete={table.views.length > 1 ? deleteView : undefined}
+                  onClose={() => setShowViewSettings(false)}
+                />
+              )}
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
                 onUpdateRow: updateRow,
                 onUpdateField: updateField,
