@@ -7,7 +7,8 @@
     "start": "expo start",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@formatjs/intl-locale": "^5.3.12",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@babel/plugin-transform-class-static-block": "^7.28.3",
     "@types/react": "~19.2.2",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   }
 }
