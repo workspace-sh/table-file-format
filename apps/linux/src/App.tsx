@@ -25,6 +25,9 @@ import { quit } from "@gtkx/react";
 import {
   attachmentPath,
   bundleOf,
+  flattenSidebar,
+  sidebarTree,
+  type SidebarEntry,
   displayChoices,
   loadDisplay,
   saveDisplay,
@@ -72,33 +75,8 @@ import {
 } from "@workspace.sh/table-gtk";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const LAYOUT_NAMES: Record<View["layout"], string> = {
-  table: "Table",
-  board: "Board",
-  gallery: "Gallery",
-  list: "List",
-  calendar: "Calendar",
-};
-
-type Entry =
-  | { kind: "bundle"; bundle: string; title: string }
-  | { kind: "table"; key: string; title: string }
-  | { kind: "view"; key: string; view: View };
-
-/**
- * The sidebar's rows: each bundle's heading, then its tables in manifest
- * order, and under the open table its views.
- */
-function sidebarEntries(library: Library, active: string): Entry[] {
-  return Object.keys(library.bundles).flatMap((bundle) => [
-    { kind: "bundle" as const, bundle, title: library.bundles[bundle]?.title ?? bundle },
-    ...tableKeysIn(library.tables, library.bundles, bundle).flatMap((key): Entry[] => {
-      const table = library.tables[key]!;
-      const row: Entry = { kind: "table", key, title: table.meta.title ?? tableNameOf(key) };
-      return key === active ? [row, ...table.views.map((view): Entry => ({ kind: "view", key, view }))] : [row];
-    }),
-  ]);
-}
+/** A line of the sidebar: table-app's tree, flattened for a ListBox. */
+type Entry = SidebarEntry;
 
 function Sidebar({
   entries,
@@ -130,22 +108,22 @@ function Sidebar({
           switch (entry.kind) {
             case "bundle":
               return (
-                <GtkListBoxRow key={`b:${entry.bundle}`} selectable={false} activatable={false}>
+                <GtkListBoxRow key={`b:${entry.bundle.bundle}`} selectable={false} activatable={false}>
                   <GtkBox marginTop={12} marginStart={6}>
-                    <GtkLabel label={entry.title} xalign={0} hexpand cssClasses={["heading", "dim-label"]} />
+                    <GtkLabel label={entry.bundle.title} xalign={0} hexpand cssClasses={["heading", "dim-label"]} />
                     <GtkButton
                       iconName="list-add-symbolic"
                       cssClasses={["flat", "circular"]}
-                      tooltipText={`New Table in ${entry.title}`}
-                      onClicked={() => onNewTable(entry.bundle)}
+                      tooltipText={`New Table in ${entry.bundle.title}`}
+                      onClicked={() => onNewTable(entry.bundle.bundle)}
                     />
                   </GtkBox>
                 </GtkListBoxRow>
               );
             case "table":
               return (
-                <GtkListBoxRow key={`t:${entry.key}`}>
-                  <GtkLabel label={entry.title} xalign={0} marginStart={6} />
+                <GtkListBoxRow key={`t:${entry.table.key}`}>
+                  <GtkLabel label={entry.table.title} xalign={0} marginStart={6} />
                 </GtkListBoxRow>
               );
             case "view":
@@ -153,7 +131,7 @@ function Sidebar({
                 <GtkListBoxRow key={`v:${entry.key}#${entry.view.id}`}>
                   <GtkBox spacing={6} marginStart={22}>
                     <GtkLabel label={entry.view.name} xalign={0} hexpand ellipsize={Pango.EllipsizeMode.END} maxWidthChars={1} />
-                    <GtkLabel label={LAYOUT_NAMES[entry.view.layout]} cssClasses={["caption", "dim-label"]} />
+                    <GtkLabel label={entry.view.layoutLabel} cssClasses={["caption", "dim-label"]} />
                   </GtkBox>
                 </GtkListBoxRow>
               );
@@ -385,7 +363,14 @@ export function App({
   const [viewIds, setViewIds] = useState<Record<string, string>>(initialTable && initialView ? { [initialTable]: initialView } : {});
   const table = tables[active];
   const view = table ? (table.views.find((v) => v.id === viewIds[active]) ?? table.views[0]) : undefined;
-  const entries = useMemo(() => sidebarEntries({ ...library, tables, bundles }, active), [library, tables, bundles, active]);
+  // The open table is expanded, its views listed; "+ New table" is on each heading.
+  const entries = useMemo(
+    () =>
+      flattenSidebar(
+        sidebarTree(tables, bundles, { expanded: [active], ...(viewIds[active] ? { active: { key: active, viewId: viewIds[active] } } : {}), newTableIn: "none" }),
+      ),
+    [tables, bundles, active, viewIds],
+  );
 
   // Every edit goes through here: the table changes on screen now, and its
   // bundle is written a moment after the last edit.
@@ -506,7 +491,7 @@ export function App({
                   entries={entries}
                   selected={selected}
                   onSelect={(entry) => {
-                    if (entry.kind === "table") setActive(entry.key);
+                    if (entry.kind === "table") setActive(entry.table.key);
                     if (entry.kind === "view") setViewIds((prev) => ({ ...prev, [entry.key]: entry.view.id }));
                   }}
                   onNewTable={(bundle) => setNaming({ kind: "table", bundle })}
