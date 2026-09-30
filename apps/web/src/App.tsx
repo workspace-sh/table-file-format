@@ -33,6 +33,7 @@ import { attachmentUrls, bundles as initialBundles, tables as initialTables } fr
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
 import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded } from "@workspace.sh/table-app";
+import { appCommands, hintWithShortcut, TOOLBAR_HINTS, type AppCommandId } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -551,6 +552,9 @@ export function App() {
     if (left.closeSettings && !keepSettingsOpen.current) setShowViewSettings(false);
     keepSettingsOpen.current = false;
   }, [activeTablePath, view.id]);
+  // Hint wording, shared with macOS and Linux (table-app's commands).
+  const commandOf = (id: AppCommandId) =>
+    appCommands({ sidebarCollapsed, filesMode: sidebarPrefs.files === true }).find((c) => c.id === id)!;
 
   const setActiveViewId = useCallback(
     (viewId: string) =>
@@ -832,7 +836,7 @@ export function App() {
           <html.div style={styles.headerTopRow}>
             <html.div style={styles.titleRow}>
               {!narrow && (
-                <Hinted hint={`${sidebarCollapsed ? "Show" : "Hide"} the sidebar (⌘B / Ctrl+B)`}>
+                <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "web")}>
                   <html.button
                     aria-label="Toggle the sidebar"
                     aria-expanded={!sidebarCollapsed}
@@ -846,7 +850,7 @@ export function App() {
               <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
             <html.div style={styles.headerActions}>
-            <Hinted hint="Name, layout, filters, sorting and grouping for this view. Saved with the table, so everyone who opens it sees the same view.">
+            <Hinted hint={TOOLBAR_HINTS.viewSettings}>
               <html.button
                 style={[styles.downloadButton, showViewSettings && styles.buttonOn]}
                 onClick={() => setShowViewSettings((open) => !open)}
@@ -854,7 +858,7 @@ export function App() {
                 View settings
               </html.button>
             </Hinted>
-            <Hinted hint="Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, documents) that any .table reader opens.">
+            <Hinted hint={commandOf("export-zip").hint}>
               <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
                 Download .table.zip
               </html.button>

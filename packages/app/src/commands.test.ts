@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { appCommands, gtkAccelOf } from "./commands.ts";
+import { appCommands, gtkAccelOf, hintWithShortcut, shortcutText, TOOLBAR_HINTS } from "./commands.ts";
 
 test("every command once, in menu order, with no two sharing a key", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
@@ -55,3 +55,25 @@ test("GTK accelerators: Control with the key, GNOME's own where it differs", () 
   assert.equal(accel("go-back"), "<Alt>Left");
 });
 
+
+test("shortcuts read as each platform writes them", () => {
+  const all = appCommands({ sidebarCollapsed: false, filesMode: false });
+  const cmd = (id: string) => all.find((c) => c.id === id)!;
+  assert.deepEqual(["mac", "web", "gtk"].map((p) => shortcutText(cmd("toggle-sidebar"), p as "mac")), ["⌘B", "⌘B / Ctrl+B", "Ctrl+B"]);
+  assert.equal(shortcutText(cmd("open-zip"), "mac"), "⇧⌘O");
+  assert.equal(shortcutText(cmd("open-zip"), "gtk"), "Ctrl+Shift+O");
+  assert.equal(shortcutText(cmd("copy-link"), "mac"), "⌥⌘C");
+  assert.equal(shortcutText(cmd("go-back"), "mac"), "⌘[");
+  assert.equal(shortcutText(cmd("go-back"), "gtk"), "Alt+Left");
+  assert.equal(shortcutText({ ...cmd("go-back"), gtkAccel: "<Control><Shift>Tab" }, "gtk"), "Ctrl+Shift+Tab");
+});
+
+test("hints: the sidebar's follows its state; with its shortcut, as the web says it", () => {
+  const sidebar = (collapsed: boolean) =>
+    appCommands({ sidebarCollapsed: collapsed, filesMode: false }).find((c) => c.id === "toggle-sidebar")!;
+  assert.equal(hintWithShortcut(sidebar(false), "web"), "Hide the sidebar (⌘B / Ctrl+B)");
+  assert.equal(hintWithShortcut(sidebar(true), "mac"), "Show the sidebar (⌘B)");
+  const exportZip = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "export-zip")!;
+  assert.match(exportZip.hint!, /^Save this table as a \.table\.zip/);
+  assert.match(TOOLBAR_HINTS.viewSettings, /^Name, layout, filters/);
+});
