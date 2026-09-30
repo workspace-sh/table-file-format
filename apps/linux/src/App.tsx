@@ -66,8 +66,10 @@ import {
   viewSummary,
   type Confirm,
   newView,
-  withNewFile,
-  withNewTable,
+  creating,
+  namePrompt,
+  type Making,
+  type NamePrompt,
   type Made,
   withoutRow,
   withoutView,
@@ -217,6 +219,8 @@ function TablePane({
   viewActions,
   openedAt,
   viewerText,
+  settingsOpen,
+  onSettings,
 }: {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -229,8 +233,10 @@ function TablePane({
   openedAt: number | undefined;
   /** How this viewer's language orders text: a sort only they see follows it. */
   viewerText: TextOrder;
+  /** View Settings shown: from its button, or for a view just made. */
+  settingsOpen: boolean;
+  onSettings: (open: boolean) => void;
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // A settings change that loses something, asked about first.
   const [asking, setAsking] = useState<{ prompt: Confirm; patch: Partial<View> } | null>(null);
   // Bumped when that's answered Cancel, so the settings show the view as it still is.
@@ -254,7 +260,7 @@ function TablePane({
           start={<GtkButton iconName="list-add-symbolic" tooltipText="New View" onClicked={viewActions.onAddView} />}
           end={
             <>
-              <GtkButton iconName="emblem-system-symbolic" tooltipText="View Settings" onClicked={() => setSettingsOpen(true)} />
+              <GtkButton iconName="emblem-system-symbolic" tooltipText="View Settings" onClicked={() => onSettings(true)} />
               <SaveStatus state={saving} />
             </>
           }
@@ -304,7 +310,7 @@ function TablePane({
           personal={isArranged(viewActions.arrangement)}
           onSaveForEveryone={viewActions.onSaveForEveryone}
           onReset={viewActions.onReset}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => onSettings(false)}
           revision={refused}
         />
       ) : null}
@@ -351,24 +357,24 @@ function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (r
   );
 }
 
-/** Ask for a name: what a new table or file is called. Empty is no name. */
-function NameDialog({ heading, action, onName, onClose }: { heading: string; action: string; onName: (name: string) => void; onClose: () => void }) {
+/** Ask for a name, worded by table-app's namePrompt; what's typed goes to `onName` as it is. */
+function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (typed: string) => void; onClose: () => void }) {
   const [name, setName] = useState("");
   return (
     <AdwAlertDialog
-      heading={heading}
+      heading={prompt.heading}
       closeResponse="cancel"
       defaultResponse="create"
       responses={[
         { id: "cancel", label: "Cancel" },
-        { id: "create", label: action, appearance: Adw.ResponseAppearance.SUGGESTED },
+        { id: "create", label: prompt.action, appearance: Adw.ResponseAppearance.SUGGESTED },
       ]}
       onResponse={(response) => {
-        if (response === "create" && name.trim()) onName(name.trim());
+        if (response === "create") onName(name);
         onClose();
       }}
     >
-      <GtkEntry placeholderText="Name" activatesDefault onChanged={(e) => setName(e.getText())} />
+      <GtkEntry placeholderText={prompt.placeholder} activatesDefault onChanged={(e) => setName(e.getText())} />
     </AdwAlertDialog>
   );
 }
@@ -445,12 +451,14 @@ export function App({
   const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
   const [shownFile, setShownFile] = useState<ShownFile | null>(null);
   // A name being asked for: a new table in a bundle, or a new .table file.
-  const [naming, setNaming] = useState<{ kind: "table"; bundle: string } | { kind: "file" } | null>(null);
+  const [naming, setNaming] = useState<Making | null>(null);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
   const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
   // A row's page open, by table and row.
   const [openPage, setOpenPage] = useState<{ key: string; rowId: string } | null>(null);
+  // The open view's settings shown.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pageTable = openPage ? tables[openPage.key] : undefined;
   // Bundles edited since they were last written.
   const dirty = useRef(new Set<string>());
@@ -502,17 +510,15 @@ export function App({
     dirty.current.add(bundleOf(result.key));
     setActive(result.key);
     setViewIds((prev) => ({ ...prev, [result.key]: result.viewId }));
+    setOpenPage(null);
   };
-  const create = (title: string) => {
-    if (!naming) return;
-    if (naming.kind === "table") {
-      made(withNewTable(tables, bundles, naming.bundle, title));
-    } else if (newFilesIn) {
-      const result = withNewFile(tables, bundles, title);
-      const bundle = bundleOf(result.key);
-      setPaths((prev) => ({ ...prev, [bundle]: `${newFilesIn}/${bundle}.table` }));
-      made(result);
-    }
+  // Nothing is made from an empty name (table-app's creating trims it).
+  const create = (typed: string) => {
+    if (!naming || (naming.kind === "file" && !newFilesIn)) return;
+    const result = creating(tables, bundles, naming, typed);
+    if (!result) return;
+    if (naming.kind === "file") setPaths((prev) => ({ ...prev, [bundleOf(result.key)]: `${newFilesIn}/${bundleOf(result.key)}.table` }));
+    made(result);
   };
 
   const edits = (key: string, viewId: string): Edits => ({
@@ -560,6 +566,8 @@ export function App({
       const fresh = newView();
       edit(key, (t) => withView(t, fresh));
       setViewIds((prev) => ({ ...prev, [key]: fresh.id }));
+      // Its settings open, as on the web: that's where it's made into what's wanted.
+      setSettingsOpen(true);
     },
     ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
     arrangement: arrangements[key]?.[current.id],
@@ -659,6 +667,8 @@ export function App({
                 viewActions={viewActions(active, view)}
                 openedAt={openedAt[active]}
                 viewerText={viewerText}
+                settingsOpen={settingsOpen}
+                onSettings={setSettingsOpen}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
@@ -666,8 +676,7 @@ export function App({
           </AdwOverlaySplitView>
           {naming && (naming.kind === "table" || newFilesIn) ? (
             <NameDialog
-              heading={naming.kind === "table" ? `New Table in ${bundles[naming.bundle]?.title ?? naming.bundle}` : "New .table File"}
-              action="Create"
+              prompt={namePrompt(naming, bundles)}
               onName={create}
               onClose={() => setNaming(null)}
             />
@@ -706,6 +715,7 @@ export function App({
                   const { key, viewId } = confirmViewDelete;
                   edit(key, (t) => withoutView(t, viewId));
                   setViewIds((prev) => ({ ...prev, [key]: viewDeleting.nextViewId }));
+                  setSettingsOpen(false);
                 }
                 setConfirmViewDelete(null);
               }}
