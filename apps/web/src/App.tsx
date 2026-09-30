@@ -311,8 +311,6 @@ const styles = css.create({
   },
 });
 
-/** The first view of each table, as the demo opens it. */
-
 export function App() {
   // Edits survive a reload (#86): what was saved, or the fixtures when
   // nothing usable was.
