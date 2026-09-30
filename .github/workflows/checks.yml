@@ -1,0 +1,19 @@
+# Checks that need no install, on every pull request and push to develop.
+
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  case-collisions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No paths that collide on a case-insensitive disk
+        run: scripts/check-case-collisions.sh
