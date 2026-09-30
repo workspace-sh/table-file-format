@@ -6,7 +6,7 @@ import { ScrollView } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { newId, parseAddress, validate } from "@workspace.sh/table-core";
+import { newId, parseAddress, textDirection, validate } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -16,6 +16,8 @@ import {
   GalleryView,
   ListView,
   AttachmentsProvider,
+  DisplaySettingsProvider,
+  type DisplaySettings,
   PortalHost,
   TableView,
   ViewSettings,
@@ -24,6 +26,9 @@ import {
 } from "@workspace.sh/table-ui";
 import {
   ARRANGEMENTS_KEY,
+  DISPLAY_KEY,
+  loadDisplay,
+  saveDisplay,
   STORAGE_KEY,
   clearSaved,
   forViews,
@@ -304,7 +309,7 @@ export default function App() {
   const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY]).then(setStore, () => setStore(null));
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY]).then(setStore, () => setStore(null));
   }, []);
   return store === undefined ? null : <TableApp store={store} />;
 }
@@ -366,7 +371,23 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     // Only views that still exist: a deleted view's arrangement goes with it.
     saveArrangements(store, forViews(arrangements, tables));
   }, [store, arrangements, tables]);
-  const viewerText = useMemo(() => new Intl.Collator(undefined, { numeric: true }).compare, []);
+  // This viewer's language, default date format and formula syntax: theirs,
+  // not the tables' (SPEC section 4), kept as the web keeps them. The layout
+  // reads the way the language does (D40): the chosen one, or the system's.
+  const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(store));
+  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
+  const locale = display.locale ?? systemLocale;
+  const direction = textDirection(locale);
+  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
+  const changeDisplay = useCallback(
+    (next: DisplaySettings) => {
+      setDisplay(next);
+      saveDisplay(store, next);
+    },
+    [store],
+  );
+  // A sort of the viewer's own follows their language.
+  const viewerText = useMemo(() => new Intl.Collator(locale, { numeric: true }).compare, [locale]);
 
   const table = tables[activeTablePath]!;
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
@@ -507,6 +528,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `opening ${path}`;
       },
       folders: () => folders.paths,
+      // Set display settings, as the Display controls will.
+      display: (next: DisplaySettings) => {
+        changeDisplay(next);
+        return "display set";
+      },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
       // Forget saved edits, opened folders and arrangements; the next launch starts from the fixtures.
       clearSaved: () => {
@@ -516,7 +542,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders and arrangements forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -545,7 +571,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folders.paths)}>
       <PortalHost>
-        <html.div style={styles.root}>
+        <DisplaySettingsProvider value={shownDisplay}>
+        <html.div dir={direction} style={styles.root}>
           <html.div style={styles.content}>
             <html.span style={styles.title}>{view.name}</html.span>
             <html.div style={styles.subtitle}>
@@ -690,6 +717,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             />
           )}
         </html.div>
+        </DisplaySettingsProvider>
       </PortalHost>
       </AttachmentsProvider>
     </GestureHandlerRootView>
