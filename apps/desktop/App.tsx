@@ -38,6 +38,7 @@ import {
   reset as resetArrangement,
   savedPatch,
   withoutView,
+  deleteViewPrompt,
   type Arrangements,
   bundleOf,
   bundleTables,
@@ -442,11 +443,13 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   );
   const deleteView = useCallback(() => {
     const viewId = activeViewId;
-    const readers = isSheet(table.views.find((v) => v.id === viewId)) ? sheetDependents(bundleTables(tables, bundleOf(activeTablePath)), tableNameOf(activeTablePath), viewId).length : 0;
-    const name = table.views.find((v) => v.id === viewId)?.name ?? viewId;
+    const view = table.views.find((v) => v.id === viewId);
+    // The same question the web asks (table-app); null when it's the last view.
+    const prompt = view ? deleteViewPrompt(tables, activeTablePath, view) : null;
+    if (!prompt) return;
     Alert.alert(
-      `Delete the view "${name}"?`,
-      `The rows stay; only this way of showing them goes.${readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : ""}`,
+      prompt.heading,
+      prompt.body,
       [
         { text: "Cancel", style: "cancel" },
         {
