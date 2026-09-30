@@ -97,7 +97,7 @@ import {
 } from "@workspace.sh/table-app";
 import { attachFile, attachmentsIn, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
-import { newId, textDirection, type TextOrder, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, textDirection, type TextOrder, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
   BoardView,
@@ -228,7 +228,6 @@ interface ViewActions {
 
 function TablePane({
   tables,
-  bundles,
   tableKey,
   view,
   edits,
@@ -243,7 +242,6 @@ function TablePane({
   menu,
 }: {
   tables: Record<string, ParsedTable>;
-  bundles: Record<string, BundleMeta>;
   tableKey: string;
   view: View;
   edits: Edits;
@@ -761,7 +759,6 @@ export function App({
               <TablePane
                 key={active}
                 tables={tables}
-                bundles={bundles}
                 tableKey={active}
                 view={view}
                 edits={edits(active, view.id)}
