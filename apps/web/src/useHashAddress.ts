@@ -30,7 +30,7 @@ export interface HashAddressState {
 
 export interface UseHashAddressOpts {
   state: HashAddressState;
-  /** Called when an external hash change (load / back / forward) needs applying. */
+  /** Called when an external hash change (back / forward, an edited address) needs applying. */
   onExternalChange: (addr: Address) => void;
 }
 
@@ -71,12 +71,8 @@ export function useHashAddress({ state, onExternalChange }: UseHashAddressOpts) 
   // Track the last hash WE wrote so we can ignore the hashchange echo.
   const lastWritten = useRef<string | null>(null);
 
-  // On mount: pull initial state from the hash (if present). Runs once.
-  useEffect(() => {
-    const addr = readHash();
-    if (addr) onExternalChange(addr);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The hash on load isn't applied here: the app starts where addressInHash
+  // says, so its first render is already there.
 
   // Listen for external hash changes (back/forward, address bar edits).
   useEffect(() => {

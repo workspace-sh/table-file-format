@@ -135,6 +135,7 @@ export type AppAction =
   | { type: "setFilesSide"; files: boolean }
   | { type: "toggleFile"; bundle: string }
   | { type: "setSidebarCollapsed"; collapsed: boolean }
+  | { type: "setDisplayFolded"; folded: boolean }
   | { type: "showFile"; file: ShownFile | null }
   | { type: "toggleDir"; id: string; open: boolean }
   // Files, and questions
@@ -386,6 +387,10 @@ function step(state: AppState, action: AppAction): AppState {
       if (!!state.sidebar.collapsed === action.collapsed) return state;
       const { collapsed: _collapsed, ...rest } = state.sidebar;
       return { ...state, sidebar: action.collapsed ? { ...rest, collapsed: true } : rest };
+    }
+    case "setDisplayFolded": {
+      if (!!state.sidebar.foldedDisplay === action.folded) return state;
+      return { ...state, sidebar: { ...state.sidebar, foldedDisplay: action.folded } };
     }
     case "showFile":
       return { ...state, shownFile: action.file };
