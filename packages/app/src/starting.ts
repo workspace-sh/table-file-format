@@ -14,3 +14,16 @@ export function firstTableKey(tables: Record<string, ParsedTable>): string | und
 export function firstViews(tables: Record<string, ParsedTable>): Record<string, string> {
   return Object.fromEntries(Object.entries(tables).map(([key, t]) => [key, t.views[0]?.id ?? ""]));
 }
+
+/**
+ * Shown only if no table is held at all, which the examples prevent: a
+ * table with one view and nothing in it, so an app never has no table to
+ * draw.
+ */
+export const NO_TABLE: ParsedTable = {
+  path: "",
+  schema: { fields: [] },
+  rows: [],
+  views: [{ id: "all", name: "All", layout: "table" }],
+  meta: {},
+};

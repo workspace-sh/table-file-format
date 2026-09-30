@@ -70,6 +70,11 @@ export function importSkippedText(opened: OpenedBundle): { heading: string; body
   };
 }
 
+/** What an app says when a bundle can't be exported. */
+export function exportFailedText(fileName: string, error: unknown): string {
+  return `Couldn't export ${fileName}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 /** What an app says when a file can't be opened at all. */
 export function openFailedText(fileName: string, error: unknown): string {
   return `Couldn't open ${fileName}: ${error instanceof Error ? error.message : String(error)}`;

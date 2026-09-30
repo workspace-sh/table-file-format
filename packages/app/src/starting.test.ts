@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { ParsedTable } from "@workspace.sh/table-core";
-import { DEFAULT_TABLE_KEY, firstTableKey, firstViews } from "./starting.ts";
+import { DEFAULT_TABLE_KEY, NO_TABLE, firstTableKey, firstViews } from "./starting.ts";
 import { withFileUnfolded } from "./sidebarPrefs.ts";
 
 const t = (views: string[]): ParsedTable => ({
@@ -29,4 +29,9 @@ test("the file on screen is unfolded; prefs are untouched when it isn't folded",
   assert.equal(withFileUnfolded(prefs, "projects"), prefs);
   const none = {};
   assert.equal(withFileUnfolded(none, "crm"), none);
+});
+
+test("the table shown when none is held has one view", () => {
+  assert.equal(NO_TABLE.views.length, 1);
+  assert.deepEqual(NO_TABLE.rows, []);
 });
