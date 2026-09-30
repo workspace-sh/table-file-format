@@ -18,6 +18,7 @@
     "react-native": "0.81.5",
     "react-native-file-access": "^4.0.4",
     "react-native-gesture-handler": "^2.31.2",
+    "react-native-get-random-values": "^2.0.0",
     "react-native-macos": "^0.81.7",
     "react-strict-dom": "0.0.55"
   },
