@@ -68,4 +68,12 @@ describe("relations on Linux", () => {
     // Behind it, the companies table is the one shown.
     expect(await screen.findByText("Companies")).toBeDefined();
   });
+
+  it("a related row's name shows in full where its column has room", async () => {
+    await openDeals();
+    const name = (await screen.findAllByText("Atlas Freight"))[0]! as Gtk.Label;
+    await waitFor(() => expect(name.getWidth()).toBeGreaterThan(0));
+    expect(name.getLayout().isEllipsized()).toBe(false);
+  });
 });
+

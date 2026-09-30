@@ -7,6 +7,7 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import * as Adw from "@gtkx/gi/adw";
+import * as Gdk from "@gtkx/gi/gdk";
 import {
   AdwAlertDialog,
   AdwApplication,
@@ -20,9 +21,25 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkEntry, GtkImage, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
+  appCommands,
+  addressLive,
+  goBack,
+  goForward,
+  gtkAccelOf,
+  loadSidebarPrefs,
+  NO_HISTORY,
+  saveSidebarPrefs,
+  tableBreadcrumb,
+  viewAddress,
+  visited,
+  type AppCommand,
+  type AppCommandId,
+  type History,
+  type SidebarPrefs,
   attachmentAt,
   attachmentPath,
   bundleOf,
@@ -80,7 +97,7 @@ import {
 } from "@workspace.sh/table-app";
 import { attachFile, attachmentsIn, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
-import { newId, textDirection, type TextOrder, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, textDirection, type TextOrder, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
   BoardView,
@@ -95,7 +112,7 @@ import {
   ViewSettings,
   type ViewProps,
 } from "@workspace.sh/table-gtk";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /** A line of the sidebar: table-app's tree, flattened for a ListBox. */
 type Entry = SidebarEntry;
@@ -211,7 +228,6 @@ interface ViewActions {
 
 function TablePane({
   tables,
-  bundles,
   tableKey,
   view,
   edits,
@@ -221,9 +237,11 @@ function TablePane({
   viewerText,
   settingsOpen,
   onSettings,
+  subtitle,
+  navigation,
+  menu,
 }: {
   tables: Record<string, ParsedTable>;
-  bundles: Record<string, BundleMeta>;
   tableKey: string;
   view: View;
   edits: Edits;
@@ -236,6 +254,12 @@ function TablePane({
   /** View Settings shown: from its button, or for a view just made. */
   settingsOpen: boolean;
   onSettings: (open: boolean) => void;
+  /** Where the view is: its file and table (table-app's tableBreadcrumb). */
+  subtitle: string;
+  /** Back and forward, at the header's start. */
+  navigation: ReactNode;
+  /** The primary menu, at the header's end. */
+  menu: ReactNode;
 }) {
   // A settings change that loses something, asked about first.
   const [asking, setAsking] = useState<{ prompt: Confirm; patch: Partial<View> } | null>(null);
@@ -254,12 +278,18 @@ function TablePane({
           titleWidget={
             <AdwWindowTitle
               title={view.name}
-              subtitle={`${bundles[bundleOf(tableKey)]?.title ?? bundleOf(tableKey)} › ${table.meta.title ?? tableNameOf(tableKey)}`}
+              subtitle={subtitle}
             />
           }
-          start={<GtkButton iconName="list-add-symbolic" tooltipText="New View" onClicked={viewActions.onAddView} />}
+          start={
+            <>
+              {navigation}
+              <GtkButton iconName="list-add-symbolic" tooltipText="New View" onClicked={viewActions.onAddView} />
+            </>
+          }
           end={
             <>
+              {menu}
               <GtkButton iconName="emblem-system-symbolic" tooltipText="View Settings" onClicked={() => onSettings(true)} />
               <SaveStatus state={saving} />
             </>
@@ -447,7 +477,14 @@ export function App({
   const [paths, setPaths] = useState(library.paths);
   // The sidebar's side (tables and views, or the files on disk), and on the
   // Files side, the folders opened or closed and the file shown.
-  const [mode, setMode] = useState<"tables" | "files">("tables");
+  // The sidebar: shown or collapsed (Ctrl+B), and its side, kept with this viewer's settings.
+  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPrefs>(() => loadSidebarPrefs(settings ?? null));
+  useEffect(() => saveSidebarPrefs(settings ?? null, sidebarPrefs), [sidebarPrefs, settings]);
+  const mode: "tables" | "files" = sidebarPrefs.files ? "files" : "tables";
+  const setMode = (next: "tables" | "files") => setSidebarPrefs((p) => ({ ...p, files: next === "files" || undefined }));
+  const setCollapsed = (collapsed: boolean) => setSidebarPrefs((p) => ({ ...p, collapsed: collapsed || undefined }));
+  // Back and forward between the views shown (table-app's history).
+  const [history, setHistory] = useState<History>(NO_HISTORY);
   const [openedDirs, setOpenedDirs] = useState<Record<string, boolean>>({});
   const [shownFile, setShownFile] = useState<ShownFile | null>(null);
   // A name being asked for: a new table in a bundle, or a new .table file.
@@ -585,6 +622,60 @@ export function App({
         return v ? deletingView(tables, confirmViewDelete.key, v) : null;
       })()
     : null;
+  // Each view shown is recorded; going back or forward skips any since deleted.
+  const here = view ? viewAddress(active, view.id) : null;
+  useEffect(() => {
+    if (here) setHistory((h) => visited(h, here));
+  }, [here]);
+  const live = (address: string) => addressLive(address, tables, bundles);
+  const go = (moved: { history: History; address: string } | null) => {
+    if (!moved) return;
+    const target = addressTarget(moved.address, tables, bundles, bundleOf(active));
+    if (!target) return;
+    setHistory(moved.history);
+    setActive(target.key);
+    if (target.viewId) setViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
+    // History is of views: a page open is left behind.
+    setOpenPage(null);
+    setMode("tables");
+  };
+  const back = goBack(history, live);
+  const forward = goForward(history, live);
+
+  // The app's commands (table-app's appCommands), each an action on the
+  // window with its accelerator, and in the primary menu. Those Linux
+  // doesn't do yet are left out.
+  const run: Partial<Record<AppCommandId, () => void>> = {
+    ...(newFilesIn ? { "new-file": () => setNaming({ kind: "file" }) } : {}),
+    "copy-link": () => {
+      if (!here) return;
+      Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(here));
+    },
+    "tables-mode": () => setMode("tables"),
+    "files-mode": () => setMode("files"),
+    "toggle-sidebar": () => setCollapsed(!sidebarPrefs.collapsed),
+    "go-back": () => go(back),
+    "go-forward": () => go(forward),
+  };
+  const commands: AppCommand[] = appCommands({
+    sidebarCollapsed: sidebarPrefs.collapsed === true,
+    filesMode: mode === "files",
+    canGoBack: back !== null,
+    canGoForward: forward !== null,
+  }).filter((c) => run[c.id]);
+  const menuSections = ["File", "Edit", "View", "Go"].map((menu) => ({
+    section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })),
+  })).filter((s) => s.section.length > 0);
+  const primaryMenu = (
+    <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
+  );
+  const navigation = (
+    <GtkBox cssClasses={["linked"]}>
+      <GtkButton iconName="go-previous-symbolic" tooltipText="Back" sensitive={back !== null} onClicked={() => go(back)} />
+      <GtkButton iconName="go-next-symbolic" tooltipText="Forward" sensitive={forward !== null} onClicked={() => go(forward)} />
+    </GtkBox>
+  );
+
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
   const fileEntries = useMemo(
     () =>
@@ -604,12 +695,21 @@ export function App({
   const shownAttachment = shownFile ? attachmentAt(shownFile.bundle, shownFile.path) : null;
 
   return (
-    <AdwApplication>
-      <AdwApplicationWindow title="Tables" defaultWidth={1280} defaultHeight={800} onCloseRequest={() => quit()}>
+    <AdwApplication actionAccels={commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] }))}>
+      <AdwApplicationWindow
+        title="Tables"
+        defaultWidth={1280}
+        defaultHeight={800}
+        onCloseRequest={() => quit()}
+        actions={commands.map((c) => (
+          <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />
+        ))}
+      >
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
           <AttachmentsProvider value={(file) => (tables[active] ? attachmentPath({ ...tables[active], path: tableDir(active) }, file) : undefined)}>
           <AdwOverlaySplitView
+            showSidebar={sidebarPrefs.collapsed !== true}
             minSidebarWidth={220}
             maxSidebarWidth={300}
             sidebar={
@@ -659,7 +759,6 @@ export function App({
               <TablePane
                 key={active}
                 tables={tables}
-                bundles={bundles}
                 tableKey={active}
                 view={view}
                 edits={edits(active, view.id)}
@@ -669,6 +768,9 @@ export function App({
                 viewerText={viewerText}
                 settingsOpen={settingsOpen}
                 onSettings={setSettingsOpen}
+                subtitle={tableBreadcrumb(active, tables, bundles, paths[bundleOf(active)]?.split("/").pop()).text}
+                navigation={navigation}
+                menu={primaryMenu}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />

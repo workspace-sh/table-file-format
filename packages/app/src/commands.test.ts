@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { appCommands } from "./commands.ts";
+import { appCommands, gtkAccelOf } from "./commands.ts";
 
 test("every command once, in menu order, with no two sharing a key", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
@@ -45,3 +45,13 @@ test("back and forward are there only when history has somewhere to go, with GNO
   const copy = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "copy-link")!;
   assert.deepEqual([copy.menu, copy.label, copy.key, copy.option], ["Edit", "Copy Link to View", "c", true]);
 });
+
+test("GTK accelerators: Control with the key, GNOME's own where it differs", () => {
+  const accel = (id: string) => gtkAccelOf(appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === id)!);
+  assert.equal(accel("new-file"), "<Control>n");
+  assert.equal(accel("open-zip"), "<Control><Shift>o");
+  assert.equal(accel("copy-link"), "<Control><Alt>c");
+  assert.equal(accel("toggle-sidebar"), "<Control>b");
+  assert.equal(accel("go-back"), "<Alt>Left");
+});
+
