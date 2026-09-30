@@ -10,6 +10,10 @@ import type { Field, ParsedTable, Row } from "@workspace.sh/table-core";
 import {
   BOARD_GAP,
   boardColumns,
+  columnOf,
+  columnValue,
+  orderAfterDrop,
+  orderMovedTo,
   bodyExcerpt,
   CALENDAR_CHIPS_PER_DAY,
   canStep,
@@ -36,6 +40,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
 import { CellValue } from "./CellValue.js";
+import { dragRow, dropRow } from "./drag.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
 /** A board column's width: the web board's. */
@@ -100,16 +105,42 @@ function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, titled = t
  * the row's page when the app has one. A card with nothing to open is
  * still focusable, so the keyboard walks every card.
  */
-function CardButton({ onActivate, width, children }: { onActivate?: () => void; width?: number; children: ReactNode }) {
+function CardButton({
+  onActivate,
+  width,
+  children,
+  controllers,
+}: {
+  onActivate?: () => void;
+  width?: number;
+  children: ReactNode;
+  /** Its drag source and drop target, when the view can be rearranged. */
+  controllers?: ReactNode;
+}) {
   return (
-    <GtkButton cssClasses={["card", styles.card]} widthRequest={width} hexpand={width === undefined} onClicked={() => onActivate?.()}>
+    <GtkButton
+      cssClasses={["card", styles.card]}
+      widthRequest={width}
+      hexpand={width === undefined}
+      onClicked={() => onActivate?.()}
+      controllers={controllers}
+    >
       {children}
     </GtkButton>
   );
 }
 
-export function BoardView({ view, rows, schema, bodies, onOpenBody, relatedTables, onOpenRelation }: ViewProps) {
+export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
   const board = boardColumns(view, rows, schema);
+  // A card dropped into a column takes its value; where it lands in the
+  // column sets the view's order, as on the web (orderAfterDrop).
+  const drop = (column: string, rowId: string, slot: { id: string; after: boolean } | null) => {
+    const row = rows.find((r) => r.id === rowId);
+    if (!row || (slot && slot.id === rowId)) return;
+    if (columnOf(row, board.field) !== column) onUpdateRow?.(rowId, board.field, columnValue(column));
+    onUpdateView?.({ order: orderAfterDrop(rows, board, rowId, column, slot) });
+  };
+  const draggable = !!onUpdateRow;
   const fields = cardFields(view, schema, board.field);
   const fieldMap = fieldsByName(schema);
   const groupField = fieldMap.get(board.field);
@@ -129,13 +160,27 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, relatedTable
               widthRequest={BOARD_COLUMN_WIDTH}
               cssClasses={[styles.boardColumn]}
               valign={Gtk.Align.START}
+              // Dropped on the column itself: after its last card.
+              controllers={draggable ? dropRow((id) => drop(key, id, null)) : undefined}
             >
               <GtkBox spacing={8} marginStart={4}>
                 <GtkLabel label={pill.label} cssClasses={[styles.pill, pillClass(pill.color, dark)]} />
                 <GtkLabel label={String(members.length)} cssClasses={["dim-label", "numeric"]} />
               </GtkBox>
               {members.map((row) => (
-                <CardButton key={row.id} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}>
+                <CardButton
+                  key={row.id}
+                  onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}
+                  controllers={
+                    draggable ? (
+                      <>
+                        {dragRow(row.id)}
+                        {/* Dropped on a card: before it, or after it in its lower half. */}
+                        {dropRow((id, lower) => drop(key, id, { id: row.id, after: lower }))}
+                      </>
+                    ) : undefined
+                  }
+                >
                   <Card
                     row={row}
                     fields={fields}
@@ -232,7 +277,9 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   );
 }
 
-export function ListView({ view, rows, schema, bodies, onOpenBody, relatedTables, onOpenRelation }: ViewProps) {
+export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
+  // A row dropped on another takes its place in the view's order (orderMovedTo).
+  const reorderable = !!onUpdateView;
   const fields = visibleFields(view, schema);
   const [titleField, ...secondary] = fields;
   const fieldMap = fieldsByName(schema);
@@ -247,7 +294,18 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, relatedTables
             {starts ? (
               <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} marginTop={12} cssClasses={["heading"]} />
             ) : null}
-            <GtkButton cssClasses={["card", styles.card]} onClicked={() => onOpenBody?.(row.id)}>
+            <GtkButton
+              cssClasses={["card", styles.card]}
+              onClicked={() => onOpenBody?.(row.id)}
+              controllers={
+                reorderable ? (
+                  <>
+                    {dragRow(row.id)}
+                    {dropRow((id) => id !== row.id && onUpdateView?.({ order: orderMovedTo(rows, id, row.id) }))}
+                  </>
+                ) : undefined
+              }
+            >
               <GtkBox spacing={16}>
                 <GtkBox spacing={6} widthRequest={260}>
                   <Title text={rowTitle(row, titleField)} classes={[styles.cardTitle]} />

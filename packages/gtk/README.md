@@ -33,8 +33,9 @@ where GTKX and the machine's bindings are. `apps/linux` typechecks, lints
 and tests it (`npm run check` there).
 
 Lists edit in place (a multi-select's popover of choices, or a plain list
-typed as "a, b, c"). Relations and attachments are shown but not yet
-edited, and cards don't drag yet. Saving is the app's: table-app's edits change a table,
+typed as "a, b, c"). Relations are picked from their related rows. Board cards drag between
+columns (taking the column's value) and into place; list rows drag into
+order. Attachments are shown but not yet replaced from a cell. Saving is the app's: table-app's edits change a table,
 and `table-app/node`'s `saveBundle` writes it. The look follows the GNOME
 HIG (libadwaita's cards, navigation sidebar, dialogs) rather than copying
 the web views pixel for pixel.
