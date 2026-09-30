@@ -8,6 +8,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // table-app imports its own files by their .ts names, as Node runs its tests.
+    "allowImportingTsExtensions": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["**/*.ts", "**/*.tsx"],

@@ -1,34 +1,54 @@
-import { useCallback, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { ScrollView } from "react-native";
+import { Alert, AppState, Platform, ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import {
-  applyView,
-  parseAddress,
-  searchRows,
-  validate,
-} from "@workspace.sh/table-core";
-import type {
-  Field,
-  ParsedTable,
-  TableSchema,
-  View,
-} from "@workspace.sh/table-core";
-import { bundles as fixtureBundles, tables as initialTables } from "@workspace.sh/table-fixtures";
+import { isSheet, newId } from "@workspace.sh/table-core";
+import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
+import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
 import {
   AttachmentsProvider,
   BodyEditor,
   BoardView,
   CalendarView,
+  DisplaySettingsProvider,
   GalleryView,
   ListView,
   PortalHost,
   TableView,
+  ViewSettings,
+  canInsertAt,
 } from "@workspace.sh/table-ui";
+import {
+  ARRANGEMENTS_KEY,
+  DISPLAY_KEY,
+  SIDEBAR_KEY,
+  STORAGE_KEY,
+  bundleOf,
+  bundleTables,
+  derive,
+  fromBundle,
+  initialAppState,
+  loadArrangements,
+  loadDisplay,
+  loadSaved,
+  loadSidebarPrefs,
+  rowTitleFor,
+  save,
+  schemaVersions,
+  tableNameOf,
+  viewCallbacks,
+  withNewFixtures,
+  type Confirm,
+  type KeyValueStore,
+  type NamePrompt,
+  type SheetGridShown,
+} from "@workspace.sh/table-app";
+import { useTableApp } from "@workspace.sh/table-app/react";
+import { openStore } from "./store";
 
 // Horizontal page padding. Used as positive padding on the scroll
 // container AND as negative margin on horizontally-scrolling sections
@@ -38,13 +58,16 @@ import {
 // of being clipped by it.
 const MOBILE_H_PADDING = 16;
 
-const DEFAULT_TABLE_PATH = "projects";
-const INITIAL_SCHEMA_VERSIONS: Record<string, number> = Object.fromEntries(
-  Object.entries(initialTables).map(([key, t]) => [
-    key,
-    (t.schema["schema-version"] as number | undefined) ?? 1,
-  ]),
+// Every fixture bundle's tables, keyed `bundle/table` (D37), as the web,
+// macOS and Linux apps hold them, and each bundle's manifest.
+const initialTables: Record<string, ParsedTable> = Object.assign(
+  {},
+  ...Object.entries(fixtureBundles).map(([name, b]) => fromBundle(name, b)),
 );
+const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
+  Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
+);
+const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 const styles = css.create({
   root: {
@@ -186,13 +209,52 @@ const styles = css.create({
     },
     outlineStyle: "none",
   },
+  toolbar: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  tool: {
+    paddingInline: 12,
+    paddingBlock: 8,
+    fontSize: 13,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#1c1c1e",
+    },
+    color: {
+      default: "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  toolOn: {
+    backgroundColor: {
+      default: "#e8e8ed",
+      "@media (prefers-color-scheme: dark)": "#2c2c30",
+    },
+  },
+  searchGrow: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  breadcrumb: {
+    fontSize: 12,
+    marginBottom: 2,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
 });
-
-/** Mirrors the policy used by apps/web and apps/desktop. */
-function bumpSchemaVersion(schema: TableSchema): TableSchema {
-  const current = (schema["schema-version"] as number | undefined) ?? 1;
-  return { ...schema, "schema-version": current + 1 };
-}
 
 interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
@@ -200,53 +262,49 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
+  onAddRow: () => string | void;
+  onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
   onUpdateView: (patch: Partial<View>) => void;
   relatedTables: Record<string, ParsedTable>;
   onOpenRelation: (address: string) => void;
+  /** Every row of the table, for formulas that read another row (D34). */
+  allRows: Row[];
+  /** This table's key among `relatedTables`. */
+  tableKey: string;
+  sheet?: SheetGridShown;
+  onInsertRow?: (anchor: string, where: "above" | "below") => void;
 }
 
 function renderView(
   view: View,
-  table: ParsedTable,
-  visibleRows: ParsedTable["rows"],
+  rows: Row[],
+  schema: TableSchema,
+  bodies: Record<string, string> | undefined,
   cb: ViewCallbacks,
 ) {
   const common = {
     view,
-    rows: visibleRows,
-    schema: table.schema,
-    bodies: table.bodies,
+    rows,
+    schema,
+    bodies,
     relatedTables: cb.relatedTables,
     onOpenRelation: cb.onOpenRelation,
   };
   switch (view.layout) {
     case "board":
-      // BoardView handles its own horizontal scroll — snap-paging
-      // carousel on touch viewports, free scroll on wide ones.
-      return (
-        <BoardView
-          {...common}
-          onUpdateRow={cb.onUpdateRow}
-          onOpenBody={cb.onOpenBody}
-          onUpdateView={cb.onUpdateView}
-        />
-      );
+      // BoardView handles its own horizontal scroll: snap-paging on touch
+      // viewports, free scroll on wide ones.
+      return <BoardView {...common} onUpdateRow={cb.onUpdateRow} onOpenBody={cb.onOpenBody} onUpdateView={cb.onUpdateView} />;
     case "gallery":
       return <GalleryView {...common} onOpenBody={cb.onOpenBody} />;
     case "list":
-      return (
-        <ListView
-          {...common}
-          onOpenBody={cb.onOpenBody}
-          onUpdateView={cb.onUpdateView}
-        />
-      );
+      return <ListView {...common} onOpenBody={cb.onOpenBody} onUpdateView={cb.onUpdateView} />;
     case "calendar":
       return <CalendarView {...common} onOpenBody={cb.onOpenBody} />;
     default:
-      // TableView manages its own horizontal scroll internally now (the
-      // scrollable pane to the right of the frozen primary column).
+      // TableView manages its own horizontal scroll: the pane to the right
+      // of the frozen primary column.
       return (
         <TableView
           {...common}
@@ -256,18 +314,43 @@ function renderView(
           onAddEnumValue={cb.onAddEnumValue}
           onMoveField={cb.onMoveField}
           onAddField={cb.onAddField}
+          onAddRow={cb.onAddRow}
+          onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}
+          allRows={cb.allRows}
+          tableKey={cb.tableKey}
+          sheet={cb.sheet}
+          onInsertRow={cb.onInsertRow}
         />
       );
   }
 }
 
-function rowTitleFor(table: ParsedTable, rowId: string): string {
-  const row = table.rows.find((r) => r.id === rowId);
-  if (!row) return rowId;
-  const titleField = table.schema.fields[0]?.name;
-  const title = titleField ? row[titleField] : undefined;
-  return typeof title === "string" ? title : rowId;
+/** Ask a table-app Confirm as a native alert; `then` gets the id of the response chosen. */
+function ask(prompt: Confirm, then: (response: string) => void) {
+  Alert.alert(
+    prompt.heading,
+    prompt.body,
+    prompt.responses.map((r) => ({
+      text: r.label,
+      style: r.id === "cancel" ? ("cancel" as const) : r.destructive ? ("destructive" as const) : ("default" as const),
+      onPress: () => then(r.id),
+    })),
+    { cancelable: true, onDismiss: () => then("cancel") },
+  );
+}
+
+/**
+ * Ask for a name, worded by table-app's namePrompt: the system's text
+ * prompt on iOS. Android has none, so there it answers as cancelled until
+ * the app draws its own.
+ */
+function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () => void) {
+  if (Platform.OS !== "ios") return cancel();
+  Alert.prompt(prompt.heading, undefined, [
+    { text: "Cancel", style: "cancel", onPress: cancel },
+    { text: prompt.action, onPress: (value?: string) => then(value ?? "") },
+  ]);
 }
 
 // SafeAreaView's TS types under react-native-safe-area-context 5.6.2 +
@@ -280,317 +363,178 @@ const Safe = SafeAreaView as unknown as ComponentType<{
 }>;
 
 /**
- * The .table file a fixture table is in: this app holds tables by name, and
- * an attachment is found by `bundle/table` (table-fixtures/native-attachments,
- * shared with macOS), as the web finds it.
+ * Edits are kept between launches (#86), as the web keeps them between
+ * reloads: the saved tables are read before the first screen, and nothing
+ * shows until they are (a moment, from the phone's own storage).
  */
-function bundleOfTable(name: string): string {
-  return Object.entries(fixtureBundles).find(([, b]) => name in b.tables)?.[0] ?? "";
+export default function App() {
+  const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
+  useEffect(() => {
+    // No store (it failed to open) still runs, from the fixtures, unsaved.
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY]).then(setStore, () => setStore(null));
+  }, []);
+  return store === undefined ? null : <TableApp store={store} />;
 }
 
-export default function App() {
-  const [tables, setTables] =
-    useState<Record<string, ParsedTable>>(initialTables);
-  const [activeTablePath, setActiveTablePath] =
-    useState<string>(DEFAULT_TABLE_PATH);
-  const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(
-    () =>
-      Object.fromEntries(
-        Object.entries(initialTables).map(([key, t]) => [
-          key,
-          t.views[0]?.id ?? "",
-        ]),
-      ),
-  );
-  const [query, setQuery] = useState<string>("");
-  const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
-
-  const table = tables[activeTablePath]!;
-  const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
-
-  const setActiveViewId = useCallback(
-    (viewId: string) =>
-      setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: viewId })),
-    [activeTablePath],
-  );
-
-  // Apply an Address to app state — shared between relation clicks and
-  // any future deep-link transport so both behave identically. Mirrors
-  // apps/web + apps/desktop so cross-table navigation works the same on
-  // every platform.
-  const applyAddress = useCallback(
-    (addr: { tablePath: string; rowId?: string; viewId?: string }) => {
-      if (!tables[addr.tablePath]) return;
-      setActiveTablePath(addr.tablePath);
-      if (addr.viewId) {
-        setActiveViewIds((prev) => ({ ...prev, [addr.tablePath]: addr.viewId! }));
-      }
-      if (addr.rowId) {
-        const target = tables[addr.tablePath];
-        setActiveBodyRowId(target?.bodies?.[addr.rowId] ? addr.rowId : null);
-      } else {
-        setActiveBodyRowId(null);
-      }
-    },
-    [tables],
-  );
-
-  const openRelation = useCallback(
-    (address: string) => {
-      const addr = parseAddress(address);
-      if (addr) applyAddress(addr);
-    },
-    [applyAddress],
-  );
-
-  const updateRow = useCallback(
-    (rowId: string, fieldName: string, value: unknown) => {
-      setTables((all) => ({
-        ...all,
-        [activeTablePath]: {
-          ...all[activeTablePath]!,
-          rows: all[activeTablePath]!.rows.map((r) =>
-            r.id === rowId ? { ...r, [fieldName]: value } : r,
-          ),
-        },
-      }));
-    },
-    [activeTablePath],
-  );
-
-  const updateField = useCallback(
-    (fieldName: string, patch: Partial<Field>) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const fields = t.schema.fields.map((f) =>
-          f.name === fieldName ? { ...f, ...patch } : f,
-        );
-        const isStructural =
-          "constraints" in patch ||
-          "deprecated" in patch ||
-          "relation" in patch;
-        const nextSchema: TableSchema = isStructural
-          ? bumpSchemaVersion({ ...t.schema, fields })
-          : { ...t.schema, fields };
-        return { ...all, [activeTablePath]: { ...t, schema: nextSchema } };
+function TableApp({ store }: { store: KeyValueStore | null }) {
+  // The platform's language, when the viewer hasn't chosen one.
+  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
+  // Everything the app holds is table-app's state (docs/APP-STATE.md), as
+  // on the web, macOS and Linux: what was saved, or the fixtures when
+  // nothing usable was (fixture tables added since still appear).
+  const { state, dispatch, display, flush } = useTableApp(
+    () => {
+      const fixtures = { tables: initialTables, bundles: bundleMetas };
+      const saved = loadSaved(store);
+      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const s = initialAppState({
+        ...initial,
+        stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
       });
+      // "Schema changed" is since the fixtures, as saved edits carry over a launch.
+      return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    [activeTablePath],
+    // Saved on the phone after every edit. The fixtures themselves are
+    // never saved, so an untouched app keeps following them as they change.
+    { store, write: async (_edited, tables, bundles) => save(store, { tables, bundles }) },
+    systemLocale,
   );
+  const { tables, bundles, active } = state;
+  const derived = derive(state, { locale: systemLocale });
+  const { table, view, summary } = derived;
+  const { view: shownView, rows: visibleRows, sheet } = derived.shown;
 
-  const addEnumValue = useCallback(
-    (fieldName: string, value: string) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const fields = t.schema.fields.map((f) => {
-          if (f.name !== fieldName) return f;
-          const existing = f.constraints?.enum ?? [];
-          if (existing.includes(value)) return f;
-          return {
-            ...f,
-            constraints: { ...(f.constraints ?? {}), enum: [...existing, value] },
-          };
-        });
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-          },
-        };
-      });
-    },
-    [activeTablePath],
-  );
+  // Going to the background may be the last the app sees before it's
+  // ended: what's left is written first.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next !== "active") void flush();
+    });
+    return () => sub.remove();
+  }, [flush]);
 
-  const moveField = useCallback(
-    (fieldName: string, delta: -1 | 1) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const from = t.schema.fields.findIndex((f) => f.name === fieldName);
-        if (from === -1) return all;
-        const to = from + delta;
-        if (to < 0 || to >= t.schema.fields.length) return all;
-        const fields = t.schema.fields.slice();
-        const [moved] = fields.splice(from, 1);
-        fields.splice(to, 0, moved!);
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-          },
-        };
-      });
-    },
-    [activeTablePath],
-  );
+  // Questions as native alerts; messages as alerts.
+  useEffect(() => {
+    const asking = state.asking;
+    if (!asking) return;
+    if (asking.kind === "name") {
+      askName(asking.prompt, (text) => dispatch({ type: "answer", response: "create", text }), () =>
+        dispatch({ type: "answer", response: "cancel" }),
+      );
+      return;
+    }
+    ask(asking.confirm, (response) => dispatch({ type: "answer", response }));
+  }, [state.asking, dispatch]);
+  useEffect(() => {
+    if (!state.telling) return;
+    Alert.alert(state.telling.heading, state.telling.body);
+    dispatch({ type: "told" });
+  }, [state.telling, dispatch]);
 
-  const addField = useCallback(
-    (field: Field) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        if (t.schema.fields.some((f) => f.name === field.name)) return all;
-        const fields = [...t.schema.fields, field];
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            schema: bumpSchemaVersion({ ...t.schema, fields }),
-          },
-        };
-      });
-    },
-    [activeTablePath],
-  );
-
-  const updateBody = useCallback(
-    (rowId: string, content: string) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        const bodies = { ...(t.bodies ?? {}) };
-        if (content.length === 0) delete bodies[rowId];
-        else bodies[rowId] = content;
-        return { ...all, [activeTablePath]: { ...t, bodies } };
-      });
-    },
-    [activeTablePath],
-  );
-
-  const openBody = useCallback((rowId: string) => setActiveBodyRowId(rowId), []);
-  const closeBody = useCallback(() => setActiveBodyRowId(null), []);
-
-  const updateActiveView = useCallback(
-    (patch: Partial<View>) => {
-      setTables((all) => {
-        const t = all[activeTablePath]!;
-        return {
-          ...all,
-          [activeTablePath]: {
-            ...t,
-            views: t.views.map((v) =>
-              v.id === activeViewId ? { ...v, ...patch } : v,
-            ),
-          },
-        };
-      });
-    },
-    [activeTablePath, activeViewId],
-  );
-
-  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
-  const viewRows = applyView(table, view);
-  const visibleRows = searchRows(viewRows, query, {
-    schema: table.schema,
-    bodies: table.bodies,
-  });
-  const errors = validate(table.schema, table.rows);
-  const searching = query.trim().length > 0;
-  const tablePaths = Object.keys(tables);
-  const showTablePicker = tablePaths.length > 1;
-  const currentSchemaVersion =
-    (table.schema["schema-version"] as number | undefined) ?? 1;
-  const schemaBumped =
-    currentSchemaVersion > (INITIAL_SCHEMA_VERSIONS[activeTablePath] ?? 1);
+  // The view on screen's callbacks, each an action (table-app's viewCallbacks).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, active]);
+  // Every table, file by file, in each file's order.
+  const tableList = derived.sidebarTree.flatMap((b) => b.tables);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AttachmentsProvider value={(file) => fixtureAttachmentUrls[`${bundleOfTable(activeTablePath)}/${activeTablePath}`]?.[file]}>
+        <AttachmentsProvider value={(file) => fixtureAttachmentUrls[active]?.[file]}>
         <PortalHost>
+          <DisplaySettingsProvider value={display}>
           <html.div style={styles.root}>
             <Safe style={{ flex: 1 }}>
               <html.div style={styles.scroll}>
-                <html.span style={styles.title}>{view.name}</html.span>
+                <html.span style={styles.breadcrumb}>{derived.breadcrumb.text}</html.span>
+                <html.span dir="auto" style={styles.title}>{view.name}</html.span>
                 <html.div style={styles.subtitle}>
-                  <html.span>
-                    {searching
-                      ? `${visibleRows.length} of ${viewRows.length} matching`
-                      : `${visibleRows.length} of ${table.rows.length} ${table.rows.length === 1 ? "row" : "rows"}`}
-                  </html.span>
+                  <html.span>{summary.count}</html.span>
                   <html.span>·</html.span>
-                  <html.span
-                    style={errors.length === 0 ? styles.validityOk : styles.validityBad}
-                  >
-                    {errors.length === 0
-                      ? "schema valid"
-                      : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`}
-                  </html.span>
+                  <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
                   {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-                  {schemaBumped && (
-                <html.span style={styles.schemaBumpBadge}>
-                      schema changed
-                    </html.span>
-                  )}
+                  {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
                 </html.div>
-                {showTablePicker && (
-                  <>
-                    <html.span style={styles.sectionLabel}>Tables</html.span>
-                    <html.div style={styles.tabRow}>
-                      {tablePaths.map((path) => (
-                        <html.button
-                          key={path}
-                          onClick={() => {
-                            setActiveTablePath(path);
-                            setQuery("");
-                            setActiveBodyRowId(null);
-                          }}
-                          style={[styles.tab, path === activeTablePath && styles.tabActive]}
-                        >
-                          {tables[path]!.meta.title ?? path}
-                        </html.button>
-                      ))}
-                    </html.div>
-                  </>
-                )}
+                <html.span style={styles.sectionLabel}>Tables</html.span>
+                <html.div style={styles.tabRow}>
+                  {tableList.map((t) => (
+                    <html.button
+                      key={t.key}
+                      onClick={() => dispatch({ type: "showTable", key: t.key })}
+                      style={[styles.tab, t.key === active && styles.tabActive]}
+                    >
+                      {t.title}
+                    </html.button>
+                  ))}
+                </html.div>
                 <html.span style={styles.sectionLabel}>Views</html.span>
                 <html.div style={styles.tabRow}>
                   {table.views.map((v) => (
                     <html.button
                       key={v.id}
-                      onClick={() => setActiveViewId(v.id)}
-                      style={[styles.tab, v.id === activeViewId && styles.tabActive]}
+                      onClick={() => dispatch({ type: "showView", key: active, viewId: v.id })}
+                      style={[styles.tab, v.id === view.id && styles.tabActive]}
                     >
                       {v.name}
                     </html.button>
                   ))}
+                  <html.button onClick={() => dispatch({ type: "addView", id: newId() })} style={styles.tab}>
+                    + New view
+                  </html.button>
                 </html.div>
-                <html.input
-                  type="text"
-                  placeholder="Search..."
-                  value={query}
-                  onChange={(e: { target: { value: string } }) => setQuery(e.target.value)}
-                  style={styles.searchInput}
-                />
-                <ScrollView
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ paddingBottom: 24 }}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {renderView(view, table, visibleRows, {
-                    onUpdateRow: updateRow,
-                    onUpdateField: updateField,
-                    onAddEnumValue: addEnumValue,
-                    onMoveField: moveField,
-                    onAddField: addField,
-                    onOpenBody: openBody,
-                    onUpdateView: updateActiveView,
-                    relatedTables: tables,
-                    onOpenRelation: openRelation,
+                <html.div style={styles.toolbar}>
+                  <html.button
+                    onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
+                    style={[styles.tool, state.settingsOpen && styles.toolOn]}
+                  >
+                    View settings
+                  </html.button>
+                  <html.input
+                    type="text"
+                    placeholder="Search…"
+                    value={state.search}
+                    onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+                    style={[styles.searchInput, styles.searchGrow]}
+                  />
+                </html.div>
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+                  {state.settingsOpen && (
+                    <ViewSettings
+                      key={view.id}
+                      view={shownView}
+                      schema={table.schema}
+                      // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+                      onChange={(patch) => dispatch({ type: "updateView", patch })}
+                      onArrange={(patch) => dispatch({ type: "arrange", patch })}
+                      personal={derived.arranged}
+                      onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
+                      onReset={() => dispatch({ type: "resetArrangement" })}
+                      onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
+                      onClose={() => dispatch({ type: "settings", open: false })}
+                    />
+                  )}
+                  {renderView(shownView, visibleRows, table.schema, table.bodies, {
+                    ...callbacks,
+                    relatedTables: bundleTables(tables, bundleOf(active)),
+                    allRows: table.rows,
+                    tableKey: tableNameOf(active),
+                    sheet,
+                    onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                   })}
                 </ScrollView>
               </html.div>
             </Safe>
-            {activeBodyRowId && (
+            {state.openPage && (
               <BodyEditor
-                rowId={activeBodyRowId}
-                rowTitle={rowTitleFor(table, activeBodyRowId)}
-                content={table.bodies?.[activeBodyRowId] ?? ""}
-                onSave={(content) => updateBody(activeBodyRowId, content)}
-                onClose={closeBody}
+                rowId={state.openPage}
+                rowTitle={rowTitleFor(table, state.openPage)}
+                content={table.bodies?.[state.openPage] ?? ""}
+                onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+                onClose={() => dispatch({ type: "openPage", rowId: null })}
               />
             )}
           </html.div>
+          </DisplaySettingsProvider>
         </PortalHost>
         </AttachmentsProvider>
       </SafeAreaProvider>
