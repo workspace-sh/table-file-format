@@ -32,7 +32,7 @@ import {
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
-import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, withFileUnfolded } from "@workspace.sh/table-app";
+import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
 import { viewPatchPrompt } from "@workspace.sh/table-app";
 import { archiveFileName, bundleToArchive, openArchive } from "@workspace.sh/table-app";
@@ -536,6 +536,20 @@ export function App() {
   if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0];
+  // Whatever changes the view on screen (the sidebar, a relation, an
+  // address), its search and settings go with it (table-app's
+  // leaving); choosing the view already there changes nothing. A new view
+  // is the exception: it opens on its settings.
+  const onScreen = useRef({ key: activeTablePath, viewId: view.id });
+  const keepSettingsOpen = useRef(false);
+  useEffect(() => {
+    const from = onScreen.current;
+    onScreen.current = { key: activeTablePath, viewId: view.id };
+    const left = leaving(from.key, from.viewId, activeTablePath, view.id);
+    if (left.clearSearch) setSearchQuery("");
+    if (left.closeSettings && !keepSettingsOpen.current) setShowViewSettings(false);
+    keepSettingsOpen.current = false;
+  }, [activeTablePath, view.id]);
   if (!view) throw new Error("table has no views");
 
   const setActiveViewId = useCallback(
@@ -673,6 +687,7 @@ export function App() {
   const addView = useCallback(() => {
     const made = newView();
     setTables((all) => onTable(all, activeTablePath, (t) => withView(t, made)));
+    keepSettingsOpen.current = true;
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
     setShowViewSettings(true);
   }, [activeTablePath]);
@@ -727,7 +742,6 @@ export function App() {
       onSelectTable={(path) => {
         setShownFile(null);
         setActiveTablePath(path);
-        setSearchQuery("");
         setActiveBodyRowId(null);
         closeDrawer();
       }}

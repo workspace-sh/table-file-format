@@ -88,6 +88,7 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  leaving,
   DEFAULT_TABLE_KEY,
   firstTableKey,
   firstViews,
@@ -869,6 +870,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const addView = useCallback(() => {
     const made = newView();
     edit((t) => withView(t, made));
+    keepSettingsOpen.current = true;
     setActiveViewIds((prev) => ({ ...prev, [activeTablePath]: made.id }));
     setShowViewSettings(true);
   }, [edit, activeTablePath]);
@@ -931,8 +933,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     "files-mode": () => chooseFilesMode(true),
     "go-back": () => go(goBack),
     "go-forward": () => go(goForward),
-    // The view's address as text; opening one from outside the app waits on a link scheme.
-    "copy-link": () => copyText(here),
+    // The view's address as text, with the open document's row as the web's address has it;
+    // opening one from outside the app waits on a link scheme.
+    "copy-link": () => copyText(viewAddress(activeTablePath, shownViewId, activeBodyRowId ?? undefined)),
   };
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
@@ -1055,6 +1058,20 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown, history]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0] ?? NO_TABLE.views[0]!;
+  // Whatever changes the view on screen (the sidebar, a relation, an
+  // address, Back or Forward), its search and settings go with it (table-app's
+  // leaving); choosing the view already there changes nothing. A new view
+  // is the exception: it opens on its settings.
+  const onScreen = useRef({ key: activeTablePath, viewId: view.id });
+  const keepSettingsOpen = useRef(false);
+  useEffect(() => {
+    const from = onScreen.current;
+    onScreen.current = { key: activeTablePath, viewId: view.id };
+    const left = leaving(from.key, from.viewId, activeTablePath, view.id);
+    if (left.clearSearch) setQuery("");
+    if (left.closeSettings && !keepSettingsOpen.current) setShowViewSettings(false);
+    keepSettingsOpen.current = false;
+  }, [activeTablePath, view.id]);
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const sheet = useMemo(() => sheetShown(tables, activeTablePath, view), [tables, activeTablePath, view]);
   const personal = arrangements[activeTablePath]?.[view.id];
@@ -1098,13 +1115,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               onSelectTable={(key) => {
                 setShownFile(null);
                 setActiveTablePath(key);
-                setQuery("");
                 setActiveBodyRowId(null);
               }}
               onSelectView={(key, viewId) => {
                 setShownFile(null);
                 setActiveViewIds((prev) => ({ ...prev, [key]: viewId }));
-                setShowViewSettings(false);
               }}
               onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
               onNewView={addView}
