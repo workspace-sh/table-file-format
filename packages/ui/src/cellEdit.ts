@@ -95,3 +95,32 @@ export function commitDraft(
   }
   return check.value !== current ? { kind: "save", value: check.value } : { kind: "unchanged" };
 }
+
+// ─── Lists ─────────────────────────────────────────────────────────────
+
+/** A list cell's items, as text. */
+export function listItems(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+/** A plain list as it's typed: "a, b, c". */
+export function listText(value: unknown): string {
+  return listItems(value).join(", ");
+}
+
+/** Typed "a, b, c" as the list it stores; nothing typed is no value. */
+export function listFromText(text: string): string[] | undefined {
+  const next = text.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+  return next.length ? next : undefined;
+}
+
+/**
+ * A multi-select's value with `choice` toggled, in the choice list's order,
+ * so the same set is always written the same way. None left is no value.
+ */
+export function listToggled(field: Field | undefined, value: unknown, choice: string): string[] | undefined {
+  const items = listItems(value);
+  const next = items.includes(choice) ? items.filter((i) => i !== choice) : [...items, choice];
+  const ordered = enumOptions(field).map((o) => o.value).filter((v) => next.includes(v));
+  return ordered.length ? ordered : undefined;
+}

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { Field } from "@workspace.sh/table-core";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind } from "./cellEdit";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listText, listToggled } from "./cellEdit";
 
 const count: Field = { name: "count", type: "integer" };
 const due: Field = { name: "due", type: "date" };
@@ -52,4 +52,18 @@ test("a currency field's input shows its symbol", () => {
   assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:GBP" }, "en-GB"), "£");
   assert.equal(currencySymbolOf({ name: "p", type: "number" }), null);
   assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:ZZZZ" }), null);
+});
+
+test("a list is typed as comma-separated text, and read back from it", () => {
+  assert.equal(listText(["a", "b"]), "a, b");
+  assert.equal(listText(undefined), "");
+  assert.deepEqual(listFromText(" a,, b ,"), ["a", "b"]);
+  assert.equal(listFromText("  , "), undefined);
+});
+
+test("toggling a choice keeps the set in the schema's order; none left is no value", () => {
+  const tags: Field = { name: "tags", type: "array", constraints: { enum: ["red", "green", "blue"] } };
+  assert.deepEqual(listToggled(tags, ["blue"], "red"), ["red", "blue"]);
+  assert.deepEqual(listToggled(tags, ["red", "blue"], "red"), ["blue"]);
+  assert.equal(listToggled(tags, ["red"], "red"), undefined);
 });

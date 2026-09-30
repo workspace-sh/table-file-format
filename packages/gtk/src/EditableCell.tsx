@@ -19,6 +19,7 @@ import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-c
 import { commitDraft, currencySymbolOf, draftOf, editorKind, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
+import { ListEditor } from "./ListEditor.js";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
 
@@ -118,7 +119,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
 
   const shown = <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />;
 
-  if (kind === "readonly" || kind === "list") return shown;
+  if (kind === "readonly") return shown;
+  if (kind === "list") return <ListEditor field={field} value={value} onCommit={onCommit} relatedTables={relatedTables} lines={lines} xalign={xalign} />;
 
   if (kind === "boolean") {
     return (
