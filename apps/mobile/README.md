@@ -11,8 +11,14 @@ What's its own:
 - **Storage:** edits and the viewer's settings are kept on the phone in
   AsyncStorage (`store.ts`), under the keys the web uses in localStorage.
   It works in Expo Go as well as in a development build.
-- **Questions:** native alerts. The name prompt is iOS's text alert;
-  Android has none yet.
+- **Questions:** native alerts. A name (new table, new `.table` file) is
+  asked for in the app's own small sheet (`NameSheet.tsx`), the same on
+  iOS and Android, which has no system text prompt.
+- **Files:** the tables sheet (`TablesSheet.tsx`) makes tables and
+  `.table` files, opens a `.table.zip` from the system's document picker,
+  and hands the file on screen to the share sheet as a `.table.zip`
+  (`files.ts`: expo-document-picker, expo-file-system and expo-sharing,
+  all in Expo Go). Reading and writing archives is table-app's.
 - **Leaving:** going to the background writes what's left at once.
 
 ## Running it

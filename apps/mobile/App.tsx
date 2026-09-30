@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Alert, AppState, Platform, ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
@@ -42,14 +42,19 @@ import {
   tableNameOf,
   viewCallbacks,
   withNewFixtures,
+  archiveFileName,
+  exportFailedText,
+  openFailedText,
+  type AppCommandId,
   type Confirm,
   type KeyValueStore,
-  type NamePrompt,
   type SheetGridShown,
 } from "@workspace.sh/table-app";
 import { useTableApp } from "@workspace.sh/table-app/react";
 import { openStore } from "./store";
 import { TablesSheet } from "./TablesSheet";
+import { NameSheet } from "./NameSheet";
+import { ZipError, chooseZip, shareZip } from "./files";
 
 // Horizontal page padding. Used as positive padding on the scroll
 // container AND as negative margin on horizontally-scrolling sections
@@ -336,19 +341,6 @@ function ask(prompt: Confirm, then: (response: string) => void) {
   );
 }
 
-/**
- * Ask for a name, worded by table-app's namePrompt: the system's text
- * prompt on iOS. Android has none, so there it answers as cancelled until
- * the app draws its own.
- */
-function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () => void) {
-  if (Platform.OS !== "ios") return cancel();
-  Alert.prompt(prompt.heading, undefined, [
-    { text: "Cancel", style: "cancel", onPress: cancel },
-    { text: prompt.action, onPress: (value?: string) => then(value ?? "") },
-  ]);
-}
-
 // SafeAreaView's TS types under react-native-safe-area-context 5.6.2 +
 // React 19.2 don't expose `style` on its props bag (likely upstream type
 // bug). Pre-built JSX element bypasses the prop-type check; runtime
@@ -413,12 +405,8 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   useEffect(() => {
     const asking = state.asking;
     if (!asking) return;
-    if (asking.kind === "name") {
-      askName(asking.prompt, (text) => dispatch({ type: "answer", response: "create", text }), () =>
-        dispatch({ type: "answer", response: "cancel" }),
-      );
-      return;
-    }
+    // A name is asked for in the NameSheet below.
+    if (asking.kind === "name") return;
     ask(asking.confirm, (response) => dispatch({ type: "answer", response }));
   }, [state.asking, dispatch]);
   useEffect(() => {
@@ -432,6 +420,40 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, active]);
   // The sheet of files and tables, open or not.
   const [tablesOpen, setTablesOpen] = useState(false);
+  // Worded as the other apps' menus word them (table-app's appCommands).
+  const commandOf = (id: AppCommandId) => derived.commands.find((c) => c.id === id)!;
+  // Something to do once the tables sheet has gone: on iOS another sheet
+  // (share, document picker) can't open while it's still closing.
+  const afterSheet = useRef<(() => void) | null>(null);
+  const closeSheetThen = (then: () => void) => {
+    setTablesOpen(false);
+    if (Platform.OS === "ios") afterSheet.current = then;
+    else then();
+  };
+  const sheetDismissed = () => {
+    const then = afterSheet.current;
+    afterSheet.current = null;
+    then?.();
+  };
+  // A .table.zip from the Files app or elsewhere becomes one more file here, saying what was skipped (D25).
+  const openZip = async () => {
+    try {
+      const opened = await chooseZip(Object.keys(bundles));
+      if (opened) dispatch({ type: "opened", library: opened.library, skipped: opened.skipped });
+    } catch (error) {
+      const heading = error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(".table.zip", error);
+      dispatch({ type: "tell", message: { heading } });
+    }
+  };
+  // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
+  const exportZip = async () => {
+    const bundle = bundleOf(active);
+    try {
+      await shareZip(bundle, tables, bundles);
+    } catch (error) {
+      dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+    }
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -534,7 +556,32 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 dispatch({ type: "showTable", key });
                 setTablesOpen(false);
               }}
+              onNewTable={(bundle) => {
+                setTablesOpen(false);
+                dispatch({ type: "create", making: { kind: "table", bundle } });
+              }}
+              actions={[
+                {
+                  label: commandOf("new-file").label,
+                  onPress: () => {
+                    setTablesOpen(false);
+                    dispatch({ type: "create", making: { kind: "file" } });
+                  },
+                },
+                { label: commandOf("open-zip").label, onPress: () => closeSheetThen(() => void openZip()) },
+                {
+                  label: `${commandOf("export-zip").label.replace(/…$/, "")} (${bundleOf(active)}.table)…`,
+                  onPress: () => closeSheetThen(() => void exportZip()),
+                },
+              ]}
               onClose={() => setTablesOpen(false)}
+              onDismissed={sheetDismissed}
+            />
+            <NameSheet
+              prompt={state.asking?.kind === "name" ? state.asking.prompt : null}
+              onAnswer={(text) =>
+                dispatch(text === null ? { type: "answer", response: "cancel" } : { type: "answer", response: "create", text })
+              }
             />
             {state.openPage && (
               <BodyEditor
