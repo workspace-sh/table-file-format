@@ -24,7 +24,7 @@ import {
   visibleFields,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled } from "./cellEdit";
+import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 import { formulaInputCells, viewGrid } from "./formulaCell";
 import {
   BOARD_GAP,
@@ -1672,6 +1672,26 @@ function EditableCell({
 
   // A list: a multi-select picks from its choices; a plain list is typed
   // as comma-separated text.
+  // A relation to many rows is ticked on and off, as a multi-select is.
+  if (kind === "relation" && relatesMany(field) && field) {
+    return (
+      <ListCell
+        field={field}
+        value={value}
+        onCommit={onCommit}
+        relatedTables={relatedTables}
+        lines={lines}
+        selected={selected}
+        onSelect={onSelect}
+        editRequest={editRequest}
+        onEditEnd={onEditEnd}
+        choices={relationOptions(field, relatedTables)}
+        toggled={(id) => relationToggled(field, value, id, relatedTables)}
+        onOpenRelation={onOpenRelation}
+      />
+    );
+  }
+
   if (kind === "list" && field) {
     return (
       <ListCell
@@ -1691,7 +1711,12 @@ function EditableCell({
   // Enum: select dropdown. Normalised via enumOptions() so both the
   // bare-string and { value, color, label } on-disk forms render.
   const enumOpts = enumOptions(field);
-  if (kind === "choice") {
+  // A relation to one row is picked the same way, from the related table's rows.
+  const singleRelation = kind === "relation" && !relatesMany(field);
+  const choiceOpts = singleRelation
+    ? relationOptions(field, relatedTables)
+    : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }));
+  if (kind === "choice" || singleRelation) {
     if (!editing) {
       return (
         <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
@@ -1710,7 +1735,7 @@ function EditableCell({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
-        options={[{ value: "", label: "—" }, ...enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }))]}
+        options={[{ value: "", label: "—" }, ...choiceOpts]}
         onChange={(next) => {
           commit(next);
           onEditEnd?.("done");
@@ -1834,9 +1859,18 @@ function ListCell({
   onSelect,
   editRequest,
   onEditEnd,
+  choices,
+  toggled,
+  onOpenRelation,
 }: {
   field: Field;
   value: unknown;
+  /** A related row's link, opened: shown as links, as a relation cell is. */
+  onOpenRelation?: (address: string) => void;
+  /** The choices, when they aren't the field's own (a relation's rows). */
+  choices?: { value: string; label?: string }[];
+  /** The value with a choice toggled, when that isn't listToggled's (a relation keeps its table's order). */
+  toggled?: (choice: string) => unknown;
   onCommit: (next: unknown) => void;
   relatedTables?: Record<string, ParsedTable>;
   lines?: number;
@@ -1846,7 +1880,7 @@ function ListCell({
   onEditEnd?: (how: EditEnd) => void;
 }) {
   const items = listItems(value);
-  const options = enumOptions(field);
+  const options = choices ?? enumOptions(field);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [rect, setRect] = useState<AnchorRect | null>(null);
@@ -1899,7 +1933,7 @@ function ListCell({
       }}
       style={styles.cellEditableIdle}
     >
-      <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
+      <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
     </html.div>
   );
   if (!open) return shown;
@@ -1927,7 +1961,7 @@ function ListCell({
       />
     );
   }
-  const toggle = (choice: string) => onCommit(listToggled(field, value, choice));
+  const toggle = (choice: string) => onCommit(toggled ? toggled(choice) : listToggled(field, value, choice));
   return (
     <>
       {shown}
@@ -1958,7 +1992,8 @@ function ListCell({
               onClick={() => toggle(o.value)}
             >
               <html.span style={styles.choiceCheck}>{items.includes(o.value) ? "✓" : ""}</html.span>
-              <EnumPill pill={pillFor(field, o.value)} />
+              {/* A relation's rows are named, not coloured choices. */}
+              {choices ? <html.span>{o.label ?? o.value}</html.span> : <EnumPill pill={pillFor(field, o.value)} />}
             </html.button>
           ))}
         </html.div>

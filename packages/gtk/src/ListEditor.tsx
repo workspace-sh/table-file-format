@@ -15,14 +15,21 @@ interface ListEditorProps {
   field: Field | undefined;
   value: unknown;
   onCommit: (next: unknown) => void;
+  /** The choices, when they aren't the field's own (a relation's rows). */
+  choices?: { value: string; label?: string }[];
+  /** The value with a choice toggled, when that isn't listToggled's (a relation keeps its table's order). */
+  toggled?: (choice: string) => unknown;
   relatedTables?: Record<string, ParsedTable>;
+  /** A related row's link, opened: shown as links, as a relation cell is. */
+  onOpenRelation?: (address: string) => void;
   lines?: number;
   xalign?: number;
 }
 
 /** A multi-select: its pills in a flat button; the popover ticks each choice on or off, saving as it goes. */
-function ChoicesList({ field, value, onCommit, relatedTables, lines, xalign }: ListEditorProps) {
+function ChoicesList({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign, choices, toggled }: ListEditorProps) {
   const items = listItems(value);
+  const options = choices ?? enumOptions(field);
   return (
     <GtkMenuButton
       hexpand
@@ -33,13 +40,13 @@ function ChoicesList({ field, value, onCommit, relatedTables, lines, xalign }: L
       popover={
         <GtkPopover>
           <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} marginTop={4} marginBottom={4} marginStart={4} marginEnd={4}>
-            {enumOptions(field).map((o) => (
+            {options.map((o) => (
               <GtkCheckButton
                 key={o.value}
                 label={o.label ?? o.value}
                 active={items.includes(o.value)}
                 onToggled={(b) => {
-                  if (b.getActive() !== items.includes(o.value)) onCommit(listToggled(field, value, o.value));
+                  if (b.getActive() !== items.includes(o.value)) onCommit(toggled ? toggled(o.value) : listToggled(field, value, o.value));
                 }}
               />
             ))}
@@ -47,7 +54,7 @@ function ChoicesList({ field, value, onCommit, relatedTables, lines, xalign }: L
         </GtkPopover>
       }
     >
-      <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} xalign={xalign} />
+      <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />
     </GtkMenuButton>
   );
 }
@@ -112,5 +119,5 @@ function TypedList({ field, value, onCommit, relatedTables, lines, xalign }: Lis
 
 /** A list cell's editor: a multi-select's popover, or a typed list. */
 export function ListEditor(props: ListEditorProps) {
-  return enumOptions(props.field).length > 0 ? <ChoicesList {...props} /> : <TypedList {...props} />;
+  return props.choices || enumOptions(props.field).length > 0 ? <ChoicesList {...props} /> : <TypedList {...props} />;
 }
