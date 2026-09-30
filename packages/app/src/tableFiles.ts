@@ -62,11 +62,16 @@ function describeSkip(d: ValidationError): string {
  * (D25): a heading and the lines skipped. Null when it read cleanly.
  */
 export function importSkippedText(opened: OpenedBundle): { heading: string; body: string } | null {
-  const n = opened.skipped.length;
+  return skippedText(opened.bundle.meta.title ?? opened.key, opened.skipped);
+}
+
+/** The same, for whatever was opened, by its title. */
+export function skippedText(title: string, skipped: string[]): { heading: string; body: string } | null {
+  const n = skipped.length;
   if (n === 0) return null;
   return {
-    heading: `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:`,
-    body: opened.skipped.join("\n"),
+    heading: `Opened "${title}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:`,
+    body: skipped.join("\n"),
   };
 }
 

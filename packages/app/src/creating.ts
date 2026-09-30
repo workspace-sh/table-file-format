@@ -18,9 +18,9 @@ export interface Made {
   viewId: string;
 }
 
-/** A new view: a plain table of everything, for its settings to make into what's wanted. */
-export function newView(): View {
-  return { id: newId(), name: "New view", layout: "table" };
+/** A new view: a plain table of everything, for its settings to make into what's wanted. `id`: the app's, else a new one. */
+export function newView(id: string = newId()): View {
+  return { id, name: "New view", layout: "table" };
 }
 
 /** A new table titled `title` in `bundle`, named from the title, last in the bundle's order. */

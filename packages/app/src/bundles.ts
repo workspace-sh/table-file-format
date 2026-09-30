@@ -76,6 +76,13 @@ export function keyForAddress(
   return tables[within] ? within : null;
 }
 
+/** Where an address leads: a held table, the view it names, and the row whose document opens. */
+export interface AddressTarget {
+  key: string;
+  viewId?: string;
+  openBody: string | null;
+}
+
 /**
  * Where following an address leads (a relation's link, or the page's own
  * address): the table's key, the view it names if any, and the row whose
@@ -88,7 +95,7 @@ export function addressTarget(
   tables: Record<string, ParsedTable>,
   bundles: Record<string, BundleMeta>,
   fromBundle: string,
-): { key: string; viewId?: string; openBody: string | null } | null {
+): AddressTarget | null {
   const addr = typeof address === "string" ? parseAddress(address) : address;
   if (!addr) return null;
   const key = keyForAddress(addr, tables, bundles, fromBundle);
@@ -114,7 +121,7 @@ export interface AppliedTarget {
  * Forward): the one rule each app applies, so all three land alike.
  */
 export function applyTarget(
-  target: { key: string; viewId?: string; openBody: string | null },
+  target: AddressTarget,
   current: { viewIds: Record<string, string> },
 ): AppliedTarget {
   return {
