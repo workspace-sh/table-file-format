@@ -94,3 +94,16 @@ describe("a sheet that formulas read, turned off", () => {
     await waitFor(async () => expect((await ledgerOnDisk()).views.find((v) => v.id === "by-date")?.coordinates).toBeUndefined());
   });
 });
+
+describe("a column header's tooltip", () => {
+  it("says what the column is, as the web's hint does", async () => {
+    await openLedger("as-entered");
+    const header = (await screen.findAllByText("Balance")).find((w) => w.getTooltipText()?.startsWith("Balance\n")) as Gtk.Label;
+    const lines = header.getTooltipText()!.split("\n");
+    expect(lines[0]).toBe("Balance");
+    expect(lines[1]!.startsWith("Formula")).toBe(true);
+    expect(lines).toContain("Stored as “balance”");
+    expect(lines.at(-1)).toBe("Click to edit this column");
+  });
+});
+
