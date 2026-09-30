@@ -36,6 +36,8 @@ export const styles = {
   /** The open formula's column, tinted; the cells it read, outlined (as on the web). */
   formulaColumn: css({ backgroundColor: "alpha(@accent_bg_color, 0.08)" }),
   formulaInput: css({ boxShadow: "inset 0 0 0 2px alpha(@accent_bg_color, 0.7)" }),
+  /** The cell the keyboard is on. */
+  selectedCell: css({ boxShadow: "inset 0 0 0 2px @accent_bg_color", outline: "none" }),
   card: css({ padding: "10px 12px", borderRadius: "10px" }),
   cardTitle: css({ fontWeight: "600" }),
   cardFieldLabel: css({ fontSize: "x-small", fontWeight: "600", opacity: 0.55, letterSpacing: "0.04em" }),

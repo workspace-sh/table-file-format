@@ -86,6 +86,7 @@ import { useViewportWidth } from "./internal/useViewportWidth";
 import { Checkbox } from "./internal/Checkbox";
 import { Select } from "./internal/Select";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
+import { afterEdit, cellPicks, gridKey } from "./gridNav";
 import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
@@ -2550,90 +2551,31 @@ export function TableView({
   // Where the selection goes when editing ends from the keyboard; the
   // table takes the keyboard back either way.
   const endEdit = (rowId: string, name: string) => (how: EditEnd) => {
-    const r = rowIds.indexOf(rowId);
-    const c = fields.indexOf(name);
-    if (how === "enter") setSel(cellAt(r + 1, c));
-    else if (how === "tab" || how === "shift-tab") {
-      const i = r * fields.length + c + (how === "tab" ? 1 : -1);
-      setSel(i < 0 || i > lastRow * fields.length + lastCol ? { rowId, name } : cellAt(Math.floor(i / fields.length), i % fields.length));
-    } else setSel({ rowId, name });
+    const next = afterEdit({ row: rowIds.indexOf(rowId), col: fields.indexOf(name) }, how, rowIds.length, fields.length);
+    setSel(cellAt(next.row, next.col));
     gridRef.current?.focus?.({ preventScroll: true });
   };
   const onGridKey = (e: KeyEventLike) => {
     const tag = (e.target as { tagName?: string } | undefined)?.tagName;
     // Typing in a cell editor, a picker or a header button is theirs.
     if (tag && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(tag)) return;
-    if (rowIds.length === 0 || fields.length === 0) return;
     const cur = sel && rowIds.includes(sel.rowId) && fields.includes(sel.name) ? sel : null;
-    if (!cur) {
-      if (/^(Arrow|Tab$|Enter$|Home$|End$)/.test(e.key)) {
-        e.preventDefault?.();
-        setSel(cellAt(0, 0));
-      }
-      return;
-    }
-    const r = rowIds.indexOf(cur.rowId);
-    const c = fields.indexOf(cur.name);
-    const jump = e.metaKey || e.ctrlKey;
-    const go = (nr: number, nc: number) => {
-      e.preventDefault?.();
-      setSel(cellAt(nr, nc));
-    };
-    const field = fieldMap.get(cur.name);
-    switch (e.key) {
-      case "ArrowUp":
-        return go(jump ? 0 : r - 1, c);
-      case "ArrowDown":
-        return go(jump ? lastRow : r + 1, c);
-      case "ArrowLeft":
-        return go(r, jump ? 0 : c - 1);
-      case "ArrowRight":
-        return go(r, jump ? lastCol : c + 1);
-      case "Home":
-        return go(jump ? 0 : r, 0);
-      case "End":
-        return go(jump ? lastRow : r, lastCol);
-      case "Tab": {
-        const i = r * fields.length + c + (e.shiftKey ? -1 : 1);
-        // Past either end, Tab leaves the table as it would any control.
-        if (i < 0 || i > lastRow * fields.length + lastCol) return;
-        return go(Math.floor(i / fields.length), i % fields.length);
-      }
-      case "Enter":
-      case "F2":
-        e.preventDefault?.();
-        void openCell(cur.rowId, cur.name);
-        return;
-      case "Escape":
-        setSel(null);
-        return;
-      case "Backspace":
-      case "Delete":
-        if (editable(cur.name) && field?.type !== "boolean") {
-          e.preventDefault?.();
-          onUpdateRow!(cur.rowId, cur.name, undefined);
-        }
-        return;
-      case " ":
-        if (field?.type === "boolean") {
-          e.preventDefault?.();
-          void openCell(cur.rowId, cur.name);
-        }
-        return;
-      default:
-        // A character typed on a cell replaces what's in it. Choices,
-        // lists and dates open their picker instead.
-        if (e.key.length === 1 && !jump && !e.altKey && editable(cur.name) && field?.type !== "boolean") {
-          e.preventDefault?.();
-          const picks =
-            enumOptions(field).length > 0 ||
-            field?.type === "array" ||
-            field?.type === "date" ||
-            field?.type === "datetime" ||
-            field?.type === "time";
-          void openCell(cur.rowId, cur.name, picks ? undefined : e.key);
-        }
-    }
+    const field = cur ? fieldMap.get(cur.name) : undefined;
+    // What the key does is table-ui/shared's gridKey, as table-gtk's grid has it.
+    const action = gridKey(
+      cur ? { row: rowIds.indexOf(cur.rowId), col: fields.indexOf(cur.name) } : null,
+      rowIds.length,
+      fields.length,
+      { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey },
+      { editable: !!cur && editable(cur.name), boolean: field?.type === "boolean", picks: cellPicks(field), computed: !!field?.computed },
+    );
+    if (!action || action.kind === "leave") return;
+    if (action.kind === "deselect") return setSel(null);
+    e.preventDefault?.();
+    if (action.kind === "select") return setSel(cellAt(action.at.row, action.at.col));
+    if (!cur) return;
+    if (action.kind === "clear") return onUpdateRow!(cur.rowId, cur.name, undefined);
+    void openCell(cur.rowId, cur.name, action.kind === "open" ? action.text : undefined);
   };
   // Focus leaving the table (not moving within it) drops the selection.
   // The browser's own focusout: RSD's blur event doesn't say where focus went.
