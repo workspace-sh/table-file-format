@@ -22,6 +22,7 @@ because they run the same code. Only the drawing is here.
 | `EditableCell` | One cell's editor, by `editorKind` from table-ui/shared |
 | `CellValue` | A value as GTK widgets |
 | `DisplaySettingsProvider` | Locale, date format and formula syntax, as in table-ui |
+| `DisplayControls` | The viewer's language, dates and formulas as combo rows, from table-app's `displayChoices`, as the web sidebar and macOS show them |
 | `BoardView` | Read-only: a column per choice (empty ones too), cards without the column's field |
 | `GalleryView` | Read-only: the hero field, the card's fields, the page's opening lines |
 | `ListView` | Read-only: titles, the view's other fields, group headings, page badges |
