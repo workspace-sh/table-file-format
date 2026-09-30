@@ -29,3 +29,11 @@ test("anything unexpected is dropped, not trusted", () => {
     assert.deepEqual(loadSidebarPrefs(memory({ [SIDEBAR_KEY]: raw })), {}, raw);
   }
 });
+
+test("an unfolded Display group, said outright, comes back too", () => {
+  const store = memory();
+  saveSidebarPrefs(store, { foldedDisplay: false });
+  assert.deepEqual(loadSidebarPrefs(store), { foldedDisplay: false });
+  saveSidebarPrefs(store, { foldedDisplay: true });
+  assert.deepEqual(loadSidebarPrefs(store), { foldedDisplay: true });
+});
