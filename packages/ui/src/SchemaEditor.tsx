@@ -2,22 +2,31 @@ import { useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { Checkbox } from "./internal/Checkbox";
 import { Select } from "./internal/Select";
-import type { CompileResult, ComputeOptions, Field, FieldAlignment, FieldType, Grid, Row } from "@workspace.sh/table-core";
+import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
-  compileFormula,
-  currencyOf,
-  inputCurrency,
   defaultAlignFor,
   enumOptions,
-  enumValues,
-  formulaType,
   printFormula,
-  formatValue,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
-import { fieldKey } from "./fieldKey";
-import { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaStatus, typeFamily } from "./formulaCell";
+import { explainFormula, formulaDraftOf, formulaStatus } from "./formulaCell";
+import {
+  addableChoices,
+  ALIGN_CHOICES,
+  alignLabel,
+  alignPatch,
+  currencyCodes,
+  currencyName,
+  fieldFormula,
+  formatState,
+  friendlyType,
+  newChoice,
+  newField,
+  requiredPatch,
+  takesChoices,
+  type AddableChoice,
+} from "./fieldEdit";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 import { useViewportHeight } from "./internal/useViewportHeight";
@@ -35,42 +44,9 @@ import { useViewportWidth } from "./internal/useViewportWidth";
  */
 export const ADD_FIELD_COLUMN_WIDTH = 84;
 
-/**
- * User-facing labels for the spec's technical type vocabulary. The
- * on-disk type identifiers stay as-is (string, integer, etc.); these are
- * purely for UI presentation. Showing the technical name as a small
- * meta-tag alongside is intentional — power users and developers should
- * still be able to see what's actually written to schema.json.
- */
-const FIELD_TYPE_LABELS: Record<FieldType, string> = {
-  string: "Text",
-  integer: "Whole number",
-  number: "Number",
-  boolean: "Checkbox",
-  date: "Date",
-  datetime: "Date & time",
-  time: "Time",
-  year: "Year",
-  array: "List",
-  object: "Structured",
-  duration: "Duration",
-  geopoint: "Location",
-  geojson: "Map shape",
-};
 
-/**
- * An alignment as people say it: the file stores `start` and `end` (D40),
- * which are Left and Right in a left-to-right layout and the other way
- * round in a right-to-left one.
- */
-function alignLabel(align: FieldAlignment, rtl: boolean): string {
-  if (align === "center") return "Center";
-  return (align === "start") !== rtl ? "Left" : "Right";
-}
 
-export function friendlyType(type: FieldType): string {
-  return FIELD_TYPE_LABELS[type] ?? type;
-}
+export { friendlyType };
 
 const styles = css.create({
   /**
@@ -506,65 +482,7 @@ function FormulaStatus({ result, typed }: { result: CompileResult | null; typed:
 
 // ---- display formats (SPEC section 2, "Field format")
 
-/**
- * ISO 4217 currency codes, from the platform's own Intl data so the list
- * never goes stale. Hermes and older engines lack supportedValuesOf, so a
- * short list of the commonest stands in there.
- */
-function currencyCodes(): string[] {
-  try {
-    if (typeof Intl.supportedValuesOf === "function") return Intl.supportedValuesOf("currency");
-  } catch {
-    // fall through
-  }
-  return ["AUD", "BRL", "CAD", "CHF", "CNY", "DKK", "EUR", "GBP", "HKD", "INR", "JPY", "KRW", "MXN", "NOK", "NZD", "SEK", "SGD", "USD", "ZAR"];
-}
 
-/** "British Pound" for GBP, in the reader's own language; the code alone if the platform can't say. */
-function currencyName(code: string): string {
-  try {
-    return new Intl.DisplayNames(undefined, { type: "currency" }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-type FormatFamily = "number" | "date" | "string" | null;
-
-function formatFamily(type: FieldType): FormatFamily {
-  if (type === "number" || type === "integer" || type === "year") return "number";
-  if (type === "date" || type === "datetime") return "date";
-  if (type === "string") return "string";
-  return null;
-}
-
-/** The spec's closed vocabulary, per family. The empty value means "the default". */
-const FORMAT_CHOICES: Record<Exclude<FormatFamily, null>, { value: string; label: string }[]> = {
-  number: [
-    { value: "", label: "Plain number" },
-    { value: "integer", label: "Whole number" },
-    { value: "decimal", label: "Decimal places…" },
-    { value: "percent", label: "Percent" },
-    { value: "currency", label: "Currency…" },
-    { value: "duration:seconds", label: "Duration (seconds)" },
-  ],
-  date: [
-    // Not set: the table leaves it to whoever shows it (the app's default).
-    { value: "", label: "App's default" },
-    { value: "iso", label: "ISO" },
-    { value: "short", label: "Short" },
-    { value: "long", label: "Long" },
-    { value: "weekday", label: "With weekday" },
-    { value: "relative", label: "Relative" },
-  ],
-  string: [
-    { value: "", label: "Plain text" },
-    { value: "markdown", label: "Markdown" },
-    { value: "url", label: "Link" },
-    { value: "email", label: "Email" },
-    { value: "phone", label: "Phone" },
-  ],
-};
 
 /**
  * Choose how a column's values are shown — never what is stored. Values
@@ -581,43 +499,13 @@ function FormatPicker({
   fields: Field[];
   onUpdate: (patch: Partial<Field>) => void;
 }) {
-  const family = formatFamily(field.type);
-  if (!family) return null;
-  // Currency is a unit (D33): a formula shows its inputs' currency unless
-  // told otherwise, and choosing another relabels without converting.
-  const inherited = field.computed ? inputCurrency(field, { fields }) : undefined;
-  const own = currencyOf(field);
-  const title = field.title ?? field.name;
-  const choices = FORMAT_CHOICES[family].map((o) =>
-    o.value === "" && family === "number" && inherited
-      ? {
-          ...o,
-          label:
-            inherited === "mixed"
-              ? "Plain number (inputs are in different currencies)"
-              : `Same as inputs (${inherited})`,
-        }
-      : o,
-  );
-  // Date choices show what they look like, today, in the app's locale.
   const display = useDisplaySettings();
-  const today = new Date().toISOString().slice(0, 10);
-  const example = (token: string) =>
-    formatValue({ name: "example", type: "date", format: token || display.dateFormat || "iso" }, today, display);
-  const shown = family === "date" ? choices.map((o) => ({ ...o, label: `${o.label} (${example(o.value)})` })) : choices;
-  const current = field.format ?? "";
-  const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current;
-  const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : 2;
-  const code = current.startsWith("currency:") ? current.slice("currency:".length).toUpperCase() : "";
+  const state = formatState(field, fields, display);
+  if (!state) return null;
+  const { kind, digits, code, notes } = state;
+  const shown = state.choices;
+  const choose = (next: string) => onUpdate(state.choose(next));
   const set = (format: string) => onUpdate({ format: format || undefined });
-  const choose = (next: string) => {
-    if (next === "decimal") set(`decimal:${digits}`);
-    // A formula's inputs decide its unit; only a column with nothing to go
-    // on falls back to the reader's own currency.
-    else if (next === "currency")
-      set(`currency:${code || (inherited && inherited !== "mixed" ? inherited : defaultCurrency())}`);
-    else set(next);
-  };
   return (
     <>
       <html.span style={styles.label}>Format</html.span>
@@ -646,32 +534,15 @@ function FormatPicker({
           style={styles.input}
         />
       )}
-      {own && inherited && inherited !== "mixed" && own !== inherited && (
-        <html.span style={styles.warnText}>
-          {title} is worked out from values in {inherited}. Showing it in {own} relabels the numbers; it
-          doesn't convert them.
+      {notes.map((n) => (
+        <html.span key={n.text} style={n.kind === "warn" ? styles.warnText : styles.noteText}>
+          {n.text}
         </html.span>
-      )}
-      {own && !field.computed && (
-        <html.span style={styles.noteText}>
-          The currency labels these numbers. Changing it doesn't convert them. To convert, use a formula with a
-          rate.
-        </html.span>
-      )}
+      ))}
     </>
   );
 }
 
-/** The reader's own currency where the platform can tell, else US dollars. */
-function defaultCurrency(): string {
-  try {
-    const region = new Intl.Locale(Intl.NumberFormat().resolvedOptions().locale).maximize().region;
-    const byRegion: Record<string, string> = { GB: "GBP", US: "USD", IE: "EUR", DE: "EUR", FR: "EUR", ES: "EUR", IT: "EUR", NL: "EUR", JP: "JPY", CA: "CAD", AU: "AUD", NZ: "NZD", CH: "CHF", IN: "INR" };
-    return (region && byRegion[region]) || "USD";
-  } catch {
-    return "USD";
-  }
-}
 
 interface SchemaFieldEditorProps {
   field: Field;
@@ -741,19 +612,11 @@ export function SchemaFieldEditor({
   const [formulaDraft, setFormulaDraft] = useState(() =>
     field.computed ? printFormula(field.computed.expr, { grid, syntax: formulaSyntax }) : "",
   );
-  const formula = field.computed
-    ? compileFormula(formulaDraft, { fields: (fields ?? []).map((f) => f.name), grid })
-    : null;
-  const formulaChanged = formula?.ok === true && formula.stored !== field.computed?.expr;
+  const formulaEdit = field.computed ? fieldFormula(field, fields ?? [], formulaDraft, grid) : null;
+  const formula = formulaEdit?.compiled ?? null;
+  const formulaChanged = formulaEdit?.save !== undefined;
   const saveFormula = () => {
-    if (!formula?.ok || !formulaChanged) return;
-    const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
-    const produced = formulaType(formula.expr, types);
-    onUpdate({
-      computed: { expr: formula.stored, dialect: FORMULA_DIALECT },
-      // A formula rewritten from sums into text is a text column now.
-      ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
-    });
+    if (formulaEdit?.save) onUpdate(formulaEdit.save);
   };
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -767,21 +630,13 @@ export function SchemaFieldEditor({
       : Math.min(viewportWidth - POPOVER_WIDTH - 8, anchorRect.left);
 
   // A list field can always gain choices: that's what makes it a multi-select (D35).
-  const hasEnum = Array.isArray(field.constraints?.enum) || (field.type === "array" && !field.relation);
+  const hasEnum = takesChoices(field);
 
-  const setRequired = (next: boolean) => {
-    const c = { ...(field.constraints ?? {}) };
-    if (next) c.required = true;
-    else delete c.required;
-    onUpdate({ constraints: Object.keys(c).length ? c : undefined });
-  };
+  const setRequired = (next: boolean) => onUpdate(requiredPatch(field, next));
 
   const submitEnumValue = () => {
-    const value = enumDraft.trim();
-    if (!value) return;
-    // Membership check via the normalised values so the rich
-    // { value, color, label } enum form deduplicates correctly too.
-    if (enumValues(field).includes(value)) return;
+    const value = newChoice(field, enumDraft);
+    if (value === null) return;
     onAddEnumValue(value);
     setEnumDraft("");
   };
@@ -900,15 +755,13 @@ export function SchemaFieldEditor({
           </html.span>
         </html.span>
         <html.div style={styles.alignmentRow}>
-          {(["auto", "start", "center", "end"] as const).map((opt) => {
+          {ALIGN_CHOICES.map((opt) => {
             const isAuto = opt === "auto";
             const isActive = isAuto ? field.align === undefined : field.align === opt;
             return (
               <html.button
                 key={opt}
-                onClick={() =>
-                  onUpdate({ align: isAuto ? undefined : (opt as FieldAlignment) })
-                }
+                onClick={() => onUpdate(alignPatch(opt))}
                 style={[
                   styles.alignmentButton,
                   isActive && styles.alignmentButtonActive,
@@ -952,17 +805,6 @@ interface AddFieldButtonProps {
   compact?: boolean;
 }
 
-/** "Formula" sits beside the stored types in the picker; it isn't one. */
-type AddableChoice = FieldType | "formula";
-
-const ADDABLE_TYPES: FieldType[] = [
-  "string",
-  "integer",
-  "number",
-  "boolean",
-  "date",
-  "datetime",
-];
 
 export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
@@ -984,14 +826,12 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
   // What's typed is the column's title; its stored key is made from it,
   // never clashing, so there's no "name in use" to fix by hand.
   const trimmed = name.trim();
-  const key = fieldKey(trimmed, existingNames);
-  const formula =
-    type === "formula" && formulaDraft.trim() !== ""
-      ? compileFormula(formulaDraft, { fields: [...existingNames], grid })
-      : null;
   // A formula field can only be added once its formula compiles: nothing
   // that can't be stored in the canonical form is ever written (D29).
-  const valid = trimmed.length > 0 && (type !== "formula" || formula?.ok === true);
+  const made = newField({ name, type, formula: formulaDraft, existing: existingNames, fields: fields ?? [], grid });
+  const key = made.key;
+  const formula = made.compiled;
+  const valid = made.field !== null;
 
   const close = () => {
     setName("");
@@ -1013,20 +853,8 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
   }, [open]);
 
   const submit = () => {
-    if (!valid) return;
-    const title = key === trimmed ? {} : { title: trimmed };
-    if (type === "formula") {
-      if (!formula?.ok) return;
-      const types = new Map((fields ?? []).map((f) => [f.name, f.type] as const));
-      onAdd({
-        name: key,
-        ...title,
-        type: formulaType(formula.expr, types),
-        computed: { expr: formula.stored, dialect: FORMULA_DIALECT },
-      });
-    } else {
-      onAdd({ name: key, ...title, type });
-    }
+    if (!made.field) return;
+    onAdd(made.field);
     close();
   };
 
@@ -1042,10 +870,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
     ? Math.min(viewportWidth - POPOVER_WIDTH - 8, desiredLeft)
     : 0;
 
-  const choices: { value: AddableChoice; label: string }[] = [
-    ...ADDABLE_TYPES.map((t) => ({ value: t as AddableChoice, label: friendlyType(t) })),
-    { value: "formula", label: "Formula" },
-  ];
+  const choices = addableChoices();
 
   return (
     <html.div style={compact ? styles.addFieldCompactWrapper : styles.addFieldWrapper}>
