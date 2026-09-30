@@ -10,9 +10,13 @@ import type { Field, TableSchema } from "@workspace.sh/table-core";
 
 import { useDisplaySettings } from "./DisplaySettings";
 import { friendlyType } from "./SchemaEditor";
+import { Tooltip } from "./internal/Tooltip";
 import { useHoverHint } from "./internal/useHoverHint";
 
-/** A span that shows `hint` when the pointer rests on it (web only). */
+/**
+ * A span that shows `hint` when the pointer rests on it: the web's own
+ * hover hint, and on macOS the system tooltip when the hint is plain text.
+ */
 export function Hinted({
   hint,
   style,
@@ -27,10 +31,12 @@ export function Hinted({
   // Centres what it wraps, so a badge or button inside a row keeps the
   // alignment it had without the wrapper.
   return (
-    <html.span {...props} style={[styles.hinted, style]}>
-      {children}
-      {element}
-    </html.span>
+    <Tooltip text={typeof hint === "string" ? hint : undefined}>
+      <html.span {...props} style={[styles.hinted, style]}>
+        {children}
+        {element}
+      </html.span>
+    </Tooltip>
   );
 }
 

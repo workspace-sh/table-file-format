@@ -17,6 +17,7 @@ import {
   ListView,
   AttachmentsProvider,
   DisplayControls,
+  Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
   PortalHost,
@@ -158,12 +159,15 @@ const styles = css.create({
     },
   },
   validityOk: {
+    // Hinted's span doesn't take the line's size on native, so it's said here.
+    fontSize: 12,
     color: {
       default: "#1f7a2c",
       "@media (prefers-color-scheme: dark)": "#7ee08a",
     },
   },
   validityBad: {
+    fontSize: 12,
     color: {
       default: "#c00",
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
@@ -914,9 +918,16 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             <html.div style={styles.subtitle}>
               <html.span>{summary.count}</html.span>
               <html.span>·</html.span>
-              <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
+              {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
+              <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                {summary.validity}
+              </Hinted>
               {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-              {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
+              {summary.schemaChanged && (
+                <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
+                  {summary.schemaChangedLabel}
+                </Hinted>
+              )}
             </html.div>
             {/* The view's own actions; the tables, views and files are in the sidebar. */}
             <html.div style={styles.toolbar}>

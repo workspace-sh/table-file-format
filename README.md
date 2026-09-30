@@ -133,9 +133,10 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are fourteen
-of them. Each is a `.web.tsx` or `.web.ts` override beside a default
-that serves native:
+Every fork lives in `packages/ui/src/internal/`, and there are fifteen
+of them. Each but one is a `.web.tsx` or `.web.ts` override beside a
+default that serves native; `Tooltip` is a `.macos.tsx` override beside a
+default that serves the rest:
 
 | Fork | Why it forks |
 |---|---|
@@ -144,6 +145,7 @@ that serves native:
 | `HScroll`, `SnapHScroll`, `Bleed` | Horizontal scrolling, snap points, and running a sideways scroller out to the page's edges. |
 | `DragHandle`, `useDropTargets` | Pointer events vs. gesture handlers. |
 | `useHoverHint` | A hint when the pointer rests on something. Native adds nothing, since touch screens don't hover. |
+| `Tooltip` | The system tooltip for a plain-text hint, on macOS: AppKit's own, through react-native-macos's `tooltip` View prop. Everywhere else it adds nothing, not even an element; the web has its own hover hint. |
 | `measureAnchor`, `useContainerWidth`, `useViewportWidth`, `useViewportHeight` | Layout measurement, which has no shared primitive. |
 | `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. React Native has no select, so native is a button that opens a menu of the options in the `Portal`. |
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
