@@ -32,7 +32,8 @@ import {
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
-import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded } from "@workspace.sh/table-app";
+import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, NO_TABLE, withFileUnfolded } from "@workspace.sh/table-app";
+import { exportFailedText } from "@workspace.sh/table-app";
 import { viewerLocale, viewerOrder, withFileToggled } from "@workspace.sh/table-app";
 import { appCommands, hintWithShortcut, TOOLBAR_HINTS, type AppCommandId } from "@workspace.sh/table-app";
 import { attachmentShown, type AttachmentShown } from "@workspace.sh/table-app";
@@ -332,7 +333,14 @@ export function App() {
     const key = addr ? keyForAddress(addr, initial.tables, initial.bundles, "") : null;
     return key ? { key, viewId: addr!.viewId } : null;
   });
-  const [activeTablePath, setActiveTablePath] = useState<string>(() => start?.key ?? firstTableKey(tables) ?? DEFAULT_TABLE_KEY);
+  const [chosenTablePath, setActiveTablePath] = useState<string>(() => start?.key ?? firstTableKey(tables) ?? DEFAULT_TABLE_KEY);
+  // The table on screen: the one chosen while it's held, else the first held
+  // (a table that went away, or a key that never was). Everything below reads
+  // this, so none of it meets a missing table; the effect keeps the choice in step.
+  const activeTablePath = tables[chosenTablePath] ? chosenTablePath : (firstTableKey(tables) ?? chosenTablePath);
+  useEffect(() => {
+    if (activeTablePath !== chosenTablePath) setActiveTablePath(activeTablePath);
+  }, [activeTablePath, chosenTablePath]);
   const [activeViewIds, setActiveViewIds] = useState<Record<string, string>>(() => ({
     ...firstViews(tables),
     ...(start?.viewId ? { [start.key]: start.viewId } : {}),
@@ -378,7 +386,13 @@ export function App() {
   // tables it links together travel together.
   const downloadTable = useCallback(async () => {
     const bundle = bundleOf(activeTablePath);
-    const bytes = await bundleToArchive(bundle, toBundle(tables, bundles, bundle));
+    let bytes: Uint8Array;
+    try {
+      bytes = await bundleToArchive(bundle, toBundle(tables, bundles, bundle));
+    } catch (error) {
+      window.alert(exportFailedText(archiveFileName(bundle), error));
+      return;
+    }
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
@@ -526,11 +540,10 @@ export function App() {
     };
   }, [drawerOpen]);
 
-  const table = tables[activeTablePath];
-  if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
+  // The table on screen (activeTablePath is always a held one; NO_TABLE only if none is held).
+  const table = tables[activeTablePath] ?? NO_TABLE;
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
-  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0];
-  if (!view) throw new Error("table has no views");
+  const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0] ?? NO_TABLE.views[0]!;
   // Whatever changes the view on screen (the sidebar, a relation, an
   // address), its search and settings go with it (table-app's
   // leaving); choosing the view already there changes nothing. A new view
@@ -724,11 +737,14 @@ export function App() {
   // What the Files side of the sidebar lists and opens: each bundle's
   // files as saving writes them, and fixture tables' attachments.
   const attachmentsOf = useCallback((key: string) => Object.keys(attachmentUrls[key] ?? {}).sort(), []);
-  const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } => {
+  // Null when the file's no longer there (its table was deleted): the view shows again, as on macOS.
+  const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } | null => {
     const attachment = attachmentAt(file.bundle, file.path);
     if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrls[attachment.tableKey]?.[attachment.name]) };
-    return { content: fileText(tables, bundles, file.bundle, file.path) ?? "" };
+    const content = fileText(tables, bundles, file.bundle, file.path);
+    return content === undefined ? null : { content };
   };
+  const shownContent = shownFile ? shownFileContent(shownFile) : null;
 
   // Built once, shown in the drawer or beside the page. Choosing closes the
   // drawer; beside the page there is none to close, so that does nothing.
@@ -813,11 +829,11 @@ export function App() {
             <html.span style={styles.topBarTitle}>{table.meta.title ?? activeTablePath}</html.span>
           </html.div>
         )}
-        {shownFile ? (
+        {shownFile && shownContent ? (
           <FileView
             bundle={shownFile.bundle}
             path={shownFile.path}
-            {...shownFileContent(shownFile)}
+            {...shownContent}
             onClose={() => setShownFile(null)}
           />
         ) : (
