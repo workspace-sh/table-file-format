@@ -1,8 +1,8 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
-import { useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
-import { DATE_FORMATS, FORMULA_SYNTAXES, LOCALES } from "@workspace.sh/table-app";
+import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
+import { displayChoices, withDisplayChoice } from "@workspace.sh/table-app";
 import { bundleOf, tableKeysIn, toBundle } from "@workspace.sh/table-app";
 
 const styles = css.create({
@@ -274,44 +274,8 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
-  displayNote: {
-    paddingInline: 8,
-  },
   displayLabel: {
     marginTop: 8,
-  },
-  displayRow: {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    paddingInline: 8,
-    paddingBlock: 3,
-  },
-  displayName: {
-    fontSize: 13,
-  },
-  select: {
-    fontSize: 12,
-    paddingInline: 6,
-    paddingBlock: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderStyle: "solid",
-    maxWidth: 140,
-    borderColor: {
-      default: "#d1d1d6",
-      "@media (prefers-color-scheme: dark)": "#3a3a3f",
-    },
-    backgroundColor: {
-      default: "#ffffff",
-      "@media (prefers-color-scheme: dark)": "#17171a",
-    },
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
   },
   itemName: {
     flex: 1,
@@ -380,18 +344,6 @@ const styles = css.create({
   },
 });
 
-const DATE_LABELS: Record<string, string> = {
-  iso: "ISO (2026-04-20)",
-  short: "Short",
-  long: "Long",
-  weekday: "With weekday",
-  relative: "Relative",
-};
-
-const FORMULA_LABELS: Record<string, string> = {
-  excel: "Excel style (=a + b)",
-  stored: "Stored form ((+ a b))",
-};
 
 interface SidebarProps {
   tables: Record<string, ParsedTable>;
@@ -593,60 +545,10 @@ export function Sidebar({
       </html.div>
       {!foldedDisplay && (
         <>
-      <html.div style={styles.displayRow}>
-        <html.span style={styles.displayName}>Language</html.span>
-        <html.select
-          aria-label="Language and region for dates and numbers"
-          value={display.locale ?? ""}
-          onChange={(e: { target: { value: string } }) =>
-            onDisplayChange({ ...display, locale: e.target.value || undefined })
-          }
-          style={styles.select}
-        >
-          <html.option value="">Browser ({browserLocale})</html.option>
-          {LOCALES.map((l) => (
-            <html.option key={l} value={l}>
-              {l}
-            </html.option>
-          ))}
-        </html.select>
-      </html.div>
-      <html.div style={styles.displayRow}>
-        <html.span style={styles.displayName}>Dates</html.span>
-        <html.select
-          aria-label="How dates are shown where a table doesn't say"
-          value={display.dateFormat ?? "iso"}
-          onChange={(e: { target: { value: string } }) =>
-            onDisplayChange({ ...display, dateFormat: e.target.value === "iso" ? undefined : e.target.value })
-          }
-          style={styles.select}
-        >
-          {DATE_FORMATS.map((f) => (
-            <html.option key={f} value={f}>
-              {DATE_LABELS[f]}
-            </html.option>
-          ))}
-        </html.select>
-      </html.div>
-      <html.span style={[styles.resetNote, styles.displayNote]}>Where a column hasn't chosen its own date format.</html.span>
-      <html.div style={styles.displayRow}>
-        <html.span style={styles.displayName}>Formulas</html.span>
-        <html.select
-          aria-label="Which syntax formulas are shown in"
-          value={display.formulaSyntax ?? "excel"}
-          onChange={(e: { target: { value: string } }) =>
-            onDisplayChange({ ...display, formulaSyntax: e.target.value === "stored" ? "stored" : undefined })
-          }
-          style={styles.select}
-        >
-          {FORMULA_SYNTAXES.map((s) => (
-            <html.option key={s} value={s}>
-              {FORMULA_LABELS[s]}
-            </html.option>
-          ))}
-        </html.select>
-      </html.div>
-      <html.span style={[styles.resetNote, styles.displayNote]}>Either can be typed. The file keeps one form.</html.span>
+      <DisplayControls
+        rows={displayChoices(display, browserLocale)}
+        onChoose={(kind, value) => onDisplayChange(withDisplayChoice(display, kind, value))}
+      />
         </>
       )}
       <html.div style={styles.footer}>

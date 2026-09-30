@@ -16,6 +16,7 @@ import {
   GalleryView,
   ListView,
   AttachmentsProvider,
+  DisplayControls,
   DisplaySettingsProvider,
   type DisplaySettings,
   PortalHost,
@@ -27,6 +28,8 @@ import {
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  displayChoices,
+  withDisplayChoice,
   loadDisplay,
   saveDisplay,
   STORAGE_KEY,
@@ -155,6 +158,25 @@ const styles = css.create({
     color: {
       default: "#92400e",
       "@media (prefers-color-scheme: dark)": "#fbbf24",
+    },
+  },
+  displayPanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    maxWidth: 340,
+    marginBottom: 16,
+    paddingBlock: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
     },
   },
   sectionLabel: {
@@ -364,6 +386,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   const [query, setQuery] = useState<string>("");
   const [activeBodyRowId, setActiveBodyRowId] = useState<string | null>(null);
   const [showViewSettings, setShowViewSettings] = useState(false);
+  const [showDisplay, setShowDisplay] = useState(false);
   // This viewer's own filters, sorts and grouping, over the saved views
   // (D4, D41), as on the web; a sort of their own follows their language.
   const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(store));
@@ -619,6 +642,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   >
                     Open .table…
                   </html.button>
+                  <html.button
+                    onClick={() => setShowDisplay((open) => !open)}
+                    style={[styles.tab, showDisplay && styles.tabActive]}
+                  >
+                    Display
+                  </html.button>
                 </html.div>
               </>
             )}
@@ -655,6 +684,15 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               contentContainerStyle={{ paddingBottom: 24 }}
               showsVerticalScrollIndicator
             >
+              {/* The viewer's own language, dates and formula syntax: the web's Display group. */}
+              {showDisplay && (
+                <html.div style={styles.displayPanel}>
+                  <DisplayControls
+                    rows={displayChoices(display, systemLocale, "System")}
+                    onChoose={(kind, value) => changeDisplay(withDisplayChoice(display, kind, value))}
+                  />
+                </html.div>
+              )}
               {/* Scrolls with the view: above it, a tall panel squeezed every control into the window. */}
               {showViewSettings && (
                 <ViewSettings
