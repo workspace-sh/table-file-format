@@ -1,4 +1,5 @@
 import { html, css } from "react-strict-dom";
+import type { AttachmentShown } from "@workspace.sh/table-app";
 
 // One file of a .table, shown in place of a view: what the Files side of
 // the sidebar opens. Text as saving writes it, or an attachment's image.
@@ -88,12 +89,12 @@ interface FileViewProps {
   path: string;
   /** Its text, for a text file. */
   content?: string;
-  /** Where to show it from, for an attachment. */
-  imageUrl?: string;
+  /** For an attachment: its image, or a note saying why there's none (table-app's attachmentShown). */
+  attachment?: AttachmentShown;
   onClose: () => void;
 }
 
-export function FileView({ bundle, path, content, imageUrl, onClose }: FileViewProps) {
+export function FileView({ bundle, path, content, attachment, onClose }: FileViewProps) {
   const name = path.slice(path.lastIndexOf("/") + 1);
   const folder = path.slice(0, path.length - name.length);
   return (
@@ -111,12 +112,14 @@ export function FileView({ bundle, path, content, imageUrl, onClose }: FileViewP
         </html.button>
       </html.div>
       <html.span style={styles.note}>
-        {imageUrl
+        {attachment
           ? "An attachment: a file the table's rows name, kept beside them."
           : "As saving writes it. Download .table.zip carries the same files."}
       </html.span>
-      {imageUrl ? (
-        <html.img src={imageUrl} alt={name} style={styles.image} />
+      {attachment && "image" in attachment ? (
+        <html.img src={attachment.image} alt={name} style={styles.image} />
+      ) : attachment ? (
+        <html.span style={styles.note}>{attachment.note}</html.span>
       ) : (
         <html.pre dir="ltr" style={styles.content}>{content ?? ""}</html.pre>
       )}

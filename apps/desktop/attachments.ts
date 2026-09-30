@@ -56,3 +56,11 @@ export function attachmentUrl(tableKey: string, fileName: string, folders: Recor
 export function fixtureAttachments(tableKey: string): string[] {
   return Object.keys(fixtureUrls[tableKey] ?? {}).sort();
 }
+
+/**
+ * Which attachments the Mac draws as an image: what a browser draws, and
+ * HEIC and TIFF too, which NSImage reads (SVG through the patched decoder).
+ */
+export function canDrawOnMac(fileName: string): boolean {
+  return /\.(png|jpe?g|gif|webp|svg|avif|heic|tiff?)$/i.test(fileName);
+}
