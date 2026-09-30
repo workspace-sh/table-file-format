@@ -52,3 +52,9 @@ export function withFileUnfolded(prefs: SidebarPrefs, bundle: string): SidebarPr
   const folded = prefs.foldedFiles ?? [];
   return folded.includes(bundle) ? { ...prefs, foldedFiles: folded.filter((b) => b !== bundle) } : prefs;
 }
+
+/** The prefs with `bundle`'s file folded if it was open, or opened if it was folded. */
+export function withFileToggled(prefs: SidebarPrefs, bundle: string): SidebarPrefs {
+  const folded = prefs.foldedFiles ?? [];
+  return { ...prefs, foldedFiles: folded.includes(bundle) ? folded.filter((b) => b !== bundle) : [...folded, bundle] };
+}

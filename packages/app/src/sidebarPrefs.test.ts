@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SIDEBAR_KEY, loadSidebarPrefs, saveSidebarPrefs } from "./sidebarPrefs.ts";
+import { SIDEBAR_KEY, loadSidebarPrefs, saveSidebarPrefs, withFileToggled } from "./sidebarPrefs.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 function memory(initial: Record<string, string> = {}): KeyValueStore {
@@ -36,4 +36,11 @@ test("an unfolded Display group, said outright, comes back too", () => {
   assert.deepEqual(loadSidebarPrefs(store), { foldedDisplay: false });
   saveSidebarPrefs(store, { foldedDisplay: true });
   assert.deepEqual(loadSidebarPrefs(store), { foldedDisplay: true });
+});
+
+test("toggling a file folds it when open and opens it when folded", () => {
+  const folded = withFileToggled({ files: true }, "crm");
+  assert.deepEqual(folded, { files: true, foldedFiles: ["crm"] });
+  assert.deepEqual(withFileToggled(folded, "shop"), { files: true, foldedFiles: ["crm", "shop"] });
+  assert.deepEqual(withFileToggled(folded, "crm"), { files: true, foldedFiles: [] });
 });

@@ -33,6 +33,7 @@ import { attachmentUrls, bundles as initialBundles, tables as initialTables } fr
 import { schemaVersions, viewSummary } from "@workspace.sh/table-app";
 import { addressTarget, afterReset, savingForEveryone, tableBreadcrumb } from "@workspace.sh/table-app";
 import { DEFAULT_TABLE_KEY, firstTableKey, firstViews, leaving, withFileUnfolded } from "@workspace.sh/table-app";
+import { viewerLocale, viewerOrder, withFileToggled } from "@workspace.sh/table-app";
 import { appCommands, hintWithShortcut, TOOLBAR_HINTS, type AppCommandId } from "@workspace.sh/table-app";
 import { attachmentShown, type AttachmentShown } from "@workspace.sh/table-app";
 import { loadDisplay, saveDisplay } from "@workspace.sh/table-app";
@@ -432,7 +433,7 @@ export function App() {
   // The layout reads the way the display language does (D40): the chosen
   // language, or the browser's. The whole page takes it, so popovers and
   // menus outside the app's root mirror too.
-  const pageLocale = display.locale ?? (typeof navigator === "undefined" ? undefined : navigator.language);
+  const pageLocale = viewerLocale(display, typeof navigator === "undefined" ? undefined : navigator.language);
   const direction = textDirection(pageLocale);
   const shown = useMemo(() => ({ ...display, direction }), [display, direction]);
   useEffect(() => {
@@ -450,7 +451,7 @@ export function App() {
   // themselves (D4, D41), kept in this browser. A sort only they see
   // follows their language; a saved one is the same on every device.
   const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(browserStore()));
-  const viewerText = useMemo(() => new Intl.Collator(pageLocale || undefined, { numeric: true }).compare, [pageLocale]);
+  const viewerText = useMemo(() => viewerOrder(pageLocale), [pageLocale]);
   useEffect(() => {
     // Only views that still exist: a deleted view's arrangement goes with it.
     saveArrangements(browserStore(), forViews(arrangements, tables));
@@ -479,13 +480,8 @@ export function App() {
     else updateSidebar({ collapsed: !sidebarCollapsed });
   }, [narrow, sidebarCollapsed, updateSidebar]);
   const toggleFile = useCallback(
-    (bundle: string) => {
-      const folded = sidebarPrefs.foldedFiles ?? [];
-      updateSidebar({
-        foldedFiles: folded.includes(bundle) ? folded.filter((b) => b !== bundle) : [...folded, bundle],
-      });
-    },
-    [sidebarPrefs.foldedFiles, updateSidebar],
+    (bundle: string) => updateSidebar({ foldedFiles: withFileToggled(sidebarPrefs, bundle).foldedFiles }),
+    [sidebarPrefs, updateSidebar],
   );
   // Opening a table unfolds its file, so the sidebar always shows where
   // you are. Folding it again afterwards is still yours to do.
