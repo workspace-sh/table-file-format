@@ -22,6 +22,7 @@ import {
   TOTAL_NAMES,
   totalFor,
   visibleFields,
+  EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
 import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
@@ -44,6 +45,7 @@ import {
   orderSwapped,
   rowsByDay,
   rowTitle,
+  columnLabel,
 } from "./cards";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
@@ -89,6 +91,7 @@ import {
   rotateWeekdays,
   weekdayNamesShort,
 } from "./internal/calendarLocale";
+import { rowNumber } from "./sheets";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -1421,8 +1424,7 @@ function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
 
 /** A board column's heading: the choice's label when it has one. */
 function BoardColumnTitle({ field, value }: { field: Field | undefined; value: string }) {
-  const option = enumOptions(field).find((o) => o.value === value);
-  return <html.span>{option?.label ?? value}</html.span>;
+  return <html.span>{columnLabel(field, value)}</html.span>;
 }
 
 function AttachmentValue({ fileName }: { fileName: string }) {
@@ -1746,7 +1748,7 @@ function EditableCell({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
-        options={[{ value: "", label: "—" }, ...choiceOpts]}
+        options={[{ value: "", label: EMPTY_TEXT }, ...choiceOpts]}
         onChange={(next) => {
           commit(next);
           onEditEnd?.("done");
@@ -2712,7 +2714,7 @@ export function TableView({
                     i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                   ]}
                 >
-                  {coords && <html.div style={styles.rowNumber}><html.span>{sheet?.position.get(row.id) ?? i + 1}</html.span></html.div>}
+                  {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                   {renderBodyCell(row, primaryName, 0, 1)}
                   {rowResizer}
                 </html.div>
@@ -2762,7 +2764,7 @@ export function TableView({
                       i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                     ]}
                   >
-                    {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{sheet?.position.get(row.id) ?? i + 1}</html.span></html.div>}
+                    {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                     {restNames.map((name, idx) =>
                       renderBodyCell(row, name, idx, restNames.length),
                     )}

@@ -177,3 +177,8 @@ export function viewGrid(
   if (view.coordinates !== true) return undefined;
   return sheet ? { columns, rows: sheet.order, sheet: view.id, sheets: sheet.sheets } : { columns, rows: shownRowIds };
 }
+
+/** An example formula for an empty formula entry, in the syntax the reader types. */
+export function formulaPlaceholder(syntax: "excel" | "stored" | undefined): string {
+  return syntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)";
+}

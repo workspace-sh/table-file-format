@@ -37,6 +37,7 @@ import {
   totalFor,
   visibleFields,
   type ViewProps,
+  rowNumber,
 } from "@workspace.sh/table-ui/shared";
 import { useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -199,7 +200,7 @@ export function TableView({
   const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
   const colWidth = columnWidths(fields, view.columnWidths ?? {}, containerWidth, chrome);
 
-  const rowNumber = (row: Row, index: number): number => sheet?.position.get(row.id) ?? index + 1;
+  const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
 
   const gutter = (content: string, height: number) =>
     coords ? (
@@ -267,7 +268,7 @@ export function TableView({
         onDeleteRow={onDeleteRow}
         onInsertRow={onInsertRow}
       >
-        {gutter(String(rowNumber(row, index)), rowHeight)}
+        {gutter(String(numberOf(row, index)), rowHeight)}
         {fields.map((name, i) => {
           const field = fieldMap.get(name);
           const xalign = xalignOf(effectiveAlign(field));

@@ -141,3 +141,8 @@ export function placeCells(
   }
   return out;
 }
+
+/** A row's number in a Sheet view: its place in the grid as saved (D41), else where it's shown. */
+export function rowNumber(position: Map<string, number> | undefined, rowId: string, index: number): number {
+  return position?.get(rowId) ?? index + 1;
+}

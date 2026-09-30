@@ -2,9 +2,9 @@
 // which cards go where, and where one lands when it's moved. What every
 // renderer of them needs, with no renderer in it.
 
-import { applyGroup, enumValues, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { applyGroup, enumOptions, enumValues, type Field, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 
-import { formatValue, visibleFields } from "./display";
+import { EMPTY_GROUP, formatValue, visibleFields } from "./display";
 
 /** A board's columns: the group field, its column keys in order, and each column's rows. */
 export interface BoardColumns {
@@ -199,4 +199,10 @@ export function rowsByDay(rows: Row[], field: string): Map<string, Row[]> {
 export function canStep(view: View, month: Date): { prev: boolean; next: boolean } {
   const { start, end } = calendarBounds(view);
   return { prev: !start || month > start, next: !end || month < end };
+}
+
+/** A board column's heading: the choice's label when it has one, and "Empty" for rows with no value. */
+export function columnLabel(field: Field | undefined, key: string): string {
+  if (key === "(empty)") return EMPTY_GROUP;
+  return enumOptions(field).find((o) => o.value === key)?.label ?? key;
 }

@@ -63,7 +63,7 @@ export function groupedRows(
   const out: { row: Row; starts?: { label: string; count: number } }[] = [];
   for (const [key, members] of Object.entries(applyGroup(rows, field, schema))) {
     if (members.length === 0) continue;
-    const label = key === "(empty)" ? "Empty" : (options.find((o) => o.value === key)?.label ?? key);
+    const label = key === "(empty)" ? EMPTY_GROUP : (options.find((o) => o.value === key)?.label ?? key);
     members.forEach((row, i) => out.push(i === 0 ? { row, starts: { label, count: members.length } } : { row }));
   }
   return out;
@@ -87,7 +87,7 @@ export const TOTAL_NAMES: Record<ViewTotal, string> = {
 };
 
 export function formatValue(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "—";
+  if (value === undefined || value === null || value === "") return EMPTY_TEXT;
   if (value instanceof FormulaError) return value.code;
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "string" || typeof value === "number") return String(value);
@@ -181,7 +181,7 @@ export function describeCell(
   if (value instanceof FormulaError) return { kind: "error", code: value.code };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
-    if (value.length === 0) return { kind: "text", text: "—", oneToken: false };
+    if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
   }
   const isEnum = field?.constraints?.enum != null;
@@ -284,3 +284,9 @@ export function columnWidths(
     return cellW + (i >= 0 && i < remainder ? 1 : 0);
   };
 }
+
+/** What an empty cell shows, and a choice picker's "no value" option. */
+export const EMPTY_TEXT = "—";
+
+/** A group, or board column, of rows with no value. */
+export const EMPTY_GROUP = "Empty";
