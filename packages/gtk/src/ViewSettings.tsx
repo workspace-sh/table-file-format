@@ -175,7 +175,16 @@ function SortRow({ sort, fields, onChange, onRemove }: { sort: ViewSort; fields:
   );
 }
 
-export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArrange, personal, onSaveForEveryone, onReset }: ViewSettingsProps) {
+export interface GtkViewSettingsProps extends ViewSettingsProps {
+  /**
+   * Bumped when a change the controls made was refused (a question
+   * answered Cancel): a GTK switch or picker keeps what it was set to, so
+   * the layout controls are drawn again from the view.
+   */
+  revision?: number;
+}
+
+export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
   const filters = view.filter ?? [];
@@ -188,7 +197,7 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
     <AdwDialog title="View Settings" contentWidth={560} contentHeight={640} onClosed={onClose}>
       <AdwToolbarView topBar={<AdwHeaderBar />}>
         <AdwPreferencesPage>
-          <AdwPreferencesGroup>
+          <AdwPreferencesGroup key={revision}>
             <AdwEntryRow title="Name" text={view.name} showApplyButton onApply={(row) => onChange({ name: row.getText() })} />
             <Choice
               title="Layout"

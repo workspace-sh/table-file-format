@@ -49,7 +49,12 @@ import {
   withField,
   withFieldMoved,
   withFieldPatch,
-  deleteViewPrompt,
+  deletingRow,
+  deletingView,
+  schemaVersions,
+  viewPatchPrompt,
+  viewSummary,
+  type Confirm,
   newView,
   withNewFile,
   withNewTable,
@@ -193,6 +198,7 @@ function TablePane({
   edits,
   saving,
   viewActions,
+  openedAt,
 }: {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -201,13 +207,19 @@ function TablePane({
   edits: Edits;
   saving: SaveState;
   viewActions: ViewActions;
+  /** The table's schema-version when it was opened: "schema changed" is against it (D22). */
+  openedAt: number | undefined;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A settings change that loses something, asked about first.
+  const [asking, setAsking] = useState<{ prompt: Confirm; patch: Partial<View> } | null>(null);
+  // Bumped when that's answered Cancel, so the settings show the view as it still is.
+  const [refused, setRefused] = useState(0);
   const table = tables[tableKey]!;
   const [search, setSearch] = useState("");
   const shown = showView(tables, tableKey, view, { search });
   const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
-  const count = search.trim() ? `${shown.rows.length} of ${shown.inView} matching` : `${shown.rows.length} of ${table.rows.length} rows`;
+  const summary = viewSummary(table, { shown: shown.rows.length, inView: shown.inView, searching: search.trim().length > 0, openedAt });
 
   return (
     <AdwToolbarView
@@ -231,7 +243,17 @@ function TablePane({
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
-          <GtkLabel label={count} hexpand xalign={0} cssClasses={["dim-label"]} />
+          <GtkBox spacing={6} hexpand>
+            <GtkLabel label={summary.count} cssClasses={["dim-label"]} />
+            <GtkLabel label="·" cssClasses={["dim-label"]} />
+            <GtkLabel label={summary.validity} tooltipText={summary.validityHint} cssClasses={[summary.valid ? "success" : "error"]} />
+            {summary.schemaChanged ? (
+              <>
+                <GtkLabel label="·" cssClasses={["dim-label"]} />
+                <GtkLabel label={summary.schemaChangedLabel} tooltipText={summary.schemaChangedHint} cssClasses={["warning"]} />
+              </>
+            ) : null}
+          </GtkBox>
           <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => setSearch(entry.getText())} />
         </GtkBox>
         <LayoutView
@@ -252,9 +274,24 @@ function TablePane({
         <ViewSettings
           view={view}
           schema={table.schema}
-          onChange={edits.onUpdateView}
+          onChange={(patch) => {
+            const prompt = viewPatchPrompt(tables, tableKey, view, patch);
+            if (prompt) setAsking({ prompt, patch });
+            else edits.onUpdateView(patch);
+          }}
           onDelete={viewActions.onDeleteView}
           onClose={() => setSettingsOpen(false)}
+          revision={refused}
+        />
+      ) : null}
+      {asking ? (
+        <ConfirmDialog
+          prompt={asking.prompt}
+          onResponse={(response) => {
+            if (response === "stop") edits.onUpdateView(asking.patch);
+            else setRefused((n) => n + 1);
+            setAsking(null);
+          }}
         />
       ) : null}
     </AdwToolbarView>
@@ -270,6 +307,24 @@ async function chooseFileToAttach(): Promise<string | null> {
     // Dismissed: the dialog rejects on that as on failure.
     return null;
   }
+}
+
+/** A question from table-app (a Confirm), asked as an alert; closing it is Cancel. */
+function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (response: string) => void }) {
+  return (
+    <AdwAlertDialog
+      heading={prompt.heading}
+      body={prompt.body}
+      closeResponse="cancel"
+      defaultResponse="cancel"
+      responses={prompt.responses.map((r) => ({
+        id: r.id,
+        label: r.label,
+        ...(r.destructive ? { appearance: Adw.ResponseAppearance.DESTRUCTIVE } : {}),
+      }))}
+      onResponse={onResponse}
+    />
+  );
 }
 
 /** Ask for a name: what a new table or file is called. Empty is no name. */
@@ -350,6 +405,8 @@ export function App({
   }, [direction]);
   const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const [tables, setTables] = useState(library.tables);
+  // Each table's schema-version as opened, for "schema changed" (D22).
+  const [openedAt] = useState(() => schemaVersions(library.tables));
   const [bundles, setBundles] = useState(library.bundles);
   // Where each bundle is kept: those opened, and new files, made in `newFilesIn`.
   const [paths, setPaths] = useState(library.paths);
@@ -457,7 +514,8 @@ export function App({
       });
     },
   });
-  const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
+  // What deleting asks, and what it closes or shows after: table-app's, as the web's and macOS's.
+  const deleting = confirmDelete && tables[confirmDelete.key] ? deletingRow(tables[confirmDelete.key]!, confirmDelete.rowId, openPage?.key === confirmDelete.key ? openPage.rowId : null) : null;
 
   const viewActions = (key: string, current: View): ViewActions => ({
     // A new view starts as a plain table of everything; its settings are
@@ -469,10 +527,10 @@ export function App({
     },
     ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
   });
-  const viewPrompt = confirmViewDelete
+  const viewDeleting = confirmViewDelete
     ? (() => {
         const v = tables[confirmViewDelete.key]?.views.find((x) => x.id === confirmViewDelete.viewId);
-        return v ? deleteViewPrompt(tables, confirmViewDelete.key, v) : null;
+        return v ? deletingView(tables, confirmViewDelete.key, v) : null;
       })()
     : null;
   const selected = entries.findIndex((e) => e.kind === "view" && e.key === active && e.view.id === view?.id);
@@ -555,6 +613,7 @@ export function App({
                 edits={edits(active, view.id)}
                 saving={saving}
                 viewActions={viewActions(active, view)}
+                openedAt={openedAt[active]}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
@@ -594,46 +653,28 @@ export function App({
               onClose={() => setOpenPage(null)}
             />
           ) : null}
-          {confirmViewDelete && viewPrompt ? (
-            <AdwAlertDialog
-              heading={viewPrompt.heading}
-              body={viewPrompt.body}
-              closeResponse="cancel"
-              defaultResponse="cancel"
-              responses={[
-                { id: "cancel", label: "Cancel" },
-                { id: "delete", label: "Delete", appearance: Adw.ResponseAppearance.DESTRUCTIVE },
-              ]}
+          {confirmViewDelete && viewDeleting ? (
+            <ConfirmDialog
+              prompt={viewDeleting.prompt}
               onResponse={(response) => {
                 if (response === "delete") {
                   const { key, viewId } = confirmViewDelete;
                   edit(key, (t) => withoutView(t, viewId));
-                  setViewIds((prev) => {
-                    const next = { ...prev };
-                    delete next[key];
-                    return next;
-                  });
+                  setViewIds((prev) => ({ ...prev, [key]: viewDeleting.nextViewId }));
                 }
                 setConfirmViewDelete(null);
               }}
             />
           ) : null}
           {confirmDelete && deleting ? (
-            <AdwAlertDialog
-              heading={`Delete “${rowTitleFor(deleting, confirmDelete.rowId)}”?`}
-              body={
-                deleting.bodies?.[confirmDelete.rowId] !== undefined
-                  ? "The row and its page are removed from the file."
-                  : "The row is removed from the file."
-              }
-              closeResponse="cancel"
-              defaultResponse="cancel"
-              responses={[
-                { id: "cancel", label: "Cancel" },
-                { id: "delete", label: "Delete", appearance: Adw.ResponseAppearance.DESTRUCTIVE },
-              ]}
+            <ConfirmDialog
+              prompt={deleting.prompt}
               onResponse={(response) => {
-                if (response === "delete") edit(confirmDelete.key, (t) => withoutRow(t, confirmDelete.rowId));
+                if (response === "delete") {
+                  edit(confirmDelete.key, (t) => withoutRow(t, confirmDelete.rowId));
+                  // Its page goes with it: saving it after would write a page for no row.
+                  if (deleting.closeBody) setOpenPage(null);
+                }
                 setConfirmDelete(null);
               }}
             />
