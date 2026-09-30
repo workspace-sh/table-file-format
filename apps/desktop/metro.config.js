@@ -60,6 +60,8 @@ const config = {
       // THIS app's copy.
       blockExact(path.resolve(workspaceRoot, "packages/ui/node_modules", "react")),
       blockExact(path.resolve(workspaceRoot, "packages/core/node_modules", "react")),
+      // table-app/react (useTableApp) takes React as a peer, with a devDep copy for its tests.
+      blockExact(path.resolve(workspaceRoot, "packages/app/node_modules", "react")),
       blockExact(
         path.resolve(
           workspaceRoot,

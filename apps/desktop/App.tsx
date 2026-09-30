@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
@@ -44,7 +44,6 @@ import {
   exportFailedText,
   fileText,
   flattenFilesTree,
-  forViews,
   fromBundle,
   hintWithShortcut,
   initialAppState,
@@ -56,11 +55,7 @@ import {
   openFailedText,
   rowTitleFor,
   save,
-  saveArrangements,
-  saveDisplay,
-  saveSidebarPrefs,
   schemaVersions,
-  tableApp,
   tableNameOf,
   toBundle,
   viewCallbacks,
@@ -79,6 +74,7 @@ import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
+import { useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
@@ -110,6 +106,8 @@ const MENU_BEFORE: Record<AppCommand["menu"], string> = {
   Go: "",
 };
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
+/** How long after the last edit it's written, so typing isn't a write a key. */
+const WRITE_AFTER_MS = 400;
 
 const styles = css.create({
   root: {
@@ -420,47 +418,49 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // was saved, or the fixtures when nothing usable was (fixture tables
   // added since the last save still appear), the folders opened last time,
   // and the viewer's own settings.
-  const [state, dispatch] = useReducer(tableApp, undefined, () => {
-    const fixtures = { tables: initialTables, bundles: bundleMetas };
-    const saved = loadSaved(store);
-    const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
-    const s = initialAppState({
-      tables: { ...initial.tables, ...reopened.tables },
-      bundles: { ...initial.bundles, ...reopened.bundles },
-      opened: reopened.paths,
-      stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
-    });
-    // "Schema changed" is since the fixtures, as saved edits carry over a launch.
-    return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
-  });
+  // The platform's language, when the viewer hasn't chosen one.
+  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
+  // Edited bundles are written a moment after the last edit: an opened
+  // folder's back to the folder (folders.ts), the rest to this Mac's store.
+  const writeRef = useRef<TableAppAdapter["write"]>(async () => {});
+  const { state, dispatch, display: shownDisplay } = useTableApp(
+    () => {
+      const fixtures = { tables: initialTables, bundles: bundleMetas };
+      const saved = loadSaved(store);
+      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const s = initialAppState({
+        tables: { ...initial.tables, ...reopened.tables },
+        bundles: { ...initial.bundles, ...reopened.bundles },
+        opened: reopened.paths,
+        stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+      });
+      // "Schema changed" is since the fixtures, as saved edits carry over a launch.
+      return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
+    },
+    { store, write: (...args) => writeRef.current(...args), delayMs: WRITE_AFTER_MS },
+    systemLocale,
+  );
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
   const stateRef = useRef(state);
   stateRef.current = state;
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
-  const folders = useFolders({ store, tables, bundles, paths: folderPaths, onProblem: showProblem });
+  const folders = useFolders({ store, bundles, paths: folderPaths, onProblem: showProblem });
+  // The fixtures themselves are never saved, so an untouched app keeps
+  // following them as they change; an opened folder's tables live in the folder.
+  writeRef.current = async (edited, all, metas) => {
+    const opened = new Set(Object.keys(stateRef.current.opened));
+    save(store, {
+      tables: Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
+      bundles: Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
+    });
+    await folders.write(edited.filter((b) => opened.has(b)), all, metas);
+  };
   // What reading last time's folders found wrong, once.
   useEffect(() => {
     for (const [key, messages] of Object.entries(reopened.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
     // Once, at launch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Saved after every edit. The fixtures themselves are never saved, so
-  // an untouched app keeps following them as they change. An opened
-  // folder's tables live in the folder (folders.ts), so they're left out.
-  useEffect(() => {
-    if (state.dirty.length === 0) return;
-    const opened = new Set(Object.keys(folderPaths));
-    save(store, {
-      tables: Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
-      bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
-    });
-    dispatch({ type: "written", bundles: state.dirty, tables });
-  }, [store, state.dirty, tables, bundles, folderPaths]);
-  useEffect(() => saveSidebarPrefs(store, sidebarPrefs), [store, sidebarPrefs]);
-  useEffect(() => saveDisplay(store, display), [store, display]);
-  // Only views that still exist: a deleted view's arrangement goes with it.
-  useEffect(() => saveArrangements(store, forViews(state.arrangements, tables)), [store, state.arrangements, tables]);
 
   // Questions, as native alerts and the system's own text prompt; messages as alerts.
   useEffect(() => {
@@ -580,14 +580,10 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     (key: string) => (folderPaths[bundleOf(key)] ? diskAttachments[key] ?? [] : fixtureAttachments(key)),
     [folderPaths, diskAttachments],
   );
-  // This viewer's language: the chosen one, or the system's. The layout reads
-  // the way it does (D40).
-  const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
   // A folder opened from disk goes by its own name.
   const folderName = (bundle: string) => folderPaths[bundle]?.split("/").pop();
   const derived = derive(state, { locale: systemLocale, attachmentsOf, fileNameOf: folderName });
   const { table, view, summary, direction } = derived;
-  const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const files = useMemo(
     () => derived.filesTree.map((b) => ({ ...b, name: folderPaths[b.bundle] ? `${folderName(b.bundle)}/` : b.name })),
     // derived.filesTree is made anew each render; it follows these.
