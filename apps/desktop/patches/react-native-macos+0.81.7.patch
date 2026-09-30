@@ -1,3 +1,33 @@
+diff --git a/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm b/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
+index f5b7fd9..039963f 100644
+--- a/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
++++ b/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
+@@ -260,8 +260,25 @@ BOOL RCTUpscalingRequired(
+   }
+ }
+ 
++#if TARGET_OS_OSX // [table-file-format patch]
++// ImageIO (below) can't read SVG, so an SVG image drew nothing. NSImage
++// decodes SVG itself (an NSSVGImageRep, resolution-independent), so SVG data
++// goes to it instead. Drop this patch once react-native-macos does the same.
++static BOOL RCTDataLooksLikeSVG(NSData *data)
++{
++  NSUInteger length = MIN(data.length, (NSUInteger)1024);
++  NSString *head = [[NSString alloc] initWithBytes:data.bytes length:length encoding:NSUTF8StringEncoding];
++  return head != nil && [head rangeOfString:@"<svg" options:NSCaseInsensitiveSearch].location != NSNotFound;
++}
++#endif
++
+ RCTPlatformImage *__nullable RCTDecodeImageWithData(NSData *data, CGSize destSize, CGFloat destScale, RCTResizeMode resizeMode) // [macOS]
+ {
++#if TARGET_OS_OSX // [table-file-format patch]
++  if (RCTDataLooksLikeSVG(data)) {
++    return [[NSImage alloc] initWithData:data];
++  }
++#endif
+   CGImageSourceRef sourceRef = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+   if (!sourceRef) {
+     return nil;
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 index 0dd5223..2a13675 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
