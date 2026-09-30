@@ -13,3 +13,5 @@ export { FormulaPanel, type FormulaPanelProps } from "./FormulaPanel.js";
 export { ViewSettings } from "./ViewSettings.js";
 export { AddField, FieldEditor, type AddFieldProps, type FieldEditorProps } from "./FieldEditor.js";
 export { RowPage, type RowPageProps } from "./RowPage.js";
+export { AttachmentImage } from "./AttachmentImage.js";
+export { AttachmentsProvider, type AttachmentUrl } from "@workspace.sh/table-ui/shared";

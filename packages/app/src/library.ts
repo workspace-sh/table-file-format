@@ -73,3 +73,14 @@ export async function writeLibraryBundle(
   if (!path) throw new Error(`no path for bundle ${JSON.stringify(key)}`);
   await writeBundleTo(fs, path, toBundle(tables, bundles, key));
 }
+
+/**
+ * Where an attachment's file is: `attachments/<file>` in its table's
+ * folder (SPEC section 6). Only a plain filename resolves: one with a path
+ * separator, or `.` and `..`, could reach outside the folder, and gets
+ * nothing, as does a table with no folder.
+ */
+export function attachmentPath(table: ParsedTable | undefined, fileName: string): string | undefined {
+  if (!table?.path || !fileName || fileName === "." || fileName === ".." || /[/\\\u0000]/.test(fileName)) return undefined;
+  return `${table.path.replace(/\/+$/, "")}/attachments/${fileName}`;
+}

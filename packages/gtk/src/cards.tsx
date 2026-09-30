@@ -34,6 +34,7 @@ import {
   type ViewProps,
 } from "@workspace.sh/table-ui/shared";
 import { useState, type ReactNode } from "react";
+import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
 import { CellValue } from "./CellValue.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
@@ -153,6 +154,22 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, relatedTable
   );
 }
 
+/**
+ * A gallery card's lead: the image itself when the hero field is an
+ * attachment the app can find, as the web's GalleryHero does; else its
+ * value as text.
+ */
+function GalleryHero({ field, value, text }: { field: Field | undefined; value: unknown; text: string }) {
+  const fileName = field?.attachment && typeof value === "string" ? value : "";
+  const paintable = useAttachmentPaintable(fileName, 200);
+  if (!paintable) return <Title text={text} classes={[styles.galleryHero]} />;
+  return (
+    <GtkBox halign={Gtk.Align.FILL} heightRequest={120} cssClasses={[styles.galleryImage]}>
+      <AttachmentPicture paintable={paintable} fileName={fileName} width={200} height={120} />
+    </GtkBox>
+  );
+}
+
 export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTables, onOpenRelation }: ViewProps) {
   const heroField = view.gallery_field;
   const fields = cardFields(view, schema, heroField);
@@ -180,7 +197,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
               return (
                 <CardButton key={row.id} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}>
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={6}>
-                    {heroField ? <Title text={rowTitle(row, heroField)} classes={[styles.galleryHero]} /> : null}
+                    {heroField ? <GalleryHero field={fieldMap.get(heroField)} value={row[heroField]} text={rowTitle(row, heroField)} /> : null}
                     <Card
                       row={row}
                       fields={fields}

@@ -42,6 +42,7 @@ export const styles = {
   bodyBadge: css({ fontSize: "x-small", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
   boardColumn: css({ backgroundColor: "alpha(currentColor, 0.04)", borderRadius: "12px", padding: "10px" }),
   galleryHero: css({ fontWeight: "500", opacity: 0.85 }),
+  galleryImage: css({ backgroundColor: "alpha(currentColor, 0.04)", borderRadius: "8px", padding: "8px" }),
   excerpt: css({ fontSize: "smaller", opacity: 0.7, borderTop: `1px solid ${RULE}`, paddingTop: "6px" }),
   calendar: css({ padding: "0" }),
   calendarWeekdays: css({ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }),
