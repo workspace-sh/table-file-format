@@ -16,6 +16,7 @@ because they run the same code. Only the drawing is here.
 | `TableView` | Cells, choices as pills, relations, formulas, sheet letters and numbers, groups, totals. With `onUpdateRow`, cells edit in place: text, numbers and dates in an entry, choices in a drop-down, booleans as a check. A value the column can't hold is refused with the reason (D42). `onAddRow` adds a New Row button; `onDeleteRow`, `onInsertRow` and `onOpenBody` fill each row's menu (a button, and a right-click). |
 | `FormulaPanel` | A formula cell's dialog: the column's formula as typed and as stored, what it read in this row and others, the result and a changed formula's preview; saving sets it for every row (`onUpdateField`). `TableView` opens it on a click on a formula cell, tinting its column and outlining its inputs. |
 | `ViewSettings` | A view's settings as a libadwaita preferences dialog: name, layout (only those the table can use), the field a board, calendar or gallery draws from, Sheet, grouping, filters and sorts, Delete View. Same `ViewSettingsProps` as table-ui's. |
+| `FieldEditor`, `AddField` | A field's editor (title, description, formula, format with currency and decimals, alignment, required, deprecated, choices, position) and "add a field" (name, type or formula), as libadwaita dialogs. `TableView` opens the editor from a header and Add Field from its "+". |
 | `EditableCell` | One cell's editor, by `editorKind` from table-ui/shared |
 | `CellValue` | A value as GTK widgets |
 | `DisplaySettingsProvider` | Locale, date format and formula syntax, as in table-ui |
