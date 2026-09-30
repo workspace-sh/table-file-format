@@ -12,6 +12,7 @@ import {
   reset,
   saveArrangements,
   savedPatch,
+  savingForEveryone,
 } from "./arrangements.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
@@ -93,4 +94,15 @@ test("arrangements of views that are gone are left behind", () => {
   all = arrange(all, "t", "gone", { sort: undefined });
   all = arrange(all, "deleted-table", "v", { sort: undefined });
   assert.deepEqual(forViews(all, { t: { views: [saved] } }), { t: { v: { sort: null } } });
+});
+
+test("saving for everyone gives the saved view's patch and drops this viewer's arrangement", () => {
+  const all = arrange(arrange({}, "crm/deals", "v", { sort: [{ field: "value", direction: "desc" }] }), "crm/deals", "w", { group: { field: "stage" } });
+  const { patch, arrangements } = savingForEveryone(all, "crm/deals", "v");
+  assert.deepEqual(patch, savedPatch(all["crm/deals"]!["v"]));
+  assert.deepEqual(patch.sort, [{ field: "value", direction: "desc" }]);
+  assert.ok("order" in patch && patch.order === undefined, "a sort drops dragged order");
+  assert.equal(arrangements["crm/deals"]?.["v"], undefined);
+  assert.ok(arrangements["crm/deals"]?.["w"], "other views' arrangements stay");
+  assert.deepEqual(savingForEveryone({}, "crm/deals", "v"), { patch: {}, arrangements: {} });
 });

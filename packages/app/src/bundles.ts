@@ -3,7 +3,7 @@
 // These turn that into what core deals in: a bundle, its tables by name,
 // and an address resolved within the right bundle.
 
-import { tableOrder } from "@workspace.sh/table-core";
+import { parseAddress, tableOrder } from "@workspace.sh/table-core";
 import type { Address, BundleMeta, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 
 /** `crm/deals` → `crm` */
@@ -74,4 +74,25 @@ export function keyForAddress(
   if (tables[path]) return path;
   const within = `${fromBundle}/${path}`;
   return tables[within] ? within : null;
+}
+
+/**
+ * Where following an address leads (a relation's link, or the page's own
+ * address): the table's key, the view it names if any, and the row whose
+ * document opens: the named row's, when it has one, else none, so a
+ * document left open from elsewhere closes. Null when the address doesn't
+ * parse or its table isn't here.
+ */
+export function addressTarget(
+  address: Address | string,
+  tables: Record<string, ParsedTable>,
+  bundles: Record<string, BundleMeta>,
+  fromBundle: string,
+): { key: string; viewId?: string; openBody: string | null } | null {
+  const addr = typeof address === "string" ? parseAddress(address) : address;
+  if (!addr) return null;
+  const key = keyForAddress(addr, tables, bundles, fromBundle);
+  if (!key) return null;
+  const openBody = addr.rowId && tables[key]?.bodies?.[addr.rowId] !== undefined ? addr.rowId : null;
+  return { key, ...(addr.viewId ? { viewId: addr.viewId } : {}), openBody };
 }

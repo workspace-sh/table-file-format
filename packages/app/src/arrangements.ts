@@ -116,6 +116,19 @@ export function savedPatch(a: Arrangement | undefined): Partial<View> {
   return patch;
 }
 
+/**
+ * "Save for everyone": the patch that writes this viewer's arrangement of
+ * a view into the saved view, and the arrangements without it (it's the
+ * saved view now).
+ */
+export function savingForEveryone(
+  all: Arrangements,
+  table: string,
+  viewId: string,
+): { patch: Partial<View>; arrangements: Arrangements } {
+  return { patch: savedPatch(all[table]?.[viewId]), arrangements: reset(all, table, viewId) };
+}
+
 /** Drop this viewer's arrangement of a view: "Reset", or after saving it for everyone. */
 export function reset(all: Arrangements, table: string, viewId: string): Arrangements {
   if (!all[table]?.[viewId]) return all;

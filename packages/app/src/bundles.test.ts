@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { ParsedTable } from "@workspace.sh/table-core";
-import { bundleTables, fromBundle, keyForAddress, tableKeysIn, toBundle } from "./bundles.ts";
+import { addressTarget, bundleTables, fromBundle, keyForAddress, tableKeysIn, toBundle } from "./bundles.ts";
 
 const t = (title: string): ParsedTable => ({
   path: title,
@@ -50,4 +50,14 @@ test("addresses resolve: spec form, demo key, and a relation's bare name within 
   assert.equal(at("deals", undefined, "crm"), "crm/deals");
   assert.equal(at("missing"), null);
   assert.equal(at("nowhere.table"), null);
+});
+
+test("following an address: its table, its view, and the named row's document if it has one", () => {
+  const withDoc = { ...tables, "crm/deals": { ...t("Deals"), rows: [{ id: "d1" }, { id: "d2" }], bodies: { d1: "# Notes" } } };
+  assert.deepEqual(addressTarget("crm.table#table=deals&view=v&row=d1", withDoc, bundles, "notes"), { key: "crm/deals", viewId: "v", openBody: "d1" });
+  // A row without a document opens none, so one left open from elsewhere closes.
+  assert.deepEqual(addressTarget("crm.table#table=deals&row=d2", withDoc, bundles, "notes"), { key: "crm/deals", openBody: null });
+  assert.deepEqual(addressTarget({ tablePath: "deals" }, withDoc, bundles, "copy"), { key: "copy/deals", openBody: null });
+  assert.equal(addressTarget("nowhere.table", withDoc, bundles, "crm"), null);
+  assert.equal(addressTarget("", withDoc, bundles, "crm"), null);
 });

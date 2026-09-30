@@ -6,7 +6,7 @@ import { ScrollView } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { newId, parseAddress, textDirection } from "@workspace.sh/table-core";
+import { newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -61,7 +61,6 @@ import {
   arrange,
   isArranged,
   reset as resetArrangement,
-  savedPatch,
   withoutView,
   deletingRow,
   deletingView,
@@ -71,7 +70,6 @@ import {
   bundleOf,
   bundleTables,
   fromBundle,
-  keyForAddress,
   onTable,
   rowTitleFor,
   sheetShown,
@@ -90,6 +88,8 @@ import {
   type SheetGridShown,
   schemaVersions,
   viewSummary,
+  addressTarget,
+  savingForEveryone,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
@@ -634,13 +634,11 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   // A relation click or deep link: the same resolution as the web app.
   const openRelation = useCallback(
     (address: string) => {
-      const addr = parseAddress(address);
-      if (!addr) return;
-      const key = keyForAddress(addr, tables, bundles, bundleOf(activeTablePath));
-      if (!key) return;
-      setActiveTablePath(key);
-      if (addr.viewId) setActiveViewIds((prev) => ({ ...prev, [key]: addr.viewId! }));
-      setActiveBodyRowId(addr.rowId && tables[key]?.bodies?.[addr.rowId] ? addr.rowId : null);
+      const target = addressTarget(address, tables, bundles, bundleOf(activeTablePath));
+      if (!target) return;
+      setActiveTablePath(target.key);
+      if (target.viewId) setActiveViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
+      setActiveBodyRowId(target.openBody);
     },
     [tables, bundles, activeTablePath],
   );
@@ -964,8 +962,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   onArrange={(patch) => setArrangements((all) => arrange(all, activeTablePath, view.id, patch))}
                   personal={isArranged(personal)}
                   onSaveForEveryone={() => {
-                    updateActiveView(savedPatch(personal));
-                    setArrangements((all) => resetArrangement(all, activeTablePath, view.id));
+                    const saving = savingForEveryone(arrangements, activeTablePath, view.id);
+                    updateActiveView(saving.patch);
+                    setArrangements(saving.arrangements);
                   }}
                   onReset={() => setArrangements((all) => resetArrangement(all, activeTablePath, view.id))}
                   onDelete={table.views.length > 1 ? deleteView : undefined}
