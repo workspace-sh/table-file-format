@@ -18,3 +18,4 @@ export * from "./sidebar.ts";
 export * from "./library.ts";
 export * from "./filesTree.ts";
 export * from "./viewSummary.ts";
+export * from "./confirm.ts";
