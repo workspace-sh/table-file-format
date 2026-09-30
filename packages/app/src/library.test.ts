@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { tables } from "@workspace.sh/table-fixtures";
-import { attachmentPath, bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
+import { attachmentName, attachmentPath, bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
 import { withCell } from "./edits.ts";
 
 test("a library opens over any file system, keys bundles by folder, and saves back", async () => {
@@ -41,4 +41,13 @@ test("an attachment is found in its table's attachments folder, and only by a pl
   assert.equal(attachmentPath(t, "co-atlas.svg"), "/docs/crm.table/tables/companies/attachments/co-atlas.svg");
   for (const bad of ["../schema.json", "a/b.png", "..", ".", "", "x\\y.png"]) assert.equal(attachmentPath(t, bad), undefined, bad);
   assert.equal(attachmentPath(undefined, "a.png"), undefined);
+});
+
+test("an attached file keeps its name, numbered when the folder already has it, and never a path", () => {
+  assert.equal(attachmentName("photo.png", []), "photo.png");
+  assert.equal(attachmentName("photo.png", ["photo.png", "photo-2.png"]), "photo-3.png");
+  assert.equal(attachmentName("README", ["README"]), "README-2");
+  assert.equal(attachmentName("/home/me/../x/report.pdf", []), "report.pdf");
+  assert.equal(attachmentName("..", []), "file");
+  assert.equal(attachmentName(".hidden", []), "hidden");
 });
