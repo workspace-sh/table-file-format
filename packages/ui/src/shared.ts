@@ -9,7 +9,7 @@ export { moveInColumns, moveInGrid, nudge } from "./cardNav";
 export { fieldKey } from "./fieldKey";
 export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells } from "./sheets";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
-export type { DisplaySettings } from "./DisplaySettings";
+export type { DisplayChoiceRow, DisplaySettingKind, DisplaySettings } from "./DisplaySettings";
 export * from "./viewEdit";
 export type { ViewProps } from "./viewProps";
 export * from "./cards";

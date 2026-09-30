@@ -19,6 +19,27 @@ export interface DisplaySettings extends DisplayOptions {
   direction?: TextDirection;
 }
 
+/** Which display setting a row of the Display controls sets. */
+export type DisplaySettingKind = "locale" | "dateFormat" | "formulaSyntax";
+
+/**
+ * One row of the Display controls: what it's called, the choices, which is
+ * chosen, and a note under it. table-app's `displayChoices` makes them, so
+ * every app (web, macOS, Linux) offers the same choices in the same words.
+ */
+export interface DisplayChoiceRow {
+  kind: DisplaySettingKind;
+  /** Shown beside the choices: "Language". */
+  name: string;
+  /** For assistive technology: what the choice does. */
+  label: string;
+  /** The chosen option's value. */
+  value: string;
+  options: { value: string; label: string }[];
+  /** Shown under the row, when there's more to say. */
+  note?: string;
+}
+
 const DisplaySettingsContext = createContext<DisplaySettings>({});
 
 export function DisplaySettingsProvider({ value, children }: { value: DisplaySettings; children: ReactNode }) {

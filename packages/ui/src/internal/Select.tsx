@@ -26,6 +26,8 @@ export interface SelectProps {
   options: SelectOption[];
   onChange: (value: string) => void;
   style?: ComponentProps<typeof html.select>["style"];
+  /** For assistive technology, when nothing beside it names it. */
+  label?: string;
   /** Keys pressed while the select (or, on native, its menu) has focus. */
   onKeyDown?: (e: { key: string; shiftKey?: boolean; preventDefault?: () => void }) => void;
   /** Left without choosing: focus moved away, or the menu was dismissed. */
@@ -38,7 +40,7 @@ export interface SelectHandle {
 }
 
 export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
-  { value, options, onChange, style, onKeyDown, onBlur },
+  { value, options, onChange, style, onKeyDown, onBlur, label },
   ref,
 ) {
   const [rect, setRect] = useState<AnchorRect | null>(null);
@@ -111,6 +113,7 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
         ref={(el: any) => {
           anchor.current = el;
         }}
+        aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={rect !== null}
         onClick={() => void open()}
