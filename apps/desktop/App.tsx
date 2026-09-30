@@ -15,6 +15,7 @@ import {
   CalendarView,
   GalleryView,
   ListView,
+  AttachmentsProvider,
   PortalHost,
   TableView,
   ViewSettings,
@@ -64,6 +65,7 @@ import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { OPENED_KEY, useFolders } from "./folders";
 import { chooseFolder } from "./panels";
+import { attachmentUrl } from "./attachments";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web and
 // Linux apps hold them, and each bundle's manifest.
@@ -502,6 +504,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `opening ${path}`;
       },
       folders: () => folders.paths,
+      attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, folders.paths) ?? null,
       // Forget saved edits and opened folders; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
@@ -536,6 +539,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folders.paths)}>
       <PortalHost>
         <html.div style={styles.root}>
           <html.div style={styles.content}>
@@ -682,6 +686,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
           )}
         </html.div>
       </PortalHost>
+      </AttachmentsProvider>
     </GestureHandlerRootView>
   );
 }
