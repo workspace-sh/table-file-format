@@ -140,6 +140,10 @@ const styles = css.create({
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
   topBarTitle: {
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
     fontSize: 13,
     fontWeight: "600",
     color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
@@ -577,7 +581,8 @@ export function App() {
             >
               ☰
             </html.button>
-            <html.span style={styles.topBarTitle}>{table.meta.title ?? activeTablePath}</html.span>
+            {/* Where the view is, file and table: narrow, the breadcrumb lives up here. */}
+            <html.span dir="auto" style={styles.topBarTitle}>{derived.breadcrumb.text}</html.span>
           </html.div>
         )}
         {shownFile && shownContent ? (
@@ -590,9 +595,11 @@ export function App() {
         ) : (
         <>
         <html.div style={styles.header}>
-          <html.span style={styles.breadcrumb}>
-            {derived.breadcrumb.text}
-          </html.span>
+          {!narrow && (
+            <html.span style={styles.breadcrumb}>
+              {derived.breadcrumb.text}
+            </html.span>
+          )}
           <html.div style={styles.headerTopRow}>
             <html.div style={styles.titleRow}>
               {!narrow && (
