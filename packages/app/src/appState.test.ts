@@ -410,6 +410,9 @@ test("display, the sidebar's side and collapse, and the Files side's folders and
   assert.deepEqual(s.shownFile, { bundle: "crm", path: "meta.json" });
   s = run(s, { type: "setFilesSide", files: false }, { type: "setSidebarCollapsed", collapsed: false });
   assert.deepEqual(s.sidebar, {});
+  s = run(s, { type: "setDisplayFolded", folded: true });
+  assert.deepEqual(s.sidebar, { foldedDisplay: true });
+  assert.deepEqual(run(s, { type: "setDisplayFolded", folded: false }).sidebar, { foldedDisplay: false });
 });
 
 // Files in, messages, writing
