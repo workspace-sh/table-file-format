@@ -53,6 +53,16 @@ import {
   deletingView,
   schemaVersions,
   viewPatchPrompt,
+  addressTarget,
+  arrange,
+  forViews,
+  isArranged,
+  loadArrangements,
+  reset as resetArrangement,
+  saveArrangements,
+  savingForEveryone,
+  type Arrangement,
+  type Arrangements,
   viewSummary,
   type Confirm,
   newView,
@@ -68,7 +78,7 @@ import {
 } from "@workspace.sh/table-app";
 import { attachFile, attachmentsIn, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
-import { newId, textDirection, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, textDirection, type TextOrder, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
   BoardView,
@@ -181,6 +191,8 @@ interface Edits {
   onAddField: (field: Field) => void;
   onOpenBody: (rowId: string) => void;
   onAttachFile: (rowId: string, field: string) => void;
+  /** A relation's link followed: its table, its view, its row's page. */
+  onOpenRelation: (address: string) => void;
 }
 
 /** What the header can do to the table's views. */
@@ -188,6 +200,11 @@ interface ViewActions {
   onAddView: () => void;
   /** Absent for the table's only view. */
   onDeleteView?: () => void;
+  /** This viewer's own filters, sorts and grouping of the view (D4), and changing them. */
+  arrangement: Arrangement | undefined;
+  onArrange: (patch: Partial<View>) => void;
+  onSaveForEveryone: () => void;
+  onReset: () => void;
 }
 
 function TablePane({
@@ -199,6 +216,7 @@ function TablePane({
   saving,
   viewActions,
   openedAt,
+  viewerText,
 }: {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -209,6 +227,8 @@ function TablePane({
   viewActions: ViewActions;
   /** The table's schema-version when it was opened: "schema changed" is against it (D22). */
   openedAt: number | undefined;
+  /** How this viewer's language orders text: a sort only they see follows it. */
+  viewerText: TextOrder;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // A settings change that loses something, asked about first.
@@ -217,7 +237,7 @@ function TablePane({
   const [refused, setRefused] = useState(0);
   const table = tables[tableKey]!;
   const [search, setSearch] = useState("");
-  const shown = showView(tables, tableKey, view, { search });
+  const shown = showView(tables, tableKey, view, { arrangement: viewActions.arrangement, search, viewerText });
   const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
   const summary = viewSummary(table, { shown: shown.rows.length, inView: shown.inView, searching: search.trim().length > 0, openedAt });
 
@@ -272,7 +292,7 @@ function TablePane({
       </GtkBox>
       {settingsOpen ? (
         <ViewSettings
-          view={view}
+          view={shown.view}
           schema={table.schema}
           onChange={(patch) => {
             const prompt = viewPatchPrompt(tables, tableKey, view, patch);
@@ -280,6 +300,10 @@ function TablePane({
             else edits.onUpdateView(patch);
           }}
           onDelete={viewActions.onDeleteView}
+          onArrange={viewActions.onArrange}
+          personal={isArranged(viewActions.arrangement)}
+          onSaveForEveryone={viewActions.onSaveForEveryone}
+          onReset={viewActions.onReset}
           onClose={() => setSettingsOpen(false)}
           revision={refused}
         />
@@ -397,6 +421,7 @@ export function App({
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
   const [displayOpen, setDisplayOpen] = useState(false);
   const ownLocale = systemLocale();
+  const viewerText = useMemo<TextOrder>(() => new Intl.Collator(display.locale ?? ownLocale, { numeric: true }).compare, [display.locale, ownLocale]);
   // The layout reads the way the display language does (D40), the whole app
   // included, so dialogs and menus mirror too.
   const direction = textDirection(display.locale ?? ownLocale);
@@ -405,6 +430,10 @@ export function App({
   }, [direction]);
   const shownDisplay = useMemo(() => ({ ...display, direction }), [display, direction]);
   const [tables, setTables] = useState(library.tables);
+  // How this viewer has filtered, sorted or grouped each view for
+  // themselves (D4), kept with their settings; a deleted view's goes with it.
+  const [arrangements, setArrangements] = useState<Arrangements>(() => loadArrangements(settings ?? null));
+  useEffect(() => saveArrangements(settings ?? null, forViews(arrangements, tables)), [arrangements, tables, settings]);
   // Each table's schema-version as opened, for "schema changed" (D22).
   const [openedAt] = useState(() => schemaVersions(library.tables));
   const [bundles, setBundles] = useState(library.bundles);
@@ -501,6 +530,13 @@ export function App({
     onMoveField: (name, delta) => edit(key, (t) => withFieldMoved(t, name, delta)),
     onAddField: (field) => edit(key, (t) => withField(t, field, viewId)),
     onOpenBody: (rowId) => setOpenPage({ key, rowId }),
+    onOpenRelation: (address) => {
+      const target = addressTarget(address, tables, bundles, bundleOf(key));
+      if (!target) return;
+      setActive(target.key);
+      if (target.viewId) setViewIds((prev) => ({ ...prev, [target.key]: target.viewId! }));
+      setOpenPage(target.openBody ? { key: target.key, rowId: target.openBody } : null);
+    },
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId, field) => {
       void chooseFile().then((source) => {
@@ -526,6 +562,14 @@ export function App({
       setViewIds((prev) => ({ ...prev, [key]: fresh.id }));
     },
     ...((tables[key]?.views.length ?? 0) > 1 ? { onDeleteView: () => setConfirmViewDelete({ key, viewId: current.id }) } : {}),
+    arrangement: arrangements[key]?.[current.id],
+    onArrange: (patch) => setArrangements((all) => arrange(all, key, current.id, patch)),
+    onSaveForEveryone: () => {
+      const saving = savingForEveryone(arrangements, key, current.id);
+      edit(key, (t) => withViewPatch(t, current.id, saving.patch));
+      setArrangements(saving.arrangements);
+    },
+    onReset: () => setArrangements((all) => resetArrangement(all, key, current.id)),
   });
   const viewDeleting = confirmViewDelete
     ? (() => {
@@ -614,6 +658,7 @@ export function App({
                 saving={saving}
                 viewActions={viewActions(active, view)}
                 openedAt={openedAt[active]}
+                viewerText={viewerText}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
