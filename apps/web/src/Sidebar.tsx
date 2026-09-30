@@ -2,9 +2,9 @@ import { type ReactNode, useMemo, useState } from "react";
 import { html, css } from "react-strict-dom";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
-import { displayChoices, sidebarTree, withDisplayChoice } from "@workspace.sh/table-app";
+import type { DisplaySettingKind } from "@workspace.sh/table-ui/shared";
+import { displayChoices, sidebarTree, type ShownFile } from "@workspace.sh/table-app";
 import { filesTree, type FilesTreeDir } from "@workspace.sh/table-app";
-import { confirmText, resetPrompt } from "@workspace.sh/table-app";
 
 const styles = css.create({
   root: {
@@ -373,7 +373,7 @@ interface SidebarProps {
   onOpenFile: () => void;
   /** This viewer's locale and default date format. */
   display: DisplaySettings;
-  onDisplayChange: (next: DisplaySettings) => void;
+  onDisplayChoose: (kind: DisplaySettingKind, value: string) => void;
   /** Showing the files on disk rather than the tables and views. */
   filesMode: boolean;
   onFilesMode: (files: boolean) => void;
@@ -385,11 +385,6 @@ interface SidebarProps {
 }
 
 /** A file of a `.table`, by its bundle and its path inside `<bundle>.table/`. */
-export interface ShownFile {
-  bundle: string;
-  path: string;
-}
-
 export function Sidebar({
   tables,
   activeTablePath,
@@ -408,7 +403,7 @@ export function Sidebar({
   onNewView,
   onOpenFile,
   display,
-  onDisplayChange,
+  onDisplayChoose,
   filesMode,
   onFilesMode,
   attachmentsOf,
@@ -547,16 +542,15 @@ export function Sidebar({
         <>
       <DisplayControls
         rows={displayChoices(display, browserLocale)}
-        onChoose={(kind, value) => onDisplayChange(withDisplayChoice(display, kind, value))}
+        onChoose={onDisplayChoose}
       />
         </>
       )}
       <html.div style={styles.footer}>
         <html.button
           style={styles.resetButton}
-          onClick={() => {
-            if (window.confirm(confirmText(resetPrompt({ openedFolders: false })))) onReset();
-          }}
+          // It asks first (table-app's reset).
+          onClick={onReset}
         >
           Reset demo data
         </html.button>
