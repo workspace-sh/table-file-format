@@ -96,3 +96,31 @@ export function addressTarget(
   const openBody = addr.rowId && tables[key]?.bodies?.[addr.rowId] !== undefined ? addr.rowId : null;
   return { key, ...(addr.viewId ? { viewId: addr.viewId } : {}), openBody };
 }
+
+/** What following an address sets in an app, as addressTarget found it. */
+export interface AppliedTarget {
+  /** The table to show. */
+  activeKey: string;
+  /** Each table's view, with the target's view for its table when it names one. */
+  viewIds: Record<string, string>;
+  /** The row whose document opens, or null to close any open one. */
+  openBody: string | null;
+  /** The main pane shows the view, not a file. */
+  mode: "tables";
+}
+
+/**
+ * Following an address (a relation's link, the page's address, Back or
+ * Forward): the one rule each app applies, so all three land alike.
+ */
+export function applyTarget(
+  target: { key: string; viewId?: string; openBody: string | null },
+  current: { viewIds: Record<string, string> },
+): AppliedTarget {
+  return {
+    activeKey: target.key,
+    viewIds: target.viewId ? { ...current.viewIds, [target.key]: target.viewId } : current.viewIds,
+    openBody: target.openBody,
+    mode: "tables",
+  };
+}
