@@ -206,3 +206,30 @@ export function columnLabel(field: Field | undefined, key: string): string {
   if (key === "(empty)") return EMPTY_GROUP;
   return enumOptions(field).find((o) => o.value === key)?.label ?? key;
 }
+
+/**
+ * Option/Alt+arrow on a board card: what dragging it does, from the
+ * keyboard. ← → move it to the next column (`column`, a board key as
+ * `columnValue` reads it), ↑ ↓ swap it with its neighbour in the column.
+ * Null at an edge, or for another key.
+ */
+export function boardCardMove(
+  columns: readonly (readonly string[])[],
+  columnKeys: readonly string[],
+  id: string,
+  key: string,
+): { kind: "column"; column: string } | { kind: "swap"; with: string } | null {
+  const c = columns.findIndex((col) => col.includes(id));
+  if (c < 0) return null;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    const column = columnKeys[c + (key === "ArrowLeft" ? -1 : 1)];
+    return column === undefined ? null : { kind: "column", column };
+  }
+  if (key === "ArrowUp" || key === "ArrowDown") {
+    const col = columns[c]!;
+    const neighbour = col[col.indexOf(id) + (key === "ArrowUp" ? -1 : 1)];
+    return neighbour === undefined ? null : { kind: "swap", with: neighbour };
+  }
+  return null;
+}
+

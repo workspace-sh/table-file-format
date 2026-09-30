@@ -5,7 +5,7 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import { AdwDialog, AdwHeaderBar, AdwStatusPage, AdwToolbarView } from "@gtkx/jsx/adw";
-import { GtkAdjustment, GtkBox, GtkButton, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow } from "@gtkx/jsx/gtk";
+import { GtkAdjustment, GtkBox, GtkButton, GtkEventControllerKey, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow } from "@gtkx/jsx/gtk";
 import type { Field, ParsedTable, Row } from "@workspace.sh/table-core";
 import {
   BOARD_GAP,
@@ -37,8 +37,14 @@ import {
   weekdayNamesShort,
   type ViewProps,
   columnLabel,
+  boardCardMove,
+  moveInColumns,
+  moveInGrid,
+  nudge,
+  orderSwapped,
 } from "@workspace.sh/table-ui/shared";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { gridKeyOf } from "./gridKeys.js";
 import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
@@ -111,24 +117,77 @@ function CardButton({
   width,
   children,
   controllers,
+  cardRef,
+  onKey,
 }: {
   onActivate?: () => void;
   width?: number;
   children: ReactNode;
   /** Its drag source and drop target, when the view can be rearranged. */
   controllers?: ReactNode;
+  /** Where the view keeps it, to move the keyboard to it. */
+  cardRef?: (widget: Gtk.Button | null) => void;
+  /** A key pressed on it: true when the view used it (see useCardKeys). */
+  onKey?: (key: string, alt: boolean) => boolean;
 }) {
   return (
     <GtkButton
+      ref={cardRef}
       cssClasses={["card", styles.card]}
       widthRequest={width}
       hexpand={width === undefined}
       onClicked={() => onActivate?.()}
-      controllers={controllers}
+      controllers={
+        <>
+          {controllers}
+          {onKey ? (
+            <GtkEventControllerKey
+              onKeyPressed={(keyval, _code, state) => {
+                const k = gridKeyOf(keyval, state);
+                return !!k && onKey(k.key, !!k.alt);
+              }}
+            />
+          ) : null}
+        </>
+      }
     >
       {children}
     </GtkButton>
   );
+}
+
+/**
+ * The keyboard on cards, as the web's views have it: arrows move between
+ * cards by `move` (table-ui/shared's moveInColumns or moveInGrid, not
+ * GTK's own nearest-widget order), and Option/Alt+arrows go to `onAltKey`,
+ * which moves the card itself. The card keeps the keyboard as it moves.
+ */
+function useCardKeys({ move, onAltKey }: { move: (id: string, key: string) => string; onAltKey?: (id: string, key: string) => boolean }) {
+  const cards = useRef(new Map<string, Gtk.Button>());
+  const focusNext = useRef<string | null>(null);
+  // A moved card is drawn again in its new place: the keyboard follows it there.
+  useEffect(() => {
+    if (!focusNext.current) return;
+    cards.current.get(focusNext.current)?.grabFocus();
+    focusNext.current = null;
+  });
+  return {
+    cardRef: (id: string) => (widget: Gtk.Button | null) => {
+      if (widget) cards.current.set(id, widget);
+      else cards.current.delete(id);
+    },
+    onKey: (id: string) => (key: string, alt: boolean) => {
+      if (!/^(Arrow|Home$|End$)/.test(key)) return false;
+      if (alt) {
+        if (!onAltKey?.(id, key)) return false;
+        focusNext.current = id;
+        return true;
+      }
+      const next = move(id, key);
+      if (next !== id) cards.current.get(next)?.grabFocus();
+      return true;
+    },
+  };
 }
 
 export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
@@ -146,6 +205,18 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
   const fieldMap = fieldsByName(schema);
   const groupField = fieldMap.get(board.field);
   const dark = useDark();
+  const columns = board.keys.map((key) => (board.groups[key] ?? []).map((r) => r.id));
+  const keys = useCardKeys({
+    move: (id, key) => moveInColumns(columns, id, key),
+    // Option/Alt+← → to the next column, ↑ ↓ within it: what dragging does.
+    onAltKey: (id, key) => {
+      const moved = onUpdateRow ? boardCardMove(columns, board.keys, id, key) : null;
+      if (moved?.kind === "column") onUpdateRow!(id, board.field, columnValue(moved.column));
+      else if (moved?.kind === "swap" && onUpdateView) onUpdateView({ order: orderSwapped(rows, id, moved.with) });
+      else return false;
+      return true;
+    },
+  });
 
   return (
     <GtkScrolledWindow hexpand vexpand vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}>
@@ -172,6 +243,8 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
                 <CardButton
                   key={row.id}
                   onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}
+                  cardRef={keys.cardRef(row.id)}
+                  onKey={keys.onKey(row.id)}
                   controllers={
                     draggable ? (
                       <>
@@ -225,6 +298,8 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   const { perRow } = galleryLayout(Math.max(0, width - 24));
   const lines: Row[][] = [];
   for (let i = 0; i < rows.length; i += perRow) lines.push(rows.slice(i, i + perRow));
+  const ids = rows.map((r) => r.id);
+  const keys = useCardKeys({ move: (id, key) => moveInGrid(ids, perRow, id, key) });
 
   return (
     <GtkScrolledWindow
@@ -241,7 +316,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
             {line.map((row) => {
               const excerpt = bodyExcerpt(bodies?.[row.id]);
               return (
-                <CardButton key={row.id} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}>
+                <CardButton key={row.id} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined} cardRef={keys.cardRef(row.id)} onKey={keys.onKey(row.id)}>
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={6}>
                     {heroField ? <GalleryHero field={fieldMap.get(heroField)} value={row[heroField]} text={rowTitle(row, heroField)} /> : null}
                     <Card
@@ -286,6 +361,15 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
   const fieldMap = fieldsByName(schema);
   const listed = groupedRows(view, rows, schema);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
+  const keys = useCardKeys({
+    move: (id, key) => moveInColumns([listed.map((d) => d.row.id)], id, key),
+    // Option/Alt+↑ ↓ moves the row, as dragging it does.
+    onAltKey: (id, key) => {
+      if (!onUpdateView || (key !== "ArrowUp" && key !== "ArrowDown")) return false;
+      onUpdateView({ order: nudge(rows.map((r) => r.id), id, key === "ArrowUp" ? -1 : 1) });
+      return true;
+    },
+  });
 
   return (
     <GtkScrolledWindow hexpand vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
@@ -295,9 +379,10 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
             {starts ? (
               <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} marginTop={12} cssClasses={["heading"]} />
             ) : null}
-            <GtkButton
-              cssClasses={["card", styles.card]}
-              onClicked={() => onOpenBody?.(row.id)}
+            <CardButton
+              onActivate={() => onOpenBody?.(row.id)}
+              cardRef={keys.cardRef(row.id)}
+              onKey={keys.onKey(row.id)}
               controllers={
                 reorderable ? (
                   <>
@@ -318,7 +403,7 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
                   </GtkBox>
                 ))}
               </GtkBox>
-            </GtkButton>
+            </CardButton>
           </GtkBox>
         ))}
       </GtkBox>

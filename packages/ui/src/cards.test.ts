@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type { Row, TableSchema, View } from "@workspace.sh/table-core";
 import {
+  boardCardMove,
   boardColumns,
   canStep,
   dateKey,
@@ -83,3 +84,16 @@ test("a calendar opens on its earliest row's month, inside its range", () => {
   assert.deepEqual(canStep(ranged, new Date(2026, 3, 1)), { prev: true, next: false });
   assert.equal(dateKey(initialMonth({ ...cal, calendar_field: undefined }, rows, new Date(2026, 6, 9))), "2026-07-01");
 });
+
+test("Alt+arrows on a board card: to the next column, or swapped in its own; nothing past an edge", () => {
+  const columns = [["a", "b"], [], ["c"]];
+  const keys = ["todo", "doing", "done"];
+  assert.deepEqual(boardCardMove(columns, keys, "a", "ArrowRight"), { kind: "column", column: "doing" });
+  assert.equal(boardCardMove(columns, keys, "a", "ArrowLeft"), null);
+  assert.deepEqual(boardCardMove(columns, keys, "c", "ArrowLeft"), { kind: "column", column: "doing" });
+  assert.deepEqual(boardCardMove(columns, keys, "a", "ArrowDown"), { kind: "swap", with: "b" });
+  assert.equal(boardCardMove(columns, keys, "b", "ArrowDown"), null);
+  assert.equal(boardCardMove(columns, keys, "a", "Enter"), null);
+  assert.equal(boardCardMove(columns, keys, "zz", "ArrowDown"), null);
+});
+
