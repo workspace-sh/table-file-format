@@ -54,7 +54,7 @@ import {
   withRowAt,
   withViewPatch,
 } from "@workspace.sh/table-app";
-import { saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { attachFile, saveBundle, type Library } from "@workspace.sh/table-app/node";
 import { newId, textDirection, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
   AttachmentsProvider,
@@ -192,6 +192,7 @@ interface Edits {
   onMoveField: (name: string, delta: -1 | 1) => void;
   onAddField: (field: Field) => void;
   onOpenBody: (rowId: string) => void;
+  onAttachFile: (rowId: string, field: string) => void;
 }
 
 /** What the header can do to the table's views. */
@@ -277,6 +278,17 @@ function TablePane({
   );
 }
 
+/** The file chooser, for a file to attach. Cancelling is no file. */
+async function chooseFileToAttach(): Promise<string | null> {
+  try {
+    const file = await Gtk.FileDialog.new().open(null, null);
+    return file?.getPath() ?? null;
+  } catch {
+    // Dismissed: the dialog rejects on that as on failure.
+    return null;
+  }
+}
+
 /** Ask for a name: what a new table or file is called. Empty is no name. */
 function NameDialog({ heading, action, onName, onClose }: { heading: string; action: string; onName: (name: string) => void; onClose: () => void }) {
   const [name, setName] = useState("");
@@ -331,6 +343,7 @@ export function App({
   initialView,
   settings,
   newFilesIn,
+  chooseFile = chooseFileToAttach,
 }: {
   library: Library;
   initialTable?: string;
@@ -339,6 +352,8 @@ export function App({
   settings?: KeyValueStore;
   /** The folder new .table files are made in; absent, none can be made. */
   newFilesIn?: string;
+  /** Ask for a file to attach; a path, or null when none was chosen. */
+  chooseFile?: () => Promise<string | null>;
 }) {
   // This viewer's locale, date format and formula syntax: theirs, not the tables'.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
@@ -395,6 +410,10 @@ export function App({
     return () => clearTimeout(timer);
   }, [tables, bundles, library, paths]);
 
+  // A table's own folder, where its attachments/ is: in its bundle's folder,
+  // which a table made in this session hasn't been read from.
+  const tableDir = (key: string) => `${paths[bundleOf(key)]}/tables/${tableNameOf(key)}`;
+
   // Something made (a table, a file): shown at once, and its bundle saved.
   const made = (result: Made) => {
     setTables(result.tables);
@@ -430,6 +449,18 @@ export function App({
     onMoveField: (name, delta) => edit(key, (t) => withFieldMoved(t, name, delta)),
     onAddField: (field) => edit(key, (t) => withField(t, field, viewId)),
     onOpenBody: (rowId) => setOpenPage({ key, rowId }),
+    // The file is copied into the table's attachments/ and the cell set to its name.
+    onAttachFile: (rowId, field) => {
+      void chooseFile().then((source) => {
+        if (!source) return;
+        try {
+          const name = attachFile(tableDir(key), source);
+          edit(key, (t) => withCell(t, rowId, field, name));
+        } catch (error) {
+          setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+        }
+      });
+    },
   });
   const deleting = confirmDelete ? tables[confirmDelete.key] : undefined;
 
@@ -456,7 +487,7 @@ export function App({
       <AdwApplicationWindow title="Tables" defaultWidth={1280} defaultHeight={800} onCloseRequest={() => quit()}>
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
-          <AttachmentsProvider value={(file) => attachmentPath(tables[active], file)}>
+          <AttachmentsProvider value={(file) => (tables[active] ? attachmentPath({ ...tables[active], path: tableDir(active) }, file) : undefined)}>
           <AdwOverlaySplitView
             minSidebarWidth={220}
             maxSidebarWidth={300}

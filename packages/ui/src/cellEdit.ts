@@ -12,12 +12,13 @@ import { relationLabel } from "./display";
  * The editor a field gets. A computed field is derived on read and never
  * stored, so there's nothing to edit; a relation is picked, not typed.
  */
-export type EditorKind = "readonly" | "boolean" | "list" | "choice" | "relation" | "text";
+export type EditorKind = "readonly" | "boolean" | "list" | "choice" | "relation" | "attachment" | "text";
 
 export function editorKind(field: Field | undefined): EditorKind {
   if (field?.computed !== undefined) return "readonly";
   if (field?.type === "boolean") return "boolean";
   if (field?.relation) return "relation";
+  if (field?.attachment) return "attachment";
   if (field?.type === "array" && !field.relation) return "list";
   if (enumOptions(field).length > 0) return "choice";
   return "text";

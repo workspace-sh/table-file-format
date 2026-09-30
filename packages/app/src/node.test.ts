@@ -24,3 +24,18 @@ test("a JSON file store keeps settings between runs, and starts empty from nothi
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("attaching copies the file into the table's attachments folder under a free name", async () => {
+  const { attachFile } = await import("./node.ts");
+  const dir = mkdtempSync(join(tmpdir(), "table-app-attach-"));
+  try {
+    const source = join(dir, "logo.svg");
+    writeFileSync(source, "<svg/>");
+    const table = join(dir, "t");
+    assert.equal(attachFile(table, source), "logo.svg");
+    assert.equal(attachFile(table, source), "logo-2.svg");
+    assert.equal(readFileSync(join(table, "attachments", "logo-2.svg"), "utf8"), "<svg/>");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

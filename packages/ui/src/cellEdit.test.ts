@@ -15,6 +15,7 @@ test("each field gets its editor: none for a formula, a picker for choices", () 
   assert.notEqual(editorKind({ name: "links", type: "array", relation: { table: "t", field: "id" } }), "list");
   assert.equal(editorKind({ name: "s", type: "string", constraints: { enum: ["a"] } }), "choice");
   assert.equal(editorKind({ name: "t", type: "string" }), "text");
+  assert.equal(editorKind({ name: "logo", type: "string", attachment: true } as Field), "attachment");
   assert.equal(editorKind(undefined), "text");
   assert.equal(inputKind(count), "number");
   assert.equal(inputKind({ name: "d", type: "datetime" }), "datetime-local");
