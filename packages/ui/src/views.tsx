@@ -49,6 +49,7 @@ import {
 } from "./cards";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
+import { fieldHint, fieldHintText } from "./fieldHintFacts";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
 import { AttachmentImage } from "./internal/AttachmentImage";
@@ -2083,6 +2084,7 @@ export function TableView({
   onInsertRow,
   onAttachFile,
 }: ViewProps) {
+  const { formulaSyntax } = useDisplaySettings();
   const rtl = useDirection() === "rtl";
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
@@ -2311,11 +2313,14 @@ export function TableView({
     // except the last one, where the `+ Field` button takes over.
     const isLast = idxInPane === paneLen - 1;
     const hint = <FieldHint field={field} name={name} schema={schema} editable={schemaEditable} />;
+    // The same facts as text, for the system tooltip where there's no rich one (macOS).
+    const hintText = fieldHintText(fieldHint({ field, name, schema, editable: schemaEditable, formulaSyntax }));
     if (!schemaEditable) {
       return (
         <Hinted
           key={name}
           hint={hint}
+          text={hintText}
           style={[
             styles.tableCell,
             styles.cellWidth(colWidth(name)),
@@ -2336,6 +2341,7 @@ export function TableView({
       <Hinted
         key={name}
         hint={isEditing ? null : hint}
+        text={isEditing ? undefined : hintText}
         style={[
           styles.headerCellWrapper,
           styles.cellWidth(colWidth(name)),
