@@ -536,6 +536,7 @@ export function App() {
   if (!table) throw new Error(`Unknown table path: ${activeTablePath}`);
   const activeViewId = activeViewIds[activeTablePath] ?? table.views[0]?.id ?? "";
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0];
+  if (!view) throw new Error("table has no views");
   // Whatever changes the view on screen (the sidebar, a relation, an
   // address), its search and settings go with it (table-app's
   // leaving); choosing the view already there changes nothing. A new view
@@ -550,7 +551,6 @@ export function App() {
     if (left.closeSettings && !keepSettingsOpen.current) setShowViewSettings(false);
     keepSettingsOpen.current = false;
   }, [activeTablePath, view.id]);
-  if (!view) throw new Error("table has no views");
 
   const setActiveViewId = useCallback(
     (viewId: string) =>
