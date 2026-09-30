@@ -10,7 +10,8 @@
 // Development only: postKey(characters, keyCode, modifiers) brings the app
 // forward (a typed key implies it's frontmost) and posts a key press to its
 // own event queue, so it goes where a typed one would; titles(menu)
-// resolves with a menu's item titles.
+// resolves with a menu's item titles; setWindowWidth(width) resizes the
+// main window, as dragging its edge would.
 
 #import <AppKit/AppKit.h>
 #import <React/RCTBridgeModule.h>
@@ -118,6 +119,14 @@ RCT_EXPORT_METHOD(postKey:(NSString *)characters
                                    isARepeat:NO
                                      keyCode:(unsigned short)keyCode.unsignedShortValue];
   [NSApp postEvent:event atStart:NO];
+}
+
+RCT_EXPORT_METHOD(setWindowWidth:(nonnull NSNumber *)width)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSRect frame = window.frame;
+  frame.size.width = width.doubleValue;
+  [window setFrame:frame display:YES animate:NO];
 }
 
 RCT_EXPORT_METHOD(titles:(NSString *)menuTitle

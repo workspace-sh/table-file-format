@@ -9,6 +9,7 @@ interface TableMenuModule {
   setItem(id: string, menu: string, title: string, key: string, modifiers: Modifier[], before: string, checked: boolean): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
   titles(menu: string): Promise<string[]>;
+  setWindowWidth(width: number): void;
   addListener(event: string): void;
   removeListeners(count: number): void;
 }
@@ -49,4 +50,9 @@ export function postKey(characters: string, keyCode: number, modifiers: Modifier
 /** Development: a menu's item titles, with their keys, as the menu bar has them. */
 export function menuTitles(menu: string): Promise<string[]> {
   return TableMenu?.titles(menu) ?? Promise.resolve([]);
+}
+
+/** Development: resize the window to this width in points, as dragging its edge would. */
+export function setWindowWidth(width: number): void {
+  TableMenu?.setWindowWidth(width);
 }
