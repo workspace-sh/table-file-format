@@ -22,7 +22,8 @@ test("a board column is headed by its choice's label, and rows with no value by 
 
 test("an empty cell shows the empty text", () => {
   assert.equal(EMPTY_TEXT, "—");
-  assert.equal(describeCell({ name: "x", type: "string" }, "").text, EMPTY_TEXT);
+  const shown = describeCell({ name: "x", type: "string" }, "", {});
+  assert.equal(shown.kind === "text" ? shown.text : null, EMPTY_TEXT);
 });
 
 test("switches set true, and clear to nothing rather than false", () => {
