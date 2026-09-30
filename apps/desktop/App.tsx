@@ -1140,12 +1140,14 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
               onNewTable={() => askName(namePrompt({ kind: "table", bundle: bundleOf(activeTablePath) }, bundles), createTable)}
               onNewView={addView}
               footer={[
-                { label: "New .table…", onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
-                { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
-                { label: "Open .table.zip…", onPress: () => void importZip() },
+                // Worded as the menu bar words them (table-app's appCommands).
+                { label: commandOf("new-file").label, onPress: () => askName(namePrompt({ kind: "file" }, bundles), createFile) },
+                { label: commandOf("open-folder").label, onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
+                { label: commandOf("open-zip").label, onPress: () => void importZip() },
                 { label: "Display", onPress: toggleDisplay, active: showDisplay },
                 { label: "Reset demo data…", onPress: resetDemo },
               ]}
+              footerNote="Edits are kept on this Mac."
             />
           )}
           <html.div style={styles.content}>
@@ -1168,7 +1170,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                   ◧
                 </html.button>
               </Hinted>
-              <html.span style={styles.title}>{view.name}</html.span>
+              <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
             <html.div style={styles.subtitle}>
               <html.span>{summary.count}</html.span>

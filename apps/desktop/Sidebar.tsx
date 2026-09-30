@@ -17,6 +17,8 @@ export interface SidebarProps {
   onNewView: () => void;
   /** The actions at the foot: new file, open folder, open zip, display. */
   footer: { label: string; onPress: () => void; active?: boolean }[];
+  /** A line under them: where edits are kept. */
+  footerNote?: string;
   /** Showing the files on disk rather than the tables and views. */
   filesMode: boolean;
   onFilesMode: (files: boolean) => void;
@@ -42,7 +44,11 @@ export function Sidebar({
   onToggleDir,
   shownFile,
   onShowFile,
+  footerNote,
 }: SidebarProps) {
+  // A folded chevron points the way the text reads (D40) with no help: › is a
+  // bidi-mirrored character, drawn as ‹ in right-to-left text.
+  const closed = "›";
   return (
     <html.div style={styles.sidebar}>
       {/* The same files two ways: as tables and views, or as they are on disk. */}
@@ -65,7 +71,7 @@ export function Sidebar({
                 const b = line.bundle;
                 return (
                   <html.button key={b.bundle} aria-expanded={!b.folded} onClick={() => onToggleFile(b.bundle)} style={styles.fileRow}>
-                    <html.span style={styles.chevron}>{b.folded ? "›" : "⌄"}</html.span>
+                    <html.span style={styles.chevron}>{b.folded ? closed : "⌄"}</html.span>
                     <html.span dir="ltr" style={styles.pathName}>{b.name}</html.span>
                   </html.button>
                 );
@@ -81,7 +87,7 @@ export function Sidebar({
                     style={[styles.row, styles.fileEntry, indent]}
                   >
                     <html.div style={styles.entryName}>
-                      <html.span style={styles.chevron}>{d.open ? "⌄" : "›"}</html.span>
+                      <html.span style={styles.chevron}>{d.open ? "⌄" : closed}</html.span>
                       <html.span dir="ltr" style={styles.pathName}>{`${d.name}/`}</html.span>
                     </html.div>
                     {d.count !== undefined && <html.span style={styles.count}>{String(d.count)}</html.span>}
@@ -105,8 +111,8 @@ export function Sidebar({
           : tree.map((file) => (
           <html.div key={file.bundle} style={styles.group}>
             <html.button aria-expanded={!file.folded} onClick={() => onToggleFile(file.bundle)} style={styles.fileRow}>
-              <html.span style={styles.chevron}>{file.folded ? "›" : "⌄"}</html.span>
-              <html.span style={styles.fileTitle}>{file.title}</html.span>
+              <html.span style={styles.chevron}>{file.folded ? closed : "⌄"}</html.span>
+              <html.span dir="auto" style={styles.fileTitle}>{file.title}</html.span>
               <html.span style={styles.fileName}>{file.file}</html.span>
             </html.button>
             {file.tables.map((table) => (
@@ -116,7 +122,7 @@ export function Sidebar({
                   onClick={() => onSelectTable(table.key)}
                   style={[styles.row, styles.tableRow, table.expanded && styles.rowOpen]}
                 >
-                  <html.span style={[styles.name, table.expanded && styles.nameOpen]}>{table.title}</html.span>
+                  <html.span dir="auto" style={[styles.name, table.expanded && styles.nameOpen]}>{table.title}</html.span>
                   <html.span style={styles.count}>{String(table.rowCount)}</html.span>
                 </html.button>
                 {table.views.map((view) => (
@@ -126,19 +132,19 @@ export function Sidebar({
                     onClick={() => onSelectView(table.key, view.id)}
                     style={[styles.row, styles.viewRow, view.active && styles.rowActive]}
                   >
-                    <html.span style={styles.name}>{view.name}</html.span>
+                    <html.span dir="auto" style={styles.name}>{view.name}</html.span>
                     <html.span style={styles.count}>{view.layoutLabel}</html.span>
                   </html.button>
                 ))}
                 {table.expanded && (
-                  <html.button onClick={onNewView} style={[styles.row, styles.viewRow, styles.action]}>
+                  <html.button dir="auto" onClick={onNewView} style={[styles.row, styles.viewRow, styles.action]}>
                     + New view
                   </html.button>
                 )}
               </html.div>
             ))}
             {file.offersNewTable && (
-              <html.button onClick={onNewTable} style={[styles.row, styles.tableRow, styles.action]}>
+              <html.button dir="auto" onClick={onNewTable} style={[styles.row, styles.tableRow, styles.action]}>
                 + New table
               </html.button>
             )}
@@ -147,10 +153,11 @@ export function Sidebar({
       </ScrollView>
       <html.div style={styles.footer}>
         {footer.map((a) => (
-          <html.button key={a.label} onClick={a.onPress} style={[styles.row, styles.footerRow, a.active && styles.rowActive]}>
+          <html.button key={a.label} dir="auto" onClick={a.onPress} style={[styles.row, styles.footerRow, a.active && styles.rowActive]}>
             {a.label}
           </html.button>
         ))}
+        {footerNote ? <html.span dir="auto" style={styles.footerNote}>{footerNote}</html.span> : null}
       </html.div>
     </html.div>
   );
@@ -219,6 +226,7 @@ const styles = css.create({
     borderColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#2c2c31" },
   },
   footerRow: { fontSize: 12 },
+  footerNote: { marginInline: 18, marginTop: 2, fontSize: 11, color: dim },
   switch: {
     display: "flex",
     flexDirection: "row",
