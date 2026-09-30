@@ -5,11 +5,10 @@
 
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
-import { effectiveFormat, printFormula } from "@workspace.sh/table-core";
 import type { Field, TableSchema } from "@workspace.sh/table-core";
 
 import { useDisplaySettings } from "./DisplaySettings";
-import { friendlyType } from "./SchemaEditor";
+import { fieldHint } from "./fieldHint";
 import { Tooltip } from "./internal/Tooltip";
 import { useHoverHint } from "./internal/useHoverHint";
 
@@ -40,28 +39,7 @@ export function Hinted({
   );
 }
 
-const FORMAT_WORDS: Record<string, string> = {
-  iso: "ISO date",
-  short: "Short date",
-  long: "Long date",
-  weekday: "Weekday",
-  relative: "Relative date",
-  integer: "Whole number",
-  percent: "Percent",
-  "duration:seconds": "Duration",
-  markdown: "Markdown",
-  url: "Link",
-  email: "Email",
-  phone: "Phone",
-};
-
-function formatWords(format: string): string {
-  if (format.startsWith("currency:")) return `Currency (${format.slice("currency:".length)})`;
-  if (format.startsWith("decimal:")) return `${format.slice("decimal:".length)} decimal places`;
-  return FORMAT_WORDS[format] ?? format;
-}
-
-/** The hint for one column. `editable`: the header opens its editor when clicked. */
+/** The hint for one column (fieldHint's facts), laid out. `editable`: the header opens its editor when clicked. */
 export function FieldHint({
   field,
   name,
@@ -73,25 +51,16 @@ export function FieldHint({
   schema: TableSchema;
   editable: boolean;
 }) {
-  const title = field?.title ?? name;
-  const kind = field?.computed ? "Formula" : field ? friendlyType(field.type) : "Unknown field";
-  const format = field ? effectiveFormat(field, schema) : undefined;
-  const facts: string[] = [kind];
-  if (field?.constraints?.required) facts.push("Required");
-  if (field?.constraints?.enum) facts.push("Choice list");
-  if (field?.relation) facts.push(`Links to ${field.relation.table}`);
-  if (format) facts.push(formatWords(format));
-  if (field?.deprecated) facts.push("Deprecated");
   const { formulaSyntax } = useDisplaySettings();
-  const formula = field?.computed?.expr ? printFormula(field.computed.expr, { syntax: formulaSyntax }) : null;
+  const hint = fieldHint({ field, name, schema, editable, formulaSyntax });
   return (
     <html.div style={styles.stack}>
-      <html.span style={styles.title}>{title}</html.span>
-      <html.span style={styles.facts}>{facts.join(" · ")}</html.span>
-      {field?.description ? <html.span style={styles.description}>{field.description}</html.span> : null}
-      {formula ? <html.span style={styles.formula}>{formula}</html.span> : null}
-      {title !== name ? <html.span style={styles.muted}>Stored as “{name}”</html.span> : null}
-      {editable ? <html.span style={styles.muted}>Click to edit this column</html.span> : null}
+      <html.span style={styles.title}>{hint.title}</html.span>
+      <html.span style={styles.facts}>{hint.facts.join(" · ")}</html.span>
+      {hint.description ? <html.span style={styles.description}>{hint.description}</html.span> : null}
+      {hint.formula ? <html.span style={styles.formula}>{hint.formula}</html.span> : null}
+      {hint.storedAs ? <html.span style={styles.muted}>{hint.storedAs}</html.span> : null}
+      {hint.editHint ? <html.span style={styles.muted}>{hint.editHint}</html.span> : null}
     </html.div>
   );
 }

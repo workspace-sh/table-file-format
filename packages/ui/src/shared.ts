@@ -18,3 +18,4 @@ export { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFrom
 export { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaPlaceholder, formulaInputCells, formulaStatus, typeFamily, viewGrid, type FormulaExplained, type FormulaInput, type FormulaStatus } from "./formulaCell";
 export * from "./fieldEdit";
 export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl } from "./Attachments";
+export { fieldHint, fieldHintText, type FieldHintFacts } from "./fieldHint";
