@@ -21,9 +21,13 @@ export const HISTORY_LIMIT = 100;
 
 export const NO_HISTORY: History = { back: [], at: null, forward: [] };
 
-/** The address of a view of the table under `key`. */
-export function viewAddress(key: string, viewId: string): string {
-  return formatAddress({ tablePath: `${bundleOf(key)}.table`, tableName: tableNameOf(key), viewId });
+/**
+ * The address of a view of the table under `key`; with `rowId`, of that
+ * row's document open in it (what Copy Link gives, as the web's address
+ * does). History records views only, so it leaves the row out.
+ */
+export function viewAddress(key: string, viewId: string, rowId?: string): string {
+  return formatAddress({ tablePath: `${bundleOf(key)}.table`, tableName: tableNameOf(key), viewId, ...(rowId ? { rowId } : {}) });
 }
 
 /** Whether an address still leads somewhere: its table is held, and the view it names, if any, is in it. */
