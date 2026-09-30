@@ -8,6 +8,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import * as Adw from "@gtkx/gi/adw";
 import * as Gdk from "@gtkx/gi/gdk";
+import * as Gio from "@gtkx/gi/gio";
 import {
   AdwAlertDialog,
   AdwApplication,
@@ -27,6 +28,15 @@ import { quit } from "@gtkx/react";
 import {
   appCommands,
   addressLive,
+  archiveFileName,
+  bundleToArchive,
+  firstTableKey,
+  fromBundle,
+  importSkippedText,
+  openArchive,
+  openFailedText,
+  resetPrompt,
+  toBundle,
   goBack,
   goForward,
   gtkAccelOf,
@@ -95,7 +105,9 @@ import {
   withRowAt,
   withViewPatch,
 } from "@workspace.sh/table-app";
-import { attachFile, attachmentsIn, saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { attachFile, attachmentsIn, bundlesIn, loadLibrary, saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { readFileSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
 import { FilePane, FilesSidebar, type ShownFile } from "./Files.js";
 import { newId, textDirection, type TextOrder, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
 import {
@@ -358,16 +370,34 @@ function TablePane({
   );
 }
 
-/** The file chooser, for a file to attach. Cancelling is no file. */
-async function chooseFileToAttach(): Promise<string | null> {
+/** A path from GTK's file chooser, set up by `ask`; null when it's dismissed. */
+async function choosePath(ask: (dialog: Gtk.FileDialog) => Promise<Gio.File>): Promise<string | null> {
   try {
-    const file = await Gtk.FileDialog.new().open(null, null);
+    const file = await ask(Gtk.FileDialog.new());
     return file?.getPath() ?? null;
   } catch {
     // Dismissed: the dialog rejects on that as on failure.
     return null;
   }
 }
+
+/** A .table.zip file to choose, and no other kind. */
+function zipFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
+  const filter = Gtk.FileFilter.new();
+  filter.setName(".table.zip");
+  filter.addPattern("*.zip");
+  dialog.setDefaultFilter(filter);
+  return dialog;
+}
+
+const chooseFileToAttach = () => choosePath((d) => d.open(null, null));
+const chooseFolderToOpen = () => choosePath((d) => d.selectFolder(null, null));
+const chooseZipToOpen = () => choosePath((d) => zipFilter(d).open(null, null));
+const chooseZipToSave = (name: string) =>
+  choosePath((d) => {
+    d.setInitialName(name);
+    return zipFilter(d).save(null, null);
+  });
 
 /** A question from table-app (a Confirm), asked as an alert; closing it is Cancel. */
 function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (response: string) => void }) {
@@ -442,6 +472,10 @@ export function App({
   settings,
   newFilesIn,
   chooseFile = chooseFileToAttach,
+  chooseFolder = chooseFolderToOpen,
+  chooseZip = chooseZipToOpen,
+  chooseZipSaveAs = chooseZipToSave,
+  resetExamples,
 }: {
   library: Library;
   initialTable?: string;
@@ -452,6 +486,17 @@ export function App({
   newFilesIn?: string;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
+  /** Ask for a .table folder to open. */
+  chooseFolder?: () => Promise<string | null>;
+  /** Ask for a .table.zip to open. */
+  chooseZip?: () => Promise<string | null>;
+  /** Ask where to save a .table.zip, suggesting `name`. */
+  chooseZipSaveAs?: (name: string) => Promise<string | null>;
+  /**
+   * Put the examples back as they shipped, in `newFilesIn`, and read them,
+   * keyed apart from `held`. Absent: there's no demo data to reset.
+   */
+  resetExamples?: (held: string[]) => Promise<Library>;
 }) {
   // This viewer's locale, date format and formula syntax: theirs, not the tables'.
   const [display, setDisplay] = useState<DisplaySettings>(() => loadDisplay(settings ?? null));
@@ -490,6 +535,9 @@ export function App({
   // A name being asked for: a new table in a bundle, or a new .table file.
   const [naming, setNaming] = useState<Making | null>(null);
   const [saving, setSaving] = useState<SaveState>({ kind: "saved" });
+  // Something to tell, once: what opening a file skipped, or why it couldn't.
+  const [notice, setNotice] = useState<{ heading: string; body?: string } | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; rowId: string } | null>(null);
   const [confirmViewDelete, setConfirmViewDelete] = useState<{ key: string; viewId: string } | null>(null);
   // A row's page open, by table and row.
@@ -643,11 +691,85 @@ export function App({
   const back = goBack(history, live);
   const forward = goForward(history, live);
 
+  // What's made or opened shows at once, on the Tables side.
+  const show = (key: string | undefined) => {
+    if (!key) return;
+    setActive(key);
+    setMode("tables");
+    setOpenPage(null);
+  };
+  // A .table folder from disk, edited where it is.
+  const openFolder = async () => {
+    const path = await chooseFolder();
+    if (!path) return;
+    const opened = await loadLibrary([path], Object.keys(bundles));
+    const key = Object.keys(opened.bundles)[0];
+    const problems = Object.values(opened.problems).flat();
+    if (!key || Object.keys(opened.tables).length === 0) {
+      setNotice({ heading: openFailedText(basename(path), problems.join("; ") || "there's no table in it") });
+      return;
+    }
+    setTables((all) => ({ ...all, ...opened.tables }));
+    setBundles((all) => ({ ...all, ...opened.bundles }));
+    setPaths((all) => ({ ...all, ...opened.paths }));
+    show(firstTableKey(opened.tables));
+    if (problems.length > 0) setNotice({ heading: `Opened ${basename(path)}, with problems:`, body: problems.join("\n") });
+  };
+  // A .table.zip becomes a .table folder beside the new files, saved as it opens.
+  const openZip = async () => {
+    const path = await chooseZip();
+    if (!path || !newFilesIn) return;
+    try {
+      // Named apart from the tables held and from any folder already there.
+      const onDisk = bundlesIn(newFilesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
+      const opened = await openArchive(new Uint8Array(readFileSync(path)), [...Object.keys(bundles), ...onDisk]);
+      const entries = fromBundle(opened.key, opened.bundle);
+      setTables((all) => ({ ...all, ...entries }));
+      setBundles((all) => ({ ...all, [opened.key]: opened.bundle.meta }));
+      setPaths((all) => ({ ...all, [opened.key]: `${newFilesIn}/${opened.key}.table` }));
+      dirty.current.add(opened.key);
+      show(Object.keys(entries)[0]);
+      const skipped = importSkippedText(opened);
+      if (skipped) setNotice(skipped);
+    } catch (error) {
+      setNotice({ heading: openFailedText(basename(path), error) });
+    }
+  };
+  // The open table's .table, every table in it, as one .table.zip.
+  const exportZip = async () => {
+    const key = bundleOf(active);
+    const path = await chooseZipSaveAs(archiveFileName(key));
+    if (!path) return;
+    try {
+      writeFileSync(path, await bundleToArchive(key, toBundle(tables, bundles, key)));
+    } catch (error) {
+      setSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  // The examples as they shipped; folders opened from elsewhere are left as they are.
+  const inExamples = (key: string) => !!newFilesIn && (paths[key] ?? "").startsWith(`${newFilesIn}/`);
+  const reset = async () => {
+    if (!resetExamples) return;
+    const kept = Object.keys(bundles).filter((key) => !inExamples(key));
+    for (const key of Object.keys(bundles)) if (!kept.includes(key)) dirty.current.delete(key);
+    const fresh = await resetExamples(kept);
+    const keep = <T,>(all: Record<string, T>, keyOf: (k: string) => string) => Object.fromEntries(Object.entries(all).filter(([k]) => kept.includes(keyOf(k))));
+    setTables((all) => ({ ...keep(all, bundleOf), ...fresh.tables }));
+    setBundles((all) => ({ ...keep(all, (k) => k), ...fresh.bundles }));
+    setPaths((all) => ({ ...keep(all, (k) => k), ...fresh.paths }));
+    setViewIds({});
+    setHistory(NO_HISTORY);
+    setShownFile(null);
+    show(firstTableKey(fresh.tables));
+  };
+
   // The app's commands (table-app's appCommands), each an action on the
   // window with its accelerator, and in the primary menu. Those Linux
   // doesn't do yet are left out.
   const run: Partial<Record<AppCommandId, () => void>> = {
-    ...(newFilesIn ? { "new-file": () => setNaming({ kind: "file" }) } : {}),
+    ...(newFilesIn ? { "new-file": () => setNaming({ kind: "file" }), "open-zip": () => void openZip() } : {}),
+    "open-folder": () => void openFolder(),
+    "export-zip": () => void exportZip(),
     "copy-link": () => {
       if (!view) return;
       // With the open page's row, as the web's address and the Mac's link have it.
@@ -669,6 +791,7 @@ export function App({
   const menuSections = ["File", "Edit", "View", "Go"].map((menu) => ({
     section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })),
   })).filter((s) => s.section.length > 0);
+  if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
   const primaryMenu = (
     <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
   );
@@ -704,9 +827,10 @@ export function App({
         defaultWidth={1280}
         defaultHeight={800}
         onCloseRequest={() => quit()}
-        actions={commands.map((c) => (
-          <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />
-        ))}
+        actions={[
+          ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
+          ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
+        ]}
       >
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
@@ -839,6 +963,25 @@ export function App({
                 }
                 setConfirmDelete(null);
               }}
+            />
+          ) : null}
+          {confirmReset ? (
+            <ConfirmDialog
+              prompt={resetPrompt({ openedFolders: Object.keys(bundles).some((key) => !inExamples(key)) })}
+              onResponse={(response) => {
+                setConfirmReset(false);
+                if (response === "reset") void reset();
+              }}
+            />
+          ) : null}
+          {notice ? (
+            <AdwAlertDialog
+              heading={notice.heading}
+              body={notice.body}
+              closeResponse="ok"
+              defaultResponse="ok"
+              responses={[{ id: "ok", label: "OK" }]}
+              onResponse={() => setNotice(null)}
             />
           ) : null}
           </AttachmentsProvider>

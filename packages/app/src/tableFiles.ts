@@ -56,3 +56,22 @@ export async function openArchive(bytes: Uint8Array, taken: Iterable<string>): P
 function describeSkip(d: ValidationError): string {
   return d.rowIndex >= 0 ? `rows.ndjson line ${d.rowIndex + 1}: ${d.message}` : d.message;
 }
+
+/**
+ * What an app says after opening an archive the reader skipped parts of
+ * (D25): a heading and the lines skipped. Null when it read cleanly.
+ */
+export function importSkippedText(opened: OpenedBundle): { heading: string; body: string } | null {
+  const n = opened.skipped.length;
+  if (n === 0) return null;
+  return {
+    heading: `Opened "${opened.bundle.meta.title ?? opened.key}", but skipped ${n} ${n === 1 ? "thing" : "things"} it couldn't read:`,
+    body: opened.skipped.join("\n"),
+  };
+}
+
+/** What an app says when a file can't be opened at all. */
+export function openFailedText(fileName: string, error: unknown): string {
+  return `Couldn't open ${fileName}: ${error instanceof Error ? error.message : String(error)}`;
+}
+

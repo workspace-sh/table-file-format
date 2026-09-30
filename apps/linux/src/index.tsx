@@ -1,4 +1,5 @@
 import { createRoot } from "@gtkx/react";
+import { rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
@@ -29,4 +30,23 @@ for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
 
-createRoot().render(<App library={library} initialTable={openTable} initialView={openView} settings={settings} newFilesIn={named.length > 0 ? undefined : examples} />);
+// Reset: the examples copied afresh, dropping every edit and every file
+// made or opened into them. Only when the examples are what's open.
+const resetExamples =
+  named.length === 0 && fixtures
+    ? (held: string[]) => {
+        rmSync(examples, { recursive: true, force: true });
+        return loadLibrary(copiesOf(fixtures, examples), held);
+      }
+    : undefined;
+
+createRoot().render(
+  <App
+    library={library}
+    initialTable={openTable}
+    initialView={openView}
+    settings={settings}
+    newFilesIn={named.length > 0 ? undefined : examples}
+    resetExamples={resetExamples}
+  />,
+);
