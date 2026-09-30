@@ -20,6 +20,9 @@ interface TableMenuModule {
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
+  replyToQuit(quit: boolean): void;
+  setUnsaved(unsaved: boolean): void;
+  pressAlertButton(title: string): Promise<boolean>;
   addListener(event: string): void;
   removeListeners(count: number): void;
 }
@@ -68,6 +71,25 @@ export function onMenu(then: (id: string) => void): () => void {
   return () => sub?.remove();
 }
 
+/**
+ * Before the app quits (⌘Q, or closing its last window): `ready` resolves
+ * true to quit, false to stay open. Returns the unsubscribe.
+ */
+export function onQuit(ready: () => Promise<boolean>): () => void {
+  const sub = events?.addListener("quit", () => {
+    ready().then(
+      (quit) => TableMenu?.replyToQuit(quit),
+      () => TableMenu?.replyToQuit(true),
+    );
+  });
+  return () => sub?.remove();
+}
+
+/** Whether there are edits left to write: macOS won't end the app suddenly while there are. */
+export function setUnsaved(unsaved: boolean): void {
+  TableMenu?.setUnsaved(unsaved);
+}
+
 /** Development: press a key, as typed (keyCode is the Mac virtual key: b is 11). */
 export function postKey(characters: string, keyCode: number, modifiers: Modifier[]): void {
   TableMenu?.postKey(characters, keyCode, modifiers);
@@ -81,4 +103,9 @@ export function menuTitles(menu: string): Promise<string[]> {
 /** Development: resize the window to this width in points, as dragging its edge would. */
 export function setWindowWidth(width: number): void {
   TableMenu?.setWindowWidth(width);
+}
+
+/** Development: click the button titled so in the alert on screen; resolves whether there was one. */
+export function pressAlertButton(title: string): Promise<boolean> {
+  return TableMenu?.pressAlertButton(title) ?? Promise.resolve(false);
 }

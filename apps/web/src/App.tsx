@@ -303,7 +303,7 @@ export function App() {
   // edits survive a reload (#86), from what was saved or the fixtures, and
   // the viewer's own settings come from this browser.
   const browserLocale = typeof navigator === "undefined" ? undefined : navigator.language;
-  const { state, dispatch, display: shownDisplay } = useTableApp(
+  const { state, dispatch, display: shownDisplay, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: initialBundles };
       const saved = loadSaved(browserStore());
@@ -334,6 +334,20 @@ export function App() {
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
   const derived = derive(state, { locale: browserLocale, attachmentsOf });
   const { table, view, shown: shownArranged, summary } = derived;
+
+  // Leaving the page (closing the tab, going elsewhere, hiding it on a
+  // phone) writes what's left at once, rather than after the delay. The
+  // browser's store is synchronous, so it's written before the page goes.
+  useEffect(() => {
+    const now = () => void flush();
+    const hidden = () => document.visibilityState === "hidden" && now();
+    window.addEventListener("pagehide", now);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("pagehide", now);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, [flush]);
 
   // Questions and messages, the browser's way.
   useEffect(() => {
