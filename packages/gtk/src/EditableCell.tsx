@@ -17,7 +17,7 @@ import {
   GtkLabel,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { type GridEditEnd, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -36,6 +36,14 @@ export interface EditableCellProps {
   autoEdit?: boolean;
   /** Choose a file for an attachment cell (the app copies it in). Absent: its name is typed. */
   onAttach?: () => void;
+  /**
+   * Open the cell from the keyboard (the grid's Enter, or a character
+   * typed on it): each new `n` opens it once, with `text` typed over what's
+   * there when given.
+   */
+  editRequest?: { n: number; text?: string };
+  /** Editing closed from the keyboard, and how: the grid moves on from it. */
+  onEditEnd?: (how: GridEditEnd) => void;
 }
 
 /**
@@ -51,7 +59,7 @@ function ChoiceEditor({
 }: {
   field: Field | undefined;
   value: unknown;
-  onClose: () => void;
+  onClose: (how: GridEditEnd) => void;
   onCommit: (next: unknown) => void;
   /** The choices, when they aren't the field's own (a relation's rows). */
   choices?: { value: string; label?: string }[];
@@ -68,21 +76,21 @@ function ChoiceEditor({
       model={<StringList strings={labels} />}
       onNotifySelected={(index) => {
         if (index === null || index === at) return;
-        onClose();
+        onClose("done");
         const next = index === 0 ? null : options[index - 1]!.value;
         if (next !== value) onCommit(next);
       }}
       controllers={
         <>
-          <GtkEventControllerFocus onLeave={onClose} />
-          <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose(), true) : false)} />
+          <GtkEventControllerFocus onLeave={() => onClose("done")} />
+          <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose("escape"), true) : false)} />
         </>
       }
     />
   );
 }
 
-export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach }: EditableCellProps) {
+export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
@@ -95,15 +103,27 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   // mustn't save the draft again.
   const closed = useRef(false);
   const entry = useRef<Gtk.Entry | null>(null);
+  // Typed over what was there: the cursor goes after it, not selecting it.
+  const typedOver = useRef(false);
 
-  const start = () => {
+  const start = (text?: string) => {
     if (kind === "readonly") return;
     closed.current = false;
     queried.current = null;
-    setDraft(draftOf(value));
+    typedOver.current = text !== undefined;
+    setDraft(text ?? draftOf(value));
     setProblem(null);
     setEditing(true);
   };
+
+  // The grid's keyboard asking: an attachment chooses its file; the rest open.
+  useEffect(() => {
+    if (!editRequest) return;
+    if (kind === "attachment" && onAttach) onAttach();
+    else start(editRequest.text);
+    // Once for each request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest?.n]);
 
   useEffect(() => {
     if (autoEdit) start();
@@ -113,7 +133,11 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
 
   // Focus the entry once it's there, with its text selected to type over.
   useEffect(() => {
-    if (editing && kind === "text") entry.current?.grabFocus();
+    if (!editing || kind !== "text" || !entry.current) return;
+    if (typedOver.current) {
+      entry.current.grabFocusWithoutSelecting();
+      entry.current.setPosition(-1);
+    } else entry.current.grabFocus();
   }, [editing, kind]);
 
   const close = () => {
@@ -122,16 +146,18 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     setProblem(null);
   };
 
-  const commit = (raw: string, how: "key" | "blur") => {
-    if (closed.current) return;
+  /** Saved (or nothing to save) and closed: true; refused, the editor stays: false. */
+  const commit = (raw: string, how: "key" | "blur"): boolean => {
+    if (closed.current) return false;
     const result = commitDraft(field, value, raw, how, queried.current);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem({ message: result.check.message, suggestion: result.check.suggestion });
-      return;
+      return false;
     }
     close();
     if (result.kind === "save") onCommit(result.value);
+    return true;
   };
 
   const shown = <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />;
@@ -193,7 +219,10 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
       <ChoiceEditor
         field={field}
         value={value}
-        onClose={close}
+        onClose={(how) => {
+          close();
+          onEditEnd?.(how);
+        }}
         onCommit={onCommit}
         choices={kind === "relation" ? relationOptions(field, relatedTables) : undefined}
       />
@@ -227,15 +256,26 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
           setDraft(e.getText());
           setProblem(null);
         }}
-        onActivate={(e) => commit(e.getText(), "key")}
+        onActivate={(e) => {
+          if (commit(e.getText(), "key")) onEditEnd?.("enter");
+        }}
         controllers={
           <>
             <GtkEventControllerKey
               propagationPhase={Gtk.PropagationPhase.CAPTURE}
-              onKeyPressed={(keyval) => {
-                if (keyval !== Gdk.KEY_Escape) return false;
-                close();
-                return true;
+              onKeyPressed={(keyval, _code, state) => {
+                if (keyval === Gdk.KEY_Escape) {
+                  close();
+                  onEditEnd?.("escape");
+                  return true;
+                }
+                // Tab saves and moves along, as in a spreadsheet, rather than leaving the table.
+                if (keyval === Gdk.KEY_Tab || keyval === Gdk.KEY_ISO_Left_Tab) {
+                  const back = keyval === Gdk.KEY_ISO_Left_Tab || (state & Gdk.ModifierType.SHIFT_MASK) !== 0;
+                  if (commit(entry.current?.getText() ?? draft, "key")) onEditEnd?.(back ? "shift-tab" : "tab");
+                  return true;
+                }
+                return false;
               }}
             />
             <GtkEventControllerFocus onLeave={() => commit(entry.current?.getText() ?? draft, "blur")} />

@@ -19,3 +19,4 @@ export { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaPlaceholder, fo
 export * from "./fieldEdit";
 export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl } from "./Attachments";
 export { fieldHint, fieldHintText, type FieldHintFacts } from "./fieldHintFacts";
+export { afterEdit, cellPicks, clampPlace, gridKey, type EditEnd as GridEditEnd, type GridAction, type GridCell, type GridKey, type GridPlace } from "./gridNav";

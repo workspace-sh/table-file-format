@@ -14,6 +14,8 @@ import {
   GtkAdjustment,
   GtkBox,
   GtkButton,
+  GtkEventControllerFocus,
+  GtkEventControllerKey,
   GtkGestureClick,
   GtkImage,
   GtkLabel,
@@ -40,6 +42,11 @@ import {
   rowNumber,
   fieldHint,
   fieldHintText,
+  afterEdit,
+  cellPicks,
+  editorKind,
+  gridKey,
+  type GridPlace,
   useDisplaySettings,
 } from "@workspace.sh/table-ui/shared";
 import { useRef, useState, type ReactNode } from "react";
@@ -48,6 +55,7 @@ import { EditableCell } from "./EditableCell.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
+import { gridKeyOf } from "./gridKeys.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
 const TABLE_CHROME = 2;
@@ -69,9 +77,32 @@ function xalignOf(align: FieldAlignment): number {
  * character), and a row of pills clips (see `Clipped`). Every row's cells
  * then line up under the header with no grid to align them.
  */
-function Cell({ width, height, children, classes = [] }: { width: number; height: number; children: ReactNode; classes?: string[] }) {
+function Cell({
+  width,
+  height,
+  children,
+  classes = [],
+  cellRef,
+  onFocused,
+}: {
+  width: number;
+  height: number;
+  children: ReactNode;
+  classes?: string[];
+  /** A body cell: it takes the keyboard's focus, and says when it has it. */
+  cellRef?: (widget: Gtk.Box | null) => void;
+  onFocused?: (focused: boolean) => void;
+}) {
   return (
-    <GtkBox widthRequest={width} heightRequest={height} hexpand={false} cssClasses={[styles.cell, styles.columnRule, ...classes]}>
+    <GtkBox
+      ref={cellRef}
+      focusable={!!cellRef}
+      widthRequest={width}
+      heightRequest={height}
+      hexpand={false}
+      cssClasses={[styles.cell, styles.columnRule, ...classes]}
+      controllers={onFocused ? <GtkEventControllerFocus onEnter={() => onFocused(true)} onLeave={() => onFocused(false)} /> : undefined}
+    >
       {children}
     </GtkBox>
   );
@@ -248,6 +279,64 @@ export function TableView({
   );
 
   const editable = !!onUpdateRow;
+
+  // The keyboard in the grid: the focused cell is the one it's on, and
+  // what each key does is table-ui/shared's gridKey, as the web's is.
+  const cells = useRef(new Map<string, Gtk.Box>());
+  const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  const [editRequest, setEditRequest] = useState<{ key: string; n: number; text?: string } | null>(null);
+  const cellKey = (rowId: string, name: string) => `${rowId}\u0000${name}`;
+  const rowIds = displayed.map((d) => d.row.id);
+  const focusCell = (at: GridPlace) => {
+    const rowId = rowIds[at.row];
+    const name = fields[at.col];
+    if (rowId !== undefined && name !== undefined) cells.current.get(cellKey(rowId, name))?.grabFocus();
+  };
+  const placeOf = (key: string): GridPlace | null => {
+    const [rowId, name] = key.split("\u0000") as [string, string];
+    const row = rowIds.indexOf(rowId);
+    const col = fields.indexOf(name);
+    return row < 0 || col < 0 ? null : { row, col };
+  };
+  const onGridKey = (keyval: number, state: number): boolean => {
+    // Only a cell itself: typing in an editor, or on a button in a cell, is theirs.
+    const focus = (cells.current.values().next().value?.getRoot() as Gtk.Window | undefined)?.getFocus();
+    const key = [...cells.current].find(([, widget]) => widget === focus)?.[0];
+    const k = gridKeyOf(keyval, state);
+    if (!key || !k) return false;
+    const at = placeOf(key);
+    if (!at) return false;
+    const rowId = rowIds[at.row]!;
+    const name = fields[at.col]!;
+    const field = fieldMap.get(name);
+    const row = rows.find((r) => r.id === rowId);
+    const action = gridKey(at, rowIds.length, fields.length, k, {
+      editable: editable && editorKind(field) !== "readonly",
+      boolean: field?.type === "boolean",
+      picks: cellPicks(field),
+      computed: !!field?.computed,
+    });
+    if (!action || action.kind === "leave") return false;
+    switch (action.kind) {
+      case "select":
+        focusCell(action.at);
+        break;
+      case "deselect":
+        (focus as Gtk.Widget | null)?.getRoot()?.setFocus?.(null);
+        break;
+      case "clear":
+        onUpdateRow!(rowId, name, undefined);
+        break;
+      case "toggle":
+        onUpdateRow!(rowId, name, !(row?.[name] === true));
+        break;
+      case "open":
+        if (field?.computed) setOpenFormula({ rowId, name });
+        else setEditRequest({ key, n: Date.now(), ...(action.text !== undefined ? { text: action.text } : {}) });
+        break;
+    }
+    return true;
+  };
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
   const grid = viewGrid(view, fields, displayed.map((d) => d.row.id), sheet);
@@ -285,7 +374,13 @@ export function TableView({
               classes={[
                 ...(openFormula?.name === name ? [styles.formulaColumn] : []),
                 ...(inputCells.has(`${row.id}\u0000${name}`) ? [styles.formulaInput] : []),
+                ...(focusedCell === cellKey(row.id, name) ? [styles.selectedCell] : []),
               ]}
+              cellRef={(widget) => {
+                if (widget) cells.current.set(cellKey(row.id, name), widget);
+                else cells.current.delete(cellKey(row.id, name));
+              }}
+              onFocused={(focused) => setFocusedCell((was) => (focused ? cellKey(row.id, name) : was === cellKey(row.id, name) ? null : was))}
             >
               <GtkBox
                 spacing={6}
@@ -308,6 +403,12 @@ export function TableView({
                     lines={lines}
                     xalign={xalign}
                     autoEdit={i === 0 && row.id === justAdded}
+                    editRequest={editRequest?.key === cellKey(row.id, name) ? editRequest : undefined}
+                    // Editing closed from the keyboard: the grid takes it back, where Enter or Tab leads.
+                    onEditEnd={(how) => {
+                      const at = placeOf(cellKey(row.id, name));
+                      if (at) focusCell(afterEdit(at, how, rowIds.length, fields.length));
+                    }}
                     onAttach={onAttachFile ? () => onAttachFile(row.id, name) : undefined}
                   />
                 ) : (
@@ -388,7 +489,12 @@ export function TableView({
       cssClasses={[styles.table]}
       hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))} />}
     >
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} halign={Gtk.Align.START} valign={Gtk.Align.START}>
+      <GtkBox
+        orientation={Gtk.Orientation.VERTICAL}
+        halign={Gtk.Align.START}
+        valign={Gtk.Align.START}
+        controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
+      >
         {header}
         {body}
         {addRow}
