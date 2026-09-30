@@ -28,6 +28,28 @@ index f5b7fd9..039963f 100644
    CGImageSourceRef sourceRef = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
    if (!sourceRef) {
      return nil;
+diff --git a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm b/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
+index 779480a..cdcc4cd 100644
+--- a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
++++ b/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
+@@ -302,10 +302,15 @@ - (void)invalidate
+   }
+   [_alertControllers addObject:alert];
+   
+-  if (modal) {
++  // [table-file-format patch] A sheet needs a window, and keyWindow is nil
++  // whenever the app isn't frontmost (say, an alert that follows a delayed
++  // save while another app is in front), so the alert never appeared. Fall
++  // back to the main window, then any window, then an app-modal alert.
++  NSWindow *sheetWindow = [NSApp keyWindow] ?: [NSApp mainWindow] ?: [[NSApp windows] firstObject];
++  if (modal || sheetWindow == nil) {
+     callbacksHandlers([alert runModal]);
+   } else {
+-    [alert beginSheetModalForWindow:[NSApp keyWindow] completionHandler:callbacksHandlers];
++    [alert beginSheetModalForWindow:sheetWindow completionHandler:callbacksHandlers];
+   }
+ #endif // macOS]
+ }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 index 0dd5223..2a13675 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
