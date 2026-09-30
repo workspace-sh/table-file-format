@@ -88,6 +88,8 @@ import {
   schemaVersions,
   viewSummary,
   appCommands,
+  afterReset,
+  resetPrompt,
   type AppCommandId,
   addressTarget,
   savingForEveryone,
@@ -444,6 +446,32 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
       bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
     });
   }, [store, tables, bundles, folders.paths]);
+
+  // Start again from the example tables (table-app's resetPrompt and
+  // afterReset): edits to them go, and so do tables made or imported here;
+  // a .table folder opened from disk is the person's own, and stays open as
+  // it is. What's on screen stays if it's in one of those folders.
+  const doReset = useCallback(() => {
+    const opened = Object.keys(folders.paths);
+    clearSaved(store);
+    const after = afterReset(tables, bundles, { tables: initialTables, bundles: bundleMetas }, opened);
+    setTables(after.tables);
+    setBundles(after.bundles);
+    if (!opened.includes(bundleOf(activeTablePath))) setActiveTablePath(DEFAULT_TABLE_PATH);
+    setActiveViewIds((prev) => ({
+      ...Object.fromEntries(Object.entries(prev).filter(([key]) => opened.includes(bundleOf(key)))),
+      ...Object.fromEntries(Object.entries(initialTables).map(([key, t]) => [key, t.views[0]?.id ?? ""])),
+    }));
+    setQuery("");
+    setActiveBodyRowId(null);
+    setShownFile(null);
+    return opened;
+  }, [folders.paths, store, tables, bundles, activeTablePath]);
+  const resetDemo = useCallback(() => {
+    ask(resetPrompt({ openedFolders: Object.keys(folders.paths).length > 0 }), (response) => {
+      if (response === "reset") doReset();
+    });
+  }, [folders.paths, doReset]);
 
   // Show what was just made: its first view, from the top.
   const showMade = useCallback((key: string, viewId: string) => {
@@ -901,6 +929,9 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `posted ${modifiers.join("+")}+${characters}`;
       },
       menuTitles,
+      // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
+      reset: () => `reset; kept ${doReset().join(", ") || "no folders"}`,
+      resetPrompt: () => resetDemo(),
       // Files mode, as the sidebar's switch, folders and files do.
       files: (on: boolean) => {
         if (!on) setShownFile(null);
@@ -924,7 +955,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -985,6 +1016,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
                 { label: "Open .table…", onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
                 { label: "Open .table.zip…", onPress: () => void importZip() },
                 { label: "Display", onPress: () => setShowDisplay((open) => !open), active: showDisplay },
+                { label: "Reset demo data…", onPress: resetDemo },
               ]}
             />
           )}
