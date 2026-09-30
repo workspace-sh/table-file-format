@@ -313,13 +313,20 @@ export function App() {
     const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
     const store = browserStore();
     const start = addressInHash();
+    const sidebar = loadSidebarPrefs(store);
     const s = initialAppState({
       ...initial,
-      stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+      stored: { sidebar, arrangements: loadArrangements(store), display: loadDisplay(store) },
       ...(start ? { start } : {}),
     });
-    // "Schema changed" is since the fixtures, as saved edits carry over a reload.
-    return { ...s, openedAt: INITIAL_SCHEMA_VERSIONS };
+    return {
+      ...s,
+      // The page's address is where a reload left it more often than a link
+      // followed, so the side the viewer left the sidebar on stays.
+      sidebar: sidebar.files ? { ...s.sidebar, files: true } : s.sidebar,
+      // "Schema changed" is since the fixtures, as saved edits carry over a reload.
+      openedAt: INITIAL_SCHEMA_VERSIONS,
+    };
   });
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
   const browserLocale = typeof navigator === "undefined" ? undefined : navigator.language;
