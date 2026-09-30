@@ -107,7 +107,7 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
-import { menuTitles, onMenu, postKey, setMenuItem } from "./menu";
+import { menuTitles, onMenu, postKey, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl, fixtureAttachments } from "./attachments";
 import { FileView } from "./FileView";
 
@@ -121,6 +121,8 @@ const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
 const DEFAULT_TABLE_PATH = "projects/projects";
+/** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
+const NARROW_AT_MOST = 760;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 const styles = css.create({
@@ -584,16 +586,27 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   );
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
-  const toggleSidebar = useCallback(
-    () =>
-      setSidebarPrefs((prefs) => {
-        const { collapsed: _was, ...rest } = prefs;
-        const next = prefs.collapsed ? rest : { ...rest, collapsed: true };
-        saveSidebarPrefs(store, next);
-        return next;
-      }),
-    [store],
-  );
+  // A narrow window (the web's breakpoint) hides the sidebar on its own, as
+  // a Mac sidebar collapses, without touching that choice: widening again
+  // brings back what was chosen. ⌘B while narrow shows it anyway, until
+  // the window next narrows. The window's width, not the screen's
+  // (useWindowDimensions is the screen on macOS), from the root's layout.
+  const [windowWidth, setWindowWidth] = useState<number | null>(null);
+  const narrow = windowWidth !== null && windowWidth <= NARROW_AT_MOST;
+  const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
+  useEffect(() => {
+    if (narrow) setShownWhileNarrow(false);
+  }, [narrow]);
+  const sidebarShown = narrow ? shownWhileNarrow : !sidebarCollapsed;
+  const toggleSidebar = useCallback(() => {
+    if (narrow) return setShownWhileNarrow((shown) => !shown);
+    setSidebarPrefs((prefs) => {
+      const { collapsed: _was, ...rest } = prefs;
+      const next = prefs.collapsed ? rest : { ...rest, collapsed: true };
+      saveSidebarPrefs(store, next);
+      return next;
+    });
+  }, [store, narrow]);
   const filesMode = sidebarPrefs.files === true;
   const setFilesMode = useCallback(
     (files: boolean) =>
@@ -821,7 +834,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
     [setFilesMode],
   );
   useEffect(() => {
-    for (const c of appCommands({ sidebarCollapsed, filesMode })) {
+    for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode })) {
       setMenuItem({
         id: c.id,
         menu: c.menu,
@@ -834,7 +847,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         checked: c.checked,
       });
     }
-  }, [sidebarCollapsed, filesMode]);
+  }, [sidebarShown, filesMode]);
   const commands: Record<AppCommandId, () => void> = {
     "new-file": () => askName(namePrompt({ kind: "file" }, bundles), createFile),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
@@ -929,6 +942,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return `posted ${modifiers.join("+")}+${characters}`;
       },
       menuTitles,
+      // The window's width, as dragging its edge would set it; and what the sidebar is doing.
+      resize: (width: number) => {
+        resizeWindow(width);
+        return `resizing to ${width}`;
+      },
+      sidebarState: () => ({ windowWidth, narrow, shownWhileNarrow, chosenCollapsed: sidebarCollapsed, shown: sidebarShown }),
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
       reset: () => `reset; kept ${doReset().join(", ") || "no folders"}`,
       resetPrompt: () => resetDemo(),
@@ -955,7 +974,7 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
         return "saved edits, opened folders, arrangements and sidebar forgotten";
       },
     };
-  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo]);
+  }, [store, tables, openFolder, folders.paths, changeDisplay, createTable, createFile, addView, exportZip, importZip, attachFile, setFilesMode, toggleSidebar, doReset, resetDemo, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown]);
 
   const view = table.views.find((v) => v.id === activeViewId) ?? table.views[0]!;
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
@@ -975,12 +994,12 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
   });
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folders.paths)}>
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
-          {!sidebarCollapsed && (
+          {sidebarShown && (
             <Sidebar
               tree={sidebarTree(tables, bundles, {
                 folded: sidebarPrefs.foldedFiles ?? [],
@@ -1026,10 +1045,10 @@ function TableApp({ store }: { store: KeyValueStore | null }) {
             ) : (
             <>
             <html.div style={styles.titleRow}>
-              <Hinted hint={`${sidebarCollapsed ? "Show" : "Hide"} the sidebar (⌘B)`}>
+              <Hinted hint={`${sidebarShown ? "Hide" : "Show"} the sidebar (⌘B)`}>
                 <html.button
-                  aria-label={sidebarCollapsed ? "Show the sidebar" : "Hide the sidebar"}
-                  aria-expanded={!sidebarCollapsed}
+                  aria-label={sidebarShown ? "Hide the sidebar" : "Show the sidebar"}
+                  aria-expanded={sidebarShown}
                   onClick={toggleSidebar}
                   style={styles.sidebarTrigger}
                 >
