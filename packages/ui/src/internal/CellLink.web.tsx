@@ -1,23 +1,17 @@
 /**
- * Web: a link, as the browser draws one. A click on it opens it, not the
- * cell; anywhere else in the cell selects it. `CellLink.macos.tsx` and
- * `CellLink.tsx` serve native.
+ * Web: a link, as the browser draws one, or a button for a link within
+ * the app (a related row). A click on it opens it, not the cell; anywhere
+ * else in the cell selects it. `CellLink.macos.tsx` and `CellLink.tsx`
+ * serve native.
  */
-import type { ReactNode } from "react";
 import { html } from "react-strict-dom";
+import { OpenButton, type CellLinkProps } from "./cellLinkParts";
 
-export interface CellLinkProps {
-  href: string;
-  /** Opens elsewhere (a web page), not in a mail or phone app. */
-  external: boolean;
-  /** What the link is, for assistive technology ("Open", "Email", "Call"). */
-  label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  style?: any;
-  children: ReactNode;
-}
+export type { CellLinkProps } from "./cellLinkParts";
 
-export function CellLink({ href, external, style, children }: CellLinkProps) {
+
+export function CellLink({ href, onOpen, external, style, children }: CellLinkProps) {
+  if (onOpen) return <OpenButton onOpen={onOpen} style={style}>{children}</OpenButton>;
   return (
     <html.a
       href={href}

@@ -1,16 +1,16 @@
 /**
  * Touch default (iOS, Android). A tap on a cell selects it, a second
- * edits it, as for any cell: the value is text, not a link that would take
- * the tap. The link opens from its own button beside it, a target of its
- * own (28 pt, the HIG's least).
+ * edits it (or opens its picker, for a relation), as for any cell: the
+ * value is text, not a link that would take the tap. The link opens from
+ * its own button beside it, a target of its own (28 pt, the HIG's least).
  */
 import { Linking } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { CellLinkProps } from "./CellLink.web";
+import type { CellLinkProps } from "./cellLinkParts";
 
-export type { CellLinkProps } from "./CellLink.web";
+export type { CellLinkProps } from "./cellLinkParts";
 
-export function CellLink({ href, label, style, children }: CellLinkProps) {
+export function CellLink({ href, onOpen, label, style, children }: CellLinkProps) {
   return (
     <html.div style={styles.row}>
       <html.span style={[style, styles.text]}>{children}</html.span>
@@ -18,7 +18,8 @@ export function CellLink({ href, label, style, children }: CellLinkProps) {
         aria-label={label}
         onClick={(e: { stopPropagation: () => void }) => {
           e.stopPropagation();
-          void Linking.openURL(href).catch(() => {});
+          if (onOpen) onOpen();
+          else if (href) void Linking.openURL(href).catch(() => {});
         }}
         style={styles.open}
       >
