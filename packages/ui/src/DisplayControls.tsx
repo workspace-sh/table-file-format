@@ -6,7 +6,7 @@
 import { Fragment } from "react";
 import { html, css } from "react-strict-dom";
 import type { DisplayChoiceRow, DisplaySettingKind } from "./DisplaySettings";
-import { Select } from "./internal/Select";
+import { Select } from "./PlatformControls";
 
 export interface DisplayControlsProps {
   rows: DisplayChoiceRow[];

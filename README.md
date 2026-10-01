@@ -137,8 +137,8 @@ Every fork lives in `packages/ui/src/internal/`, and there are twenty
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
 default that serves the rest, `useEscape` and `AttachmentImage` have
-both, and `RowActions` has `.ios.tsx` and `.android.tsx` beside a
-default for the web and macOS:
+both, and `RowActions` and `Select` have `.ios.tsx` and `.android.tsx`
+beside their other forks:
 
 | Fork | Why it forks |
 |---|---|
@@ -151,7 +151,7 @@ default for the web and macOS:
 | `useEscape` | Escape as a way out (closing an editor with nothing unsaved). The web hears it on the document; macOS from the text input being typed in, which reports it as the escape character; touch screens have no Escape key, so there it adds nothing. |
 | `AttachmentImage` | An attachment drawn as an image. React Native's decoders on iOS and Android don't read SVG, so there an `.svg` is drawn by react-native-svg; the web and macOS draw every image themselves (macOS's decoder is patched to hand SVG to NSImage, and react-native-svg draws nothing on react-native-macos under the New Architecture). |
 | `measureAnchor`, `useContainerWidth`, `useViewportWidth`, `useViewportHeight` | Layout measurement, which has no shared primitive. |
-| `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. React Native has no select, so native is a button that opens a menu of the options in the `Portal`. |
+| `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. iOS uses the system's menu (SwiftUI's Picker, from `@expo/ui`), and Android Material's dropdown menu (Compose's); on both, a selected choice cell is itself the menu, so its next tap chooses. macOS, which React Native gives no select, has a button that opens a menu of the options in the `Portal`. |
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
 | `CellLink` | A link in a cell (an email, a phone number, a web address, an attachment, a related row). The web keeps the browser's link, and a button for a related row. macOS clicks it the same way and has the system open it, since React Strict DOM's `<a>` doesn't follow its `href` on native. A touch screen shows the value as text, so a tap selects the cell and a second edits it (or opens a relation's picker), with a button beside it that opens the link. |
 | `inputAttributes` | The keyboard a field wants (`inputHints`). The web keeps the browser's input types (a date picker, a number field). React Native has neither, and React Strict DOM turns `type="number"` into a digits-only pad, so native passes the input mode alone, and sets the keyboard with a minus and a point for a signed number on the TextInput itself. |
@@ -167,7 +167,7 @@ cost.
 
 ### Overriding a control
 
-Where a fork is a control (`RowActions` so far), table-ui draws the
+Where a fork is a control (`RowActions` and `Select` so far), table-ui draws the
 platform's own by default, and a host app can pass its own instead:
 
 ```tsx
