@@ -8,6 +8,7 @@ import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { rowActions } from "@workspace.sh/table-ui/shared";
 import { App } from "../src/App.js";
 import { fixturesDir } from "../src/fixtures.js";
 
@@ -58,13 +59,17 @@ async function firstRowMenu(): Promise<string[]> {
 describe("the row menu on Linux", () => {
   it("a sheet offers rows inserted above and below", async () => {
     await open("budget", "sheet");
-    expect(await firstRowMenu()).toContain("Insert Row Above");
+    const menu = await firstRowMenu();
+    expect(menu).toContain("Insert Row Above");
+    // The same words as on the web, the Mac and phones: table-ui/shared's rowActions.
+    const shared = rowActions("any", { onOpenBody: () => {}, hasBody: false, onInsertRow: () => {}, onDeleteRow: () => {} }).map((a) => a.label);
+    expect(menu).toEqual(shared);
   });
 
   it("a table view that isn't a sheet doesn't", async () => {
     await open("ledger", "as-entered");
     const menu = await firstRowMenu();
-    expect(menu).toContain("Delete Row…");
+    expect(menu).toContain("Delete Row");
     expect(menu).not.toContain("Insert Row Above");
   });
 });
