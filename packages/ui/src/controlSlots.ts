@@ -4,7 +4,7 @@
 // Android, a pointer menu on the web and macOS), and an app passes its
 // own where it wants something else. Free of any renderer, as shared.ts.
 
-import type { ForwardRefExoticComponent, ReactElement, RefAttributes } from "react";
+import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
 
 /** Something that can be done to a row as a whole, from its row menu. */
 export interface RowAction {
@@ -116,6 +116,33 @@ export interface ToggleProps {
 export type ToggleSlot = (props: ToggleProps) => ReactElement;
 
 /**
+ * The Sheet slot: something edited apart from the view (a row's page),
+ * presented the platform's way. The web and macOS: a card over the page,
+ * with its buttons along the foot. iOS: the system's page sheet, Cancel
+ * leading and the confirming action trailing, swiped away when nothing
+ * is lost. Android: Material's full-screen dialog, close leading and the
+ * confirming action trailing.
+ */
+export interface SheetProps {
+  title: string;
+  /** Under the title: what's edited (the page's file). */
+  subtitle?: string;
+  /** Leaving without keeping: Close, or Discard when there are changes. */
+  cancel: { label: string; onPress: () => void };
+  /** Keeping: Save. Disabled when there's nothing to keep. */
+  confirm?: { label: string; onPress: () => void; disabled?: boolean };
+  /** A word on the state, where the platform shows one ("Unsaved changes"). */
+  status?: string;
+  /** Whether a swipe, a tap outside or Escape may close it: only when nothing is lost. */
+  dismissible: boolean;
+  /** Closed by a swipe, a tap outside or Escape. */
+  onDismiss: () => void;
+  children: ReactNode;
+}
+
+export type SheetSlot = (props: SheetProps) => ReactElement;
+
+/**
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
@@ -124,6 +151,7 @@ export interface PlatformControls {
   Select: SelectSlot;
   DateInput: DateInputSlot;
   Toggle: ToggleSlot;
+  Sheet: SheetSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
