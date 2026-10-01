@@ -40,7 +40,12 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
   // DragHandle has: RNGH sets collapsable on it, which RSD refuses.
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false}>
+      <View
+        collapsable={false}
+        // The same actions for VoiceOver and TalkBack, which don't touch and hold: the row's custom actions.
+        accessibilityActions={actions.map((action) => ({ name: action.id, label: action.label }))}
+        onAccessibilityAction={(e) => actions.find((action) => action.id === e.nativeEvent.actionName)?.onSelect()}
+      >
         {children}
         {at && (
           <Host style={{ position: "absolute", left: at.x, top: at.y, width: 1, height: 1 }}>
