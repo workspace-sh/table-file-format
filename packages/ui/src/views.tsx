@@ -183,15 +183,18 @@ const styles = css.create({
     flexDirection: "row",
     alignItems: "flex-start",
   },
-  // What the columns share when the frame scrolls: the page's width, less
-  // the "+" beside the header. Measured on a line with no height.
+  // What the columns share when the frame scrolls: the page's width.
+  // Measured on a line with no height.
   measureRow: {
     height: 0,
     overflow: "hidden",
   },
-  addFieldPlaceholder: {
-    width: 30,
-    flexShrink: 0,
+  /** "+ Field" under an edge-to-edge grid. */
+  addFieldBelow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 8,
   },
   /** Centres the "+" on the header row (33px). */
   addFieldSlot: {
@@ -2329,6 +2332,17 @@ export function TableView({
     onAddField?.(field);
     setAddedField(field.name);
   };
+  const addFieldButton = (compact: boolean) => (
+    <Hinted hint="Add a field">
+      <AddFieldButton
+        compact={compact}
+        existingNames={new Set(schema.fields.map((f) => f.name))}
+        fields={schema.fields}
+        grid={grid}
+        onAdd={addField}
+      />
+    </Hinted>
+  );
   useEffect(() => {
     if (!addedField) return;
     const el = headerButtonRefs.current[addedField];
@@ -2777,7 +2791,6 @@ export function TableView({
     {edgeToEdge && (
       <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
         <html.div {...measureProps} style={styles.tableGrow} />
-        {canAddField && <html.div style={styles.addFieldPlaceholder} />}
       </html.div>
     )}
     <EdgeToEdge on={edgeToEdge}>
@@ -2894,21 +2907,14 @@ export function TableView({
         </html.div>
       </html.div>
     </html.div>
-      {canAddField && (
-        <html.div style={styles.addFieldSlot}>
-          <Hinted hint="Add a field">
-            <AddFieldButton
-              compact
-              existingNames={new Set(schema.fields.map((f) => f.name))}
-              fields={schema.fields}
-              grid={grid}
-              onAdd={addField}
-            />
-          </Hinted>
-        </html.div>
+      {canAddField && !edgeToEdge && (
+        <html.div style={styles.addFieldSlot}>{addFieldButton(true)}</html.div>
       )}
     </html.div>
     </EdgeToEdge>
+    {/* Edge to edge, the grid keeps all the width and "+ Field" sits under
+        it, on the page's margin, rather than taking a strip beside it. */}
+    {canAddField && edgeToEdge && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
       {formulaCell && openFormulaField && (() => {
         const openRow = rows.find((r) => r.id === formulaCell.rowId);
         if (!openRow) return null;
