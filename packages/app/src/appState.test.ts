@@ -219,6 +219,18 @@ test("edits change the table on screen and mark its bundle to write", () => {
   assert.deepEqual(s.dirty, ["crm"]);
 });
 
+test("a page's save names its table, so one landing after a move edits that table", () => {
+  const s = run(
+    start(),
+    { type: "showTable", key: "crm/deals" },
+    { type: "showTable", key: "projects/projects" },
+    { type: "updateBody", rowId: "dl-2", content: "# Late", table: "crm/deals" },
+  );
+  assert.equal(s.tables["crm/deals"]!.bodies?.["dl-2"], "# Late");
+  assert.equal(s.tables["projects/projects"]!.bodies?.["dl-2"], undefined);
+  assert.deepEqual(s.dirty, ["crm"]);
+});
+
 test("an edit that changes nothing marks nothing", () => {
   const s = start();
   assert.equal(tableApp(s, { type: "moveField", name: "title", delta: -1 }), s);
