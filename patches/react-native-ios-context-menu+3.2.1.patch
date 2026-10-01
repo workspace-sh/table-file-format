@@ -1,0 +1,48 @@
+diff --git a/node_modules/react-native-ios-context-menu/ios/RNIContextMenuView/RNIContextMenuViewContent.swift b/node_modules/react-native-ios-context-menu/ios/RNIContextMenuView/RNIContextMenuViewContent.swift
+index c01e1ef..d721a75 100644
+--- a/node_modules/react-native-ios-context-menu/ios/RNIContextMenuView/RNIContextMenuViewContent.swift
++++ b/node_modules/react-native-ios-context-menu/ios/RNIContextMenuView/RNIContextMenuViewContent.swift
+@@ -205,19 +205,34 @@ public final class RNIContextMenuViewContent: UIView, RNIContentView {
+   var menuPreviewParameters: UIPreviewParameters {
+     let param = UIPreviewParameters();
+       
+-    // set preview bg color
+-    param.backgroundColor = self.previewConfig.backgroundColor;
++    // set preview bg color: a view with no fill of its own (a table row,
++    // the page showing through) lifts on the page's, light or dark.
++    param.backgroundColor = self.previewConfig.backgroundColor == .clear
++      ? .systemBackground
++      : self.previewConfig.backgroundColor;
++
++    // Only the part of the target on screen lifts: a view wider than its
++    // scroll view (a table row) would otherwise lift whole, shrunk to fit.
++    let target = self.menuPreviewTargetView;
++    var visible = target.bounds;
++    var ancestor = target.superview;
++    while let view = ancestor {
++      if view.clipsToBounds {
++        visible = visible.intersection(view.convert(view.bounds, to: target));
++      };
++      ancestor = view.superview;
++    };
++    if let window = target.window {
++      visible = visible.intersection(window.convert(window.bounds, to: target));
++    };
++    let isClipped = !visible.isNull && !visible.isEmpty && visible != target.bounds;
+ 
+     // set the preview border shape
+-    if let borderRadius = self.previewConfig.borderRadius {
++    if self.previewConfig.borderRadius != nil || isClipped {
+       let previewShape = UIBezierPath(
+-        // get width/height from custom preview view
+-        roundedRect: CGRect(
+-          origin: CGPoint(x: 0, y: 0),
+-          size  : self.frame.size
+-        ),
++        roundedRect: isClipped ? visible : target.bounds,
+         // set the preview corner radius
+-        cornerRadius: borderRadius
++        cornerRadius: self.previewConfig.borderRadius ?? 0
+       );
+       
+       // set preview border shape
