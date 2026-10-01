@@ -45,6 +45,8 @@ import {
   rowNumber,
   fieldHint,
   fieldHintText,
+  rowActions,
+  type RowAction,
   resizedColumnWidth,
   resizedRowHeight,
   useDirection,
@@ -115,15 +117,25 @@ function Cell({
 }
 
 /** The row menu's entries, by what the table was given to do. */
-function rowMenu(hasBody: boolean, canOpen: boolean, canInsert: boolean, canDelete: boolean): MenuItem[] {
-  return [
-    // A row without a page can have one started from here.
-    ...(canOpen ? [{ section: [{ label: hasBody ? "Open Page" : "Add Page", action: "row.open" }] }] : []),
-    ...(canInsert
-      ? [{ section: [{ label: "Insert Row Above", action: "row.above" }, { label: "Insert Row Below", action: "row.below" }] }]
-      : []),
-    ...(canDelete ? [{ section: [{ label: "Delete Row…", action: "row.delete" }] }] : []),
-  ];
+/** The row's own action for each of table-ui/shared's row actions. */
+const ROW_ACTION: Record<RowAction["id"], string> = {
+  "open-document": "row.open",
+  "add-document": "row.open",
+  "insert-above": "row.above",
+  "insert-below": "row.below",
+  delete: "row.delete",
+};
+
+/**
+ * The row menu: table-ui/shared's rowActions, with the same labels as
+ * on the web, the Mac and phones, in sections: the page, inserting,
+ * deleting.
+ */
+function rowMenu(actions: RowAction[]): MenuItem[] {
+  const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
+  return [section(["open-document", "add-document"]), section(["insert-above", "insert-below"]), section(["delete"])]
+    .filter((items) => items.length > 0)
+    .map((items) => ({ section: items }));
 }
 
 /**
@@ -183,7 +195,7 @@ function BodyRow({
           <GtkPopoverMenu
             flags={Gtk.PopoverMenuFlags.NESTED}
             hasArrow={false}
-            menuModel={<GMenu items={rowMenu(hasBody, !!onOpenBody, canInsert, !!onDeleteRow)} />}
+            menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onDeleteRow }))} />}
           />
         }
       />
