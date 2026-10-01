@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type TableSchema, type View } from "@workspace.sh/table-core";
 import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
@@ -139,6 +139,8 @@ export type AppAction =
   | { type: "updateField"; name: string; patch: Partial<Field> }
   | { type: "addField"; field: Field }
   | { type: "moveField"; name: string; delta: -1 | 1 }
+  // A field's settings, cancelled: the schema as they opened, version and all.
+  | { type: "restoreSchema"; schema: TableSchema }
   | { type: "addChoice"; name: string; value: string }
   | { type: "updateView"; patch: Partial<View> }
   | { type: "addView"; id: string }
@@ -372,6 +374,8 @@ function step(state: AppState, action: AppAction): AppState {
       return edit(state, (t) => withField(t, action.field, viewIdOf(state, state.active)));
     case "moveField":
       return edit(state, (t) => withFieldMoved(t, action.name, action.delta));
+    case "restoreSchema":
+      return edit(state, (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
     case "addChoice":
       return edit(state, (t) => withChoice(t, action.name, action.value));
     case "updateView": {
@@ -662,6 +666,7 @@ export type ViewCallbacks = Required<
     | "onUpdateField"
     | "onAddEnumValue"
     | "onMoveField"
+    | "onRestoreSchema"
     | "onAddField"
     | "onAddRow"
     | "onDeleteRow"
@@ -683,6 +688,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onMoveField: (name, delta) => dispatch({ type: "moveField", name, delta }),
+    onRestoreSchema: (schema) => dispatch({ type: "restoreSchema", schema }),
     onAddField: (field) => dispatch({ type: "addField", field }),
     onAddRow: () => {
       const id = newId();

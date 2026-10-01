@@ -457,6 +457,20 @@ test("Cancel on a new view's settings drops the view; Done keeps it", () => {
   assert.ok(kept.tables["projects/projects"]!.views.some((v) => v.id === "new-1"));
 });
 
+test("a field's settings cancelled put the schema back, version and all, so it isn't 'changed'", () => {
+  const before = start();
+  const schema = before.tables["projects/projects"]!.schema;
+  const changed = run(
+    before,
+    { type: "updateField", name: "status", patch: { deprecated: true } },
+    { type: "moveField", name: "status", delta: 1 },
+  );
+  assert.equal(derive(changed).summary.schemaChanged, true);
+  const restored = run(changed, { type: "restoreSchema", schema });
+  assert.equal(restored.tables["projects/projects"]!.schema, schema);
+  assert.equal(derive(restored).summary.schemaChanged, false);
+});
+
 test("Cancel on settings opened with nothing changed changes nothing", () => {
   const open = run(start(), { type: "settings", open: true });
   const cancelled = run(open, { type: "settings", open: false, revert: true });
