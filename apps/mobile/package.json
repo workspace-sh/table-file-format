@@ -11,6 +11,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@expo/ui": "~55.0.16",
     "@formatjs/intl-locale": "^5.3.12",
     "@formatjs/intl-pluralrules": "^6.3.15",
     "@formatjs/intl-relativetimeformat": "^12.3.15",
