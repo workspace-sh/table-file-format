@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { dateOfStored, storedOfDate } from "./dateEntry.ts";
+import { dateOfStored, localDate, storedOfDate } from "./dateEntry.ts";
 
 test("a date round-trips through the viewer's local midnight", () => {
   const d = dateOfStored("date", "2026-04-01")!;
@@ -34,4 +34,16 @@ test("empty or unreadable values start the picker from now", () => {
   assert.equal(dateOfStored("date", "1 April"), null);
   assert.equal(dateOfStored("time", "half nine"), null);
   assert.equal(dateOfStored("datetime", "soon"), null);
+});
+
+test("an early year stays itself: 0026 is not 1926", () => {
+  const d = dateOfStored("date", "0026-01-02")!;
+  assert.deepEqual([d.getFullYear(), d.getMonth(), d.getDate()], [26, 0, 2]);
+  assert.equal(storedOfDate("date", d), "0026-01-02");
+  assert.equal(storedOfDate("date", localDate(26, 0, 2)), "0026-01-02");
+  const t = dateOfStored("time", "09:30", localDate(26, 0, 2))!;
+  assert.equal(t.getFullYear(), 26);
+  const u = new Date(Date.UTC(2000, 0, 2));
+  u.setUTCFullYear(26);
+  assert.equal(storedOfDate("date", u, "utc"), "0026-01-02");
 });
