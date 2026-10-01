@@ -8,17 +8,21 @@
 // RowActions.ios.tsx and so on), so a view's rows don't remount when the
 // provider's value changes identity.
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
-import type { PlatformControls } from "./controlSlots";
+import { createContext, forwardRef, useContext, useMemo, type ReactNode } from "react";
+import type { PlatformControls, SelectHandle, SelectProps } from "./controlSlots";
 import { RowActions } from "./internal/RowActions";
+import { Select as PlatformSelect } from "./internal/Select";
 
-const defaults: PlatformControls = { RowActions };
+const defaults: PlatformControls = { RowActions, Select: PlatformSelect };
 
 const Context = createContext<PlatformControls>(defaults);
 
 export function PlatformControlsProvider({ value, children }: { value: Partial<PlatformControls>; children: ReactNode }) {
-  const { RowActions: rowActions } = value;
-  const merged = useMemo<PlatformControls>(() => ({ RowActions: rowActions ?? defaults.RowActions }), [rowActions]);
+  const { RowActions: rowActions, Select: select } = value;
+  const merged = useMemo<PlatformControls>(
+    () => ({ RowActions: rowActions ?? defaults.RowActions, Select: select ?? defaults.Select }),
+    [rowActions, select],
+  );
   return <Context.Provider value={merged}>{children}</Context.Provider>;
 }
 
@@ -26,3 +30,9 @@ export function PlatformControlsProvider({ value, children }: { value: Partial<P
 export function usePlatformControls(): PlatformControls {
   return useContext(Context);
 }
+
+/** The Select in use here (the host's, else the platform's), for the views to draw. */
+export const Select = forwardRef<SelectHandle, SelectProps>(function Select(props, ref) {
+  const { Select: Control } = usePlatformControls();
+  return <Control ref={ref} {...props} />;
+});

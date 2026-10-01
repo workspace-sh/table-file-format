@@ -7,37 +7,15 @@
  * `Portal`. The chosen option is ticked, a disabled one can't be
  * picked, and a click outside or Escape closes it.
  */
+import type { SelectHandle, SelectProps } from "../controlSlots";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { ComponentProps } from "react";
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { measureAnchor, type AnchorRect } from "./measureAnchor";
 import { Portal } from "./Portal";
 import { ITEM_HEIGHT, placeMenu } from "./selectMenu";
 
-export interface SelectOption {
-  value: string;
-  label: string;
-  disabled?: boolean;
-}
-
-export interface SelectProps {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  style?: ComponentProps<typeof html.select>["style"];
-  /** For assistive technology, when nothing beside it names it. */
-  label?: string;
-  /** Keys pressed while the select (or, on native, its menu) has focus. */
-  onKeyDown?: (e: { key: string; shiftKey?: boolean; preventDefault?: () => void }) => void;
-  /** Left without choosing: focus moved away, or the menu was dismissed. */
-  onBlur?: () => void;
-}
-
-/** What a ref to a Select can do on every platform: take focus (native opens its menu). */
-export interface SelectHandle {
-  focus: () => void;
-}
+export type { SelectHandle, SelectOption, SelectProps } from "../controlSlots";
 
 export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
   { value, options, onChange, style, onKeyDown, onBlur, label },

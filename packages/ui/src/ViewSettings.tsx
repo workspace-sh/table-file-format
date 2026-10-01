@@ -9,7 +9,7 @@ import { useState } from "react";
 import type React from "react";
 import { html, css } from "react-strict-dom";
 import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./internal/Select";
+import { Select } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
 import { enumOptions } from "@workspace.sh/table-core";
 
