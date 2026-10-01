@@ -85,6 +85,7 @@ import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
+import { HOVERS } from "./internal/hovers";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { Select, Toggle } from "./PlatformControls";
@@ -953,6 +954,8 @@ const styles = css.create({
   newRow: {
     display: "flex",
     height: 36,
+    // On the band, not the label: native drops a text span's inline padding.
+    paddingInline: 16,
     alignItems: "center",
     cursor: "pointer",
   },
@@ -960,7 +963,6 @@ const styles = css.create({
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#17171a" },
   },
   newRowLabel: {
-    paddingInline: 16,
     fontSize: 13,
     whiteSpace: "nowrap",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
@@ -982,9 +984,14 @@ const styles = css.create({
     letterSpacing: 0.5,
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
+  shown: {
+    opacity: 1,
+  },
   totalPlaceholder: {
     fontSize: 11,
-    opacity: { default: 0, ":hover": 1 },
+    // Shown on hover, or all along where nothing hovers (a touch screen):
+    // otherwise the footer is a blank strip there.
+    opacity: { default: 0, ":hover": 1, "@media (hover: none)": 1 },
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
   // A grouped table's band at the start of each group (fixed height, so
@@ -2524,7 +2531,7 @@ export function TableView({
             )}
           </>
         ) : onUpdateView ? (
-          <html.span style={styles.totalPlaceholder}>Calculate</html.span>
+          <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
         ) : null}
       </html.div>
     );
