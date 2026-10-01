@@ -1137,7 +1137,6 @@ So an author who needs two choices told apart at a glance should pick from diffe
 
 **Follow-ups, not in this change:** the `EnumColor` type in `@workspace.sh/table-core`, `PILL_PALETTE` in `@workspace.sh/table-ui`, and the web's StyleX literals; iOS maps names with a system equivalent to PlatformColor; Android takes Material You tones (#308).
 
-
 ## D44: `history.ndjson` is a table's append-only edit history, with whole values
 
 **Decided (1 Oct 2026, in the product review that made pages autosave: history comes from git or the app, and a plain `.table` carries its own). Open to revisit.**
