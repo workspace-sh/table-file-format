@@ -227,18 +227,24 @@ export function totalFor(rows: Row[], name: string, kind: ViewTotal): { value: u
 }
 
 /**
- * A choice's colours by the schema's symbolic name (SPEC "enum colours"),
+ * A choice's colours by the schema's symbolic name (SPEC "enum colours", DECISIONS D43),
  * light and dark: `bg` behind the label, `fg` for it. Unknown names and
  * no colour use `gray`. The web views restate these as literals, because
  * StyleX compiles only values written in its own file; change both.
  */
 export const PILL_PALETTE: Record<string, { light: { bg: string; fg: string }; dark: { bg: string; fg: string } }> = {
   gray: { light: { bg: "#e8e8ed", fg: "#3a3a3c" }, dark: { bg: "#2c2c31", fg: "#e5e5ea" } },
+  brown: { light: { bg: "#eee3d8", fg: "#7a4a21" }, dark: { bg: "#3b2a1d", fg: "#d9b08c" } },
   red: { light: { bg: "#fde2e1", fg: "#b42318" }, dark: { bg: "#4a1f1f", fg: "#ff8a80" } },
   orange: { light: { bg: "#fde8d4", fg: "#b54708" }, dark: { bg: "#4a2c14", fg: "#ffb86b" } },
-  yellow: { light: { bg: "#fdf3c4", fg: "#8a6d00" }, dark: { bg: "#433a10", fg: "#f5d565" } },
+  yellow: { light: { bg: "#fdf3c4", fg: "#7a5f00" }, dark: { bg: "#433a10", fg: "#f5d565" } },
+  lime: { light: { bg: "#eaf5cc", fg: "#4d6b00" }, dark: { bg: "#2b3a10", fg: "#c3e56a" } },
   green: { light: { bg: "#dcf5e3", fg: "#1f7a2c" }, dark: { bg: "#16341f", fg: "#7ee08a" } },
+  mint: { light: { bg: "#d8f5ea", fg: "#0b6b4d" }, dark: { bg: "#12362b", fg: "#7fe3c0" } },
+  teal: { light: { bg: "#d4f1f2", fg: "#0e6b73" }, dark: { bg: "#10353a", fg: "#76dde6" } },
+  cyan: { light: { bg: "#d6eefb", fg: "#075985" }, dark: { bg: "#0f3447", fg: "#7cd3f7" } },
   blue: { light: { bg: "#dde9fd", fg: "#1d4ed8" }, dark: { bg: "#15284a", fg: "#8ab4ff" } },
+  indigo: { light: { bg: "#e1e4fb", fg: "#4338ca" }, dark: { bg: "#1f2347", fg: "#a5adff" } },
   purple: { light: { bg: "#ece3fd", fg: "#6d28d9" }, dark: { bg: "#2d1f4a", fg: "#c4a8ff" } },
   pink: { light: { bg: "#fce1f0", fg: "#be185d" }, dark: { bg: "#4a1f36", fg: "#ff9ecb" } },
 };
