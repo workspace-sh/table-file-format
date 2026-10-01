@@ -133,7 +133,7 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are twenty-three
+Every fork lives in `packages/ui/src/internal/`, and there are twenty-four
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
 default that serves the rest, `useEscape` and `AttachmentImage` have
@@ -157,6 +157,7 @@ both, and `RowActions`, `Select`, `DateInput`, `Toggle` and `Sheet` have
 | `Toggle` | On or off. The web and macOS keep their checkbox. On a phone a setting is the system's switch (SwiftUI's Toggle on iOS, Material's Switch on Android), its text before it, and a table cell is a symbol a tap flips (iOS's check circle, Material's check box), since the HIG keeps switches to list rows. |
 | `Sheet` | Something edited apart from the view (a row's page). The web and macOS: a card over the page with its buttons along the foot. iOS: the system's page sheet (React Native's Modal, so nothing is hosted in SwiftUI), the leaving action leading and Save trailing, swiped away when nothing is lost and asking Discard Changes or Keep Editing when something would be. Android: Material's full-screen dialog. A view's settings (`size: "settings"`) are a form sheet on iOS that opens half way and grows, with a grabber and Done (react-native-screens' formSheet; React Native's Modal has no detents); elsewhere they stay a panel in the page. |
 | `DateInput` | A date, time, or date and time picked in a selected cell. iOS: the system's compact date picker (SwiftUI's), opening the calendar or time wheels. Android: Material's date and time dialogs (Compose's). The web and macOS type dates in the cell's editor (the web's own date input), so there it's unavailable. Typing on a selected cell still opens its text editor everywhere, so a typed or pasted date still parses. |
+| `systemColors` | The interface's colours. On iOS, each light/dark pair a view writes is swapped at load for the system colour that plays the same role (label, secondary label, separator, system background, system blue and red, link) through PlatformColor, so they follow dark mode and Increase Contrast. The web, macOS and Android keep the palette as written; choice pills are data colours and keep theirs. |
 | `inputAttributes` | The keyboard a field wants (`inputHints`). The web keeps the browser's input types (a date picker, a number field). React Native has neither, and React Strict DOM turns `type="number"` into a digits-only pad, so native passes the input mode alone, and sets the keyboard with a minus and a point for a signed number on the TextInput itself. |
 | `RowActions` | A row's actions (open its document, insert, delete). The web and macOS: right-click for a menu at the pointer. iOS: touch and hold for the system's context menu (UIKit's `UIContextMenuInteraction` on the row's own view, from react-native-ios-context-menu), lifting a card with the row's title; not @expo/ui's ContextMenu, which hosts the row inside SwiftUI, where hosted rows lost their text. Android: touch and hold for Material's dropdown menu (Compose's, from `@expo/ui`). |
 
