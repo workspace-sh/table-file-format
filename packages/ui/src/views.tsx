@@ -2738,7 +2738,7 @@ export function TableView({
                     </html.span>
                   </html.div>
                 )}
-                <RowActions actions={actionsFor(row.id)}>
+                <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
                   <html.div
                     style={[
                       styles.tableRow,
@@ -2789,7 +2789,7 @@ export function TableView({
                       )}
                     </html.div>
                   )}
-                  <RowActions actions={actionsFor(row.id)}>
+                  <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
                     <html.div
                       style={[
                         styles.tableRow,

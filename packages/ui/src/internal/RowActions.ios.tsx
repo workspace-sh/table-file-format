@@ -1,85 +1,77 @@
 /**
- * iOS default: touch and hold a row for its actions in the system's
- * confirmation dialog (SwiftUI's, from @expo/ui), which iOS 26 anchors
- * where the finger is, Delete in red. The hold is
- * react-native-gesture-handler's, so it's recognised over a cell that
- * takes taps, and a scroll that starts first wins.
+ * iOS default: touch and hold a row for the system's context menu,
+ * UIKit's UIContextMenuInteraction on the row's own React Native view
+ * (react-native-ios-context-menu): the row lifts with the system's
+ * haptic, and the menu opens with each action's SF Symbol, Delete in
+ * red. Nothing is hosted in SwiftUI (hosted rows lost their text, #292).
  *
- * Not a context menu around the row: that hosts the row inside SwiftUI
- * (RNHostView), and hosted rows lost their text (cells drawn blank or
- * half-clipped), so the row stays React Native and only the dialog is
- * SwiftUI.
+ * The lift is a card with the row's title, as Mail and Notes lift what's
+ * visible: the row itself runs wider than the screen, and lifted whole it
+ * would be shrunk to fit, off-screen columns and all.
  */
-import { useMemo, useRef, useState, type ComponentProps, type ReactElement } from "react";
-import { View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { ImpactFeedbackStyle, impactAsync } from "expo-haptics";
-import { Button, ConfirmationDialog, Host, Text } from "@expo/ui/swift-ui";
+import type { ComponentType, ReactElement, ReactNode } from "react";
+import { PlatformColor, Text, View } from "react-native";
+// react-native-ios-context-menu 3.2.1 is published without its built lib/,
+// types included: Metro runs its src/, and its props are typed here, for
+// this file only.
+// @ts-expect-error -- no type declarations in the published package
+import { ContextMenuView as UntypedContextMenuView } from "react-native-ios-context-menu";
 import type { RowActionsProps } from "../controlSlots";
 
-export function RowActions({ actions, children }: RowActionsProps): ReactElement {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
-  // The gesture stays the same object across renders (see DragHandle):
-  // it reads what to do through a ref.
-  const open = useRef(setAt);
-  const gesture = useMemo(
-    () =>
-      Gesture.LongPress()
-        .runOnJS(true)
-        .maxDistance(15)
-        .onStart((e) => {
-          // The hold is felt: the system's tap as it's recognised, as a context menu has.
-          void impactAsync(ImpactFeedbackStyle.Medium).catch(() => {});
-          open.current({ x: e.x, y: e.y });
-        }),
-    [],
-  );
+interface ContextMenuViewProps {
+  menuConfig: {
+    menuTitle: string;
+    menuItems: {
+      actionKey: string;
+      actionTitle: string;
+      menuAttributes?: "destructive"[];
+      icon?: { type: "IMAGE_SYSTEM"; imageValue: { systemName: string } };
+    }[];
+  };
+  previewConfig?: { previewType: "DEFAULT" | "CUSTOM"; previewSize?: "INHERIT" | "STRETCH" };
+  renderPreview?: () => ReactNode;
+  onPressMenuItem?: (e: { nativeEvent: { actionKey: string } }) => void;
+  children?: ReactNode;
+}
+
+const ContextMenuView = UntypedContextMenuView as ComponentType<ContextMenuViewProps>;
+
+export function RowActions({ actions, children, title }: RowActionsProps): ReactElement {
   if (actions.length === 0) return children;
-  const close = () => setAt(null);
-  // A plain View between the detector and the (React Strict DOM) row, as
-  // DragHandle has: RNGH sets collapsable on it, which RSD refuses.
+  const run = (id: string) => actions.find((action) => action.id === id)?.onSelect();
   return (
-    <GestureDetector gesture={gesture}>
+    <ContextMenuView
+      menuConfig={{
+        menuTitle: "",
+        menuItems: actions.map((action) => ({
+          actionKey: action.id,
+          actionTitle: action.label,
+          ...(action.destructive ? { menuAttributes: ["destructive" as const] } : {}),
+          ...(action.symbol?.sf ? { icon: { type: "IMAGE_SYSTEM" as const, imageValue: { systemName: action.symbol.sf } } } : {}),
+        })),
+      }}
+      {...(title
+        ? {
+            previewConfig: { previewType: "CUSTOM" as const, previewSize: "INHERIT" as const },
+            renderPreview: () => (
+              <View style={{ paddingHorizontal: 20, paddingVertical: 16, minWidth: 220, maxWidth: 340, backgroundColor: PlatformColor("systemBackground") }}>
+                <Text numberOfLines={3} style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("label") }}>
+                  {title}
+                </Text>
+              </View>
+            ),
+          }
+        : {})}
+      onPressMenuItem={({ nativeEvent }) => run(nativeEvent.actionKey)}
+    >
+      {/* The same actions for VoiceOver, which doesn't touch and hold: the row's custom actions. */}
       <View
-        collapsable={false}
-        // The same actions for VoiceOver and TalkBack, which don't touch and hold: the row's custom actions.
         accessibilityActions={actions.map((action) => ({ name: action.id, label: action.label }))}
-        onAccessibilityAction={(e) => actions.find((action) => action.id === e.nativeEvent.actionName)?.onSelect()}
+        onAccessibilityAction={(e) => run(e.nativeEvent.actionName)}
       >
         {children}
-        {at && (
-          <Host style={{ position: "absolute", left: at.x, top: at.y, width: 1, height: 1 }}>
-            <ConfirmationDialog
-              title="Row"
-              titleVisibility="hidden"
-              isPresented
-              onIsPresentedChange={(presented) => {
-                if (!presented) close();
-              }}
-            >
-              {/* Something for the dialog to be shown from: SwiftUI shows none from nothing. */}
-              <ConfirmationDialog.Trigger>
-                <Text> </Text>
-              </ConfirmationDialog.Trigger>
-              <ConfirmationDialog.Actions>
-                {actions.map((action) => (
-                  <Button
-                    key={action.id}
-                    label={action.label}
-                    systemImage={action.symbol?.sf as ComponentProps<typeof Button>["systemImage"]}
-                    role={action.destructive ? "destructive" : "default"}
-                    onPress={() => {
-                      close();
-                      action.onSelect();
-                    }}
-                  />
-                ))}
-              </ConfirmationDialog.Actions>
-            </ConfirmationDialog>
-          </Host>
-        )}
       </View>
-    </GestureDetector>
+    </ContextMenuView>
   );
 }
 

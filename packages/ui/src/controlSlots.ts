@@ -28,6 +28,8 @@ export interface RowAction {
 export interface RowActionsProps {
   actions: RowAction[];
   children: ReactElement;
+  /** The row's title as shown, for a menu that lifts the row as a preview (iOS's context menu). */
+  title?: string;
 }
 
 export interface SelectOption {
