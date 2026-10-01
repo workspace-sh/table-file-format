@@ -2412,6 +2412,7 @@ export function TableView({
     <Hinted hint="Add a field">
       <AddFieldButton
         compact={compact}
+        hug={!compact}
         existingNames={new Set(schema.fields.map((f) => f.name))}
         fields={schema.fields}
         grid={grid}

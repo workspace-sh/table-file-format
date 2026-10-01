@@ -864,6 +864,8 @@ interface AddFieldButtonProps {
   grid?: Grid;
   /** A small "+" at the end of the header row, not a labelled button. */
   compact?: boolean;
+  /** Labelled, as wide as its label: it sits where it is put, rather than centred in a column's width. */
+  hug?: boolean;
 }
 
 
@@ -874,7 +876,7 @@ function pairsOf<T>(items: T[]): T[][] {
   return pairs;
 }
 
-export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hug }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
@@ -947,7 +949,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact }: 
   const choices = addableChoices();
 
   return (
-    <html.div style={compact ? styles.addFieldCompactWrapper : styles.addFieldWrapper}>
+    <html.div style={compact || hug ? styles.addFieldCompactWrapper : styles.addFieldWrapper}>
       <html.button
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ref={(el: any) => {
