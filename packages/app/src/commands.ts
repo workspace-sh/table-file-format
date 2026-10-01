@@ -59,7 +59,7 @@ export function appCommands(state: AppCommandState): AppCommand[] {
       label: "Export .table.zip…",
       key: "e",
       shift: true,
-      hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, documents) that any .table reader opens.",
+      hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, pages) that any .table reader opens.",
     },
     { id: "copy-link", menu: "Edit", label: "Copy Link to View", key: "c", option: true },
     { id: "tables-mode", menu: "View", label: "Tables", key: "1", checked: !state.filesMode },

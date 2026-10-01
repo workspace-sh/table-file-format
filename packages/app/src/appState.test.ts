@@ -275,7 +275,7 @@ test("a page open closes when another table shows, even one with a row of the sa
 test("deleteRow asks first; cancel keeps the row, delete removes it and closes its page", () => {
   const asked = run(start(), { type: "openPage", rowId: "p10" }, { type: "deleteRow", rowId: "p10" });
   assert.equal(asked.asking?.kind, "confirm");
-  assert.match(asked.asking!.kind === "confirm" ? asked.asking.confirm.body : "", /document/);
+  assert.match(asked.asking!.kind === "confirm" ? asked.asking.confirm.body : "", /page/);
   assert.ok(rowIds(asked).includes("p10"), "nothing changes before the answer");
   const kept = run(asked, { type: "answer", response: "cancel" });
   assert.equal(kept.asking, null);
