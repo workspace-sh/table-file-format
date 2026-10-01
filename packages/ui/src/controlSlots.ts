@@ -133,7 +133,7 @@ export interface SheetProps {
   title: string;
   /** Under the title: what's edited (the page's file). */
   subtitle?: string;
-  /** Leaving without keeping: Close, or Discard when there are changes. Settings have none (they're kept as made). */
+  /** Leaving without keeping: Close, or Discard when there are changes. For settings, Cancel, which puts back what changed since they opened. */
   cancel?: { label: string; onPress: () => void };
   /** Keeping: Save. Disabled when there's nothing to keep. */
   confirm?: { label: string; onPress: () => void; disabled?: boolean };

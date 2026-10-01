@@ -7,15 +7,16 @@
  *
  * Settings (a view's) are a form sheet that opens half way and grows
  * (react-native-screens' formSheet, with detents and a grabber), as
- * Settings-style sheets do, with Done trailing: changes apply as they're
- * made. React Native's Modal has no detents.
+ * Settings-style sheets do: changes apply as they're made, Done trailing
+ * keeps them and Cancel leading puts them back. React Native's Modal has
+ * no detents.
  *
  * Either way what it holds is React Native, presented natively, not
  * hosted in SwiftUI.
  */
 import type { ReactElement, ReactNode } from "react";
 import { Alert, KeyboardAvoidingView, Modal, PlatformColor, Pressable, ScrollView, Text, View } from "react-native";
-import { ScreenStack, ScreenStackHeaderRightView, ScreenStackItem } from "react-native-screens";
+import { ScreenStack, ScreenStackHeaderLeftView, ScreenStackHeaderRightView, ScreenStackItem } from "react-native-screens";
 import type { SheetProps, SheetSlot } from "../controlSlots";
 
 function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "subtitle" | "cancel" | "confirm">) {
@@ -74,10 +75,11 @@ function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "s
   );
 }
 
-function SettingsSheet({ title, confirm, onDismiss, children }: SheetProps & { children: ReactNode }) {
+function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetProps & { children: ReactNode }) {
   // A stack of its own, out of the way, to present the form sheet from:
   // its root shows nothing, and the sheet is its second screen. The sheet's
-  // bar is the system's (UINavigationBar): its title, and Done trailing.
+  // bar is the system's (UINavigationBar): Cancel leading, its title, and
+  // Done trailing.
   return (
     <ScreenStack style={{ position: "absolute", width: 0, height: 0 }}>
       <ScreenStackItem screenId="sheet-root" headerConfig={{ hidden: true }}>
@@ -88,13 +90,22 @@ function SettingsSheet({ title, confirm, onDismiss, children }: SheetProps & { c
         headerConfig={{
           title,
           hidden: false,
-          children: confirm ? (
-            <ScreenStackHeaderRightView>
-              <Pressable accessibilityRole="button" hitSlop={10} onPress={confirm.onPress} disabled={confirm.disabled}>
-                <Text style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("systemBlue") }}>{confirm.label}</Text>
-              </Pressable>
-            </ScreenStackHeaderRightView>
-          ) : undefined,
+          children: [
+            cancel && (
+              <ScreenStackHeaderLeftView key="cancel">
+                <Pressable accessibilityRole="button" hitSlop={10} onPress={cancel.onPress}>
+                  <Text style={{ fontSize: 17, color: PlatformColor("systemBlue") }}>{cancel.label}</Text>
+                </Pressable>
+              </ScreenStackHeaderLeftView>
+            ),
+            confirm && (
+              <ScreenStackHeaderRightView key="confirm">
+                <Pressable accessibilityRole="button" hitSlop={10} onPress={confirm.onPress} disabled={confirm.disabled}>
+                  <Text style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("systemBlue") }}>{confirm.label}</Text>
+                </Pressable>
+              </ScreenStackHeaderRightView>
+            ),
+          ],
         }}
         stackPresentation="formSheet"
         sheetAllowedDetents={[0.5, 1]}

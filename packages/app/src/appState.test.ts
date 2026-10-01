@@ -395,6 +395,37 @@ test("arrange is this viewer's own; save for everyone writes it into the view, r
   assert.equal(tableApp(s, { type: "saveForEveryone" }), s, "nothing arranged, nothing saved");
 });
 
+test("Cancel puts back everything the view settings changed; Done keeps it", () => {
+  const before = start({ stored: { arrangements: { "projects/projects": { v1: { filter: [{ field: "status", operator: "eq", value: "active" }] } } } } });
+  const changed = run(
+    before,
+    { type: "settings", open: true },
+    { type: "updateView", patch: { name: "Renamed" } },
+    { type: "arrange", patch: { sort: [{ field: "title", direction: "asc" }] } },
+    { type: "saveForEveryone" },
+    { type: "arrange", patch: { group: { field: "status" } } },
+  );
+  assert.equal(changed.tables["projects/projects"]!.views[0]!.name, "Renamed");
+
+  const cancelled = run(changed, { type: "settings", open: false, revert: true });
+  assert.equal(cancelled.settingsOpen, false);
+  assert.deepEqual(cancelled.tables["projects/projects"]!.views, before.tables["projects/projects"]!.views);
+  assert.deepEqual(cancelled.arrangements, before.arrangements);
+  assert.equal(cancelled.settingsBefore, null);
+
+  const kept = run(changed, { type: "settings", open: false });
+  assert.equal(kept.tables["projects/projects"]!.views[0]!.name, "Renamed");
+  assert.deepEqual(kept.arrangements["projects/projects"]?.["v1"], { group: { field: "status" } });
+  assert.equal(kept.settingsBefore, null);
+});
+
+test("Cancel on settings opened with nothing changed changes nothing", () => {
+  const open = run(start(), { type: "settings", open: true });
+  const cancelled = run(open, { type: "settings", open: false, revert: true });
+  assert.equal(cancelled.tables, open.tables);
+  assert.deepEqual(cancelled.dirty, []);
+});
+
 test("display, the sidebar's side and collapse, and the Files side's folders and file", () => {
   let s = run(
     start(),
