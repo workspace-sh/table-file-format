@@ -94,6 +94,28 @@ export interface DateInputProps {
 export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
 
 /**
+ * The Toggle slot: on or off. A `setting` (a view's or a field's option,
+ * with its text beside it) is the platform's switch on a phone: SwiftUI's
+ * Toggle on iOS, Material's Switch on Android. A table `cell` is a
+ * symbol a tap flips: a filled check circle or an empty one on iOS,
+ * Material's check box on Android. The web and macOS draw a checkbox for
+ * both.
+ */
+export interface ToggleProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  role: "setting" | "cell";
+  /** What it's for, when no text beside it says so. */
+  label?: string;
+  /** Text beside it, which flips it too. */
+  children?: string;
+  /** The caller's style for the row holding it and its text (each renderer's own style type). */
+  style?: unknown;
+}
+
+export type ToggleSlot = (props: ToggleProps) => ReactElement;
+
+/**
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
@@ -101,6 +123,7 @@ export interface PlatformControls {
   RowActions: RowActionsSlot;
   Select: SelectSlot;
   DateInput: DateInputSlot;
+  Toggle: ToggleSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */

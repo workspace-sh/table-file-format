@@ -87,8 +87,7 @@ import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
-import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./PlatformControls";
+import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { afterEdit, cellPicks, gridKey } from "./gridNav";
 import { BottomSheet } from "./internal/BottomSheet";
@@ -1718,8 +1717,10 @@ function EditableCell({
   // Boolean: toggle on click, no draft state
   if (kind === "boolean") {
     return (
-      <Checkbox
+      <Toggle
+        role="cell"
         checked={value === true}
+        label={field?.title ?? field?.name}
         onChange={(checked) => {
           onSelect?.();
           onCommit(checked);

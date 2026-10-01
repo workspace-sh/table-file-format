@@ -9,24 +9,26 @@
 // provider's value changes identity.
 
 import { createContext, forwardRef, useContext, useMemo, type ReactNode } from "react";
-import type { PlatformControls, SelectHandle, SelectProps } from "./controlSlots";
+import type { PlatformControls, SelectHandle, SelectProps, ToggleProps } from "./controlSlots";
 import { RowActions } from "./internal/RowActions";
 import { Select as PlatformSelect } from "./internal/Select";
 import { DateInput } from "./internal/DateInput";
+import { Toggle as PlatformToggle } from "./internal/Toggle";
 
-const defaults: PlatformControls = { RowActions, Select: PlatformSelect, DateInput };
+const defaults: PlatformControls = { RowActions, Select: PlatformSelect, DateInput, Toggle: PlatformToggle };
 
 const Context = createContext<PlatformControls>(defaults);
 
 export function PlatformControlsProvider({ value, children }: { value: Partial<PlatformControls>; children: ReactNode }) {
-  const { RowActions: rowActions, Select: select, DateInput: dateInput } = value;
+  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle } = value;
   const merged = useMemo<PlatformControls>(
     () => ({
       RowActions: rowActions ?? defaults.RowActions,
       Select: select ?? defaults.Select,
       DateInput: dateInput ?? defaults.DateInput,
+      Toggle: toggle ?? defaults.Toggle,
     }),
-    [rowActions, select, dateInput],
+    [rowActions, select, dateInput, toggle],
   );
   return <Context.Provider value={merged}>{children}</Context.Provider>;
 }
@@ -41,3 +43,9 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(prop
   const { Select: Control } = usePlatformControls();
   return <Control ref={ref} {...props} />;
 });
+
+/** The Toggle in use here (the host's, else the platform's), for the views to draw. */
+export function Toggle(props: ToggleProps) {
+  const { Toggle: Control } = usePlatformControls();
+  return <Control {...props} />;
+}
