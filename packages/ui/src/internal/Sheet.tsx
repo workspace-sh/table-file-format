@@ -29,7 +29,7 @@ export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, o
               <html.span style={styles.title}>{title}</html.span>
               {subtitle !== undefined && <html.span style={styles.subtitle}>{subtitle}</html.span>}
             </html.div>
-            <html.button style={styles.closeButton} onClick={cancel.onPress}>
+            <html.button style={styles.closeButton} onClick={cancel?.onPress ?? onDismiss}>
               ✕
             </html.button>
           </html.div>
@@ -37,9 +37,11 @@ export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, o
           <html.div style={styles.footer}>
             <html.span style={styles.footerHint}>{status}</html.span>
             <html.div style={styles.buttonRow}>
-              <html.button style={styles.button} onClick={cancel.onPress}>
-                {cancel.label}
-              </html.button>
+              {cancel && (
+                <html.button style={styles.button} onClick={cancel.onPress}>
+                  {cancel.label}
+                </html.button>
+              )}
               {confirm && (
                 <html.button
                   disabled={confirm.disabled}

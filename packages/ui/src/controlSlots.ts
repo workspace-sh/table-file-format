@@ -124,11 +124,17 @@ export type ToggleSlot = (props: ToggleProps) => ReactElement;
  * confirming action trailing.
  */
 export interface SheetProps {
+  /**
+   * What it's for. A `page` (a row's page) is edited, so it takes the
+   * screen. `settings` (a view's settings) change as they're made, so a
+   * phone shows them in a sheet that opens part way and can grow.
+   */
+  size?: "page" | "settings";
   title: string;
   /** Under the title: what's edited (the page's file). */
   subtitle?: string;
-  /** Leaving without keeping: Close, or Discard when there are changes. */
-  cancel: { label: string; onPress: () => void };
+  /** Leaving without keeping: Close, or Discard when there are changes. Settings have none (they're kept as made). */
+  cancel?: { label: string; onPress: () => void };
   /** Keeping: Save. Disabled when there's nothing to keep. */
   confirm?: { label: string; onPress: () => void; disabled?: boolean };
   /** A word on the state, where the platform shows one ("Unsaved changes"). */
@@ -140,7 +146,12 @@ export interface SheetProps {
   children: ReactNode;
 }
 
-export type SheetSlot = (props: SheetProps) => ReactElement;
+/**
+ * A Sheet control; `presentsSettings` when it shows `settings` as a sheet
+ * of its own (a phone's). Where it doesn't (the web, macOS), a view's
+ * settings stay a panel in the page, so the caller draws its own.
+ */
+export type SheetSlot = ((props: SheetProps) => ReactElement) & { presentsSettings?: boolean };
 
 /**
  * Every control a host may replace. Each is optional: what's given is
