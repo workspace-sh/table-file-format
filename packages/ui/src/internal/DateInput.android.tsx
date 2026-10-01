@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Pressable } from "react-native";
 import { DatePickerDialog, Host, TimePickerDialog } from "@expo/ui/jetpack-compose";
 import type { DateInputProps, DateInputSlot } from "../controlSlots";
-import { dateOfStored, storedOfDate } from "../dateEntry";
+import { dateOfStored, localDate, storedOfDate } from "../dateEntry";
 
 function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps) {
   // Which dialog is open; a date and time keeps the day picked before its time.
@@ -54,7 +54,7 @@ function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps
                 if (kind === "time" || !day) store(t);
                 else {
                   // The day as picked (UTC midnight), at the time picked, in the viewer's time.
-                  store(new Date(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), t.getHours(), t.getMinutes()));
+                  store(localDate(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), t.getHours(), t.getMinutes()));
                 }
                 close();
               }}
