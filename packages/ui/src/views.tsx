@@ -1617,7 +1617,7 @@ function EditableCell({
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
   const hints = inputHints(field);
-  const { Select: SelectControl } = usePlatformControls();
+  const { Select: SelectControl, DateInput: DateInputControl } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
@@ -1837,15 +1837,35 @@ function EditableCell({
 
   // Text/number/integer: text input on click
   if (!editing) {
+    const shown = (
+      <CellValue
+        field={field}
+        value={value}
+        relatedTables={relatedTables}
+        onOpenRelation={onOpenRelation}
+        lines={lines}
+      />
+    );
+    // On a phone a selected date, time, or date and time is the system's
+    // picker: its next tap picks, and typing on it still edits the text.
+    const pickedKind = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime" ? hints.kind : null;
+    if (pickedKind && selected !== false && DateInputControl.available) {
+      return (
+        <DateInputControl
+          kind={pickedKind}
+          value={draftOf(value)}
+          onChange={(next) => {
+            commit(next);
+            onEditEnd?.("done");
+          }}
+          label={field?.title ?? field?.name}
+          trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+        />
+      );
+    }
     return (
       <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
-        <CellValue
-          field={field}
-          value={value}
-          relatedTables={relatedTables}
-          onOpenRelation={onOpenRelation}
-          lines={lines}
-        />
+        {shown}
       </html.div>
     );
   }

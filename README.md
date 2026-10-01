@@ -133,12 +133,12 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are twenty
+Every fork lives in `packages/ui/src/internal/`, and there are twenty-one
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
 default that serves the rest, `useEscape` and `AttachmentImage` have
-both, and `RowActions` and `Select` have `.ios.tsx` and `.android.tsx`
-beside their other forks:
+both, and `RowActions`, `Select` and `DateInput` have `.ios.tsx` and
+`.android.tsx` beside their other forks:
 
 | Fork | Why it forks |
 |---|---|
@@ -154,6 +154,7 @@ beside their other forks:
 | `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. iOS uses the system's menu (SwiftUI's Picker, from `@expo/ui`), and Android Material's dropdown menu (Compose's); on both, a selected choice cell is itself the menu, so its next tap chooses. macOS, which React Native gives no select, has a button that opens a menu of the options in the `Portal`. |
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
 | `CellLink` | A link in a cell (an email, a phone number, a web address, an attachment, a related row). The web keeps the browser's link, and a button for a related row. macOS clicks it the same way and has the system open it, since React Strict DOM's `<a>` doesn't follow its `href` on native. A touch screen shows the value as text, so a tap selects the cell and a second edits it (or opens a relation's picker), with a button beside it that opens the link. |
+| `DateInput` | A date, time, or date and time picked in a selected cell. iOS: the system's compact date picker (SwiftUI's), opening the calendar or time wheels. Android: Material's date and time dialogs (Compose's). The web and macOS type dates in the cell's editor (the web's own date input), so there it's unavailable. Typing on a selected cell still opens its text editor everywhere, so a typed or pasted date still parses. |
 | `inputAttributes` | The keyboard a field wants (`inputHints`). The web keeps the browser's input types (a date picker, a number field). React Native has neither, and React Strict DOM turns `type="number"` into a digits-only pad, so native passes the input mode alone, and sets the keyboard with a minus and a point for a signed number on the TextInput itself. |
 | `RowActions` | A row's actions (open its document, insert, delete). The web and macOS: right-click for a menu at the pointer. iOS: touch and hold for the system's confirmation dialog (SwiftUI's, from `@expo/ui`), which iOS 26 anchors at the finger; not a context menu, which would host the row inside SwiftUI, where hosted rows lost their text. Android: touch and hold for Material's dropdown menu (Compose's, from `@expo/ui`). |
 
@@ -167,7 +168,7 @@ cost.
 
 ### Overriding a control
 
-Where a fork is a control (`RowActions` and `Select` so far), table-ui draws the
+Where a fork is a control (`RowActions`, `Select` and `DateInput` so far), table-ui draws the
 platform's own by default, and a host app can pass its own instead:
 
 ```tsx
