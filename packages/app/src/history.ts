@@ -23,7 +23,7 @@ export const NO_HISTORY: History = { back: [], at: null, forward: [] };
 
 /**
  * The address of a view of the table under `key`; with `rowId`, of that
- * row's document open in it (what Copy Link gives, as the web's address
+ * row's page open in it (what Copy Link gives, as the web's address
  * does). History records views only, so it leaves the row out.
  */
 export function viewAddress(key: string, viewId: string, rowId?: string): string {

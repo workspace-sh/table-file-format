@@ -52,17 +52,17 @@ test("addresses resolve: spec form, demo key, and a relation's bare name within 
   assert.equal(at("nowhere.table"), null);
 });
 
-test("following an address: its table, its view, and the named row's document if it has one", () => {
+test("following an address: its table, its view, and the named row's page if it has one", () => {
   const withDoc = { ...tables, "crm/deals": { ...t("Deals"), rows: [{ id: "d1" }, { id: "d2" }], bodies: { d1: "# Notes" } } };
   assert.deepEqual(addressTarget("crm.table#table=deals&view=v&row=d1", withDoc, bundles, "notes"), { key: "crm/deals", viewId: "v", openBody: "d1" });
-  // A row without a document opens none, so one left open from elsewhere closes.
+  // A row without a page opens none, so one left open from elsewhere closes.
   assert.deepEqual(addressTarget("crm.table#table=deals&row=d2", withDoc, bundles, "notes"), { key: "crm/deals", openBody: null });
   assert.deepEqual(addressTarget({ tablePath: "deals" }, withDoc, bundles, "copy"), { key: "copy/deals", openBody: null });
   assert.equal(addressTarget("nowhere.table", withDoc, bundles, "crm"), null);
   assert.equal(addressTarget("", withDoc, bundles, "crm"), null);
 });
 
-test("applying a target: its table, its view over the others, its document, the view not a file", () => {
+test("applying a target: its table, its view over the others, its page, the view not a file", () => {
   const current = { viewIds: { "crm/deals": "all", "crm/companies": "all" } };
   const applied = applyTarget({ key: "crm/deals", viewId: "pipe", openBody: "d1" }, current);
   assert.deepEqual(applied, {

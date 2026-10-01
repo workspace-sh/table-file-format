@@ -76,7 +76,7 @@ export function keyForAddress(
   return tables[within] ? within : null;
 }
 
-/** Where an address leads: a held table, the view it names, and the row whose document opens. */
+/** Where an address leads: a held table, the view it names, and the row whose page opens. */
 export interface AddressTarget {
   key: string;
   viewId?: string;
@@ -86,8 +86,8 @@ export interface AddressTarget {
 /**
  * Where following an address leads (a relation's link, or the page's own
  * address): the table's key, the view it names if any, and the row whose
- * document opens: the named row's, when it has one, else none, so a
- * document left open from elsewhere closes. Null when the address doesn't
+ * page opens: the named row's, when it has one, else none, so a
+ * page left open from elsewhere closes. Null when the address doesn't
  * parse or its table isn't here.
  */
 export function addressTarget(
@@ -110,7 +110,7 @@ export interface AppliedTarget {
   activeKey: string;
   /** Each table's view, with the target's view for its table when it names one. */
   viewIds: Record<string, string>;
-  /** The row whose document opens, or null to close any open one. */
+  /** The row whose page opens, or null to close any open one. */
   openBody: string | null;
   /** The main pane shows the view, not a file. */
   mode: "tables";
