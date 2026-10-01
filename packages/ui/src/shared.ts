@@ -21,3 +21,4 @@ export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl 
 export { fieldHint, fieldHintText, type FieldHintFacts } from "./fieldHintFacts";
 export { afterEdit, cellPicks, clampPlace, gridKey, type EditEnd as GridEditEnd, type GridAction, type GridCell, type GridKey, type GridPlace } from "./gridNav";
 export { inputHints, inputModeOf, type InputHintKind, type InputHints } from "./inputHints";
+export { rowActions, type PlatformControls, type RowAction, type RowActionsProps, type RowActionsSlot } from "./controlSlots";
