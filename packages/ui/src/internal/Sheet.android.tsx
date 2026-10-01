@@ -24,13 +24,13 @@ export function Sheet({ title, subtitle, cancel, confirm, dismissible, onDismiss
         else
           Alert.alert("Discard changes?", undefined, [
             { text: "Keep editing", style: "cancel" },
-            { text: "Discard", style: "destructive", onPress: cancel.onPress },
+            { text: "Discard", style: "destructive", onPress: cancel?.onPress ?? onDismiss },
           ]);
       }}
     >
       <View style={{ flex: 1, backgroundColor: surface }}>
         <View style={{ flexDirection: "row", alignItems: "center", height: 64, paddingHorizontal: 4, gap: 4 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel={cancel.label} onPress={cancel.onPress} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={cancel?.label ?? "Close"} onPress={cancel?.onPress ?? onDismiss} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}>
             <SymbolView name={{ ios: "xmark", android: "close" }} size={24} tintColor={onSurface} />
           </Pressable>
           <View style={{ flex: 1 }}>

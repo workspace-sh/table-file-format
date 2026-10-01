@@ -8,7 +8,7 @@
 import { useState } from "react";
 import type React from "react";
 import { html, css } from "react-strict-dom";
-import { Select, Toggle } from "./PlatformControls";
+import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -47,6 +47,7 @@ export function ViewSettings({
   onSaveForEveryone,
   onReset,
 }: ViewSettingsProps) {
+  const { Sheet: SheetControl } = usePlatformControls();
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
   const live = choices.live;
@@ -62,14 +63,8 @@ export function ViewSettings({
   const dateFields = choices.date;
   const boardFields = choices.board;
 
-  return (
-    <html.div style={styles.panel} role="dialog" aria-label="View settings">
-      <html.div style={styles.row}>
-        <html.span style={styles.heading}>View settings</html.span>
-        <html.button style={styles.close} onClick={onClose} aria-label="Close view settings">
-          ×
-        </html.button>
-      </html.div>
+  const body = (
+    <>
 
       <html.div style={styles.fields}>
         <FieldRow label="Name">
@@ -218,6 +213,27 @@ export function ViewSettings({
           Delete this view
         </html.button>
       )}
+    </>
+  );
+
+  // On a phone, the platform's settings sheet, with Done; elsewhere a panel
+  // in the page, with its own heading and close button.
+  if (SheetControl.presentsSettings) {
+    return (
+      <SheetControl size="settings" title="View settings" confirm={{ label: "Done", onPress: onClose }} dismissible onDismiss={onClose}>
+        <html.div style={styles.sheetBody}>{body}</html.div>
+      </SheetControl>
+    );
+  }
+  return (
+    <html.div style={styles.panel} role="dialog" aria-label="View settings">
+      <html.div style={styles.row}>
+        <html.span style={styles.heading}>View settings</html.span>
+        <html.button style={styles.close} onClick={onClose} aria-label="Close view settings">
+          ×
+        </html.button>
+      </html.div>
+      {body}
     </html.div>
   );
 }
@@ -342,6 +358,8 @@ const styles = css.create({
     maxWidth: 720,
   },
   row: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  // In a phone's sheet: the panel's spacing without its frame.
+  sheetBody: { display: "flex", flexDirection: "column", gap: 8 },
   fields: { display: "flex", flexDirection: "column", gap: 8 },
   field: { display: "flex", flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   heading: { flex: 1, fontSize: 14, fontWeight: "600" },
