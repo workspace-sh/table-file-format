@@ -7,6 +7,7 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { AndroidHaptics, performAndroidHapticsAsync } from "expo-haptics";
 import { Box, DropdownMenu, DropdownMenuItem, Host, Text } from "@expo/ui/jetpack-compose";
 import type { RowActionsProps } from "../controlSlots";
 
@@ -23,7 +24,11 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
       Gesture.LongPress()
         .runOnJS(true)
         .maxDistance(15)
-        .onStart((e) => open.current({ x: e.x, y: e.y })),
+        .onStart((e) => {
+          // The hold is felt: the system's long-press feedback as it's recognised.
+          void performAndroidHapticsAsync(AndroidHaptics.Long_Press).catch(() => {});
+          open.current({ x: e.x, y: e.y });
+        }),
     [],
   );
   if (actions.length === 0) return children;
