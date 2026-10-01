@@ -17,12 +17,13 @@ import {
   GtkLabel,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { type GridEditEnd, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
+import { inputHintsOf, inputPurposeOf } from "./inputPurpose.js";
 
 export interface EditableCellProps {
   field: Field | undefined;
@@ -240,6 +241,9 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
         // and a row box hands spare room out by natural width.
         widthChars={1}
         maxWidthChars={1}
+        // What the column takes, for an on-screen keyboard (table-ui/shared's inputHints).
+        inputPurpose={inputPurposeOf(inputHints(field))}
+        inputHints={inputHintsOf(inputHints(field))}
         text={draft}
         xalign={xalign}
         cssClasses={problem ? ["error"] : []}
