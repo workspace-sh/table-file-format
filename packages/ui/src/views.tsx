@@ -927,14 +927,6 @@ const styles = css.create({
     borderRadius: 999,
     fontSize: 11,
     fontWeight: "500",
-    backgroundColor: {
-      default: "#e8e8ed",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
   },
 
   // The totals footer.
@@ -1477,7 +1469,8 @@ function linkLabel(href: string, text: string): string {
 
 /** A choice as the schema describes it: its label, in its colour. */
 function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
-  const color = pill.color && pill.color in PILL_COLORS ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : null;
+  // No colour, or a name this reader doesn't know, is gray (SPEC section 4).
+  const color = pill.color && Object.hasOwn(PILL_COLORS, pill.color) ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : styles.pillGray;
   return <html.span style={[styles.pill, color, atStart && styles.pillAtStart]}>{pill.label}</html.span>;
 }
 
