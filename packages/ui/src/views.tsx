@@ -99,6 +99,7 @@ import {
   weekdayNamesShort,
 } from "./internal/calendarLocale";
 import { rowNumber } from "./sheets";
+import { CellLink } from "./internal/CellLink";
 import { inputHints } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 
@@ -1425,16 +1426,12 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
     case "attachment":
       return <AttachmentValue fileName={shown.fileName} />;
     case "link":
+      // A link the pointer clicks; on a touch screen, text with a button
+      // that opens it, so a tap on the cell still selects it (CellLink).
       return (
-        <html.a
-          href={shown.href}
-          target={shown.external ? "_blank" : undefined}
-          rel="noopener noreferrer"
-          onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
-          style={[styles.link, clamp]}
-        >
+        <CellLink href={shown.href} external={shown.external} label={linkLabel(shown.href, shown.text)} style={[styles.link, clamp]}>
           {shown.text}
-        </html.a>
+        </CellLink>
       );
     case "text": {
       // An empty list is its dash, clamped like any text.
@@ -1458,6 +1455,13 @@ const PILL_COLORS = {
   pink: styles.pillPink,
 } as const;
 
+/** What opening a link does, for assistive technology: "Email a@b.c", "Call +44…", "Open example.com". */
+function linkLabel(href: string, text: string): string {
+  if (href.startsWith("mailto:")) return `Email ${text}`;
+  if (href.startsWith("tel:")) return `Call ${text}`;
+  return `Open ${text}`;
+}
+
 /** A choice as the schema describes it: its label, in its colour. */
 function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
   const color = pill.color && pill.color in PILL_COLORS ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : null;
@@ -1475,9 +1479,9 @@ function AttachmentValue({ fileName }: { fileName: string }) {
   return (
     <html.span style={styles.attachment}>
       {isImageFile(fileName) ? <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} /> : null}
-      <html.a href={url} target="_blank" rel="noopener noreferrer" style={styles.link}>
+      <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
         {fileName}
-      </html.a>
+      </CellLink>
     </html.span>
   );
 }
