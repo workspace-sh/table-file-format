@@ -13,12 +13,22 @@ It targets **iOS 26 and later** (deployment target 26.0) and Android, in
 development builds only (never Expo Go). It shows how a host frames the
 views the platform's way; table-ui itself owns no navigation:
 - **Navigation:** expo-router's native stack (`app/`). The table screen
-  (`app/index.tsx`) has its view's name as the large title, the views in
-  a menu (top right), the tables list button (top left), and a bottom
-  toolbar with View settings, search and a ⋯ menu (New Table, New .table
-  File, Open .table.zip, Export .table.zip). On iOS 26+ the bars, buttons
-  and search are Liquid Glass, from the system. The tables list
-  (`app/tables.tsx`) is a native form sheet with detents.
+  (`app/index.tsx`) has its view's name as the title, and the same
+  actions on both platforms: the tables list, the views menu, View
+  settings, search and a ⋯ menu (New Table, New .table File, Open
+  .table.zip, Export .table.zip).
+  - **iOS:** a large title, the tables button (top left), the views menu
+    (top right), and a bottom toolbar with View settings, search and ⋯.
+    On iOS 26+ the bars, buttons and search are Liquid Glass, from the
+    system.
+  - **Android:** Material's top app bar (`AndroidHeader.android.tsx`):
+    the tables list as the navigation icon, and the views menu, View
+    settings and ⋯ as Compose icon buttons and dropdown menus from
+    @expo/ui, beside the stack's search. expo-router's toolbars are iOS
+    only. The icons are
+    Material Symbols as vector drawables (`assets/symbols/`).
+  - The tables list (`app/tables.tsx`) is a native form sheet with
+    detents.
 - **Storage:** edits and the viewer's settings are kept on the phone in
   AsyncStorage (`store.ts`), under the keys the web uses in localStorage.
 - **Questions:** native alerts. On iOS a name (new table, new `.table`
