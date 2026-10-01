@@ -99,6 +99,8 @@ import {
   weekdayNamesShort,
 } from "./internal/calendarLocale";
 import { rowNumber } from "./sheets";
+import { inputHints } from "./inputHints";
+import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -1614,10 +1616,12 @@ function EditableCell({
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
+  const hints = inputHints(field);
 
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
+      applyKeyboard(el, hints);
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
         focusInput(el);
         const end = el.value.length;
@@ -1838,7 +1842,9 @@ function EditableCell({
         dir="auto"
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={inputRef as any}
-      type={inputType}
+      // The keyboard the field wants: a number pad, an @ for an email, no
+      // capitals or corrections in a code (inputHints).
+      {...inputAttributes(hints, inputType)}
       value={draft}
       onChange={(e: { target: { value: string } }) => {
         setDraft(e.target.value);
