@@ -13,6 +13,7 @@
 import { useMemo, useRef, useState, type ComponentProps, type ReactElement } from "react";
 import { View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { ImpactFeedbackStyle, impactAsync } from "expo-haptics";
 import { Button, ConfirmationDialog, Host, Text } from "@expo/ui/swift-ui";
 import type { RowActionsProps } from "../controlSlots";
 
@@ -26,7 +27,11 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
       Gesture.LongPress()
         .runOnJS(true)
         .maxDistance(15)
-        .onStart((e) => open.current({ x: e.x, y: e.y })),
+        .onStart((e) => {
+          // The hold is felt: the system's tap as it's recognised, as a context menu has.
+          void impactAsync(ImpactFeedbackStyle.Medium).catch(() => {});
+          open.current({ x: e.x, y: e.y });
+        }),
     [],
   );
   if (actions.length === 0) return children;

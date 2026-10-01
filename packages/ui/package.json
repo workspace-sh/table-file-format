@@ -29,6 +29,7 @@
   },
   "peerDependencies": {
     "@expo/ui": ">=55.0.0",
+    "expo-haptics": ">=55.0.0",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0",
     "react-native": ">=0.81.0",
@@ -55,6 +56,10 @@
     },
     "react-native-svg": {
       "optional": true
+    },
+    "expo-haptics": {
+      "optional": true,
+      "comment": "iOS and Android only: the feel of a touch and hold (RowActions.ios.tsx, RowActions.android.tsx). Web and macOS never load it."
     }
   },
   "devDependencies": {
