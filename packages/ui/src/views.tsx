@@ -102,6 +102,8 @@ import { rowNumber } from "./sheets";
 import { CellLink } from "./internal/CellLink";
 import { inputHints } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
+import { usePlatformControls } from "./PlatformControls";
+import { rowActions } from "./controlSlots";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -1251,7 +1253,7 @@ const styles = css.create({
   noBottomBorder: {
     borderBottomWidth: 0,
   },
-  // Right-click menu on a row: what can be done to the row as a whole.
+  // The totals footer's menu (the row menu is RowActions').
   rowMenuBackdrop: {
     position: "fixed",
     top: 0,
@@ -1288,9 +1290,6 @@ const styles = css.create({
       ":hover": { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#2a2a2e" },
     },
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
-  },
-  rowMenuDanger: {
-    color: { default: "#c00", "@media (prefers-color-scheme: dark)": "#ff6b6b" },
   },
 
   // "doc" badge for rows with a markdown body — clickable variant overrides
@@ -2166,11 +2165,12 @@ export function TableView({
   // column, and where to anchor the panel. While it's open, the column is
   // tinted and the cells it read in that row are outlined.
   const [formulaCell, setFormulaCell] = useState<{ rowId: string; name: string; rect: AnchorRect } | null>(null);
-  // Right-click on a row: its actions, where the pointer is. Deleting lives
-  // here rather than as a control in every row, where it would be clutter
-  // and easy to hit.
-  const [rowMenu, setRowMenu] = useState<{ rowId: string; x: number; y: number } | null>(null);
-  const canOpenRowMenu = !!onDeleteRow || !!onOpenBody;
+  // A row's actions (open its document, insert, delete), offered the
+  // platform's way: right-click on the web and macOS, touch and hold on a
+  // phone. A host can replace the control (PlatformControlsProvider).
+  const { RowActions } = usePlatformControls();
+  const actionsFor = (rowId: string) =>
+    rowActions(rowId, { onOpenBody, hasBody: bodies?.[rowId] !== undefined, onInsertRow, onDeleteRow });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   // The row just added from "+ New row": its first cell opens for typing
@@ -2200,20 +2200,6 @@ export function TableView({
   // No totals chosen: the footer is only a place to choose one, so it
   // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
   const quietTotals = Object.keys(totals).length === 0;
-  const openRowMenu = (rowId: string) => (e: { preventDefault: () => void; clientX: number; clientY: number }) => {
-    if (!canOpenRowMenu) return;
-    e.preventDefault();
-    setRowMenu({ rowId, x: e.clientX, y: e.clientY });
-  };
-  useEffect(() => {
-    // React Native has a `window` (its global), but no addEventListener.
-    if (!rowMenu || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRowMenu(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [rowMenu]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cellRefs = useRef<Record<string, any>>({});
   const openFormulaField = formulaCell ? fieldMap.get(formulaCell.name) : undefined;
@@ -2664,7 +2650,7 @@ export function TableView({
         <Hinted
           hint={
             "Add a row and start typing in it. A view's filter may hide it until it's filled in." +
-            (onDeleteRow ? "\nRight-click a row to delete it." : "")
+            (onDeleteRow && RowActions.gesture ? `\n${RowActions.gesture} to delete it.` : "")
           }
         >
           <html.span style={styles.newRowLabel}>+ New row</html.span>
@@ -2709,19 +2695,20 @@ export function TableView({
                     </html.span>
                   </html.div>
                 )}
-                <html.div
-                  onContextMenu={openRowMenu(row.id)}
-                  style={[
-                    styles.tableRow,
-                    styles.rowHeight(rowHeight),
-                    styles.positioned,
-                    i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
-                  ]}
-                >
-                  {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                  {renderBodyCell(row, primaryName, 0, 1)}
-                  {rowResizer}
-                </html.div>
+                <RowActions actions={actionsFor(row.id)}>
+                  <html.div
+                    style={[
+                      styles.tableRow,
+                      styles.rowHeight(rowHeight),
+                      styles.positioned,
+                      i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                    ]}
+                  >
+                    {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                    {renderBodyCell(row, primaryName, 0, 1)}
+                    {rowResizer}
+                  </html.div>
+                </RowActions>
               </Fragment>
             ))}
             {addRow && newRowBand(true)}
@@ -2759,22 +2746,23 @@ export function TableView({
                       )}
                     </html.div>
                   )}
-                  <html.div
-                    onContextMenu={openRowMenu(row.id)}
-                    style={[
-                      styles.tableRow,
-                      styles.rowHeight(rowHeight),
-                      styles.positioned,
-                      i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
-                    ]}
-                  >
-                    {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                    {restNames.map((name, idx) =>
-                      renderBodyCell(row, name, idx, restNames.length),
-                    )}
-                    {/* Without a frozen pane, this pane carries the row handle. */}
-                    {!primaryName && rowResizer}
-                  </html.div>
+                  <RowActions actions={actionsFor(row.id)}>
+                    <html.div
+                      style={[
+                        styles.tableRow,
+                        styles.rowHeight(rowHeight),
+                        styles.positioned,
+                        i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                      ]}
+                    >
+                      {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                      {restNames.map((name, idx) =>
+                        renderBodyCell(row, name, idx, restNames.length),
+                      )}
+                      {/* Without a frozen pane, this pane carries the row handle. */}
+                      {!primaryName && rowResizer}
+                    </html.div>
+                  </RowActions>
                 </Fragment>
               ))}
               {addRow && newRowBand(!primaryName)}
@@ -2877,63 +2865,6 @@ export function TableView({
           </Portal>
         );
       })()}
-      {rowMenu && (
-        <Portal>
-          <html.div style={styles.rowMenuBackdrop} onClick={() => setRowMenu(null)} onContextMenu={(e: { preventDefault: () => void }) => { e.preventDefault(); setRowMenu(null); }} />
-          <html.div
-            role="menu"
-            style={[
-              styles.rowMenu,
-              styles.rowMenuAt(
-                !hasWindowSize() ? rowMenu.y : Math.min(rowMenu.y, window.innerHeight - 180),
-                !hasWindowSize() ? rowMenu.x : Math.min(rowMenu.x, window.innerWidth - 190),
-              ),
-            ]}
-          >
-            {onOpenBody && bodies?.[rowMenu.rowId] !== undefined && (
-              <html.button
-                role="menuitem"
-                style={styles.rowMenuItem}
-                onClick={() => {
-                  const id = rowMenu.rowId;
-                  setRowMenu(null);
-                  onOpenBody(id);
-                }}
-              >
-                Open document
-              </html.button>
-            )}
-            {onInsertRow &&
-              (["above", "below"] as const).map((where) => (
-                <html.button
-                  key={where}
-                  role="menuitem"
-                  style={styles.rowMenuItem}
-                  onClick={() => {
-                    const id = rowMenu.rowId;
-                    setRowMenu(null);
-                    onInsertRow(id, where);
-                  }}
-                >
-                  {where === "above" ? "Insert row above" : "Insert row below"}
-                </html.button>
-              ))}
-            {onDeleteRow && (
-              <html.button
-                role="menuitem"
-                style={[styles.rowMenuItem, styles.rowMenuDanger]}
-                onClick={() => {
-                  const id = rowMenu.rowId;
-                  setRowMenu(null);
-                  onDeleteRow(id);
-                }}
-              >
-                Delete row
-              </html.button>
-            )}
-          </html.div>
-        </Portal>
-      )}
     </>
   );
 }

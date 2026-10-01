@@ -133,11 +133,12 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are nineteen
+Every fork lives in `packages/ui/src/internal/`, and there are twenty
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
-default that serves the rest, and `useEscape` and `AttachmentImage` have
-both:
+default that serves the rest, `useEscape` and `AttachmentImage` have
+both, and `RowActions` has `.ios.tsx` and `.android.tsx` beside a
+default for the web and macOS:
 
 | Fork | Why it forks |
 |---|---|
@@ -154,6 +155,7 @@ both:
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
 | `CellLink` | A link in a cell (an email, a phone number, a web address, an attachment, a related row). The web keeps the browser's link, and a button for a related row. macOS clicks it the same way and has the system open it, since React Strict DOM's `<a>` doesn't follow its `href` on native. A touch screen shows the value as text, so a tap selects the cell and a second edits it (or opens a relation's picker), with a button beside it that opens the link. |
 | `inputAttributes` | The keyboard a field wants (`inputHints`). The web keeps the browser's input types (a date picker, a number field). React Native has neither, and React Strict DOM turns `type="number"` into a digits-only pad, so native passes the input mode alone, and sets the keyboard with a minus and a point for a signed number on the TextInput itself. |
+| `RowActions` | A row's actions (open its document, insert, delete). The web and macOS: right-click for a menu at the pointer. iOS: touch and hold for the system's context menu (SwiftUI's, from `@expo/ui`). Android: touch and hold for Material's dropdown menu (Compose's, from `@expo/ui`). |
 
 The pattern is worth stating plainly: the forks are **scrolling,
 dragging, measuring, overlays and the two form controls React Native
@@ -162,6 +164,37 @@ abstraction unifies, because they are where platforms genuinely differ.
 Feature code does not fork. If a new fork appears outside
 `internal/`, that is a signal worth examining rather than a routine
 cost.
+
+### Overriding a control
+
+Where a fork is a control (`RowActions` so far), table-ui draws the
+platform's own by default, and a host app can pass its own instead:
+
+```tsx
+import { PlatformControlsProvider } from "@workspace.sh/table-ui";
+import type { RowActionsProps } from "@workspace.sh/table-ui/shared";
+
+function MyRowMenu({ actions, children }: RowActionsProps) {
+  // `children` is the row; `actions` are what can be done to it, each
+  // with a label, an SF Symbol and Material Symbol name, `destructive`
+  // for delete, and `onSelect`.
+  return <MyMenu items={actions}>{children}</MyMenu>;
+}
+
+<PlatformControlsProvider value={{ RowActions: MyRowMenu }}>
+  <TableView … />
+</PlatformControlsProvider>
+```
+
+The value is partial: what's given replaces the default, and every
+other control stays the platform's. The slots' props are types in
+`@workspace.sh/table-ui/shared` (`controlSlots.ts`), free of any
+renderer, so another view library (table-gtk) offers the same actions
+in its own controls. A component's static `gesture` ("Right-click a
+row", "Touch and hold a row") words the views' hints.
+
+`@expo/ui` is an optional peer dependency: only the iOS and Android
+defaults load it, and they need a development build (not Expo Go).
 
 ## Running
 
