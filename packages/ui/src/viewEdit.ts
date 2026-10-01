@@ -187,6 +187,12 @@ export interface ViewSettingsProps {
   /** Absent when this is the table's only view: a table always has one. */
   onDelete?: () => void;
   onClose: () => void;
+  /**
+   * Closing by Cancel, where the platform offers it (a phone's settings
+   * sheet): puts back everything changed since the settings opened. Done
+   * (`onClose`) keeps it. Absent: no Cancel.
+   */
+  onCancel?: () => void;
   /** Filters, sorts and grouping, as this reader's own. Absent: they change the view for everyone. */
   onArrange?: (patch: Partial<View>) => void;
   /** This reader's filters, sorts or grouping differ from the view as saved. */

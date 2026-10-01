@@ -69,6 +69,15 @@ export interface Telling {
   body?: string;
 }
 
+/** What the view settings can change, as it was when they opened. */
+export interface SettingsBefore {
+  key: string;
+  viewId: string;
+  views: View[];
+  /** This viewer's own arrangements of the table's views. */
+  arrangements: Arrangements[string] | undefined;
+}
+
 export interface AppState {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -92,6 +101,8 @@ export interface AppState {
   display: DisplaySettings;
   search: string;
   settingsOpen: boolean;
+  /** The view settings' table as they opened, for Cancel to put back. */
+  settingsBefore: SettingsBefore | null;
   asking: Asking | null;
   telling: Telling | null;
   /** Bundles edited since they were last written. */
@@ -113,7 +124,10 @@ export type AppAction =
   | { type: "forward" }
   | { type: "openPage"; rowId: string | null }
   | { type: "search"; text: string }
-  | { type: "settings"; open: boolean }
+  // `revert`: closing by Cancel, which puts back everything the settings
+  // changed since they opened (the views, saved for everyone or not, and
+  // this viewer's own arrangements).
+  | { type: "settings"; open: boolean; revert?: boolean }
   // Edits to the view on screen: ViewProps' callbacks, one to one
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
   | { type: "addRow"; id: string }
@@ -184,6 +198,7 @@ export function initialAppState(input: AppStart): AppState {
     display: input.stored?.display ?? {},
     search: "",
     settingsOpen: false,
+    settingsBefore: null,
     asking: null,
     telling: null,
     dirty: [],
@@ -231,6 +246,13 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   const left = leaving(prev.active, fromView, next.active, toView);
   if (left.clearSearch && next.search !== "") next = { ...next, search: "" };
   if (left.closeSettings && next.settingsOpen && action.type !== "addView") next = { ...next, settingsOpen: false };
+  if (next.settingsOpen && !prev.settingsOpen) {
+    const key = next.active;
+    next = {
+      ...next,
+      settingsBefore: { key, viewId: viewIdOf(next, key), views: next.tables[key]?.views ?? [], arrangements: next.arrangements[key] },
+    };
+  } else if (!next.settingsOpen && next.settingsBefore) next = { ...next, settingsBefore: null };
   if (tableChanged) next = { ...next, sidebar: withFileUnfolded(next.sidebar, bundleOf(next.active)) };
   if (next.tables[next.active]) {
     const history = visited(next.history, viewAddress(next.active, toView));
@@ -309,8 +331,19 @@ function step(state: AppState, action: AppAction): AppState {
       return action.rowId === state.openPage ? state : { ...state, openPage: action.rowId };
     case "search":
       return action.text === state.search ? state : { ...state, search: action.text };
-    case "settings":
-      return action.open === state.settingsOpen ? state : { ...state, settingsOpen: action.open };
+    case "settings": {
+      if (action.open === state.settingsOpen) return state;
+      const before = state.settingsBefore;
+      if (action.open || !action.revert || !before || !state.tables[before.key]) return { ...state, settingsOpen: action.open };
+      const reverted = edit(state, (t) => (t.views === before.views ? t : { ...t, views: before.views }), before.key);
+      const { [before.key]: _, ...others } = state.arrangements;
+      return {
+        ...reverted,
+        arrangements: before.arrangements ? { ...others, [before.key]: before.arrangements } : others,
+        viewIds: { ...reverted.viewIds, [before.key]: before.viewId },
+        settingsOpen: false,
+      };
+    }
 
     case "updateRow":
       return edit(state, (t) => withCell(t, action.rowId, action.field, action.value));
