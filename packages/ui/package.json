@@ -28,6 +28,8 @@
     "@workspace.sh/table-core": "file:../core"
   },
   "peerDependencies": {
+    "@expo/ui": ">=55.0.0",
+    "expo-haptics": ">=55.0.0",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0",
     "react-native": ">=0.81.0",
@@ -36,6 +38,10 @@
     "react-strict-dom": ">=0.0.55"
   },
   "peerDependenciesMeta": {
+    "@expo/ui": {
+      "optional": true,
+      "comment": "iOS and Android only: the platform's own controls (RowActions.ios.tsx, RowActions.android.tsx). Web and macOS never load it."
+    },
     "react-dom": {
       "optional": true,
       "comment": "Only needed by web consumers — used by createPortal in SchemaEditor + DragGhost. Native consumers (Expo, RN-macOS) don't install it. Drop once the Portal abstraction lands and these imports become conditional."
@@ -50,6 +56,10 @@
     },
     "react-native-svg": {
       "optional": true
+    },
+    "expo-haptics": {
+      "optional": true,
+      "comment": "iOS and Android only: the feel of a touch and hold (RowActions.ios.tsx, RowActions.android.tsx). Web and macOS never load it."
     }
   },
   "devDependencies": {
