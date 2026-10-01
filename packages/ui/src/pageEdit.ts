@@ -12,6 +12,8 @@ export type PageSave = "none" | "save" | "ask";
 
 export function pageSave(saved: string, draft: string): PageSave {
   if (draft === saved) return "none";
-  if (draft.trim() === "" && saved.trim() !== "") return "ask";
+  // Only spaces is no text: nothing to keep on a new page, and on one
+  // with text it would delete the page.
+  if (draft.trim() === "") return saved.trim() === "" ? "none" : "ask";
   return "save";
 }
