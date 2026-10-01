@@ -227,10 +227,14 @@ carrying display metadata:
 
 - `value` (required) — the stored data value. This is the only part
   that participates in validation and enum-ordered sort/group.
-- `color` (optional) — symbolic, one of the 8-color Notion / Linear
-  palette: `gray`, `red`, `orange`, `yellow`, `green`, `blue`,
-  `purple`, `pink`. Consumers map the symbolic name onto their own
-  light/dark theme; the format never stores hex.
+- `color` (optional) — a symbolic name, one of: `gray`, `brown`, `red`,
+  `orange`, `yellow`, `lime`, `green`, `mint`, `teal`, `cyan`, `blue`,
+  `indigo`, `purple`, `pink`. Consumers map the name onto their own
+  light/dark theme; the format never stores hex. A reader MUST show a
+  name it doesn't know (or no colour) as `gray`, and MUST show the
+  choice's label whatever its colour, since colour is never the only
+  carrier of meaning. The reference light and dark pairs, and the
+  contrast rule they meet, are in DECISIONS D43.
 - `label` (optional) — display-only text; defaults to `value`.
 
 Bare strings and objects may be mixed in one array. Readers MUST

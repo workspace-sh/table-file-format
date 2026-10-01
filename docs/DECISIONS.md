@@ -282,7 +282,7 @@ the same event vocabulary, not a parallel format.
 
 An `enum` entry is either a bare string or an object
 `{ value, color?, label? }`. Only `value` participates in validation
-and enum-ordered sort/group; `color` (symbolic 8-color palette) and
+and enum-ordered sort/group; `color` (a symbolic name; 8 here, widened to 14 by D43) and
 `label` are display-only. Readers coerce strings to `{ value }` via
 `enumOptions()`; both forms may mix in one array.
 
@@ -1100,3 +1100,40 @@ So `.table` stores what Airtable stores. Excel's and OpenFormula's limits are on
 
 **Revisit when:** the formula engine (#124) settles how dates before 1900 calculate, or if Excel round-trips need a narrower range.
 
+## D43: Choice colours are 14 symbolic names, each with a light and a dark pair that pass WCAG AA
+
+**Decided (1 Oct 2026, Leslie: "Any chance we can do a mix, and have a large corpus of light/dark colours? We can revisit this until launch and likely even after."). Open to revisit.**
+
+**Amends** D18. A choice's `color` is one of 14 names: the original `gray`, `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, plus `brown`, `lime`, `mint`, `teal`, `cyan`, `indigo`. Names stay symbolic; a reader that doesn't know one shows `gray`, so a file written with a new name still opens in an older app. No per-choice custom colour in 1.0.
+
+**Reference pairs.** Each name has a light and a dark pair, `bg` behind the label and `fg` for it. Every pair gives the label at least 4.5:1 contrast (WCAG AA for normal text), checked with the WCAG relative-luminance formula. An app SHOULD use these pairs, and MAY use the platform's own colour for a name it has an equivalent for (iOS's `systemRed`, say), if the label still meets 4.5:1 in light, dark and increased-contrast modes. Light yellow's `fg` moved from `#8a6d00` (4.40:1) to `#7a5f00`.
+
+| Name | Light bg | Light fg | Dark bg | Dark fg |
+|---|---|---|---|---|
+| `gray` | `#e8e8ed` | `#3a3a3c` | `#2c2c31` | `#e5e5ea` |
+| `brown` | `#eee3d8` | `#7a4a21` | `#3b2a1d` | `#d9b08c` |
+| `red` | `#fde2e1` | `#b42318` | `#4a1f1f` | `#ff8a80` |
+| `orange` | `#fde8d4` | `#b54708` | `#4a2c14` | `#ffb86b` |
+| `yellow` | `#fdf3c4` | `#7a5f00` | `#433a10` | `#f5d565` |
+| `lime` | `#eaf5cc` | `#4d6b00` | `#2b3a10` | `#c3e56a` |
+| `green` | `#dcf5e3` | `#1f7a2c` | `#16341f` | `#7ee08a` |
+| `mint` | `#d8f5ea` | `#0b6b4d` | `#12362b` | `#7fe3c0` |
+| `teal` | `#d4f1f2` | `#0e6b73` | `#10353a` | `#76dde6` |
+| `cyan` | `#d6eefb` | `#075985` | `#0f3447` | `#7cd3f7` |
+| `blue` | `#dde9fd` | `#1d4ed8` | `#15284a` | `#8ab4ff` |
+| `indigo` | `#e1e4fb` | `#4338ca` | `#1f2347` | `#a5adff` |
+| `purple` | `#ece3fd` | `#6d28d9` | `#2d1f4a` | `#c4a8ff` |
+| `pink` | `#fce1f0` | `#be185d` | `#4a1f36` | `#ff9ecb` |
+
+**Colour-vision differences.** Checked by simulating protanopia, deuteranopia and tritanopia (Machado et al. 2009, full severity) and comparing neighbouring names. Some pairs of names come out hard to tell apart in the pills' colours alone, which no palette of this size avoids:
+- `blue` and `indigo` (all three simulations in light mode), and with `purple` under protanopia and deuteranopia;
+- `yellow` and `lime`; `green` and `brown`; `red` and `brown`; `orange` and `lime`;
+- `mint`, `teal`, `cyan` and `green` under tritanopia.
+
+So an author who needs two choices told apart at a glance should pick from different families (say `red`, `blue`, `yellow`, `gray`), and an app never relies on colour alone: the label is always shown (SPEC section 4).
+
+**Why 14.** Leslie asked for a large corpus. These add the hues iOS has system colours for (`mint`, `teal`, `cyan`, `indigo`, `brown`) and `lime` between yellow and green. Shades of one hue would add names an author can't tell apart, so there are none. The number is a result of that rule, not a target; adding names later is additive.
+
+**Revisit when:** a consumer needs a name this set lacks, or a custom per-choice pair (a `{ light, dark }` object) is wanted. Adding names is additive; removing or renaming one isn't.
+
+**Follow-ups, not in this change:** the `EnumColor` type in `@workspace.sh/table-core`, `PILL_PALETTE` in `@workspace.sh/table-ui`, and the web's StyleX literals; iOS maps names with a system equivalent to PlatformColor; Android takes Material You tones (#308).
