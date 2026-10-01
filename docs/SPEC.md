@@ -227,7 +227,7 @@ carrying display metadata:
 
 - `value` (required) — the stored data value. This is the only part
   that participates in validation and enum-ordered sort/group.
-- `color` (optional) — a symbolic name, one of: `gray`, `brown`, `red`,
+- `color` (optional): a symbolic name, one of: `gray`, `brown`, `red`,
   `orange`, `yellow`, `lime`, `green`, `mint`, `teal`, `cyan`, `blue`,
   `indigo`, `purple`, `pink`. Consumers map the name onto their own
   light/dark theme; the format never stores hex. A reader MUST show a
