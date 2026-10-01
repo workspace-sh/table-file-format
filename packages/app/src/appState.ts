@@ -245,10 +245,13 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   if (left.clearSearch && next.search !== "") next = { ...next, search: "" };
   if (left.closeSettings && next.settingsOpen && action.type !== "addView") next = { ...next, settingsOpen: false };
   if (next.settingsOpen && !prev.settingsOpen) {
+    // A new view opens on its settings: Cancel there drops it, as a new
+    // thing's sheet does, so what's kept is from before it was added.
     const key = next.active;
+    const from = action.type === "addView" ? prev : next;
     next = {
       ...next,
-      settingsBefore: { key, viewId: viewIdOf(next, key), views: next.tables[key]?.views ?? [], arrangements: next.arrangements[key] },
+      settingsBefore: { key, viewId: viewIdOf(from, key), views: from.tables[key]?.views ?? [], arrangements: from.arrangements[key] },
     };
   } else if (!next.settingsOpen && next.settingsBefore) next = { ...next, settingsBefore: null };
   if (tableChanged) next = { ...next, sidebar: withFileUnfolded(next.sidebar, bundleOf(next.active)) };
