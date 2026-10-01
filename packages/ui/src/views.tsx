@@ -2142,19 +2142,20 @@ function DragGhost({
 }
 
 function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle?: boolean }) {
-  if (!onClick) return <html.span style={[styles.bodyBadge, besideTitle && styles.bodyBadgeBesideTitle]}>doc</html.span>;
+  if (!onClick) return <html.span style={[styles.bodyBadge, besideTitle && styles.bodyBadgeBesideTitle]}>page</html.span>;
   // Beside a title, the hint's wrapper takes the badge's place and margins:
   // on native it's a Text, and a button inside one loses its own.
   return (
-    <Hinted hint="This row has a document. Click to open it." style={besideTitle ? styles.bodyBadgeHintBesideTitle : undefined}>
+    <Hinted hint="This row has a page. Click to open it." style={besideTitle ? styles.bodyBadgeHintBesideTitle : undefined}>
     <html.button
+      aria-label="Open page"
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
         onClick();
       }}
       style={[styles.bodyBadge, styles.bodyBadgeButton, besideTitle && styles.bodyBadgeButtonBesideTitle]}
     >
-      doc
+      page
     </html.button>
     </Hinted>
   );
@@ -2207,7 +2208,7 @@ export function TableView({
   // column, and where to anchor the panel. While it's open, the column is
   // tinted and the cells it read in that row are outlined.
   const [formulaCell, setFormulaCell] = useState<{ rowId: string; name: string; rect: AnchorRect } | null>(null);
-  // A row's actions (open its document, insert, delete), offered the
+  // A row's actions (open its page, insert, delete), offered the
   // platform's way: right-click on the web and macOS, touch and hold on a
   // phone. A host can replace the control (PlatformControlsProvider).
   const { RowActions } = usePlatformControls();
@@ -2914,7 +2915,7 @@ export function TableView({
 /**
  * Keyboard focus for the views that show rows as cards: one card has a
  * ring, arrows move it (`move` says where), Enter opens the card's
- * document, and Escape, or focus leaving the view, drops it. `onAltKey`
+ * page, and Escape, or focus leaving the view, drops it. `onAltKey`
  * takes Option/Alt+arrow first (moving a card), returning whether it did.
  */
 function useCardKeys({
@@ -3765,7 +3766,7 @@ interface CardProps {
   fieldMap: Map<string, Field>;
   relatedTables?: Record<string, ParsedTable>;
   onOpenRelation?: (address: string) => void;
-  /** The row has a long-form body; the card shows the DOC badge. */
+  /** The row has a long-form body (its page); the card shows the PAGE badge. */
   hasBody?: boolean;
 }
 

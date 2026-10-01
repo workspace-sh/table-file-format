@@ -129,11 +129,11 @@ test("deleting a view shows the table's first other view after", () => {
   assert.equal(deletingView({ "projects/tasks": withoutView(tasks, second!.id) }, "projects/tasks", first!), null);
 });
 
-test("deleting a row names it, says whether its document goes, and closes that document if it's open", () => {
+test("deleting a row names it, says whether its page goes, and closes that page if it's open", () => {
   const projects = tables["projects"]!;
   const withDoc = deletingRow(projects, "p2", "p2");
   assert.equal(withDoc.prompt.heading, `Delete “${rowTitleFor(projects, "p2")}”?`);
-  assert.equal(withDoc.prompt.body, "The row and its document are removed from the file.");
+  assert.equal(withDoc.prompt.body, "The row and its page are removed from the file.");
   assert.equal(withDoc.closeBody, true);
   const plain = deletingRow(tasks, "t1", "p2");
   assert.equal(plain.prompt.body, "The row is removed from the file.");

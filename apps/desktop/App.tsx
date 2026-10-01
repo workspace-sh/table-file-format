@@ -696,7 +696,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     "files-mode": () => chooseFilesMode(true),
     "go-back": () => dispatch({ type: "back" }),
     "go-forward": () => dispatch({ type: "forward" }),
-    // The view's address as text, with the open document's row as the web's address has it;
+    // The view's address as text, with the open page's row as the web's address has it;
     // opening one from outside the app waits on a link scheme.
     "copy-link": () => copyText(derived.address),
   };

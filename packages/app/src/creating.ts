@@ -85,7 +85,7 @@ export function namePrompt(making: Making, bundles: Record<string, BundleMeta>):
 /**
  * Making it with the name given: trimmed, and nothing made when it's empty
  * or the prompt was cancelled (null). What's made shows at once, its first
- * view, with the search cleared and no document open.
+ * view, with the search cleared and no page open.
  */
 export function creating(
   tables: Record<string, ParsedTable>,

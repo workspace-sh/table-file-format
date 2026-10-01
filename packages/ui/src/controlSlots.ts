@@ -8,7 +8,7 @@ import type { ForwardRefExoticComponent, ReactElement, RefAttributes } from "rea
 
 /** Something that can be done to a row as a whole, from its row menu. */
 export interface RowAction {
-  id: "open-document" | "add-document" | "insert-above" | "insert-below" | "delete";
+  id: "open-page" | "add-page" | "insert-above" | "insert-below" | "delete";
   /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
@@ -116,13 +116,13 @@ export function rowActions(
 ): RowAction[] {
   const actions: RowAction[] = [];
   const { onOpenBody, onInsertRow, onDeleteRow } = can;
-  // A row's document opens from here, or starts here: on a touch screen
+  // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
     actions.push(
       can.hasBody
-        ? { id: "open-document", label: "Open Document", symbol: { sf: "doc.text", material: "description" }, onSelect: () => onOpenBody(rowId) }
-        : { id: "add-document", label: "Add Document", symbol: { sf: "doc.badge.plus", material: "note_add" }, onSelect: () => onOpenBody(rowId) },
+        ? { id: "open-page", label: "Open Page", symbol: { sf: "doc.text", material: "description" }, onSelect: () => onOpenBody(rowId) }
+        : { id: "add-page", label: "Add Page", symbol: { sf: "doc.badge.plus", material: "note_add" }, onSelect: () => onOpenBody(rowId) },
     );
   }
   if (onInsertRow) {

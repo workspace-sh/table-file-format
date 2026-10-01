@@ -201,15 +201,15 @@ export function deletingView(
 }
 
 /**
- * Deleting a row: what to ask (its document goes with it), and whether the
- * document open now is that row's, so the app closes it once the row goes.
+ * Deleting a row: what to ask (its page goes with it), and whether the
+ * page open now is that row's, so the app closes it once the row goes.
  */
 export function deletingRow(table: ParsedTable, rowId: string, openBody: string | null): { prompt: Confirm; closeBody: boolean } {
   const hasBody = table.bodies?.[rowId] !== undefined;
   return {
     prompt: {
       heading: `Delete “${rowTitleFor(table, rowId)}”?`,
-      body: hasBody ? "The row and its document are removed from the file." : "The row is removed from the file.",
+      body: hasBody ? "The row and its page are removed from the file." : "The row is removed from the file.",
       responses: [CANCEL, { id: "delete", label: "Delete", destructive: true }],
     },
     closeBody: openBody === rowId,
