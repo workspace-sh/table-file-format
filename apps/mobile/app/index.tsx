@@ -84,6 +84,62 @@ export default function TableScreen() {
 
   return (
     <>
+      {/* The table first, before the bars' elements below: expo-router
+          draws those as native views too, and UIKit collapses the large
+          title only for a scroll view that comes first in the screen. */}
+      <PortalHost>
+        <ScrollView
+          // Tracked by the large title, which collapses as it scrolls.
+          contentInsetAdjustmentBehavior="automatic"
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: 24 }}
+          // The keyboard makes room rather than covering the cell being edited,
+          // and a tap elsewhere while typing goes to what's tapped.
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
+        >
+          <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
+          <html.div style={styles.subtitle}>
+            <html.span>{summary.count}</html.span>
+            <html.span>·</html.span>
+            <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
+            {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
+            {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
+          </html.div>
+          {state.settingsOpen && (
+            <ViewSettings
+              key={view.id}
+              view={shownView}
+              schema={table.schema}
+              // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+              onChange={(patch) => dispatch({ type: "updateView", patch })}
+              onArrange={(patch) => dispatch({ type: "arrange", patch })}
+              personal={derived.arranged}
+              onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
+              onReset={() => dispatch({ type: "resetArrangement" })}
+              onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
+              onClose={() => dispatch({ type: "settings", open: false })}
+            />
+          )}
+          {renderView(shownView, visibleRows, table.schema, table.bodies, {
+            ...callbacks,
+            relatedTables: bundleTables(state.tables, bundle),
+            allRows: table.rows,
+            tableKey: tableNameOf(state.active),
+            sheet,
+            onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+          })}
+        </ScrollView>
+        {state.openPage && (
+          <BodyEditor
+            rowId={state.openPage}
+            rowTitle={rowTitleFor(table, state.openPage)}
+            content={table.bodies?.[state.openPage] ?? ""}
+            onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+            onClose={() => dispatch({ type: "openPage", rowId: null })}
+          />
+        )}
+      </PortalHost>
       <Stack.Screen
         options={{
           title: view.name,
@@ -148,59 +204,6 @@ export default function TableScreen() {
           </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       )}
-      <PortalHost>
-        <ScrollView
-          // First in the screen, so the large title collapses as it scrolls.
-          contentInsetAdjustmentBehavior="automatic"
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: 24 }}
-          // The keyboard makes room rather than covering the cell being edited,
-          // and a tap elsewhere while typing goes to what's tapped.
-          automaticallyAdjustKeyboardInsets
-          keyboardShouldPersistTaps="handled"
-        >
-          <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
-          <html.div style={styles.subtitle}>
-            <html.span>{summary.count}</html.span>
-            <html.span>·</html.span>
-            <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
-            {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-            {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
-          </html.div>
-          {state.settingsOpen && (
-            <ViewSettings
-              key={view.id}
-              view={shownView}
-              schema={table.schema}
-              // Turning a Sheet view into anything else asks first (D41): the reducer's question.
-              onChange={(patch) => dispatch({ type: "updateView", patch })}
-              onArrange={(patch) => dispatch({ type: "arrange", patch })}
-              personal={derived.arranged}
-              onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
-              onReset={() => dispatch({ type: "resetArrangement" })}
-              onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
-              onClose={() => dispatch({ type: "settings", open: false })}
-            />
-          )}
-          {renderView(shownView, visibleRows, table.schema, table.bodies, {
-            ...callbacks,
-            relatedTables: bundleTables(state.tables, bundle),
-            allRows: table.rows,
-            tableKey: tableNameOf(state.active),
-            sheet,
-            onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
-          })}
-        </ScrollView>
-        {state.openPage && (
-          <BodyEditor
-            rowId={state.openPage}
-            rowTitle={rowTitleFor(table, state.openPage)}
-            content={table.bodies?.[state.openPage] ?? ""}
-            onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
-            onClose={() => dispatch({ type: "openPage", rowId: null })}
-          />
-        )}
-      </PortalHost>
     </>
   );
 }
