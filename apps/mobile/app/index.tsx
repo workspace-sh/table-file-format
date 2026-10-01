@@ -1,10 +1,12 @@
 // The table on screen, framed the platform's way: its view's name as the
-// large title, the views in a menu, the tables list and file actions in
-// the toolbars, and search in the toolbar's search field. What's below is
+// title, the views in a menu, the tables list and file actions in the
+// toolbars (iOS) or the top app bar (Android, AndroidHeader), and search
+// in the stack's search field. What's below is
 // table-ui's views, scrolling under the glass bars.
 
 import { useEffect, useMemo, useRef } from "react";
-import { ScrollView } from "react-native";
+import { Platform, ScrollView } from "react-native";
+import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
@@ -13,6 +15,7 @@ import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from 
 import { BodyEditor, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
+import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 
 // Horizontal page padding, and the negative margin that lets a sideways
 // scroller run to the screen's edges.
@@ -54,66 +57,97 @@ export default function TableScreen() {
   const { table, view, summary } = derived;
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
   const bundle = bundleOf(state.active);
+  const showTables = () => router.push("/tables");
+  const toggleSettings = () => dispatch({ type: "settings", open: !state.settingsOpen });
+  // The same actions on both platforms, each with its system's symbol: SF
+  // Symbols in iOS's toolbar menus, Material Symbols in Android's.
+  const views: { key: string; label: string; sf?: SFSymbol; material?: MaterialSymbol; on?: boolean; onPress: () => void }[] = [
+    ...table.views.map((v) => ({
+      key: v.id,
+      label: v.name,
+      on: v.id === view.id,
+      onPress: () => dispatch({ type: "showView", key: state.active, viewId: v.id }),
+    })),
+    { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newId() }) },
+  ];
+  const fileActions: { label: string; sf: SFSymbol; material: MaterialSymbol; onPress: () => void }[] = [
+    {
+      label: `New Table in ${state.bundles[bundle]?.title ?? bundle}`,
+      sf: "tablecells.badge.ellipsis",
+      material: "table",
+      onPress: () => dispatch({ type: "create", making: { kind: "table", bundle } }),
+    },
+    { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
+    { label: labelOf("open-zip"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
+    { label: labelOf("export-zip"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
+  ];
 
   return (
     <>
-      <Stack.Screen options={{ title: view.name }} />
-      {/* The tables, in a sheet of their own. */}
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button icon="sidebar.left" accessibilityLabel="Tables" onPress={() => router.push("/tables")} />
-      </Stack.Toolbar>
-      {/* This table's views, and a new one. */}
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="rectangle.stack" accessibilityLabel="Views" title={table.meta.title ?? tableNameOf(state.active)}>
-          {table.views.map((v) => (
-            <Stack.Toolbar.MenuAction
-              key={v.id}
-              isOn={v.id === view.id}
-              onPress={() => dispatch({ type: "showView", key: state.active, viewId: v.id })}
-            >
-              {v.name}
-            </Stack.Toolbar.MenuAction>
-          ))}
-          <Stack.Toolbar.MenuAction icon="plus" onPress={() => dispatch({ type: "addView", id: newId() })}>
-            New View
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
+      <Stack.Screen
+        options={{
+          title: view.name,
+          // Android's actions are in the top app bar; iOS's in the toolbars below.
+          ...(Platform.OS === "android" && {
+            headerLeft: () => <AndroidTablesButton onPress={showTables} />,
+            headerRight: () => (
+              <AndroidHeaderActions
+                views={views.map((v) => ({ label: v.label, icon: v.material, checked: v.on, onPress: v.onPress }))}
+                settingsOpen={state.settingsOpen}
+                onSettings={toggleSettings}
+                more={fileActions.map((a) => ({ label: a.label, icon: a.material, onPress: a.onPress }))}
+              />
+            ),
+          }),
+        }}
+      />
+      {Platform.OS === "ios" && (
+        <>
+          {/* The tables, in a sheet of their own. */}
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.Button icon="sidebar.left" accessibilityLabel="Tables" onPress={showTables} />
+          </Stack.Toolbar>
+          {/* This table's views, and a new one. */}
+          <Stack.Toolbar placement="right">
+            <Stack.Toolbar.Menu icon="rectangle.stack" accessibilityLabel="Views" title={table.meta.title ?? tableNameOf(state.active)}>
+              {views.map((v) => (
+                <Stack.Toolbar.MenuAction key={v.key} icon={v.sf} isOn={v.on} onPress={v.onPress}>
+                  {v.label}
+                </Stack.Toolbar.MenuAction>
+              ))}
+            </Stack.Toolbar.Menu>
+          </Stack.Toolbar>
+        </>
+      )}
       <Stack.SearchBar
         ref={searchBar}
         placeholder="Search"
         onChangeText={(e: { nativeEvent: { text: string } }) => dispatch({ type: "search", text: e.nativeEvent.text })}
+        // Cancel on iOS; closing the search field on Android.
         onCancelButtonPress={() => dispatch({ type: "search", text: "" })}
+        onClose={() => dispatch({ type: "search", text: "" })}
       />
       {/* View settings, search, and the file actions, in the bottom toolbar. */}
-      <Stack.Toolbar>
-        <Stack.Toolbar.Button
-          icon="slider.horizontal.3"
-          accessibilityLabel="View Settings"
-          selected={state.settingsOpen}
-          onPress={() => dispatch({ type: "settings", open: !state.settingsOpen })}
-        />
-        <Stack.Toolbar.Spacer />
-        <Stack.Toolbar.SearchBarSlot />
-        <Stack.Toolbar.Spacer />
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="More">
-          <Stack.Toolbar.MenuAction
-            icon="tablecells.badge.ellipsis"
-            onPress={() => dispatch({ type: "create", making: { kind: "table", bundle } })}
-          >
-            {`New Table in ${state.bundles[bundle]?.title ?? bundle}`}
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon="doc.badge.plus" onPress={() => dispatch({ type: "create", making: { kind: "file" } })}>
-            {labelOf("new-file")}
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon="folder" onPress={() => void app.openZip()}>
-            {labelOf("open-zip")}
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon="square.and.arrow.up" onPress={() => void app.exportZip()}>
-            {labelOf("export-zip")}
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
-      </Stack.Toolbar>
+      {Platform.OS === "ios" && (
+        <Stack.Toolbar>
+          <Stack.Toolbar.Button
+            icon="slider.horizontal.3"
+            accessibilityLabel="View Settings"
+            selected={state.settingsOpen}
+            onPress={toggleSettings}
+          />
+          <Stack.Toolbar.Spacer />
+          <Stack.Toolbar.SearchBarSlot />
+          <Stack.Toolbar.Spacer />
+          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="More">
+            {fileActions.map((a) => (
+              <Stack.Toolbar.MenuAction key={a.label} icon={a.sf} onPress={a.onPress}>
+                {a.label}
+              </Stack.Toolbar.MenuAction>
+            ))}
+          </Stack.Toolbar.Menu>
+        </Stack.Toolbar>
+      )}
       <PortalHost>
         <ScrollView
           // First in the screen, so the large title collapses as it scrolls.
