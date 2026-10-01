@@ -5,33 +5,11 @@
  * what people expect on the web, so nothing here replaces them. React
  * Native has no select at all, which is why this forks.
  */
+import type { SelectHandle, SelectProps } from "../controlSlots";
 import { forwardRef } from "react";
-import type { ComponentProps } from "react";
 import { html } from "react-strict-dom";
 
-export interface SelectOption {
-  value: string;
-  label: string;
-  disabled?: boolean;
-}
-
-export interface SelectProps {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  style?: ComponentProps<typeof html.select>["style"];
-  /** For assistive technology, when nothing beside it names it. */
-  label?: string;
-  /** Keys pressed while the select (or, on native, its menu) has focus. */
-  onKeyDown?: (e: { key: string; shiftKey?: boolean; preventDefault?: () => void }) => void;
-  /** Left without choosing: focus moved away, or the menu was dismissed. */
-  onBlur?: () => void;
-}
-
-/** What a ref to a Select can do on every platform: take focus (native opens its menu). */
-export interface SelectHandle {
-  focus: () => void;
-}
+export type { SelectHandle, SelectOption, SelectProps } from "../controlSlots";
 
 export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
   { value, options, onChange, style, onKeyDown, onBlur, label },
@@ -46,7 +24,8 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
       onChange={(e: { target: { value: string } }) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
-      style={style}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      style={style as any}
     >
       {options.map((o) => (
         <html.option key={o.value} value={o.value} disabled={o.disabled}>
