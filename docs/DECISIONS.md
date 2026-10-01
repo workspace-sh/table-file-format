@@ -206,8 +206,7 @@ Properties (intended):
 - Apps that care implement it; apps that don't, ignore it.
 - Readers MUST tolerate absence; MAY ignore unknown `op` values.
 
-This shape is **not normative until specced**. Don't write tooling
-against it yet.
+**Specified by D44** (SPEC section 14); the shape above is its `set` event.
 
 **Why park rather than spec now:** specifying a versioning model
 before a real consumer has built against it bakes assumptions we
@@ -1137,3 +1136,25 @@ So an author who needs two choices told apart at a glance should pick from diffe
 **Revisit when:** a consumer needs a name this set lacks, or a custom per-choice pair (a `{ light, dark }` object) is wanted. Adding names is additive; removing or renaming one isn't.
 
 **Follow-ups, not in this change:** the `EnumColor` type in `@workspace.sh/table-core`, `PILL_PALETTE` in `@workspace.sh/table-ui`, and the web's StyleX literals; iOS maps names with a system equivalent to PlatformColor; Android takes Material You tones (#308).
+
+## D44: `history.ndjson` is a table's append-only edit history, with whole values
+
+**Decided (1 Oct 2026, in the product review that made pages autosave: history comes from git or the app, and a plain `.table` carries its own). Open to revisit.**
+
+**Amends** D14 (no longer parked) and builds on D17 (the file is the at-rest form of the sync op log, so the event vocabulary is one).
+
+The file is `tables/{name}/history.ndjson`, in the table's own directory because row ids are per table (D14 said "directory root"). Events are `set`, `insert`, `delete` and `page`, each carrying whole values (SPEC section 14).
+
+**Whole values, not diffs.** The Workspace P2P core already keeps each revision's full contents and restores from them (`foldHistory`, `packages/core/src/documents.ts`, over an append-only Hypercore log, ADR 0003); with D17 the two should agree. A diff chain makes a reader replay every earlier line correctly, and one damaged line spoils all that follow. A hash with periodic full text can't restore the states in between, which is the point of history.
+
+**Size is handled by when an event is written, not how.** Autosave writes `bodies/{id}.md` often; the history gets one `page` event per editing burst (editor closed, or about 60 seconds with no typing). That is a SHOULD, so readers never rely on it. The file is append-only, so git only ever sees added lines, however long.
+
+**`op: "page"`, not `set` on a `body` field.** A page isn't a field (SPEC section 7): it has no field key, and it is a file rather than a cell value. A separate op keeps `set` meaning "a cell".
+
+**What git and the app each give.** Git still gives history for a git-backed `.table`. This file is for one that isn't, or that travels as a `.table.zip`, and an app can read it to offer "restore this version" without git.
+
+**Privacy.** History keeps data that was later changed or deleted. That is the point, and also why an app offering to erase something must rewrite this file (SPEC section 14).
+
+**Not decided:** compaction of a large log, whether schema and view changes are recorded, and how an app presents it. Adding ops is additive (readers skip unknown ones).
+
+**Revisit when:** the first app builds a history UI, or the Workspace op log's event vocabulary needs something this lacks.
