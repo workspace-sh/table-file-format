@@ -8,8 +8,7 @@
 import { useState } from "react";
 import type React from "react";
 import { html, css } from "react-strict-dom";
-import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./PlatformControls";
+import { Select, Toggle } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -113,13 +112,14 @@ export function ViewSettings({
         )}
         {view.layout === "table" && (
           <FieldRow label="Sheet">
-            <Checkbox
+            <Toggle
+              role="setting"
               checked={view.coordinates === true}
               onChange={(checked) => onChange(sheetPatch(checked))}
               style={styles.check}
             >
               Letter the columns and number the rows, so formulas can use =B7
-            </Checkbox>
+            </Toggle>
           </FieldRow>
         )}
         {(view.layout === "table" || view.layout === "list") && (

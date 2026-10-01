@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
-import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./PlatformControls";
+import { Select, Toggle } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
@@ -732,13 +731,15 @@ export function SchemaFieldEditor({
         <FormatPicker field={field} fields={fields ?? []} onUpdate={onUpdate} />
 
         <html.div style={styles.checkRow}>
-          <Checkbox checked={field.constraints?.required === true} onChange={setRequired} />
-          <html.span>Required</html.span>
+          <Toggle role="setting" checked={field.constraints?.required === true} onChange={setRequired} style={styles.checkRow}>
+            Required
+          </Toggle>
         </html.div>
 
         <html.div style={styles.checkRow}>
-          <Checkbox checked={field.deprecated === true} onChange={(checked) => onUpdate(deprecatedPatch(checked))} />
-          <html.span>Deprecated</html.span>
+          <Toggle role="setting" checked={field.deprecated === true} onChange={(checked) => onUpdate(deprecatedPatch(checked))} style={styles.checkRow}>
+            Deprecated
+          </Toggle>
         </html.div>
 
         {hasEnum && (
