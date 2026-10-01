@@ -577,6 +577,12 @@ interface SchemaFieldEditorProps {
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
+  /**
+   * Cancel, where the host puts the table's schema back as the settings
+   * opened (`onRestoreSchema`). Absent: the editor puts its field back
+   * itself, through onUpdate and onMove.
+   */
+  onCancel?: () => void;
   /** The table's fields, so a formula can warn about a name that doesn't exist. */
   fields?: Field[];
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
@@ -617,6 +623,7 @@ export function SchemaFieldEditor({
   onAddEnumValue,
   onMove,
   onClose,
+  onCancel,
   fields,
   grid,
 }: SchemaFieldEditorProps) {
@@ -627,6 +634,7 @@ export function SchemaFieldEditor({
   const [before] = useState(field);
   const [beforeIndex] = useState(fieldIndex);
   const cancel = () => {
+    if (onCancel) return onCancel();
     const patch = revertPatch(before, field);
     if (Object.keys(patch).length > 0) onUpdate(patch);
     for (const delta of movesBack(beforeIndex, fieldIndex)) onMove(delta);
