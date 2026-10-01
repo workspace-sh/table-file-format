@@ -431,6 +431,32 @@ test("Cancel puts back everything the view settings changed; Done keeps it", () 
   assert.equal(kept.settingsBefore, null);
 });
 
+test("Cancel after adding a view from the settings drops it and goes back to the view that was open", () => {
+  const open = run(start(), { type: "settings", open: true });
+  const before = open.tables["projects/projects"]!.views.length;
+  const added = run(open, { type: "addView", id: "new-1" });
+  assert.equal(added.tables["projects/projects"]!.views.length, before + 1);
+  assert.equal(added.settingsOpen, true);
+
+  const cancelled = run(added, { type: "settings", open: false, revert: true });
+  assert.equal(cancelled.tables["projects/projects"]!.views.length, before);
+  assert.equal(cancelled.viewIds["projects/projects"], open.viewIds["projects/projects"]);
+});
+
+test("Cancel on a new view's settings drops the view; Done keeps it", () => {
+  const start0 = start();
+  const added = run(start0, { type: "addView", id: "new-1" });
+  assert.equal(added.settingsOpen, true);
+  assert.equal(added.viewIds["projects/projects"], "new-1");
+
+  const cancelled = run(added, { type: "settings", open: false, revert: true });
+  assert.deepEqual(cancelled.tables["projects/projects"]!.views, start0.tables["projects/projects"]!.views);
+  assert.equal(viewOf(cancelled), viewOf(start0));
+
+  const kept = run(added, { type: "settings", open: false });
+  assert.ok(kept.tables["projects/projects"]!.views.some((v) => v.id === "new-1"));
+});
+
 test("Cancel on settings opened with nothing changed changes nothing", () => {
   const open = run(start(), { type: "settings", open: true });
   const cancelled = run(open, { type: "settings", open: false, revert: true });
