@@ -167,6 +167,32 @@ const styles = css.create({
     flex: 1,
     minWidth: 0,
   },
+  // Edge to edge: the frame is as wide as its columns, inside the
+  // sideways scroller, rather than the scroller inside the frame.
+  tableFit: {
+    flexShrink: 0,
+  },
+  // Edge to edge, the panes are as wide and tall as their rows: flex: 1
+  // would start them from nothing inside a scroller sized by its content.
+  tablePaneFit: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  bleedRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  // What the columns share when the frame scrolls: the page's width, less
+  // the "+" beside the header. Measured on a line with no height.
+  measureRow: {
+    height: 0,
+    overflow: "hidden",
+  },
+  addFieldPlaceholder: {
+    width: 30,
+    flexShrink: 0,
+  },
   /** Centres the "+" on the header row (33px). */
   addFieldSlot: {
     display: "flex",
@@ -2172,6 +2198,31 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
   );
 }
 
+/**
+ * Edge to edge (`on`): what it holds scrolls sideways over the page's
+ * margins to the screen's edges, starting and ending in line with the
+ * page. Off: as it is.
+ */
+function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
+  if (!on) return <>{children}</>;
+  return (
+    <Bleed>
+      <HScroll>
+        <html.div style={styles.bleedRow}>
+          <GutterSpacer />
+          {children}
+          <GutterSpacer />
+        </html.div>
+      </HScroll>
+    </Bleed>
+  );
+}
+
+/** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
+function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
+  return on ? <HScroll>{children}</HScroll> : <>{children}</>;
+}
+
 export function TableView({
   view,
   rows,
@@ -2395,6 +2446,11 @@ export function TableView({
   // pane gets the rest. When not frozen, the right pane gets all
   // fields and the left pane is unused.
   const primaryName = freezePrimary ? fields[0] : undefined;
+  // Tables are edge to edge, as the markdown library's are: the framed
+  // grid rests on the page's margin and scrolls sideways over it to the
+  // screen's edges (Bleed). With a pinned first column the frame stays
+  // put and its other columns scroll inside it.
+  const edgeToEdge = !primaryName;
   const restNames = freezePrimary ? fields.slice(1) : fields;
 
   // Cell renderers — extracted because both panes share them.
@@ -2718,6 +2774,13 @@ export function TableView({
     {/* "+" for a new field sits at the end of the header row, just outside
         the table, as Airtable has it: the grid gives up its width once,
         rather than every row carrying an empty column (#71). */}
+    {edgeToEdge && (
+      <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
+        <html.div {...measureProps} style={styles.tableGrow} />
+        {canAddField && <html.div style={styles.addFieldPlaceholder} />}
+      </html.div>
+    )}
+    <EdgeToEdge on={edgeToEdge}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
@@ -2725,9 +2788,9 @@ export function TableView({
       }}
       tabIndex={0}
       onKeyDown={onGridKey}
-      style={styles.tableWithAdd}
+      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
     >
-    <html.div {...measureProps} style={[styles.table, styles.tableGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
@@ -2777,9 +2840,9 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={styles.tableScrollOuter}>
-          <HScroll>
-            <html.div style={styles.tableScrollPane}>
+        <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
+          <PaneScroll on={!edgeToEdge}>
+            <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
@@ -2827,7 +2890,7 @@ export function TableView({
                 </html.div>
               )}
             </html.div>
-          </HScroll>
+          </PaneScroll>
         </html.div>
       </html.div>
     </html.div>
@@ -2845,6 +2908,7 @@ export function TableView({
         </html.div>
       )}
     </html.div>
+    </EdgeToEdge>
       {formulaCell && openFormulaField && (() => {
         const openRow = rows.find((r) => r.id === formulaCell.rowId);
         if (!openRow) return null;
