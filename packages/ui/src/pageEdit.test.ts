@@ -16,5 +16,5 @@ test("wiping a page asks rather than deleting it as you type", () => {
 
 test("a new page left empty saves nothing and asks nothing", () => {
   assert.equal(pageSave("", ""), "none");
-  assert.equal(pageSave("", "  "), "save");
+  assert.equal(pageSave("", "  \n"), "none");
 });

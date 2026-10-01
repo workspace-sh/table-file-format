@@ -45,6 +45,11 @@ test("a new row is an id at the end; deleting one takes its body with it", () =>
   assert.equal(withBody(withPage, "new1", "").bodies?.["new1"], undefined);
 });
 
+test("a page saved after its row was deleted leaves no orphan body", () => {
+  const gone = withoutRow(withRow(tasks, "new1"), "new1");
+  assert.equal(withBody(gone, "new1", "# Late"), gone);
+});
+
 test("a row goes above or below another in a Sheet view's file order", () => {
   const first = ledger.rows[0]!.id;
   const below = withRowAt(ledger, "as-entered", first, "below", "ins");
