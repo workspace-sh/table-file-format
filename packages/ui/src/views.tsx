@@ -550,13 +550,27 @@ const styles = css.create({
     borderBottomWidth: 0,
   },
   listItemTitle: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
     flex: 1,
+    minWidth: 0,
+  },
+  listItemTitleText: {
     fontSize: 13,
     fontWeight: "500",
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
+  },
+  // A title and its "doc" badge side by side, wrapping as the title would.
+  titleWithBadge: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
   },
   listItemSecondary: {
     fontSize: 12,
@@ -1277,6 +1291,20 @@ const styles = css.create({
   },
 
   // "doc" badge for rows with a markdown body — clickable variant overrides
+  // Beside a 13px title, where it sat when it was inline: 3px down, and
+  // no taller than the title's line, so the row keeps its height.
+  bodyBadgeBesideTitle: {
+    marginTop: 3,
+    marginBottom: -0.5,
+  },
+  bodyBadgeHintBesideTitle: {
+    marginInlineStart: 6,
+    marginTop: 3,
+    marginBottom: -0.5,
+  },
+  bodyBadgeButtonBesideTitle: {
+    marginInlineStart: 0,
+  },
   bodyBadgeButton: {
     borderWidth: 0,
     cursor: "pointer",
@@ -2065,16 +2093,18 @@ function DragGhost({
   );
 }
 
-function BodyBadge({ onClick }: { onClick?: () => void }) {
-  if (!onClick) return <html.span style={styles.bodyBadge}>doc</html.span>;
+function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle?: boolean }) {
+  if (!onClick) return <html.span style={[styles.bodyBadge, besideTitle && styles.bodyBadgeBesideTitle]}>doc</html.span>;
+  // Beside a title, the hint's wrapper takes the badge's place and margins:
+  // on native it's a Text, and a button inside one loses its own.
   return (
-    <Hinted hint="This row has a document. Click to open it.">
+    <Hinted hint="This row has a document. Click to open it." style={besideTitle ? styles.bodyBadgeHintBesideTitle : undefined}>
     <html.button
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
         onClick();
       }}
-      style={[styles.bodyBadge, styles.bodyBadgeButton]}
+      style={[styles.bodyBadge, styles.bodyBadgeButton, besideTitle && styles.bodyBadgeButtonBesideTitle]}
     >
       doc
     </html.button>
@@ -3452,12 +3482,16 @@ export function ListView({
                 isDropTarget && styles.listItemDropTarget,
               ]}
             >
-              <html.span dir="auto" style={styles.listItemTitle}>
-                {titleField ? formatValue(row[titleField]) : ""}
+              {/* The badge beside the title, not inside it: on native a span is a
+                  Text, and one nested in it loses its margin. */}
+              <html.div style={styles.listItemTitle}>
+                <html.span dir="auto" style={styles.listItemTitleText}>
+                  {titleField ? formatValue(row[titleField]) : ""}
+                </html.span>
                 {bodies?.[row.id] ? (
-                  <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+                  <BodyBadge besideTitle onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
                 ) : null}
-              </html.span>
+              </html.div>
               {secondaryFields.map((name) => (
                 <html.div key={name} style={styles.listItemSecondary}>
                   <CellValue
@@ -3761,10 +3795,13 @@ function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody }:
   return (
     <html.div style={styles.card}>
       {titleField && (
-        <html.span dir="auto" style={styles.cardTitle}>
-          {formatValue(row[titleField])}
-          {hasBody ? <BodyBadge /> : null}
-        </html.span>
+        // The badge beside the title, not inside it (see the list's title).
+        <html.div style={styles.titleWithBadge}>
+          <html.span dir="auto" style={styles.cardTitle}>
+            {formatValue(row[titleField])}
+          </html.span>
+          {hasBody ? <BodyBadge besideTitle /> : null}
+        </html.div>
       )}
       <CardBody
         row={row}
