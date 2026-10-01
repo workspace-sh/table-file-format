@@ -289,10 +289,11 @@ npm run ui:typecheck
 **Deliberately deferred** (no spec, no plan):
 - Data versioning — undo/redo, edit history, real-time collaboration,
   audit trails. Git is the format's version-control substrate by
-  design; everything else is the consuming app's concern. A future
-  optional `history.ndjson` extension is reserved but not specified.
-  See [docs/DECISIONS.md D14](docs/DECISIONS.md) for the full
-  rationale and Workspace-specific guidance.
+  design; everything else is the consuming app's concern. A table that
+  wants its own history in the format uses the optional
+  `history.ndjson` (SPEC section 14, D44). See
+  [docs/DECISIONS.md D14](docs/DECISIONS.md) for the full rationale and
+  Workspace-specific guidance.
 
 ## Spike, not product
 

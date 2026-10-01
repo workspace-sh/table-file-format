@@ -35,6 +35,7 @@ crm.table/
 │   │   ├── rows.ndjson       REQUIRED
 │   │   ├── views.json        OPTIONAL
 │   │   ├── meta.json         OPTIONAL: the table's own title and description
+│   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
 │   │   ├── attachments/      OPTIONAL
 │   │   └── bodies/           OPTIONAL
 │   │       └── {row.id}.md
@@ -1093,11 +1094,10 @@ substrate** — any consumer that uses git gets full history, diffing,
 merging, branching, and authorship for free.
 
 Apps that need versioning beyond what git provides (in-app undo,
-"what did this row look like yesterday," audit trail, real-time
-collaboration) implement it themselves. A future optional
-`history.ndjson` extension is reserved in each table's directory for a
-portable append-only edit log, but it is **not yet specified** — its
-shape will be designed when a consumer's UX actually motivates it.
+real-time collaboration) implement it themselves. A table that should
+carry its own edit history in the format, so that "what did this row
+or page look like yesterday" works without git, uses the optional
+`history.ndjson` (section 14).
 
 ## 13. Archive transport (`.table.zip`)
 
@@ -1171,3 +1171,70 @@ platform's one line:
 Constraints: methods stored/deflate only; UTF-8 names; no
 encryption, no multi-volume, no zip64 (readers MAY reject archives
 beyond 4 GiB).
+
+
+## 14. `history.ndjson`
+
+An optional, append-only log of a table's edits, so a plain `.table`
+carries its own history without git (DECISIONS D44). It is **purely
+additive**: `rows.ndjson`, `bodies/` and the rest stay canonical, and a
+reader that ignores this file loses nothing it needs to read the table.
+
+```
+tables/tasks/history.ndjson
+```
+
+One JSON object per line, oldest first. Every event has:
+
+- `id` (string) — unique within the file.
+- `at` (string) — RFC 3339 UTC timestamp.
+- `by` (string, optional) — who wrote it: a name or a `did:key`. Opaque to the format.
+- `op` (string) — what happened, below.
+- `row` (string) — the row's `id`.
+
+Ops:
+
+```json
+{"id":"e1","at":"2026-10-01T15:00:00Z","by":"leslie","op":"set","row":"p1","field":"status","from":"todo","to":"doing"}
+{"id":"e2","at":"2026-10-01T15:02:00Z","by":"leslie","op":"insert","row":"p9","values":{"id":"p9","title":"New"}}
+{"id":"e3","at":"2026-10-01T15:03:00Z","by":"leslie","op":"delete","row":"p9","values":{"id":"p9","title":"New"}}
+{"id":"e4","at":"2026-10-01T15:05:00Z","by":"leslie","op":"page","row":"p1","from":"Old text","to":"New text"}
+```
+
+- `set` — one cell changed. `field` is the field key; `from` and `to`
+  are the stored values. As in `rows.ndjson`, an absent value means
+  empty (section 3), so `from` is absent for a cell that was empty and
+  `to` is absent for one that was cleared.
+- `insert` — a row was added. `values` is the row as written.
+- `delete` — a row was removed. `values` is the whole row as it was, so
+  it can be restored.
+- `page` — a row's page (`bodies/{id}.md`, section 7) changed. `from`
+  and `to` are the **complete** text before and after; `from` is absent
+  for a new page and `to` is absent for a cleared one.
+
+Rules:
+
+- **Append only.** A writer only adds lines. Undoing or restoring a
+  change is a new event (a `set` back to the old value), never an edit
+  or removal of an earlier one.
+- **Whole values, not diffs.** Each event stands alone, so a reader can
+  restore any revision from its line without replaying the ones before.
+- **Coalescing.** A writer SHOULD record a page's burst of edits as one
+  `page` event, when the editor closes or after about 60 seconds with
+  no typing, rather than one per autosave. Readers MUST NOT depend on
+  it.
+- **Tolerant readers.** A reader MUST accept a missing file, MUST skip
+  a line it can't parse and an event whose `op` it doesn't know, and
+  MUST NOT fail the table over either. Event `id`s let a merge of two
+  copies drop duplicates.
+- **Leave it alone.** A writer that doesn't record history MUST NOT
+  delete or change an existing file. So the file is not proof that no
+  other edit happened: a writer that ignores it leaves a gap.
+- **Not an access log.** Reads aren't recorded.
+- **It keeps old values.** `from` and `delete`'s `values` hold data
+  that has since been changed or removed, so removing a row or page
+  does not remove it from history. An app that offers to erase data
+  must rewrite this file too.
+
+Not specified, left to apps: compacting a large log, and which edits
+(schema changes, view changes) a writer chooses to record.
