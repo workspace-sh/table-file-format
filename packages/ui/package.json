@@ -34,6 +34,8 @@
     "react-dom": ">=19.0.0",
     "react-native": ">=0.81.0",
     "react-native-gesture-handler": ">=2.0.0",
+    "react-native-ios-context-menu": "3.2.1",
+    "react-native-ios-utilities": "5.2.0",
     "react-native-svg": ">=15.0.0",
     "react-strict-dom": ">=0.0.55"
   },
@@ -60,6 +62,14 @@
     "expo-haptics": {
       "optional": true,
       "comment": "iOS and Android only: the feel of a touch and hold (RowActions.ios.tsx, RowActions.android.tsx). Web and macOS never load it."
+    },
+    "react-native-ios-context-menu": {
+      "optional": true,
+      "comment": "iOS only: a row's context menu (RowActions.ios.tsx). Pinned: 3.2.1 is published as source only (no lib/), so a patch could change its shape."
+    },
+    "react-native-ios-utilities": {
+      "optional": true,
+      "comment": "iOS only: react-native-ios-context-menu's native base. Pinned with it."
     }
   },
   "devDependencies": {
