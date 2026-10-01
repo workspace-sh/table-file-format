@@ -1184,13 +1184,13 @@ reader that ignores this file loses nothing it needs to read the table.
 tables/tasks/history.ndjson
 ```
 
-One JSON object per line, oldest first. Every event has:
+One JSON object per line, in the order written. Every event has:
 
-- `id` (string) — unique within the file.
-- `at` (string) — RFC 3339 UTC timestamp.
-- `by` (string, optional) — who wrote it: a name or a `did:key`. Opaque to the format.
-- `op` (string) — what happened, below.
-- `row` (string) — the row's `id`.
+- `id` (string): unique within the file.
+- `at` (string): RFC 3339 UTC timestamp.
+- `by` (string, optional): who wrote it, a name or a `did:key`. Opaque to the format.
+- `op` (string): what happened, below.
+- `row` (string): the row's `id`.
 
 Ops:
 
@@ -1201,20 +1201,21 @@ Ops:
 {"id":"e4","at":"2026-10-01T15:05:00Z","by":"leslie","op":"page","row":"p1","from":"Old text","to":"New text"}
 ```
 
-- `set` — one cell changed. `field` is the field key; `from` and `to`
-  are the stored values. As in `rows.ndjson`, an absent value means
+- `set`: one cell changed. `field` is the field key; `from` and `to`
+  are the stored values. Only stored values are recorded: a formula,
+  lookup or rollup's result isn't in `rows.ndjson`, so it isn't here. As in `rows.ndjson`, an absent value means
   empty (section 3), so `from` is absent for a cell that was empty and
   `to` is absent for one that was cleared.
-- `insert` — a row was added. `values` is the row as written.
-- `delete` — a row was removed. `values` is the whole row as it was, so
+- `insert`: a row was added. `values` is the row as written.
+- `delete`: a row was removed. `values` is the whole row as it was, so
   it can be restored.
-- `page` — a row's page (`bodies/{id}.md`, section 7) changed. `from`
+- `page`: a row's page (`bodies/{id}.md`, section 7) changed. `from`
   and `to` are the **complete** text before and after; `from` is absent
   for a new page and `to` is absent for a cleared one.
 
 Rules:
 
-- **Append only.** A writer only adds lines. Undoing or restoring a
+- **Append only.** A writer only adds lines, except to erase data (below). Undoing or restoring a
   change is a new event (a `set` back to the old value), never an edit
   or removal of an earlier one.
 - **Whole values, not diffs.** Each event stands alone, so a reader can
@@ -1223,6 +1224,7 @@ Rules:
   `page` event, when the editor closes or after about 60 seconds with
   no typing, rather than one per autosave. Readers MUST NOT depend on
   it.
+- **Order.** Lines are in the order written. Two merged copies interleave, so a reader that needs time order sorts by `at` and doesn't assume it only increases.
 - **Tolerant readers.** A reader MUST accept a missing file, MUST skip
   a line it can't parse and an event whose `op` it doesn't know, and
   MUST NOT fail the table over either. Event `id`s let a merge of two
