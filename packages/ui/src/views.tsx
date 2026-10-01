@@ -2175,6 +2175,7 @@ export function TableView({
   onUpdateField,
   onAddEnumValue,
   onMoveField,
+  onRestoreSchema,
   onAddField,
   onAddRow,
   onDeleteRow,
@@ -2201,6 +2202,13 @@ export function TableView({
   const rowHeight = liveRowHeight ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
   const lines = linesFor(rowHeight);
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
+  // The schema as a field's settings opened, for their Cancel to put back.
+  const schemaBefore = useRef<TableSchema | null>(null);
+  useEffect(() => {
+    schemaBefore.current = editingFieldName ? schema : null;
+    // Only on opening and closing: what's changed since is what Cancel undoes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingFieldName]);
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
   // Ref typed loosely (`unknown`) because the underlying instance differs
   // per platform — HTMLButtonElement on web, a Pressable view ref on
@@ -2475,6 +2483,15 @@ export function TableView({
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onMove={(delta) => onMoveField!(name, delta)}
+            onCancel={
+              onRestoreSchema
+                ? () => {
+                    if (schemaBefore.current) onRestoreSchema(schemaBefore.current);
+                    setEditingFieldName(null);
+                    setAnchorRect(null);
+                  }
+                : undefined
+            }
             fields={schema.fields}
             grid={grid}
             onClose={() => {
