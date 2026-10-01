@@ -3,7 +3,5 @@
 import "react-native-get-random-values";
 // Before anything formats a date: see intl.ts.
 import "./intl";
-import { registerRootComponent } from "expo";
-import App from "./App";
-
-registerRootComponent(App);
+// Then the app: expo-router's entry, which loads app/.
+import "expo-router/entry";
