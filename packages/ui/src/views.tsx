@@ -98,6 +98,7 @@ import {
   weekdayNamesShort,
 } from "./internal/calendarLocale";
 import { rowNumber } from "./sheets";
+import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
 import { inputHints } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
@@ -1355,6 +1356,8 @@ const styles = css.create({
     marginTop: 4,
   },
 });
+// On iOS, the interface's colours become the system's (internal/systemColors).
+adoptSystemColors(styles);
 
 /**
  * Fields by name, each carrying the format it is shown with. A formula
