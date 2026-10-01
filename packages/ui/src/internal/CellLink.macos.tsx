@@ -4,18 +4,19 @@
  */
 import { Linking } from "react-native";
 import { html } from "react-strict-dom";
-import type { CellLinkProps } from "./CellLink.web";
+import { OpenButton, type CellLinkProps } from "./cellLinkParts";
 
-export type { CellLinkProps } from "./CellLink.web";
+export type { CellLinkProps } from "./cellLinkParts";
 
-export function CellLink({ href, label, style, children }: CellLinkProps) {
+export function CellLink({ href, onOpen, label, style, children }: CellLinkProps) {
+  if (onOpen) return <OpenButton onOpen={onOpen} style={style}>{children}</OpenButton>;
   return (
     <html.span
       role="link"
       aria-label={label}
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
-        void Linking.openURL(href).catch(() => {});
+        if (href) void Linking.openURL(href).catch(() => {});
       }}
       style={style}
     >
