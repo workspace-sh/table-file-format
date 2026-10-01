@@ -2,7 +2,7 @@
 // picker, and handed to the share sheet (Save to Files, AirDrop, Mail…).
 // Reading and writing the archive is table-app's (openArchive,
 // bundleToArchive), as on the web, macOS and Linux; so is the wording of
-// what went wrong. All three Expo modules work in Expo Go.
+// what went wrong.
 
 import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
