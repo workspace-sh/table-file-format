@@ -1,7 +1,6 @@
 // Where the phone keeps edits and the viewer's settings between launches:
 // AsyncStorage, under the same keys the web keeps in localStorage and the
-// Mac in its own store. It works in Expo Go as well as in a development
-// build.
+// Mac in its own store.
 //
 // table-app's savers read and write synchronously (a KeyValueStore, like
 // localStorage), and AsyncStorage answers later. So the keys the app uses
