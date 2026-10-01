@@ -4,7 +4,7 @@
 // Android, a pointer menu on the web and macOS), and an app passes its
 // own where it wants something else. Free of any renderer, as shared.ts.
 
-import type { ReactElement } from "react";
+import type { ForwardRefExoticComponent, ReactElement, RefAttributes } from "react";
 
 /** Something that can be done to a row as a whole, from its row menu. */
 export interface RowAction {
@@ -30,12 +30,52 @@ export interface RowActionsProps {
   children: ReactElement;
 }
 
+export interface SelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+/**
+ * The Select slot: one choice from a list. The web: the browser's select.
+ * iOS: the system's menu (SwiftUI's Picker). Android: Material's dropdown
+ * menu. macOS: a button opening a menu of the options.
+ */
+export interface SelectProps {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  /** The caller's style for the select's own button (each renderer's own style type). */
+  style?: unknown;
+  /** For assistive technology, when nothing beside it names it. */
+  label?: string;
+  /** Keys pressed while the select (or, on native, its menu) has focus. */
+  onKeyDown?: (e: { key: string; shiftKey?: boolean; preventDefault?: () => void }) => void;
+  /** Left without choosing: focus moved away, or the menu was dismissed. */
+  onBlur?: () => void;
+  /**
+   * Drawn instead of the select's own button, opening the choices when
+   * tapped: a table cell's value, so the cell itself is the menu. Only a
+   * select whose `opensFromTrigger` is true takes it.
+   */
+  trigger?: ReactElement;
+}
+
+/** What a ref to a Select can do on every platform: take focus (where it can, opening its menu). */
+export interface SelectHandle {
+  focus: () => void;
+}
+
+/** A Select control; `opensFromTrigger` when it can open its choices from a `trigger`. */
+export type SelectSlot = ForwardRefExoticComponent<SelectProps & RefAttributes<SelectHandle>> & { opensFromTrigger?: boolean };
+
 /**
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
 export interface PlatformControls {
   RowActions: RowActionsSlot;
+  Select: SelectSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */

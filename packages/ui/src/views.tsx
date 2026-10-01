@@ -88,7 +88,7 @@ import { SnapHScroll } from "./internal/SnapHScroll";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./internal/Select";
+import { Select } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { afterEdit, cellPicks, gridKey } from "./gridNav";
 import { BottomSheet } from "./internal/BottomSheet";
@@ -1617,6 +1617,7 @@ function EditableCell({
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
   const hints = inputHints(field);
+  const { Select: SelectControl } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
@@ -1775,15 +1776,36 @@ function EditableCell({
     : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }));
   if (kind === "choice" || singleRelation) {
     if (!editing) {
+      const shown = (
+        <CellValue
+          field={field}
+          value={value}
+          relatedTables={relatedTables}
+          onOpenRelation={onOpenRelation}
+          lines={lines}
+        />
+      );
+      // On a phone the selected cell is itself the system's menu of
+      // choices: its next tap chooses, as a text cell's next tap types.
+      // Not a relation: its value has a button of its own (CellLink),
+      // which a menu's label would swallow.
+      if (kind === "choice" && selected !== false && SelectControl.opensFromTrigger) {
+        return (
+          <Select
+            value={typeof value === "string" ? value : ""}
+            options={[{ value: "", label: EMPTY_TEXT }, ...choiceOpts]}
+            onChange={(next) => {
+              commit(next);
+              onEditEnd?.("done");
+            }}
+            label={field?.title ?? field?.name}
+            trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+          />
+        );
+      }
       return (
         <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
-          <CellValue
-            field={field}
-            value={value}
-            relatedTables={relatedTables}
-            onOpenRelation={onOpenRelation}
-            lines={lines}
-          />
+          {shown}
         </html.div>
       );
     }

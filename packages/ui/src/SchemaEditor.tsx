@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
 import { Checkbox } from "./internal/Checkbox";
-import { Select } from "./internal/Select";
+import { Select } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
