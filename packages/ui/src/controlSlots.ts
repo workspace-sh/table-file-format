@@ -8,7 +8,8 @@ import type { ReactElement } from "react";
 
 /** Something that can be done to a row as a whole, from its row menu. */
 export interface RowAction {
-  id: "open-document" | "insert-above" | "insert-below" | "delete";
+  id: "open-document" | "add-document" | "insert-above" | "insert-below" | "delete";
+  /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
   symbol?: { sf?: string; material?: string };
@@ -52,15 +53,21 @@ export function rowActions(
 ): RowAction[] {
   const actions: RowAction[] = [];
   const { onOpenBody, onInsertRow, onDeleteRow } = can;
-  if (onOpenBody && can.hasBody) {
-    actions.push({ id: "open-document", label: "Open document", symbol: { sf: "doc.text", material: "description" }, onSelect: () => onOpenBody(rowId) });
+  // A row's document opens from here, or starts here: on a touch screen
+  // the menu is the only way in to a row without one.
+  if (onOpenBody) {
+    actions.push(
+      can.hasBody
+        ? { id: "open-document", label: "Open Document", symbol: { sf: "doc.text", material: "description" }, onSelect: () => onOpenBody(rowId) }
+        : { id: "add-document", label: "Add Document", symbol: { sf: "doc.badge.plus", material: "note_add" }, onSelect: () => onOpenBody(rowId) },
+    );
   }
   if (onInsertRow) {
-    actions.push({ id: "insert-above", label: "Insert row above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
-    actions.push({ id: "insert-below", label: "Insert row below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
+    actions.push({ id: "insert-above", label: "Insert Row Above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
+    actions.push({ id: "insert-below", label: "Insert Row Below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
   }
   if (onDeleteRow) {
-    actions.push({ id: "delete", label: "Delete row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
+    actions.push({ id: "delete", label: "Delete Row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
   }
   return actions;
 }
