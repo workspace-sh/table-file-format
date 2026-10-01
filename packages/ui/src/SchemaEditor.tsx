@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
-import { Select, Toggle } from "./PlatformControls";
+import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import {
@@ -90,6 +90,8 @@ const styles = css.create({
     flexDirection: "column",
     gap: 8,
   },
+  // In a phone's sheet: the popover's spacing without its frame.
+  sheetBody: { display: "flex", flexDirection: "column", gap: 8 },
   popoverPosition: (top: number, left: number, width: number) => ({
     top,
     left,
@@ -617,6 +619,7 @@ export function SchemaFieldEditor({
   fields,
   grid,
 }: SchemaFieldEditorProps) {
+  const { Sheet: SheetControl } = usePlatformControls();
   const [enumDraft, setEnumDraft] = useState("");
   // A formula is shown in the app's chosen syntax, typed in either, and
   // saved in the stored form (D29, #76). Only a field that is already
@@ -656,21 +659,8 @@ export function SchemaFieldEditor({
     setEnumDraft("");
   };
 
-  return (
-    <Portal>
-      {/* Fullscreen backdrop — tap anywhere outside the popover closes it.
-          html.button maps to <button> on web and Pressable on native, so
-          the same onClick handler wires up correctly. */}
-      <html.button onClick={onClose} style={styles.backdrop} />
-      <html.div
-        style={[
-          styles.popover,
-          place.below
-            ? styles.popoverPosition(place.top, popoverLeft, POPOVER_WIDTH)
-            : styles.popoverAbove(place.bottom, popoverLeft, POPOVER_WIDTH),
-          styles.popoverMaxHeight(place.maxHeight),
-        ]}
-      >
+  const body = (
+    <>
         <html.div style={styles.identity}>
           <html.span>{field.name}</html.span>
           <html.span style={styles.typeBadge}>
@@ -806,6 +796,34 @@ export function SchemaFieldEditor({
             ↓ Move down
           </html.button>
         </html.div>
+    </>
+  );
+
+  // On a phone, the platform's settings sheet, titled with the field and
+  // with Done; elsewhere a popover under (or over) the column's heading.
+  if (SheetControl.presentsSettings) {
+    return (
+      <SheetControl size="settings" title={field.title ?? field.name} confirm={{ label: "Done", onPress: onClose }} dismissible onDismiss={onClose}>
+        <html.div style={styles.sheetBody}>{body}</html.div>
+      </SheetControl>
+    );
+  }
+  return (
+    <Portal>
+      {/* Fullscreen backdrop — tap anywhere outside the popover closes it.
+          html.button maps to <button> on web and Pressable on native, so
+          the same onClick handler wires up correctly. */}
+      <html.button onClick={onClose} style={styles.backdrop} />
+      <html.div
+        style={[
+          styles.popover,
+          place.below
+            ? styles.popoverPosition(place.top, popoverLeft, POPOVER_WIDTH)
+            : styles.popoverAbove(place.bottom, popoverLeft, POPOVER_WIDTH),
+          styles.popoverMaxHeight(place.maxHeight),
+        ]}
+      >
+        {body}
       </html.div>
     </Portal>
   );
