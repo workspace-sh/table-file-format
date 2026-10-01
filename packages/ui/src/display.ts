@@ -249,6 +249,11 @@ export const PILL_PALETTE: Record<string, { light: { bg: string; fg: string }; d
   pink: { light: { bg: "#fce1f0", fg: "#be185d" }, dark: { bg: "#4a1f36", fg: "#ff9ecb" } },
 };
 
+/** A choice's pair by name; no colour, or a name not in the palette, is gray (SPEC section 4). */
+export function pillColors(color: string | undefined): (typeof PILL_PALETTE)[string] {
+  return color !== undefined && Object.hasOwn(PILL_PALETTE, color) ? PILL_PALETTE[color]! : PILL_PALETTE["gray"]!;
+}
+
 /** Default column width, and the narrowest one fills to (web `MIN_CELL_WIDTH`). */
 export const MIN_CELL_WIDTH = 180;
 /** Narrowest a column can be dragged. */

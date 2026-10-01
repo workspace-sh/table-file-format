@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { PILL_PALETTE } from "./display.ts";
+import { PILL_PALETTE, pillColors } from "./display.ts";
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 const names = Object.keys(PILL_PALETTE);
@@ -55,4 +55,10 @@ test("the web's StyleX literals restate the palette", () => {
     assert.deepEqual(line.match(HEX), [p.light.bg, p.dark.bg, p.light.fg, p.dark.fg], name);
     assert.ok(views.includes(`${name}: styles.${style},`), `${name} is in PILL_COLORS`);
   }
+});
+
+test("no colour, an unknown name, or an object property name is gray", () => {
+  const gray = PILL_PALETTE["gray"];
+  for (const color of [undefined, "", "magenta", "toString", "constructor", "__proto__"]) assert.equal(pillColors(color), gray, String(color));
+  assert.equal(pillColors("mint"), PILL_PALETTE["mint"]);
 });
