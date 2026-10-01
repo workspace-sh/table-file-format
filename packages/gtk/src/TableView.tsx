@@ -119,8 +119,8 @@ function Cell({
 /** The row menu's entries, by what the table was given to do. */
 /** The row's own action for each of table-ui/shared's row actions. */
 const ROW_ACTION: Record<RowAction["id"], string> = {
-  "open-document": "row.open",
-  "add-document": "row.open",
+  "open-page": "row.open",
+  "add-page": "row.open",
   "insert-above": "row.above",
   "insert-below": "row.below",
   delete: "row.delete",
@@ -133,7 +133,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-document", "add-document"]), section(["insert-above", "insert-below"]), section(["delete"])]
+  return [section(["open-page", "add-page"]), section(["insert-above", "insert-below"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
