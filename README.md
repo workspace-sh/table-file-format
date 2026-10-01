@@ -133,7 +133,7 @@ The five views, the schema editor and the body editor are written once
 and run unchanged on web, iOS, Android and macOS. Nothing in the view
 layer branches on platform.
 
-Every fork lives in `packages/ui/src/internal/`, and there are seventeen
+Every fork lives in `packages/ui/src/internal/`, and there are eighteen
 of them. Most are a `.web.tsx` or `.web.ts` override beside a default
 that serves native; `Tooltip` is a `.macos.tsx` override beside a
 default that serves the rest, and `useEscape` and `AttachmentImage` have
@@ -152,6 +152,7 @@ both:
 | `measureAnchor`, `useContainerWidth`, `useViewportWidth`, `useViewportHeight` | Layout measurement, which has no shared primitive. |
 | `Select` | A choice from a list. The web keeps the browser's own select, with its look, keyboard and accessibility. React Native has no select, so native is a button that opens a menu of the options in the `Portal`. |
 | `Checkbox` | The web keeps the browser's own checkbox, in a `label` when it has text. React Native has none, so native is a small square that fills with a tick, set in a row beside its text, since a `label` is a Text there. |
+| `inputAttributes` | The keyboard a field wants (`inputHints`). The web keeps the browser's input types (a date picker, a number field). React Native has neither, and React Strict DOM turns `type="number"` into a digits-only pad, so native passes the input mode alone, and sets the keyboard with a minus and a point for a signed number on the TextInput itself. |
 
 The pattern is worth stating plainly: the forks are **scrolling,
 dragging, measuring, overlays and the two form controls React Native
