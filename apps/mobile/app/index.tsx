@@ -12,7 +12,7 @@ import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
-import { BodyEditor, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
+import { BodyEditor, PageGutter, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
@@ -87,6 +87,7 @@ export default function TableScreen() {
       {/* The table first, before the bars' elements below: expo-router
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
+      <PageGutter.Provider value={MOBILE_H_PADDING}>
       <PortalHost>
         <ScrollView
           // Tracked by the large title, which collapses as it scrolls.
@@ -140,6 +141,7 @@ export default function TableScreen() {
           />
         )}
       </PortalHost>
+      </PageGutter.Provider>
       <Stack.Screen
         options={{
           title: view.name,
