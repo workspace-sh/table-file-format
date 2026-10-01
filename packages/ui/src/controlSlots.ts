@@ -70,12 +70,35 @@ export interface SelectHandle {
 export type SelectSlot = ForwardRefExoticComponent<SelectProps & RefAttributes<SelectHandle>> & { opensFromTrigger?: boolean };
 
 /**
+ * The DateInput slot: a date, time, or date and time chosen in the
+ * system's picker, for a table cell that's selected. iOS: the system's
+ * compact date picker in the cell. Android: a tap on the cell opens
+ * Material's date (and time) dialogs. The web and macOS type dates in the
+ * cell's editor instead, so their default is unavailable.
+ */
+export interface DateInputProps {
+  kind: "date" | "time" | "datetime";
+  /** The stored value ("2026-04-01", "09:30:00", "2026-09-22T14:30:00Z"), or "". */
+  value: string;
+  /** Called with the value to store, in the same forms. */
+  onChange: (value: string) => void;
+  /** For assistive technology: the column's name. */
+  label?: string;
+  /** The cell's value as it's shown, for a picker that opens from it (Android). */
+  trigger: ReactElement;
+}
+
+/** A DateInput control; `available` false where cells type their dates instead. */
+export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
+
+/**
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
 export interface PlatformControls {
   RowActions: RowActionsSlot;
   Select: SelectSlot;
+  DateInput: DateInputSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
