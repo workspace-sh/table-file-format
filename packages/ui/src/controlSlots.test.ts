@@ -17,9 +17,22 @@ test("a row's actions: document, inserts, then delete last and destructive", () 
   assert.deepEqual(done, ["open r1", "insert above r1", "insert below r1", "delete r1"]);
 });
 
-test("only what the view can do: no document without a body, nothing at all for a read-only view", () => {
-  assert.deepEqual(rowActions("r1", { onOpenBody: () => {}, hasBody: false, onDeleteRow: () => {} }).map((a) => a.id), ["delete"]);
+test("a row without a document offers to add one, opened the same way", () => {
+  const opened: string[] = [];
+  const actions = rowActions("r1", { onOpenBody: (id) => opened.push(id), hasBody: false, onDeleteRow: () => {} });
+  assert.deepEqual(actions.map((a) => [a.id, a.label]), [["add-document", "Add Document"], ["delete", "Delete Row"]]);
+  actions[0]!.onSelect();
+  assert.deepEqual(opened, ["r1"]);
+});
+
+test("only what the view can do: nothing at all for a read-only view", () => {
+  assert.deepEqual(rowActions("r1", { hasBody: true, onDeleteRow: () => {} }).map((a) => a.id), ["delete"]);
   assert.deepEqual(rowActions("r1", {}), []);
+});
+
+test("labels are title case", () => {
+  const actions = rowActions("r1", { onOpenBody: () => {}, hasBody: true, onInsertRow: () => {}, onDeleteRow: () => {} });
+  assert.deepEqual(actions.map((a) => a.label), ["Open Document", "Insert Row Above", "Insert Row Below", "Delete Row"]);
 });
 
 test("each action names its symbol on both phones", () => {
