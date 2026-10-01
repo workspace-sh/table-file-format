@@ -1518,16 +1518,13 @@ function RelationCellValue({
     return <html.span>{link.label}</html.span>;
   }
 
+  // The related row opens from its name with a pointer; on a touch
+  // screen from a button beside it, so a tap on the cell still selects it
+  // and a second opens the picker (CellLink).
   return (
-    <html.button
-      style={styles.relationLink}
-      onClick={(e: { stopPropagation: () => void }) => {
-        e.stopPropagation();
-        onOpenRelation(link.address);
-      }}
-    >
+    <CellLink onOpen={() => onOpenRelation(link.address)} label={`Open ${link.label}`} style={styles.relationLink}>
       {link.label}
-    </html.button>
+    </CellLink>
   );
 }
 
