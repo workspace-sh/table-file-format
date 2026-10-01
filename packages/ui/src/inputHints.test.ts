@@ -12,6 +12,8 @@ test("numbers: a pad without a minus only when the field can't go below zero", (
   assert.equal(inputHints(f({ type: "number" })).kind, "signed-decimal");
   assert.equal(inputHints(f({ type: "integer", constraints: { minimum: -5 } })).kind, "signed-decimal");
   assert.equal(inputHints(f({ type: "number", format: "currency:GBP" })).kind, "signed-decimal");
+  assert.equal(inputHints(f({ type: "year", constraints: { minimum: 1900 } })).kind, "integer");
+  assert.equal(inputHints(f({ type: "year" })).kind, "signed-decimal");
 });
 
 test("strings by format: email, url and phone get their keyboards", () => {

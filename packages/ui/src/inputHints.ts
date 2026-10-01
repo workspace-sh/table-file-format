@@ -39,6 +39,7 @@ function hintKind(field: Field | undefined): InputHintKind {
   const unsigned = (field?.constraints?.minimum ?? -1) >= 0;
   switch (field?.type) {
     case "integer":
+    case "year":
       return unsigned ? "integer" : "signed-decimal";
     case "number":
       return unsigned ? "decimal" : "signed-decimal";
