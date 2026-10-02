@@ -231,7 +231,7 @@ Can the web demo keep its own index for a big table, with no server? `@sqlite.or
 
 ## The indexer (Phase 3, 2 Oct 2026)
 
-`buildIndex`, `queryIndex`, `putRows` and `removeRows` in `packages/core/src/indexer.ts` are the SQLite index of SPEC section 8, written once against a small `SqlDriver` that each platform fills with its own SQLite (Node's `node:sqlite` is what the tests use; the web would pass SQLite WASM, the phone op-sqlite or expo-sqlite). `queryIndex` takes a view's filter, sort and manual order and a search string, and returns a count plus a window reader, `rows(start, end)`. That pair is what a virtualised list draws from.
+`buildIndex`, `queryIndex`, `putRows` and `removeRows` in `packages/core/src/indexer.ts` are the SQLite index of SPEC section 8, written once against a small `SqlDriver` that each platform fills with its own SQLite (Node's `node:sqlite` is what the tests use; the web passes SQLite WASM in a worker, `apps/web/src/sqlite/`; the phone will pass expo-sqlite). `queryIndex` takes a view's filter, sort and manual order and a search string, and returns a count plus a window reader, `rows(start, end)`. That pair is what a virtualised list draws from.
 
 It is exact or absent. A randomised test compares every answer with `applyView` and `searchRows` (empties, mixed kinds, Unicode, enums, datetimes, arrays, pages, all fourteen filter operators), and anything it can't promise, such as a field holding the wrong kind of value or a formula that reads other rows, returns null so the caller computes the view in memory. Writing it turned up one difference in the in-memory path, fixed with it: an empty cell passed `gt`, `gte`, `lt` and `lte` because JavaScript turns null and "" into 0.
 
@@ -242,7 +242,26 @@ Measured in Node 24 (`node:sqlite`, in memory) on the rig, with the table from `
 | 100,000 | 2.4 s | 2 ms | 1 to 13 ms | 2 ms | 1 ms | 90 to 140 ms | under 1 ms |
 | 1,000,000 | 31.6 s | 3 ms | 3 to 120 ms | 19 ms | 1 ms | 1.0 to 1.7 s | about 1 ms |
 
-A sort's index is made the first time that sort is asked for, so the first sort of a field costs a second at 1M rows and every one after it is instant, including a page deep into the list. Filters scan: 160 ms for `stage = won` at 1M. These are Node numbers; the browser's are in the section above.
+A sort's index is made the first time that sort is asked for, so the first sort of a field costs a second at 1M rows and every one after it is instant, including a page deep into the list. Filters scan: 160 ms for `stage = won` at 1M. These are Node numbers; the browser's are below.
+
+### In the browser (3 Oct 2026)
+
+`apps/web/src/sqlite/` runs the same indexer over SQLite WASM (`@sqlite.org/sqlite-wasm`, 3.53) in a worker, with the database file in OPFS (`opfs-sahpool`, so it survives a reload and needs no special headers). `oo1Driver` in core wraps the WASM database as a `SqlDriver`; the worker owns it and `client.ts` is the `SqlDriver` the page sees, so a build or a query never runs on the thread that draws. The indexer's tests also run over SQLite WASM in Node (`npm run core:test:wasm`), where the FTS5 trigram tokenizer and `json_each` are confirmed present.
+
+`apps/web/harness/` is a page that does a build and the queries in a real browser, from a production build (`BIG_DIR=<dir with big-<n>.table> npm run web:harness:build`, then `npm run web:harness:preview`, and open `/?n=100000`; `fresh=1` drops the stored index first, and a plain reload reopens it). Firefox 155 headless on the rig, `cache_size` 64 MB, 32 KB pages, `synchronous=off`:
+
+| Rows | Build | File | Open (first 50) | `stage = won` | First sort of a field | Page at the middle | Search | Edit | Reopen after a reload |
+|---|---|---|---|---|---|---|---|---|---|
+| 100,000 | 7.1 s | about 70 MB | 9 ms | 25 ms | 140 to 230 ms | 8 ms | 27 ms | 8 ms | not measured |
+| 1,000,000 | 89 s | about 700 MB | 46 ms | 0.8 s | 2.4 to 3.4 s | 30 ms | 0.4 to 0.5 s | 13 ms | 46 ms to the first rows |
+
+The build is about three times Node's (31.6 s at 1M): rows are fetched, parsed and posted to the worker in batches, and OPFS writes cost more than memory. A sort's index is stored in the file, so after a reload the first sort of a field is instant (23 ms at 1M). The 100,000-row run also checks eight queries (filters, enum and text sorts, search, a computed field) against `applyView` and `searchRows`; all match.
+
+What the numbers taught:
+
+- **Page size is the one setting that matters.** At the default 4 KB, 1M rows built in 112 s and `stage = won` took 2.2 s. At 32 KB the build is 89 s and the filter 0.8 s. A scan through OPFS is bound by the number of reads, not bytes, so fewer, larger pages win; a 256 MB cache did not help (it only trimmed search). The page size is set when the file is created and is ignored on an existing file, so changing it needs a new file.
+- **A browser must grant the space.** The 1M index is 700 MB, and Firefox's per-site quota is a fraction of free disk: on a profile in a 3.9 GB tmpfs the build failed with `SQLITE_IOERR`. A build that runs out of space rejects with the SQLite error, and the caller should fall back to memory; `WebDatabase.persistent` says only whether OPFS was available at all.
+- Filters still scan (0.8 s at 1M, against 160 ms in Node's in-memory database); a first search at 1M is half a second. Phase 1's list should treat a window as arriving late.
 
 ## Open questions for the large-tables discussion
 
