@@ -15,6 +15,7 @@ import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from 
 import { BodyEditor, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
+import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 
 // Horizontal page padding, and the negative margin that lets a sideways
@@ -52,7 +53,20 @@ export default function TableScreen() {
       back: () => router.back(),
       dispatch: app.dispatch,
       state: () => app.state,
+      // Measuring large tables (#126): see measure.ts.
+      openZipFrom: (url: string) => openZipFrom(url, app.state, app.dispatch),
+      timeEdit: () => timeEdit(app.state, app.dispatch),
     };
+  });
+  // A measuring build (EXPO_PUBLIC_TABLE_MEASURE=1) opens what its local
+  // server names, once, at launch (measure.ts).
+  const measured = useRef(false);
+  const appRef = useRef(app);
+  appRef.current = app;
+  useEffect(() => {
+    if (!MEASURING || measured.current || !app) return;
+    measured.current = true;
+    void runMeasure(() => appRef.current!.state, app.dispatch);
   });
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf } = app;
