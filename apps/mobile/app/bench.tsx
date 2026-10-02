@@ -10,7 +10,7 @@
 // platform's row menu (RowActions, the system context menu on iOS).
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Dimensions, PlatformColor, ScrollView, Text, View } from "react-native";
+import { Animated, Dimensions, PlatformColor, ScrollView, Text, View, type ScrollViewProps } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
@@ -70,11 +70,17 @@ const frame = () => new Promise<number>((done) => requestAnimationFrame((t) => d
 
 export default function Bench() {
   const params = useLocalSearchParams<{ lib?: string; n?: string }>();
-  const lib = params.lib === "legend" ? "legend" : "flash";
+  const lib = params.lib === "legend" ? "legend" : params.lib === "screen" ? "screen" : "flash";
   const n = Number(params.n ?? 10000);
   const data = useMemo(() => Array.from({ length: n }, (_, i) => i), [n]);
   const flash = useRef<FlashListRef<number>>(null);
   const legend = useRef<LegendListRef>(null);
+  const screen = useRef<LegendListRef>(null);
+  // "screen": the layout the table will have on a phone. The list is the
+  // screen's vertical scroller (so the large title collapses), the rows sit
+  // in one sideways scroller inside it, and the screen's own header slides
+  // back against the sideways scroll so it stays put.
+  const scrollX = useRef(new Animated.Value(0)).current;
   const [started] = useState(() => performance.now());
   const ran = useRef(false);
 
@@ -118,6 +124,7 @@ export default function Bench() {
       // Jump to the last row and wait until it's drawn.
       const t1 = performance.now();
       if (lib === "flash") flash.current?.scrollToEnd({ animated: false });
+      else if (lib === "screen") screen.current?.scrollToEnd({ animated: false });
       else legend.current?.scrollToEnd({ animated: false });
       let waited = 0;
       while (deepest < n - 15 && waited < 600) {
@@ -139,6 +146,43 @@ export default function Bench() {
 
   // Nothing in an ordinary build, though the route exists.
   if (!(MEASURING || __DEV__)) return null;
+  if (lib === "screen") {
+    const width = CELL * FIELDS.length;
+    return (
+      <LegendList
+        ref={screen}
+        data={data}
+        onScroll={onScroll}
+        renderItem={({ item }: { item: number }) => <Row i={item} />}
+        keyExtractor={(i: number) => String(i)}
+        estimatedItemSize={ROW_HEIGHT}
+        getFixedItemSize={() => ROW_HEIGHT}
+        recycleItems
+        contentInsetAdjustmentBehavior="automatic"
+        ListHeaderComponent={
+          <Animated.View style={{ transform: [{ translateX: scrollX }] }}>
+            <Text style={{ padding: 16, fontSize: 13, color: PlatformColor("secondaryLabel") }}>
+              Screen layout · {n.toLocaleString("en")} rows
+            </Text>
+          </Animated.View>
+        }
+        // Its props are typed against the hoisted react-native's types; the
+        // app has its own copy, so they pass through as ScrollView's.
+        renderScrollComponent={({ children, ...props }) => (
+          <ScrollView {...(props as ScrollViewProps)}>
+            <Animated.ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true })}
+            >
+              <View style={{ width }}>{children}</View>
+            </Animated.ScrollView>
+          </ScrollView>
+        )}
+      />
+    );
+  }
   return (
     <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={{ width: CELL * FIELDS.length }}>
       <View style={{ width: CELL * FIELDS.length, flex: 1 }}>

@@ -59,7 +59,7 @@ export async function runMeasure(getState: () => AppState, dispatch: Dispatch<Ap
   try {
     const name = (await (await fetch(`${SERVER}/next`)).text()).trim();
     if (!name) return;
-    const bench = /^bench (flash|legend) (\d+)$/.exec(name);
+    const bench = /^bench (flash|legend|screen) (\d+)$/.exec(name);
     if (bench) {
       navigate(`/bench?lib=${bench[1]}&n=${bench[2]}`);
       return;
