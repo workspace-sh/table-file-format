@@ -575,7 +575,7 @@ function memoFor(schema: TableSchema) {
   return memo;
 }
 
-function rowLocal(schema: TableSchema, computed: Field[]): boolean {
+export function rowLocal(schema: TableSchema, computed: Field[]): boolean {
   let local = localSchemas.get(schema);
   if (local === undefined) {
     const across = (e: Expr): boolean =>

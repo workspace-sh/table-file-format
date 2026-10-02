@@ -250,15 +250,18 @@ export function inOrder<T>(items: T[], order: string[] | undefined, id: (item: T
   return mentioned;
 }
 
+const isEmpty = (v: unknown) => v === undefined || v === null || v === "";
+
 export function matchesFilter(row: Row, f: ViewFilter): boolean {
   const v = row[f.field];
   switch (f.operator) {
     case "eq": return v === f.value;
     case "neq": return v !== f.value;
-    case "gt": return (v as number) > (f.value as number);
-    case "gte": return (v as number) >= (f.value as number);
-    case "lt": return (v as number) < (f.value as number);
-    case "lte": return (v as number) <= (f.value as number);
+    // An empty cell is greater or less than nothing (SPEC "Empty values"), not 0 by coercion.
+    case "gt": return !isEmpty(v) && (v as number) > (f.value as number);
+    case "gte": return !isEmpty(v) && (v as number) >= (f.value as number);
+    case "lt": return !isEmpty(v) && (v as number) < (f.value as number);
+    case "lte": return !isEmpty(v) && (v as number) <= (f.value as number);
     // On an array (a multi-select, say) these ask about its items (D35).
     case "contains": return Array.isArray(v) ? v.includes(f.value) : typeof v === "string" && v.includes(String(f.value));
     case "not_contains": return Array.isArray(v) ? !v.includes(f.value) : typeof v === "string" && !v.includes(String(f.value));

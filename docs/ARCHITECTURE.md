@@ -13,7 +13,7 @@ explains the implementation that consumes it.
 │   │                        Pure-TS format library — parser, writer,
 │   │                        validator, query, manifest stamping,
 │   │                        nanoid generation, CSV converter,
-│   │                        zip archive transport, indexer stubs.
+│   │                        zip archive transport, SQLite indexer.
 │   │                        Cross-platform (Node + RN + browser).
 │   │
 │   ├── ui/                  @workspace.sh/table-ui
@@ -109,7 +109,7 @@ Mirrors what other workspace-sh repos with bare-RN consumers do.
 environment: types, `id` (nanoid generator), `validate`,
 `validateBodies`, `applyFilters`, `applySort`, `applyGroup`,
 `applyView`, `searchRows`, `effectiveAlign`, `defaultAlignFor`, and
-the `indexer` stubs.
+the SQLite `indexer`.
 
 The archive transport (`readTableArchive` / `writeTableArchive`) is
 in the barrel too — it is deliberately platform-free (bytes in,

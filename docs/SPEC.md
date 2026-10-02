@@ -663,7 +663,7 @@ two `"table"` views named "Active" and "Done").
 
 On an `array` value, `contains` and `not_contains` ask whether it has
 the given item, and `in` / `not_in` whether any of its items is in the
-given list.
+given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
 
 ### Sort behaviour
 
@@ -855,18 +855,22 @@ joins inside one database. Where this section says `schema.json` and
 - Apps decide their own caching strategy; the format prescribes only
   the fallback rule.
 
-The interface (`buildIndex`, `queryIndex`, `isIndexStale`,
-`dropIndex`) lives in `@workspace.sh/table-core` as types; concrete
-implementations belong in optional per-platform packages (Node via
-`node:sqlite`, RN via op-sqlite / expo-sqlite, browser via
-wa-sqlite + OPFS — or no cache at all; the in-memory query path is
-always sufficient). The implementation is currently a stub.
+The interface (`buildIndex`, `queryIndex`, `isIndexStale`, `dropIndex`,
+`putRows`, `removeRows`) lives in `@workspace.sh/table-core`. It is one
+implementation, written against a small `SqlDriver` (`exec`, `run`,
+`all`, optionally `batch`) that each platform fills with its SQLite:
+`node:sqlite` on Node, op-sqlite or expo-sqlite on React Native,
+SQLite WASM on the web — or no cache at all; the in-memory query path
+is always sufficient.
 
 ### Query interface — structured, not raw SQL
 
-`queryIndex` accepts the **view query AST** — the same
-`filter` / `sort` structures defined for `views.json` (section 4) plus an
-optional free-text `search` string — and compiles to SQL internally.
+`queryIndex` accepts the **view query AST** — the `filter` / `sort`
+structures defined for `views.json` (section 4), the view's manual
+`order`, and an optional free-text `search` string — and compiles to
+SQL internally. It returns the number of rows that match and a way to
+read any window of them (`rows(start, end)`), so a screen never needs
+the whole result.
 
 Consumers MUST NOT be handed raw SQL access. Rationale:
 
@@ -874,15 +878,40 @@ Consumers MUST NOT be handed raw SQL access. Rationale:
   configuration) is an implementation detail; raw SQL would freeze it
   into a public contract.
 - The indexed path and the in-memory fallback (`applyFilters` /
-  `applySort` / `searchRows`) share one query language by
-  construction, so results cannot diverge by accident.
+  `applySort` / `searchRows`) answer the same query with the same
+  rows in the same order, and the test suite compares them on
+  randomised tables (empties, mixed kinds, Unicode, enums, datetimes,
+  arrays) so they cannot diverge by accident.
 - User-supplied search text never reaches an SQL string.
+
+**An index never guesses.** `queryIndex` returns nothing (null) when it
+cannot promise the rows the in-memory path would give, and the caller
+computes the view in memory. It does so when there is no index, the
+index was built for another schema, a filtered or sorted field holds
+values its type does not (a string in a number field), a computed field
+reads other rows, a filter's value is one JavaScript would coerce, or
+the caller wants text sorted in the viewer's own order (D41) rather
+than the saved one.
+
+### Storage mapping
+
+One database per bundle holds every table. Each table gets its rows as
+JSON (what `applyView` returns, computed fields included) beside typed
+columns for querying: numbers and booleans as numbers, text as text
+with its lower-cased form, datetimes with their instant, arrays and
+objects as JSON. `""` is kept apart from an absent value, since
+filters tell them apart. A sort's index is made the first time that
+sort is asked for. A full-text table (trigram) over the id, the
+string, date and datetime fields and the page narrows a search; an
+exact substring test over the same text answers it.
 
 ### Staleness contract
 
-The index stores `{schema_hash, rows_hash, format_version, built_at}`
-in a `_meta` table inside the database. `isIndexStale` re-hashes
-`schema.json` + `rows.ndjson` and compares.
+The index stores the table's schema signature and an opaque `key` the
+caller chooses when it builds (a content hash of `schema.json` +
+`rows.ndjson` + bodies is the natural one). `isIndexStale(db, name,
+key)` compares it. A key from another content version, a missing
+index and an index of another format all read as stale.
 
 Hashing — not mtime comparison — because git does not preserve
 mtimes: checkouts and pulls rewrite them even when content is
@@ -890,20 +919,22 @@ unchanged, which makes an mtime-based check rebuild after every git
 operation. Content hashing is correct across git, file copies, and
 clock skew, and costs ~50ms on a multi-MB NDJSON.
 
-### Rebuild contract
+### Rebuild and in-place edits
 
-Rebuilds are **whole-file**: parse `rows.ndjson`, insert in a single
-transaction. At this format's realistic size class (tens of
-thousands of rows — Airtable caps at 50k/base) a full rebuild is
-sub-second; incremental indexing is deliberately out of scope until
-a real consumer outgrows that. (The format is already
-incremental-friendly if needed: append-only edits can be detected by
-prefix hash + byte watermark.)
+A build replaces the table's index in one transaction, so a concurrent
+reader sees the old index or the new one, never half. Rows can be
+streamed in, so memory stays flat at a million rows (about 30 s in
+Node, once per content version; reopening a saved index is
+instant). Deleting `index.sqlite` at any moment MUST be safe (it is,
+by the fallback rule).
 
-Writers MUST build into a temporary file and atomically rename over
-`index.sqlite`, so a concurrent reader never observes a half-built
-index. WAL mode is recommended. Deleting `index.sqlite` at any
-moment MUST be safe (it is, by the fallback rule).
+An edit does not need a rebuild: `putRows` adds or replaces rows and
+their pages, and `removeRows` removes them, each a few statements (about
+a millisecond at a million rows), and both move the key. Rows added
+this way sit at the end of the file order. Schemas with formulas that
+read other rows (a change to one row changes others) refuse in-place
+edits and are rebuilt; so is a table whose schema changed or whose rows
+were inserted mid-file.
 
 ### Full-text search includes bodies
 

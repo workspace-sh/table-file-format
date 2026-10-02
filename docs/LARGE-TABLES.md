@@ -229,6 +229,21 @@ Can the web demo keep its own index for a big table, with no server? `@sqlite.or
 - **The build is the cost** (17 s to insert 1M rows, against 10.9 s in Node): done once per content version, in a worker, with progress. Memory stays flat because rows are inserted as the text is read.
 - **Not yet measured:** Chromium and Safari (the VFS is supported in both), the browser's storage quota for a 580 MB index, and a build that follows the table's schema rather than fixed columns.
 
+## The indexer (Phase 3, 2 Oct 2026)
+
+`buildIndex`, `queryIndex`, `putRows` and `removeRows` in `packages/core/src/indexer.ts` are the SQLite index of SPEC section 8, written once against a small `SqlDriver` that each platform fills with its own SQLite (Node's `node:sqlite` is what the tests use; the web would pass SQLite WASM, the phone op-sqlite or expo-sqlite). `queryIndex` takes a view's filter, sort and manual order and a search string, and returns a count plus a window reader, `rows(start, end)`. That pair is what a virtualised list draws from.
+
+It is exact or absent. A randomised test compares every answer with `applyView` and `searchRows` (empties, mixed kinds, Unicode, enums, datetimes, arrays, pages, all fourteen filter operators), and anything it can't promise, such as a field holding the wrong kind of value or a formula that reads other rows, returns null so the caller computes the view in memory. Writing it turned up one difference in the in-memory path, fixed with it: an empty cell passed `gt`, `gte`, `lt` and `lte` because JavaScript turns null and "" into 0.
+
+Measured in Node 24 (`node:sqlite`, in memory) on the rig, with the table from `scripts/big-table.mts`:
+
+| Rows | Build (with full-text) | View, first 50 | Search | Page at the middle | Edit one row | First sort of a field | The same sort again |
+|---|---|---|---|---|---|---|---|
+| 100,000 | 2.4 s | 2 ms | 1 to 13 ms | 2 ms | 1 ms | 90 to 140 ms | under 1 ms |
+| 1,000,000 | 31.6 s | 3 ms | 3 to 120 ms | 19 ms | 1 ms | 1.0 to 1.7 s | about 1 ms |
+
+A sort's index is made the first time that sort is asked for, so the first sort of a field costs a second at 1M rows and every one after it is instant, including a page deep into the list. Filters scan: 160 ms for `stage = won` at 1M. These are Node numbers; the browser's are in the section above.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.

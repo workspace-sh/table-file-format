@@ -76,7 +76,7 @@ const body = projects.bodies?.[visibleRows[0]!.id];
 ├── packages/
 │   ├── core/             @workspace.sh/table-core
 │   │                     pure-TS format library — parser/writer/validator/query/
-│   │                     id/indexer-stubs. Cross-platform (Node + RN + browser).
+│   │                     id/indexer. Cross-platform (Node + RN + browser).
 │   ├── ui/               @workspace.sh/table-ui
 │   │                     RSD/StyleX view components — TableView, BoardView,
 │   │                     GalleryView, ListView, CalendarView, SchemaEditor,
@@ -271,16 +271,13 @@ npm run ui:typecheck
 - Sort respects enum declaration order; nulls last regardless of direction
 - Group buckets nulls into `"(empty)"`; keys ordered by enum when present
 - Optional `bodies/{id}.md` for long-form markdown bodies
+- `index.sqlite` cache over a `SqlDriver`: `buildIndex` / `queryIndex` / `isIndexStale` / `dropIndex` / `putRows` / `removeRows`
 - `format: "markdown"` annotation for inline markdown content
-
-**Stubs** (interface locked, implementation deferred):
-- `index.sqlite` cache: `buildIndex` / `queryIndex` / `isIndexStale` / `dropIndex`
 
 **Open** (tracked as issues):
 - Cross-table relation drilldown (#3)
 - Markdown ↔ `.table/` cross-reference addressing (#4)
 - CSV converter (`fromCSV` / `toCSV`) (#5)
-- `index.sqlite` cache implementation (#6)
 - Granular parser/writer/validator named exports (#7)
 - Lift `@workspace.sh/table-ui` from web-only to cross-platform
   (replace `react-dom/createPortal`, abstract `document.pointermove`,
