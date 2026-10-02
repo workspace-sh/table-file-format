@@ -206,6 +206,11 @@ No blank frames in any run. The peak includes the app itself, about 300 MB in th
 - **The web:** LegendList has a React DOM build that can use an ancestor's scrollbar (`scrollElement`), which suits the web demo. FlashList's web support goes through react-native-web, which the web app doesn't use.
 - **Rows of different heights:** FlashList measures them without slowing down. LegendList is fast when it's told each height (`getFixedItemSize` can return a different size for each row), and slow when it has to measure at 100k rows and up.
 
+**Decided (Leslie, 2 Oct 2026): LegendList, on every platform, for now.** One library for iPhone, the Mac and the web (its React DOM build), knowing the caveat: it's fast at a million rows when each row's height is known before drawing, and slow from about 100k rows when it has to measure them.
+- Heights that can be worked out keep it fast: a view's row height (the Airtable short to extra-tall kind), group headers, totals, a height stored with a row, and close estimates from a row's text.
+- Heights only content can tell (wrapped text, images, page previews) are the risk. Mitigations: cells clip to the view's lines unless a view asks to wrap; estimate then correct for wrapped views; and the table draws through one internal component, so a view that needs measured rows at scale could use FlashList on native later without touching the rest.
+- `apps/mobile/app/bench.tsx` stays, so the choice can be re-checked as either library changes.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.
