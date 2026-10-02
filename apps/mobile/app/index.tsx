@@ -5,7 +5,7 @@
 // table-ui's views, scrolling under the glass bars.
 
 import { useEffect, useMemo, useRef } from "react";
-import { Platform, ScrollView } from "react-native";
+import { Alert, Platform, ScrollView } from "react-native";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
@@ -20,6 +20,8 @@ import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "
 // Horizontal page padding, and the negative margin that lets a sideways
 // scroller run to the screen's edges.
 const MOBILE_H_PADDING = 16;
+/** How many validation errors a tap on the count lists. */
+const ERRORS_LISTED = 8;
 
 export default function TableScreen() {
   const app = useTableAppContext();
@@ -103,7 +105,34 @@ export default function TableScreen() {
           <html.div style={styles.subtitle}>
             <html.span>{summary.count}</html.span>
             <html.span>·</html.span>
-            <html.span style={summary.valid ? styles.validityOk : styles.validityBad}>{summary.validity}</html.span>
+            {summary.valid ? (
+              <html.span style={styles.validityOk}>{summary.validity}</html.span>
+            ) : (
+              // Which rows, and why: the web shows them on hover, which a
+              // touch screen has none of, so a tap lists them.
+              <html.button
+                aria-label={`${summary.validity}: show them`}
+                onClick={() =>
+                  Alert.alert(
+                    summary.validity,
+                    summary.errors
+                      .slice(0, ERRORS_LISTED)
+                      .map((e) => {
+                        // A row by its title, or by its place when it has none
+                        // (a new row's title is only its id); a field by its title.
+                        const title = e.rowId ? rowTitleFor(table, e.rowId) : undefined;
+                        const row = title && title !== e.rowId ? title : `Row ${e.rowIndex + 1}`;
+                        const field = table.schema.fields.find((f) => f.name === e.field);
+                        return `${row} · ${field ? `${field.title ?? field.name}: ` : ""}${e.message}`;
+                      })
+                      .join("\n") + (summary.errors.length > ERRORS_LISTED ? `\n…and ${summary.errors.length - ERRORS_LISTED} more` : ""),
+                  )
+                }
+                style={styles.validityButton}
+              >
+                <html.span style={styles.validityBad}>{summary.validity}</html.span>
+              </html.button>
+            )}
             {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
             {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
           </html.div>
@@ -238,6 +267,11 @@ const styles = css.create({
       default: "#1f7a2c",
       "@media (prefers-color-scheme: dark)": "#7ee08a",
     },
+  },
+  validityButton: {
+    padding: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
   },
   validityBad: {
     color: {
