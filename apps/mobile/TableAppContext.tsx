@@ -48,6 +48,8 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
+// How long after the last edit the phone saves (the Mac and Linux apps use 400 ms): typing is one write, not one a key.
+const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 export interface TableAppContextValue {
@@ -113,9 +115,9 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    // Saved on the phone after every edit. The fixtures themselves are
+    // Saved on the phone a moment after the last edit. The fixtures themselves are
     // never saved, so an untouched app keeps following them as they change.
-    { store, write: async (_edited, tables, bundles) => save(store, { tables, bundles }) },
+    { store, write: async (_edited, tables, bundles) => save(store, { tables, bundles }), delayMs: SAVE_AFTER_MS },
     systemLocale,
   );
   const derived = derive(state, { locale: systemLocale });
