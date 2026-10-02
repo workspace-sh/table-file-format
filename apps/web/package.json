@@ -7,10 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "harness:build": "vite build -c vite.harness.config.ts",
+    "harness:preview": "vite preview -c vite.harness.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --no-warnings --test src/*.test.ts"
   },
   "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build2",
     "@workspace.sh/table-app": "*",
     "@workspace.sh/table-core": "*",
     "@workspace.sh/table-ui": "*",
