@@ -5,12 +5,13 @@
  * haptic, and the menu opens with each action's SF Symbol, Delete in
  * red. Nothing is hosted in SwiftUI (hosted rows lost their text, #292).
  *
- * The lift is a card with the row's title, as Mail and Notes lift what's
- * visible: the row itself runs wider than the screen, and lifted whole it
- * would be shrunk to fit, off-screen columns and all.
+ * The lift is the row as it is on screen. A table's row runs wider than
+ * the screen, and lifted whole it would be shrunk to fit, off-screen
+ * columns and all, so only the part in view lifts (the clip is native: the
+ * package's preview parameters, patched in patches/).
  */
 import type { ComponentType, ReactElement, ReactNode } from "react";
-import { PlatformColor, Text, View } from "react-native";
+import { View } from "react-native";
 // react-native-ios-context-menu 3.2.1 is published without its built lib/,
 // types included: Metro runs its src/, and its props are typed here, for
 // this file only.
@@ -28,15 +29,18 @@ interface ContextMenuViewProps {
       icon?: { type: "IMAGE_SYSTEM"; imageValue: { systemName: string } };
     }[];
   };
-  previewConfig?: { previewType: "DEFAULT" | "CUSTOM"; previewSize?: "INHERIT" | "STRETCH" };
-  renderPreview?: () => ReactNode;
+  previewConfig?: {
+    previewType: "DEFAULT" | "CUSTOM";
+    previewSize?: "INHERIT" | "STRETCH";
+    borderRadius?: number;
+  };
   onPressMenuItem?: (e: { nativeEvent: { actionKey: string } }) => void;
   children?: ReactNode;
 }
 
 const ContextMenuView = UntypedContextMenuView as ComponentType<ContextMenuViewProps>;
 
-export function RowActions({ actions, children, title }: RowActionsProps): ReactElement {
+export function RowActions({ actions, children }: RowActionsProps): ReactElement {
   if (actions.length === 0) return children;
   const run = (id: string) => actions.find((action) => action.id === id)?.onSelect();
   return (
@@ -50,18 +54,11 @@ export function RowActions({ actions, children, title }: RowActionsProps): React
           ...(action.symbol?.sf ? { icon: { type: "IMAGE_SYSTEM" as const, imageValue: { systemName: action.symbol.sf } } } : {}),
         })),
       }}
-      {...(title
-        ? {
-            previewConfig: { previewType: "CUSTOM" as const, previewSize: "INHERIT" as const },
-            renderPreview: () => (
-              <View style={{ paddingHorizontal: 20, paddingVertical: 16, minWidth: 220, maxWidth: 340, backgroundColor: PlatformColor("systemBackground") }}>
-                <Text numberOfLines={3} style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("label") }}>
-                  {title}
-                </Text>
-              </View>
-            ),
-          }
-        : {})}
+      // The row lifts as it is on screen, as the system lifts what's
+      // touched: only the part in view, not the columns scrolled off.
+      // Rows have no fill of their own (the page shows through): the lift
+      // is on the page's, systemBackground (the patch, as the clip).
+      previewConfig={{ previewType: "DEFAULT", borderRadius: 12 }}
       onPressMenuItem={({ nativeEvent }) => run(nativeEvent.actionKey)}
     >
       {/* The same actions for VoiceOver, which doesn't touch and hold: the row's custom actions. */}
