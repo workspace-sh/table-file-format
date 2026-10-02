@@ -58,6 +58,8 @@ import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
 
+// How long after the last edit the demo saves, as the Mac and Linux apps do (400 ms): typing is one write, not one a key.
+const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 // What the Files side of the sidebar lists and opens: each bundle's files
@@ -331,9 +333,9 @@ export function App() {
         openedAt: INITIAL_SCHEMA_VERSIONS,
       };
     },
-    // Saved after every edit, in this browser. The fixtures themselves are
+    // Saved a moment after the last edit, in this browser. The fixtures themselves are
     // never saved, so an untouched demo keeps following them as they change.
-    { store: browserStore(), write: async (_edited, tables, bundles) => save(browserStore(), { tables, bundles }) },
+    { store: browserStore(), write: async (_edited, tables, bundles) => save(browserStore(), { tables, bundles }), delayMs: SAVE_AFTER_MS },
     browserLocale,
   );
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
