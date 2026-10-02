@@ -4,6 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
+import { movesBack, revertPatch } from "./revert";
 import {
   defaultAlignFor,
   enumOptions,
@@ -576,6 +577,12 @@ interface SchemaFieldEditorProps {
   onAddEnumValue: (value: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
+  /**
+   * Cancel, where the host puts the table's schema back as the settings
+   * opened (`onRestoreSchema`). Absent: the editor puts its field back
+   * itself, through onUpdate and onMove.
+   */
+  onCancel?: () => void;
   /** The table's fields, so a formula can warn about a name that doesn't exist. */
   fields?: Field[];
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
@@ -616,11 +623,23 @@ export function SchemaFieldEditor({
   onAddEnumValue,
   onMove,
   onClose,
+  onCancel,
   fields,
   grid,
 }: SchemaFieldEditorProps) {
   const { Sheet: SheetControl } = usePlatformControls();
   const [enumDraft, setEnumDraft] = useState("");
+  // The field as it opened, for Cancel to put back: its changes are made as
+  // they're chosen, and Done keeps them.
+  const [before] = useState(field);
+  const [beforeIndex] = useState(fieldIndex);
+  const cancel = () => {
+    if (onCancel) return onCancel();
+    const patch = revertPatch(before, field);
+    if (Object.keys(patch).length > 0) onUpdate(patch);
+    for (const delta of movesBack(beforeIndex, fieldIndex)) onMove(delta);
+    onClose();
+  };
   // A formula is shown in the app's chosen syntax, typed in either, and
   // saved in the stored form (D29, #76). Only a field that is already
   // computed shows this: turning a stored field into a formula would drop
@@ -803,7 +822,14 @@ export function SchemaFieldEditor({
   // with Done; elsewhere a popover under (or over) the column's heading.
   if (SheetControl.presentsSettings) {
     return (
-      <SheetControl size="settings" title={field.title ?? field.name} confirm={{ label: "Done", onPress: onClose }} dismissible onDismiss={onClose}>
+      <SheetControl
+        size="settings"
+        title={field.title ?? field.name}
+        cancel={{ label: "Cancel", onPress: cancel }}
+        confirm={{ label: "Done", onPress: onClose }}
+        dismissible
+        onDismiss={onClose}
+      >
         <html.div style={styles.sheetBody}>{body}</html.div>
       </SheetControl>
     );

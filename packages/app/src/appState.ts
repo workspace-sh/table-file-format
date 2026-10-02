@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type TableSchema, type View } from "@workspace.sh/table-core";
 import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
@@ -69,6 +69,15 @@ export interface Telling {
   body?: string;
 }
 
+/** What the view settings can change, as it was when they opened. */
+export interface SettingsBefore {
+  key: string;
+  viewId: string;
+  views: View[];
+  /** This viewer's own arrangements of the table's views. */
+  arrangements: Arrangements[string] | undefined;
+}
+
 export interface AppState {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
@@ -92,6 +101,8 @@ export interface AppState {
   display: DisplaySettings;
   search: string;
   settingsOpen: boolean;
+  /** The view settings' table as they opened, for Cancel to put back. */
+  settingsBefore: SettingsBefore | null;
   asking: Asking | null;
   telling: Telling | null;
   /** Bundles edited since they were last written. */
@@ -113,7 +124,10 @@ export type AppAction =
   | { type: "forward" }
   | { type: "openPage"; rowId: string | null }
   | { type: "search"; text: string }
-  | { type: "settings"; open: boolean }
+  // `revert`: closing by Cancel, which puts back everything the settings
+  // changed since they opened (the views, saved for everyone or not, and
+  // this viewer's own arrangements).
+  | { type: "settings"; open: boolean; revert?: boolean }
   // Edits to the view on screen: ViewProps' callbacks, one to one
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
   | { type: "addRow"; id: string }
@@ -125,6 +139,8 @@ export type AppAction =
   | { type: "updateField"; name: string; patch: Partial<Field> }
   | { type: "addField"; field: Field }
   | { type: "moveField"; name: string; delta: -1 | 1 }
+  // A field's settings, cancelled: the schema as they opened, version and all.
+  | { type: "restoreSchema"; schema: TableSchema }
   | { type: "addChoice"; name: string; value: string }
   | { type: "updateView"; patch: Partial<View> }
   | { type: "addView"; id: string }
@@ -184,6 +200,7 @@ export function initialAppState(input: AppStart): AppState {
     display: input.stored?.display ?? {},
     search: "",
     settingsOpen: false,
+    settingsBefore: null,
     asking: null,
     telling: null,
     dirty: [],
@@ -231,6 +248,16 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   const left = leaving(prev.active, fromView, next.active, toView);
   if (left.clearSearch && next.search !== "") next = { ...next, search: "" };
   if (left.closeSettings && next.settingsOpen && action.type !== "addView") next = { ...next, settingsOpen: false };
+  if (next.settingsOpen && !prev.settingsOpen) {
+    // A new view opens on its settings: Cancel there drops it, as a new
+    // thing's sheet does, so what's kept is from before it was added.
+    const key = next.active;
+    const from = action.type === "addView" ? prev : next;
+    next = {
+      ...next,
+      settingsBefore: { key, viewId: viewIdOf(from, key), views: from.tables[key]?.views ?? [], arrangements: from.arrangements[key] },
+    };
+  } else if (!next.settingsOpen && next.settingsBefore) next = { ...next, settingsBefore: null };
   if (tableChanged) next = { ...next, sidebar: withFileUnfolded(next.sidebar, bundleOf(next.active)) };
   if (next.tables[next.active]) {
     const history = visited(next.history, viewAddress(next.active, toView));
@@ -309,8 +336,19 @@ function step(state: AppState, action: AppAction): AppState {
       return action.rowId === state.openPage ? state : { ...state, openPage: action.rowId };
     case "search":
       return action.text === state.search ? state : { ...state, search: action.text };
-    case "settings":
-      return action.open === state.settingsOpen ? state : { ...state, settingsOpen: action.open };
+    case "settings": {
+      if (action.open === state.settingsOpen) return state;
+      const before = state.settingsBefore;
+      if (action.open || !action.revert || !before || !state.tables[before.key]) return { ...state, settingsOpen: action.open };
+      const reverted = edit(state, (t) => (t.views === before.views ? t : { ...t, views: before.views }), before.key);
+      const { [before.key]: _, ...others } = state.arrangements;
+      return {
+        ...reverted,
+        arrangements: before.arrangements ? { ...others, [before.key]: before.arrangements } : others,
+        viewIds: { ...reverted.viewIds, [before.key]: before.viewId },
+        settingsOpen: false,
+      };
+    }
 
     case "updateRow":
       return edit(state, (t) => withCell(t, action.rowId, action.field, action.value));
@@ -336,6 +374,8 @@ function step(state: AppState, action: AppAction): AppState {
       return edit(state, (t) => withField(t, action.field, viewIdOf(state, state.active)));
     case "moveField":
       return edit(state, (t) => withFieldMoved(t, action.name, action.delta));
+    case "restoreSchema":
+      return edit(state, (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
     case "addChoice":
       return edit(state, (t) => withChoice(t, action.name, action.value));
     case "updateView": {
@@ -595,6 +635,7 @@ export type ViewCallbacks = Required<
     | "onUpdateField"
     | "onAddEnumValue"
     | "onMoveField"
+    | "onRestoreSchema"
     | "onAddField"
     | "onAddRow"
     | "onDeleteRow"
@@ -616,6 +657,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onMoveField: (name, delta) => dispatch({ type: "moveField", name, delta }),
+    onRestoreSchema: (schema) => dispatch({ type: "restoreSchema", schema }),
     onAddField: (field) => dispatch({ type: "addField", field }),
     onAddRow: () => {
       const id = newId();
