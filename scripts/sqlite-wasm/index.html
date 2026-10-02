@@ -1,0 +1,9 @@
+<!doctype html><meta charset=utf-8><title>spike</title><body>spike</body>
+<script type=module>
+window.run = (n, mode) => new Promise((resolve, reject) => {
+  const w = new Worker("/worker.mjs", { type: "module" });
+  w.onmessage = (e) => { if (e.data.done) { resolve(e.data.result); w.terminate(); } else if (e.data.error) reject(new Error(e.data.error)); };
+  w.onerror = (e) => reject(new Error("worker: " + e.message));
+  w.postMessage({ n, mode });
+});
+</script>
