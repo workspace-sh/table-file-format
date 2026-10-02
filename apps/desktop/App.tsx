@@ -20,6 +20,7 @@ import {
   Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
+  PageGutter,
   PortalHost,
   TableView,
   ViewSettings,
@@ -98,6 +99,8 @@ const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
 );
 /** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
 const NARROW_AT_MOST = 760;
+/** The content's side margin, which what scrolls sideways runs over (PageGutter). */
+const CONTENT_GUTTER = 24;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
 const MENU_BEFORE: Record<AppCommand["menu"], string> = {
   File: "Close",
@@ -124,7 +127,7 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     flex: 1,
-    paddingInline: 24,
+    paddingInline: CONTENT_GUTTER,
     paddingBlock: 20,
   },
   breadcrumb: {
@@ -941,9 +944,13 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
               style={styles.searchInput}
             />
+            {/* Out to the content's edges, its margin inside, so what scrolls
+                sideways (a table, a board) can run over the margin to the
+                edges (PageGutter) rather than be cut off by this view. */}
+            <PageGutter.Provider value={CONTENT_GUTTER}>
             <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingBottom: 24 }}
+              style={{ flex: 1, marginHorizontal: -CONTENT_GUTTER }}
+              contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
               showsVerticalScrollIndicator
             >
               {/* The viewer's own language, dates and formula syntax: the web's Display group. */}
@@ -982,6 +989,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 onAttachFile: attachFile,
               })}
             </ScrollView>
+            </PageGutter.Provider>
             </>
             )}
           </html.div>
