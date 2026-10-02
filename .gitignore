@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-web/
+dist-harness/
 index.sqlite
 *.sqlite
 

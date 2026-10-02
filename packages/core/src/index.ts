@@ -34,6 +34,7 @@ export {
   type SqlValue,
 } from "./indexer.js";
 export { arraySource, type RowSource } from "./row-source.js";
+export { oo1Driver, type Oo1Database, type Oo1Statement } from "./sqlite-wasm.js";
 export {
   toCSV,
   fromCSV,
