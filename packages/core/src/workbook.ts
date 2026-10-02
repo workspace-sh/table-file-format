@@ -564,6 +564,7 @@ export function computeRows(
  * that reads across rows, tables or a Sheet view's places isn't, and the
  * table is computed whole each time.
  */
+// Anything that reads the clock or chance (TODAY, NOW, RAND, #124) must be added here too: its answer isn't the row's alone.
 const ACROSS_ROWS = new Set(["column", "lookup", "linked", "at", "range", "row", "rows"]);
 const localSchemas = new WeakMap<TableSchema, boolean>();
 const memos = new WeakMap<TableSchema, { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] }>();
