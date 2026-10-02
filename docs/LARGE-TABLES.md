@@ -125,6 +125,37 @@ Options for a large table:
 - **workspace-sh/workspace#610** covers the whole tree on join, contents on open, and placeholders.
 - **workspace-sh/workspace#612** is a spike on per-tier Hyperdrives instead of Workspace's own encryption layer. Both are with the Linux rig, and #610 waits on #612.
 
+## In the apps today (2 Oct 2026)
+
+Leslie, 2 Oct: make large tables work on mobile first, then the web; the web demo stays client-side (SQLite through WebAssembly when it comes to that). This is the starting point, measured before any change (Phase 0).
+
+**How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and a `.table.zip`. The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
+- **iOS:** a Release build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, in the iOS 26 Simulator on this Mac. It asks `scripts/measure-server.py` what to open, edits the first row's title once, and posts the times back (`apps/mobile/measure.ts`). The app is reinstalled before each run. Memory is the process's peak resident size.
+- **Web:** the Vite development build in Chromium (`__tableWeb.openZipFrom`), with render and commit timed by `flushSync`. A production build will be faster; the shape is the same.
+- **Data alone:** `scripts/big-table-read.mts` in Node 22, with no drawing: `openArchive`, then `applyView` (formulas, filters, sort) as `derive()` runs it on every render.
+
+| Rows | iOS show | iOS edit | iOS peak memory | Web show | Web page elements | Web heap |
+|---|---|---|---|---|---|---|
+| 1,000 | 11.4 s | 8.4 s | 1.0 GB | 1.3 s | 25k | 106 MB |
+| 5,000 | 103 s | 58 s | 1.6 GB | 5.1 s | 125k | 356 MB |
+| 10,000 | killed after 6.5 min, never shown | | 1.9 GB | 15 s | 250k | 790 MB |
+| 50,000 and up | not attempted | | | not attempted | | |
+
+On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all the rest is drawing. A web edit at 1,000 rows took 2.2 s.
+
+| Rows | rows.ndjson | Read (unzip, parse) | View (formulas, filter, sort) | Heap |
+|---|---|---|---|---|
+| 50,000 | 8 MB | 0.13 s | 0.04 s | 47 MB |
+| 100,000 | 16 MB | 0.26 s | 0.08 s | 86 MB |
+| 1,000,000 | 165 MB | 2.7 s | 0.6 s, again on every render | 700 MB |
+
+**What it says:**
+- **Drawing is the wall, by far.** Every row is drawn (twice with a pinned column) inside one long page, and each row has its own native context menu. Below about 100k rows the data side is fast enough even on a phone, whose JavaScript runs several times slower than Node here.
+- **An edit redraws everything** and writes every table to storage in one piece, so it costs as much as opening.
+- **At a million rows the data itself is the problem:** 700 MB of objects and 0.6 s per render on a Mac. That needs the index (SQLite), not just faster drawing.
+
+**The plan:** Phase 1, draw only the rows on screen. Phase 2, compute and save only what changed. Phase 3, SQLite as the index (the web through WebAssembly). Each phase reruns these tables, and fills in 50k, 100k and 1M as they become possible.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
@@ -413,6 +414,34 @@ export function App() {
     });
     document.body.appendChild(input);
     input.click();
+  }, [bundles]);
+
+  // Development only: opens a .table.zip from a URL as a chosen file is
+  // opened, and says how long each step took (ms), for measuring large
+  // tables (#126): fetching it, reading it (unzip and parse), and showing
+  // it (React's render and commit, synchronously: a hidden tab has no
+  // frames to wait for).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as { __tableWeb?: unknown }).__tableWeb = {
+      openZipFrom: async (url: string) => {
+        const t0 = performance.now();
+        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+        const t1 = performance.now();
+        const opened = await openArchive(bytes, Object.keys(bundles));
+        const t2 = performance.now();
+        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        flushSync(() => dispatch({ type: "opened", library, skipped: opened.skipped }));
+        const t3 = performance.now();
+        return { key: opened.key, fetch: Math.round(t1 - t0), read: Math.round(t2 - t1), show: Math.round(t3 - t2) };
+      },
+      // Milliseconds to edit a row's title in the table on screen and render it.
+      timeEdit: (rowId: string) => {
+        const t0 = performance.now();
+        flushSync(() => dispatch({ type: "updateRow", rowId, field: "title", value: "Edited" }));
+        return Math.round(performance.now() - t0);
+      },
+    };
   }, [bundles]);
 
   // The layout reads the way the display language does (D40): the chosen
