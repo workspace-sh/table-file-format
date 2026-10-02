@@ -9,7 +9,8 @@
  * (react-native-screens' formSheet, with detents and a grabber), as
  * Settings-style sheets do: changes apply as they're made, Done trailing
  * keeps them and Cancel leading puts them back. React Native's Modal has
- * no detents.
+ * no detents. It has no fill of its own: part way up it's the system's
+ * Liquid Glass (iOS 26), full height its opaque background.
  *
  * Either way what it holds is React Native, presented natively, not
  * hosted in SwiftUI.
@@ -112,7 +113,6 @@ function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetPro
         sheetGrabberVisible
         sheetExpandsWhenScrolledToEdge
         onDismissed={onDismiss}
-        contentStyle={{ backgroundColor: PlatformColor("systemBackground") }}
       >
         <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
       </ScreenStackItem>
