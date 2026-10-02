@@ -10,7 +10,7 @@
 // platform's row menu (RowActions, the system context menu on iOS).
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { PlatformColor, ScrollView, Text, View } from "react-native";
+import { Dimensions, PlatformColor, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
@@ -99,7 +99,7 @@ export default function Bench() {
       // hadn't reached the bottom of the screen (a blank strip).
       await new Promise<void>((go) => (scrolled.current = go));
       scrolled.current = () => {};
-      const screenRows = Math.ceil(800 / ROW_HEIGHT);
+      const screenRows = Math.ceil(Dimensions.get("window").height / ROW_HEIGHT);
       let frames = 0;
       let blank = 0;
       let longest = 0;
