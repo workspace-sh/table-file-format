@@ -119,7 +119,9 @@ export type AppAction =
   | { type: "addRow"; id: string }
   | { type: "insertRow"; anchor: string; where: "above" | "below"; id: string }
   | { type: "deleteRow"; rowId: string }
-  | { type: "updateBody"; rowId: string; content: string }
+  // `table`: the table it's in, when that may no longer be the one on
+  // screen (a page saved as it's typed, its last save landing after a move).
+  | { type: "updateBody"; rowId: string; content: string; table?: string }
   | { type: "updateField"; name: string; patch: Partial<Field> }
   | { type: "addField"; field: Field }
   | { type: "moveField"; name: string; delta: -1 | 1 }
@@ -327,7 +329,7 @@ function step(state: AppState, action: AppAction): AppState {
       return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "deleteRow", key: state.active, rowId: action.rowId } } };
     }
     case "updateBody":
-      return edit(state, (t) => withBody(t, action.rowId, action.content));
+      return edit(state, (t) => withBody(t, action.rowId, action.content), action.table);
     case "updateField":
       return edit(state, (t) => withFieldPatch(t, action.name, action.patch));
     case "addField":
