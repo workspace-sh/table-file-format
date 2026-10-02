@@ -156,6 +156,21 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 
 **The plan:** Phase 1, draw only the rows on screen. Phase 2, compute and save only what changed. Phase 3, SQLite as the index (the web through WebAssembly). Each phase reruns these tables, and fills in 50k, 100k and 1M as they become possible.
 
+### Phase 2: computing and saving only what changed (#325)
+
+`scripts/big-table-app.mts <zip>` runs the app's own state (`derive` after the reducer) in Node, with no drawing. Milliseconds, before → after:
+
+| Rows | derive, first | derive, same state | derive after an edit | derive after opening a panel |
+|---|---|---|---|---|
+| 10,000 | 89 | 35 → 0.2 | 27 → 4.6 | 24 → 0.2 |
+| 100,000 | 434 | 250 → 0.2 | 249 → 37 | 252 → 0.2 |
+| 1,000,000 | 4,100 | 0.2 | 508 | 0.2 |
+
+- **Formulas and validation are kept per row object.** Rows are never changed in place, so an edit makes one new row and the rest are found again. Only formulas that read their own row's fields are kept; a formula that reads across rows, tables or a Sheet view's places is computed whole.
+- **`derive` answers again with the same rows** when the table, its bundle's other tables, the view, the arrangement, the search and the locale are the same.
+- **The web demo and the phone save 400 ms after the last edit**, not on every key. Every table is still one stored value, written whole (about 1 s to stringify at 1M rows); Phase 3's index replaces that.
+- **What's left at a million rows:** an edit still passes over every row (filter, sort, ids) for about half a second, and the first open takes 4 s.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.
