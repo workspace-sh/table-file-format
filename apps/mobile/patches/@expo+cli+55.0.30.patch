@@ -92,3 +92,18 @@ diff --git a/node_modules/@expo/cli/build/src/start/platforms/ios/ensureSimulato
  
  //# sourceMappingURL=ensureSimulatorAppRunning.js.map
 \ No newline at end of file
+diff --git a/node_modules/@expo/cli/build/src/run/ios/appleDevice/client/LockdowndClient.js b/node_modules/@expo/cli/build/src/run/ios/appleDevice/client/LockdowndClient.js
+index 4005594..7037786 100644
+--- a/node_modules/@expo/cli/build/src/run/ios/appleDevice/client/LockdowndClient.js
++++ b/node_modules/@expo/cli/build/src/run/ios/appleDevice/client/LockdowndClient.js
+@@ -112,7 +112,9 @@ class LockdowndClient extends _ServiceClient.ServiceClient {
+         }
+     }
+     async startSession(pairRecord) {
+-        debug(`startSession: ${pairRecord}`);
++        // Not `${pairRecord}`: the plist parser gives it no prototype, so it has no
++        // toString, and building this message threw before the session started.
++        debug(`startSession: ${pairRecord.HostID}`);
+         const resp = await this.protocolClient.sendMessage({
+             Request: 'StartSession',
+             HostID: pairRecord.HostID,
