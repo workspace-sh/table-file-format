@@ -23,8 +23,17 @@ export {
   queryIndex,
   isIndexStale,
   dropIndex,
+  indexKey,
+  putRows,
+  removeRows,
+  INDEX_FORMAT,
   type IndexQuery,
+  type IndexedRows,
+  type BuildOptions,
+  type SqlDriver,
+  type SqlValue,
 } from "./indexer.js";
+export { arraySource, type RowSource } from "./row-source.js";
 export {
   toCSV,
   fromCSV,
