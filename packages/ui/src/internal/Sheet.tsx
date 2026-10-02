@@ -3,13 +3,17 @@
  * file it edits at the top with a close button, what it holds in the
  * middle, and its buttons along the foot. iOS and Android present the
  * same as the system's sheets (`Sheet.ios.tsx`, `Sheet.android.tsx`).
+ * A host can draw the card on a native material (PanelSurface): the macOS
+ * app draws it on Liquid Glass.
  */
-import type { ReactElement } from "react";
+import { useContext, type ReactElement } from "react";
+import { PanelSurface } from "../panelSurface";
 import { html, css } from "react-strict-dom";
 import type { SheetProps } from "../controlSlots";
 import { Portal } from "./Portal";
 
 export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, onDismiss, children }: SheetProps): ReactElement {
+  const Surface = useContext(PanelSurface);
   return (
     <Portal>
       {/* Backdrop sibling: a tap outside the card closes it, when that
@@ -23,7 +27,8 @@ export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, o
       {/* The wrapper centres the card and lets taps around it through to
           the backdrop (pointer-events: none). */}
       <html.div style={styles.modalWrapper}>
-        <html.div style={styles.modal}>
+        <html.div style={[styles.modal, Surface && styles.modalOnSurface]}>
+          {Surface && <Surface radius={CARD_RADIUS} />}
           <html.div style={styles.header}>
             <html.div style={styles.headerLeft}>
               <html.span style={styles.title}>{title}</html.span>
@@ -58,6 +63,9 @@ export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, o
     </Portal>
   );
 }
+
+/** The card's corners: StyleX needs the literal below too. */
+const CARD_RADIUS = 10;
 
 const styles = css.create({
   /**
@@ -104,6 +112,7 @@ const styles = css.create({
     borderRadius: 10,
     overflow: "hidden",
     pointerEvents: "auto",
+    position: "relative",
     backgroundColor: {
       default: "#ffffff",
       "@media (prefers-color-scheme: dark)": "#1c1c1e",
@@ -114,6 +123,11 @@ const styles = css.create({
       default: "#d1d1d6",
       "@media (prefers-color-scheme: dark)": "#3a3a3f",
     },
+  },
+  // On a host's material (PanelSurface): its fill and edge, not the card's.
+  modalOnSurface: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
   },
   header: {
     display: "flex",

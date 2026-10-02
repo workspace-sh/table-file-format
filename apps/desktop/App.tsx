@@ -20,11 +20,13 @@ import {
   Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
+  PanelSurface,
   PortalHost,
   TableView,
   ViewSettings,
   canInsertAt,
 } from "@workspace.sh/table-ui";
+import { GlassSurface } from "./GlassSurface";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -849,6 +851,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   return (
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
+      {/* Panels (a row's page) are Liquid Glass, as macOS 26's own are.
+          Outside the PortalHost: a panel is drawn there. */}
+      <PanelSurface.Provider value={GlassSurface}>
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
@@ -994,6 +999,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         </html.div>
         </DisplaySettingsProvider>
       </PortalHost>
+      </PanelSurface.Provider>
       </AttachmentsProvider>
     </GestureHandlerRootView>
   );
