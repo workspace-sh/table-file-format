@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { Sheet } from "./PlatformControls";
+import { PanelSurface } from "./panelSurface";
 import { useEscape } from "./internal/useEscape";
 
 const styles = css.create({
@@ -23,6 +24,10 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
   },
+  // On a host's material (PanelSurface), the page is written on it.
+  textareaOnSurface: {
+    backgroundColor: "transparent",
+  },
 });
 
 interface BodyEditorProps {
@@ -35,6 +40,7 @@ interface BodyEditorProps {
 
 export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorProps) {
   const [draft, setDraft] = useState(content);
+  const onSurface = useContext(PanelSurface) !== null;
   const dirty = draft !== content;
   const isNew = content.length === 0;
 
@@ -69,7 +75,7 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
         value={draft}
         onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
         placeholder="Long-form markdown body…"
-        style={styles.textarea}
+        style={[styles.textarea, onSurface && styles.textareaOnSurface]}
       />
     </Sheet>
   );
