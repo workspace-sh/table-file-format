@@ -100,8 +100,22 @@ function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetPro
             ),
             confirm && (
               <ScreenStackHeaderRightView key="confirm">
-                <Pressable accessibilityRole="button" hitSlop={10} onPress={confirm.onPress} disabled={confirm.disabled}>
-                  <Text style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("systemBlue") }}>{confirm.label}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !!confirm.disabled }}
+                  hitSlop={10}
+                  onPress={confirm.onPress}
+                  disabled={confirm.disabled}
+                >
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      fontWeight: "600",
+                      color: confirm.disabled ? PlatformColor("tertiaryLabel") : PlatformColor("systemBlue"),
+                    }}
+                  >
+                    {confirm.label}
+                  </Text>
                 </Pressable>
               </ScreenStackHeaderRightView>
             ),
