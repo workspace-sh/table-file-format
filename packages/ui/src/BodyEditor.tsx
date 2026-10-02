@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { Sheet } from "./PlatformControls";
 import { confirmDestructive } from "./internal/confirm";
+import { PanelSurface } from "./panelSurface";
 import { useEscape } from "./internal/useEscape";
 import { pageSave } from "./pageEdit";
 
@@ -27,6 +28,10 @@ const styles = css.create({
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
+  },
+  // On a host's material (PanelSurface), the page is written on it.
+  textareaOnSurface: {
+    backgroundColor: "transparent",
   },
 });
 
@@ -55,6 +60,7 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
   const [draft, setDraft] = useState(content);
   // What's been saved, as this editor knows it.
   const [saved, setSaved] = useState(content);
+  const onSurface = useContext(PanelSurface) !== null;
   const isNew = content.length === 0;
   const next = pageSave(saved, draft);
 
@@ -124,7 +130,7 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
         value={draft}
         onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
         placeholder="Long-form markdown body…"
-        style={styles.textarea}
+        style={[styles.textarea, onSurface && styles.textareaOnSurface]}
       />
     </Sheet>
   );
