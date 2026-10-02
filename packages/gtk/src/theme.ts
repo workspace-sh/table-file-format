@@ -5,7 +5,7 @@
 import { css } from "@gtkx/css";
 import * as Adw from "@gtkx/gi/adw";
 import { useProperty } from "@gtkx/react";
-import { PILL_PALETTE } from "@workspace.sh/table-ui/shared";
+import { pillColors } from "@workspace.sh/table-ui/shared";
 
 /** Whether libadwaita is drawing dark, followed live as the system switches. */
 export function useDark(): boolean {
@@ -58,7 +58,7 @@ const pillClasses = new Map<string, string>();
 
 /** The class that draws a choice's pill in its colour, light or dark. */
 export function pillClass(color: string | undefined, dark: boolean): string {
-  const palette = PILL_PALETTE[color ?? "gray"] ?? PILL_PALETTE["gray"]!;
+  const palette = pillColors(color);
   const { bg, fg } = dark ? palette.dark : palette.light;
   const key = `${bg}${fg}`;
   let name = pillClasses.get(key);
