@@ -1,9 +1,9 @@
 /**
  * iOS default. A page (a row's page) is the system's page sheet (UIKit's,
  * through React Native's Modal), its bar as a sheet's is: the leaving
- * action leading (Close, or Discard with changes), the title in the
- * middle, the keeping action trailing in bold (Save). A swipe down closes
- * it when that loses nothing; with changes it asks first.
+ * action leading (Cancel, where there is one), the title in the
+ * middle, the keeping action trailing in bold (Done). A swipe down closes
+ * it when that loses nothing; otherwise the caller asks (onDismiss).
  *
  * Settings (a view's) are a form sheet that opens half way and grows
  * (react-native-screens' formSheet, with detents and a grabber), as
@@ -14,7 +14,7 @@
  * hosted in SwiftUI.
  */
 import type { ReactElement, ReactNode } from "react";
-import { Alert, KeyboardAvoidingView, Modal, PlatformColor, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, PlatformColor, Pressable, ScrollView, Text, View } from "react-native";
 import { ScreenStack, ScreenStackHeaderRightView, ScreenStackItem } from "react-native-screens";
 import type { SheetProps, SheetSlot } from "../controlSlots";
 
@@ -118,16 +118,9 @@ function SheetView(props: SheetProps): ReactElement {
       animationType="slide"
       presentationStyle="pageSheet"
       allowSwipeDismissal={dismissible}
-      // A swipe closes it when that loses nothing. With changes, iOS keeps
-      // the sheet and reports the attempt here: ask, as Notes and Mail do.
-      onRequestClose={() => {
-        if (dismissible) onDismiss();
-        else
-          Alert.alert("", undefined, [
-            { text: "Discard Changes", style: "destructive", onPress: cancel?.onPress ?? onDismiss },
-            { text: "Keep Editing", style: "cancel" },
-          ]);
-      }}
+      // A swipe closes it when that loses nothing. Otherwise iOS keeps the
+      // sheet and reports the attempt here, for the caller to ask.
+      onRequestClose={onDismiss}
     >
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
         <Bar title={title} subtitle={subtitle} cancel={cancel} confirm={confirm} />
