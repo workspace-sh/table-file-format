@@ -8,7 +8,9 @@
  * Settings (a view's) are a form sheet that opens half way and grows
  * (react-native-screens' formSheet, with detents and a grabber), as
  * Settings-style sheets do, with Done trailing: changes apply as they're
- * made. React Native's Modal has no detents.
+ * made. React Native's Modal has no detents. It has no fill of its own:
+ * part way up it's the system's Liquid Glass (iOS 26), full height its
+ * opaque background.
  *
  * Either way what it holds is React Native, presented natively, not
  * hosted in SwiftUI.
@@ -101,7 +103,6 @@ function SettingsSheet({ title, confirm, onDismiss, children }: SheetProps & { c
         sheetGrabberVisible
         sheetExpandsWhenScrolledToEdge
         onDismissed={onDismiss}
-        contentStyle={{ backgroundColor: PlatformColor("systemBackground") }}
       >
         <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
       </ScreenStackItem>
