@@ -137,6 +137,8 @@ export default function Bench() {
     })();
   }, [lib, n, started]);
 
+  // Nothing in an ordinary build, though the route exists.
+  if (!(MEASURING || __DEV__)) return null;
   return (
     <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={{ width: CELL * FIELDS.length }}>
       <View style={{ width: CELL * FIELDS.length, flex: 1 }}>
