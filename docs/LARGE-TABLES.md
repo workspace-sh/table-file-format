@@ -211,6 +211,24 @@ No blank frames in any run. The peak includes the app itself, about 300 MB in th
 - Heights only content can tell (wrapped text, images, page previews) are the risk. Mitigations: cells clip to the view's lines unless a view asks to wrap; estimate then correct for wrapped views; and the table draws through one internal component, so a view that needs measured rows at scale could use FlashList on native later without touching the rest.
 - `apps/mobile/app/bench.tsx` stays, so the choice can be re-checked as either library changes.
 
+## SQLite in the browser (Phase 3 spike, 2 Oct 2026)
+
+Can the web demo keep its own index for a big table, with no server? `@sqlite.org/sqlite-wasm` in a Web Worker, the file kept in OPFS through its `opfs-sahpool` VFS (it needs no special headers and runs in Safari, Firefox and Chromium). `scripts/sqlite-wasm/` streams a table's `rows.ndjson` into typed columns (id, title, stage, amount and so on), builds three indexes and an FTS5 index, then times the queries a view needs. A spike: the columns are hardcoded and it isn't the indexer.
+
+**Measured in:** headless Firefox on the rig (8 GB), the table from `scripts/big-table.mts`. Build and reopen are separate page loads.
+
+| Rows | Build once (read and insert, indexes, full-text) | Reopen the saved index, page load to first answer | View, first 50 | Search | Point query | Totals by stage |
+|---|---|---|---|---|---|---|
+| 10,000 | 0.4 s | not measured | 2 ms | 1 ms | < 1 ms | 4 ms |
+| 100,000 | 2.7 s (1.9 + 0.4 + 0.4) | 0.37 s | 2 ms | 1 ms | < 1 ms | 19 ms |
+| 1,000,000 | 26.9 s (17.4 + 4.6 + 4.9) | 1.6 s | 2 ms | 1 ms | < 1 ms | 168 ms |
+
+- **Reopening is what a person feels.** After the one build, a 1M-row table is ready in 1.6 s with nothing parsed into JavaScript objects, against 2.7 s to read it in Node and about 4 s to compute its view as the apps do today.
+- **Straight after a reopen the cache is cold.** At 1M rows the same queries took: view 6 ms, search 3 ms, point 0.6 ms, totals by stage 350 ms, a page at row 500,000 231 ms, and sorting by an unindexed text field 0.7 s. The sorted-by field needs its index, as the Node findings above say.
+- **An edit is a statement, not a rebuild**: updating a row took about 1 ms at every size. That is the in-place update the limits section asks for.
+- **The build is the cost** (17 s to insert 1M rows, against 10.9 s in Node): done once per content version, in a worker, with progress. Memory stays flat because rows are inserted as the text is read.
+- **Not yet measured:** Chromium and Safari (the VFS is supported in both), the browser's storage quota for a 580 MB index, and a build that follows the table's schema rather than fixed columns.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.
