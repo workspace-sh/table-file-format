@@ -47,12 +47,23 @@ export async function timeEdit(state: AppState, dispatch: Dispatch<AppAction>): 
   return Math.round(performance.now() - t0);
 }
 
-/** At launch in a measuring build: open what the server names, edit once, post the times. */
-export async function runMeasure(getState: () => AppState, dispatch: Dispatch<AppAction>): Promise<void> {
-  const report = (body: unknown) => fetch(`${SERVER}/result`, { method: "POST", body: JSON.stringify(body) }).catch(() => {});
+/** Sends what was measured to the measuring server. */
+export const report = (body: unknown) => fetch(`${SERVER}/result`, { method: "POST", body: JSON.stringify(body) }).catch(() => {});
+
+/**
+ * At launch in a measuring build: open what the server names, edit once,
+ * post the times. "bench <flash|legend> <rows>" opens the list benchmark
+ * (app/bench.tsx) instead, which posts its own.
+ */
+export async function runMeasure(getState: () => AppState, dispatch: Dispatch<AppAction>, navigate: (path: string) => void): Promise<void> {
   try {
     const name = (await (await fetch(`${SERVER}/next`)).text()).trim();
     if (!name) return;
+    const bench = /^bench (flash|legend) (\d+)$/.exec(name);
+    if (bench) {
+      navigate(`/bench?lib=${bench[1]}&n=${bench[2]}`);
+      return;
+    }
     const opened = await openZipFrom(`${SERVER}/${name}`, getState(), dispatch);
     await report({ name, step: "opened", ...opened });
     await new Promise((done) => setTimeout(done, 500));

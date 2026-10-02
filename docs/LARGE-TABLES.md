@@ -131,7 +131,7 @@ Leslie, 2 Oct: make large tables work on mobile first, then the web; the web dem
 
 **How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and a `.table.zip`. The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
 - **iOS:** a Release build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, in the iOS 26 Simulator on this Mac. It asks `scripts/measure-server.py` what to open, edits the first row's title once, and posts the times back (`apps/mobile/measure.ts`). The app is reinstalled before each run. Memory is the process's peak resident size.
-- **Web:** the Vite development build in Chromium (`__tableWeb.openZipFrom`), with render and commit timed by `flushSync`. A production build will be faster; the shape is the same.
+- **Web:** the Vite development build in Chromium (`__tableWeb.openZipFrom`), with render and commit timed by `flushSync`. Measured before the rule in [BENCHMARKING.md](BENCHMARKING.md) (Release builds only); rerun in a production build before comparing.
 - **Data alone:** `scripts/big-table-read.mts` in Node 22, with no drawing: `openArchive`, then `applyView` (formulas, filters, sort) as `derive()` runs it on every render.
 
 | Rows | iOS show | iOS edit | iOS peak memory | Web show | Web page elements | Web heap |
@@ -170,6 +170,41 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 - **`derive` answers again with the same rows** when the table, its bundle's other tables, the view, the arrangement, the search and the locale are the same.
 - **The web demo and the phone save 400 ms after the last edit**, not on every key. Every table is still one stored value, written whole (about 1 s to stringify at 1M rows); Phase 3's index replaces that.
 - **What's left at a million rows:** an edit still passes over every row (filter, sort, ids) for about half a second, and the first open takes 4 s.
+
+## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
+
+Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
+
+**How** (see [BENCHMARKING.md](BENCHMARKING.md)):
+- **Build:** Release, measuring build, iOS 26 Simulator (iPhone 17 Pro) on this Mac; reinstalled before each run.
+- **The screen** (`apps/mobile/app/bench.tsx`): N table-shaped rows, each with 8 cells, a coloured choice, money formatted for the locale, and the system row menu (`RowActions`), inside a sideways scroller as the table is. Rows are made from their index, so this measures the list, not the data.
+- **The scroll:** three hard flicks through the Simulator's touch injection. Counted from the first scroll event for 3 s: frames, the longest frame, and blank frames (the rows drawn hadn't reached the bottom of the screen). Then a jump to the end, timed until the last row is drawn.
+- **Setup:** FlashList 2.3.3 as it comes; it measures rows itself. LegendList 3.6.0 with `estimatedItemSize`, `recycleItems` and `getFixedItemSize` (every row is 44 pt).
+
+| Rows | | FlashList 2.3.3 | LegendList 3.6.0 |
+|---|---|---|---|
+| 10,000 | open | 93 ms | 77 ms |
+| | flicking | 60 fps, longest frame 27 ms | 60 fps, 27 ms |
+| | jump to end | 130 ms | 88 ms |
+| | peak memory | 337 MB | 345 MB |
+| 100,000 | open | 304 ms | 454 ms |
+| | flicking | 60 fps, 30 ms | 60 fps, 22 ms |
+| | jump to end | 231 ms | 173 ms |
+| | peak memory | 340 MB | 359 MB |
+| 1,000,000 | open | 2.2 s | 4.0 s |
+| | flicking | 60 fps, 33 ms | 60 fps, 25 ms |
+| | jump to end | 1.3 s | 2.3 s |
+| | peak memory | 411 MB | 499 MB |
+
+No blank frames in any run. The peak includes the app itself, about 300 MB in the Simulator.
+
+**Without `getFixedItemSize`**, measuring every row, LegendList managed 19 fps at 100k rows with a 1.8 s stall, and froze for 3.7 s at 1M. FlashList measures every row and stays at 60 fps. That matters for rows of different heights: LegendList wants each row's height given up front (computed, not measured) to stay fast at this size.
+
+**What it says:**
+- Both scroll a million rows at 60 fps with no blanking. Drawing is solved by either; the current table (every row drawn) couldn't show 10,000.
+- **Opening** is the difference at scale: both do work for every row up front, FlashList 2.2 s and LegendList 4.0 s at 1M. Both are over the 1 s budget (#126), and on top of the data side (2.7 s to read in Node, more in Hermes), which Phase 3 addresses.
+- **The web:** LegendList has a React DOM build that can use an ancestor's scrollbar (`scrollElement`), which suits the web demo. FlashList's web support goes through react-native-web, which the web app doesn't use.
+- **Rows of different heights:** FlashList measures them without slowing down. LegendList is fast when it's told each height (`getFixedItemSize` can return a different size for each row), and slow when it has to measure at 100k rows and up.
 
 ## Open questions for the large-tables discussion
 

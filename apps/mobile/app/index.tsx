@@ -66,7 +66,7 @@ export default function TableScreen() {
   useEffect(() => {
     if (!MEASURING || measured.current || !app) return;
     measured.current = true;
-    void runMeasure(() => appRef.current!.state, app.dispatch);
+    void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"));
   });
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf } = app;
