@@ -107,3 +107,18 @@ index 4005594..7037786 100644
          const resp = await this.protocolClient.sendMessage({
              Request: 'StartSession',
              HostID: pairRecord.HostID,
+diff --git a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+--- a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
++++ b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+@@ -234,7 +234,10 @@
+     if (!props.isSimulator || (0, _simulatorCodeSigning.simulatorBuildRequiresCodeSigning)(props.projectRoot)) {
+         const developmentTeamId = await (0, _configureCodeSigning.ensureDeviceIsCodeSignedForDeploymentAsync)(props.projectRoot);
+         if (developmentTeamId) {
+-            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`, '-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration');
++            // Never let xcodebuild create or revoke certificates or profiles on
++            // the shared Apple account: each machine that mints one revokes
++            // the others'. Sign with what's already installed, or fail.
++            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`);
+         }
+     }
+     // Add last
