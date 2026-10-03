@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App.js";
 import { fixturesDir } from "../src/fixtures.js";
 
-// Dragging a column's end edge, or a row's bottom edge: the size saved to
-// the view (columnWidths, rowHeight), as the web's handles do.
+// Dragging a column's end edge, or the grip on the selected row: the size
+// saved to the view (columnWidths, rowHeights), as the web's handles do.
 
 let dir: string;
 let bundle: string;
@@ -57,12 +57,48 @@ describe("resizing on Linux", () => {
     await waitFor(async () => expect((await viewOnDisk()).columnWidths?.title).toBe(60));
   });
 
-  it("rows dragged taller keep their height, within bounds", async () => {
+  async function selectFirstRow() {
+    let w: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (w && !w.getFocusable()) w = w.getParent();
+    w!.grabFocus();
+  }
+
+  it("a row has no grip until one of its cells is selected, and then only that row does", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
-    await drag("resize-rows", 0, 30);
-    await waitFor(async () => expect((await viewOnDisk()).rowHeight).toBe(74));
-    await drag("resize-rows", 0, 1000);
-    await waitFor(async () => expect((await viewOnDisk()).rowHeight).toBe(240));
+    await screen.findAllByText("Land .table extension");
+    expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
+    await selectFirstRow();
+    await waitFor(() => expect(screen.queryAllByName("resize-row-grip")).toHaveLength(1));
+  });
+
+  it("the selected row dragged taller keeps its own height, in whole lines, within bounds", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await selectFirstRow();
+    await drag("resize-row-grip", 0, 20);
+    await waitFor(async () => {
+      const heights = (await viewOnDisk()).rowHeights ?? {};
+      expect(Object.values(heights)).toEqual([64]);
+    });
+    expect((await viewOnDisk()).rowHeight).toBeUndefined();
+    const landed = (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.title === "Land .table extension")!;
+    expect(Object.keys((await viewOnDisk()).rowHeights ?? {})).toEqual([landed.id]);
+    await drag("resize-row-grip", 0, 1000);
+    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([224]));
+  });
+
+  it("a double click on the grip fits the row to what it holds", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await selectFirstRow();
+    await drag("resize-row-grip", 0, 60);
+    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([104]));
+    const grip = (await screen.findAllByName("resize-row-grip"))[0]!;
+    await fireEvent(getController(grip, Gtk.GestureClick), "pressed", 1, 0, 0);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([104]);
+    await fireEvent(getController(grip, Gtk.GestureClick), "pressed", 2, 0, 0);
+    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([44]));
   });
 });
