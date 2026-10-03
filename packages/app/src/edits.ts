@@ -32,8 +32,12 @@ export function withCell(table: ParsedTable, rowId: string, field: string, value
   return { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
 }
 
-/** A row's long-form body; empty removes it. */
+/**
+ * A row's long-form body; empty removes it. A row that isn't there gets
+ * none: a page's last save can land after its row was deleted.
+ */
 export function withBody(table: ParsedTable, rowId: string, content: string): ParsedTable {
+  if (content.length > 0 && !table.rows.some((row) => row.id === rowId)) return table;
   const bodies = { ...(table.bodies ?? {}) };
   if (content.length === 0) delete bodies[rowId];
   else bodies[rowId] = content;

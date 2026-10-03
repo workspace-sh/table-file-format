@@ -133,15 +133,19 @@ export interface SheetProps {
   title: string;
   /** Under the title: what's edited (the page's file). */
   subtitle?: string;
-  /** Leaving without keeping: Close, or Discard when there are changes. Settings have none (they're kept as made). */
+  /** Leaving without keeping, where there's such a thing. A page has none: it's saved as it's typed. */
   cancel?: { label: string; onPress: () => void };
-  /** Keeping: Save. Disabled when there's nothing to keep. */
+  /** Finishing: Done. */
   confirm?: { label: string; onPress: () => void; disabled?: boolean };
-  /** A word on the state, where the platform shows one ("Unsaved changes"). */
+  /** A word on the state, where the platform shows one ("Saved"). */
   status?: string;
-  /** Whether a swipe, a tap outside or Escape may close it: only when nothing is lost. */
+  /**
+   * Whether a swipe or a tap outside may close it: only when nothing is
+   * lost. When not, it stays open, and a swipe (iOS) calls `onDismiss` for
+   * the caller to ask.
+   */
   dismissible: boolean;
-  /** Closed by a swipe, a tap outside or Escape. */
+  /** Closed, or asked to close, by a swipe or a tap outside. */
   onDismiss: () => void;
   children: ReactNode;
 }

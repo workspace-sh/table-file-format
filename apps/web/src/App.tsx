@@ -717,10 +717,11 @@ export function App() {
       </html.div>
       {state.openPage && (
         <BodyEditor
+          key={`${state.active}/${state.openPage}`}
           rowId={state.openPage}
           rowTitle={rowTitleFor(table, state.openPage)}
           content={table.bodies?.[state.openPage] ?? ""}
-          onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+          onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
           onClose={() => dispatch({ type: "openPage", rowId: null })}
         />
       )}
