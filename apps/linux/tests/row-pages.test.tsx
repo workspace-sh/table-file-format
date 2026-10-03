@@ -42,15 +42,25 @@ async function textView(): Promise<Gtk.TextView> {
   return view!;
 }
 
+const dialogOf = async () => (await screen.findAllByRole(Gtk.AccessibleRole.DIALOG)).find((w) => w instanceof Adw.Dialog && !(w instanceof Adw.AlertDialog)) as Adw.Dialog;
+
 describe("row pages on Linux", () => {
-  it("a row with a page opens it, and Save writes the edit to its file", async () => {
+  it("a row with a page opens it, and Done leaves the edit in its file", async () => {
     await openList();
     await userEvent.click(await screen.findByText("Table file format spike"));
     const view = await textView();
     expect(view.getBuffer().text.startsWith("# Table file format spike")).toBe(true);
     await userEvent.type(view, " Edited.");
-    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save" }));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
     await waitFor(() => expect(readFileSync(page("p2"), "utf8")).toContain("Edited."));
+  });
+
+  it("typing is saved after a pause, with the page still open", async () => {
+    await openList();
+    await userEvent.click(await screen.findByText("Table file format spike"));
+    await userEvent.type(await textView(), " Typed.");
+    await waitFor(() => expect(readFileSync(page("p2"), "utf8")).toContain("Typed."), { timeout: 5000 });
+    expect(await screen.findByText("Saved")).toBeDefined();
   });
 
   it("a row without a page starts one, saved as a new file", async () => {
@@ -59,20 +69,39 @@ describe("row pages on Linux", () => {
     await userEvent.click(await screen.findByText("Workspace v1"));
     expect(await screen.findByText("bodies/p1.md · new")).toBeDefined();
     await userEvent.type(await textView(), "# Plan");
-    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save" }));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
     await waitFor(() => expect(readFileSync(page("p1"), "utf8")).toBe("# Plan\n"));
   });
 
-  it("closing with unsaved changes asks first, and Discard leaves the file as it was", async () => {
+  it("closing the dialog keeps what was typed", async () => {
+    await openList();
+    await userEvent.click(await screen.findByText("Table file format spike"));
+    await userEvent.type(await textView(), " Kept.");
+    (await dialogOf()).close();
+    await waitFor(() => expect(readFileSync(page("p2"), "utf8")).toContain("Kept."));
+  });
+
+  it("wiping a page isn't saved as typed; closing asks, and Keep Editing leaves the file", async () => {
     await openList();
     const before = readFileSync(page("p2"), "utf8");
     await userEvent.click(await screen.findByText("Table file format spike"));
-    await userEvent.type(await textView(), " Not kept.");
-    const dialog = (await screen.findAllByRole(Gtk.AccessibleRole.DIALOG)).find((w) => w instanceof Adw.Dialog && !(w instanceof Adw.AlertDialog)) as Adw.Dialog;
-    dialog.close();
-    expect(await screen.findByText("Discard changes to this page?")).toBeDefined();
-    await userEvent.click(await screen.findByText("Discard"));
-    await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+    const view = await textView();
+    view.getBuffer().text = "";
+    expect(await screen.findByText("Empty, not saved")).toBeDefined();
+    (await dialogOf()).close();
+    expect(await screen.findByText("Delete this page?")).toBeDefined();
+    await userEvent.click(await screen.findByText("Keep Editing"));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(readFileSync(page("p2"), "utf8")).toBe(before);
+  });
+
+  it("Delete Page removes the page's file", async () => {
+    await openList();
+    await userEvent.click(await screen.findByText("Table file format spike"));
+    (await textView()).getBuffer().text = "";
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
+    expect(await screen.findByText("Delete this page?")).toBeDefined();
+    await userEvent.click(await screen.findByText("Delete Page"));
+    await waitFor(() => expect(existsSync(page("p2"))).toBe(false));
   });
 });

@@ -730,7 +730,7 @@ export function App({
               rowId={state.openPage}
               rowTitle={rowTitleFor(pageTable, state.openPage)}
               content={pageTable.bodies?.[state.openPage] ?? ""}
-              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content })}
+              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
               onClose={() => dispatch({ type: "openPage", rowId: null })}
             />
           ) : null}
