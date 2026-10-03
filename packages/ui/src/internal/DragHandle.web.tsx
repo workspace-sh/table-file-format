@@ -38,6 +38,8 @@ export interface DragHandleProps {
    * right-to-left layout) or a row's bottom edge.
    */
   edge?: "end" | "bottom";
+  /** A double click on the handle, without dragging. */
+  onDoubleTap?: () => void;
 }
 
 const edgeStyles = css.create({
@@ -85,6 +87,7 @@ export function DragHandle({
   onDragMove,
   onDragEnd,
   edge,
+  onDoubleTap,
 }: DragHandleProps) {
   const activeRef = useRef(false);
   /** Detaches the window listeners of a press that hasn't become a drag yet. */
@@ -177,6 +180,9 @@ export function DragHandle({
       onPointerUp={handlePointerUp as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onPointerCancel={handlePointerCancel as any}
+      // React Strict DOM has no onDoubleClick; a click's `detail` counts it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onClick={onDoubleTap ? (e: any) => e?.detail === 2 && onDoubleTap() : undefined}
     >
       {children}
     </html.div>
