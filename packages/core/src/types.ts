@@ -16,17 +16,23 @@ export type FieldType =
   | "geojson";
 
 /**
- * Symbolic enum-chip color — the 8-color Notion / Linear palette.
- * Symbolic (not hex) so each consumer maps the name onto its own
- * light/dark theme. See SPEC "Field constraints → enum".
+ * Symbolic enum-chip color: one of 14 names (DECISIONS D43). Symbolic
+ * (not hex) so each consumer maps the name onto its own light/dark
+ * theme. See SPEC "Field constraints → enum".
  */
 export type EnumColor =
   | "gray"
+  | "brown"
   | "red"
   | "orange"
   | "yellow"
+  | "lime"
   | "green"
+  | "mint"
+  | "teal"
+  | "cyan"
   | "blue"
+  | "indigo"
   | "purple"
   | "pink";
 
