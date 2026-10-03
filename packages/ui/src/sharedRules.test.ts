@@ -105,6 +105,8 @@ test("fitting a row: short text is one line, long text wraps, newlines count, th
   // 168px of room at 6.5px a character: 26 characters a line.
   assert.equal(linesNeeded(text("x".repeat(60)), 200), 3);
   assert.equal(linesNeeded(text("one\ntwo\nthree"), 200), 3);
+  // A blank line still takes a line.
+  assert.equal(linesNeeded(text("a\n\nb"), 200), 3);
   assert.equal(linesNeeded({ kind: "text", text: "US$1,234,567.89", oneToken: true }, 60), 1);
   const pills = { kind: "pills" as const, pills: ["alpha", "beta", "gamma", "delta"].map((l) => ({ value: l, label: l })) };
   assert.equal(linesNeeded(pills, 1000), 1);
