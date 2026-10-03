@@ -27,3 +27,12 @@ An impossible `#`: two rows and two columns woven in one flat layer, each bar ov
 
 - Redraw the reference itself, in its own projection and proportions. Re-projecting the face-on # into isometric made it unreadable.
 - Look at every drawing large, and at 60 pt and 29 pt next to the Workspace glyph, before showing it.
+
+## Perspective (3 Oct, after #341)
+
+Leslie noticed the shipped bars look oblong next to the Workspace glyph's square ones. Cause: Workspace is isometric, so each bar shows two long faces of equal width; the # is face-on with a diagonal depth offset, and its side face is only 0.6 of the front.
+
+- `sheets/perspective-compare.png`: Workspace, A (shipped, 0.6), B (0.8), C (1.0), each at full size, 60 pt and 29 pt.
+- B: `regs(1.8, 3.0, 2.34, 2.88)`; C: `regs(1.5, 3.0, 1.5, 3.0)` in `tools/persp.py` (weave reversed, as shipped). Both score 0 slivers. `tools/find.py` searches other sliver-free proportions per ratio.
+- C crowds the cells and shortens the ends. A true isometric # has square bars but tilts the # onto a slanted floor, which Leslie rejected; a clean retry read as a pile of blocks.
+- Leslie hasn't chosen between A, B and C. Linux owns the icon and the decision's follow-through.
