@@ -26,7 +26,7 @@
 import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, State } from "react-native-gesture-handler";
 
 export interface DragEvent {
   pageX: number;
@@ -55,6 +55,13 @@ export interface DragHandleProps {
   edge?: "end" | "bottom";
   /** A double tap (a double click on macOS) on the handle, without dragging. */
   onDoubleTap?: () => void;
+  /**
+   * Take the touch as soon as it lands, before a scroll view around the
+   * handle can: any movement drags, and a touch that ends where it began
+   * is a tap. For a small handle that only shows while something is
+   * selected, where a scroll that starts on it would only be a miss.
+   */
+  grabOnTouch?: boolean;
 }
 
 const edgeStyles = StyleSheet.create({
@@ -70,6 +77,7 @@ export function DragHandle({
   longPressMs,
   edge,
   onDoubleTap,
+  grabOnTouch,
 }: DragHandleProps) {
   // Read callbacks through refs so the gesture object stays stable
   // across renders. Without this, consumers passing inline lambdas
@@ -85,6 +93,43 @@ export function DragHandle({
   const doubleTaps = onDoubleTap !== undefined;
 
   const gesture = useMemo(() => {
+    // Two taps within half a second (iOS's own double-tap interval) are
+    // a double tap. Counted here because the gesture library's two-tap
+    // recogniser failed between the taps inside a scroll view.
+    const lastTap = { at: 0 };
+    const tapped = () => {
+      const now = Date.now();
+      if (now - lastTap.at < 500) {
+        lastTap.at = 0;
+        callbacksRef.current.onDoubleTap?.();
+      } else lastTap.at = now;
+    };
+    if (grabOnTouch) {
+      const from = { x: 0, y: 0 };
+      const active = { on: false };
+      return Gesture.Pan()
+        .runOnJS(true)
+        .minDistance(0)
+        .shouldCancelWhenOutside(false)
+        .onBegin((e) => {
+          from.x = e.absoluteX;
+          from.y = e.absoluteY;
+          active.on = false;
+        })
+        .onStart(() => {
+          active.on = true;
+          callbacksRef.current.onDragStart?.({ pageX: from.x, pageY: from.y });
+        })
+        .onUpdate((e) => {
+          callbacksRef.current.onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+        })
+        .onFinalize((e) => {
+          if (active.on) callbacksRef.current.onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
+          active.on = false;
+          // A touch the system took back (a call, another view) isn't a tap.
+          if (e.state !== State.CANCELLED && Math.hypot(e.absoluteX - from.x, e.absoluteY - from.y) < 4) tapped();
+        });
+    }
     let pan = Gesture.Pan()
       // Run callbacks on the JS thread, not as Reanimated worklets.
       // State updates flow through React; no Reanimated dependency.
@@ -137,26 +182,17 @@ export function DragHandle({
       });
     if (!doubleTaps) return pan;
     // Whichever is first: a drag starts after a few points of movement,
-    // and a tap ends without moving. Two taps within half a second (iOS's
-    // own double-tap interval) are a double tap. Counted here because the
-    // gesture library's two-tap recogniser failed between the taps inside
-    // a scroll view.
-    const lastTap = { at: 0 };
+    // and a tap ends without moving.
     const doubleTap = Gesture.Tap()
       .runOnJS(true)
       .onEnd((_e, success) => {
-        if (!success) return;
-        const now = Date.now();
-        if (now - lastTap.at < 500) {
-          lastTap.at = 0;
-          callbacksRef.current.onDoubleTap?.();
-        } else lastTap.at = now;
+        if (success) tapped();
       });
     return Gesture.Race(doubleTap, pan);
     // Only `longPressMs` and whether there's a double tap shape the
     // gesture; callbacks read through `callbacksRef` so they don't need
     // to invalidate the memo.
-  }, [longPressMs, doubleTaps]);
+  }, [longPressMs, doubleTaps, grabOnTouch]);
 
   // Real RN View between GestureDetector and the (likely RSD) child.
   // RNGH injects `collapsable={false}` into its immediate child so RN's
