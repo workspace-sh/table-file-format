@@ -233,11 +233,17 @@ export interface View {
    */
   columnWidths?: Record<string, number>;
   /**
-   * Body row height in pixels, for every row of a table view. Rows
-   * show as many lines of text as fit; the rest is clipped. Absent
-   * means one line. Set by dragging a row's bottom edge.
+   * The default body row height in pixels, for rows of a table view
+   * that don't have their own in `rowHeights`. Rows show as many lines
+   * of text as fit; the rest is clipped. Absent means one line.
    */
   rowHeight?: number;
+  /**
+   * Heights of single rows in pixels, keyed by row id, set by resizing
+   * a selected row. A row not listed uses `rowHeight`; ids matching no
+   * row are ignored. Display-only.
+   */
+  rowHeights?: Record<string, number>;
   /**
    * Show the table layout as a sheet: columns lettered A, B, C… and rows
    * numbered 1, 2, 3… in the order this view shows them, so a formula can

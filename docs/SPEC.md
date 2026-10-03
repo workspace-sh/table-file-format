@@ -705,10 +705,15 @@ given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
 - `columnWidths: { "<field name>": <pixels> }` — column widths set by
   resizing in table layouts. Columns not listed use the app's default.
   Display-only.
-- `rowHeight: <pixels>` — the height of every body row in a table
-  layout, set by resizing a row. Each row shows as many lines of text
-  as fit and clips the rest; absent means one line. One height for all
-  rows keeps rows aligned across a frozen first column. Display-only.
+- `rowHeight: <pixels>` — the default height of body rows in a table
+  layout, for rows without their own in `rowHeights`. Each row shows
+  as many lines of text as fit and clips the rest; absent means one
+  line. Display-only.
+- `rowHeights: { "<row id>": <pixels> }` — the heights of single rows
+  in a table layout, set by resizing a selected row. Rows not listed
+  use `rowHeight`; ids that match no row are ignored. A row has one
+  height across all its cells, which keeps it aligned across a frozen
+  first column. Display-only.
 - `totals: { "<field>": "sum" | "average" | "min" | "max" | "count" |
   "count_empty" }`: a footer under a table layout, one calculation per
   column, over the rows the view shows (after its filters). `sum`,
