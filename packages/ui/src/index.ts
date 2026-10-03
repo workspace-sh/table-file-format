@@ -19,6 +19,7 @@ export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
 export { PageGutter } from "./pageGutter";
 export { PanelSurface, type PanelSurfaceComponent } from "./panelSurface";
+export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { ViewSettings, type ViewSettingsProps } from "./ViewSettings";
 export { DisplayControls, type DisplayControlsProps } from "./DisplayControls";
 export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells } from "./sheets";
