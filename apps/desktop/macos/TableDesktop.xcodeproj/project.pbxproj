@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E8E089DA1640F14E029C4072 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 133BD66CE5E4C18D42B7B3B3 /* AppIcon.icon */; };
 		3CD378DFFC1D1EBAEE41E2DD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FBFEA35E733EC6BF88B29DD3 /* PrivacyInfo.xcprivacy */; };
 		5142014D2437B4B30078DB4F /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5142014C2437B4B30078DB4F /* AppDelegate.mm */; };
 		514201522437B4B40078DB4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 514201512437B4B40078DB4F /* Assets.xcassets */; };
@@ -17,6 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		133BD66CE5E4C18D42B7B3B3 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* TableDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1D0E1A1FDF99301486A16A60 /* Pods-TableDesktop-macOS.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TableDesktop-macOS.release.xcconfig"; path = "Target Support Files/Pods-TableDesktop-macOS/Pods-TableDesktop-macOS.release.xcconfig"; sourceTree = "<group>"; };
 		514201492437B4B30078DB4F /* TableDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -66,6 +68,7 @@
 			children = (
 				5142014B2437B4B30078DB4F /* AppDelegate.h */,
 				5142014C2437B4B30078DB4F /* AppDelegate.mm */,
+				133BD66CE5E4C18D42B7B3B3 /* AppIcon.icon */,
 				514201512437B4B40078DB4F /* Assets.xcassets */,
 				514201532437B4B40078DB4F /* Main.storyboard */,
 				514201562437B4B40078DB4F /* Info.plist */,
@@ -208,6 +211,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				514201522437B4B40078DB4F /* Assets.xcassets in Resources */,
+				E8E089DA1640F14E029C4072 /* AppIcon.icon in Resources */,
 				514201552437B4B40078DB4F /* Main.storyboard in Resources */,
 				76E8CC01AB6E001531ECE453 /* PrivacyInfo.xcprivacy in Resources */,
 			);
