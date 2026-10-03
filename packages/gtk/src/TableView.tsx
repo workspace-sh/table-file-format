@@ -30,7 +30,8 @@ import type { MenuItem } from "@gtkx/react/internal";
 import { columnLetter, effectiveAlign, isSheet, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
 import {
   canInsertAt,
-  DEFAULT_ROW_HEIGHT,
+  describeCell,
+  fittedRowHeight,
   formulaInputCells,
   viewGrid,
   columnWidths,
@@ -48,7 +49,8 @@ import {
   rowActions,
   type RowAction,
   resizedColumnWidth,
-  resizedRowHeight,
+  rowHeightOf,
+  snappedRowHeight,
   useDirection,
   afterEdit,
   cellPicks,
@@ -236,13 +238,13 @@ export function TableView({
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   // Resizing: live sizes while a handle is dragged, saved to the view
-  // (columnWidths, rowHeight; SPEC section 4) when it's let go, as on the web.
+  // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRowHeight, setLiveRowHeight] = useState<number | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number } | null>(null);
   const resizeFrom = useRef(0);
-  const rowHeight = liveRowHeight ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
-  const lines = linesFor(rowHeight);
+  // Each row's own height, else the view's default; the row being resized follows the drag.
+  const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
   const coords = view.coordinates === true;
   const displayed = groupedRows(view, rows, schema);
   const totals = view.totals ?? {};
@@ -260,7 +262,7 @@ export function TableView({
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome);
 
   // A column's handle is on its end edge (the left, right to left, where
-  // dragging leftwards widens it); a row's is on its bottom edge.
+  // dragging leftwards widens it); a row's grip is on its bottom edge.
   const columnHandle = (name: string) =>
     onUpdateView ? (
       <GtkBox
@@ -282,27 +284,6 @@ export function TableView({
         }
       />
     ) : null;
-  const rowHandle = onUpdateView ? (
-    <GtkBox
-      name="resize-rows"
-      heightRequest={5}
-      valign={Gtk.Align.END}
-      cursor={Gdk.Cursor.newFromName("row-resize", null)}
-      controllers={
-        <GtkGestureDrag
-          onDragBegin={() => {
-            resizeFrom.current = rowHeight;
-          }}
-          onDragUpdate={(_dx, dy) => setLiveRowHeight(resizedRowHeight(resizeFrom.current, dy))}
-          onDragEnd={(_dx, dy) => {
-            onUpdateView({ rowHeight: resizedRowHeight(resizeFrom.current, dy) });
-            setLiveRowHeight(null);
-          }}
-        />
-      }
-    />
-  ) : null;
-
   const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
 
   const gutter = (content: string, height: number) =>
@@ -310,7 +291,66 @@ export function TableView({
       <GtkLabel label={content} widthRequest={ROW_NUMBER_WIDTH} heightRequest={height} cssClasses={[styles.rowNumber]} />
     ) : null;
 
-  const { formulaSyntax } = useDisplaySettings();
+  const display = useDisplaySettings();
+  const { formulaSyntax } = display;
+
+  // A row's grip: only on the row with the selected cell (so nothing else
+  // can be dragged by a scroll), at its bottom start edge. Dragging resizes
+  // that row in whole lines; a double click fits it to what it holds.
+  const rowGrip = (row: Row) => {
+    if (!onUpdateView || (focusedCell?.split("\u0000")[0] !== row.id && liveRow?.rowId !== row.id)) return null;
+    const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    return (
+      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={4} marginBottom={2} spacing={6}>
+        <GtkBox
+          name="resize-row-grip"
+          halign={Gtk.Align.CENTER}
+          valign={Gtk.Align.CENTER}
+          widthRequest={28}
+          heightRequest={14}
+          cssClasses={[styles.rowGrip]}
+          tooltipText="Drag to resize the row; double-click to fit it"
+          cursor={Gdk.Cursor.newFromName("row-resize", null)}
+          controllers={[
+            <GtkGestureDrag
+              key="drag"
+              onDragBegin={() => {
+                resizeFrom.current = heightOf(row.id);
+              }}
+              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy) })}
+              onDragEnd={(_dx, dy) => {
+                saveHeight(snappedRowHeight(resizeFrom.current, dy));
+                setLiveRow(null);
+              }}
+            />,
+            <GtkGestureClick
+              key="fit"
+              onPressed={(nPress) => {
+                if (nPress !== 2) return;
+                saveHeight(
+                  fittedRowHeight(
+                    fields.map((name) => ({
+                      show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
+                      width: colWidth(name),
+                    })),
+                  ),
+                );
+              }}
+            />,
+          ]}
+        >
+          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={12} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
+        </GtkBox>
+        {liveRow?.rowId === row.id ? (
+          <GtkLabel
+            label={`${linesFor(liveRow.h)} ${linesFor(liveRow.h) === 1 ? "line" : "lines"}`}
+            cssClasses={[styles.rowGripLabel]}
+          />
+        ) : null}
+      </GtkBox>
+    );
+  };
+
   const header = (
     <GtkBox cssClasses={[styles.headerRow]}>
       {gutter("", HEADER_HEIGHT)}
@@ -415,7 +455,10 @@ export function TableView({
   // While a formula is open: its column tinted, the cells it read outlined.
   const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
 
-  const body = displayed.map(({ row, starts }, index) => (
+  const body = displayed.map(({ row, starts }, index) => {
+    const rowHeight = heightOf(row.id);
+    const lines = linesFor(rowHeight);
+    return (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
       {starts ? (
         <GtkLabel
@@ -424,7 +467,7 @@ export function TableView({
           cssClasses={[styles.groupRow]}
         />
       ) : null}
-      <GtkOverlay overlays={rowHandle}>
+      <GtkOverlay overlays={rowGrip(row)}>
       <BodyRow
         rowId={row.id}
         menu={hasMenu}
@@ -509,7 +552,8 @@ export function TableView({
       </BodyRow>
       </GtkOverlay>
     </GtkBox>
-  ));
+    );
+  });
 
   const addRow = onAddRow ? (
     <GtkButton
