@@ -12,6 +12,8 @@
   "//workspaces": "apps/desktop is intentionally NOT a workspace member — bare RN doesn't compose with npm hoisting. See apps/desktop/README.md.",
   "scripts": {
     "dev": "npm run web:dev",
+    "//postinstall": "patches/: fixes to installed packages, applied on every install (patch-package). apps/mobile has its own for the packages nested there.",
+    "postinstall": "patch-package",
     "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run app:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace.sh/table-core",
@@ -63,6 +65,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
+    "patch-package": "^8.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tsx": "^4.0.0",
