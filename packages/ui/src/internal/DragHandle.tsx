@@ -26,7 +26,7 @@
 import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, State } from "react-native-gesture-handler";
 
 export interface DragEvent {
   pageX: number;
@@ -126,7 +126,8 @@ export function DragHandle({
         .onFinalize((e) => {
           if (active.on) callbacksRef.current.onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
           active.on = false;
-          if (Math.hypot(e.absoluteX - from.x, e.absoluteY - from.y) < 4) tapped();
+          // A touch the system took back (a call, another view) isn't a tap.
+          if (e.state !== State.CANCELLED && Math.hypot(e.absoluteX - from.x, e.absoluteY - from.y) < 4) tapped();
         });
     }
     let pan = Gesture.Pan()

@@ -265,36 +265,51 @@ const styles = css.create({
   positioned: {
     position: "relative",
   },
-  // A selected cell's grip, centred on its bottom edge, inside the cell.
+  // A line of no height under the selected row, outside its row-actions
+  // wrapper, that the grip hangs from. On iOS that wrapper is a native
+  // context-menu view, which takes no touch outside its bounds, so a grip
+  // inside the row couldn't be touched below the row's edge.
+  rowGripAnchor: {
+    position: "relative",
+    height: 0,
+    zIndex: 3,
+  },
+  // A selected row's grip, straddling its bottom edge at the start.
   rowGripSlot: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: -17,
+    insetInlineStart: 4,
     zIndex: 3,
-    display: "flex",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "flex-end",
-    gap: 6,
   },
-  // Room for a finger around the grabber, 64 by 20, below the line of
-  // text a one-line row holds, so a tap on the text still reaches it.
+  // Room for a finger around the pill: 52 by 34, centred on the row's edge.
   rowGripHit: {
-    paddingTop: 12,
-    paddingBottom: 3,
-    paddingInline: 16,
+    paddingBlock: 10,
+    paddingInline: 12,
     cursor: "row-resize",
   },
-  // A grabber, as on an iOS sheet, under the cell's text.
   rowGrip: {
-    width: 32,
-    height: 5,
-    borderRadius: 2.5,
+    width: 28,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: "#0a84ff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
   },
+  rowGripBar: {
+    width: 12,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
+  },
+  // Beside the pill, out of the flow, so the pill stays put as it appears.
   rowGripLabel: {
-    marginBottom: 4,
+    position: "absolute",
+    bottom: 5,
+    insetInlineStart: "100%",
+    whiteSpace: "nowrap",
     fontSize: 11,
     fontWeight: 600,
     color: "#ffffff",
@@ -2490,12 +2505,11 @@ export function TableView({
       />
     ) : null;
 
-  // A row's grip: only in the selected cell, centred on its bottom edge
-  // as Numbers has it, so nothing else can be dragged by a scroll that
-  // starts on a row's edge. It sits wholly inside the cell, where every
-  // touch reaches it, and takes a touch as it lands. Dragging resizes the
-  // row in whole lines, with a tick for each; a double tap fits it to
-  // what it holds.
+  // A row's grip: only on the row with the selected cell, so nothing else
+  // can be dragged by a scroll that starts on a row's edge. A pill on the
+  // row's bottom edge at its start, as Numbers marks a selected row, that
+  // takes a touch as it lands. Dragging resizes the row in whole lines,
+  // with a tick for each; a double tap fits it to what it holds.
   const rowGrip = (row: Row) => {
     if (!onUpdateView) return null;
     const saveHeight = (h: number) => {
@@ -2537,7 +2551,10 @@ export function TableView({
           }
         >
           <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
-            <html.div style={styles.rowGrip} />
+            <html.div style={styles.rowGrip}>
+              <html.div style={styles.rowGripBar} />
+              <html.div style={styles.rowGripBar} />
+            </html.div>
           </html.div>
         </DragHandle>
         {dragging !== null && (
@@ -2758,7 +2775,6 @@ export function TableView({
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
           isSelected && styles.cellSelected,
-          isSelected && styles.positioned,
         ]}
       >
         {onUpdateRow ? (
@@ -2789,7 +2805,6 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
-        {isSelected && rowGrip(row)}
       </html.div>
     );
   };
@@ -2945,6 +2960,7 @@ export function TableView({
                     {renderBodyCell(row, primaryName, 0, 1)}
                   </html.div>
                 </RowActions>
+                {sel?.rowId === row.id && <html.div style={styles.rowGripAnchor}>{rowGrip(row)}</html.div>}
               </Fragment>
             ))}
             {addRow && newRowBand(true)}
@@ -2988,7 +3004,7 @@ export function TableView({
                         styles.tableRow,
                         styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
-                        i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                          i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                       ]}
                     >
                       {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -2997,6 +3013,8 @@ export function TableView({
                       )}
                     </html.div>
                   </RowActions>
+                  {/* Without a frozen pane, this pane carries the row's grip. */}
+                  {!primaryName && sel?.rowId === row.id && <html.div style={styles.rowGripAnchor}>{rowGrip(row)}</html.div>}
                 </Fragment>
               ))}
               {addRow && newRowBand(!primaryName)}
