@@ -54,6 +54,7 @@ import {
 } from "./cards";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
+import { useHaptics } from "./Haptics";
 import { fieldHint, fieldHintText } from "./fieldHintFacts";
 import { FieldHint, Hinted } from "./FieldHint";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
@@ -235,41 +236,41 @@ const styles = css.create({
   positioned: {
     position: "relative",
   },
-  // A selected row's grip, straddling its bottom edge at the start.
+  // A selected cell's grip, centred on its bottom edge, inside the cell.
   rowGripSlot: {
     position: "absolute",
-    bottom: -12,
-    insetInlineStart: 4,
+    bottom: 0,
+    left: 0,
+    right: 0,
     zIndex: 3,
     display: "flex",
     flexDirection: "row",
-    alignItems: "center",
+    justifyContent: "center",
+    alignItems: "flex-end",
     gap: 6,
   },
-  // Room for a finger around the small grip.
+  // Room for a finger around the grabber, 64 by 20, below the line of
+  // text a one-line row holds, so a tap on the text still reaches it.
   rowGripHit: {
-    paddingBlock: 5,
-    paddingInline: 8,
+    paddingTop: 12,
+    paddingBottom: 3,
+    paddingInline: 16,
     cursor: "row-resize",
   },
+  // A grabber, as on an iOS sheet, under the cell's text.
   rowGrip: {
-    width: 28,
-    height: 14,
-    borderRadius: 7,
+    width: 32,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: "#0a84ff",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 3,
   },
-  rowGripBar: {
-    width: 12,
-    height: 1.5,
-    borderRadius: 1,
-    backgroundColor: "#ffffff",
-  },
+  // Beside the grabber, out of the flow, so the grabber stays put as it
+  // appears.
   rowGripLabel: {
+    position: "absolute",
+    bottom: 2,
+    left: "50%",
+    marginLeft: 40,
     fontSize: 11,
     fontWeight: 600,
     color: "#ffffff",
@@ -2253,6 +2254,9 @@ export function TableView({
   // Each row's own height, else the view's default; the row being
   // resized follows the drag.
   const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
+  const haptics = useHaptics();
+  // The height the drag last ticked at, so each line passed ticks once.
+  const lastStep = useRef(0);
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null);
   // Ref typed loosely (`unknown`) because the underlying instance differs
@@ -2412,24 +2416,33 @@ export function TableView({
       />
     ) : null;
 
-  // A row's grip: only on the row with the selected cell, as Numbers and
-  // Sheets show one on a selected row, so nothing else can be dragged by
-  // a scroll that starts on a row's edge. Dragging resizes that row in
-  // whole lines; a double tap fits it to what it holds.
+  // A row's grip: only in the selected cell, centred on its bottom edge
+  // as Numbers has it, so nothing else can be dragged by a scroll that
+  // starts on a row's edge. It sits wholly inside the cell, where every
+  // touch reaches it, and takes a touch as it lands. Dragging resizes the
+  // row in whole lines, with a tick for each; a double tap fits it to
+  // what it holds.
   const rowGrip = (row: Row) => {
-    if (!onUpdateView || sel?.rowId !== row.id) return null;
-    const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    if (!onUpdateView) return null;
+    const saveHeight = (h: number) => {
+      if (h !== rowHeightOf(view, row.id)) onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    };
     const dragging = liveRow?.rowId === row.id ? liveRow.h : null;
     return (
       <html.div style={styles.rowGripSlot}>
         <DragHandle
+          grabOnTouch
           onDragStart={(e) => {
             resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
+            lastStep.current = heightOf(row.id);
           }}
           onDragMove={(e) => {
             const start = resizeStart.current;
             if (!start) return;
-            setLiveRow({ rowId: row.id, h: snappedRowHeight(start.size, e.pageY - start.at) });
+            const h = snappedRowHeight(start.size, e.pageY - start.at);
+            if (h !== lastStep.current) haptics.step?.();
+            lastStep.current = h;
+            setLiveRow({ rowId: row.id, h });
           }}
           onDragEnd={(e) => {
             const start = resizeStart.current;
@@ -2450,10 +2463,7 @@ export function TableView({
           }
         >
           <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
-            <html.div style={styles.rowGrip}>
-              <html.div style={styles.rowGripBar} />
-              <html.div style={styles.rowGripBar} />
-            </html.div>
+            <html.div style={styles.rowGrip} />
           </html.div>
         </DragHandle>
         {dragging !== null && (
@@ -2660,6 +2670,7 @@ export function TableView({
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
           isSelected && styles.cellSelected,
+          isSelected && styles.positioned,
         ]}
       >
         {onUpdateRow ? (
@@ -2690,6 +2701,7 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
+        {isSelected && rowGrip(row)}
       </html.div>
     );
   };
@@ -2837,7 +2849,6 @@ export function TableView({
                   >
                     {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                     {renderBodyCell(row, primaryName, 0, 1)}
-                    {rowGrip(row)}
                   </html.div>
                 </RowActions>
               </Fragment>
@@ -2890,8 +2901,6 @@ export function TableView({
                       {restNames.map((name, idx) =>
                         renderBodyCell(row, name, idx, restNames.length),
                       )}
-                      {/* Without a frozen pane, this pane carries the row's grip. */}
-                      {!primaryName && rowGrip(row)}
                     </html.div>
                   </RowActions>
                 </Fragment>
