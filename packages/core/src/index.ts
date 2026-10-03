@@ -23,8 +23,18 @@ export {
   queryIndex,
   isIndexStale,
   dropIndex,
+  indexKey,
+  putRows,
+  removeRows,
+  INDEX_FORMAT,
   type IndexQuery,
+  type IndexedRows,
+  type BuildOptions,
+  type SqlDriver,
+  type SqlValue,
 } from "./indexer.js";
+export { arraySource, type RowSource } from "./row-source.js";
+export { oo1Driver, type Oo1Database, type Oo1Statement } from "./sqlite-wasm.js";
 export {
   toCSV,
   fromCSV,

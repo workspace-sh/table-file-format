@@ -250,6 +250,17 @@ indexed path and the in-memory fallback speaking one query language
 so results can't diverge, and user search text never reaches an SQL
 string.
 
+**Extended (2 Oct 2026):** `queryIndex` also takes the view's manual
+`order`, returns a count and a window reader rather than every row,
+and says null when it can't match the in-memory path exactly (the
+index is exact or absent, never approximate). One implementation runs
+on every platform over a small `SqlDriver`; D15's "incremental
+indexing is deferred" is superseded by `putRows` / `removeRows`
+because the large-tables work (docs/LARGE-TABLES.md) put a million
+rows in a table, where a rebuild is half a minute. Staleness is a
+caller-chosen content `key`, not hashes the indexer reads off disk,
+because the web and mobile have no files to hash.
+
 ## D17: Sync posture — op-log transport, files as materialisation
 
 For multi-writer sync (Hypercore/Autobase per workspace-p2p-spike),

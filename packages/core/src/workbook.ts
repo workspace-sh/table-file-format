@@ -538,10 +538,56 @@ export function computeRows(
 ): { rows: Row[]; diagnostics: ValidationError[] } {
   const computed = schema.fields.filter((f) => f.computed);
   if (computed.length === 0) return { rows, diagnostics: [] };
-  const { workbook, sheet } = workbookFor(schema, rows, options);
   const out: Row[] = new Array(rows.length);
-  for (let i = 0; i < rows.length; i++) out[i] = workbook.fill(sheet, i, computed);
-  return { rows: out, diagnostics: sheet.diagnostics };
+  const memo = rowLocal(schema, computed) ? memoFor(schema) : undefined;
+  let made: { workbook: Workbook; sheet: Sheet } | undefined;
+  const book = () => (made ??= workbookFor(schema, rows, options));
+  for (let i = 0; i < rows.length; i++) {
+    const cached = memo?.rows.get(rows[i]!);
+    if (cached) {
+      out[i] = cached;
+      continue;
+    }
+    const { workbook, sheet } = book();
+    out[i] = workbook.fill(sheet, i, computed);
+    memo?.rows.set(rows[i]!, out[i]!);
+  }
+  // The diagnostics are the formulas' own (one doesn't parse): the same for every row of this schema.
+  if (memo) memo.diagnostics ??= book().sheet.diagnostics;
+  return { rows: out, diagnostics: memo ? memo.diagnostics! : book().sheet.diagnostics };
+}
+
+/**
+ * Formulas that read only their own row's fields give the same answer for
+ * the same row object, so an edit to one row of a million computes one row
+ * (rows are never changed in place; an edit makes a new row). A formula
+ * that reads across rows, tables or a Sheet view's places isn't, and the
+ * table is computed whole each time.
+ */
+// Anything that reads the clock or chance (TODAY, NOW, RAND, #124) must be added here too: its answer isn't the row's alone.
+const ACROSS_ROWS = new Set(["column", "lookup", "linked", "at", "range", "row", "rows"]);
+const localSchemas = new WeakMap<TableSchema, boolean>();
+const memos = new WeakMap<TableSchema, { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] }>();
+
+function memoFor(schema: TableSchema) {
+  let memo = memos.get(schema);
+  if (!memo) memos.set(schema, (memo = { rows: new WeakMap() }));
+  return memo;
+}
+
+export function rowLocal(schema: TableSchema, computed: Field[]): boolean {
+  let local = localSchemas.get(schema);
+  if (local === undefined) {
+    const across = (e: Expr): boolean =>
+      e.kind === "call" && (ACROSS_ROWS.has(e.fn) || (e.fn === "field" && e.args.length > 1) || e.args.some(across));
+    local = computed.every((f) => {
+      if (f.computed!.dialect !== "table-expr-v1") return true;
+      const r = parseExpr(f.computed!.expr);
+      return !r.ok || !across(r.expr);
+    });
+    localSchemas.set(schema, local);
+  }
+  return local;
 }
 
 /** A Sheet view as its grid (SPEC section 4, "Sheet views"; D41). */

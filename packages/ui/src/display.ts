@@ -312,3 +312,70 @@ export function resizedRowHeight(size: number, delta: number): number {
   return Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, Math.round(size + delta)));
 }
 
+/** The most lines a row can be resized to show, within MAX_ROW_HEIGHT. */
+export const MAX_ROW_LINES = Math.floor((MAX_ROW_HEIGHT - DEFAULT_ROW_HEIGHT) / CELL_LINE_HEIGHT) + 1;
+
+/** The height of a row showing `lines` lines: one line is the default height, and each more adds a line. */
+export function heightForLines(lines: number): number {
+  const n = Math.min(MAX_ROW_LINES, Math.max(1, Math.round(lines)));
+  return DEFAULT_ROW_HEIGHT + (n - 1) * CELL_LINE_HEIGHT;
+}
+
+/** A row's height in a view: its own (rowHeights), else the view's default (rowHeight), else one line. */
+export function rowHeightOf(view: { rowHeight?: number; rowHeights?: Record<string, number> }, rowId: string): number {
+  return view.rowHeights?.[rowId] ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
+}
+
+/**
+ * A row dragged `delta` taller from `size`, in whole lines: cells clip to
+ * whole lines, so a height between two would only add empty space.
+ */
+export function snappedRowHeight(size: number, delta: number): number {
+  return heightForLines((size + delta - DEFAULT_ROW_HEIGHT) / CELL_LINE_HEIGHT + 1);
+}
+
+// An estimate of the cell font's average character width (13px system
+// text) and its side padding, for fitting a row to what it holds without
+// measuring it on screen.
+const AVERAGE_CHAR_WIDTH = 6.5;
+const CELL_PADDING_INLINE = 16;
+// What a pill or link adds around its label: its own padding and the gap.
+const ITEM_EXTRA_WIDTH = 24;
+
+/** Lines `show` needs in a column `width` wide, estimated. */
+export function linesNeeded(show: CellShow, width: number): number {
+  const room = Math.max(1, width - 2 * CELL_PADDING_INLINE);
+  const wrap = (text: string) =>
+    text.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length * AVERAGE_CHAR_WIDTH) / room)), 0);
+  switch (show.kind) {
+    case "text":
+      return show.oneToken ? 1 : wrap(show.text);
+    case "link":
+      return wrap(show.text);
+    case "pills":
+    case "relations": {
+      // Items flow left to right and wrap to a new line when full.
+      const widths = (show.kind === "pills" ? show.pills.map((p) => p.label) : show.links.map((l) => l.label)).map(
+        (label) => Math.min(room, (label ?? "").length * AVERAGE_CHAR_WIDTH + ITEM_EXTRA_WIDTH),
+      );
+      let lines = 1;
+      let used = 0;
+      for (const w of widths) {
+        if (used > 0 && used + w > room) {
+          lines += 1;
+          used = 0;
+        }
+        used += w;
+      }
+      return lines;
+    }
+    default:
+      return 1;
+  }
+}
+
+/** The height that shows all of a row's cells (each with its column's width), within MAX_ROW_HEIGHT. */
+export function fittedRowHeight(cells: { show: CellShow; width: number }[]): number {
+  return heightForLines(cells.reduce((most, c) => Math.max(most, linesNeeded(c.show, c.width)), 1));
+}
+

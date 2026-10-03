@@ -573,6 +573,42 @@ export interface Derived {
   address: string;
 }
 
+const sameAs = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((x, i) => Object.is(x, b[i]));
+
+/**
+ * `f`'s last answer again when it's asked the same thing (each argument
+ * the same object or value): a render that changes nothing about the
+ * table on screen, like opening a panel, doesn't work its rows out again.
+ */
+function lastAnswer<A extends unknown[], R>(f: (...args: A) => R): (...args: A) => R {
+  let asked: A | undefined;
+  let answer: R;
+  return (...args) => {
+    if (asked && sameAs(asked, args)) return answer;
+    answer = f(...args);
+    asked = args;
+    return answer;
+  };
+}
+
+const summaryLast = lastAnswer(
+  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined) =>
+    viewSummary(table, { shown, inView, searching, openedAt }),
+);
+
+let lastShown: { asked: unknown[]; answer: ShownView } | undefined;
+
+/** The rows on screen. They read the tables of the active bundle (lookups, Sheet grids), so those are what is compared. */
+function shownLast(tables: Record<string, ParsedTable>, key: string, view: View, arrangement: Arrangement | undefined, search: string, locale: string | undefined): ShownView {
+  const prefix = `${bundleOf(key)}/`;
+  const asked: unknown[] = [key, view, arrangement, search, locale];
+  for (const k in tables) if (k.startsWith(prefix)) asked.push(k, tables[k]);
+  if (lastShown && sameAs(lastShown.asked, asked)) return lastShown.answer;
+  const answer = showView(tables, key, view, { arrangement, search, viewerText: viewerOrder(locale) });
+  lastShown = { asked, answer };
+  return answer;
+}
+
 export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const table = state.tables[state.active] ?? NO_TABLE;
   const viewId = viewIdOf(state, state.active);
@@ -581,7 +617,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const locale = viewerLocale(state.display, options.locale);
   const held = state.tables[state.active] !== undefined;
   const shown: ShownView = held
-    ? showView(state.tables, state.active, view, { arrangement, search: state.search, viewerText: viewerOrder(locale) })
+    ? shownLast(state.tables, state.active, view, arrangement, state.search, locale)
     : { view: arrangedView(view, arrangement), rows: [], inView: 0 };
   const live = (a: string) => addressLive(a, state.tables, state.bundles);
   const canGoBack = goBack(state.history, live) !== null;
@@ -599,12 +635,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     arrangement,
     arranged: isArranged(arrangement),
     shown,
-    summary: viewSummary(table, {
-      shown: shown.rows.length,
-      inView: shown.inView,
-      searching: state.search.trim().length > 0,
-      openedAt: state.openedAt[state.active],
-    }),
+    summary: summaryLast(table, shown.rows.length, shown.inView, state.search.trim().length > 0, state.openedAt[state.active]),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
     mode,
     locale,

@@ -6,8 +6,8 @@ import { Portal } from "./internal/Portal";
 import {
   bodyExcerpt,
   describeCell,
-  DEFAULT_ROW_HEIGHT,
   fieldsByName,
+  fittedRowHeight,
   formatValue,
   groupedRows,
   pillFor,
@@ -16,7 +16,8 @@ import {
   linesFor,
   columnWidths,
   resizedColumnWidth,
-  resizedRowHeight,
+  rowHeightOf,
+  snappedRowHeight,
   MIN_RESIZED_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
   MAX_ROW_HEIGHT,
@@ -262,6 +263,49 @@ const styles = css.create({
   }),
   positioned: {
     position: "relative",
+  },
+  // A selected row's grip, straddling its bottom edge at the start.
+  rowGripSlot: {
+    position: "absolute",
+    bottom: -12,
+    insetInlineStart: 4,
+    zIndex: 3,
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  // Room for a finger around the small grip.
+  rowGripHit: {
+    paddingBlock: 5,
+    paddingInline: 8,
+    cursor: "row-resize",
+  },
+  rowGrip: {
+    width: 28,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#0a84ff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  rowGripBar: {
+    width: 12,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
+  },
+  rowGripLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#ffffff",
+    backgroundColor: "#0a84ff",
+    borderRadius: 6,
+    paddingInline: 6,
+    paddingBlock: 2,
   },
   /** A value that can't wrap: one line, cut short with an ellipsis. */
   oneLine: {
@@ -2254,19 +2298,21 @@ export function TableView({
   onInsertRow,
   onAttachFile,
 }: ViewProps) {
-  const { formulaSyntax } = useDisplaySettings();
+  const display = useDisplaySettings();
+  const { formulaSyntax } = display;
   const rtl = useDirection() === "rtl";
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
   const titleField = fields[0];
 
   // Resizing: live values while a handle is dragged, committed to the
-  // view (columnWidths / rowHeight, SPEC section 4) when it's let go.
+  // view (columnWidths / rowHeights, SPEC section 4) when it's let go.
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRowHeight, setLiveRowHeight] = useState<number | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number } | null>(null);
   const resizeStart = useRef<{ at: number; size: number } | null>(null);
-  const rowHeight = liveRowHeight ?? view.rowHeight ?? DEFAULT_ROW_HEIGHT;
-  const lines = linesFor(rowHeight);
+  // Each row's own height, else the view's default; the row being
+  // resized follows the drag.
+  const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   // The schema as a field's settings opened, for their Cancel to put back.
   const schemaBefore = useRef<TableSchema | null>(null);
@@ -2445,27 +2491,58 @@ export function TableView({
       />
     ) : null;
 
-  const rowResizer = onUpdateView ? (
-    <DragHandle
-      edge="bottom"
-      onDragStart={(e) => {
-        resizeStart.current = { at: e.pageY, size: rowHeight };
-      }}
-      onDragMove={(e) => {
-        const start = resizeStart.current;
-        if (!start) return;
-        setLiveRowHeight(resizedRowHeight(start.size, e.pageY - start.at));
-      }}
-      onDragEnd={(e) => {
-        const start = resizeStart.current;
-        resizeStart.current = null;
-        if (!start) return;
-        const h = resizedRowHeight(start.size, e.pageY - start.at);
-        onUpdateView({ rowHeight: h });
-        setLiveRowHeight(null);
-      }}
-    />
-  ) : null;
+  // A row's grip: only on the row with the selected cell, as Numbers and
+  // Sheets show one on a selected row, so nothing else can be dragged by
+  // a scroll that starts on a row's edge. Dragging resizes that row in
+  // whole lines; a double tap fits it to what it holds.
+  const rowGrip = (row: Row) => {
+    if (!onUpdateView || sel?.rowId !== row.id) return null;
+    const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    const dragging = liveRow?.rowId === row.id ? liveRow.h : null;
+    return (
+      <html.div style={styles.rowGripSlot}>
+        <DragHandle
+          onDragStart={(e) => {
+            resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
+          }}
+          onDragMove={(e) => {
+            const start = resizeStart.current;
+            if (!start) return;
+            setLiveRow({ rowId: row.id, h: snappedRowHeight(start.size, e.pageY - start.at) });
+          }}
+          onDragEnd={(e) => {
+            const start = resizeStart.current;
+            resizeStart.current = null;
+            if (!start) return;
+            saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
+            setLiveRow(null);
+          }}
+          onDoubleTap={() =>
+            saveHeight(
+              fittedRowHeight(
+                fields.map((name) => ({
+                  show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
+                  width: colWidth(name),
+                })),
+              ),
+            )
+          }
+        >
+          <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
+            <html.div style={styles.rowGrip}>
+              <html.div style={styles.rowGripBar} />
+              <html.div style={styles.rowGripBar} />
+            </html.div>
+          </html.div>
+        </DragHandle>
+        {dragging !== null && (
+          <html.span style={styles.rowGripLabel}>
+            {linesFor(dragging)} {linesFor(dragging) === 1 ? "line" : "lines"}
+          </html.span>
+        )}
+      </html.div>
+    );
+  };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
   // Primary is the title field — first in the visible order. Empty
@@ -2685,7 +2762,7 @@ export function TableView({
             onCommit={(next) => onUpdateRow(row.id, name, next)}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
-            lines={lines}
+            lines={linesFor(heightOf(row.id))}
             align={align}
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
@@ -2700,7 +2777,7 @@ export function TableView({
             value={row[name]}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
-            lines={lines}
+            lines={linesFor(heightOf(row.id))}
           />
         )}
         {name === titleField && bodies?.[row.id] ? (
@@ -2852,14 +2929,14 @@ export function TableView({
                   <html.div
                     style={[
                       styles.tableRow,
-                      styles.rowHeight(rowHeight),
+                      styles.rowHeight(heightOf(row.id)),
                       styles.positioned,
                       i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                     ]}
                   >
                     {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                     {renderBodyCell(row, primaryName, 0, 1)}
-                    {rowResizer}
+                    {rowGrip(row)}
                   </html.div>
                 </RowActions>
               </Fragment>
@@ -2903,7 +2980,7 @@ export function TableView({
                     <html.div
                       style={[
                         styles.tableRow,
-                        styles.rowHeight(rowHeight),
+                        styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
                         i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
                       ]}
@@ -2912,8 +2989,8 @@ export function TableView({
                       {restNames.map((name, idx) =>
                         renderBodyCell(row, name, idx, restNames.length),
                       )}
-                      {/* Without a frozen pane, this pane carries the row handle. */}
-                      {!primaryName && rowResizer}
+                      {/* Without a frozen pane, this pane carries the row's grip. */}
+                      {!primaryName && rowGrip(row)}
                     </html.div>
                   </RowActions>
                 </Fragment>
