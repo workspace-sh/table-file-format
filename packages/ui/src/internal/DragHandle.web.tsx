@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { css, html } from "react-strict-dom";
+import { edgeScroller } from "./edgeScroller";
 
 export interface DragEvent {
   pageX: number;
@@ -92,6 +93,11 @@ export function DragHandle({
   onDoubleTap,
 }: DragHandleProps) {
   const activeRef = useRef(false);
+  /** The pressed element, and where the pointer last was: what edge scrolling follows. */
+  const sourceRef = useRef<Element | null>(null);
+  const pointerRef = useRef({ x: 0, y: 0 });
+  const moveRef = useRef(onDragMove);
+  moveRef.current = onDragMove;
   /** Detaches the window listeners of a press that hasn't become a drag yet. */
   const pendingRef = useRef<(() => void) | null>(null);
   useEffect(() => () => pendingRef.current?.(), []);
@@ -117,6 +123,26 @@ export function DragHandle({
     };
   }, [dragging]);
 
+  // A drag held near the edge of what it's in scrolls it, as Trello does,
+  // so a card can be carried past what's on screen. Not for a resize
+  // handle: its edge is the thing being moved.
+  useEffect(() => {
+    if (!dragging || edge || !sourceRef.current) return;
+    const scroller = edgeScroller(sourceRef.current);
+    let last = performance.now();
+    let frame = requestAnimationFrame(function tick(now) {
+      const { x, y } = pointerRef.current;
+      // What's under the pointer has moved, though the pointer hasn't.
+      if (scroller.step(x, y, now - last)) moveRef.current?.({ pageX: x, pageY: y });
+      last = now;
+      frame = requestAnimationFrame(tick);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.release();
+    };
+  }, [dragging, edge]);
+
   // A press becomes a drag only once the pointer has moved
   // DRAG_THRESHOLD_PX. Until then the window is watched rather than this
   // element — a fast flick can land its first move event anywhere — and
@@ -126,6 +152,7 @@ export function DragHandle({
     pendingRef.current?.();
     e.preventDefault?.(); // a press that may become a drag selects no text
     const el = e.currentTarget;
+    sourceRef.current = el as unknown as Element;
     const id = e.pointerId;
     const start = { x: e.clientX, y: e.clientY };
     if (typeof window === "undefined") return;
@@ -136,6 +163,7 @@ export function DragHandle({
       activeRef.current = true;
       setDragging(true);
       el.setPointerCapture?.(id);
+      pointerRef.current = { x: ev.clientX, y: ev.clientY };
       onDragStart?.({ pageX: start.x, pageY: start.y });
       onDragMove?.({ pageX: ev.clientX, pageY: ev.clientY });
     };
@@ -153,6 +181,7 @@ export function DragHandle({
 
   const handlePointerMove = (e: PointerEventLike) => {
     if (!activeRef.current) return;
+    pointerRef.current = { x: e.clientX, y: e.clientY };
     onDragMove?.({ pageX: e.clientX, pageY: e.clientY });
   };
 
