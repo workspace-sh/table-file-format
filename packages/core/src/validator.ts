@@ -18,13 +18,8 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
       seenIds.add(row.id);
     }
 
-    for (const field of schema.fields) {
-      if (field.computed) continue; // derived on read, never stored — nothing to validate
-      const value = row[field.name];
-      const fieldErrors = validateField(field, value);
-      for (const message of fieldErrors) {
-        errors.push({ rowIndex: i, rowId: row.id, field: field.name, message });
-      }
+    for (const e of fieldErrorsOf(schema, row)) {
+      errors.push({ rowIndex: i, rowId: row.id, field: e.field, message: e.message });
     }
 
     if (schema.primaryKey && schema.primaryKey.length > 0) {
@@ -43,6 +38,29 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
   }
 
   return errors;
+}
+
+/**
+ * A row's own field errors, kept for the row object: a row is never
+ * changed in place (an edit makes a new one), so an edit to one row of a
+ * million checks one row's fields, and the rest are found again.
+ */
+const fieldErrorMemo = new WeakMap<TableSchema, WeakMap<Row, { field: string; message: string }[]>>();
+const NO_ERRORS: { field: string; message: string }[] = [];
+
+function fieldErrorsOf(schema: TableSchema, row: Row): { field: string; message: string }[] {
+  let rows = fieldErrorMemo.get(schema);
+  if (!rows) fieldErrorMemo.set(schema, (rows = new WeakMap()));
+  let found = rows.get(row);
+  if (!found) {
+    const errors: { field: string; message: string }[] = [];
+    for (const field of schema.fields) {
+      if (field.computed) continue; // derived on read, never stored — nothing to validate
+      for (const message of validateField(field, row[field.name])) errors.push({ field: field.name, message });
+    }
+    rows.set(row, (found = errors.length === 0 ? NO_ERRORS : errors));
+  }
+  return found;
 }
 
 /**

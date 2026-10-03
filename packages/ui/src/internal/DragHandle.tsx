@@ -53,6 +53,8 @@ export interface DragHandleProps {
    * edge. Wider than on web: it's for a finger.
    */
   edge?: "end" | "bottom";
+  /** A double tap (a double click on macOS) on the handle, without dragging. */
+  onDoubleTap?: () => void;
 }
 
 const edgeStyles = StyleSheet.create({
@@ -67,6 +69,7 @@ export function DragHandle({
   onDragEnd,
   longPressMs,
   edge,
+  onDoubleTap,
 }: DragHandleProps) {
   // Read callbacks through refs so the gesture object stays stable
   // across renders. Without this, consumers passing inline lambdas
@@ -77,8 +80,9 @@ export function DragHandle({
   // `setPointerPos`; React re-rendered; loop ("Maximum update depth
   // exceeded"). Refs let the gesture point at a stable indirection
   // while still calling the latest consumer callback every fire.
-  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd });
-  callbacksRef.current = { onDragStart, onDragMove, onDragEnd };
+  const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDoubleTap });
+  callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDoubleTap };
+  const doubleTaps = onDoubleTap !== undefined;
 
   const gesture = useMemo(() => {
     let pan = Gesture.Pan()
@@ -102,7 +106,7 @@ export function DragHandle({
         .failOffsetX([-15, 15])
         .failOffsetY([-15, 15]);
     }
-    return pan
+    pan = pan
       .onStart((e) => {
         callbacksRef.current.onDragStart?.({
           pageX: e.absoluteX,
@@ -131,10 +135,28 @@ export function DragHandle({
           });
         }
       });
-    // Only `longPressMs` participates in the gesture's structure;
-    // callbacks read through `callbacksRef` so they don't need to
-    // invalidate the memo.
-  }, [longPressMs]);
+    if (!doubleTaps) return pan;
+    // Whichever is first: a drag starts after a few points of movement,
+    // and a tap ends without moving. Two taps within half a second (iOS's
+    // own double-tap interval) are a double tap. Counted here because the
+    // gesture library's two-tap recogniser failed between the taps inside
+    // a scroll view.
+    const lastTap = { at: 0 };
+    const doubleTap = Gesture.Tap()
+      .runOnJS(true)
+      .onEnd((_e, success) => {
+        if (!success) return;
+        const now = Date.now();
+        if (now - lastTap.at < 500) {
+          lastTap.at = 0;
+          callbacksRef.current.onDoubleTap?.();
+        } else lastTap.at = now;
+      });
+    return Gesture.Race(doubleTap, pan);
+    // Only `longPressMs` and whether there's a double tap shape the
+    // gesture; callbacks read through `callbacksRef` so they don't need
+    // to invalidate the memo.
+  }, [longPressMs, doubleTaps]);
 
   // Real RN View between GestureDetector and the (likely RSD) child.
   // RNGH injects `collapsable={false}` into its immediate child so RN's

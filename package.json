@@ -18,6 +18,7 @@
 
     "core:build": "npm run build -w @workspace.sh/table-core",
     "core:test": "npm run test -w @workspace.sh/table-core",
+    "core:test:wasm": "INDEXER_DRIVER=wasm npm run test -w @workspace.sh/table-core",
     "core:test:watch": "npm run test:watch -w @workspace.sh/table-core",
     "core:typecheck": "npm run typecheck -w @workspace.sh/table-core",
 
@@ -37,6 +38,8 @@
     "web:dev": "npm run dev -w @workspace.sh/table-web",
     "web:build": "npm run build -w @workspace.sh/table-web",
     "web:preview": "npm run preview -w @workspace.sh/table-web",
+    "web:harness:build": "npm run harness:build -w @workspace.sh/table-web",
+    "web:harness:preview": "npm run harness:preview -w @workspace.sh/table-web",
     "web:typecheck": "npm run typecheck -w @workspace.sh/table-web",
 
     "mobile:start": "cd apps/mobile && NODE_PATH=$PWD/node_modules npx expo start --dev-client --port 8082",
