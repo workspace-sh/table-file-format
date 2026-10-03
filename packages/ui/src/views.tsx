@@ -236,41 +236,44 @@ const styles = css.create({
   positioned: {
     position: "relative",
   },
-  // A selected cell's grip, centred on its bottom edge, inside the cell.
+  // A selected row's grip, straddling its bottom edge at the start.
   rowGripSlot: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: -12,
+    insetInlineStart: 4,
     zIndex: 3,
-    display: "flex",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "flex-end",
-    gap: 6,
   },
-  // Room for a finger around the grabber, 64 by 20, below the line of
-  // text a one-line row holds, so a tap on the text still reaches it.
+  // Room for a finger: 52 by 33, two thirds of it above the row's edge,
+  // the part iOS delivers touches to.
   rowGripHit: {
-    paddingTop: 12,
-    paddingBottom: 3,
-    paddingInline: 16,
+    paddingTop: 14,
+    paddingBottom: 5,
+    paddingInline: 12,
     cursor: "row-resize",
   },
-  // A grabber, as on an iOS sheet, under the cell's text.
   rowGrip: {
-    width: 32,
-    height: 5,
-    borderRadius: 2.5,
+    width: 28,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: "#0a84ff",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
   },
-  // Beside the grabber, out of the flow, so the grabber stays put as it
-  // appears.
+  rowGripBar: {
+    width: 12,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
+  },
+  // Beside the pill, out of the flow, so the pill stays put as it appears.
   rowGripLabel: {
     position: "absolute",
-    bottom: 2,
-    left: "50%",
-    marginLeft: 40,
+    bottom: 5,
+    insetInlineStart: "100%",
+    whiteSpace: "nowrap",
     fontSize: 11,
     fontWeight: 600,
     color: "#ffffff",
@@ -2416,10 +2419,11 @@ export function TableView({
       />
     ) : null;
 
-  // A row's grip: only in the selected cell, centred on its bottom edge
-  // as Numbers has it, so nothing else can be dragged by a scroll that
-  // starts on a row's edge. It sits wholly inside the cell, where every
-  // touch reaches it, and takes a touch as it lands. Dragging resizes the
+  // A row's grip: only on the row with the selected cell, so nothing else
+  // can be dragged by a scroll that starts on a row's edge. A pill on the
+  // row's bottom edge at its start, as Numbers marks a selected row. It
+  // takes a touch as it lands, and its target reaches up into the row,
+  // since iOS delivers no touch below a row's edge. Dragging resizes the
   // row in whole lines, with a tick for each; a double tap fits it to
   // what it holds.
   const rowGrip = (row: Row) => {
@@ -2463,7 +2467,10 @@ export function TableView({
           }
         >
           <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
-            <html.div style={styles.rowGrip} />
+            <html.div style={styles.rowGrip}>
+              <html.div style={styles.rowGripBar} />
+              <html.div style={styles.rowGripBar} />
+            </html.div>
           </html.div>
         </DragHandle>
         {dragging !== null && (
@@ -2670,7 +2677,6 @@ export function TableView({
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
           isSelected && styles.cellSelected,
-          isSelected && styles.positioned,
         ]}
       >
         {onUpdateRow ? (
@@ -2701,7 +2707,6 @@ export function TableView({
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
-        {isSelected && rowGrip(row)}
       </html.div>
     );
   };
@@ -2849,6 +2854,7 @@ export function TableView({
                   >
                     {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                     {renderBodyCell(row, primaryName, 0, 1)}
+                    {sel?.rowId === row.id && rowGrip(row)}
                   </html.div>
                 </RowActions>
               </Fragment>
@@ -2901,6 +2907,8 @@ export function TableView({
                       {restNames.map((name, idx) =>
                         renderBodyCell(row, name, idx, restNames.length),
                       )}
+                      {/* Without a frozen pane, this pane carries the row's grip. */}
+                      {!primaryName && sel?.rowId === row.id && rowGrip(row)}
                     </html.div>
                   </RowActions>
                 </Fragment>
