@@ -8,7 +8,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useColorScheme } from "react-native";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
-import { AttachmentsProvider, DisplaySettingsProvider } from "@workspace.sh/table-ui";
+import * as ExpoHaptics from "expo-haptics";
+import { AttachmentsProvider, DisplaySettingsProvider, HapticsProvider, type Haptics } from "@workspace.sh/table-ui";
 import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
 import { TableAppProvider, useTableAppContext } from "../TableAppContext";
 
@@ -42,8 +43,12 @@ export default function Layout() {
   );
 }
 
+// The views' ticks (a resized row passing a line) as the system's
+// selection feedback, the light click a picker wheel gives.
+const haptics: Haptics = { step: () => void ExpoHaptics.selectionAsync() };
+
 /**
- * What every screen draws in: the viewer's display settings, and
+ * What every screen draws in: the viewer's display settings, haptics, and
  * attachments from the fixtures. Each screen has its own PortalHost, since
  * a native screen covers anything drawn outside it.
  */
@@ -52,7 +57,9 @@ function Providers({ children }: { children: React.ReactNode }) {
   if (!app) return <>{children}</>;
   return (
     <DisplaySettingsProvider value={app.display}>
-      <AttachmentsProvider value={(file) => fixtureAttachmentUrls[app.state.active]?.[file]}>{children}</AttachmentsProvider>
+      <HapticsProvider value={haptics}>
+        <AttachmentsProvider value={(file) => fixtureAttachmentUrls[app.state.active]?.[file]}>{children}</AttachmentsProvider>
+      </HapticsProvider>
     </DisplaySettingsProvider>
   );
 }

@@ -40,6 +40,8 @@ export interface DragHandleProps {
   edge?: "end" | "bottom";
   /** A double click on the handle, without dragging. */
   onDoubleTap?: () => void;
+  /** Accepted for parity with native; a pointer press already belongs to the handle. */
+  grabOnTouch?: boolean;
 }
 
 const edgeStyles = css.create({
