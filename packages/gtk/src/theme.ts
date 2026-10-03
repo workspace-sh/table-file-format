@@ -25,7 +25,7 @@ export const styles = {
   totalsRow: css({ borderTop: `1px solid ${RULE}`, minHeight: "36px" }),
   totalLabel: css({ fontSize: "smaller", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
-  rowGrip: css({ backgroundColor: "@accent_bg_color", borderRadius: "3px", padding: "0", minHeight: "0", minWidth: "0" }),
+  rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "7px", padding: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
   rowNumber: css({ opacity: 0.55, fontFeatureSettings: '"tnum"', fontSize: "smaller" }),
   /** Numbers and dates line up by digit. */
