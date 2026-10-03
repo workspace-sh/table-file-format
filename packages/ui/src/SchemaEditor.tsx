@@ -894,6 +894,11 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
   const nameFocused = useRef(false);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
+  // On a phone, the platform's settings sheet (Cancel, the title, Add), as
+  // a field's settings are: a popover under a table at the foot of the
+  // screen had its Add button under the keyboard.
+  const { Sheet: SheetControl } = usePlatformControls();
+  const inSheet = !!SheetControl.presentsSettings;
 
   // What's typed is the column's title; its stored key is made from it,
   // never clashing, so there's no "name in use" to fix by hand.
@@ -948,6 +953,82 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
 
   const choices = addableChoices();
 
+  const form = (
+    <>
+      <html.input
+        dir="auto"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ref={(el: any) => {
+          nameRef.current = el;
+          // Focused once as it appears: in a popover it can mount
+          // after the effect below has run (on native, #281).
+          if (el && !nameFocused.current) {
+            nameFocused.current = true;
+            focusInput(el);
+          }
+        }}
+        type="text"
+        value={name}
+        aria-label="Field name"
+        placeholder="Field name"
+        onChange={(e: { target: { value: string } }) => setName(e.target.value)}
+        onKeyDown={(e: { key: string }) => {
+          if (e.key === "Enter") submit();
+        }}
+        style={[styles.input, styles.fieldNameInput]}
+      />
+      {trimmed.length > 0 && key !== trimmed ? (
+        <html.span style={styles.hintText}>Stored as {key}</html.span>
+      ) : null}
+
+      <html.span style={styles.label}>Type</html.span>
+      <html.div role="radiogroup" aria-label="Field type" style={styles.typeGrid}>
+        {/* Two to a row, each an equal share: the same as a two-column
+            grid, which React Native doesn't have. A lone last choice
+            keeps its half beside an empty one. */}
+        {pairsOf(choices).map((pair) => (
+          <html.div key={pair[0]!.value} style={styles.typeRow}>
+            {pair.map((c) => (
+              <html.button
+                key={c.value}
+                role="radio"
+                aria-checked={type === c.value}
+                onClick={() => setType(c.value)}
+                style={[styles.typeChoice, styles.typeCell, type === c.value && styles.typeChoiceOn]}
+              >
+                {c.label}
+              </html.button>
+            ))}
+            {pair.length === 1 && (
+              // The same box as a choice (its padding and border count
+              // in the share), unseen.
+              <html.div aria-hidden={true} style={[styles.typeChoice, styles.typeCell, styles.typeSpacer]} />
+            )}
+          </html.div>
+        ))}
+      </html.div>
+
+      {type === "formula" && (
+        <>
+          <html.span style={styles.label}>Formula</html.span>
+          <html.input
+        dir="auto"
+            type="text"
+            value={formulaDraft}
+            placeholder={formulaPlaceholder(formulaSyntax)}
+            onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
+            onKeyDown={(e: { key: string }) => {
+              if (e.key === "Enter") submit();
+            }}
+            style={[styles.input, styles.formulaInput]}
+          />
+          <FormulaStatus result={formula} typed={formulaDraft} />
+        </>
+      )}
+
+    </>
+  );
+
   return (
     <html.div style={compact || hug ? styles.addFieldCompactWrapper : styles.addFieldWrapper}>
       <html.button
@@ -965,7 +1046,19 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
       >
         {compact ? "+" : "+ Field"}
       </html.button>
-      {open && anchorRect && (
+      {open && inSheet && (
+        <SheetControl
+          size="settings"
+          title="New field"
+          cancel={{ label: "Cancel", onPress: close }}
+          confirm={{ label: "Add", onPress: submit, disabled: !valid }}
+          dismissible
+          onDismiss={close}
+        >
+          <html.div style={styles.sheetBody}>{form}</html.div>
+        </SheetControl>
+      )}
+      {open && !inSheet && anchorRect && (
         <Portal>
           <html.button onClick={close} style={styles.backdrop} />
           <html.div
@@ -977,77 +1070,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
               styles.popoverMaxHeight(place?.maxHeight ?? 400),
             ]}
           >
-            <html.input
-        dir="auto"
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ref={(el: any) => {
-                nameRef.current = el;
-                // Focused once as it appears: in a popover it can mount
-                // after the effect below has run (on native, #281).
-                if (el && !nameFocused.current) {
-                  nameFocused.current = true;
-                  focusInput(el);
-                }
-              }}
-              type="text"
-              value={name}
-              aria-label="Field name"
-              placeholder="Field name"
-              onChange={(e: { target: { value: string } }) => setName(e.target.value)}
-              onKeyDown={(e: { key: string }) => {
-                if (e.key === "Enter") submit();
-              }}
-              style={[styles.input, styles.fieldNameInput]}
-            />
-            {trimmed.length > 0 && key !== trimmed ? (
-              <html.span style={styles.hintText}>Stored as {key}</html.span>
-            ) : null}
-
-            <html.span style={styles.label}>Type</html.span>
-            <html.div role="radiogroup" aria-label="Field type" style={styles.typeGrid}>
-              {/* Two to a row, each an equal share: the same as a two-column
-                  grid, which React Native doesn't have. A lone last choice
-                  keeps its half beside an empty one. */}
-              {pairsOf(choices).map((pair) => (
-                <html.div key={pair[0]!.value} style={styles.typeRow}>
-                  {pair.map((c) => (
-                    <html.button
-                      key={c.value}
-                      role="radio"
-                      aria-checked={type === c.value}
-                      onClick={() => setType(c.value)}
-                      style={[styles.typeChoice, styles.typeCell, type === c.value && styles.typeChoiceOn]}
-                    >
-                      {c.label}
-                    </html.button>
-                  ))}
-                  {pair.length === 1 && (
-                    // The same box as a choice (its padding and border count
-                    // in the share), unseen.
-                    <html.div aria-hidden={true} style={[styles.typeChoice, styles.typeCell, styles.typeSpacer]} />
-                  )}
-                </html.div>
-              ))}
-            </html.div>
-
-            {type === "formula" && (
-              <>
-                <html.span style={styles.label}>Formula</html.span>
-                <html.input
-        dir="auto"
-                  type="text"
-                  value={formulaDraft}
-                  placeholder={formulaPlaceholder(formulaSyntax)}
-                  onChange={(e: { target: { value: string } }) => setFormulaDraft(e.target.value)}
-                  onKeyDown={(e: { key: string }) => {
-                    if (e.key === "Enter") submit();
-                  }}
-                  style={[styles.input, styles.formulaInput]}
-                />
-                <FormulaStatus result={formula} typed={formulaDraft} />
-              </>
-            )}
-
+            {form}
             <html.div style={styles.actionRow}>
               <html.button
                 disabled={!valid}
