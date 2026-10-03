@@ -1,4 +1,14 @@
-# .table app icon (in progress)
+# .table app icon
+
+## Shipped: three L-shaped plates (#344, 3 Oct 2026)
+
+Leslie moved off the woven # to an isometric triangle of three interlocked L-shaped plates, point up. `triangle/table-glyph.svg` is the glyph; `triangle/preview.png` shows it beside Workspace on iOS, macOS and the README.
+
+- `tools/vox.py` draws voxel models isometrically, painting unit cubes front to back, so every face is consistent. `tools/lp.py` builds the three plates (each one a copy of the first, turned about the view axis). `python3 tools/triangle.py` (run from this folder, with shapely) regenerates the glyph.
+- It uses Workspace's numbers: 623 canvas, glyph 474 wide, 8.1 lines, Icon Composer scale 1.6. macOS PNGs are drawn on Workspace's own tile.
+
+The notes below are from the woven-# rounds.
+
 
 An impossible `#`: two rows and two columns woven in one flat layer, each bar over at one crossing and under at the next. It follows "Impossible grid" (Unmoegliches_Objekt_2.svg on Wikimedia Commons), drawn face-on with depth as a diagonal offset down and to the left, in the Workspace glyph's line style.
 
