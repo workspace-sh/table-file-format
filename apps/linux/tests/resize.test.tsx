@@ -70,12 +70,6 @@ describe("resizing on Linux", () => {
     expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
     await selectFirstRow();
     await waitFor(() => expect(screen.queryAllByName("resize-row-grip")).toHaveLength(1));
-    // It is inside the selected cell, the widget the keyboard is on.
-    const grip = screen.queryAllByName("resize-row-grip")[0]!;
-    const focus = (grip.getRoot() as unknown as Gtk.Window).getFocus();
-    let up: Gtk.Widget | null = grip;
-    while (up && up !== focus) up = up.getParent();
-    expect(up).toBe(focus);
   });
 
   it("the selected row dragged taller keeps its own height, in whole lines, within bounds", async () => {

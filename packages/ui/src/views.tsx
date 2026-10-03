@@ -274,11 +274,14 @@ const styles = css.create({
     height: 0,
     zIndex: 3,
   },
-  // A selected row's grip, straddling its bottom edge at the start.
+  // A selected row's grip, straddling its bottom edge under the selected
+  // cell (rowGripAt).
+  rowGripAt: (x: number) => ({
+    insetInlineStart: x,
+  }),
   rowGripSlot: {
     position: "absolute",
     bottom: -17,
-    insetInlineStart: 4,
     zIndex: 3,
   },
   // Room for a finger around the pill: 52 by 34, centred on the row's edge.
@@ -2507,17 +2510,18 @@ export function TableView({
 
   // A row's grip: only on the row with the selected cell, so nothing else
   // can be dragged by a scroll that starts on a row's edge. A pill on the
-  // row's bottom edge at its start, as Numbers marks a selected row, that
-  // takes a touch as it lands. Dragging resizes the row in whole lines,
+  // row's bottom edge under the start of the selected cell, so it's in
+  // view wherever the row has been scrolled, that takes a touch as it
+  // lands. Dragging resizes the row in whole lines,
   // with a tick for each; a double tap fits it to what it holds.
-  const rowGrip = (row: Row) => {
+  const rowGrip = (row: Row, cellStart: number) => {
     if (!onUpdateView) return null;
     const saveHeight = (h: number) => {
       if (h !== rowHeightOf(view, row.id)) onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
     };
     const dragging = liveRow?.rowId === row.id ? liveRow.h : null;
     return (
-      <html.div style={styles.rowGripSlot}>
+      <html.div style={[styles.rowGripSlot, styles.rowGripAt(cellStart + 4)]}>
         <DragHandle
           grabOnTouch
           onDragStart={(e) => {
@@ -2564,6 +2568,17 @@ export function TableView({
         )}
       </html.div>
     );
+  };
+
+  // Where the selected cell starts in its pane: the grip sits under that
+  // cell, so it's in view wherever the pane has been scrolled.
+  const cellStartIn = (names: string[], name: string, numbered: boolean) => {
+    let x = numbered ? ROW_NUMBER_WIDTH : 0;
+    for (const n of names) {
+      if (n === name) break;
+      x += colWidth(n);
+    }
+    return x;
   };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
@@ -2960,7 +2975,9 @@ export function TableView({
                     {renderBodyCell(row, primaryName, 0, 1)}
                   </html.div>
                 </RowActions>
-                {sel?.rowId === row.id && <html.div style={styles.rowGripAnchor}>{rowGrip(row)}</html.div>}
+                {sel?.rowId === row.id && sel.name === primaryName && (
+                  <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
+                )}
               </Fragment>
             ))}
             {addRow && newRowBand(true)}
@@ -3013,8 +3030,11 @@ export function TableView({
                       )}
                     </html.div>
                   </RowActions>
-                  {/* Without a frozen pane, this pane carries the row's grip. */}
-                  {!primaryName && sel?.rowId === row.id && <html.div style={styles.rowGripAnchor}>{rowGrip(row)}</html.div>}
+                  {sel?.rowId === row.id && sel.name !== primaryName && (
+                    <html.div style={styles.rowGripAnchor}>
+                      {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
+                    </html.div>
+                  )}
                 </Fragment>
               ))}
               {addRow && newRowBand(!primaryName)}
