@@ -1,7 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
 import { Sheet } from "./PlatformControls";
+import { confirmDestructive } from "./internal/confirm";
 import { useEscape } from "./internal/useEscape";
+import { pageSave } from "./pageEdit";
+
+/** How long typing pauses before it's saved. */
+const SAVE_AFTER_MS = 700;
 
 const styles = css.create({
   textarea: {
@@ -33,22 +38,72 @@ interface BodyEditorProps {
   onClose: () => void;
 }
 
-export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorProps) {
+/**
+ * A row's page. What's typed is saved as it's typed, a moment after each
+ * pause, as Notes and Docs do: Done closes, and there's nothing to
+ * discard. The one thing it won't do as you type is delete: a page wiped
+ * of its text isn't saved (an empty page is no page), and closing asks
+ * first.
+ */
+export function BodyEditor(props: BodyEditorProps) {
+  // A fresh editor for each page, so one page's text and timer never carry
+  // into the next. Hosts key it by table as well (a row id is per table).
+  return <PageEditor key={props.rowId} {...props} />;
+}
+
+function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorProps) {
   const [draft, setDraft] = useState(content);
-  const dirty = draft !== content;
+  // What's been saved, as this editor knows it.
+  const [saved, setSaved] = useState(content);
   const isNew = content.length === 0;
+  const next = pageSave(saved, draft);
 
-  // Escape closes it when there's nothing unsaved (internal/useEscape: the
-  // document on the web, the text input on macOS, nothing on touch screens).
-  const closeIfClean = useCallback(() => {
-    if (!dirty) onClose();
-  }, [dirty, onClose]);
-  const escape = useEscape(closeIfClean);
+  // Read by the timer and on unmount, which see the latest without re-running.
+  const latest = useRef({ saved, draft, onSave });
+  latest.current = { saved, draft, onSave };
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const save = () => {
+  const flush = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+    const { saved, draft, onSave } = latest.current;
+    if (pageSave(saved, draft) !== "save") return;
     onSave(draft);
-    onClose();
-  };
+    // Now, not on the next render: closing saves, then unmounts, which saves.
+    latest.current.saved = draft;
+    setSaved(draft);
+  }, []);
+
+  useEffect(() => {
+    if (next !== "save") return;
+    timer.current = setTimeout(flush, SAVE_AFTER_MS);
+    return () => clearTimeout(timer.current);
+  }, [draft, next, flush]);
+
+  // Closed some other way (the app moved on): keep what was typed.
+  useEffect(() => flush, [flush]);
+
+  const close = useCallback(() => {
+    if (pageSave(latest.current.saved, latest.current.draft) !== "ask") {
+      flush();
+      onClose();
+      return;
+    }
+    void confirmDestructive({
+      title: "Delete this page?",
+      message: `Its text is gone, so closing deletes bodies/${rowId}.md.`,
+      confirm: "Delete Page",
+      cancel: "Keep Editing",
+    }).then((yes) => {
+      if (!yes) return;
+      latest.current.onSave("");
+      onClose();
+    });
+  }, [flush, onClose, rowId]);
+
+  // Escape closes it, as Done does (internal/useEscape: the document on the
+  // web, the text input on macOS, nothing on touch screens).
+  const escape = useEscape(close);
 
   return (
     // The platform's sheet (PlatformControls): a card over the page on the
@@ -56,12 +111,12 @@ export function BodyEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEd
     <Sheet
       title={rowTitle || rowId}
       subtitle={`bodies/${rowId}.md${isNew ? " · new" : ""}`}
-      cancel={{ label: dirty ? "Discard" : "Close", onPress: onClose }}
-      confirm={{ label: "Save", onPress: save, disabled: !dirty }}
-      status={dirty ? "Unsaved changes" : "No changes"}
-      // Closing by a tap outside, a swipe or Escape loses nothing: only when clean.
-      dismissible={!dirty}
-      onDismiss={onClose}
+      confirm={{ label: "Done", onPress: close }}
+      status={next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved"}
+      // A swipe or a tap outside closes it, saving, unless it would delete
+      // the page: then it stays, and a swipe asks (onDismiss).
+      dismissible={next !== "ask"}
+      onDismiss={close}
     >
       <html.textarea
         {...escape.inputProps}
