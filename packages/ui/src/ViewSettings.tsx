@@ -42,6 +42,7 @@ export function ViewSettings({
   onChange,
   onDelete,
   onClose,
+  onCancel,
   onArrange,
   personal,
   onSaveForEveryone,
@@ -220,7 +221,14 @@ export function ViewSettings({
   // in the page, with its own heading and close button.
   if (SheetControl.presentsSettings) {
     return (
-      <SheetControl size="settings" title="View settings" confirm={{ label: "Done", onPress: onClose }} dismissible onDismiss={onClose}>
+      <SheetControl
+        size="settings"
+        title="View settings"
+        cancel={onCancel && { label: "Cancel", onPress: onCancel }}
+        confirm={{ label: "Done", onPress: onClose }}
+        dismissible
+        onDismiss={onClose}
+      >
         <html.div style={styles.sheetBody}>{body}</html.div>
       </SheetControl>
     );

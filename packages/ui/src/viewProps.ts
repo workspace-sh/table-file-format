@@ -21,6 +21,12 @@ export interface ViewProps {
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
+  /**
+   * Put the table's schema back as it was: a field's settings, cancelled.
+   * Absent: the field editor puts its field back through onUpdateField and
+   * onMoveField, which leaves `schema-version` raised.
+   */
+  onRestoreSchema?: (schema: TableSchema) => void;
   onAddField?: (field: Field) => void;
   /**
    * Add an empty row. The app mints its id (D23) and may return it: the

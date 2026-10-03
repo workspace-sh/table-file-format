@@ -162,6 +162,7 @@ export default function TableScreen() {
               onReset={() => dispatch({ type: "resetArrangement" })}
               onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
               onClose={() => dispatch({ type: "settings", open: false })}
+              onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
             />
           )}
           {renderView(shownView, visibleRows, table.schema, table.bodies, {
