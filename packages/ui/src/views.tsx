@@ -264,8 +264,13 @@ const styles = css.create({
     borderRadius: 2.5,
     backgroundColor: "#0a84ff",
   },
+  // Beside the grabber, out of the flow, so the grabber stays put as it
+  // appears.
   rowGripLabel: {
-    marginBottom: 4,
+    position: "absolute",
+    bottom: 2,
+    left: "50%",
+    marginLeft: 40,
     fontSize: 11,
     fontWeight: 600,
     color: "#ffffff",
