@@ -1,11 +1,10 @@
 # .table app icon
 
-## Shipped: three L-shaped plates (#344, 3 Oct 2026)
+## Shipped: Leslie's reference triangle (#345, 3 Oct 2026)
 
-Leslie moved off the woven # to an isometric triangle of three interlocked L-shaped plates, point up. `triangle/table-glyph.svg` is the glyph; `triangle/preview.png` shows it beside Workspace on iOS, macOS and the README.
+Three chunky L-shaped plates interlocked with a notched outline, turned 60° so it points up. `tools/ref2.py` lists every face as lattice points (e1 horizontal, e2 at 60°) read off Leslie's reference; `python3 tools/ref2.py triangle` writes the glyph at Workspace's 623 canvas, 474 span and 8.1 lines (`ref2_60.svg` is the shipped one, copied to `triangle/table-glyph.svg`).
 
-- `tools/vox.py` draws voxel models isometrically, painting unit cubes front to back, so every face is consistent. `tools/lp.py` builds the three plates (each one a copy of the first, turned about the view axis). `python3 tools/triangle.py` (run from this folder, with shapely) regenerates the glyph.
-- It uses Workspace's numbers: 623 canvas, glyph 474 wide, 8.1 lines, Icon Composer scale 1.6. macOS PNGs are drawn on Workspace's own tile.
+#344 briefly shipped a different figure built with `tools/vox.py` and `tools/lp.py` (a closed triangle with a pinwheel inside). It was a stand-in, not the reference; don't reuse it. `triangle/preview.png` shows that stand-in.
 
 The notes below are from the woven-# rounds.
 
