@@ -94,6 +94,7 @@ function Cell({
   classes = [],
   cellRef,
   onFocused,
+  overlays,
 }: {
   width: number;
   height: number;
@@ -102,6 +103,8 @@ function Cell({
   /** A body cell: it takes the keyboard's focus, and says when it has it. */
   cellRef?: (widget: Gtk.Box | null) => void;
   onFocused?: (focused: boolean) => void;
+  /** Drawn over a body cell's content (its row-resize grip), without moving it. */
+  overlays?: ReactNode;
 }) {
   return (
     <GtkBox
@@ -113,7 +116,7 @@ function Cell({
       cssClasses={[styles.cell, styles.columnRule, ...classes]}
       controllers={onFocused ? <GtkEventControllerFocus onEnter={() => onFocused(true)} onLeave={() => onFocused(false)} /> : undefined}
     >
-      {children}
+      {cellRef ? <GtkOverlay overlays={overlays}>{children}</GtkOverlay> : children}
     </GtkBox>
   );
 }
@@ -294,61 +297,71 @@ export function TableView({
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
 
-  // A row's grip: only on the row with the selected cell (so nothing else
-  // can be dragged by a scroll), at its bottom start edge. Dragging resizes
-  // that row in whole lines; a double click fits it to what it holds.
-  const rowGrip = (row: Row) => {
-    if (!onUpdateView || (focusedCell?.split("\u0000")[0] !== row.id && liveRow?.rowId !== row.id)) return null;
+  // A row's grip: only in the selected cell (so nothing else can be
+  // dragged by a scroll), a grabber centred under its text. Dragging
+  // resizes the row in whole lines; a double click fits it to what it holds.
+  const rowGrip = (row: Row, name: string) => {
+    if (!onUpdateView || focusedCell !== cellKey(row.id, name)) return null;
     const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
-    return (
-      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={4} marginBottom={2} spacing={6}>
+    return [
+      <GtkBox
+        key="grip"
+        name="resize-row-grip"
+        halign={Gtk.Align.CENTER}
+        valign={Gtk.Align.END}
+        widthRequest={64}
+        heightRequest={14}
+        tooltipText="Drag to resize the row; double-click to fit it"
+        cursor={Gdk.Cursor.newFromName("row-resize", null)}
+        controllers={[
+          <GtkGestureDrag
+            key="drag"
+            onDragBegin={() => {
+              resizeFrom.current = heightOf(row.id);
+            }}
+            onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy) })}
+            onDragEnd={(_dx, dy) => {
+              saveHeight(snappedRowHeight(resizeFrom.current, dy));
+              setLiveRow(null);
+            }}
+          />,
+          <GtkGestureClick
+            key="fit"
+            onPressed={(nPress) => {
+              if (nPress !== 2) return;
+              saveHeight(
+                fittedRowHeight(
+                  fields.map((field) => ({
+                    show: describeCell(fieldMap.get(field), row[field], display, relatedTables),
+                    width: colWidth(field),
+                  })),
+                ),
+              );
+            }}
+          />,
+        ]}
+      >
         <GtkBox
-          name="resize-row-grip"
           halign={Gtk.Align.CENTER}
-          valign={Gtk.Align.CENTER}
-          widthRequest={28}
-          heightRequest={14}
+          valign={Gtk.Align.END}
+          marginBottom={3}
+          widthRequest={32}
+          heightRequest={5}
           cssClasses={[styles.rowGrip]}
-          tooltipText="Drag to resize the row; double-click to fit it"
-          cursor={Gdk.Cursor.newFromName("row-resize", null)}
-          controllers={[
-            <GtkGestureDrag
-              key="drag"
-              onDragBegin={() => {
-                resizeFrom.current = heightOf(row.id);
-              }}
-              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy) })}
-              onDragEnd={(_dx, dy) => {
-                saveHeight(snappedRowHeight(resizeFrom.current, dy));
-                setLiveRow(null);
-              }}
-            />,
-            <GtkGestureClick
-              key="fit"
-              onPressed={(nPress) => {
-                if (nPress !== 2) return;
-                saveHeight(
-                  fittedRowHeight(
-                    fields.map((name) => ({
-                      show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-                      width: colWidth(name),
-                    })),
-                  ),
-                );
-              }}
-            />,
-          ]}
-        >
-          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={12} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
-        </GtkBox>
-        {liveRow?.rowId === row.id ? (
-          <GtkLabel
-            label={`${linesFor(liveRow.h)} ${linesFor(liveRow.h) === 1 ? "line" : "lines"}`}
-            cssClasses={[styles.rowGripLabel]}
-          />
-        ) : null}
-      </GtkBox>
-    );
+        />
+      </GtkBox>,
+      liveRow?.rowId === row.id ? (
+        <GtkLabel
+          key="lines"
+          label={`${linesFor(liveRow.h)} ${linesFor(liveRow.h) === 1 ? "line" : "lines"}`}
+          halign={Gtk.Align.END}
+          valign={Gtk.Align.END}
+          marginEnd={6}
+          marginBottom={4}
+          cssClasses={[styles.rowGripLabel]}
+        />
+      ) : null,
+    ];
   };
 
   const header = (
@@ -467,7 +480,6 @@ export function TableView({
           cssClasses={[styles.groupRow]}
         />
       ) : null}
-      <GtkOverlay overlays={rowGrip(row)}>
       <BodyRow
         rowId={row.id}
         menu={hasMenu}
@@ -495,6 +507,7 @@ export function TableView({
                 if (widget) cells.current.set(cellKey(row.id, name), widget);
                 else cells.current.delete(cellKey(row.id, name));
               }}
+              overlays={rowGrip(row, name)}
               onFocused={(focused) => setFocusedCell((was) => (focused ? cellKey(row.id, name) : was === cellKey(row.id, name) ? null : was))}
             >
               <GtkBox
@@ -550,7 +563,6 @@ export function TableView({
           );
         })}
       </BodyRow>
-      </GtkOverlay>
     </GtkBox>
     );
   });
