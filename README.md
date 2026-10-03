@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/.assets/table.logo.dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/.assets/table.logo.light.svg">
+    <img alt=".table logo" src="docs/.assets/table.logo.light.svg" width="200">
+  </picture>
+</p>
+
 # `.table/`
 
 An open, app-agnostic file format for what Airtable, Google Tables, and

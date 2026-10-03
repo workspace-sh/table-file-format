@@ -72,6 +72,21 @@ describe("resizing on Linux", () => {
     await waitFor(() => expect(screen.queryAllByName("resize-row-grip")).toHaveLength(1));
   });
 
+  it("the grip hangs under the selected cell, wherever in the row it is", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (cell && !cell.getFocusable()) cell = cell.getParent();
+    cell!.grabFocus();
+    const startOf = async () => (await screen.findAllByName("resize-row"))[0]!.getMarginStart();
+    await waitFor(() => expect(screen.queryAllByName("resize-row")).toHaveLength(1));
+    const first = await startOf();
+    let next: Gtk.Widget | null = cell!.getNextSibling();
+    while (next && !next.getFocusable()) next = next.getNextSibling();
+    next!.grabFocus();
+    await waitFor(async () => expect(await startOf()).toBe(first + cell!.getSizeRequest()[0]));
+  });
+
   it("the selected row dragged taller keeps its own height, in whole lines, within bounds", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);

@@ -241,7 +241,7 @@ export function TableView({
   // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number } | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; name: string } | null>(null);
   const resizeFrom = useRef(0);
   // Each row's own height, else the view's default; the row being resized follows the drag.
   const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
@@ -295,13 +295,21 @@ export function TableView({
   const { formulaSyntax } = display;
 
   // A row's grip: only on the row with the selected cell (so nothing else
-  // can be dragged by a scroll), at its bottom start edge. Dragging resizes
-  // that row in whole lines; a double click fits it to what it holds.
+  // can be dragged by a scroll), at its bottom edge under the start of that
+  // cell, so it is in view wherever the table has been scrolled. Dragging
+  // resizes that row in whole lines; a double click fits it to what it holds.
   const rowGrip = (row: Row) => {
-    if (!onUpdateView || (focusedCell?.split("\u0000")[0] !== row.id && liveRow?.rowId !== row.id)) return null;
+    const [selectedRow, selectedName] = focusedCell?.split("\u0000") ?? [];
+    if (!onUpdateView || (selectedRow !== row.id && liveRow?.rowId !== row.id)) return null;
+    const gripName = (selectedRow === row.id ? selectedName : liveRow?.name) ?? fields[0]!;
+    let cellStart = coords ? ROW_NUMBER_WIDTH : 0;
+    for (const field of fields) {
+      if (field === gripName) break;
+      cellStart += colWidth(field);
+    }
     const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
     return (
-      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={4} marginBottom={2} spacing={6}>
+      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={cellStart + 4} marginBottom={2} spacing={6}>
         <GtkBox
           name="resize-row-grip"
           halign={Gtk.Align.CENTER}
@@ -317,7 +325,7 @@ export function TableView({
               onDragBegin={() => {
                 resizeFrom.current = heightOf(row.id);
               }}
-              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy) })}
+              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy), name: gripName })}
               onDragEnd={(_dx, dy) => {
                 saveHeight(snappedRowHeight(resizeFrom.current, dy));
                 setLiveRow(null);
