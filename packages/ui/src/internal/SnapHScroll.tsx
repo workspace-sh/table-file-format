@@ -10,8 +10,9 @@
  * (interval-based) or `snapToOffsets` (point-based). We use the
  * interval form — columns are uniform width.
  */
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { ScrollView } from "react-native";
+import { PageGutter } from "../pageGutter";
 
 export interface SnapHScrollProps {
   children?: ReactNode;
@@ -29,6 +30,9 @@ export function SnapHScroll({
   paddingLeft,
   gap,
 }: SnapHScrollProps) {
+  // Bled over the page's margins (Bleed): the first column rests on the
+  // margin and the last ends on it, and each snap lines one up there.
+  const gutter = useContext(PageGutter);
   return (
     <ScrollView
       horizontal
@@ -36,7 +40,11 @@ export function SnapHScroll({
       snapToInterval={snapInterval}
       snapToAlignment="start"
       decelerationRate="fast"
-      contentContainerStyle={{ ...(paddingLeft ? { paddingLeft } : {}), ...(gap ? { gap } : {}) }}
+      contentContainerStyle={{
+        paddingLeft: (paddingLeft ?? 0) + gutter,
+        paddingRight: gutter,
+        ...(gap ? { gap } : {}),
+      }}
     >
       {children}
     </ScrollView>
