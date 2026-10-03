@@ -133,7 +133,7 @@ export interface SheetProps {
   title: string;
   /** Under the title: what's edited (the page's file). */
   subtitle?: string;
-  /** Leaving without keeping, where there's such a thing. A page has none: it's saved as it's typed. */
+  /** Leaving without keeping, where there's such a thing: Cancel in settings puts back what changed since they opened. A page has none: it's saved as it's typed. */
   cancel?: { label: string; onPress: () => void };
   /** Finishing: Done. */
   confirm?: { label: string; onPress: () => void; disabled?: boolean };
