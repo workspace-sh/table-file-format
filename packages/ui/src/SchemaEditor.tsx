@@ -52,6 +52,18 @@ export const ADD_FIELD_COLUMN_WIDTH = 84;
 
 export { friendlyType };
 
+/**
+ * What a field holds, as people say it: a formula, one choice or several,
+ * a link to rows, else its stored type ("Text", "Number").
+ */
+function typeShown(field: Field): string {
+  if (field.computed) return "Formula";
+  if (field.relation) return field.relation.cardinality === "many" || field.type === "array" ? "Links to rows" : "Link to a row";
+  const n = enumOptions(field).length;
+  if (n > 0) return `${field.type === "array" ? "Choices" : "Choice"} · ${n} option${n === 1 ? "" : "s"}`;
+  return friendlyType(field.type);
+}
+
 const styles = css.create({
   /**
    * Fullscreen transparent backdrop captures outside-tap dismiss. Inside
@@ -685,7 +697,7 @@ export function SchemaFieldEditor({
         <html.div style={styles.identity}>
           <html.span>{field.name}</html.span>
           <html.span style={styles.typeBadge}>
-            <html.span>{field.computed ? "Formula" : friendlyType(field.type)}</html.span>
+            <html.span>{typeShown(field)}</html.span>
             <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
           </html.span>
         </html.div>
@@ -827,7 +839,7 @@ export function SchemaFieldEditor({
         id: "identity",
         rows: [
           { kind: "info", id: "name", label: "Stored as", value: field.name },
-          { kind: "info", id: "type", label: "Type", value: field.computed ? "Formula" : friendlyType(field.type) },
+          { kind: "info", id: "type", label: "Type", value: typeShown(field) },
         ],
       },
     ];

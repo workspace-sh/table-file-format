@@ -44,8 +44,10 @@ export interface CellEditSession {
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
   /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
   suggestions?: boolean;
-  /** A choice field: picked, not typed. */
-  choices?: { id: string; label: string }[];
+  /** A choice field: picked, not typed. Each in its colours, as its pill is drawn. */
+  choices?: { id: string; label: string; colors?: { light: { bg: string; fg: string }; dark: { bg: string; fg: string } } }[];
+  /** Add a new choice to the field and pick it. */
+  addChoice?(label: string): void;
   selected?: string;
   /** A multi-select: each choice turns on or off, saved as it's tapped. */
   multiple?: boolean;

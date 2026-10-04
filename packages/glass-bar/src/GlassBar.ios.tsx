@@ -132,7 +132,11 @@ export function GlassBar(props: GlassBarProps) {
   const raised = (state.kind === "editing" && !!state.chips?.length) || state.kind === "choosing" || state.kind === "dating";
   const dark = useColorScheme() === "dark";
   return (
-    <Animated.View pointerEvents="box-none" style={[styles.dock, { paddingBottom: rest, transform: [{ translateY: lift }] }]}>
+    <Animated.View
+      pointerEvents="box-none"
+      onLayout={(e) => props.onHeight?.(e.nativeEvent.layout.height - rest)}
+      style={[styles.dock, { paddingBottom: rest, transform: [{ translateY: lift }] }]}
+    >
       {raised ? (
         <View
           pointerEvents="none"
@@ -227,7 +231,8 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   );
 }
 
-function Chips({ state, ns, onChip, onChoose, onPickDate, editor }: Part) {
+function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor }: Part) {
+  const dark = useColorScheme() === "dark";
   const chips =
     state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
     : state.kind === "choosing"
@@ -236,6 +241,7 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, editor }: Part) {
           detail: undefined,
           symbol: undefined,
           on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
+          tone: c.colors ? (dark ? c.colors.dark : c.colors.light) : undefined,
           press: () => onChoose?.(c.id),
         }))
     : [];
@@ -263,6 +269,7 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, editor }: Part) {
     );
   }
   // As many as there are, on one line each, scrolling sideways when they don't fit.
+  const canAdd = state.kind === "choosing" && state.canAdd;
   return (
     <ScrollView axes="horizontal" showsIndicators={false}>
     <HStack spacing={6} modifiers={[padding({ vertical: 2 })]}>
@@ -274,19 +281,33 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, editor }: Part) {
           modifiers={[
             padding({ horizontal: 14, vertical: c.detail ? 6 : 9 }),
             frame({ minWidth: 44 }),
-            glassEffect({ glass: { variant: "regular", interactive: true, tint: c.on ? "#0A84FF" : undefined }, shape: "capsule" }),
+            glassEffect({ glass: { variant: "regular", interactive: true, tint: chipTint(c) }, shape: "capsule" }),
             glassEffectId(`chip-${c.id}`, ns),
             contentShape(shapes.capsule()),
             onTapGesture(c.press),
             accessibilityLabel(c.label),
           ]}
         >
-          <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), ...(c.on ? [foregroundStyle("white")] : [])]}>
+          <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), ...chipLabel(c)]}>
             {c.label}
           </Text>
           {c.detail ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{c.detail}</Text> : null}
         </VStack>
       ))}
+      {canAdd ? (
+        <Image
+          systemName="plus"
+          size={17}
+          onPress={onAddChoice}
+          modifiers={[
+            frame({ width: 44, height: 40 }),
+            glassEffect({ glass: { variant: "regular", interactive: true }, shape: "capsule" }),
+            glassEffectId("chip-add", ns),
+            contentShape(shapes.capsule()),
+            accessibilityLabel("New choice"),
+          ]}
+        />
+      ) : null}
     </HStack>
     </ScrollView>
   );
@@ -322,7 +343,7 @@ function Capsule(props: Part) {
     case "selected":
       return (
         <VStack alignment="leading" spacing={1} modifiers={[padding({ horizontal: 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
-          <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.label}</Text>
+          <Label text={state.label} size={11} />
           <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
         </VStack>
       );
@@ -348,6 +369,17 @@ function Capsule(props: Part) {
   }
 }
 
+type ChipLook = { on: boolean; tone?: { bg: string; fg: string } };
+/** A choice's glass: a light wash of its colour, a little stronger when it's on; else plain, or blue when on. */
+function chipTint(c: ChipLook): string | undefined {
+  if (c.tone) return c.tone.bg + (c.on ? "E6" : "66");
+  return c.on ? "#0A84FF" : undefined;
+}
+function chipLabel(c: ChipLook) {
+  if (c.tone) return [foregroundStyle(c.tone.fg), ...(c.on ? [font({ size: 17, weight: "semibold" })] : [])];
+  return c.on ? [foregroundStyle("white")] : [];
+}
+
 /** The system's calendar (and clock), in glass above the capsule; a pick saves. */
 function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void }) {
   return (
@@ -368,10 +400,21 @@ function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { k
   );
 }
 
+/** A label, its leading "ƒ " drawn as the system's function symbol. */
+function Label({ text, size }: { text: string; size: number }) {
+  if (!text.startsWith("ƒ ")) return <Text modifiers={[font({ size }), secondary, lineLimit(1)]}>{text}</Text>;
+  return (
+    <HStack spacing={3}>
+      <Image systemName="function" size={size + 1} modifiers={[secondary]} />
+      <Text modifiers={[font({ size }), secondary, lineLimit(1)]}>{text.slice(2)}</Text>
+    </HStack>
+  );
+}
+
 function Header({ label, detail }: { label: string; detail?: string }) {
   return (
     <HStack spacing={8}>
-      <Text modifiers={[font({ size: 12 }), secondary, lineLimit(1)]}>{label}</Text>
+      <Label text={label} size={12} />
       <Spacer />
       {detail ? <Text modifiers={[font({ size: 12, weight: "semibold" }), lineLimit(1)]}>{detail}</Text> : null}
     </HStack>

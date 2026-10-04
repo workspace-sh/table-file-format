@@ -12,7 +12,7 @@ export type GlassBarState =
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
-  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean }
+  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean; canAdd?: boolean }
   /** Picking a date or time with the system's calendar: no keyboard. */
   | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string };
 
@@ -53,7 +53,8 @@ export type GlassBarChip = { id: string; label: string; detail?: string; insert?
 
 /** Imperative access for the host app: tapping a column while writing a formula inserts its name. */
 export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => void };
-export type GlassBarChoice = { id: string; label: string };
+/** A choice, optionally in its own colours (a light wash of `bg`, the label in `fg`). */
+export type GlassBarChoice = { id: string; label: string; colors?: { light: { bg: string; fg: string }; dark: { bg: string; fg: string } } };
 
 /** One action in the More menu. */
 export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
@@ -89,5 +90,9 @@ export type GlassBarProps = {
   onChip?: (id: string) => void;
   onFix?: () => void;
   onChoose?: (id: string) => void;
+  /** The "+" after the choices: add a new one. */
+  onAddChoice?: () => void;
   onPickDate?: (date: Date) => void;
+  /** The bar's height as laid out (above the home indicator or keyboard), for keeping content clear of it. */
+  onHeight?: (height: number) => void;
 };
