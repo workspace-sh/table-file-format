@@ -47,6 +47,20 @@ export interface CellEditSession {
   /** A choice field: picked, not typed. */
   choices?: { id: string; label: string }[];
   selected?: string;
+  /** A multi-select: each choice turns on or off, saved as it's tapped. */
+  multiple?: boolean;
+  selectedMany?: string[];
+  /** Turn one choice on or off and save; returns what's now on. */
+  toggle?(id: string): string[];
+  /** A date, time, or date and time: picked from the system's calendar. */
+  date?: {
+    value?: Date;
+    components: ("date" | "hourAndMinute")[];
+    /** The value as shown. */
+    shown: string;
+    /** Save a picked date; returns what to show for it. */
+    pick(date: Date): { ok: true; shown: string } | { ok: false; error: { message: string } };
+  };
   /** The draft changed (the cell shows it); returns what to say about it. */
   change(text: string): CellEditStatus;
   /** Save. Refused, the edit stays open with the reason (the draft can't be held). */
@@ -71,6 +85,11 @@ export interface CellEditor {
   /** The cell's edit ended on the table's side (it went away, or another began). */
   end(key: string): void;
   attach(commands: CellEditorCommands | null): void;
+  /**
+   * Keep this cell in view while it's edited: where it is on screen
+   * (window coordinates) as its edit begins.
+   */
+  reveal?(rect: { top: number; left: number; width: number; height: number }): void;
   /**
    * While a formula is being edited, a tap on a cell may add a reference
    * to it (`reference`: the column's name, or its coordinate in a sheet)

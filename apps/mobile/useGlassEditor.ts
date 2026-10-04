@@ -4,7 +4,7 @@
 // bar shows. The bar's callbacks go back to the session or the table.
 
 import { useMemo, useRef, useState } from "react";
-import { Keyboard } from "react-native";
+import { Dimensions, Keyboard } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
 
@@ -31,13 +31,31 @@ export interface GlassEditorOptions {
   onQuery: (query: string) => void;
   onFilter: () => void;
   moreActions?: GlassBarAction[];
+  /** Scroll the table by this much (positive: content moves up), to keep a cell in view. */
+  onScrollBy?: (dy: number) => void;
 }
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassEditorOptions) {
+/** Roughly how tall the editor stands above the keyboard, by what it shows. */
+function editorHeight(s: CellEditSession): number {
+  if (s.date) return 420;
+  if (s.choices) return 124;
+  if (s.mode === "formula") return 132;
+  if (s.mode === "text") return 120;
+  return 76;
+}
+/** Under the navigation bar: a cell above this is hidden behind it. */
+const TOP = 112;
+
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
   const [status, setStatus] = useState<CellEditStatus>({});
   const [searching, setSearching] = useState(false);
+  // A multi-select's choices that are on, and a date's text, as they change.
+  const [many, setMany] = useState<string[]>([]);
+  const [shownDate, setShownDate] = useState("");
+  const scrollBy = useRef(onScrollBy);
+  scrollBy.current = onScrollBy;
   const bar = useRef<GlassBarHandle>(null);
   const commands = useRef<CellEditorCommands | null>(null);
   // What's typed, and the open session, for the table's taps, which come
@@ -54,6 +72,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
         typed.current = next.initial;
         setSession(next);
         setSearching(false);
+        setMany(next.selectedMany ?? []);
+        setShownDate(next.date?.shown ?? "");
         setStatus(next.mode === "formula" ? next.change(next.initial) : {});
         return true;
       },
@@ -65,6 +85,19 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
       },
       attach: (c) => {
         commands.current = c;
+      },
+      // Once the keyboard (if any) is up, scroll so the cell sits between
+      // the navigation bar and the editor.
+      reveal: (rect) => {
+        const s = open.current;
+        if (!s) return;
+        setTimeout(() => {
+          const keyboard = s.choices || s.date ? 0 : (Keyboard.metrics()?.height ?? 0);
+          const foot = Dimensions.get("window").height - (keyboard > 0 ? keyboard + 8 : 34) - editorHeight(s) - 12;
+          const bottom = rect.top + rect.height;
+          if (bottom > foot) scrollBy.current?.(bottom - foot);
+          else if (rect.top < TOP) scrollBy.current?.(rect.top - TOP);
+        }, s.choices || s.date ? 60 : 360);
       },
       tapWhileEditing: (_rowId, _name, reference) => {
         if (open.current?.mode !== "formula" || !EXPECTS_REFERENCE.test(typed.current)) return false;
@@ -83,8 +116,17 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
 
   let state: GlassBarState;
   if (searching) state = { kind: "searching", query };
-  else if (session?.choices) {
-    state = { kind: "choosing", label: session.label, detail: session.rowLabel, choices: session.choices, selected: session.selected };
+  else if (session?.date) {
+    state = { kind: "dating", label: session.label, detail: session.rowLabel, value: session.date.value, components: session.date.components, shown: shownDate };
+  } else if (session?.choices) {
+    state = {
+      kind: "choosing",
+      label: session.label,
+      detail: session.rowLabel,
+      choices: session.choices,
+      selected: session.multiple ? many : session.selected,
+      multiple: session.multiple,
+    };
   } else if (session) {
     const formula = session.mode === "formula";
     state = {
@@ -153,7 +195,19 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
     onFix: () => {
       if (status.error?.fix) bar.current?.insert(status.error.fix);
     },
-    onChoose: (id) => save(id),
+    // One choice saves and closes; a multi-select toggles and stays open.
+    onChoose: (id) => {
+      const s = open.current;
+      if (s?.multiple && s.toggle) setMany(s.toggle(id));
+      else save(id);
+    },
+    // A date saves as it's picked, and stays open to pick again.
+    onPickDate: (date) => {
+      const r = open.current?.date?.pick(date);
+      if (!r) return;
+      if (r.ok) setShownDate(r.shown);
+      else setStatus({ error: r.error });
+    },
   };
 
   return {
@@ -162,7 +216,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
     props,
     /** The table is being scrolled: an open edit is saved, as the keyboard goes. */
     onScrollBegin: () => {
-      if (open.current && !open.current.choices) save(typed.current);
+      if (open.current && !open.current.choices && !open.current.date) save(typed.current);
     },
   };
 }

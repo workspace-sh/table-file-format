@@ -17,16 +17,18 @@
  * whatever is behind.
  */
 import { useEffect, useId, useImperativeHandle, useMemo, useRef, type ComponentProps, type RefObject } from "react";
-import { Animated, Dimensions, Easing, Keyboard, PlatformColor, StyleSheet, type KeyboardEvent } from "react-native";
+import { Animated, Dimensions, Easing, Keyboard, PlatformColor, StyleSheet, View, useColorScheme, type KeyboardEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Button,
+  DatePicker,
   GlassEffectContainer,
   HStack,
   Host,
   Image,
   Menu,
   Namespace,
+  ScrollView,
   Spacer,
   Text,
   TextField,
@@ -38,6 +40,7 @@ import {
   accessibilityLabel,
   animation,
   autocorrectionDisabled,
+  datePickerStyle,
   contentShape,
   fixedSize,
   font,
@@ -74,6 +77,7 @@ function layoutOf(state: GlassBarState): number {
     case "searching": return 2;
     case "selected": return 3;
     case "choosing": return 4;
+    case "dating": return 5;
     case "editing": return 10 + (state.chips?.length ? 1 : 0) + (state.error ? 2 : 0) + (state.mode === "text" ? 4 : 0);
   }
 }
@@ -97,8 +101,12 @@ function useKeyboardLift(rest: number): Animated.Value {
       }).start();
     const subs = [
       Keyboard.addListener("keyboardWillChangeFrame", (e) => {
-        const covered = Math.max(0, Dimensions.get("screen").height - e.endCoordinates.screenY);
-        to(e, covered > 0 ? -(covered + LIFT - rest) : 0);
+        // Only a keyboard docked at the foot of the screen lifts the bar: a
+        // floating, undocked or hardware keyboard reports frames that would
+        // otherwise throw it to the top of the screen.
+        const { screenY, height } = e.endCoordinates;
+        const docked = height > 0 && Math.abs(screenY + height - Dimensions.get("screen").height) < 2;
+        to(e, docked ? -(height + LIFT - rest) : 0);
       }),
       Keyboard.addListener("keyboardWillHide", (e) => to(e, 0)),
     ];
@@ -118,8 +126,26 @@ export function GlassBar(props: GlassBarProps) {
   const editor = useRef<GlassBarHandle | null>(null);
   useImperativeHandle(props.ref, () => ({ insert: (text, back) => editor.current?.insert(text, back) }), []);
 
+  // Something above the capsule (operators, choices, a calendar): a soft
+  // fade behind the group keeps it legible over the table, as a bar's
+  // scroll edge does.
+  const raised = (state.kind === "editing" && !!state.chips?.length) || state.kind === "choosing" || state.kind === "dating";
+  const dark = useColorScheme() === "dark";
   return (
     <Animated.View pointerEvents="box-none" style={[styles.dock, { paddingBottom: rest, transform: [{ translateY: lift }] }]}>
+      {raised ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.fade,
+            {
+              experimental_backgroundImage: dark
+                ? "linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.72) 38%, rgba(0,0,0,0.86))"
+                : "linear-gradient(to bottom, rgba(242,242,247,0), rgba(242,242,247,0.78) 38%, rgba(242,242,247,0.9))",
+            },
+          ]}
+        />
+      ) : null}
       <Host matchContents={{ vertical: true }} ignoreSafeArea="keyboard" style={styles.host}>
         <Namespace id={ns}>
           <GlassEffectContainer
@@ -170,7 +196,7 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel }: Part) {
 }
 
 function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
-  if (state.kind === "editing" || state.kind === "choosing") return null; // merged into the capsule
+  if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
     // More is the system's menu, its button the same glass circle.
@@ -201,11 +227,19 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   );
 }
 
-function Chips({ state, ns, onChip, onChoose, editor }: Part) {
+function Chips({ state, ns, onChip, onChoose, onPickDate, editor }: Part) {
   const chips =
     state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
-    : state.kind === "choosing" ? state.choices.map((c) => ({ ...c, detail: undefined, symbol: undefined, on: c.id === state.selected, press: () => onChoose?.(c.id) }))
+    : state.kind === "choosing"
+      ? state.choices.map((c) => ({
+          ...c,
+          detail: undefined,
+          symbol: undefined,
+          on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
+          press: () => onChoose?.(c.id),
+        }))
     : [];
+  if (state.kind === "dating") return <DateCard state={state} ns={ns} onPickDate={onPickDate} />;
   if (chips.length === 0) return null;
   // Symbols share one glass background, as a toolbar group does: one
   // larger, steadier piece of glass reads better over a busy table than a
@@ -228,8 +262,10 @@ function Chips({ state, ns, onChip, onChoose, editor }: Part) {
       </HStack>
     );
   }
+  // As many as there are, on one line each, scrolling sideways when they don't fit.
   return (
-    <HStack spacing={6}>
+    <ScrollView axes="horizontal" showsIndicators={false}>
+    <HStack spacing={6} modifiers={[padding({ vertical: 2 })]}>
       {chips.map((c) => (
         <VStack
           key={c.id}
@@ -245,13 +281,14 @@ function Chips({ state, ns, onChip, onChoose, editor }: Part) {
             accessibilityLabel(c.label),
           ]}
         >
-          <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), ...(c.on ? [foregroundStyle("white")] : [])]}>
+          <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), ...(c.on ? [foregroundStyle("white")] : [])]}>
             {c.label}
           </Text>
-          {c.detail ? <Text modifiers={[font({ size: 11 }), secondary]}>{c.detail}</Text> : null}
+          {c.detail ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{c.detail}</Text> : null}
         </VStack>
       ))}
     </HStack>
+    </ScrollView>
   );
 }
 
@@ -289,16 +326,46 @@ function Capsule(props: Part) {
           <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
         </VStack>
       );
-    case "choosing":
+    case "choosing": {
+      const picked = Array.isArray(state.selected) ? state.selected : state.selected ? [state.selected] : [];
+      const text = state.choices.filter((c) => picked.includes(c.id)).map((c) => c.label).join(", ");
       return (
         <VStack alignment="leading" spacing={1} modifiers={[padding({ horizontal: 16, vertical: 6 }), ...shape]}>
           <Header label={state.label} detail={state.detail} />
-          <Text modifiers={[font({ size: 16 }), lineLimit(1)]}>{state.choices.find((c) => c.id === state.selected)?.label ?? " "}</Text>
+          <Text modifiers={[font({ size: 16 }), lineLimit(1)]}>{text || " "}</Text>
+        </VStack>
+      );
+    }
+    case "dating":
+      return (
+        <VStack alignment="leading" spacing={1} modifiers={[padding({ horizontal: 16, vertical: 6 }), ...shape]}>
+          <Header label={state.label} detail={state.detail} />
+          <Text modifiers={[font({ size: 16 }), lineLimit(1)]}>{state.shown || " "}</Text>
         </VStack>
       );
     case "editing":
       return <Editor {...props} state={state} shape={shape} />;
   }
+}
+
+/** The system's calendar (and clock), in glass above the capsule; a pick saves. */
+function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void }) {
+  return (
+    <VStack
+      modifiers={[
+        padding({ all: 12 }),
+        glassEffect({ glass: { variant: "regular" }, shape: "roundedRectangle", cornerRadius: 28 }),
+        glassEffectId("dates", ns),
+      ]}
+    >
+      <DatePicker
+        selection={state.value ?? new Date()}
+        displayedComponents={state.components}
+        onDateChange={(d) => onPickDate?.(d)}
+        modifiers={[datePickerStyle("graphical")]}
+      />
+    </VStack>
+  );
 }
 
 function Header({ label, detail }: { label: string; detail?: string }) {
@@ -403,4 +470,6 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, editor }: Par
 const styles = StyleSheet.create({
   dock: { position: "absolute", left: 0, right: 0, bottom: 0 },
   host: { width: "100%" },
+  /** Behind the group, rising a little above it. */
+  fade: { position: "absolute", left: 0, right: 0, top: -36, bottom: 0 },
 });

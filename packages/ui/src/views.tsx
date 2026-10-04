@@ -1884,6 +1884,15 @@ function EditableCell({
     );
   }
 
+  // A multi-select with an outside editor: its choices are picked there.
+  if (kind === "list" && field && editOutside && enumOptions(field).length > 0) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+      </html.div>
+    );
+  }
+
   if (kind === "list" && field) {
     return (
       <ListCell
@@ -1984,7 +1993,7 @@ function EditableCell({
     // On a phone a selected date, time, or date and time is the system's
     // picker: its next tap picks, and typing on it still edits the text.
     const pickedKind = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime" ? hints.kind : null;
-    if (pickedKind && selected !== false && DateInputControl.available) {
+    if (pickedKind && selected !== false && DateInputControl.available && !editOutside) {
       return (
         <DateInputControl
           kind={pickedKind}
@@ -2319,6 +2328,31 @@ function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
 function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
   return on ? <HScroll>{children}</HScroll> : <>{children}</>;
+}
+
+/** A cell's draft ("2026-03-01", "09:30", "2026-03-01T09:30") as a Date for the system's picker. */
+function dateOfDraft(draft: string, kind: InputHintKind): Date | undefined {
+  if (!draft) return undefined;
+  if (kind === "time") {
+    const [h, m] = draft.split(":").map(Number);
+    if (h === undefined || Number.isNaN(h)) return undefined;
+    const d = new Date();
+    d.setHours(h, m ?? 0, 0, 0);
+    return d;
+  }
+  const [date, time] = draft.split("T");
+  const [y, mo, da] = (date ?? "").split("-").map(Number);
+  if (!y || !mo || !da) return undefined;
+  const [h, mi] = (time ?? "").split(":").map(Number);
+  return new Date(y, mo - 1, da, h || 0, mi || 0);
+}
+
+/** A picked Date as the draft a cell of this kind takes, in local time. */
+function draftOfDate(d: Date, kind: InputHintKind): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return kind === "date" ? date : kind === "time" ? time : `${date}T${time}`;
 }
 
 /** The outside editor's keyboard for each kind of entry (inputHints); a signed number needs a minus. */
@@ -3000,24 +3034,54 @@ export function TableView({
     } else {
       if (!editable(name)) return false;
       const kind = editorKind(field);
-      if (kind !== "text" && kind !== "choice") return false;
       const hints = inputHints(field);
-      // A date or time keeps the system's picker in the cell.
-      if (hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime") return false;
+      const many = kind === "list" && enumOptions(field).length > 0;
+      const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
+      if (kind !== "text" && kind !== "choice" && !many) return false;
       const initial = text ?? draftOf(row[name]);
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
-      setBarDraft({ rowId, name, text: initial });
+      // A multi-select's value as it's toggled, each toggle saved.
+      let current: unknown = row[name];
+      // Typed values show as they're typed; a choice keeps its pill until it's picked.
+      if (kind === "text" && !dated) setBarDraft({ rowId, name, text: initial });
       session = {
         key, rowId, name, label, rowLabel, initial,
         mode: field.format === "markdown" ? "text" : "line",
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
-        ...(kind === "choice"
+        ...(kind === "choice" || many
+          ? { choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value })) }
+          : {}),
+        ...(kind === "choice" ? { selected: typeof row[name] === "string" ? (row[name] as string) : undefined } : {}),
+        ...(many
           ? {
-              choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value })),
-              selected: typeof row[name] === "string" ? (row[name] as string) : undefined,
+              multiple: true,
+              selectedMany: listItems(row[name]),
+              toggle: (id: string) => {
+                current = listToggled(field, current, id);
+                onUpdateRow!(rowId, name, current);
+                return listItems(current);
+              },
+            }
+          : {}),
+        ...(dated
+          ? {
+              date: {
+                value: dateOfDraft(draftOf(row[name]), hints.kind),
+                components: hints.kind === "date" ? ["date" as const] : hints.kind === "time" ? ["hourAndMinute" as const] : ["date" as const, "hourAndMinute" as const],
+                shown: formatCellValue(field, row[name]),
+                pick: (d: Date) => {
+                  const r = commitDraft(field, current, draftOfDate(d, hints.kind), "key", null);
+                  if (r.kind === "problem") return { ok: false as const, error: { message: r.check.message } };
+                  if (r.kind === "save") {
+                    current = r.value;
+                    onUpdateRow!(rowId, name, r.value);
+                  }
+                  return { ok: true as const, shown: formatCellValue(field, current) };
+                },
+              },
             }
           : {}),
         change: (t) => {
@@ -3054,6 +3118,8 @@ export function TableView({
     }
     barSession.current = session;
     setSel({ rowId, name });
+    // Keep it in view above the editor (and the keyboard).
+    void measureAnchor(cellRefs.current[`${rowId}\u0000${name}`]).then((rect) => rect && editor.reveal?.(rect));
     return true;
   };
 
