@@ -20,7 +20,7 @@ import {
   TextField,
   Toggle,
 } from "@expo/ui/swift-ui";
-import { labelsHidden, multilineTextAlignment, pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
+import { disabled, foregroundStyle, labelsHidden, multilineTextAlignment, onSubmit, pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
 import type { SettingsFormProps, SettingsRow, SettingsSection } from "../controlSlots";
 
 function Choice({ row, compact }: { row: Extract<SettingsRow, { kind: "choice" }>; compact?: boolean }) {
@@ -32,8 +32,8 @@ function Choice({ row, compact }: { row: Extract<SettingsRow, { kind: "choice" }
         if (String(next) !== row.value) row.onChange(String(next));
       }}
       modifiers={[
-        pickerStyle(row.style === "inline" ? "inline" : "menu"),
-        ...(compact || row.style === "inline" ? [labelsHidden()] : []),
+        pickerStyle(row.style ?? "menu"),
+        ...(compact || row.style === "inline" || row.style === "segmented" ? [labelsHidden()] : []),
       ]}
     >
       {row.options.map((o) => (
@@ -46,6 +46,8 @@ function Choice({ row, compact }: { row: Extract<SettingsRow, { kind: "choice" }
 }
 
 function Field({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>; compact?: boolean }) {
+  // The text as typed, for Return: SwiftUI's submit says only that it happened.
+  let typed = row.value;
   const field = (
     <TextField
       // A new id is a new field (another filter): start from its value.
@@ -53,11 +55,18 @@ function Field({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>; 
       defaultValue={row.value}
       autoFocus={row.autoFocus}
       placeholder={row.placeholder ?? row.label}
-      onValueChange={row.onChange}
-      modifiers={compact ? [] : [multilineTextAlignment("trailing")]}
+      onValueChange={(value: string) => {
+        typed = value;
+        row.onChange(value);
+      }}
+      modifiers={[
+        ...(compact || row.onSubmit ? [] : [multilineTextAlignment("trailing")]),
+        ...(row.onSubmit ? [onSubmit(() => row.onSubmit!(typed))] : []),
+      ]}
     />
   );
-  return compact ? field : <LabeledContent label={row.label}>{field}</LabeledContent>;
+  // A field that submits (adding to a list) is the whole row, its label its placeholder.
+  return compact || row.onSubmit ? field : <LabeledContent label={row.label}>{field}</LabeledContent>;
 }
 
 function Row({ row }: { row: SettingsRow }): ReactElement {
@@ -66,6 +75,12 @@ function Row({ row }: { row: SettingsRow }): ReactElement {
       return <Field row={row} />;
     case "choice":
       return <Choice row={row} />;
+    case "info":
+      return (
+        <LabeledContent label={row.label}>
+          <Text modifiers={[foregroundStyle("secondary")]}>{row.value}</Text>
+        </LabeledContent>
+      );
     case "toggle":
       return <Toggle label={row.label} isOn={row.value} onIsOnChange={row.onChange} />;
     case "compound":
@@ -89,6 +104,7 @@ function Row({ row }: { row: SettingsRow }): ReactElement {
           systemImage={row.role === "add" ? "plus.circle.fill" : undefined}
           role={row.role === "destructive" ? "destructive" : undefined}
           onPress={row.onPress}
+          modifiers={row.disabled ? [disabled(true)] : []}
         />
       );
   }

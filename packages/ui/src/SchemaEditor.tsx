@@ -4,7 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
-import type { SettingsSection } from "./controlSlots";
+import type { SettingsRow, SettingsSection } from "./controlSlots";
 import { movesBack, revertPatch } from "./revert";
 import {
   defaultAlignFor,
@@ -628,7 +628,8 @@ export function SchemaFieldEditor({
   fields,
   grid,
 }: SchemaFieldEditorProps) {
-  const { Sheet: SheetControl } = usePlatformControls();
+  const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
+  const display = useDisplaySettings();
   const [enumDraft, setEnumDraft] = useState("");
   // The field as it opened, for Cancel to put back: its changes are made as
   // they're chosen, and Done keeps them.
@@ -818,6 +819,159 @@ export function SchemaFieldEditor({
         </html.div>
     </>
   );
+
+  // The same settings as a platform's own form shows them (iOS).
+  const fieldSections = (): SettingsSection[] => {
+    const sections: SettingsSection[] = [
+      {
+        id: "identity",
+        rows: [
+          { kind: "info", id: "name", label: "Stored as", value: field.name },
+          { kind: "info", id: "type", label: "Type", value: field.computed ? "Formula" : friendlyType(field.type) },
+        ],
+      },
+    ];
+    if (field.computed) {
+      const status = formula === null ? null : formulaStatus(formula, formulaDraft);
+      sections.push({
+        id: "formula",
+        title: "Formula",
+        footer:
+          status === null
+            ? undefined
+            : status.kind === "error"
+              ? status.message
+              : [...status.warnings, ...(status.storedAs === undefined ? [] : [`Stored as ${status.storedAs}`])].join(" ") || undefined,
+        rows: [
+          { kind: "text", id: "formula", label: "Formula", value: formulaDraft, onChange: setFormulaDraft, onSubmit: () => saveFormula() },
+          { kind: "action", id: "save-formula", label: "Save Formula", disabled: !formulaChanged, onPress: saveFormula },
+        ],
+      });
+    }
+    sections.push({
+      id: "words",
+      rows: [
+        { kind: "text", id: "title", label: "Title", placeholder: field.name, value: field.title ?? "", onChange: (t) => onUpdate({ title: t || undefined }) },
+        {
+          kind: "text",
+          id: "description",
+          label: "Description",
+          placeholder: "None",
+          value: field.description ?? "",
+          onChange: (d) => onUpdate({ description: d || undefined }),
+        },
+      ],
+    });
+    const format = formatState(field, fields ?? [], display);
+    if (format) {
+      const set = (f: string) => onUpdate({ format: f || undefined });
+      const rows: SettingsRow[] = [
+        {
+          kind: "choice",
+          id: "format",
+          label: "Format",
+          value: format.kind,
+          options: format.choices.map((o) => ({ value: o.value, label: o.label })),
+          onChange: (next) => onUpdate(format.choose(next)),
+        },
+      ];
+      if (format.kind === "decimal") {
+        rows.push({
+          kind: "choice",
+          id: "digits",
+          label: "Decimal places",
+          value: String(format.digits),
+          options: DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) })),
+          onChange: (next) => set(`decimal:${next}`),
+        });
+      }
+      if (format.kind === "currency") {
+        rows.push({
+          kind: "choice",
+          id: "currency",
+          label: "Currency",
+          value: format.code,
+          options: currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` })),
+          onChange: (next) => set(`currency:${next}`),
+        });
+      }
+      sections.push({ id: "format", footer: format.notes.map((n) => n.text).join(" ") || undefined, rows });
+    }
+    sections.push({
+      id: "rules",
+      rows: [
+        { kind: "toggle", id: "required", label: "Required", value: field.constraints?.required === true, onChange: setRequired },
+        { kind: "toggle", id: "deprecated", label: "Deprecated", value: field.deprecated === true, onChange: (on) => onUpdate(deprecatedPatch(on)) },
+      ],
+    });
+    if (hasEnum) {
+      const options = enumOptions(field);
+      sections.push({
+        id: "choices",
+        title: "Choices",
+        footer: field.type === "array" ? "Each item is one of these." : undefined,
+        rows: [
+          ...options.map((o): SettingsRow => ({ kind: "info", id: `choice-${o.value}`, label: o.label ?? o.value, value: "" })),
+          {
+            kind: "text",
+            // A new id after each added choice: the field starts empty again.
+            id: `add-choice-${options.length}`,
+            label: "Add Choice",
+            placeholder: "Add Choice",
+            value: "",
+            onChange: setEnumDraft,
+            onSubmit: (typed) => {
+              const value = newChoice(field, typed);
+              if (value === null) return;
+              onAddEnumValue(value);
+              setEnumDraft("");
+            },
+          },
+        ],
+      });
+    }
+    sections.push({
+      id: "alignment",
+      title: "Alignment",
+      footer: `Auto is ${alignLabel(defaultAlignFor(field.type), rtl).toLowerCase()}.`,
+      rows: [
+        {
+          kind: "choice",
+          id: "align",
+          label: "Alignment",
+          style: "segmented",
+          value: field.align ?? "auto",
+          options: ALIGN_CHOICES.map((opt) => ({ value: opt, label: opt === "auto" ? "Auto" : alignLabel(opt, rtl) })),
+          onChange: (next) => onUpdate(alignPatch(next as (typeof ALIGN_CHOICES)[number])),
+        },
+      ],
+    });
+    sections.push({
+      id: "order",
+      title: "Order",
+      rows: [
+        { kind: "action", id: "up", label: "Move Up", disabled: fieldIndex === 0, onPress: () => onMove(-1) },
+        { kind: "action", id: "down", label: "Move Down", disabled: fieldIndex >= totalFields - 1, onPress: () => onMove(1) },
+      ],
+    });
+    return sections;
+  };
+
+  if (SheetControl.presentsSettings && SettingsForm) {
+    return (
+      <SheetControl
+        size="settings"
+        title={field.title ?? field.name}
+        cancel={{ label: "Cancel", onPress: cancel }}
+        confirm={{ label: "Done", onPress: onClose }}
+        dismissible
+        onDismiss={onClose}
+        fill
+      >
+        <SettingsForm sections={fieldSections()} />
+      </SheetControl>
+    );
+  }
 
   // On a phone, the platform's settings sheet, titled with the field and
   // with Done; elsewhere a popover under (or over) the column's heading.
