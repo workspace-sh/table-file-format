@@ -1014,6 +1014,10 @@ const styles = css.create({
 
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
+  /** A footer cell inside a menu button: fills the row's height, as the others do. */
+  totalCellFill: {
+    alignSelf: "stretch",
+  },
   /** Pills cut to one line, with a "+N" for the rest. */
   pillListOneLine: {
     flexWrap: "nowrap",
@@ -2545,7 +2549,10 @@ export function TableView({
       }
     : undefined;
   const totals = view.totals ?? {};
-  const showTotals = !!onUpdateView || Object.keys(totals).length > 0;
+  // Where totals are chosen in the view's settings (a phone's settings
+  // form), an empty footer is only noise: it shows once a column has a total.
+  const { SettingsForm: settingsForm } = usePlatformControls();
+  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm);
   // No totals chosen: the footer is only a place to choose one, so it
   // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
   const quietTotals = Object.keys(totals).length === 0;
@@ -2930,7 +2937,7 @@ export function TableView({
           options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
           onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
           label={`Calculate ${field?.title ?? name}`}
-          trigger={<html.div style={cellStyle}>{content}</html.div>}
+          trigger={<html.div style={[...cellStyle, styles.totalCellFill]}>{content}</html.div>}
         />
       );
     }
