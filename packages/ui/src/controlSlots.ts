@@ -147,8 +147,78 @@ export interface SheetProps {
   dismissible: boolean;
   /** Closed, or asked to close, by a swipe or a tap outside. */
   onDismiss: () => void;
+  /**
+   * What it holds scrolls by itself (a platform's settings form), so the
+   * sheet gives it the whole space rather than a scroller of its own.
+   */
+  fill?: boolean;
   children: ReactNode;
 }
+
+/**
+ * One row of a settings form (SettingsForm). Each says what it is, not how
+ * it's drawn, so a platform can draw it its own way: a SwiftUI Form on
+ * iOS, Material list items on Android.
+ */
+export type SettingsRow =
+  /** A text field, labelled. */
+  | {
+      kind: "text";
+      id: string;
+      label: string;
+      value: string;
+      placeholder?: string;
+      autoFocus?: boolean;
+      onChange: (value: string) => void;
+      /** Return pressed: the text as typed. */
+      onSubmit?: (value: string) => void;
+    }
+  /** A fact shown, not edited: its label and its value. */
+  | { kind: "info"; id: string; label: string; value: string }
+  /** One choice from a list, labelled: a menu. */
+  | {
+      kind: "choice";
+      id: string;
+      label: string;
+      value: string;
+      options: SelectOption[];
+      /**
+       * `menu` (the default): a menu from the row. `inline`: every option a
+       * row, the chosen one ticked. `segmented`: a few options side by side.
+       */
+      style?: "menu" | "inline" | "segmented";
+      onChange: (value: string) => void;
+    }
+  /** On or off, labelled. */
+  | { kind: "toggle"; id: string; label: string; value: boolean; onChange: (value: boolean) => void }
+  /**
+   * Several controls in one row, unlabelled, that together make one thing:
+   * a filter (field, operator, value) or a sort (field, direction).
+   */
+  | { kind: "compound"; id: string; parts: SettingsRow[]; removeLabel: string }
+  /** A button row: adding, destroying, or anything else. */
+  | { kind: "action"; id: string; label: string; role?: "add" | "destructive"; disabled?: boolean; onPress: () => void };
+
+export interface SettingsSection {
+  id: string;
+  title?: string;
+  /** Under the section: what its rows mean. */
+  footer?: string;
+  rows: SettingsRow[];
+  /**
+   * The section's `compound` rows can be removed (a swipe on iOS) and
+   * reordered; indices count those rows only, in order.
+   */
+  onRemove?: (index: number) => void;
+  onMove?: (from: number, to: number) => void;
+}
+
+export interface SettingsFormProps {
+  sections: SettingsSection[];
+}
+
+/** A platform's own settings form, or null where the shared layout is drawn instead. */
+export type SettingsFormSlot = ((props: SettingsFormProps) => ReactElement) | null;
 
 /**
  * A Sheet control; `presentsSettings` when it shows `settings` as a sheet
@@ -167,6 +237,7 @@ export interface PlatformControls {
   DateInput: DateInputSlot;
   Toggle: ToggleSlot;
   Sheet: SheetSlot;
+  SettingsForm: SettingsFormSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
