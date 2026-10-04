@@ -2946,6 +2946,10 @@ export function TableView({
         setBarFormula(null);
       }
       setSel({ rowId: row.id, name });
+      // While editing, the next cell tapped opens for editing too, as a
+      // spreadsheet keeps typing from cell to cell. Only selected, a tap
+      // only selects, so the table can be browsed without a keyboard.
+      if (open) beginBar(row.id, name);
     };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
