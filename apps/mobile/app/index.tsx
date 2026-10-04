@@ -12,15 +12,19 @@ import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
-import { BodyEditor, PageGutter, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
+import { BodyEditor, CellEditorContext, PageGutter, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
+import { GlassBar } from "@workspace.sh/glass-bar";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
+import { useGlassEditor } from "../useGlassEditor";
 
 // Horizontal page padding, and the negative margin that lets a sideways
 // scroller run to the screen's edges.
 const MOBILE_H_PADDING = 16;
+/** iOS: search, the selected cell and the editor are one glass control at the foot (#352). */
+const GLASS = Platform.OS === "ios";
 /** How many validation errors a tap on the count lists. */
 const ERRORS_LISTED = 8;
 
@@ -43,6 +47,11 @@ export default function TableScreen() {
   useEffect(() => {
     if (search === "") searchBar.current?.clearText();
   }, [search]);
+  const glass = useGlassEditor({
+    query: search ?? "",
+    onQuery: (text) => app?.dispatch({ type: "search", text }),
+    onFilter: () => app?.dispatch({ type: "settings", open: !app.state.settingsOpen }),
+  });
   // Development only: lets a script drive the app through React Native's
   // debugger connection, as the Mac's __tableDesktop does (taps can't be
   // sent from an agent's session). Not in release builds.
@@ -103,17 +112,21 @@ export default function TableScreen() {
       {/* The table first, before the bars' elements below: expo-router
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
+      <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
       <PageGutter.Provider value={MOBILE_H_PADDING}>
       <PortalHost>
         <ScrollView
           // Tracked by the large title, which collapses as it scrolls.
           contentInsetAdjustmentBehavior="automatic"
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: 24 }}
+          // Room under the last row for the glass control on iOS.
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 : 24 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped.
           automaticallyAdjustKeyboardInsets
           keyboardShouldPersistTaps="handled"
+          // iOS: scrolling puts the keyboard away and saves what was typed.
+          {...(GLASS ? { keyboardDismissMode: "on-drag" as const, onScrollBeginDrag: glass.onScrollBegin } : {})}
         >
           <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
           <html.div style={styles.subtitle}>
@@ -187,6 +200,7 @@ export default function TableScreen() {
         )}
       </PortalHost>
       </PageGutter.Provider>
+      </CellEditorContext.Provider>
       <Stack.Screen
         options={{
           title: view.name,
@@ -222,34 +236,24 @@ export default function TableScreen() {
           </Stack.Toolbar>
         </>
       )}
-      <Stack.SearchBar
-        ref={searchBar}
-        placeholder="Search"
-        onChangeText={(e: { nativeEvent: { text: string } }) => dispatch({ type: "search", text: e.nativeEvent.text })}
-        // Cancel on iOS; closing the search field on Android.
-        onCancelButtonPress={() => dispatch({ type: "search", text: "" })}
-        onClose={() => dispatch({ type: "search", text: "" })}
-      />
-      {/* View settings, search, and the file actions, in the bottom toolbar. */}
-      {Platform.OS === "ios" && (
-        <Stack.Toolbar>
-          <Stack.Toolbar.Button
-            icon="slider.horizontal.3"
-            accessibilityLabel="View Settings"
-            selected={state.settingsOpen}
-            onPress={toggleSettings}
-          />
-          <Stack.Toolbar.Spacer />
-          <Stack.Toolbar.SearchBarSlot />
-          <Stack.Toolbar.Spacer />
-          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="More">
-            {fileActions.map((a) => (
-              <Stack.Toolbar.MenuAction key={a.label} icon={a.sf} onPress={a.onPress}>
-                {a.label}
-              </Stack.Toolbar.MenuAction>
-            ))}
-          </Stack.Toolbar.Menu>
-        </Stack.Toolbar>
+      {/* Android: search in the top app bar. */}
+      {!GLASS && (
+        <Stack.SearchBar
+          ref={searchBar}
+          placeholder="Search"
+          onChangeText={(e: { nativeEvent: { text: string } }) => dispatch({ type: "search", text: e.nativeEvent.text })}
+          onCancelButtonPress={() => dispatch({ type: "search", text: "" })}
+          onClose={() => dispatch({ type: "search", text: "" })}
+        />
+      )}
+      {/* iOS: view settings, search, the selected cell and its editor, and
+          the file actions, in one glass control at the foot. */}
+      {GLASS && (
+        <GlassBar
+          ref={glass.bar}
+          {...glass.props}
+          moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, onPress: a.onPress }))}
+        />
       )}
     </>
   );

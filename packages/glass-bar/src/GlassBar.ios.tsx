@@ -20,10 +20,12 @@ import { useEffect, useId, useImperativeHandle, useMemo, useRef, type ComponentP
 import { Animated, Dimensions, Easing, Keyboard, PlatformColor, StyleSheet, type KeyboardEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  Button,
   GlassEffectContainer,
   HStack,
   Host,
   Image,
+  Menu,
   Namespace,
   Spacer,
   Text,
@@ -165,9 +167,22 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel }: Part) {
   );
 }
 
-function Trail({ state, ns, onMore, onSearchEnd }: Part) {
+function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   if (state.kind === "editing" || state.kind === "choosing") return null; // merged into the capsule
   const searching = state.kind === "searching";
+  if (!searching && moreActions?.length) {
+    // More is the system's menu, its button the same glass circle.
+    return (
+      <Menu
+        label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
+        modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
+      >
+        {moreActions.map((a) => (
+          <Button key={a.label} label={a.label} systemImage={a.symbol as Symbol | undefined} onPress={a.onPress} />
+        ))}
+      </Menu>
+    );
+  }
   return (
     <Image
       systemName={searching ? "xmark" : "ellipsis"}
