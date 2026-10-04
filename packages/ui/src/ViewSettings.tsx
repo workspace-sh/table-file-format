@@ -329,6 +329,31 @@ function viewSettingsSections({
 
   const sections: SettingsSection[] = [{ id: "view", rows: viewRows }];
 
+  // Which columns show (the view's `fields`). Absent, all do; one always stays.
+  if (view.layout === "table" || view.layout === "list") {
+    const shown = new Set(view.fields ?? schema.fields.map((f) => f.name));
+    const setShown = (name: string, on: boolean) => {
+      const next = schema.fields.map((f) => f.name).filter((n) => (n === name ? on : shown.has(n)));
+      if (next.length === 0) return;
+      onChange({ fields: next.length === schema.fields.length ? undefined : next });
+    };
+    sections.push({
+      id: "columns",
+      title: "Columns",
+      footer: shown.size === 1 ? "One column always shows." : undefined,
+      rows: schema.fields.map((f) => ({
+        kind: "toggle" as const,
+        id: `column-${f.name}`,
+        label: f.title ?? f.name,
+        value: shown.has(f.name),
+        onChange: (on: boolean) => {
+          if (!on && shown.size === 1) return;
+          setShown(f.name, on);
+        },
+      })),
+    });
+  }
+
   if (view.layout === "table") {
     sections.push({
       id: "sheet",

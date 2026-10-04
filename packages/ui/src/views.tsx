@@ -2412,6 +2412,8 @@ export function TableView({
   onUpdateRow,
   onUpdateField,
   onAddEnumValue,
+  onRemoveEnumValue,
+  onDeleteField,
   onMoveField,
   onRestoreSchema,
   onAddField,
@@ -2848,6 +2850,17 @@ export function TableView({
             anchorRect={anchorRect}
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
+            onRemoveEnumValue={onRemoveEnumValue ? (value) => onRemoveEnumValue(name, value) : undefined}
+            onDelete={
+              onDeleteField
+                ? () => {
+                    // The settings close first: the field they show is going.
+                    setEditingFieldName(null);
+                    setAnchorRect(null);
+                    onDeleteField(name);
+                  }
+                : undefined
+            }
             onMove={(delta) => onMoveField!(name, delta)}
             onCancel={
               onRestoreSchema

@@ -20,6 +20,10 @@ export interface ViewProps {
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
+  /** Remove a choice from a field; rows holding it lose it (the host asks first). */
+  onRemoveEnumValue?: (fieldName: string, value: string) => void;
+  /** Delete a field from the table: its values and every view's use of it (the host asks first). */
+  onDeleteField?: (fieldName: string) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   /**
    * Put the table's schema back as it was: a field's settings, cancelled.
