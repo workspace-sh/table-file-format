@@ -31,7 +31,10 @@ function Choice({ row, compact }: { row: Extract<SettingsRow, { kind: "choice" }
       onSelectionChange={(next: string | number) => {
         if (String(next) !== row.value) row.onChange(String(next));
       }}
-      modifiers={[pickerStyle("menu"), ...(compact ? [labelsHidden()] : [])]}
+      modifiers={[
+        pickerStyle(row.style === "inline" ? "inline" : "menu"),
+        ...(compact || row.style === "inline" ? [labelsHidden()] : []),
+      ]}
     >
       {row.options.map((o) => (
         <Text key={o.value} modifiers={[tag(o.value)]}>
@@ -48,6 +51,7 @@ function Field({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>; 
       // A new id is a new field (another filter): start from its value.
       key={row.id}
       defaultValue={row.value}
+      autoFocus={row.autoFocus}
       placeholder={row.placeholder ?? row.label}
       onValueChange={row.onChange}
       modifiers={compact ? [] : [multilineTextAlignment("trailing")]}

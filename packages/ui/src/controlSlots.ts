@@ -162,9 +162,18 @@ export interface SheetProps {
  */
 export type SettingsRow =
   /** A text field, labelled. */
-  | { kind: "text"; id: string; label: string; value: string; placeholder?: string; onChange: (value: string) => void }
+  | { kind: "text"; id: string; label: string; value: string; placeholder?: string; autoFocus?: boolean; onChange: (value: string) => void }
   /** One choice from a list, labelled: a menu. */
-  | { kind: "choice"; id: string; label: string; value: string; options: SelectOption[]; onChange: (value: string) => void }
+  | {
+      kind: "choice";
+      id: string;
+      label: string;
+      value: string;
+      options: SelectOption[];
+      /** `menu` (the default): a menu from the row. `inline`: every option a row, the chosen one ticked. */
+      style?: "menu" | "inline";
+      onChange: (value: string) => void;
+    }
   /** On or off, labelled. */
   | { kind: "toggle"; id: string; label: string; value: boolean; onChange: (value: boolean) => void }
   /**

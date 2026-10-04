@@ -4,6 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
+import type { SettingsSection } from "./controlSlots";
 import { movesBack, revertPatch } from "./revert";
 import {
   defaultAlignFor,
@@ -897,7 +898,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
   // On a phone, the platform's settings sheet (Cancel, the title, Add), as
   // a field's settings are: a popover under a table at the foot of the
   // screen had its Add button under the keyboard.
-  const { Sheet: SheetControl } = usePlatformControls();
+  const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
   const inSheet = !!SheetControl.presentsSettings;
 
   // What's typed is the column's title; its stored key is made from it,
@@ -952,6 +953,49 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
     : 0;
 
   const choices = addableChoices();
+
+  // The same as `form` below, as a platform's settings form shows it.
+  const newFieldSections = (): SettingsSection[] => {
+    const status = formula === null ? null : formulaStatus(formula, formulaDraft);
+    const sections: SettingsSection[] = [
+      {
+        id: "name",
+        footer: trimmed.length > 0 && key !== trimmed ? `Stored as ${key}` : undefined,
+        rows: [{ kind: "text", id: "name", label: "Name", placeholder: "Field name", value: name, autoFocus: true, onChange: setName }],
+      },
+      {
+        id: "type",
+        title: "Type",
+        rows: [
+          {
+            kind: "choice",
+            id: "type",
+            label: "Type",
+            style: "inline",
+            value: type,
+            options: choices.map((c) => ({ value: c.value, label: c.label })),
+            onChange: (next) => setType(next as AddableChoice),
+          },
+        ],
+      },
+    ];
+    if (type === "formula") {
+      sections.push({
+        id: "formula",
+        title: "Formula",
+        footer:
+          status === null
+            ? undefined
+            : status.kind === "error"
+              ? status.message
+              : [...status.warnings, ...(status.storedAs === undefined ? [] : [`Stored as ${status.storedAs}`])].join(" ") || undefined,
+        rows: [
+          { kind: "text", id: "formula", label: "Formula", placeholder: formulaPlaceholder(formulaSyntax), value: formulaDraft, onChange: setFormulaDraft },
+        ],
+      });
+    }
+    return sections;
+  };
 
   const form = (
     <>
@@ -1046,7 +1090,22 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
       >
         {compact ? "+" : "+ Field"}
       </html.button>
-      {open && inSheet && (
+      {open && inSheet && SettingsForm && (
+        // The platform's own form (iOS): the name, the type as a ticked
+        // list, and a formula's text with what it makes of it.
+        <SheetControl
+          size="settings"
+          title="New field"
+          cancel={{ label: "Cancel", onPress: close }}
+          confirm={{ label: "Add", onPress: submit, disabled: !valid }}
+          dismissible
+          onDismiss={close}
+          fill
+        >
+          <SettingsForm sections={newFieldSections()} />
+        </SheetControl>
+      )}
+      {open && inSheet && !SettingsForm && (
         <SheetControl
           size="settings"
           title="New field"
