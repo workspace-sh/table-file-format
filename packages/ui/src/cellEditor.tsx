@@ -41,7 +41,9 @@ export interface CellEditSession {
   initial: string;
   /** `line`: a value, Return saves; `formula`: grows, Return saves; `text`: grows, Return is a new line. */
   mode: "line" | "formula" | "text";
-  keyboard?: "default" | "decimal-pad" | "numeric";
+  keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
+  /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
+  suggestions?: boolean;
   /** A choice field: picked, not typed. */
   choices?: { id: string; label: string }[];
   selected?: string;

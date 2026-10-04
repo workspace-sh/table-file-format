@@ -107,7 +107,7 @@ import {
 import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
-import { inputHints } from "./inputHints";
+import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
@@ -2321,6 +2321,16 @@ function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
   return on ? <HScroll>{children}</HScroll> : <>{children}</>;
 }
 
+/** The outside editor's keyboard for each kind of entry (inputHints); a signed number needs a minus. */
+const BAR_KEYBOARD: Partial<Record<InputHintKind, NonNullable<CellEditSession["keyboard"]>>> = {
+  integer: "numeric",
+  decimal: "decimal-pad",
+  "signed-decimal": "numbers-and-punctuation",
+  email: "email-address",
+  url: "url",
+  phone: "phone-pad",
+};
+
 export function TableView({
   view,
   rows,
@@ -2842,11 +2852,12 @@ export function TableView({
       // Writing a formula, a tap may add a reference instead.
       if (editor?.tapWhileEditing?.(row.id, name, coords && grid ? (coordinateOf(name, row.id, grid) ?? name) : name)) return;
       // Typing a value, a tap elsewhere saves it first.
-      if (barSession.current && barDraft) {
-        const done = barSession.current.save(barDraft.text);
+      // (The session clears itself on saving, so hold it first.)
+      const open = barSession.current;
+      if (open && barDraft) {
+        const done = open.save(barDraft.text);
         if (!done.ok) return;
-        editor?.end(barSession.current.key);
-        barSession.current = null;
+        editor?.end(open.key);
       }
       setSel({ rowId: row.id, name });
     };
@@ -2962,6 +2973,7 @@ export function TableView({
         key, rowId, name, rowLabel, initial,
         label: `ƒ ${label} · every row`,
         mode: "formula",
+        suggestions: false,
         change: (t) => {
           setBarFormula({ rowId, name, draft: t });
           const ex = explain(t);
@@ -2992,7 +3004,6 @@ export function TableView({
       const hints = inputHints(field);
       // A date or time keeps the system's picker in the cell.
       if (hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime") return false;
-      const numeric = field.type === "number" || field.type === "integer" || field.type === "year";
       const initial = text ?? draftOf(row[name]);
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
@@ -3000,7 +3011,9 @@ export function TableView({
       session = {
         key, rowId, name, label, rowLabel, initial,
         mode: field.format === "markdown" ? "text" : "line",
-        keyboard: numeric ? "decimal-pad" : "default",
+        // The keyboard the field wants, as a cell's own input has (inputHints).
+        keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
+        suggestions: hints.autocorrect,
         ...(kind === "choice"
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value })),
