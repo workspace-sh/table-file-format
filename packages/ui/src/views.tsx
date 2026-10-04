@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -26,6 +26,7 @@ import {
   TOTAL_NAMES,
   totalFor,
   visibleFields,
+  pillColors,
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
@@ -1013,6 +1014,14 @@ const styles = css.create({
 
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
+  /** Pills cut to one line, with a "+N" for the rest. */
+  pillListOneLine: {
+    flexWrap: "nowrap",
+    overflow: "hidden",
+  },
+  pillMore: {
+    flexShrink: 0,
+  },
   pill: {
     paddingInline: 10,
     paddingBlock: 3,
@@ -1484,6 +1493,25 @@ function headerAlignStyle(align: FieldAlignment) {
 
 
 
+/** The width a table cell's content has, for pills to know how many fit. */
+const CellWidth = createContext<number | undefined>(undefined);
+
+/** A pill's width, roughly: its label, padding and the gap after it. */
+const pillWidth = (p: Pill) => String(p.label).length * 7.6 + 30;
+/** The pills that fit in `width`, leaving room for a "+N" when some don't. */
+function pillsThatFit(pills: Pill[], width: number): Pill[] {
+  let used = 0;
+  const out: Pill[] = [];
+  for (let i = 0; i < pills.length; i++) {
+    const w = pillWidth(pills[i]!);
+    const reserve = i < pills.length - 1 ? 40 : 0;
+    if (out.length > 0 && used + w + reserve > width) break;
+    out.push(pills[i]!);
+    used += w;
+  }
+  return out;
+}
+
 interface CellValueProps {
   field: Field | undefined;
   value: unknown;
@@ -1503,6 +1531,7 @@ interface CellValueProps {
 
 function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
+  const width = useContext(CellWidth);
   const display = useDisplaySettings();
   const shown = describeCell(field, value, display, relatedTables);
   switch (shown.kind) {
@@ -1518,16 +1547,25 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
       );
     case "error":
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
-    case "pills":
+    case "pills": {
       // A single choice is its pill; a list sits in a row of them.
       if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} atStart={inColumn} />;
+      // On one line in a table, as many as fit and then "+3".
+      const shownPills = width !== undefined && (lines ?? 1) <= 1 ? pillsThatFit(shown.pills, width) : shown.pills;
+      const more = shown.pills.length - shownPills.length;
       return (
-        <html.div style={styles.pillList}>
-          {shown.pills.map((pill, i) => (
+        <html.div style={[styles.pillList, more > 0 && styles.pillListOneLine]}>
+          {shownPills.map((pill, i) => (
             <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
           ))}
+          {more > 0 ? (
+            <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
+              +{more}
+            </html.span>
+          ) : null}
         </html.div>
       );
+    }
     case "attachment":
       return <AttachmentValue fileName={shown.fileName} />;
     case "link":
@@ -1884,8 +1922,8 @@ function EditableCell({
     );
   }
 
-  // A multi-select with an outside editor: its choices are picked there.
-  if (kind === "list" && field && editOutside && enumOptions(field).length > 0) {
+  // A multi-select or a link with an outside editor: picked there.
+  if (field && editOutside && ((kind === "list" && enumOptions(field).length > 0) || kind === "relation")) {
     return (
       <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
         <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
@@ -2460,7 +2498,14 @@ export function TableView({
       rowLabel: titleField ? formatValue(row[titleField]) : row.id,
       text: field.computed
         ? formulaDraftOf(field, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
-        : formatCellValue(field, row[sel.name]),
+        : field.relation
+          ? // A link reads as the rows it points at, as the cell shows them.
+            (() => {
+              const names = new Map(relationOptions(field, relatedTables).map((o) => [o.value, o.label] as const));
+              const ids = Array.isArray(row[sel.name]) ? listItems(row[sel.name]) : row[sel.name] ? [String(row[sel.name])] : [];
+              return ids.map((id) => names.get(id) ?? id).join(", ");
+            })()
+          : formatCellValue(field, row[sel.name]),
       formula: field.computed !== undefined,
     });
   });
@@ -2885,13 +2930,20 @@ export function TableView({
     const select = () => {
       // Writing a formula, a tap may add a reference instead.
       if (editor?.tapWhileEditing?.(row.id, name, coords && grid ? (coordinateOf(name, row.id, grid) ?? name) : name)) return;
-      // Typing a value, a tap elsewhere saves it first.
-      // (The session clears itself on saving, so hold it first.)
+      // A tap elsewhere ends the open edit, so the editor follows to the
+      // cell tapped: what was typed saves first; a choice or a date has
+      // saved already. (The session clears itself on saving: hold it.)
       const open = barSession.current;
-      if (open && barDraft) {
-        const done = open.save(barDraft.text);
-        if (!done.ok) return;
+      if (open) {
+        const typed = barDraft?.text ?? barFormula?.draft;
+        if (typed !== undefined) {
+          const done = open.save(typed);
+          if (!done.ok) return;
+        }
         editor?.end(open.key);
+        barSession.current = null;
+        setBarDraft(null);
+        setBarFormula(null);
       }
       setSel({ rowId: row.id, name });
     };
@@ -2936,6 +2988,7 @@ export function TableView({
           isSelected && styles.cellSelected,
         ]}
       >
+        <CellWidth.Provider value={colWidth(name) - 24}>
         {onUpdateRow ? (
           <EditableCell
             field={field}
@@ -2963,6 +3016,7 @@ export function TableView({
             lines={linesFor(heightOf(row.id))}
           />
         )}
+        </CellWidth.Provider>
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
@@ -3036,8 +3090,12 @@ export function TableView({
       const kind = editorKind(field);
       const hints = inputHints(field);
       const many = kind === "list" && enumOptions(field).length > 0;
+      // A link to rows: its choices are the linked table's rows.
+      const linked = kind === "relation" ? relationOptions(field, relatedTables) : [];
+      const linksMany = linked.length > 0 && relatesMany(field);
+      const linksOne = linked.length > 0 && !linksMany;
       const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
-      if (kind !== "text" && kind !== "choice" && !many) return false;
+      if (kind !== "text" && kind !== "choice" && !many && !linksOne && !linksMany) return false;
       const initial = text ?? draftOf(row[name]);
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
@@ -3052,9 +3110,36 @@ export function TableView({
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
         ...(kind === "choice" || many
-          ? { choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value })) }
+          ? {
+              choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
+              ...(onAddEnumValue
+                ? {
+                    addChoice: (label: string) => {
+                      const value = label.trim();
+                      if (!value) return;
+                      if (!enumOptions(field).some((o) => o.value === value)) onAddEnumValue(name, value);
+                      if (many) {
+                        current = listToggled({ ...field, constraints: { ...field.constraints, enum: [...(field.constraints?.enum ?? []), value] } }, current, value);
+                        onUpdateRow!(rowId, name, current);
+                      } else onUpdateRow!(rowId, name, value);
+                    },
+                  }
+                : {}),
+            }
           : {}),
-        ...(kind === "choice" ? { selected: typeof row[name] === "string" ? (row[name] as string) : undefined } : {}),
+        ...(kind === "choice" || linksOne ? { selected: typeof row[name] === "string" ? (row[name] as string) : undefined } : {}),
+        ...(linksOne || linksMany ? { choices: linked.map((o) => ({ id: o.value, label: o.label })) } : {}),
+        ...(linksMany
+          ? {
+              multiple: true,
+              selectedMany: listItems(row[name]),
+              toggle: (id: string) => {
+                current = relationToggled(field, current, id, relatedTables);
+                onUpdateRow!(rowId, name, current);
+                return listItems(current);
+              },
+            }
+          : {}),
         ...(many
           ? {
               multiple: true,
@@ -3089,6 +3174,12 @@ export function TableView({
           return {};
         },
         save: (t) => {
+          if (linksOne) {
+            setBarDraft(null);
+            barSession.current = null;
+            if (t !== row[name]) onUpdateRow!(rowId, name, t);
+            return { ok: true };
+          }
           const r = commitDraft(field, row[name], t, "key", queried);
           if (r.kind === "problem") {
             queried = r.queried;

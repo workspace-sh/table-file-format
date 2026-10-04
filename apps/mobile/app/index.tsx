@@ -5,7 +5,7 @@
 // table-ui's views, scrolling under the glass bars.
 
 import { useEffect, useMemo, useRef } from "react";
-import { Alert, Platform, ScrollView } from "react-native";
+import { Alert, Platform, Pressable, ScrollView } from "react-native";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
@@ -129,7 +129,8 @@ export default function TableScreen() {
           contentInsetAdjustmentBehavior="automatic"
           style={{ flex: 1 }}
           // Room under the last row for the glass control on iOS.
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 : 24 }}
+          // and, while an editor is open, room for any cell to scroll clear of it.
+          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped.
           automaticallyAdjustKeyboardInsets
@@ -137,6 +138,8 @@ export default function TableScreen() {
           // iOS: scrolling puts the keyboard away and saves what was typed.
           {...(GLASS ? { keyboardDismissMode: "on-drag" as const, onScrollBeginDrag: glass.onScrollBegin } : {})}
         >
+          {/* iOS: a tap on empty space (around or below the table) closes the editor and deselects. */}
+          <Pressable onPress={GLASS ? glass.dismiss : undefined} disabled={!GLASS} style={{ flexGrow: 1 }} accessible={false}>
           <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
           <html.div style={styles.subtitle}>
             <html.span>{summary.count}</html.span>
@@ -196,6 +199,7 @@ export default function TableScreen() {
             sheet,
             onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
           })}
+          </Pressable>
         </ScrollView>
         {state.openPage && (
           <BodyEditor
