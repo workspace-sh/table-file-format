@@ -162,7 +162,19 @@ export interface SheetProps {
  */
 export type SettingsRow =
   /** A text field, labelled. */
-  | { kind: "text"; id: string; label: string; value: string; placeholder?: string; autoFocus?: boolean; onChange: (value: string) => void }
+  | {
+      kind: "text";
+      id: string;
+      label: string;
+      value: string;
+      placeholder?: string;
+      autoFocus?: boolean;
+      onChange: (value: string) => void;
+      /** Return pressed: the text as typed. */
+      onSubmit?: (value: string) => void;
+    }
+  /** A fact shown, not edited: its label and its value. */
+  | { kind: "info"; id: string; label: string; value: string }
   /** One choice from a list, labelled: a menu. */
   | {
       kind: "choice";
@@ -170,8 +182,11 @@ export type SettingsRow =
       label: string;
       value: string;
       options: SelectOption[];
-      /** `menu` (the default): a menu from the row. `inline`: every option a row, the chosen one ticked. */
-      style?: "menu" | "inline";
+      /**
+       * `menu` (the default): a menu from the row. `inline`: every option a
+       * row, the chosen one ticked. `segmented`: a few options side by side.
+       */
+      style?: "menu" | "inline" | "segmented";
       onChange: (value: string) => void;
     }
   /** On or off, labelled. */
@@ -182,7 +197,7 @@ export type SettingsRow =
    */
   | { kind: "compound"; id: string; parts: SettingsRow[]; removeLabel: string }
   /** A button row: adding, destroying, or anything else. */
-  | { kind: "action"; id: string; label: string; role?: "add" | "destructive"; onPress: () => void };
+  | { kind: "action"; id: string; label: string; role?: "add" | "destructive"; disabled?: boolean; onPress: () => void };
 
 export interface SettingsSection {
   id: string;
