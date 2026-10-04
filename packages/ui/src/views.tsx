@@ -2473,6 +2473,19 @@ export function TableView({
     rowActions(rowId, { onOpenBody, hasBody: bodies?.[rowId] !== undefined, onInsertRow, onDeleteRow });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const { Select: TotalsSelect } = usePlatformControls();
+  /** The totals a column can show: sums and the like for numbers, counts for anything. */
+  const totalKindsFor = (field: Field | undefined): ViewTotal[] => {
+    const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
+    return [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+  };
+  const chooseTotal = (name: string, kind: ViewTotal | null) => {
+    const next = { ...(view.totals ?? {}) };
+    if (kind) next[name] = kind;
+    else delete next[name];
+    onUpdateView?.({ totals: Object.keys(next).length ? next : undefined });
+    setTotalsMenu(null);
+  };
   // The row just added from "+ New row": its first cell opens for typing
   // as it appears, then this clears (the cell's effect runs first).
   const [focusRowId, setFocusRowId] = useState<string | null>(null);
@@ -2888,6 +2901,39 @@ export function TableView({
     const field = fieldMap.get(name);
     const kind = totals[name];
     const { value: shown, numeric } = kind ? totalFor(rows, name, kind) : { value: undefined, numeric: false };
+    const content = kind ? (
+      <>
+        <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
+        {numeric ? (
+          <CellValue field={field} value={shown} relatedTables={relatedTables} lines={1} />
+        ) : (
+          <html.span>{String(shown ?? "")}</html.span>
+        )}
+      </>
+    ) : onUpdateView ? (
+      <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
+    ) : null;
+    const cellStyle = [
+      styles.tableCell,
+      styles.cellWidth(colWidth(name)),
+      cellAlignStyle(effectiveAlign(field)),
+      idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
+      styles.totalCell,
+    ];
+    // On a phone the footer cell is itself the system's menu of totals, as a
+    // choice cell is its menu of choices; elsewhere it opens the popover below.
+    if (onUpdateView && TotalsSelect.opensFromTrigger) {
+      return (
+        <Select
+          key={name}
+          value={kind ?? ""}
+          options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
+          onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
+          label={`Calculate ${field?.title ?? name}`}
+          trigger={<html.div style={cellStyle}>{content}</html.div>}
+        />
+      );
+    }
     return (
       <html.div
         key={name}
@@ -2910,18 +2956,7 @@ export function TableView({
             : undefined
         }
       >
-        {kind ? (
-          <>
-            <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
-            {numeric ? (
-              <CellValue field={field} value={shown} relatedTables={relatedTables} lines={1} />
-            ) : (
-              <html.span>{String(shown ?? "")}</html.span>
-            )}
-          </>
-        ) : onUpdateView ? (
-          <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
-        ) : null}
+        {content}
       </html.div>
     );
   };
@@ -3494,16 +3529,8 @@ export function TableView({
         );
       })()}
       {totalsMenu && onUpdateView && (() => {
-        const field = fieldMap.get(totalsMenu.name);
-        const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
-        const kinds: ViewTotal[] = [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
-        const choose = (kind: ViewTotal | null) => {
-          const next = { ...totals };
-          if (kind) next[totalsMenu.name] = kind;
-          else delete next[totalsMenu.name];
-          onUpdateView({ totals: Object.keys(next).length ? next : undefined });
-          setTotalsMenu(null);
-        };
+        const kinds = totalKindsFor(fieldMap.get(totalsMenu.name));
+        const choose = (kind: ViewTotal | null) => chooseTotal(totalsMenu.name, kind);
         return (
           <Portal>
             <html.div style={styles.rowMenuBackdrop} onClick={() => setTotalsMenu(null)} />
