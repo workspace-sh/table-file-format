@@ -17,7 +17,7 @@
  */
 import type { ReactElement, ReactNode } from "react";
 import { KeyboardAvoidingView, Modal, PlatformColor, Pressable, ScrollView, Text, View } from "react-native";
-import { ScreenStack, ScreenStackHeaderLeftView, ScreenStackHeaderRightView, ScreenStackItem } from "react-native-screens";
+import { ScreenStack, ScreenStackItem } from "react-native-screens";
 import type { SheetProps, SheetSlot } from "../controlSlots";
 
 function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "subtitle" | "cancel" | "confirm">) {
@@ -79,8 +79,8 @@ function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "s
 function SettingsSheet({ title, cancel, confirm, onDismiss, fill, children }: SheetProps & { children: ReactNode }) {
   // A stack of its own, out of the way, to present the form sheet from:
   // its root shows nothing, and the sheet is its second screen. The sheet's
-  // bar is the system's (UINavigationBar): Cancel leading, its title, and
-  // Done trailing.
+  // bar is the system's (UINavigationBar), with its own buttons: Cancel
+  // leading, its title, and Done trailing.
   return (
     <ScreenStack style={{ position: "absolute", width: 0, height: 0 }}>
       <ScreenStackItem screenId="sheet-root" headerConfig={{ hidden: true }}>
@@ -91,36 +91,29 @@ function SettingsSheet({ title, cancel, confirm, onDismiss, fill, children }: Sh
         headerConfig={{
           title,
           hidden: false,
-          children: [
-            cancel && (
-              <ScreenStackHeaderLeftView key="cancel">
-                <Pressable accessibilityRole="button" hitSlop={10} onPress={cancel.onPress}>
-                  <Text style={{ fontSize: 17, color: PlatformColor("systemBlue") }}>{cancel.label}</Text>
-                </Pressable>
-              </ScreenStackHeaderLeftView>
-            ),
-            confirm && (
-              <ScreenStackHeaderRightView key="confirm">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !!confirm.disabled }}
-                  hitSlop={10}
-                  onPress={confirm.onPress}
-                  disabled={confirm.disabled}
-                >
-                  <Text
-                    style={{
-                      fontSize: 17,
-                      fontWeight: "600",
-                      color: confirm.disabled ? PlatformColor("tertiaryLabel") : PlatformColor("systemBlue"),
-                    }}
-                  >
-                    {confirm.label}
-                  </Text>
-                </Pressable>
-              </ScreenStackHeaderRightView>
-            ),
-          ],
+          // No hairline and no fill: iOS 26's sheet bar is glass over the
+          // content, as the tables sheet's is. UIKit makes it so on its own only
+          // for a scroll view it can find, and a SwiftUI form's it can't.
+          hideShadow: true,
+          translucent: true,
+          backgroundColor: "transparent",
+          // The system's own bar buttons, so they're Liquid Glass: Cancel a
+          // cross, leading; Done a tick, trailing, in the tinted style.
+          headerLeftBarButtonItems: cancel
+            ? [{ type: "button", icon: { type: "sfSymbol", name: "xmark" }, accessibilityLabel: cancel.label, onPress: cancel.onPress }]
+            : [],
+          headerRightBarButtonItems: confirm
+            ? [
+                {
+                  type: "button",
+                  icon: { type: "sfSymbol", name: "checkmark" },
+                  variant: "prominent",
+                  accessibilityLabel: confirm.label,
+                  disabled: confirm.disabled,
+                  onPress: confirm.onPress,
+                },
+              ]
+            : [],
         }}
         stackPresentation="formSheet"
         sheetAllowedDetents={[0.5, 1]}
