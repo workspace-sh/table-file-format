@@ -30,7 +30,9 @@ export type GlassBarEditing = {
    * `text`: long text, grows; Return is a new line, so only Save saves.
    */
   mode: "line" | "formula" | "text";
-  keyboard?: "default" | "numeric" | "decimal-pad";
+  keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
+  /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
+  suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
   chips?: GlassBarChip[];
   /** Why it can't be saved, with an optional fix. */

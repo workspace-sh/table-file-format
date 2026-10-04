@@ -95,6 +95,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions }: GlassE
       initialValue: session.initial,
       mode: session.mode,
       keyboard: session.keyboard,
+      suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       error: status.error ? { message: status.error.message, fixLabel: status.error.fix ? `Add ${status.error.fix}` : undefined } : undefined,
     };

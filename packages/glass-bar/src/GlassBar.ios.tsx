@@ -37,6 +37,7 @@ import {
   Animation,
   accessibilityLabel,
   animation,
+  autocorrectionDisabled,
   contentShape,
   fixedSize,
   font,
@@ -50,6 +51,7 @@ import {
   onTapGesture,
   padding,
   shapes,
+  textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState } from "./types";
 
@@ -371,6 +373,8 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, editor }: Par
             // A growing field takes the height of its lines rather than what it is offered.
             ...(grows ? [lineLimit(5), fixedSize({ horizontal: false, vertical: true })] : []),
             ...(state.keyboard && state.keyboard !== "default" ? [keyboardType(state.keyboard)] : []),
+            // A number, code or formula: no word suggestions, corrections or capitals.
+            ...(state.suggestions === false ? [autocorrectionDisabled(true), textInputAutocapitalization("never")] : []),
             // A one-line field reports Return as a submit, not a new line.
             ...(grows ? [] : [onSubmitModifier(() => onSubmit?.(value.current))]),
             padding({ vertical: 4 }),
