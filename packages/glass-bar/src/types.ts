@@ -1,0 +1,83 @@
+/**
+ * What the bar shows. The host app owns this and changes it in response to
+ * the callbacks; the bar animates between whatever it is given.
+ */
+export type GlassBarState =
+  /** Filter, Search and More. A non-empty query shows as results, with its clear button. */
+  | { kind: "rest"; query?: string }
+  /** Search raised above the keyboard. */
+  | { kind: "searching"; query: string }
+  /** A selected cell: its label ("Owner · iOS Pro launch") and value or formula. */
+  | { kind: "selected"; label: string; value: string; monospaced?: boolean }
+  /** The editor. */
+  | GlassBarEditing
+  /** Picking one of a field's choices: no keyboard. */
+  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string };
+
+export type GlassBarEditing = {
+  kind: "editing";
+  /** Identifies one edit; a new key starts a new field (moving to the next row). */
+  editKey: string;
+  /** What is being edited ("Owner", "ƒ Left · every row"). */
+  label: string;
+  /** The right-hand side of the header: the row, or this row's result. */
+  detail?: string;
+  /** The value the field starts with. */
+  initialValue: string;
+  /**
+   * `line`: a short value; Return saves and moves on.
+   * `formula`: monospaced, grows up to five lines; Return saves.
+   * `text`: long text, grows; Return is a new line, so only Save saves.
+   */
+  mode: "line" | "formula" | "text";
+  keyboard?: "default" | "numeric" | "decimal-pad";
+  /** Buttons above the capsule: operators, or suggestions. */
+  chips?: GlassBarChip[];
+  /** Why it can't be saved, with an optional fix. */
+  error?: { message: string; fixLabel?: string };
+};
+
+/**
+ * A button above the capsule. `insert`: text the bar puts at the cursor
+ * when tapped (an operator), stepping back `cursorBack` characters after it
+ * (1 puts the cursor between a pair of brackets); otherwise only `onChip`
+ * runs. `symbol`: an SF Symbol name. When every chip has one, the chips
+ * share one glass background, as a toolbar's buttons do; `label` is then
+ * what VoiceOver reads.
+ */
+export type GlassBarChip = { id: string; label: string; detail?: string; insert?: string; cursorBack?: number; symbol?: string };
+
+/** Imperative access for the host app: tapping a column while writing a formula inserts its name. */
+export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => void };
+export type GlassBarChoice = { id: string; label: string };
+
+export type GlassBarProps = {
+  state: GlassBarState;
+  ref?: import("react").Ref<GlassBarHandle>;
+  onFilter?: () => void;
+  onMore?: () => void;
+  /** Rest: Search tapped. */
+  onSearch?: () => void;
+  onQueryChange?: (query: string) => void;
+  /** Searching: Close, or Return. The query stays. */
+  onSearchEnd?: () => void;
+  onClearQuery?: () => void;
+  /** Selected: the capsule tapped, to edit. */
+  onEdit?: () => void;
+  /** Selected: ✕. */
+  onDeselect?: () => void;
+  /** Editing or choosing: ✕. Discards the edit. */
+  onCancel?: () => void;
+  onChange?: (value: string) => void;
+  /** Save tapped. */
+  onSave?: (value: string) => void;
+  /**
+   * Return in a `line` or `formula` field: save and move on. The bar never
+   * saves on its own when the keyboard goes; a host whose content dismisses
+   * the keyboard by scrolling should save when that scroll begins.
+   */
+  onSubmit?: (value: string) => void;
+  onChip?: (id: string) => void;
+  onFix?: () => void;
+  onChoose?: (id: string) => void;
+};

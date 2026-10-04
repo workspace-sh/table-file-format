@@ -1,0 +1,29 @@
+{
+  "name": "@workspace.sh/glass-bar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One Liquid Glass control at the bottom of the screen: search at rest, the selection, and the editor, morphing between them.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@expo/ui": ">=55.0.0",
+    "react": ">=19.0.0",
+    "react-native": ">=0.81.0",
+    "react-native-safe-area-context": ">=5.0.0"
+  }
+}
