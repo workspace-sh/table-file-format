@@ -234,7 +234,7 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
 function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor }: Part) {
   const dark = useColorScheme() === "dark";
   const chips =
-    state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
+    state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, tone: undefined, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
     : state.kind === "choosing"
       ? state.choices.map((c) => ({
           ...c,
@@ -288,9 +288,13 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor }:
             accessibilityLabel(c.label),
           ]}
         >
-          <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), ...chipLabel(c)]}>
-            {c.label}
-          </Text>
+          <HStack spacing={5}>
+            {/* What's chosen carries a checkmark, as a menu's choice does. */}
+            {c.on ? <Image systemName="checkmark" size={13} color={c.tone ? c.tone.fg : "white"} /> : null}
+            <Text modifiers={[font({ size: c.detail ? 14 : 17, weight: c.detail || c.on ? "semibold" : "regular", design: c.detail ? "monospaced" : "default" }), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), ...chipLabel(c)]}>
+              {c.label}
+            </Text>
+          </HStack>
           {c.detail ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{c.detail}</Text> : null}
         </VStack>
       ))}
@@ -372,11 +376,12 @@ function Capsule(props: Part) {
 type ChipLook = { on: boolean; tone?: { bg: string; fg: string } };
 /** A choice's glass: a light wash of its colour, a little stronger when it's on; else plain, or blue when on. */
 function chipTint(c: ChipLook): string | undefined {
-  if (c.tone) return c.tone.bg + (c.on ? "E6" : "66");
+  // Chosen: its colour in full; the rest only a light wash of it.
+  if (c.tone) return c.tone.bg + (c.on ? "FF" : "4D");
   return c.on ? "#0A84FF" : undefined;
 }
 function chipLabel(c: ChipLook) {
-  if (c.tone) return [foregroundStyle(c.tone.fg), ...(c.on ? [font({ size: 17, weight: "semibold" })] : [])];
+  if (c.tone) return [foregroundStyle(c.tone.fg)];
   return c.on ? [foregroundStyle("white")] : [];
 }
 
