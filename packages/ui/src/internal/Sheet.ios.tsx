@@ -76,7 +76,7 @@ function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "s
   );
 }
 
-function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetProps & { children: ReactNode }) {
+function SettingsSheet({ title, cancel, confirm, onDismiss, fill, children }: SheetProps & { children: ReactNode }) {
   // A stack of its own, out of the way, to present the form sheet from:
   // its root shows nothing, and the sheet is its second screen. The sheet's
   // bar is the system's (UINavigationBar): Cancel leading, its title, and
@@ -128,7 +128,12 @@ function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetPro
         sheetExpandsWhenScrolledToEdge
         onDismissed={onDismiss}
       >
-        <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
+        {fill ? (
+          // A platform form scrolls itself (and the sheet grows from its scroll view).
+          <View style={{ flex: 1 }}>{children}</View>
+        ) : (
+          <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
+        )}
       </ScreenStackItem>
     </ScreenStack>
   );
