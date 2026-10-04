@@ -11,8 +11,10 @@ export type GlassBarState =
   | { kind: "selected"; label: string; value: string; monospaced?: boolean }
   /** The editor. */
   | GlassBarEditing
-  /** Picking one of a field's choices: no keyboard. */
-  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string };
+  /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
+  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean }
+  /** Picking a date or time with the system's calendar: no keyboard. */
+  | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string };
 
 export type GlassBarEditing = {
   kind: "editing";
@@ -87,4 +89,5 @@ export type GlassBarProps = {
   onChip?: (id: string) => void;
   onFix?: () => void;
   onChoose?: (id: string) => void;
+  onPickDate?: (date: Date) => void;
 };

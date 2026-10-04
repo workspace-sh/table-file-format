@@ -47,7 +47,11 @@ export default function TableScreen() {
   useEffect(() => {
     if (search === "") searchBar.current?.clearText();
   }, [search]);
+  // The table's scroll position, so the editor can keep its cell in view.
+  const scroller = useRef<ScrollView>(null);
+  const scrollY = useRef(0);
   const glass = useGlassEditor({
+    onScrollBy: (dy) => scroller.current?.scrollTo({ y: scrollY.current + dy, animated: true }),
     query: search ?? "",
     onQuery: (text) => app?.dispatch({ type: "search", text }),
     onFilter: () => app?.dispatch({ type: "settings", open: !app.state.settingsOpen }),
@@ -116,6 +120,11 @@ export default function TableScreen() {
       <PageGutter.Provider value={MOBILE_H_PADDING}>
       <PortalHost>
         <ScrollView
+          ref={scroller}
+          onScroll={(e) => {
+            scrollY.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           // Tracked by the large title, which collapses as it scrolls.
           contentInsetAdjustmentBehavior="automatic"
           style={{ flex: 1 }}
