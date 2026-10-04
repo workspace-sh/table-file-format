@@ -17,8 +17,12 @@ import { CANCEL, type Confirm } from "./confirm.ts";
 import { creating, namePrompt, newView, type Making, type NamePrompt } from "./creating.ts";
 import { viewerLocale, viewerOrder, withDisplayChoice } from "./displaySettings.ts";
 import {
+  deletingField,
   deletingRow,
   deletingView,
+  removingChoice,
+  withoutChoice,
+  withoutField,
   onTable,
   viewPatchPrompt,
   withBody,
@@ -55,6 +59,8 @@ export interface ShownFile {
 /** What answering the question does, as data. */
 export type Pending =
   | { type: "deleteRow"; key: string; rowId: string }
+  | { type: "deleteField"; key: string; name: string }
+  | { type: "removeChoice"; key: string; name: string; value: string }
   | { type: "deleteView"; key: string; viewId: string; nextViewId: string }
   | { type: "updateView"; key: string; viewId: string; patch: Partial<View> }
   | { type: "reset"; fresh: Library }
@@ -142,6 +148,8 @@ export type AppAction =
   // A field's settings, cancelled: the schema as they opened, version and all.
   | { type: "restoreSchema"; schema: TableSchema }
   | { type: "addChoice"; name: string; value: string }
+  | { type: "removeChoice"; name: string; value: string }
+  | { type: "deleteField"; name: string }
   | { type: "updateView"; patch: Partial<View> }
   | { type: "addView"; id: string }
   | { type: "deleteView" }
@@ -378,6 +386,19 @@ function step(state: AppState, action: AppAction): AppState {
       return edit(state, (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
     case "addChoice":
       return edit(state, (t) => withChoice(t, action.name, action.value));
+    case "removeChoice": {
+      // Rows that hold it lose it, so ask first; none hold it, it just goes.
+      const table = state.tables[state.active];
+      if (!table) return state;
+      const prompt = removingChoice(table, action.name, action.value);
+      if (!prompt) return edit(state, (t) => withoutChoice(t, action.name, action.value));
+      return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "removeChoice", key: state.active, name: action.name, value: action.value } } };
+    }
+    case "deleteField": {
+      const table = state.tables[state.active];
+      if (!table?.schema.fields.some((f) => f.name === action.name)) return state;
+      return { ...state, asking: { kind: "confirm", confirm: deletingField(table, action.name), on: { type: "deleteField", key: state.active, name: action.name } } };
+    }
     case "updateView": {
       const view = currentView(state);
       if (!view) return state;
@@ -496,6 +517,10 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
     case "deleteRow":
       // Its page, if open, goes with it (settle's rule).
       return edit(state, (t) => withoutRow(t, on.rowId), on.key);
+    case "deleteField":
+      return edit(state, (t) => withoutField(t, on.name), on.key);
+    case "removeChoice":
+      return edit(state, (t) => withoutChoice(t, on.name, on.value), on.key);
     case "deleteView": {
       const edited = edit(state, (t) => withoutView(t, on.viewId), on.key);
       if (edited === state) return state;
@@ -665,6 +690,8 @@ export type ViewCallbacks = Required<
     | "onUpdateRow"
     | "onUpdateField"
     | "onAddEnumValue"
+    | "onRemoveEnumValue"
+    | "onDeleteField"
     | "onMoveField"
     | "onRestoreSchema"
     | "onAddField"
@@ -687,6 +714,8 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
+    onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),
+    onDeleteField: (name) => dispatch({ type: "deleteField", name }),
     onMoveField: (name, delta) => dispatch({ type: "moveField", name, delta }),
     onRestoreSchema: (schema) => dispatch({ type: "restoreSchema", schema }),
     onAddField: (field) => dispatch({ type: "addField", field }),

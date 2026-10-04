@@ -14,6 +14,11 @@ import {
   withCell,
   withChoice,
   withField,
+  withoutChoice,
+  withoutField,
+  removingChoice,
+  deletingField,
+  rowsHolding,
   withFieldMoved,
   withFieldPatch,
   withoutRow,
@@ -159,4 +164,38 @@ test("turning a Sheet view that formulas read into anything else asks first", ()
   assert.equal(viewPatchPrompt(held, "household-budget/ledger", byDate, { name: "Dated" }), null);
   assert.equal(viewPatchPrompt(held, "projects/tasks", { ...tasks.views[0]!, coordinates: true }, { coordinates: undefined }), null);
   assert.equal(viewPatchPrompt(held, "projects/tasks", tasks.views[0]!, { layout: "board" }), null);
+});
+
+test("removing a choice takes it from the field and from every row that held it", () => {
+  const companies = tables["companies"]!;
+  const held = rowsHolding(companies, "industry", "Design");
+  assert.ok(held > 0);
+  assert.ok(removingChoice(companies, "industry", "Design"));
+  const without = withoutChoice(companies, "industry", "Design");
+  const values = (without.schema.fields.find((f) => f.name === "industry")!.constraints!.enum ?? []).map((o) => (typeof o === "string" ? o : o.value));
+  assert.ok(!values.includes("Design"));
+  assert.equal(rowsHolding(without, "industry", "Design"), 0);
+  assert.ok(version(without) > version(companies));
+  // A list keeps its other items.
+  const tagged = companies.rows.find((r) => Array.isArray(r.tags) && (r.tags as string[]).includes("agency") && (r.tags as string[]).length > 1)!;
+  const after = withoutChoice(companies, "tags", "agency").rows.find((r) => r.id === tagged.id)!;
+  assert.deepEqual(after.tags, (tagged.tags as string[]).filter((t) => t !== "agency"));
+  // A choice nothing holds goes without asking.
+  assert.equal(removingChoice(withChoice(companies, "industry", "Unused"), "industry", "Unused"), null);
+});
+
+test("deleting a field takes it from the schema, every row and every view that names it", () => {
+  const companies = tables["companies"]!;
+  assert.match(deletingField(companies, "industry").heading, /Industry/);
+  const without = withoutField(companies, "industry");
+  assert.ok(!without.schema.fields.some((f) => f.name === "industry"));
+  assert.ok(without.rows.every((r) => !("industry" in r)));
+  for (const v of without.views) {
+    assert.ok(!(v.fields ?? []).includes("industry"));
+    assert.ok(!(v.sort ?? []).some((s) => s.field === "industry"));
+    assert.ok(!(v.filter ?? []).some((f) => f.field === "industry"));
+    assert.notEqual(v.group?.field, "industry");
+    assert.notEqual(v.board_field, "industry");
+  }
+  assert.equal(withoutField(companies, "no-such-field"), companies);
 });
