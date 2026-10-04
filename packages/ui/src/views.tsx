@@ -30,7 +30,8 @@ import {
 } from "./display";
 import type { ViewProps } from "./viewProps";
 import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
-import { formulaInputCells, viewGrid } from "./formulaCell";
+import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
+import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
   BOARD_GAP,
   boardColumns,
@@ -65,6 +66,9 @@ import {
   effectiveAlign,
   enumOptions,
   columnLetter,
+  computeRows,
+  coordinateOf,
+  formatValue as formatCellValue,
 } from "@workspace.sh/table-core";
 import type {
   SheetRef,
@@ -1308,6 +1312,14 @@ const styles = css.create({
   },
   // Idle (display) wrapper inside an editable cell — fills the cell so
   // clicks anywhere in the cell start editing, not just on the text run.
+  /** A value being typed in an editor outside the cell (#352), shown as it is typed. */
+  cellOutsideDraft: {
+    fontSize: 14,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
+    color: { default: "#1d1d1f", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
   cellEditableIdle: {
     display: "flex",
     flex: 1,
@@ -1662,6 +1674,13 @@ interface EditableCellProps {
   editRequest?: EditRequest;
   /** How editing ended from the keyboard, so the table can move on. */
   onEditEnd?: (how: EditEnd) => void;
+  /**
+   * An editor outside the cell (#352): asked first whenever the cell would
+   * start editing; true means it took the edit and the cell stays idle.
+   */
+  editOutside?: (text?: string) => boolean;
+  /** That editor's draft, shown in the cell as it is typed. */
+  outsideDraft?: string;
 }
 
 /** A request from the table to open a cell; `n` changes for each one. */
@@ -1696,6 +1715,8 @@ function EditableCell({
   onAttach,
   editRequest,
   onEditEnd,
+  editOutside,
+  outsideDraft,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1738,6 +1759,7 @@ function EditableCell({
   }, [editing]);
 
   const startEdit = (text?: string) => {
+    if (editOutside?.(text)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
     setDraft(text ?? draftOf(value));
@@ -1813,6 +1835,15 @@ function EditableCell({
   if (readOnly) {
     return (
       <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+    );
+  }
+
+  // Being edited outside the cell: show what is typed, as it is typed.
+  if (outsideDraft !== undefined) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
+      </html.div>
     );
   }
 
@@ -1892,7 +1923,8 @@ function EditableCell({
       // choices: its next tap chooses, as a text cell's next tap types.
       // Not a relation: its value has a button of its own (CellLink),
       // which a menu's label would swallow.
-      if (kind === "choice" && selected !== false && SelectControl.opensFromTrigger) {
+      // An outside editor offers the choices itself.
+      if (kind === "choice" && selected !== false && SelectControl.opensFromTrigger && !editOutside) {
         return (
           <Select
             value={typeof value === "string" ? value : ""}
@@ -2364,6 +2396,35 @@ export function TableView({
   // typing edits it (#85). Cleared when focus leaves the table.
   const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
   const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  // An editor outside the table (#352), when the host provides one: the
+  // draft it is typing into a cell, or into a formula column, shown live.
+  const editor = useCellEditor();
+  const [barDraft, setBarDraft] = useState<{ rowId: string; name: string; text: string } | null>(null);
+  const [barFormula, setBarFormula] = useState<{ rowId: string; name: string; draft: string } | null>(null);
+  const barSession = useRef<CellEditSession | null>(null);
+  const barSeq = useRef(0);
+  // The editor shows the selected cell, and can deselect it or edit it.
+  useEffect(() => {
+    if (!editor) return;
+    const row = sel ? rows.find((r) => r.id === sel.rowId) : undefined;
+    const field = sel ? fieldMap.get(sel.name) : undefined;
+    if (!sel || !row || !field) return editor.select(null);
+    editor.select({
+      rowId: sel.rowId,
+      name: sel.name,
+      label: field.title ?? field.name,
+      rowLabel: titleField ? formatValue(row[titleField]) : row.id,
+      text: field.computed
+        ? formulaDraftOf(field, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
+        : formatCellValue(field, row[sel.name]),
+      formula: field.computed !== undefined,
+    });
+  });
+  useEffect(() => {
+    if (!editor) return;
+    editor.attach({ deselect: () => setSel(null), editSelected: () => void (sel && openCell(sel.rowId, sel.name)) });
+  });
+  useEffect(() => () => editor?.attach(null), [editor]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gridRef = useRef<any>(null);
   useEffect(() => {
@@ -2399,7 +2460,26 @@ export function TableView({
   // The cells the open formula reads, outlined: by row id, this row, or by place (D41).
   const inputCells = formulaCell
     ? formulaInputCells(openFormulaField, formulaCell.rowId, view, fields, sheet?.order)
-    : new Set<string>();
+    : barFormula
+      ? formulaInputCells(fieldMap.get(barFormula.name), barFormula.rowId, view, fields, sheet?.order)
+      : new Set<string>();
+  // A formula being written in the outside editor: every row of its column
+  // shows what the draft makes, once it compiles. The column is the preview.
+  const barColumn = (() => {
+    if (!barFormula) return null;
+    const field = fieldMap.get(barFormula.name);
+    const row = rows.find((r) => r.id === barFormula.rowId);
+    if (!field || !row) return null;
+    const ex = explainFormula({
+      field, row, fields: schema.fields, draft: barFormula.draft, editable: true,
+      grid: grid ? { ...grid, here: barFormula.rowId } : undefined, allRows, computeOptions: { tables: relatedTables, self: tableKey },
+    });
+    const computed = ex.save?.computed;
+    if (!computed) return null;
+    const trial = schema.fields.map((f) => (f.name === field.name ? { ...f, computed } : f));
+    const out = computeRows({ fields: trial }, allRows ?? rows, { tables: relatedTables, self: tableKey }).rows;
+    return new Map(out.map((r) => [r.id, r[field.name]] as const));
+  })();
   const canAddField = !!onAddField;
   // A new field lands at the end of the row, often past the right edge:
   // bring its header into view once it has rendered.
@@ -2755,8 +2835,21 @@ export function TableView({
     const isLast = idxInPane === paneLen - 1;
     const isFormula = field?.computed !== undefined;
     const cellKey = `${row.id}\u0000${name}`;
-    const inOpenColumn = formulaCell?.name === name;
-    const isOpenCell = inOpenColumn && formulaCell?.rowId === row.id;
+    const inOpenColumn = formulaCell?.name === name || barFormula?.name === name;
+    const isOpenCell = inOpenColumn && (formulaCell?.rowId ?? barFormula?.rowId) === row.id;
+    const shownValue = barColumn && barFormula?.name === name ? barColumn.get(row.id) : row[name];
+    const select = () => {
+      // Writing a formula, a tap may add a reference instead.
+      if (editor?.tapWhileEditing?.(row.id, name, coords && grid ? (coordinateOf(name, row.id, grid) ?? name) : name)) return;
+      // Typing a value, a tap elsewhere saves it first.
+      if (barSession.current && barDraft) {
+        const done = barSession.current.save(barDraft.text);
+        if (!done.ok) return;
+        editor?.end(barSession.current.key);
+        barSession.current = null;
+      }
+      setSel({ rowId: row.id, name });
+    };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
@@ -2768,7 +2861,13 @@ export function TableView({
           cellRefs.current[cellKey] = el;
         }}
         onClick={
-          isFormula
+          isFormula && editor
+            ? () => {
+                // With an outside editor the formula opens there, on a second tap.
+                if (isSelected && !barFormula) beginBar(row.id, name);
+                else select();
+              }
+            : isFormula
             ? async () => {
                 setSel({ rowId: row.id, name });
                 if (isOpenCell) {
@@ -2778,7 +2877,7 @@ export function TableView({
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
               }
-            : () => setSel({ rowId: row.id, name })
+            : select
         }
         style={[
           styles.tableCell,
@@ -2795,7 +2894,7 @@ export function TableView({
         {onUpdateRow ? (
           <EditableCell
             field={field}
-            value={row[name]}
+            value={shownValue}
             onCommit={(next) => onUpdateRow(row.id, name, next)}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
@@ -2803,15 +2902,17 @@ export function TableView({
             align={align}
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
-            onSelect={() => setSel({ rowId: row.id, name })}
+            onSelect={select}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
+            editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
+            outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
           />
         ) : (
           <CellValue
             field={field}
-            value={row[name]}
+            value={shownValue}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
             lines={linesFor(heightOf(row.id))}
@@ -2834,7 +2935,117 @@ export function TableView({
     name: fields[Math.max(0, Math.min(lastCol, c))]!,
   });
   const editable = (name: string) => !!onUpdateRow && fieldMap.get(name)?.computed === undefined;
+  /**
+   * Hand a cell's edit to the outside editor (#352). A formula column's
+   * formula, a value typed, or a choice picked; anything else (a toggle,
+   * a list, a date with its picker, a file) stays in the cell. False when
+   * there is no editor or it doesn't take this cell.
+   */
+  const beginBar = (rowId: string, name: string, text?: string): boolean => {
+    if (!editor) return false;
+    const field = fieldMap.get(name);
+    const row = rows.find((r) => r.id === rowId);
+    if (!field || !row) return false;
+    const label = field.title ?? field.name;
+    const rowLabel = titleField ? formatValue(row[titleField]) : row.id;
+    const key = `${rowId}\u0000${name}\u0000${++barSeq.current}`;
+    let session: CellEditSession;
+    if (field.computed) {
+      if (!schemaEditable) return false;
+      const g = grid ? { ...grid, here: rowId } : undefined;
+      const explain = (draft: string) =>
+        explainFormula({ field, row, fields: schema.fields, draft, editable: true, grid: g, allRows, computeOptions: { tables: relatedTables, self: tableKey } });
+      const initial = formulaDraftOf(field, g, formulaSyntax);
+      setFormulaCell(null);
+      setBarFormula({ rowId, name, draft: initial });
+      session = {
+        key, rowId, name, rowLabel, initial,
+        label: `ƒ ${label} · every row`,
+        mode: "formula",
+        change: (t) => {
+          setBarFormula({ rowId, name, draft: t });
+          const ex = explain(t);
+          if (ex.status?.kind === "error") {
+            const open = (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+            return { error: { message: ex.status.message, fix: open > 0 ? ")" : undefined } };
+          }
+          return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name]) };
+        },
+        save: (t) => {
+          const ex = explain(t);
+          if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
+          if (ex.save) onUpdateField!(name, ex.save);
+          setBarFormula(null);
+          barSession.current = null;
+          return { ok: true };
+        },
+        cancel: () => {
+          setBarFormula(null);
+          barSession.current = null;
+        },
+        next: () => {},
+      };
+    } else {
+      if (!editable(name)) return false;
+      const kind = editorKind(field);
+      if (kind !== "text" && kind !== "choice") return false;
+      const hints = inputHints(field);
+      // A date or time keeps the system's picker in the cell.
+      if (hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime") return false;
+      const numeric = field.type === "number" || field.type === "integer" || field.type === "year";
+      const initial = text ?? draftOf(row[name]);
+      // A draft already asked about (an early year): Return again keeps it.
+      let queried: string | null = null;
+      setBarDraft({ rowId, name, text: initial });
+      session = {
+        key, rowId, name, label, rowLabel, initial,
+        mode: field.format === "markdown" ? "text" : "line",
+        keyboard: numeric ? "decimal-pad" : "default",
+        ...(kind === "choice"
+          ? {
+              choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value })),
+              selected: typeof row[name] === "string" ? (row[name] as string) : undefined,
+            }
+          : {}),
+        change: (t) => {
+          setBarDraft({ rowId, name, text: t });
+          return {};
+        },
+        save: (t) => {
+          const r = commitDraft(field, row[name], t, "key", queried);
+          if (r.kind === "problem") {
+            queried = r.queried;
+            return { ok: false, error: { message: r.check.message } };
+          }
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          return { ok: true };
+        },
+        cancel: () => {
+          setBarDraft(null);
+          barSession.current = null;
+        },
+        // Return: down a row, still editing, as a spreadsheet does.
+        next: () => {
+          const below = rowIds[rowIds.indexOf(rowId) + 1];
+          setSel({ rowId: below ?? rowId, name });
+          if (below) beginBar(below, name);
+        },
+      };
+    }
+    if (!editor.begin(session)) {
+      setBarDraft(null);
+      setBarFormula(null);
+      return false;
+    }
+    barSession.current = session;
+    setSel({ rowId, name });
+    return true;
+  };
+
   const openCell = async (rowId: string, name: string, text?: string) => {
+    if (beginBar(rowId, name, text)) return;
     const field = fieldMap.get(name);
     if (field?.computed) {
       // A formula cell opens its formula, as a click does.

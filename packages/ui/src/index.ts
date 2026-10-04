@@ -24,3 +24,12 @@ export { ViewSettings, type ViewSettingsProps } from "./ViewSettings";
 export { DisplayControls, type DisplayControlsProps } from "./DisplayControls";
 export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells } from "./sheets";
 export { checkEntry, coerceValue, type CellCheck } from "./cellCheck";
+export {
+  CellEditorContext,
+  useCellEditor,
+  type CellEditor,
+  type CellEditorCommands,
+  type CellEditorSelection,
+  type CellEditSession,
+  type CellEditStatus,
+} from "./cellEditor";
