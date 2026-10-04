@@ -51,8 +51,13 @@ export type GlassBarChip = { id: string; label: string; detail?: string; insert?
 export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => void };
 export type GlassBarChoice = { id: string; label: string };
 
+/** One action in the More menu. */
+export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
+
 export type GlassBarProps = {
   state: GlassBarState;
+  /** More's menu. Without it, More calls `onMore`. */
+  moreActions?: GlassBarAction[];
   ref?: import("react").Ref<GlassBarHandle>;
   onFilter?: () => void;
   onMore?: () => void;
