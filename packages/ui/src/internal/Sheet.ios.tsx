@@ -1,86 +1,33 @@
 /**
- * iOS default. A page (a row's page) is the system's page sheet (UIKit's,
- * through React Native's Modal), its bar as a sheet's is: the leaving
- * action leading (Cancel, where there is one), the title in the
- * middle, the keeping action trailing in bold (Done). A swipe down closes
- * it when that loses nothing; otherwise the caller asks (onDismiss).
+ * iOS default. Both kinds are the system's own sheets (react-native-screens),
+ * with the system's bar and its own Liquid Glass buttons: Cancel a cross,
+ * leading, where there is one; the title in the middle; Done a tinted
+ * tick, trailing.
  *
- * Settings (a view's) are a form sheet that opens half way and grows
- * (react-native-screens' formSheet, with detents and a grabber), as
- * Settings-style sheets do: changes apply as they're made, Done trailing
- * keeps them and Cancel leading puts them back. React Native's Modal has
- * no detents. It has no fill of its own: part way up it's the system's
- * Liquid Glass (iOS 26), full height its opaque background.
+ * A page (a row's page) is a page sheet. A swipe down closes it when that
+ * loses nothing; otherwise iOS keeps it and the caller asks (onDismiss).
  *
- * Either way what it holds is React Native, presented natively, not
- * hosted in SwiftUI.
+ * Settings are a form sheet that opens half way and grows, with a grabber,
+ * as Settings-style sheets do: changes apply as they're made, Done keeps
+ * them and Cancel puts them back. It has no fill of its own: part way up
+ * it's the system's Liquid Glass (iOS 26), full height its opaque
+ * background.
+ *
+ * What it holds is React Native, or a platform form (SettingsForm) that
+ * fills it.
  */
-import type { ReactElement, ReactNode } from "react";
-import { KeyboardAvoidingView, Modal, PlatformColor, Pressable, ScrollView, Text, View } from "react-native";
-import { ScreenStack, ScreenStackHeaderLeftView, ScreenStackHeaderRightView, ScreenStackItem } from "react-native-screens";
+import type { ReactElement } from "react";
+import { KeyboardAvoidingView, PlatformColor, ScrollView, Text, View } from "react-native";
+import { ScreenStack, ScreenStackHeaderCenterView, ScreenStackItem } from "react-native-screens";
 import type { SheetProps, SheetSlot } from "../controlSlots";
 
-function Bar({ title, subtitle, cancel, confirm }: Pick<SheetProps, "title" | "subtitle" | "cancel" | "confirm">) {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingTop: 14,
-        paddingBottom: 10,
-        gap: 12,
-        borderBottomWidth: 0.5,
-        borderBottomColor: PlatformColor("separator"),
-      }}
-    >
-      <View style={{ minWidth: 70 }}>
-        {cancel && (
-          <Pressable accessibilityRole="button" hitSlop={10} onPress={cancel.onPress}>
-            <Text style={{ fontSize: 17, color: PlatformColor("systemBlue") }}>{cancel.label}</Text>
-          </Pressable>
-        )}
-      </View>
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <Text numberOfLines={1} accessibilityRole="header" style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("label") }}>
-          {title}
-        </Text>
-        {subtitle !== undefined && (
-          <Text numberOfLines={1} style={{ fontSize: 12, color: PlatformColor("secondaryLabel") }}>
-            {subtitle}
-          </Text>
-        )}
-      </View>
-      <View style={{ minWidth: 70, alignItems: "flex-end" }}>
-        {confirm && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !!confirm.disabled }}
-            disabled={confirm.disabled}
-            hitSlop={10}
-            onPress={confirm.onPress}
-          >
-            <Text
-              style={{
-                fontSize: 17,
-                fontWeight: "600",
-                color: confirm.disabled ? PlatformColor("tertiaryLabel") : PlatformColor("systemBlue"),
-              }}
-            >
-              {confirm.label}
-            </Text>
-          </Pressable>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetProps & { children: ReactNode }) {
-  // A stack of its own, out of the way, to present the form sheet from:
-  // its root shows nothing, and the sheet is its second screen. The sheet's
-  // bar is the system's (UINavigationBar): Cancel leading, its title, and
-  // Done trailing.
+function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDismiss, fill, children }: SheetProps) {
+  const page = size !== "settings";
+  // A stack of its own, out of the way, to present the sheet from: its root
+  // shows nothing, and the sheet is its second screen. The sheet's bar is
+  // the system's (UINavigationBar), with the system's own buttons, so they
+  // are Liquid Glass: Cancel a cross, leading; Done a tick, trailing, in
+  // the tinted style.
   return (
     <ScreenStack style={{ position: "absolute", width: 0, height: 0 }}>
       <ScreenStackItem screenId="sheet-root" headerConfig={{ hidden: true }}>
@@ -91,68 +38,78 @@ function SettingsSheet({ title, cancel, confirm, onDismiss, children }: SheetPro
         headerConfig={{
           title,
           hidden: false,
-          children: [
-            cancel && (
-              <ScreenStackHeaderLeftView key="cancel">
-                <Pressable accessibilityRole="button" hitSlop={10} onPress={cancel.onPress}>
-                  <Text style={{ fontSize: 17, color: PlatformColor("systemBlue") }}>{cancel.label}</Text>
-                </Pressable>
-              </ScreenStackHeaderLeftView>
-            ),
-            confirm && (
-              <ScreenStackHeaderRightView key="confirm">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !!confirm.disabled }}
-                  hitSlop={10}
-                  onPress={confirm.onPress}
-                  disabled={confirm.disabled}
-                >
-                  <Text
-                    style={{
-                      fontSize: 17,
-                      fontWeight: "600",
-                      color: confirm.disabled ? PlatformColor("tertiaryLabel") : PlatformColor("systemBlue"),
-                    }}
-                  >
-                    {confirm.label}
-                  </Text>
-                </Pressable>
-              </ScreenStackHeaderRightView>
-            ),
-          ],
+          hideShadow: true,
+          // Settings: no fill, so the bar is glass over the form, as the tables
+          // sheet's is. UIKit makes it so on its own only for a scroll view it
+          // can find, and a SwiftUI form's it can't; the form insets itself.
+          // A page's editor doesn't, so its bar is the standard one, with the
+          // page below it.
+          ...(page ? {} : { translucent: true, backgroundColor: "transparent" }),
+          headerLeftBarButtonItems: cancel
+            ? [{ type: "button", icon: { type: "sfSymbol", name: "xmark" }, accessibilityLabel: cancel.label, onPress: cancel.onPress }]
+            : [],
+          headerRightBarButtonItems: confirm
+            ? [
+                {
+                  type: "button",
+                  icon: { type: "sfSymbol", name: "checkmark" },
+                  variant: "prominent",
+                  accessibilityLabel: confirm.label,
+                  disabled: confirm.disabled,
+                  onPress: confirm.onPress,
+                },
+              ]
+            : [],
+          // A page's file under its title: the bar has no subtitle of its own.
+          children:
+            subtitle !== undefined
+              ? [
+                  <ScreenStackHeaderCenterView key="title">
+                    <View style={{ alignItems: "center" }}>
+                      <Text numberOfLines={1} accessibilityRole="header" style={{ fontSize: 17, fontWeight: "600", color: PlatformColor("label") }}>
+                        {title}
+                      </Text>
+                      <Text numberOfLines={1} style={{ fontSize: 12, color: PlatformColor("secondaryLabel") }}>
+                        {subtitle}
+                      </Text>
+                    </View>
+                  </ScreenStackHeaderCenterView>,
+                ]
+              : [],
         }}
-        stackPresentation="formSheet"
-        sheetAllowedDetents={[0.5, 1]}
-        sheetGrabberVisible
-        sheetExpandsWhenScrolledToEdge
+        {...(page
+          ? {
+              stackPresentation: "pageSheet" as const,
+              // A swipe closes it when that loses nothing. Otherwise iOS keeps
+              // the sheet and reports the attempt, for the caller to ask.
+              preventNativeDismiss: !dismissible,
+              onNativeDismissCancelled: onDismiss,
+            }
+          : {
+              stackPresentation: "formSheet" as const,
+              sheetAllowedDetents: [0.5, 1],
+              sheetGrabberVisible: true,
+              sheetExpandsWhenScrolledToEdge: true,
+            })}
         onDismissed={onDismiss}
       >
-        <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
+        {page ? (
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
+            {children}
+          </KeyboardAvoidingView>
+        ) : fill ? (
+          // A platform form scrolls itself (and the sheet grows from its scroll view).
+          <View style={{ flex: 1 }}>{children}</View>
+        ) : (
+          <ScrollView contentContainerStyle={{ padding: 16 }}>{children}</ScrollView>
+        )}
       </ScreenStackItem>
     </ScreenStack>
   );
 }
 
 function SheetView(props: SheetProps): ReactElement {
-  const { title, subtitle, cancel, confirm, dismissible, onDismiss, children } = props;
-  if (props.size === "settings") return <SettingsSheet {...props} />;
-  return (
-    <Modal
-      visible
-      animationType="slide"
-      presentationStyle="pageSheet"
-      allowSwipeDismissal={dismissible}
-      // A swipe closes it when that loses nothing. Otherwise iOS keeps the
-      // sheet and reports the attempt here, for the caller to ask.
-      onRequestClose={onDismiss}
-    >
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
-        <Bar title={title} subtitle={subtitle} cancel={cancel} confirm={confirm} />
-        <View style={{ flex: 1 }}>{children}</View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
+  return <NativeSheet {...props} />;
 }
 
 export const Sheet: SheetSlot = Object.assign(SheetView, { presentsSettings: true });

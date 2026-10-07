@@ -10,6 +10,7 @@ import type React from "react";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
+import type { SelectOption, SettingsRow, SettingsSection } from "./controlSlots";
 import { enumOptions } from "@workspace.sh/table-core";
 
 import {
@@ -48,7 +49,7 @@ export function ViewSettings({
   onSaveForEveryone,
   onReset,
 }: ViewSettingsProps) {
-  const { Sheet: SheetControl } = usePlatformControls();
+  const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
   const live = choices.live;
@@ -217,6 +218,26 @@ export function ViewSettings({
     </>
   );
 
+  // Where the platform has a settings form of its own (iOS), the same
+  // settings as its sections and rows, drawn its way.
+  if (SheetControl.presentsSettings && SettingsForm) {
+    return (
+      <SheetControl
+        size="settings"
+        title="View settings"
+        cancel={onCancel && { label: "Cancel", onPress: onCancel }}
+        confirm={{ label: "Done", onPress: onClose }}
+        dismissible
+        onDismiss={onClose}
+        fill
+      >
+        <SettingsForm
+          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset })}
+        />
+      </SheetControl>
+    );
+  }
+
   // On a phone, the platform's settings sheet, with Done; elsewhere a panel
   // in the page, with its own heading and close button.
   if (SheetControl.presentsSettings) {
@@ -244,6 +265,200 @@ export function ViewSettings({
       {body}
     </html.div>
   );
+}
+
+function fieldOptions(fields: Field[], none?: string): SelectOption[] {
+  return [
+    ...(none !== undefined ? [{ value: "", label: none }] : []),
+    ...fields.map((f) => ({ value: f.name, label: f.title ?? f.name })),
+  ];
+}
+
+/**
+ * A view's settings as a platform's settings form shows them: the view
+ * itself, the sheet switch with what it means, filters, sorts, the
+ * reader's own arrangement, and deleting the view. The same patches as the
+ * shared layout makes.
+ */
+function viewSettingsSections({
+  view,
+  schema,
+  onChange,
+  onDelete,
+  arrange,
+  onArrange,
+  personal,
+  onSaveForEveryone,
+  onReset,
+}: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset"> & {
+  arrange: ViewSettingsProps["onChange"];
+}): SettingsSection[] {
+  const choices = viewFieldChoices(schema);
+  const live = choices.live;
+  const byName = new Map(schema.fields.map((f) => [f.name, f]));
+  const filters = view.filter ?? [];
+  const sorts = view.sort ?? [];
+  const setFilters = (next: ViewFilter[]) => arrange(filtersPatch(next));
+  const setSorts = (next: ViewSort[]) => arrange(sortsPatch(next));
+  const choice = (
+    id: string,
+    label: string,
+    value: string | undefined,
+    options: SelectOption[],
+    onPick: (value: string) => void,
+  ): SettingsRow => ({ kind: "choice", id, label, value: value ?? "", options, onChange: onPick });
+
+  const viewRows: SettingsRow[] = [
+    { kind: "text", id: "name", label: "Name", value: view.name, onChange: (name) => onChange({ name }) },
+    choice("layout", "Layout", view.layout, layoutOptions(schema), (next) => onChange(layoutPatch(view, schema, next as ViewLayout))),
+  ];
+  if (view.layout === "board") {
+    viewRows.push(choice("board", "Columns from", view.board_field, fieldOptions(choices.board), (f) => onChange({ board_field: f || undefined })));
+  }
+  if (view.layout === "calendar") {
+    viewRows.push(choice("calendar", "Dates from", view.calendar_field, fieldOptions(choices.date), (f) => onChange({ calendar_field: f || undefined })));
+  }
+  if (view.layout === "gallery") {
+    viewRows.push(choice("gallery", "Card lead", view.gallery_field, fieldOptions(live, "Nothing"), (f) => onChange({ gallery_field: f || undefined })));
+  }
+  if (view.layout === "table" || view.layout === "list") {
+    viewRows.push(
+      choice("group", "Group by", view.group?.field, fieldOptions(choices.group, "No grouping"), (f) => arrange({ group: f ? { field: f } : undefined })),
+    );
+  }
+
+  const sections: SettingsSection[] = [{ id: "view", rows: viewRows }];
+
+  if (view.layout === "table") {
+    sections.push({
+      id: "sheet",
+      footer: "Letter the columns and number the rows, so formulas can use =B7.",
+      rows: [{ kind: "toggle", id: "sheet", label: "Sheet", value: view.coordinates === true, onChange: (on) => onChange(sheetPatch(on)) }],
+    });
+  }
+
+  sections.push({
+    id: "filters",
+    title: "Filters",
+    footer: filters.length > 1 ? "Rows must match every filter." : undefined,
+    onRemove: (i) => setFilters(filters.filter((_, j) => j !== i)),
+    rows: [
+      ...filters.map((flt, i): SettingsRow => {
+        const field = byName.get(flt.field);
+        const set = (next: ViewFilter) => setFilters(filters.map((f, j) => (j === i ? next : f)));
+        const parts: SettingsRow[] = [
+          choice(`filter-${i}-field`, "Field", flt.field, fieldOptions(live), (name) => {
+            const next = live.find((f) => f.name === name);
+            if (next) set(filterOnField(flt, next));
+          }),
+          choice(
+            `filter-${i}-operator`,
+            "Condition",
+            flt.operator,
+            operatorsFor(field).map((op) => ({ value: op, label: OPERATOR_LABELS[op] })),
+            (op) => set(filterWithOperator(flt, field, op as FilterOperator, filterValueText(flt.value))),
+          ),
+        ];
+        if (takesValue(flt.operator)) {
+          if (picksChoice(field, flt.operator)) {
+            parts.push(
+              choice(
+                `filter-${i}-value`,
+                "Value",
+                String(flt.value ?? ""),
+                [{ value: "", label: "Choose…" }, ...enumOptions(field).map((c) => ({ value: c.value, label: c.label ?? c.value }))],
+                (value) => set({ ...flt, value }),
+              ),
+            );
+          } else {
+            parts.push({
+              kind: "text",
+              // Its field and condition in the id: a new field starts the value afresh.
+              id: `filter-${i}-value-${flt.field}-${flt.operator}`,
+              label: "Value",
+              value: filterValueText(flt.value),
+              placeholder: flt.operator === "in" || flt.operator === "not_in" ? "a, b, c" : "Value",
+              onChange: (text) => set({ ...flt, value: filterValueFrom(field, flt.operator, text) }),
+            });
+          }
+        }
+        return { kind: "compound", id: `filter-${i}`, parts, removeLabel: "Remove filter" };
+      }),
+      {
+        kind: "action",
+        id: "add-filter",
+        label: "Add Filter",
+        role: "add",
+        onPress: () => {
+          const made = newFilter(live);
+          if (made) setFilters([...filters, made]);
+        },
+      },
+    ],
+  });
+
+  sections.push({
+    id: "sorts",
+    title: "Sort",
+    footer: orderNote(view, sorts) || (sorts.length > 1 ? "The first sort comes first. Touch and hold to reorder." : undefined),
+    onRemove: (i) => setSorts(sorts.filter((_, j) => j !== i)),
+    onMove: (from, to) => {
+      const next = [...sorts];
+      const [moved] = next.splice(from, 1);
+      if (moved) next.splice(to, 0, moved);
+      setSorts(next);
+    },
+    rows: [
+      ...sorts.map(
+        (srt, i): SettingsRow => ({
+          kind: "compound",
+          id: `sort-${i}`,
+          removeLabel: "Remove sort",
+          parts: [
+            choice(`sort-${i}-field`, "Field", srt.field, fieldOptions(live), (f) => f && setSorts(sorts.map((s, j) => (j === i ? { ...s, field: f } : s)))),
+            choice(
+              `sort-${i}-direction`,
+              "Direction",
+              srt.direction,
+              [
+                { value: "asc", label: "Ascending" },
+                { value: "desc", label: "Descending" },
+              ],
+              (d) => setSorts(sorts.map((s, j) => (j === i ? { ...s, direction: d as "asc" | "desc" } : s))),
+            ),
+          ],
+        }),
+      ),
+      {
+        kind: "action",
+        id: "add-sort",
+        label: "Add Sort",
+        role: "add",
+        onPress: () => {
+          const made = newSort(live, sorts);
+          if (made) setSorts([...sorts, made]);
+        },
+      },
+    ],
+  });
+
+  if (onArrange && personal) {
+    const actions: SettingsRow[] = [];
+    if (onSaveForEveryone) actions.push({ kind: "action", id: "save", label: "Save for Everyone", onPress: onSaveForEveryone });
+    if (onReset) actions.push({ kind: "action", id: "reset", label: "Reset", onPress: onReset });
+    sections.push({
+      id: "personal",
+      footer:
+        "Only you see this filter, sort and grouping." +
+        (view.coordinates === true ? " Row numbers and formulas follow the view as saved." : ""),
+      rows: actions,
+    });
+  }
+
+  if (onDelete) {
+    sections.push({ id: "delete", rows: [{ kind: "action", id: "delete", label: "Delete View", role: "destructive", onPress: onDelete }] });
+  }
+  return sections;
 }
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
