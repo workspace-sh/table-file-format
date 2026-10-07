@@ -64,6 +64,7 @@ import {
   shapes,
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
+import { FormulaField } from "./FormulaField.ios";
 import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState } from "./types";
 
 const SIZE = 48;
@@ -580,7 +581,9 @@ const LINE = { mono: 19, prose: 22 };
 const EXPANDED_CHROME = 116;
 
 function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+  // Expo UI's TextField, or for a formula the bar's own coloured field: the same commands.
   const field = useRef<TextFieldRef>(null);
+  const [spansFor, setSpansFor] = useState(state.initialValue);
   const value = useRef(state.initialValue);
   // A new edit (the next row) starts from its own value.
   useMemo(() => { value.current = state.initialValue; }, [state.editKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -601,6 +604,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
         const next = value.current.slice(0, start) + text + value.current.slice(end);
         const at = start + text.length - back;
         value.current = next;
+        if (state.highlight) setSpansFor(next);
         selection.current = { start: at, end: at };
         void field.current?.setText(next).then(() => field.current?.setSelection(at, at));
         onChange?.(next);
@@ -643,6 +647,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
       return;
     }
     value.current = next;
+    if (state.highlight) setSpansFor(next);
     onChange?.(next);
   };
 
@@ -658,26 +663,44 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     >
       <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
-        <TextField
-          key={state.editKey}
-          ref={field}
-          defaultValue={state.initialValue}
-          autoFocus
-          axis={grows ? "vertical" : "horizontal"}
-          onValueChange={change}
-          onSelectionChange={(sel) => { selection.current = sel; }}
-          modifiers={[
-            font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),
-            // A growing field takes the height of its lines rather than what it is offered.
-            ...(grows ? [lineLimit(lines, { reservesSpace: tall }), fixedSize({ horizontal: false, vertical: true })] : []),
-            ...(state.keyboard && state.keyboard !== "default" ? [keyboardType(state.keyboard)] : []),
-            // A number, code or formula: no word suggestions, corrections or capitals.
-            ...(state.suggestions === false ? [autocorrectionDisabled(true), textInputAutocapitalization("never")] : []),
-            // A one-line field reports Return as a submit, not a new line.
-            ...(grows ? [] : [onSubmitModifier(() => onSubmit?.(value.current))]),
-            padding({ vertical: 4 }),
-          ]}
-        />
+        {state.highlight ? (
+          <FormulaField
+            key={state.editKey}
+            ref={field}
+            defaultValue={state.initialValue}
+            autoFocus
+            spans={state.highlight(spansFor)}
+            spansFor={spansFor}
+            fontSize={15}
+            minLines={tall ? lines : 1}
+            maxLines={lines}
+            onValueChange={change}
+            onSelectionChange={(sel) => { selection.current = sel; }}
+            onSubmit={(v) => onSubmit?.(v)}
+            modifiers={[fixedSize({ horizontal: false, vertical: true }), padding({ vertical: 4 })]}
+          />
+        ) : (
+          <TextField
+            key={state.editKey}
+            ref={field}
+            defaultValue={state.initialValue}
+            autoFocus
+            axis={grows ? "vertical" : "horizontal"}
+            onValueChange={change}
+            onSelectionChange={(sel) => { selection.current = sel; }}
+            modifiers={[
+              font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),
+              // A growing field takes the height of its lines rather than what it is offered.
+              ...(grows ? [lineLimit(lines, { reservesSpace: tall }), fixedSize({ horizontal: false, vertical: true })] : []),
+              ...(state.keyboard && state.keyboard !== "default" ? [keyboardType(state.keyboard)] : []),
+              // A number, code or formula: no word suggestions, corrections or capitals.
+              ...(state.suggestions === false ? [autocorrectionDisabled(true), textInputAutocapitalization("never")] : []),
+              // A one-line field reports Return as a submit, not a new line.
+              ...(grows ? [] : [onSubmitModifier(() => onSubmit?.(value.current))]),
+              padding({ vertical: 4 }),
+            ]}
+          />
+        )}
         {/* Expanded, Save steps out to the row below. */}
         {tall ? null : (
           <Image

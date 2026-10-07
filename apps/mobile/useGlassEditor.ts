@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
+import { formulaSpans } from "@workspace.sh/table-core";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
 const OPERATORS = [
@@ -177,6 +178,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       keyboard: session.keyboard,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
+      highlight: formula ? formulaSpans : undefined,
       error: status.error ? { message: status.error.message, fixLabel: status.error.fix ? `Add ${status.error.fix}` : undefined } : undefined,
     };
   } else if (selection) {
