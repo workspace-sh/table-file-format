@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
-import type { CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
+import type { EnumColor, EnumOption, CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import type { SettingsRow, SettingsSection } from "./controlSlots";
 import { movesBack, revertPatch } from "./revert";
@@ -51,6 +51,28 @@ export const ADD_FIELD_COLUMN_WIDTH = 84;
 
 
 export { friendlyType };
+
+/**
+ * What a field holds, as people say it: a formula, one choice or several,
+ * a link to rows, else its stored type ("Text", "Number").
+ */
+/** The schema's choice colours (SPEC "enum colours"), for a choice's colour picker. */
+const CHOICE_COLOURS = [
+  // Not "": an empty selection draws a native picker blank.
+  { value: "none", label: "None" },
+  ...(["gray", "brown", "red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink"] as const).map((c) => ({
+    value: c,
+    label: c === "gray" ? "Grey" : c[0]!.toUpperCase() + c.slice(1),
+  })),
+];
+
+function typeShown(field: Field): string {
+  if (field.computed) return "Formula";
+  if (field.relation) return field.relation.cardinality === "many" || field.type === "array" ? "Links to rows" : "Link to a row";
+  const n = enumOptions(field).length;
+  if (n > 0) return `${field.type === "array" ? "Choices" : "Choice"} · ${n} option${n === 1 ? "" : "s"}`;
+  return friendlyType(field.type);
+}
 
 const styles = css.create({
   /**
@@ -576,6 +598,10 @@ interface SchemaFieldEditorProps {
   anchorRect: AnchorRect;
   onUpdate: (patch: Partial<Field>) => void;
   onAddEnumValue: (value: string) => void;
+  /** Remove a choice (the host asks first when rows hold it). Absent: choices can't be removed. */
+  onRemoveEnumValue?: (value: string) => void;
+  /** Delete the field (the host asks first). Absent: no delete. */
+  onDelete?: () => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
   /**
@@ -622,6 +648,8 @@ export function SchemaFieldEditor({
   anchorRect,
   onUpdate,
   onAddEnumValue,
+  onRemoveEnumValue,
+  onDelete,
   onMove,
   onClose,
   onCancel,
@@ -685,7 +713,7 @@ export function SchemaFieldEditor({
         <html.div style={styles.identity}>
           <html.span>{field.name}</html.span>
           <html.span style={styles.typeBadge}>
-            <html.span>{field.computed ? "Formula" : friendlyType(field.type)}</html.span>
+            <html.span>{typeShown(field)}</html.span>
             <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
           </html.span>
         </html.div>
@@ -820,6 +848,10 @@ export function SchemaFieldEditor({
     </>
   );
 
+  // The field's choices written back, each as { value, label?, color? } (SPEC "enum").
+  const setChoices = (next: EnumOption[]) =>
+    onUpdate({ constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } });
+
   // The same settings as a platform's own form shows them (iOS).
   const fieldSections = (): SettingsSection[] => {
     const sections: SettingsSection[] = [
@@ -827,7 +859,7 @@ export function SchemaFieldEditor({
         id: "identity",
         rows: [
           { kind: "info", id: "name", label: "Stored as", value: field.name },
-          { kind: "info", id: "type", label: "Type", value: field.computed ? "Formula" : friendlyType(field.type) },
+          { kind: "info", id: "type", label: "Type", value: typeShown(field) },
         ],
       },
     ];
@@ -910,8 +942,42 @@ export function SchemaFieldEditor({
         id: "choices",
         title: "Choices",
         footer: field.type === "array" ? "Each item is one of these." : undefined,
+        // Each choice: its label to rename, its colour to change; a swipe
+        // removes it and touch and hold drags it into another place.
+        onRemove: onRemoveEnumValue ? (i) => options[i] && onRemoveEnumValue(options[i]!.value) : undefined,
+        onMove: (from, to) => {
+          if (from === to) return;
+          const next = options.slice();
+          const [moved] = next.splice(from, 1);
+          next.splice(to, 0, moved!);
+          setChoices(next);
+        },
         rows: [
-          ...options.map((o): SettingsRow => ({ kind: "info", id: `choice-${o.value}`, label: o.label ?? o.value, value: "" })),
+          ...options.map(
+            (o, i): SettingsRow => ({
+              kind: "compound",
+              id: `choice-${o.value}`,
+              removeLabel: "Remove",
+              parts: [
+                {
+                  kind: "text",
+                  id: `choice-label-${o.value}`,
+                  label: o.value,
+                  placeholder: o.value,
+                  value: o.label ?? o.value,
+                  onChange: (t) => setChoices(options.map((c, j) => (j === i ? { ...c, label: t.trim() && t.trim() !== c.value ? t.trim() : undefined } : c))),
+                },
+                {
+                  kind: "choice",
+                  id: `choice-color-${o.value}`,
+                  label: "Colour",
+                  value: o.color ?? "none",
+                  options: CHOICE_COLOURS,
+                  onChange: (c) => setChoices(options.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x))),
+                },
+              ],
+            }),
+          ),
           {
             kind: "text",
             // A new id after each added choice: the field starts empty again.
@@ -954,6 +1020,13 @@ export function SchemaFieldEditor({
         { kind: "action", id: "down", label: "Move Down", disabled: fieldIndex >= totalFields - 1, onPress: () => onMove(1) },
       ],
     });
+    if (onDelete) {
+      sections.push({
+        id: "delete",
+        footer: "Its values go with it, from every row.",
+        rows: [{ kind: "action", id: "delete-field", label: "Delete Field", role: "destructive", onPress: onDelete }],
+      });
+    }
     return sections;
   };
 

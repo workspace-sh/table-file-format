@@ -98,6 +98,95 @@ export function withChoice(table: ParsedTable, name: string, value: string): Par
   return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }) };
 }
 
+/**
+ * Without a choice: gone from the field's list, and from every row that
+ * held it. A list keeps its other items; one left with none has no value.
+ */
+export function withoutChoice(table: ParsedTable, name: string, value: string): ParsedTable {
+  const field = table.schema.fields.find((f) => f.name === name);
+  const existing = field?.constraints?.enum ?? [];
+  const kept = existing.filter((o) => (typeof o === "string" ? o : o.value) !== value);
+  if (!field || kept.length === existing.length) return table;
+  const fields = table.schema.fields.map((f) => (f.name === name ? { ...f, constraints: { ...(f.constraints ?? {}), enum: kept } } : f));
+  const rows = table.rows.map((r) => {
+    const held = r[name];
+    if (held === value) return withoutKey(r, name);
+    if (Array.isArray(held) && held.includes(value)) {
+      const rest = held.filter((v) => v !== value);
+      return rest.length ? { ...r, [name]: rest } : withoutKey(r, name);
+    }
+    return r;
+  });
+  return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }), rows };
+}
+
+/** How many rows hold `value` in `name` (as their value, or in their list). */
+export function rowsHolding(table: ParsedTable, name: string, value: string): number {
+  return table.rows.filter((r) => r[name] === value || (Array.isArray(r[name]) && (r[name] as unknown[]).includes(value))).length;
+}
+
+/** Asking before a choice that rows hold is removed; null when none hold it. */
+export function removingChoice(table: ParsedTable, name: string, value: string): Confirm | null {
+  const n = rowsHolding(table, name, value);
+  if (n === 0) return null;
+  const field = table.schema.fields.find((f) => f.name === name);
+  const label = enumLabel(field, value);
+  return {
+    heading: `Remove “${label}”?`,
+    body: `${n} row${n === 1 ? " has" : "s have"} it; ${n === 1 ? "it is" : "they are"} cleared.`,
+    responses: [CANCEL, { id: "remove", label: "Remove", destructive: true }],
+  };
+}
+
+/**
+ * Without the field: gone from the schema, from every row, and from every
+ * view that names it (its columns, sorts, filters, grouping, widths and
+ * totals). A formula that used it shows its error until it's changed.
+ */
+export function withoutField(table: ParsedTable, name: string): ParsedTable {
+  if (!table.schema.fields.some((f) => f.name === name)) return table;
+  const fields = table.schema.fields.filter((f) => f.name !== name);
+  const primaryKey = table.schema.primaryKey?.filter((k) => k !== name);
+  const schema = { ...table.schema, fields, ...(table.schema.primaryKey ? { primaryKey } : {}) };
+  const rows = table.rows.map((r) => (name in r ? withoutKey(r, name) : r));
+  return { ...table, schema: bumpSchemaVersion(schema), rows, views: table.views.map((v) => viewWithoutField(v, name)) };
+}
+
+function viewWithoutField(view: View, name: string): View {
+  const next: View = { ...view };
+  if (view.fields) next.fields = view.fields.filter((f) => f !== name);
+  if (view.sort) next.sort = view.sort.filter((s) => s.field !== name);
+  if (view.filter) next.filter = view.filter.filter((f) => f.field !== name);
+  if (view.group?.field === name) delete next.group;
+  if (view.columnWidths && name in view.columnWidths) next.columnWidths = withoutKey(view.columnWidths, name);
+  if (view.totals && name in view.totals) next.totals = withoutKey(view.totals, name);
+  for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === name) delete next[k];
+  return next;
+}
+
+/** Asking before a field is deleted. */
+export function deletingField(table: ParsedTable, name: string): Confirm {
+  const field = table.schema.fields.find((f) => f.name === name);
+  const used = table.rows.filter((r) => r[name] !== undefined && r[name] !== null && r[name] !== "").length;
+  return {
+    heading: `Delete “${field?.title ?? name}”?`,
+    body: used > 0
+      ? `The field and its value${used === 1 ? "" : "s"} in ${used} row${used === 1 ? "" : "s"} are removed from the file.`
+      : "The field is removed from the file.",
+    responses: [CANCEL, { id: "delete", label: "Delete", destructive: true }],
+  };
+}
+
+function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
+  const { [key]: _gone, ...rest } = obj;
+  return rest as T;
+}
+
+function enumLabel(field: Field | undefined, value: string): string {
+  const o = (field?.constraints?.enum ?? []).find((e) => (typeof e === "string" ? e : e.value) === value);
+  return typeof o === "object" && o?.label ? o.label : value;
+}
+
 /** A field one place earlier or later. Unchanged at either end. */
 export function withFieldMoved(table: ParsedTable, name: string, delta: -1 | 1): ParsedTable {
   const from = table.schema.fields.findIndex((f) => f.name === name);

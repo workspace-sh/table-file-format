@@ -9,7 +9,8 @@ import { useState } from "react";
 import type React from "react";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
-import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort } from "@workspace.sh/table-core";
+import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort, ViewTotal } from "@workspace.sh/table-core";
+import { TOTAL_NAMES } from "./display";
 import type { SelectOption, SettingsRow, SettingsSection } from "./controlSlots";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -328,6 +329,58 @@ function viewSettingsSections({
   }
 
   const sections: SettingsSection[] = [{ id: "view", rows: viewRows }];
+
+  // Which columns show (the view's `fields`). Absent, all do; one always stays.
+  if (view.layout === "table" || view.layout === "list") {
+    const shown = new Set(view.fields ?? schema.fields.map((f) => f.name));
+    const setShown = (name: string, on: boolean) => {
+      const next = schema.fields.map((f) => f.name).filter((n) => (n === name ? on : shown.has(n)));
+      if (next.length === 0) return;
+      onChange({ fields: next.length === schema.fields.length ? undefined : next });
+    };
+    sections.push({
+      id: "columns",
+      title: "Columns",
+      footer: shown.size === 1 ? "One column always shows." : undefined,
+      rows: schema.fields.map((f) => ({
+        kind: "toggle" as const,
+        id: `column-${f.name}`,
+        label: f.title ?? f.name,
+        value: shown.has(f.name),
+        onChange: (on: boolean) => {
+          if (!on && shown.size === 1) return;
+          setShown(f.name, on);
+        },
+      })),
+    });
+  }
+
+  // A total under each column (SPEC section 4, `totals`), chosen here on a phone.
+  if (view.layout === "table") {
+    const totals = view.totals ?? {};
+    const shownFields = (view.fields ?? schema.fields.map((f) => f.name)).map((n) => byName.get(n)).filter((f): f is Field => !!f);
+    sections.push({
+      id: "totals",
+      title: "Totals",
+      footer: "Shown in a row under the table.",
+      rows: shownFields.map((f) => {
+        const numeric = f.type === "number" || f.type === "integer" || f.type === "year" || f.computed !== undefined;
+        const kinds: ViewTotal[] = [...(numeric ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+        return choice(
+          `total-${f.name}`,
+          f.title ?? f.name,
+          totals[f.name] ?? "none",
+          [{ value: "none", label: "None" }, ...kinds.map((k) => ({ value: k, label: TOTAL_NAMES[k] }))],
+          (picked) => {
+            const next = { ...totals };
+            if (picked === "none") delete next[f.name];
+            else next[f.name] = picked as ViewTotal;
+            arrange({ totals: Object.keys(next).length ? next : undefined });
+          },
+        );
+      }),
+    });
+  }
 
   if (view.layout === "table") {
     sections.push({

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -26,11 +26,13 @@ import {
   TOTAL_NAMES,
   totalFor,
   visibleFields,
+  pillColors,
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
 import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
-import { formulaInputCells, viewGrid } from "./formulaCell";
+import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
+import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
   BOARD_GAP,
   boardColumns,
@@ -65,6 +67,9 @@ import {
   effectiveAlign,
   enumOptions,
   columnLetter,
+  computeRows,
+  coordinateOf,
+  formatValue as formatCellValue,
 } from "@workspace.sh/table-core";
 import type {
   SheetRef,
@@ -103,7 +108,7 @@ import {
 import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
-import { inputHints } from "./inputHints";
+import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
@@ -1009,6 +1014,18 @@ const styles = css.create({
 
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
+  /** A footer cell inside a menu button: fills the row's height, as the others do. */
+  totalCellFill: {
+    alignSelf: "stretch",
+  },
+  /** Pills cut to one line, with a "+N" for the rest. */
+  pillListOneLine: {
+    flexWrap: "nowrap",
+    overflow: "hidden",
+  },
+  pillMore: {
+    flexShrink: 0,
+  },
   pill: {
     paddingInline: 10,
     paddingBlock: 3,
@@ -1308,6 +1325,14 @@ const styles = css.create({
   },
   // Idle (display) wrapper inside an editable cell — fills the cell so
   // clicks anywhere in the cell start editing, not just on the text run.
+  /** A value being typed in an editor outside the cell (#352), shown as it is typed. */
+  cellOutsideDraft: {
+    fontSize: 14,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
+    color: { default: "#1d1d1f", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
   cellEditableIdle: {
     display: "flex",
     flex: 1,
@@ -1472,6 +1497,25 @@ function headerAlignStyle(align: FieldAlignment) {
 
 
 
+/** The width a table cell's content has, for pills to know how many fit. */
+const CellWidth = createContext<number | undefined>(undefined);
+
+/** A pill's width, roughly: its label, padding and the gap after it. */
+const pillWidth = (p: Pill) => String(p.label).length * 7.6 + 30;
+/** The pills that fit in `width`, leaving room for a "+N" when some don't. */
+function pillsThatFit(pills: Pill[], width: number): Pill[] {
+  let used = 0;
+  const out: Pill[] = [];
+  for (let i = 0; i < pills.length; i++) {
+    const w = pillWidth(pills[i]!);
+    const reserve = i < pills.length - 1 ? 40 : 0;
+    if (out.length > 0 && used + w + reserve > width) break;
+    out.push(pills[i]!);
+    used += w;
+  }
+  return out;
+}
+
 interface CellValueProps {
   field: Field | undefined;
   value: unknown;
@@ -1491,6 +1535,7 @@ interface CellValueProps {
 
 function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
+  const width = useContext(CellWidth);
   const display = useDisplaySettings();
   const shown = describeCell(field, value, display, relatedTables);
   switch (shown.kind) {
@@ -1506,16 +1551,25 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
       );
     case "error":
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
-    case "pills":
+    case "pills": {
       // A single choice is its pill; a list sits in a row of them.
       if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} atStart={inColumn} />;
+      // On one line in a table, as many as fit and then "+3".
+      const shownPills = width !== undefined && (lines ?? 1) <= 1 ? pillsThatFit(shown.pills, width) : shown.pills;
+      const more = shown.pills.length - shownPills.length;
       return (
-        <html.div style={styles.pillList}>
-          {shown.pills.map((pill, i) => (
+        <html.div style={[styles.pillList, more > 0 && styles.pillListOneLine]}>
+          {shownPills.map((pill, i) => (
             <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
           ))}
+          {more > 0 ? (
+            <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
+              +{more}
+            </html.span>
+          ) : null}
         </html.div>
       );
+    }
     case "attachment":
       return <AttachmentValue fileName={shown.fileName} />;
     case "link":
@@ -1662,6 +1716,13 @@ interface EditableCellProps {
   editRequest?: EditRequest;
   /** How editing ended from the keyboard, so the table can move on. */
   onEditEnd?: (how: EditEnd) => void;
+  /**
+   * An editor outside the cell (#352): asked first whenever the cell would
+   * start editing; true means it took the edit and the cell stays idle.
+   */
+  editOutside?: (text?: string) => boolean;
+  /** That editor's draft, shown in the cell as it is typed. */
+  outsideDraft?: string;
 }
 
 /** A request from the table to open a cell; `n` changes for each one. */
@@ -1696,6 +1757,8 @@ function EditableCell({
   onAttach,
   editRequest,
   onEditEnd,
+  editOutside,
+  outsideDraft,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1738,6 +1801,7 @@ function EditableCell({
   }, [editing]);
 
   const startEdit = (text?: string) => {
+    if (editOutside?.(text)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
     setDraft(text ?? draftOf(value));
@@ -1816,6 +1880,15 @@ function EditableCell({
     );
   }
 
+  // Being edited outside the cell: show what is typed, as it is typed.
+  if (outsideDraft !== undefined) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
+      </html.div>
+    );
+  }
+
   // Boolean: toggle on click, no draft state
   if (kind === "boolean") {
     return (
@@ -1850,6 +1923,15 @@ function EditableCell({
         toggled={(id) => relationToggled(field, value, id, relatedTables)}
         onOpenRelation={onOpenRelation}
       />
+    );
+  }
+
+  // A multi-select or a link with an outside editor: picked there.
+  if (field && editOutside && ((kind === "list" && enumOptions(field).length > 0) || kind === "relation")) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+      </html.div>
     );
   }
 
@@ -1892,7 +1974,8 @@ function EditableCell({
       // choices: its next tap chooses, as a text cell's next tap types.
       // Not a relation: its value has a button of its own (CellLink),
       // which a menu's label would swallow.
-      if (kind === "choice" && selected !== false && SelectControl.opensFromTrigger) {
+      // An outside editor offers the choices itself.
+      if (kind === "choice" && selected !== false && SelectControl.opensFromTrigger && !editOutside) {
         return (
           <Select
             value={typeof value === "string" ? value : ""}
@@ -1952,7 +2035,7 @@ function EditableCell({
     // On a phone a selected date, time, or date and time is the system's
     // picker: its next tap picks, and typing on it still edits the text.
     const pickedKind = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime" ? hints.kind : null;
-    if (pickedKind && selected !== false && DateInputControl.available) {
+    if (pickedKind && selected !== false && DateInputControl.available && !editOutside) {
       return (
         <DateInputControl
           kind={pickedKind}
@@ -2289,6 +2372,41 @@ function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
   return on ? <HScroll>{children}</HScroll> : <>{children}</>;
 }
 
+/** A cell's draft ("2026-03-01", "09:30", "2026-03-01T09:30") as a Date for the system's picker. */
+function dateOfDraft(draft: string, kind: InputHintKind): Date | undefined {
+  if (!draft) return undefined;
+  if (kind === "time") {
+    const [h, m] = draft.split(":").map(Number);
+    if (h === undefined || Number.isNaN(h)) return undefined;
+    const d = new Date();
+    d.setHours(h, m ?? 0, 0, 0);
+    return d;
+  }
+  const [date, time] = draft.split("T");
+  const [y, mo, da] = (date ?? "").split("-").map(Number);
+  if (!y || !mo || !da) return undefined;
+  const [h, mi] = (time ?? "").split(":").map(Number);
+  return new Date(y, mo - 1, da, h || 0, mi || 0);
+}
+
+/** A picked Date as the draft a cell of this kind takes, in local time. */
+function draftOfDate(d: Date, kind: InputHintKind): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return kind === "date" ? date : kind === "time" ? time : `${date}T${time}`;
+}
+
+/** The outside editor's keyboard for each kind of entry (inputHints); a signed number needs a minus. */
+const BAR_KEYBOARD: Partial<Record<InputHintKind, NonNullable<CellEditSession["keyboard"]>>> = {
+  integer: "numeric",
+  decimal: "decimal-pad",
+  "signed-decimal": "numbers-and-punctuation",
+  email: "email-address",
+  url: "url",
+  phone: "phone-pad",
+};
+
 export function TableView({
   view,
   rows,
@@ -2298,6 +2416,8 @@ export function TableView({
   onUpdateRow,
   onUpdateField,
   onAddEnumValue,
+  onRemoveEnumValue,
+  onDeleteField,
   onMoveField,
   onRestoreSchema,
   onAddField,
@@ -2357,6 +2477,19 @@ export function TableView({
     rowActions(rowId, { onOpenBody, hasBody: bodies?.[rowId] !== undefined, onInsertRow, onDeleteRow });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const { Select: TotalsSelect } = usePlatformControls();
+  /** The totals a column can show: sums and the like for numbers, counts for anything. */
+  const totalKindsFor = (field: Field | undefined): ViewTotal[] => {
+    const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
+    return [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+  };
+  const chooseTotal = (name: string, kind: ViewTotal | null) => {
+    const next = { ...(view.totals ?? {}) };
+    if (kind) next[name] = kind;
+    else delete next[name];
+    onUpdateView?.({ totals: Object.keys(next).length ? next : undefined });
+    setTotalsMenu(null);
+  };
   // The row just added from "+ New row": its first cell opens for typing
   // as it appears, then this clears (the cell's effect runs first).
   const [focusRowId, setFocusRowId] = useState<string | null>(null);
@@ -2364,6 +2497,46 @@ export function TableView({
   // typing edits it (#85). Cleared when focus leaves the table.
   const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
   const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  // An editor outside the table (#352), when the host provides one: the
+  // draft it is typing into a cell, or into a formula column, shown live.
+  const editor = useCellEditor();
+  const [barDraft, setBarDraft] = useState<{ rowId: string; name: string; text: string } | null>(null);
+  const [barFormula, setBarFormula] = useState<{ rowId: string; name: string; draft: string } | null>(null);
+  const barSession = useRef<CellEditSession | null>(null);
+  const barSeq = useRef(0);
+  // The editor shows the selected cell, and can deselect it or edit it.
+  useEffect(() => {
+    if (!editor) return;
+    const row = sel ? rows.find((r) => r.id === sel.rowId) : undefined;
+    const field = sel ? fieldMap.get(sel.name) : undefined;
+    if (!sel || !row || !field) return editor.select(null);
+    editor.select({
+      rowId: sel.rowId,
+      name: sel.name,
+      label: field.title ?? field.name,
+      rowLabel: titleField ? formatValue(row[titleField]) : row.id,
+      text: field.computed
+        ? formulaDraftOf(field, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
+        : field.relation
+          ? // A link reads as the rows it points at, as the cell shows them.
+            (() => {
+              const names = new Map(relationOptions(field, relatedTables).map((o) => [o.value, o.label] as const));
+              const ids = Array.isArray(row[sel.name]) ? listItems(row[sel.name]) : row[sel.name] ? [String(row[sel.name])] : [];
+              return ids.map((id) => names.get(id) ?? id).join(", ");
+            })()
+          : formatCellValue(field, row[sel.name]),
+      formula: field.computed !== undefined,
+    });
+  });
+  useEffect(() => {
+    if (!editor) return;
+    editor.attach({
+      deselect: () => setSel(null),
+      editSelected: () => void (sel && openCell(sel.rowId, sel.name)),
+      revealSelected: () => void (sel && measureAnchor(cellRefs.current[`${sel.rowId}\u0000${sel.name}`]).then((rect) => rect && editor.reveal?.(rect))),
+    });
+  });
+  useEffect(() => () => editor?.attach(null), [editor]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gridRef = useRef<any>(null);
   useEffect(() => {
@@ -2380,7 +2553,10 @@ export function TableView({
       }
     : undefined;
   const totals = view.totals ?? {};
-  const showTotals = !!onUpdateView || Object.keys(totals).length > 0;
+  // Where totals are chosen in the view's settings (a phone's settings
+  // form), an empty footer is only noise: it shows once a column has a total.
+  const { SettingsForm: settingsForm } = usePlatformControls();
+  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm);
   // No totals chosen: the footer is only a place to choose one, so it
   // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
   const quietTotals = Object.keys(totals).length === 0;
@@ -2399,7 +2575,26 @@ export function TableView({
   // The cells the open formula reads, outlined: by row id, this row, or by place (D41).
   const inputCells = formulaCell
     ? formulaInputCells(openFormulaField, formulaCell.rowId, view, fields, sheet?.order)
-    : new Set<string>();
+    : barFormula
+      ? formulaInputCells(fieldMap.get(barFormula.name), barFormula.rowId, view, fields, sheet?.order)
+      : new Set<string>();
+  // A formula being written in the outside editor: every row of its column
+  // shows what the draft makes, once it compiles. The column is the preview.
+  const barColumn = (() => {
+    if (!barFormula) return null;
+    const field = fieldMap.get(barFormula.name);
+    const row = rows.find((r) => r.id === barFormula.rowId);
+    if (!field || !row) return null;
+    const ex = explainFormula({
+      field, row, fields: schema.fields, draft: barFormula.draft, editable: true,
+      grid: grid ? { ...grid, here: barFormula.rowId } : undefined, allRows, computeOptions: { tables: relatedTables, self: tableKey },
+    });
+    const computed = ex.save?.computed;
+    if (!computed) return null;
+    const trial = schema.fields.map((f) => (f.name === field.name ? { ...f, computed } : f));
+    const out = computeRows({ fields: trial }, allRows ?? rows, { tables: relatedTables, self: tableKey }).rows;
+    return new Map(out.map((r) => [r.id, r[field.name]] as const));
+  })();
   const canAddField = !!onAddField;
   // A new field lands at the end of the row, often past the right edge:
   // bring its header into view once it has rendered.
@@ -2679,6 +2874,17 @@ export function TableView({
             anchorRect={anchorRect}
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
+            onRemoveEnumValue={onRemoveEnumValue ? (value) => onRemoveEnumValue(name, value) : undefined}
+            onDelete={
+              onDeleteField
+                ? () => {
+                    // The settings close first: the field they show is going.
+                    setEditingFieldName(null);
+                    setAnchorRect(null);
+                    onDeleteField(name);
+                  }
+                : undefined
+            }
             onMove={(delta) => onMoveField!(name, delta)}
             onCancel={
               onRestoreSchema
@@ -2706,6 +2912,39 @@ export function TableView({
     const field = fieldMap.get(name);
     const kind = totals[name];
     const { value: shown, numeric } = kind ? totalFor(rows, name, kind) : { value: undefined, numeric: false };
+    const content = kind ? (
+      <>
+        <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
+        {numeric ? (
+          <CellValue field={field} value={shown} relatedTables={relatedTables} lines={1} />
+        ) : (
+          <html.span>{String(shown ?? "")}</html.span>
+        )}
+      </>
+    ) : onUpdateView ? (
+      <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
+    ) : null;
+    const cellStyle = [
+      styles.tableCell,
+      styles.cellWidth(colWidth(name)),
+      cellAlignStyle(effectiveAlign(field)),
+      idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
+      styles.totalCell,
+    ];
+    // On a phone the footer cell is itself the system's menu of totals, as a
+    // choice cell is its menu of choices; elsewhere it opens the popover below.
+    if (onUpdateView && TotalsSelect.opensFromTrigger) {
+      return (
+        <Select
+          key={name}
+          value={kind ?? ""}
+          options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
+          onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
+          label={`Calculate ${field?.title ?? name}`}
+          trigger={<html.div style={[...cellStyle, styles.totalCellFill]}>{content}</html.div>}
+        />
+      );
+    }
     return (
       <html.div
         key={name}
@@ -2728,18 +2967,7 @@ export function TableView({
             : undefined
         }
       >
-        {kind ? (
-          <>
-            <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
-            {numeric ? (
-              <CellValue field={field} value={shown} relatedTables={relatedTables} lines={1} />
-            ) : (
-              <html.span>{String(shown ?? "")}</html.span>
-            )}
-          </>
-        ) : onUpdateView ? (
-          <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
-        ) : null}
+        {content}
       </html.div>
     );
   };
@@ -2755,8 +2983,33 @@ export function TableView({
     const isLast = idxInPane === paneLen - 1;
     const isFormula = field?.computed !== undefined;
     const cellKey = `${row.id}\u0000${name}`;
-    const inOpenColumn = formulaCell?.name === name;
-    const isOpenCell = inOpenColumn && formulaCell?.rowId === row.id;
+    const inOpenColumn = formulaCell?.name === name || barFormula?.name === name;
+    const isOpenCell = inOpenColumn && (formulaCell?.rowId ?? barFormula?.rowId) === row.id;
+    const shownValue = barColumn && barFormula?.name === name ? barColumn.get(row.id) : row[name];
+    const select = () => {
+      // Writing a formula, a tap may add a reference instead.
+      if (editor?.tapWhileEditing?.(row.id, name, coords && grid ? (coordinateOf(name, row.id, grid) ?? name) : name)) return;
+      // A tap elsewhere ends the open edit, so the editor follows to the
+      // cell tapped: what was typed saves first; a choice or a date has
+      // saved already. (The session clears itself on saving: hold it.)
+      const open = barSession.current;
+      if (open) {
+        const typed = barDraft?.text ?? barFormula?.draft;
+        if (typed !== undefined) {
+          const done = open.save(typed);
+          if (!done.ok) return;
+        }
+        editor?.end(open.key);
+        barSession.current = null;
+        setBarDraft(null);
+        setBarFormula(null);
+      }
+      setSel({ rowId: row.id, name });
+      // While editing, the next cell tapped opens for editing too, as a
+      // spreadsheet keeps typing from cell to cell. Only selected, a tap
+      // only selects, so the table can be browsed without a keyboard.
+      if (open) beginBar(row.id, name);
+    };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
@@ -2768,7 +3021,13 @@ export function TableView({
           cellRefs.current[cellKey] = el;
         }}
         onClick={
-          isFormula
+          isFormula && editor
+            ? () => {
+                // With an outside editor the formula opens there, on a second tap.
+                if (isSelected && !barFormula) beginBar(row.id, name);
+                else select();
+              }
+            : isFormula
             ? async () => {
                 setSel({ rowId: row.id, name });
                 if (isOpenCell) {
@@ -2778,7 +3037,7 @@ export function TableView({
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
               }
-            : () => setSel({ rowId: row.id, name })
+            : select
         }
         style={[
           styles.tableCell,
@@ -2792,10 +3051,11 @@ export function TableView({
           isSelected && styles.cellSelected,
         ]}
       >
+        <CellWidth.Provider value={colWidth(name) - 24}>
         {onUpdateRow ? (
           <EditableCell
             field={field}
-            value={row[name]}
+            value={shownValue}
             onCommit={(next) => onUpdateRow(row.id, name, next)}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
@@ -2803,20 +3063,23 @@ export function TableView({
             align={align}
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
-            onSelect={() => setSel({ rowId: row.id, name })}
+            onSelect={select}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
+            editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
+            outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
           />
         ) : (
           <CellValue
             field={field}
-            value={row[name]}
+            value={shownValue}
             relatedTables={relatedTables}
             onOpenRelation={onOpenRelation}
             lines={linesFor(heightOf(row.id))}
           />
         )}
+        </CellWidth.Provider>
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
         ) : null}
@@ -2834,7 +3097,188 @@ export function TableView({
     name: fields[Math.max(0, Math.min(lastCol, c))]!,
   });
   const editable = (name: string) => !!onUpdateRow && fieldMap.get(name)?.computed === undefined;
+  /**
+   * Hand a cell's edit to the outside editor (#352). A formula column's
+   * formula, a value typed, or a choice picked; anything else (a toggle,
+   * a list, a date with its picker, a file) stays in the cell. False when
+   * there is no editor or it doesn't take this cell.
+   */
+  const beginBar = (rowId: string, name: string, text?: string): boolean => {
+    if (!editor) return false;
+    const field = fieldMap.get(name);
+    const row = rows.find((r) => r.id === rowId);
+    if (!field || !row) return false;
+    const label = field.title ?? field.name;
+    const rowLabel = titleField ? formatValue(row[titleField]) : row.id;
+    const key = `${rowId}\u0000${name}\u0000${++barSeq.current}`;
+    let session: CellEditSession;
+    if (field.computed) {
+      if (!schemaEditable) return false;
+      const g = grid ? { ...grid, here: rowId } : undefined;
+      const explain = (draft: string) =>
+        explainFormula({ field, row, fields: schema.fields, draft, editable: true, grid: g, allRows, computeOptions: { tables: relatedTables, self: tableKey } });
+      const initial = formulaDraftOf(field, g, formulaSyntax);
+      setFormulaCell(null);
+      setBarFormula({ rowId, name, draft: initial });
+      session = {
+        key, rowId, name, rowLabel, initial,
+        label: `ƒ ${label} · every row`,
+        mode: "formula",
+        suggestions: false,
+        change: (t) => {
+          setBarFormula({ rowId, name, draft: t });
+          const ex = explain(t);
+          if (ex.status?.kind === "error") {
+            const open = (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+            return { error: { message: ex.status.message, fix: open > 0 ? ")" : undefined } };
+          }
+          return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name]) };
+        },
+        save: (t) => {
+          const ex = explain(t);
+          if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
+          if (ex.save) onUpdateField!(name, ex.save);
+          setBarFormula(null);
+          barSession.current = null;
+          return { ok: true };
+        },
+        cancel: () => {
+          setBarFormula(null);
+          barSession.current = null;
+        },
+        next: () => {},
+      };
+    } else {
+      if (!editable(name)) return false;
+      const kind = editorKind(field);
+      const hints = inputHints(field);
+      const many = kind === "list" && enumOptions(field).length > 0;
+      // A link to rows: its choices are the linked table's rows.
+      const linked = kind === "relation" ? relationOptions(field, relatedTables) : [];
+      const linksMany = linked.length > 0 && relatesMany(field);
+      const linksOne = linked.length > 0 && !linksMany;
+      const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
+      if (kind !== "text" && kind !== "choice" && !many && !linksOne && !linksMany) return false;
+      const initial = text ?? draftOf(row[name]);
+      // A draft already asked about (an early year): Return again keeps it.
+      let queried: string | null = null;
+      // A multi-select's value as it's toggled, each toggle saved.
+      let current: unknown = row[name];
+      // Typed values show as they're typed; a choice keeps its pill until it's picked.
+      if (kind === "text" && !dated) setBarDraft({ rowId, name, text: initial });
+      session = {
+        key, rowId, name, label, rowLabel, initial,
+        mode: field.format === "markdown" ? "text" : "line",
+        // The keyboard the field wants, as a cell's own input has (inputHints).
+        keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
+        suggestions: hints.autocorrect,
+        ...(kind === "choice" || many
+          ? {
+              choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
+              ...(onAddEnumValue
+                ? {
+                    addChoice: (label: string) => {
+                      const value = label.trim();
+                      if (!value) return;
+                      if (!enumOptions(field).some((o) => o.value === value)) onAddEnumValue(name, value);
+                      if (many) {
+                        current = listToggled({ ...field, constraints: { ...field.constraints, enum: [...(field.constraints?.enum ?? []), value] } }, current, value);
+                        onUpdateRow!(rowId, name, current);
+                      } else onUpdateRow!(rowId, name, value);
+                    },
+                  }
+                : {}),
+            }
+          : {}),
+        ...(kind === "choice" || linksOne ? { selected: typeof row[name] === "string" ? (row[name] as string) : undefined } : {}),
+        ...(linksOne || linksMany ? { choices: linked.map((o) => ({ id: o.value, label: o.label })) } : {}),
+        ...(linksMany
+          ? {
+              multiple: true,
+              selectedMany: listItems(row[name]),
+              toggle: (id: string) => {
+                current = relationToggled(field, current, id, relatedTables);
+                onUpdateRow!(rowId, name, current);
+                return listItems(current);
+              },
+            }
+          : {}),
+        ...(many
+          ? {
+              multiple: true,
+              selectedMany: listItems(row[name]),
+              toggle: (id: string) => {
+                current = listToggled(field, current, id);
+                onUpdateRow!(rowId, name, current);
+                return listItems(current);
+              },
+            }
+          : {}),
+        ...(dated
+          ? {
+              date: {
+                value: dateOfDraft(draftOf(row[name]), hints.kind),
+                components: hints.kind === "date" ? ["date" as const] : hints.kind === "time" ? ["hourAndMinute" as const] : ["date" as const, "hourAndMinute" as const],
+                shown: formatCellValue(field, row[name]),
+                pick: (d: Date) => {
+                  const r = commitDraft(field, current, draftOfDate(d, hints.kind), "key", null);
+                  if (r.kind === "problem") return { ok: false as const, error: { message: r.check.message } };
+                  if (r.kind === "save") {
+                    current = r.value;
+                    onUpdateRow!(rowId, name, r.value);
+                  }
+                  return { ok: true as const, shown: formatCellValue(field, current) };
+                },
+              },
+            }
+          : {}),
+        change: (t) => {
+          setBarDraft({ rowId, name, text: t });
+          return {};
+        },
+        save: (t) => {
+          if (linksOne) {
+            setBarDraft(null);
+            barSession.current = null;
+            if (t !== row[name]) onUpdateRow!(rowId, name, t);
+            return { ok: true };
+          }
+          const r = commitDraft(field, row[name], t, "key", queried);
+          if (r.kind === "problem") {
+            queried = r.queried;
+            return { ok: false, error: { message: r.check.message } };
+          }
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          return { ok: true };
+        },
+        cancel: () => {
+          setBarDraft(null);
+          barSession.current = null;
+        },
+        // Return: down a row, still editing, as a spreadsheet does.
+        next: () => {
+          const below = rowIds[rowIds.indexOf(rowId) + 1];
+          setSel({ rowId: below ?? rowId, name });
+          if (below) beginBar(below, name);
+        },
+      };
+    }
+    if (!editor.begin(session)) {
+      setBarDraft(null);
+      setBarFormula(null);
+      return false;
+    }
+    barSession.current = session;
+    setSel({ rowId, name });
+    // Keep it in view above the editor (and the keyboard).
+    void measureAnchor(cellRefs.current[`${rowId}\u0000${name}`]).then((rect) => rect && editor.reveal?.(rect));
+    return true;
+  };
+
   const openCell = async (rowId: string, name: string, text?: string) => {
+    if (beginBar(rowId, name, text)) return;
     const field = fieldMap.get(name);
     if (field?.computed) {
       // A formula cell opens its formula, as a click does.
@@ -3096,16 +3540,8 @@ export function TableView({
         );
       })()}
       {totalsMenu && onUpdateView && (() => {
-        const field = fieldMap.get(totalsMenu.name);
-        const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
-        const kinds: ViewTotal[] = [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
-        const choose = (kind: ViewTotal | null) => {
-          const next = { ...totals };
-          if (kind) next[totalsMenu.name] = kind;
-          else delete next[totalsMenu.name];
-          onUpdateView({ totals: Object.keys(next).length ? next : undefined });
-          setTotalsMenu(null);
-        };
+        const kinds = totalKindsFor(fieldMap.get(totalsMenu.name));
+        const choose = (kind: ViewTotal | null) => chooseTotal(totalsMenu.name, kind);
         return (
           <Portal>
             <html.div style={styles.rowMenuBackdrop} onClick={() => setTotalsMenu(null)} />

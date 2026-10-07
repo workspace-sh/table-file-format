@@ -9,6 +9,8 @@ export interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue: (fieldName: string, value: string) => void;
+  onRemoveEnumValue: (fieldName: string, value: string) => void;
+  onDeleteField: (fieldName: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
   onAddField: (field: Field) => void;
@@ -62,6 +64,8 @@ export function renderView(
           onUpdateRow={cb.onUpdateRow}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
+          onRemoveEnumValue={cb.onRemoveEnumValue}
+          onDeleteField={cb.onDeleteField}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
