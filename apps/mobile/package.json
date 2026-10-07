@@ -19,6 +19,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/native": "^7.5.0",
     "@shopify/flash-list": "^2.3.3",
+    "@workspace.sh/glass-bar": "*",
     "@workspace.sh/table-app": "*",
     "@workspace.sh/table-core": "*",
     "@workspace.sh/table-fixtures": "*",
