@@ -132,8 +132,12 @@ export default function TableScreen() {
           // and, while an editor is open, room for any cell to scroll clear of it.
           contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
-          // and a tap elsewhere while typing goes to what's tapped.
-          automaticallyAdjustKeyboardInsets
+          // and a tap elsewhere while typing goes to what's tapped. On iOS the
+          // glass bar's editor leaves that room itself (`reserve`) and scrolls
+          // the cell into view: the automatic insets also scroll the focused
+          // field into view, and that field is in the bar, not the table, so
+          // they threw the table up behind the navigation bar.
+          automaticallyAdjustKeyboardInsets={!GLASS}
           keyboardShouldPersistTaps="handled"
           // iOS: scrolling puts the keyboard away and saves what was typed.
           {...(GLASS ? { keyboardDismissMode: "on-drag" as const, onScrollBeginDrag: glass.onScrollBegin } : {})}
