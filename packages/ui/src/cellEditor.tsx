@@ -78,6 +78,8 @@ export interface CellEditorCommands {
   deselect(): void;
   /** Edit the selected cell, as a second tap on it does. */
   editSelected(): void;
+  /** Report where the selected cell is again (`reveal`), as when the editor changes size. */
+  revealSelected?(): void;
 }
 
 export interface CellEditor {

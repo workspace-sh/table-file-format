@@ -3,7 +3,7 @@
 // a session; this keeps them, and turns them, with search, into what the
 // bar shows. The bar's callbacks go back to the session or the table.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
@@ -43,6 +43,8 @@ function editorHeight(s: CellEditSession): number {
   if (s.mode === "text") return 120;
   return 76;
 }
+/** Room between the edited cell and the editor below it. */
+const CLEARANCE = 28;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
@@ -56,6 +58,17 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   const [shownDate, setShownDate] = useState("");
   // The bar's height as it last laid out; the estimate stands in until it has.
   const barHeight = useRef(0);
+  const [laidOut, setLaidOut] = useState(0);
+  // The keyboard's height while it's up: the table needs that much more room
+  // below its last row for a low cell to scroll clear of the editor.
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    const subs = [
+      Keyboard.addListener("keyboardWillShow", (e) => setKeyboard(e.endCoordinates.height)),
+      Keyboard.addListener("keyboardWillHide", () => setKeyboard(0)),
+    ];
+    return () => subs.forEach((s) => s.remove());
+  }, []);
   const scrollBy = useRef(onScrollBy);
   scrollBy.current = onScrollBy;
   const bar = useRef<GlassBarHandle>(null);
@@ -93,14 +106,35 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       reveal: (rect) => {
         const s = open.current;
         if (!s) return;
-        setTimeout(() => {
-          const keyboard = s.choices || s.date ? 0 : (Keyboard.metrics()?.height ?? 0);
+        const place = (keyboard: number) => {
           const tall = barHeight.current > 60 ? barHeight.current : editorHeight(s);
-          const foot = Dimensions.get("window").height - (keyboard > 0 ? keyboard + 8 : 30) - tall - 12;
+          // Clear of the editor by more than the row grip that hangs below the cell.
+          const foot = Dimensions.get("window").height - (keyboard > 0 ? keyboard + 8 : 30) - tall - CLEARANCE;
           const bottom = rect.top + rect.height;
           if (bottom > foot) scrollBy.current?.(bottom - foot);
           else if (rect.top < TOP) scrollBy.current?.(rect.top - TOP);
-        }, s.choices || s.date ? 220 : 380);
+        };
+        if (s.choices || s.date) {
+          setTimeout(() => place(0), 220);
+          return;
+        }
+        const up = Keyboard.isVisible() ? Keyboard.metrics() : undefined;
+        if (up) {
+          setTimeout(() => place(up.height), 380);
+          return;
+        }
+        // The keyboard's height is known only once it has shown, and the
+        // first time it shows can take a while: wait for it rather than
+        // placing the cell as if there were no keyboard.
+        let done = false;
+        const settle = (height: number) => {
+          if (done) return;
+          done = true;
+          sub.remove();
+          place(height);
+        };
+        const sub = Keyboard.addListener("keyboardDidShow", (e) => settle(e.endCoordinates.height));
+        setTimeout(() => settle(Keyboard.metrics()?.height ?? 0), 1500);
       },
       tapWhileEditing: (_rowId, _name, reference) => {
         if (open.current?.mode !== "formula" || !EXPECTS_REFERENCE.test(typed.current)) return false;
@@ -173,7 +207,10 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     onFilter,
     onHeight: (h) => {
       barHeight.current = h;
+      setLaidOut(Math.round(h));
     },
+    // Grown or shrunk: once it has, put the edited cell just above it again.
+    onExpandChange: () => setTimeout(() => commands.current?.revealSelected?.(), 120),
     onSearch: () => setSearching(true),
     onQueryChange: onQuery,
     onSearchEnd: () => {
@@ -241,7 +278,10 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     bar,
     props,
     /** Room to leave under the table while an editor stands above the keyboard, so any cell can scroll clear of it. */
-    reserve: session ? editorHeight(session) : 0,
+    // Kept while a cell is selected, not only while it's edited: Return closes
+    // one edit before opening the next, and dropping the room between them
+    // would let the table spring back before the next cell is revealed.
+    reserve: session || selection ? Math.max(session ? editorHeight(session) : 76, laidOut) + (session?.choices || session?.date ? 0 : keyboard) : 0,
     /** A tap on empty space: save what was typed, close the editor, and deselect. */
     dismiss: () => {
       const s = open.current;
