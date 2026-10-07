@@ -8,7 +8,7 @@ import type { ReactElement } from "react";
 import { PlatformColor, Pressable } from "react-native";
 import { SymbolView } from "expo-symbols";
 import { Host, Toggle as SwiftToggle } from "@expo/ui/swift-ui";
-import { fixedSize, lineLimit } from "@expo/ui/swift-ui/modifiers";
+import { fixedSize, font, lineLimit } from "@expo/ui/swift-ui/modifiers";
 import type { ToggleProps } from "../controlSlots";
 
 export function Toggle({ checked, onChange, role, label, children }: ToggleProps): ReactElement {
@@ -38,7 +38,9 @@ export function Toggle({ checked, onChange, role, label, children }: ToggleProps
         label={children ?? label ?? ""}
         isOn={checked}
         onIsOnChange={onChange}
-        modifiers={[lineLimit(), fixedSize({ horizontal: false, vertical: true })]}
+        // The settings' own text size, not SwiftUI's 17 pt body, so the
+        // description reads as part of the row rather than over it.
+        modifiers={[font({ size: 13 }), lineLimit(), fixedSize({ horizontal: false, vertical: true })]}
       />
     </Host>
   );
