@@ -37,6 +37,12 @@ export type GlassBarEditing = {
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
   chips?: GlassBarChip[];
+  /**
+   * A formula: where its colours go, worked out from its text as it is
+   * typed. iOS draws them in the bar's own field (Expo UI's TextField takes
+   * plain text only).
+   */
+  highlight?: (text: string) => GlassBarSpan[];
   /** Why it can't be saved, with an optional fix. */
   error?: { message: string; fixLabel?: string };
 };
@@ -55,6 +61,9 @@ export type GlassBarChip = { id: string; label: string; detail?: string; insert?
 export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => void };
 /** A choice, optionally in its own colours (a light wash of `bg`, the label in `fg`). */
 export type GlassBarChoice = { id: string; label: string; colors?: { light: { bg: string; fg: string }; dark: { bg: string; fg: string } } };
+
+/** A stretch of a formula to colour, by UTF-16 offsets. */
+export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
 /** One action in the More menu. */
 export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
