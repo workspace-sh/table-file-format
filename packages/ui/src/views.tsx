@@ -2530,7 +2530,11 @@ export function TableView({
   });
   useEffect(() => {
     if (!editor) return;
-    editor.attach({ deselect: () => setSel(null), editSelected: () => void (sel && openCell(sel.rowId, sel.name)) });
+    editor.attach({
+      deselect: () => setSel(null),
+      editSelected: () => void (sel && openCell(sel.rowId, sel.name)),
+      revealSelected: () => void (sel && measureAnchor(cellRefs.current[`${sel.rowId}\u0000${sel.name}`]).then((rect) => rect && editor.reveal?.(rect))),
+    });
   });
   useEffect(() => () => editor?.attach(null), [editor]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

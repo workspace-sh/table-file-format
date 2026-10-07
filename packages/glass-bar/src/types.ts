@@ -93,6 +93,8 @@ export type GlassBarProps = {
   /** The "+" after the choices: add a new one. */
   onAddChoice?: () => void;
   onPickDate?: (date: Date) => void;
+  /** The editor expanded or collapsed: a host can scroll what's edited into view above it. */
+  onExpandChange?: (expanded: boolean) => void;
   /** The bar's height as laid out (above the home indicator or keyboard), for keeping content clear of it. */
   onHeight?: (height: number) => void;
 };
