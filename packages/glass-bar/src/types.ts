@@ -39,6 +39,8 @@ export type GlassBarEditing = {
    */
   expandable?: boolean;
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
+  /** Shown before the field, in the field's own type: a currency's symbol. */
+  prefix?: string;
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
