@@ -149,6 +149,32 @@ export function sortsPatch(next: ViewSort[]): Partial<View> {
   return { sort: next.length ? next : undefined, order: undefined };
 }
 
+/** One sort moved from `from` to `to`, the rest keeping their order. */
+export function moveSort(sorts: ViewSort[], from: number, to: number): ViewSort[] {
+  if (from === to || from < 0 || from >= sorts.length || to < 0 || to >= sorts.length) return sorts;
+  const next = sorts.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
+/** The columns a view shows: its `fields`, or, absent, all of them. */
+export function shownColumns(view: View, schema: TableSchema): Set<string> {
+  return new Set(view.fields ?? schema.fields.map((f) => f.name));
+}
+
+/**
+ * One column shown or hidden, in the schema's order. All shown is written
+ * as no `fields` at all, so columns added later show too. Null when it
+ * would hide the last column: one always shows.
+ */
+export function columnShownPatch(view: View, schema: TableSchema, name: string, on: boolean): Partial<View> | null {
+  const shown = shownColumns(view, schema);
+  const next = schema.fields.map((f) => f.name).filter((n) => (n === name ? on : shown.has(n)));
+  if (next.length === 0) return null;
+  return { fields: next.length === schema.fields.length ? undefined : next };
+}
+
 /** A new filter: on the first field, with its first operator. Null when there's no field. */
 export function newFilter(live: Field[]): ViewFilter | null {
   const first = live[0];
