@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>.table viewer</title>
+    <script>
+      // Apple's platforms (macOS, iOS, iPadOS, which reports itself as a Mac)
+      // get SF; everyone else Inter (src/strict.css). Set before the first
+      // paint so the font never swaps.
+      if (navigator.userAgentData?.platform === "macOS" || /Mac|iPhone|iPad|iPod/.test(navigator.userAgent))
+        document.documentElement.dataset.apple = "";
+    </script>
   </head>
   <body>
     <div id="root"></div>

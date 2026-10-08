@@ -98,7 +98,7 @@ const styles = css.create({
     paddingInlineStart: 8,
     flexShrink: 0,
     fontSize: 11,
-    fontFamily: "system-ui, sans-serif",
+    fontFamily: "inherit",
     color: {
       default: "#8e8e93",
       "@media (prefers-color-scheme: dark)": "#6e6e73",
