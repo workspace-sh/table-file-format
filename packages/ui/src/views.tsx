@@ -1904,6 +1904,21 @@ function EditableCell({
     );
   }
 
+  // A multi-select or a link with an outside editor: picked there, links
+  // to many rows included (the editor ticks them on and off), as long as
+  // there are rows to link to.
+  if (
+    field &&
+    editOutside &&
+    ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
+  ) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+      </html.div>
+    );
+  }
+
   // A list: a multi-select picks from its choices; a plain list is typed
   // as comma-separated text.
   // A relation to many rows is ticked on and off, as a multi-select is.
@@ -1923,15 +1938,6 @@ function EditableCell({
         toggled={(id) => relationToggled(field, value, id, relatedTables)}
         onOpenRelation={onOpenRelation}
       />
-    );
-  }
-
-  // A multi-select or a link with an outside editor: picked there.
-  if (field && editOutside && ((kind === "list" && enumOptions(field).length > 0) || kind === "relation")) {
-    return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
-        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
-      </html.div>
     );
   }
 
@@ -3172,6 +3178,7 @@ export function TableView({
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
+        ...(kind === "text" && !dated && currencySymbolOf(field) ? { prefix: currencySymbolOf(field)! } : {}),
         ...(kind === "choice" || many
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
@@ -3246,7 +3253,7 @@ export function TableView({
           const r = commitDraft(field, row[name], t, "key", queried);
           if (r.kind === "problem") {
             queried = r.queried;
-            return { ok: false, error: { message: r.check.message } };
+            return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
           }
           setBarDraft(null);
           barSession.current = null;

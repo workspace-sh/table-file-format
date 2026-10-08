@@ -180,11 +180,17 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       initialValue: session.initial,
       mode: session.mode,
       keyboard: session.keyboard,
+      prefix: session.prefix,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       // Any text can run long; a number, an email or a link can't.
       expandable: session.mode === "line" && (!session.keyboard || session.keyboard === "default"),
-      error: status.error ? { message: status.error.message, fixLabel: status.error.fix ? `Add ${status.error.fix}` : undefined } : undefined,
+      error: status.error
+        ? {
+            message: status.error.message,
+            fixLabel: status.error.replace ? `Use ${status.error.replace.slice(0, 4)}` : status.error.fix ? `Add ${status.error.fix}` : undefined,
+          }
+        : undefined,
     };
   } else if (selection) {
     state = {
@@ -248,8 +254,11 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       const s = open.current;
       save(text, s && s.mode === "line" ? () => s.next() : undefined);
     },
+    // A missing piece goes in at the cursor; a corrected value is saved as it stands.
     onFix: () => {
-      if (status.error?.fix) bar.current?.insert(status.error.fix);
+      const s = open.current;
+      if (status.error?.replace) save(status.error.replace, s && s.mode === "line" ? () => s.next() : undefined);
+      else if (status.error?.fix) bar.current?.insert(status.error.fix);
     },
     // One choice saves and closes; a multi-select toggles and stays open.
     onChoose: (id) => {
