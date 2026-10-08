@@ -375,7 +375,9 @@ function viewSettingsSections({
             const next = { ...totals };
             if (picked === "none") delete next[f.name];
             else next[f.name] = picked as ViewTotal;
-            arrange({ totals: Object.keys(next).length ? next : undefined });
+            // Written to the view itself: a personal arrangement keeps only
+            // filters, sorts and grouping, so a total sent there was dropped.
+            onChange({ totals: Object.keys(next).length ? next : undefined });
           },
         );
       }),
