@@ -4,6 +4,8 @@ Research notes, not spec. This looks at what happens to a `.table` at 50k to 1M 
 
 Companion docs: SPEC section 8 (the `index.sqlite` contract), DECISIONS D6, D15 and D16, [STORAGE-AND-SYNC.md](STORAGE-AND-SYNC.md).
 
+The plan that follows from these numbers, for views reading through the index and for the edit history, is [LARGE-TABLES-PLAN.md](LARGE-TABLES-PLAN.md).
+
 ## How it was measured
 
 - **Machine:** Apple M1, 8 GB, Node 22.23 with `node:sqlite`.
