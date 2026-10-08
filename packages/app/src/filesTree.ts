@@ -188,3 +188,48 @@ export function attachmentShown(
   if (!url) return { note: "Not found." };
   return canDraw(name) ? { image: url } : { note: "Not an image, so there's nothing to preview." };
 }
+
+/**
+ * The tree as plain nodes, for a file browser that knows nothing of .table
+ * files (@workspace.sh/file-browser takes this shape): each bundle a
+ * top-level folder, its files and folders inside. A file's id is
+ * `bundle` and `path` joined by a NUL, which `fileOfNode` reads back.
+ */
+export interface FilesNode {
+  id: string;
+  name: string;
+  children?: FilesNode[];
+  note?: string;
+  open?: boolean;
+  opens?: "text" | "image" | "none";
+}
+
+export function filesNodes(tree: FilesTreeBundle[], isImage: (name: string) => boolean = isImageFile): FilesNode[] {
+  const dir = (bundle: string, d: FilesTreeDir): FilesNode[] => [
+    ...d.files.map(
+      (f): FilesNode => ({
+        id: `${bundle}\u0000${f.path}`,
+        name: f.name,
+        ...(f.note ? { note: f.note } : {}),
+        opens: f.opens === "attachment" ? (isImage(f.name) ? "image" : "none") : "text",
+      }),
+    ),
+    ...d.dirs.map(
+      (sub): FilesNode => ({
+        id: `${bundle}\u0000${sub.path}/`,
+        name: sub.name,
+        open: sub.open,
+        ...(sub.count !== undefined ? { note: String(sub.count) } : {}),
+        children: dir(bundle, sub),
+      }),
+    ),
+  ];
+  return tree.map((b) => ({ id: `${b.bundle}\u0000`, name: b.name, open: !b.folded, children: dir(b.bundle, b.root) }));
+}
+
+/** A node id from `filesNodes` back to its bundle and path. */
+export function fileOfNode(id: string): { bundle: string; path: string } {
+  const at = id.indexOf("\u0000");
+  return { bundle: id.slice(0, at), path: id.slice(at + 1) };
+}
+
