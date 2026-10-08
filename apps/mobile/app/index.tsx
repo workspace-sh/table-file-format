@@ -4,7 +4,7 @@
 // in the stack's search field. What's below is
 // table-ui's views, scrolling under the glass bars.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView } from "react-native";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
@@ -19,6 +19,7 @@ import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 import { useGlassEditor } from "../useGlassEditor";
+import { AppSettings } from "../AppSettings";
 
 // Horizontal page padding, and the negative margin that lets a sideways
 // scroller run to the screen's edges.
@@ -31,6 +32,8 @@ const ERRORS_LISTED = 8;
 export default function TableScreen() {
   const app = useTableAppContext();
   const router = useRouter();
+  // The app's own settings (display, reset), from the More menu.
+  const [appSettings, setAppSettings] = useState(false);
   const tables = app?.state.tables;
   const bundles = app?.state.bundles;
   const active = app?.state.active;
@@ -109,6 +112,7 @@ export default function TableScreen() {
     { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
     { label: labelOf("open-zip"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
     { label: labelOf("export-zip"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
+    { label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
   ];
 
   return (
@@ -132,8 +136,12 @@ export default function TableScreen() {
           // and, while an editor is open, room for any cell to scroll clear of it.
           contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
-          // and a tap elsewhere while typing goes to what's tapped.
-          automaticallyAdjustKeyboardInsets
+          // and a tap elsewhere while typing goes to what's tapped. On iOS the
+          // glass bar's editor leaves that room itself (`reserve`) and scrolls
+          // the cell into view: the automatic insets also scroll the focused
+          // field into view, and that field is in the bar, not the table, so
+          // they threw the table up behind the navigation bar.
+          automaticallyAdjustKeyboardInsets={!GLASS}
           keyboardShouldPersistTaps="handled"
           // iOS: scrolling puts the keyboard away and saves what was typed.
           {...(GLASS ? { keyboardDismissMode: "on-drag" as const, onScrollBeginDrag: glass.onScrollBegin } : {})}
@@ -173,8 +181,18 @@ export default function TableScreen() {
               </html.button>
             )}
             {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-            {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
+            {/* What it means, which the web says on hover: a tap says it here. */}
+            {summary.schemaChanged && (
+              <html.button
+                aria-label={`${summary.schemaChangedLabel}: what this means`}
+                onClick={() => Alert.alert(summary.schemaChangedLabel, summary.schemaChangedHint)}
+                style={styles.validityButton}
+              >
+                <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>
+              </html.button>
+            )}
           </html.div>
+          {appSettings && <AppSettings onClose={() => setAppSettings(false)} />}
           {state.settingsOpen && (
             <ViewSettings
               key={view.id}

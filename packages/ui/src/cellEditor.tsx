@@ -20,14 +20,37 @@ export interface CellEditorSelection {
   text: string;
   /** A formula column: `text` is its formula. */
   formula: boolean;
+  /** The field's description (SPEC section 2: its help), if it has one. */
+  description?: string;
+  /**
+   * What the column is, a line each: its kind and rules, description,
+   * formula and stored key; what the web shows when a header is hovered.
+   */
+  facts?: string;
 }
 
 /** What the editor shows about a draft as it changes. */
 export interface CellEditStatus {
-  /** Why it can't be saved, and a fix the editor can offer (text to insert). */
-  error?: { message: string; fix?: string };
+  /**
+   * Why it can't be saved, and a fix the editor can offer: `fix`, text to
+   * insert at the cursor (a missing bracket); `replace`, a whole value to
+   * save instead (a two-digit year read as this century).
+   */
+  error?: { message: string; fix?: string; replace?: string };
   /** This row's result with the draft (a formula). */
   result?: string;
+}
+
+/** A formula's working, as the web's formula panel shows it: what it read, and what it gives. */
+export interface FormulaDetails {
+  /** What it read in this row, each as the cell shows it. */
+  thisRow: { label: string; shown: string }[];
+  /** What it read in other rows. */
+  otherRows: { label: string; shown: string }[];
+  /** This row's value now. */
+  result: string;
+  /** This row's value once the draft is saved, when the draft differs. */
+  after?: string;
 }
 
 /** One edit, handed to the editor by a cell. */
@@ -42,6 +65,8 @@ export interface CellEditSession {
   /** `line`: a value, Return saves; `formula`: grows, Return saves; `text`: grows, Return is a new line. */
   mode: "line" | "formula" | "text";
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
+  /** Shown before the typed value, as the web's cell shows it: a currency's symbol. */
+  prefix?: string;
   /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
   suggestions?: boolean;
   /** A choice field: picked, not typed. Each in its colours, as its pill is drawn. */
@@ -66,7 +91,14 @@ export interface CellEditSession {
   /** The draft changed (the cell shows it); returns what to say about it. */
   change(text: string): CellEditStatus;
   /** Save. Refused, the edit stays open with the reason (the draft can't be held). */
-  save(text: string): { ok: true } | { ok: false; error: { message: string; fix?: string } };
+  save(text: string): { ok: true } | { ok: false; error: { message: string; fix?: string; replace?: string } };
+  /**
+   * Empty the cell and end the edit, as the Delete key does on the web: a
+   * single choice, a single link or a date, which have nothing to type away.
+   */
+  clear?(): void;
+  /** A formula's working with `draft`, for the editor to show on request. */
+  details?(draft: string): FormulaDetails;
   /** Discard the edit. */
   cancel(): void;
   /** After a save by Return: move down a row and edit there. */
@@ -80,6 +112,8 @@ export interface CellEditorCommands {
   editSelected(): void;
   /** Report where the selected cell is again (`reveal`), as when the editor changes size. */
   revealSelected?(): void;
+  /** Open a field's settings, as clicking its heading does. Absent where the schema can't be edited. */
+  openFieldSettings?(name: string): void;
 }
 
 export interface CellEditor {

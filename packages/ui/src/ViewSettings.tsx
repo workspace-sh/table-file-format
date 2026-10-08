@@ -28,6 +28,9 @@ import {
   operatorsFor,
   picksChoice,
   sortsPatch,
+  moveSort,
+  shownColumns,
+  columnShownPatch,
   takesValue,
   viewFieldChoices,
   sheetPatch,
@@ -62,6 +65,13 @@ export function ViewSettings({
   const setLayout = (layout: ViewLayout) => onChange(layoutPatch(view, schema, layout));
   const setFilters = (next: ViewFilter[]) => arrange(filtersPatch(next));
   const setSorts = (next: ViewSort[]) => arrange(sortsPatch(next));
+  // Which columns show is the view's own (its `fields`), not a personal arrangement.
+  const showsColumns = view.layout === "table" || view.layout === "list";
+  const shown = shownColumns(view, schema);
+  const setShown = (name: string, on: boolean) => {
+    const patch = columnShownPatch(view, schema, name, on);
+    if (patch) onChange(patch);
+  };
 
   const dateFields = choices.date;
   const boardFields = choices.board;
@@ -132,6 +142,24 @@ export function ViewSettings({
         )}
       </html.div>
 
+      {showsColumns && (
+        <>
+          <html.span style={styles.section}>Columns</html.span>
+          {schema.fields.map((f) => (
+            <Toggle
+              key={f.name}
+              role="setting"
+              checked={shown.has(f.name)}
+              onChange={(on) => setShown(f.name, on)}
+              style={styles.check}
+            >
+              {label(f)}
+            </Toggle>
+          ))}
+          {shown.size === 1 && <html.span style={styles.note}>One column always shows.</html.span>}
+        </>
+      )}
+
       <html.span style={styles.section}>Filter</html.span>
       {filters.map((flt, i) => (
         <FilterRow
@@ -174,6 +202,16 @@ export function ViewSettings({
             }
             style={styles.input}
           />
+          {sorts.length > 1 && (
+            <>
+              <html.button style={[styles.remove, i === 0 && styles.off]} aria-label="Sort earlier" disabled={i === 0} onClick={() => setSorts(moveSort(sorts, i, i - 1))}>
+                ↑
+              </html.button>
+              <html.button style={[styles.remove, i === sorts.length - 1 && styles.off]} aria-label="Sort later" disabled={i === sorts.length - 1} onClick={() => setSorts(moveSort(sorts, i, i + 1))}>
+                ↓
+              </html.button>
+            </>
+          )}
           <html.button style={styles.remove} aria-label="Remove sort" onClick={() => setSorts(sorts.filter((_, j) => j !== i))}>
             ×
           </html.button>
@@ -188,6 +226,7 @@ export function ViewSettings({
       >
         + Add sort
       </html.button>
+      {sorts.length > 1 && <html.span style={styles.note}>The first sort comes first.</html.span>}
       {orderNote(view, sorts) && <html.span style={styles.note}>{orderNote(view, sorts)}</html.span>}
 
       {onArrange && personal && (
@@ -332,11 +371,10 @@ function viewSettingsSections({
 
   // Which columns show (the view's `fields`). Absent, all do; one always stays.
   if (view.layout === "table" || view.layout === "list") {
-    const shown = new Set(view.fields ?? schema.fields.map((f) => f.name));
+    const shown = shownColumns(view, schema);
     const setShown = (name: string, on: boolean) => {
-      const next = schema.fields.map((f) => f.name).filter((n) => (n === name ? on : shown.has(n)));
-      if (next.length === 0) return;
-      onChange({ fields: next.length === schema.fields.length ? undefined : next });
+      const patch = columnShownPatch(view, schema, name, on);
+      if (patch) onChange(patch);
     };
     sections.push({
       id: "columns",
@@ -347,10 +385,7 @@ function viewSettingsSections({
         id: `column-${f.name}`,
         label: f.title ?? f.name,
         value: shown.has(f.name),
-        onChange: (on: boolean) => {
-          if (!on && shown.size === 1) return;
-          setShown(f.name, on);
-        },
+        onChange: (on: boolean) => setShown(f.name, on),
       })),
     });
   }
@@ -375,7 +410,9 @@ function viewSettingsSections({
             const next = { ...totals };
             if (picked === "none") delete next[f.name];
             else next[f.name] = picked as ViewTotal;
-            arrange({ totals: Object.keys(next).length ? next : undefined });
+            // Written to the view itself: a personal arrangement keeps only
+            // filters, sorts and grouping, so a total sent there was dropped.
+            onChange({ totals: Object.keys(next).length ? next : undefined });
           },
         );
       }),
@@ -455,12 +492,7 @@ function viewSettingsSections({
     title: "Sort",
     footer: orderNote(view, sorts) || (sorts.length > 1 ? "The first sort comes first. Touch and hold to reorder." : undefined),
     onRemove: (i) => setSorts(sorts.filter((_, j) => j !== i)),
-    onMove: (from, to) => {
-      const next = [...sorts];
-      const [moved] = next.splice(from, 1);
-      if (moved) next.splice(to, 0, moved);
-      setSorts(next);
-    },
+    onMove: (from, to) => setSorts(moveSort(sorts, from, to)),
     rows: [
       ...sorts.map(
         (srt, i): SettingsRow => ({
@@ -678,6 +710,8 @@ const styles = css.create({
     cursor: "pointer",
     color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" },
   },
+  /** A button that can't act here (the first sort can't go earlier). */
+  off: { opacity: 0.3, cursor: "default" },
   remove: {
     fontSize: 14,
     borderWidth: 0,

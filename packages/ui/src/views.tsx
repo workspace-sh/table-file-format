@@ -1288,6 +1288,29 @@ const styles = css.create({
     boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
   },
   cellProblemAt: (top: number, left: number) => ({ top, left }),
+  /** Long text being written: a box over its cell, at least as wide, growing with its lines. */
+  cellLongText: {
+    position: "fixed",
+    zIndex: 60,
+    minHeight: 120,
+    maxHeight: "50vh",
+    paddingInline: 10,
+    paddingBlock: 8,
+    fontSize: 13,
+    lineHeight: 1.45,
+    fontFamily: "inherit",
+    resize: "none",
+    boxSizing: "border-box",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: { default: "#3478f6", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+    borderRadius: 6,
+    outlineStyle: "none",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#1c1c1e" },
+    boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+  },
+  cellLongTextAt: (top: number, left: number, width: number) => ({ top, left, width }),
   cellProblemRefused: {
     color: "#ffffff",
     backgroundColor: { default: "#c62828", "@media (prefers-color-scheme: dark)": "#b3261e" },
@@ -1776,7 +1799,11 @@ function EditableCell({
   // Once the edit is saved or cancelled, the input's blur (which fires as
   // it goes away) mustn't save the draft again over what was chosen.
   const closed = useRef(false);
-  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null);
+  // Long text (a markdown string) is written in a box over the cell, where
+  // lines have room; the cell itself is a row high. Measured from the cell.
+  const cellAnchor = useRef<HTMLElement | null>(null);
+  const [longAt, setLongAt] = useState<AnchorRect | null>(null);
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
@@ -1904,6 +1931,21 @@ function EditableCell({
     );
   }
 
+  // A multi-select or a link with an outside editor: picked there, links
+  // to many rows included (the editor ticks them on and off), as long as
+  // there are rows to link to.
+  if (
+    field &&
+    editOutside &&
+    ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
+  ) {
+    return (
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+      </html.div>
+    );
+  }
+
   // A list: a multi-select picks from its choices; a plain list is typed
   // as comma-separated text.
   // A relation to many rows is ticked on and off, as a multi-select is.
@@ -1923,15 +1965,6 @@ function EditableCell({
         toggled={(id) => relationToggled(field, value, id, relatedTables)}
         onOpenRelation={onOpenRelation}
       />
-    );
-  }
-
-  // A multi-select or a link with an outside editor: picked there.
-  if (field && editOutside && ((kind === "list" && enumOptions(field).length > 0) || kind === "relation")) {
-    return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
-        <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
-      </html.div>
     );
   }
 
@@ -2065,6 +2098,60 @@ function EditableCell({
   // how it's shown. While editing, show the symbol beside the input so
   // it's clear what the number is in.
   const currencySymbol = currencySymbolOf(field);
+  // Long text: the cell shows its value as it stands, and the writing is
+  // done in a box over it. Enter is a new line, as in a row's page;
+  // ⌘/Ctrl+Enter saves and moves down; Escape cancels; clicking away saves.
+  if (field?.format === "markdown" && kind === "text") {
+    return (
+      <>
+        <html.span
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ref={(el: any) => {
+            if (el && !cellAnchor.current) {
+              cellAnchor.current = el;
+              void measureAnchor(el).then(setLongAt);
+            }
+          }}
+          style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}
+        >
+          <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
+        </html.span>
+        {longAt && (
+          <Portal>
+            <html.textarea
+              dir="auto"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                if (el && inputRef.current !== el) {
+                  inputRef.current = el;
+                  focusInput(el);
+                  const end = el.value.length;
+                  el.setSelectionRange?.(caretAtEnd.current ? end : 0, end);
+                }
+              }}
+              aria-label={field.title ?? field.name}
+              value={draft}
+              onChange={(e: { target: { value: string } }) => {
+                setDraft(e.target.value);
+                setProblem(null);
+              }}
+              onBlur={() => {
+                if (!closed.current) commit(draft, "blur");
+              }}
+              onKeyDown={(e: KeyEventLike) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault?.();
+                  if (commit(draft)) onEditEnd?.("enter");
+                } else if (e.key === "Enter") return;
+                else onEditKey(e);
+              }}
+              style={[styles.cellLongText, styles.cellLongTextAt(longAt.top - 2, longAt.left - 2, Math.max(longAt.width + 4, 320))]}
+            />
+          </Portal>
+        )}
+      </>
+    );
+  }
   const input = (
     <html.input
         dir="auto"
@@ -2504,6 +2591,21 @@ export function TableView({
   const [barFormula, setBarFormula] = useState<{ rowId: string; name: string; draft: string } | null>(null);
   const barSession = useRef<CellEditSession | null>(null);
   const barSeq = useRef(0);
+  // Another view or table on screen (or this one gone): the open edit ends
+  // with it, discarded. Without this the editor kept editing a field that
+  // was no longer shown. Not saved: by now the app's active table may be
+  // another, and a save writes to the active table.
+  useEffect(
+    () => () => {
+      const open = barSession.current;
+      if (!open) return;
+      barSession.current = null;
+      open.cancel();
+      editor?.end(open.key);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, view.id, tableKey],
+  );
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
@@ -2526,6 +2628,12 @@ export function TableView({
             })()
           : formatCellValue(field, row[sel.name]),
       formula: field.computed !== undefined,
+      ...(field.description ? { description: field.description } : {}),
+      // What the web's header hover says, for a platform with no hover.
+      facts: (() => {
+        const hint = fieldHint({ field, name: sel.name, schema, editable: false, formulaSyntax });
+        return [hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
+      })(),
     });
   });
   useEffect(() => {
@@ -2534,6 +2642,19 @@ export function TableView({
       deselect: () => setSel(null),
       editSelected: () => void (sel && openCell(sel.rowId, sel.name)),
       revealSelected: () => void (sel && measureAnchor(cellRefs.current[`${sel.rowId}\u0000${sel.name}`]).then((rect) => rect && editor.reveal?.(rect))),
+      // As clicking the heading does; a sheet ignores where the heading is,
+      // but the editor waits for a place, so a heading scrolled away still opens it.
+      ...(schemaEditable
+        ? {
+            openFieldSettings: (name: string) => {
+              setFormulaCell(null);
+              void measureAnchor(headerButtonRefs.current[name]).then((rect) => {
+                setAnchorRect(rect ?? { top: 0, left: 0, width: 0, height: 0 });
+                setEditingFieldName(name);
+              });
+            },
+          }
+        : {}),
     });
   });
   useEffect(() => () => editor?.attach(null), [editor]);
@@ -3134,6 +3255,20 @@ export function TableView({
           }
           return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name]) };
         },
+        // The web panel's working, as text: each input as its cell shows it.
+        details: (t) => {
+          const ex = explain(t);
+          const shown = (i: { field: string; value: unknown }) => {
+            const f = fieldMap.get(i.field);
+            return f ? formatCellValue(f, i.value) : i.value == null ? "" : String(i.value);
+          };
+          return {
+            thisRow: ex.thisRow.map((i) => ({ label: i.label, shown: shown(i) })),
+            otherRows: ex.otherRows.map((i) => ({ label: i.label, shown: shown(i) })),
+            result: formatCellValue(field, row[name]),
+            ...(ex.changed && ex.preview ? { after: formatCellValue(field, ex.preview.value) } : {}),
+          };
+        },
         save: (t) => {
           const ex = explain(t);
           if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
@@ -3172,6 +3307,7 @@ export function TableView({
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
+        ...(kind === "text" && !dated && currencySymbolOf(field) ? { prefix: currencySymbolOf(field)! } : {}),
         ...(kind === "choice" || many
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
@@ -3246,13 +3382,24 @@ export function TableView({
           const r = commitDraft(field, row[name], t, "key", queried);
           if (r.kind === "problem") {
             queried = r.queried;
-            return { ok: false, error: { message: r.check.message } };
+            return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
           }
           setBarDraft(null);
           barSession.current = null;
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
           return { ok: true };
         },
+        // Emptied as the Delete key does (the value goes, not ""), required or not:
+        // the table then reports a required one as missing, as on the web.
+        ...((kind === "choice" && !many) || linksOne || dated
+          ? {
+              clear: () => {
+                setBarDraft(null);
+                barSession.current = null;
+                if (row[name] !== undefined) onUpdateRow!(rowId, name, undefined);
+              },
+            }
+          : {}),
         cancel: () => {
           setBarDraft(null);
           barSession.current = null;
@@ -3522,6 +3669,21 @@ export function TableView({
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
+            // The cell under a click, named as a tap names it on iOS: its
+            // coordinate in a sheet, else its column. Only a page has points.
+            referenceAt={
+              typeof document === "undefined"
+                ? undefined
+                : (x, y) => {
+                    const under = document.elementsFromPoint(x, y);
+                    for (const [key, node] of Object.entries(cellRefs.current)) {
+                      if (!node || !under.some((el) => node === el || (node as Element).contains?.(el))) continue;
+                      const [rowId, field] = key.split("\u0000") as [string, string];
+                      return coords && grid ? (coordinateOf(field, rowId, grid) ?? field) : field;
+                    }
+                    return null;
+                  }
+            }
             onMoreOptions={
               schemaEditable
                 ? async () => {

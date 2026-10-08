@@ -12,7 +12,7 @@ import {
   printFormula,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
-import { explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
+import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -215,26 +215,46 @@ const styles = css.create({
     gap: 8,
     fontSize: 12,
   },
-  enumRow: {
+  choiceRow: {
     display: "flex",
     flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "center",
     gap: 4,
     marginTop: 4,
-    marginBottom: 4,
   },
-  enumPill: {
+  choiceLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+  choiceColour: {
+    width: 88,
+  },
+  smallButton: {
+    minWidth: 26,
     paddingInline: 6,
-    paddingBlock: 2,
+    paddingBlock: 4,
+    fontSize: 12,
     borderRadius: 4,
-    fontSize: 11,
+    borderWidth: 1,
+    borderStyle: "solid",
+    cursor: "pointer",
+    borderColor: {
+      default: "#d1d1d6",
+      "@media (prefers-color-scheme: dark)": "#3a3a3f",
+    },
     backgroundColor: {
-      default: "#e8e8ed",
-      "@media (prefers-color-scheme: dark)": "#26262b",
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#17171a",
     },
     color: {
       default: "#1c1c1e",
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
+    },
+  },
+  dangerButton: {
+    color: {
+      default: "#d70015",
+      "@media (prefers-color-scheme: dark)": "#ff6961",
     },
   },
   actionRow: {
@@ -708,6 +728,18 @@ export function SchemaFieldEditor({
     setEnumDraft("");
   };
 
+  // The field's choices written back, each as { value, label?, color? } (SPEC "enum").
+  const setChoices = (next: EnumOption[]) =>
+    onUpdate({ constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } });
+  const choices = hasEnum ? enumOptions(field) : [];
+  const moveChoice = (from: number, to: number) => {
+    if (to < 0 || to >= choices.length) return;
+    const next = choices.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    setChoices(next);
+  };
+
   const body = (
     <>
         <html.div style={styles.identity}>
@@ -784,13 +816,40 @@ export function SchemaFieldEditor({
         {hasEnum && (
           <>
             <html.span style={styles.label}>{field.type === "array" ? "Choices (each item is one of these)" : "Enum values"}</html.span>
-            <html.div style={styles.enumRow}>
-              {enumOptions(field).map((opt) => (
-                <html.span key={opt.value} style={styles.enumPill}>
-                  {opt.label ?? opt.value}
-                </html.span>
-              ))}
-            </html.div>
+            {/* Each choice: its label to rename, its colour, its place, and removing it. */}
+            {choices.map((o, i) => (
+              <html.div key={o.value} style={styles.choiceRow}>
+                <html.input
+                  dir="auto"
+                  type="text"
+                  aria-label={`Label for ${o.value}`}
+                  value={o.label ?? o.value}
+                  placeholder={o.value}
+                  onChange={(e: { target: { value: string } }) => {
+                    const t = e.target.value.trim();
+                    setChoices(choices.map((c, j) => (j === i ? { ...c, label: t && t !== c.value ? t : undefined } : c)));
+                  }}
+                  style={[styles.input, styles.choiceLabel]}
+                />
+                <Select
+                  value={o.color ?? "none"}
+                  options={CHOICE_COLOURS}
+                  onChange={(c) => setChoices(choices.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x)))}
+                  style={[styles.input, styles.choiceColour]}
+                />
+                <html.button aria-label={`Move ${o.label ?? o.value} up`} disabled={i === 0} onClick={() => moveChoice(i, i - 1)} style={styles.smallButton}>
+                  ↑
+                </html.button>
+                <html.button aria-label={`Move ${o.label ?? o.value} down`} disabled={i === choices.length - 1} onClick={() => moveChoice(i, i + 1)} style={styles.smallButton}>
+                  ↓
+                </html.button>
+                {onRemoveEnumValue && (
+                  <html.button aria-label={`Remove ${o.label ?? o.value}`} onClick={() => onRemoveEnumValue(o.value)} style={styles.smallButton}>
+                    ×
+                  </html.button>
+                )}
+              </html.div>
+            ))}
             <html.input
         dir="auto"
               type="text"
@@ -845,12 +904,19 @@ export function SchemaFieldEditor({
             ↓ Move down
           </html.button>
         </html.div>
+
+        {onDelete && (
+          <>
+            <html.div style={styles.actionRow}>
+              <html.button onClick={onDelete} style={[styles.button, styles.dangerButton]}>
+                Delete field
+              </html.button>
+            </html.div>
+            <html.span style={styles.noteText}>Its values go with it, from every row.</html.span>
+          </>
+        )}
     </>
   );
-
-  // The field's choices written back, each as { value, label?, color? } (SPEC "enum").
-  const setChoices = (next: EnumOption[]) =>
-    onUpdate({ constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } });
 
   // The same settings as a platform's own form shows them (iOS).
   const fieldSections = (): SettingsSection[] => {
@@ -1401,6 +1467,12 @@ interface FormulaCellPanelProps {
   allRows?: Row[];
   /** The other tables, so lookups and linked rows preview too (D36). */
   computeOptions?: ComputeOptions;
+  /**
+   * The reference to the cell at a point on the page (its column, or its
+   * coordinate in a sheet), or null where there's no cell: a click on a
+   * cell while the formula waits for one adds it, rather than closing.
+   */
+  referenceAt?: (x: number, y: number) => string | null;
 }
 
 /**
@@ -1420,6 +1492,7 @@ export function FormulaCellPanel({
   grid,
   allRows,
   computeOptions,
+  referenceAt,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1438,10 +1511,35 @@ export function FormulaCellPanel({
   const save = () => {
     if (onSave && explained.save) onSave(explained.save);
   };
+  const input = useRef<HTMLInputElement | null>(null);
+  // A click outside the panel closes it, unless the formula is waiting for
+  // something to work on and the click is on a cell: then the cell's
+  // reference goes in at the cursor, as a spreadsheet's formula bar does.
+  const outside = (e: { pageX: number; pageY: number }) => {
+    const el = input.current;
+    if (onSave && referenceAt && el && typeof window !== "undefined") {
+      const start = el.selectionStart ?? draft.length;
+      const end = el.selectionEnd ?? start;
+      if (expectsReference(draft.slice(0, start))) {
+        // The page's point, as the window shows it.
+        const reference = referenceAt(e.pageX - window.scrollX, e.pageY - window.scrollY);
+        if (reference) {
+          setDraft(draft.slice(0, start) + reference + draft.slice(end));
+          const at = start + reference.length;
+          requestAnimationFrame(() => {
+            el.focus();
+            el.setSelectionRange(at, at);
+          });
+          return;
+        }
+      }
+    }
+    onClose();
+  };
 
   return (
     <Portal>
-      <html.button onClick={onClose} style={styles.backdrop} />
+      <html.button onClick={outside} style={styles.backdrop} />
       <html.div
         style={[
           styles.popover,
@@ -1462,7 +1560,9 @@ export function FormulaCellPanel({
         {onSave ? (
           <>
             <html.input
-        dir="auto"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={input as any}
+              dir="auto"
               type="text"
               value={draft}
               onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
@@ -1473,6 +1573,7 @@ export function FormulaCellPanel({
               style={[styles.input, styles.formulaInput]}
             />
             <FormulaStatus result={compiled} typed={draft} />
+            {referenceAt && expectsReference(draft) && <html.span style={styles.hintText}>Click a cell to add it.</html.span>}
           </>
         ) : (
           <>
