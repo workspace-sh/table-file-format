@@ -4,7 +4,9 @@
  * this is the package's own SwiftUI view (ios/FormulaFieldView.swift),
  * registered as an Expo UI view: it sits in the bar's Host and takes the same
  * modifiers. The host app says where the colours go (`highlight`), so the bar
- * stays free of any one formula language.
+ * stays free of any one formula language and the rules live once, in shared
+ * code. The native field keeps the last colouring in step with each edit
+ * until the colouring for the new text arrives, so colour never drops out.
  */
 import { requireNativeView } from "expo";
 import type { Ref } from "react";
