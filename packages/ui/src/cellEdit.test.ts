@@ -52,6 +52,15 @@ test("an early year is asked about once, then kept; leaving keeps it outright", 
 test("a currency field's input shows its symbol", () => {
   assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:GBP" }, "en-GB"), "£");
   assert.equal(currencySymbolOf({ name: "p", type: "number" }), null);
+  // An engine without formatToParts (Hermes on iOS) still gets the symbol.
+  const own = Intl.NumberFormat.prototype.formatToParts;
+  try {
+    (Intl.NumberFormat.prototype as { formatToParts?: unknown }).formatToParts = undefined;
+    assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:GBP" }, "en-GB"), "£");
+    assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:USD" }, "en-GB"), "US$");
+  } finally {
+    Intl.NumberFormat.prototype.formatToParts = own;
+  }
   assert.equal(currencySymbolOf({ name: "p", type: "number", format: "currency:ZZZZ" }), null);
 });
 

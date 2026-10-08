@@ -57,8 +57,12 @@ export function currencySymbolOf(field: Field | undefined, locale?: string): str
   const format = field?.format;
   if (!format?.startsWith("currency:")) return null;
   try {
-    const parts = new Intl.NumberFormat(locale, { style: "currency", currency: format.slice("currency:".length) }).formatToParts(0);
-    return parts.find((p) => p.type === "currency")?.value ?? null;
+    const nf = new Intl.NumberFormat(locale, { style: "currency", currency: format.slice("currency:".length) });
+    // formatToParts isn't in every engine (Hermes on iOS lacks it): there,
+    // zero formatted with its digits, separators and spaces taken away.
+    const part = typeof nf.formatToParts === "function" ? nf.formatToParts(0).find((p) => p.type === "currency")?.value : undefined;
+    const symbol = part ?? nf.format(0).replace(/[\d.,\s\u00a0\u202f\u2212-]/g, "");
+    return symbol || null;
   } catch {
     return null;
   }
