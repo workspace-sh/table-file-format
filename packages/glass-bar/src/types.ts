@@ -48,6 +48,8 @@ export type GlassBarEditing = {
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
   chips?: GlassBarChip[];
+  /** An ⓘ in the header, for more about what's being edited (a formula's working). */
+  info?: boolean;
   /** Why it can't be saved, with an optional fix. */
   error?: { message: string; fixLabel?: string };
 };
@@ -87,7 +89,7 @@ export type GlassBarProps = {
   onEdit?: () => void;
   /** Selected: ✕. */
   onDeselect?: () => void;
-  /** Selected: the ⓘ, for what the field is. */
+  /** The ⓘ: selected, what the field is; editing, more about the edit. */
   onInfo?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */
   onCancel?: () => void;
