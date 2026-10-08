@@ -46,6 +46,8 @@ function editorHeight(s: CellEditSession): number {
 }
 /** Room between the edited cell and the editor below it. */
 const CLEARANCE = 28;
+/** Taller than this, the editor is expanded. */
+const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
@@ -109,8 +111,10 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         if (!s) return;
         const place = (keyboard: number) => {
           const tall = barHeight.current > 60 ? barHeight.current : editorHeight(s);
-          // Clear of the editor by more than the row grip that hangs below the cell.
-          const foot = Dimensions.get("window").height - (keyboard > 0 ? keyboard + 8 : 30) - tall - CLEARANCE;
+          // Clear of the editor by more than the row grip that hangs below the cell;
+          // expanded, the cell has only the row's worth of room above the editor.
+          const clear = tall > EXPANDED ? 14 : CLEARANCE;
+          const foot = Dimensions.get("window").height - (keyboard > 0 ? keyboard + 8 : 30) - tall - clear;
           const bottom = rect.top + rect.height;
           if (bottom > foot) scrollBy.current?.(bottom - foot);
           else if (rect.top < TOP) scrollBy.current?.(rect.top - TOP);
@@ -179,6 +183,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       highlight: formula ? formulaSpans : undefined,
+      // Any text can run long; a number, an email or a link can't.
+      expandable: session.mode === "line" && (!session.keyboard || session.keyboard === "default"),
       error: status.error ? { message: status.error.message, fixLabel: status.error.fix ? `Add ${status.error.fix}` : undefined } : undefined,
     };
   } else if (selection) {
