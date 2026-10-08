@@ -13,6 +13,9 @@ import {
   newSort,
   picksChoice,
   sortsPatch,
+  moveSort,
+  shownColumns,
+  columnShownPatch,
   viewFieldChoices,
   filterValueFrom,
   filterValueText,
@@ -128,4 +131,22 @@ test("a choice field's value is picked for is, is not, contains; typed otherwise
   assert.deepEqual(board.map((f) => f.name), ["s"]);
   assert.deepEqual(date.map((f) => f.name), ["d"]);
   assert.deepEqual(group.map((f) => f.name), ["s", "l", "d"]);
+});
+
+test("a sort moves to another place, and a move out of range changes nothing", () => {
+  const a = { field: "a", direction: "asc" as const };
+  const b = { field: "b", direction: "desc" as const };
+  const c = { field: "c", direction: "asc" as const };
+  assert.deepEqual(moveSort([a, b, c], 2, 0), [c, a, b]);
+  assert.deepEqual(moveSort([a, b, c], 0, 1), [b, a, c]);
+  assert.deepEqual(moveSort([a, b], 0, 2), [a, b]);
+});
+
+test("columns are shown and hidden in the schema's order; all shown is no list; one always stays", () => {
+  const schema = { fields: [{ name: "a", type: "string" }, { name: "b", type: "string" }, { name: "c", type: "string" }] } as unknown as Parameters<typeof shownColumns>[1];
+  const view = { id: "v", name: "V", layout: "table" } as Parameters<typeof shownColumns>[0];
+  assert.deepEqual([...shownColumns(view, schema)], ["a", "b", "c"]);
+  assert.deepEqual(columnShownPatch(view, schema, "b", false), { fields: ["a", "c"] });
+  assert.deepEqual(columnShownPatch({ ...view, fields: ["c", "a"] }, schema, "b", true), { fields: undefined });
+  assert.equal(columnShownPatch({ ...view, fields: ["a"] }, schema, "a", false), null);
 });
