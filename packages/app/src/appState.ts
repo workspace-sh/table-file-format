@@ -39,7 +39,7 @@ import {
   withViewPatch,
 } from "./edits.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
-import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History } from "./history.ts";
+import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History, type Place } from "./history.ts";
 import { leaving } from "./leaving.ts";
 import type { Library } from "./library.ts";
 import { afterReset, resetPrompt } from "./resetting.ts";
@@ -103,6 +103,18 @@ export interface AppState {
   openedDirs: Record<string, boolean>;
   sidebar: SidebarPrefs;
   history: History;
+  /**
+   * Where you are in the view on screen, as the view and the app report it
+   * (the cell selected, how far down): kept with the view in history as
+   * it's left. The page open and the search are their own fields.
+   */
+  place: Place;
+  /**
+   * A place handed back by going back or forward, for the view and the app
+   * to put back (select the cell, scroll to the row). `n` counts each one,
+   * so the same place twice is still news.
+   */
+  restoring: { place: Place; n: number } | null;
   arrangements: Arrangements;
   display: DisplaySettings;
   search: string;
@@ -129,6 +141,8 @@ export type AppAction =
   | { type: "back" }
   | { type: "forward" }
   | { type: "openPage"; rowId: string | null }
+  /** The view or the app reporting where you are in the view on screen. */
+  | { type: "place"; place: Pick<Place, "rowId" | "field" | "top"> }
   | { type: "search"; text: string }
   // `revert`: closing by Cancel, which puts back everything the settings
   // changed since they opened (the views, saved for everyone or not, and
@@ -204,6 +218,8 @@ export function initialAppState(input: AppStart): AppState {
     openedDirs: {},
     sidebar: input.stored?.sidebar ?? {},
     history: NO_HISTORY,
+    place: {},
+    restoring: null,
     arrangements: input.stored?.arrangements ?? {},
     display: input.stored?.display ?? {},
     search: "",
@@ -268,10 +284,30 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   } else if (!next.settingsOpen && next.settingsBefore) next = { ...next, settingsBefore: null };
   if (tableChanged) next = { ...next, sidebar: withFileUnfolded(next.sidebar, bundleOf(next.active)) };
   if (next.tables[next.active]) {
-    const history = visited(next.history, viewAddress(next.active, toView));
-    if (history !== next.history) next = { ...next, history };
+    const history = visited(next.history, viewAddress(next.active, toView), placeOf(prev));
+    // A view arrived at afresh starts at its top; one gone back or forward to, where it was left.
+    if (history !== next.history) next = { ...next, history, place: {} };
+  }
+  if ((action.type === "back" || action.type === "forward") && next.restoring && next.restoring !== prev.restoring) {
+    const { place } = next.restoring;
+    const rows = next.tables[next.active]?.rows ?? [];
+    next = {
+      ...next,
+      place: { ...(place.rowId ? { rowId: place.rowId, field: place.field } : {}), ...(place.top ? { top: place.top } : {}) },
+      search: place.search ?? "",
+      openPage: place.page && rows.some((r) => r.id === place.page) ? place.page : null,
+    };
   }
   return next;
+}
+
+/** Where you are in the view on screen, all of it: what history keeps as it's left. */
+function placeOf(state: AppState): Place {
+  return {
+    ...state.place,
+    ...(state.openPage ? { page: state.openPage } : {}),
+    ...(state.search ? { search: state.search } : {}),
+  };
 }
 
 /** An edit to the table on screen: made, and its bundle marked to write. Nothing when it changes nothing. */
@@ -302,11 +338,12 @@ function tablesSide(prefs: SidebarPrefs): SidebarPrefs {
   return rest;
 }
 
-function moved(state: AppState, to: { history: History; address: string } | null): AppState {
+function moved(state: AppState, to: { history: History; address: string; place?: Place } | null): AppState {
   if (!to) return state;
   const target = addressTarget(to.address, state.tables, state.bundles, bundleOf(state.active));
-  // History is of views: its addresses name no row, so a page open is left behind.
-  return target ? { ...follow(state, target), history: to.history } : state;
+  if (!target) return state;
+  // The place the view was left at comes back with it (settle puts it in place).
+  return { ...follow(state, target), history: to.history, restoring: { place: to.place ?? {}, n: (state.restoring?.n ?? 0) + 1 } };
 }
 
 function currentView(state: AppState): View | undefined {
@@ -336,9 +373,14 @@ function step(state: AppState, action: AppAction): AppState {
     case "follow":
       return state.tables[action.target.key] ? follow(state, action.target) : state;
     case "back":
-      return moved(state, goBack(state.history, (a) => addressLive(a, state.tables, state.bundles)));
+      return moved(state, goBack(state.history, (a) => addressLive(a, state.tables, state.bundles), placeOf(state)));
     case "forward":
-      return moved(state, goForward(state.history, (a) => addressLive(a, state.tables, state.bundles)));
+      return moved(state, goForward(state.history, (a) => addressLive(a, state.tables, state.bundles), placeOf(state)));
+    case "place": {
+      const place = { ...state.place, ...action.place };
+      for (const k of Object.keys(place) as (keyof Place)[]) if (place[k] === undefined) delete place[k];
+      return JSON.stringify(place) === JSON.stringify(state.place) ? state : { ...state, place };
+    }
     case "openPage":
       if (action.rowId !== null && !state.tables[state.active]?.rows.some((r) => r.id === action.rowId)) return state;
       return action.rowId === state.openPage ? state : { ...state, openPage: action.rowId };
@@ -542,6 +584,8 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
           openedAt: schemaVersions(after.tables),
           viewIds: firstViews(after.tables),
           history: NO_HISTORY,
+          place: {},
+          restoring: null,
           shownFile: null,
           dirty: state.dirty.filter((b) => keep.includes(b)),
         },
