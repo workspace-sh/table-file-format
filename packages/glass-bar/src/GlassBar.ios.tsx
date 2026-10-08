@@ -65,7 +65,7 @@ import {
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
-import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState } from "./types";
+import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 
 const SIZE = 48;
 const GAP = 8;
@@ -315,7 +315,7 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   );
 }
 
-function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor, expansion }: Part) {
+function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, onClear, editor, expansion }: Part) {
   const dark = useColorScheme() === "dark";
   // Expanded, the operators are inside the capsule. Collapsing, they wait
   // until it's slim: a glass piece that appears grows out of its nearest
@@ -324,16 +324,22 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor, e
   const chips =
     state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, tone: undefined, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
     : state.kind === "choosing"
-      ? state.choices.map((c) => ({
-          ...c,
-          detail: undefined,
-          symbol: undefined,
-          on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
-          tone: c.colors ? (dark ? c.colors.dark : c.colors.light) : undefined,
-          press: () => onChoose?.(c.id),
-        }))
+      ? [
+          // One choice can be none: first, as an empty option leads a menu.
+          ...(state.canClear && !state.multiple
+            ? [{ id: "\u0000none", label: "None", detail: undefined, symbol: undefined, on: !state.selected, tone: undefined, press: () => onClear?.() }]
+            : []),
+          ...state.choices.map((c) => ({
+            ...c,
+            detail: undefined,
+            symbol: undefined,
+            on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
+            tone: c.colors ? (dark ? c.colors.dark : c.colors.light) : undefined,
+            press: () => onChoose?.(c.id),
+          })),
+        ]
     : [];
-  if (state.kind === "dating") return <DateCard state={state} ns={ns} onPickDate={onPickDate} />;
+  if (state.kind === "dating") return <DateCard state={state} ns={ns} onPickDate={onPickDate} onClear={onClear} />;
   if (chips.length === 0) return null;
   // Symbols share one glass background, as a toolbar group does: one
   // larger, steadier piece of glass reads better over a busy table than a
@@ -481,10 +487,23 @@ function Capsule(props: Part) {
       );
     case "selected":
       return (
-        <VStack alignment="leading" spacing={1} modifiers={[padding({ horizontal: 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
-          <Label text={state.label} size={11} />
-          <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
-        </VStack>
+        <HStack spacing={8} modifiers={[padding({ leading: 16, trailing: state.info ? 10 : 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
+          <VStack alignment="leading" spacing={1}>
+            <Label text={state.label} size={11} />
+            <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            {/* The field's own help, as the web shows it on hover. */}
+            {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
+          </VStack>
+          <Spacer />
+          {state.info ? (
+            <Image
+              systemName="info.circle"
+              size={19}
+              onPress={() => props.onInfo?.()}
+              modifiers={[frame({ width: 32, height: 32 }), secondary, contentShape(shapes.circle()), accessibilityLabel("About this field")]}
+            />
+          ) : null}
+        </HStack>
       );
     case "choosing": {
       const picked = Array.isArray(state.selected) ? state.selected : state.selected ? [state.selected] : [];
@@ -521,7 +540,7 @@ function chipLabel(c: ChipLook) {
 }
 
 /** The system's calendar (and clock), in glass above the capsule; a pick saves. */
-function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void }) {
+function DateCard({ state, ns, onPickDate, onClear }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void; onClear?: () => void }) {
   return (
     <VStack
       modifiers={[
@@ -536,6 +555,13 @@ function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { k
         onDateChange={(d) => onPickDate?.(d)}
         modifiers={[datePickerStyle("graphical")]}
       />
+      {/* Only when there's a date to clear: the calendar can't show "none". */}
+      {state.canClear && state.value ? (
+        <HStack modifiers={[padding({ horizontal: 8, bottom: 2 })]}>
+          <Spacer />
+          <Button label="Clear" role="destructive" onPress={() => onClear?.()} />
+        </HStack>
+      ) : null}
     </VStack>
   );
 }
@@ -575,12 +601,42 @@ function Header({ label, detail, expansion }: { label: string; detail?: string; 
   );
 }
 
+/**
+ * A formula's working, under the field in the expanded bar: what it read,
+ * its result and what saving gives, as the web's formula panel lists them,
+ * kept up to date as the formula is typed. Scrolls when there's more than
+ * room for.
+ */
+function Working({ working, onFieldSettings }: { working: GlassBarWorking; onFieldSettings?: () => void }) {
+  return (
+    <ScrollView>
+      <VStack alignment="leading" spacing={10} modifiers={[padding({ top: 4, trailing: 6 })]}>
+        {working.sections.map((section, i) => (
+          <VStack key={section.title ?? `section-${i}`} alignment="leading" spacing={4}>
+            {section.title ? <Text modifiers={[font({ size: 11, weight: "semibold" }), secondary]}>{section.title.toUpperCase()}</Text> : null}
+            {section.rows.map((row, j) => (
+              <HStack key={`${row.label}-${j}`} spacing={8}>
+                <Text modifiers={[font({ size: 14 }), row.strong ? foregroundStyle("primary") : secondary, lineLimit(1)]}>{row.label}</Text>
+                <Spacer />
+                <Text modifiers={[font({ size: 14, weight: row.strong ? "semibold" : "regular" }), lineLimit(1)]}>{row.value || "—"}</Text>
+              </HStack>
+            ))}
+          </VStack>
+        ))}
+        {onFieldSettings ? (
+          <Text modifiers={[font({ size: 14 }), foregroundStyle("#0A84FF"), onTapGesture(onFieldSettings), accessibilityLabel("Field Settings")]}>Field Settings…</Text>
+        ) : null}
+      </VStack>
+    </ScrollView>
+  );
+}
+
 /** Roughly one line of the editor's text, to fit as many as the expanded capsule holds. */
 const LINE = { mono: 19, prose: 22 };
 /** The expanded capsule's header, its actions along the foot, and padding. */
 const EXPANDED_CHROME = 116;
 
-function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
   // Expo UI's TextField, or for a formula the bar's own coloured field: the same commands.
   const field = useRef<TextFieldRef>(null);
   const [spansFor, setSpansFor] = useState(state.initialValue);
@@ -635,7 +691,9 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     return () => clearTimeout(t);
   }, [tall]);
   // Expanded: as many lines as fit, held open even when there are fewer; past that, the field scrolls.
-  const lines = tall ? Math.max(3, Math.floor((expansion!.height - EXPANDED_CHROME - (state.error ? 24 : 0)) / (mono ? LINE.mono : LINE.prose))) : 5;
+  // Expanded with a formula's working under it, the field takes a few lines and the working the rest.
+  const working = tall ? state.working : undefined;
+  const lines = working ? 4 : tall ? Math.max(3, Math.floor((expansion!.height - EXPANDED_CHROME - (state.error ? 24 : 0)) / (mono ? LINE.mono : LINE.prose))) : 5;
 
   const change = (next: string) => {
     // A growing field types Return as a new line. In a formula or a short
@@ -664,6 +722,10 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     >
       <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
+        {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
+        {state.prefix ? (
+          <Text modifiers={[font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }), secondary, padding({ vertical: 4 })]}>{state.prefix}</Text>
+        ) : null}
         {state.highlight ? (
           <FormulaField
             key={state.editKey}
@@ -673,7 +735,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
             spans={state.highlight(spansFor)}
             spansFor={spansFor}
             fontSize={15}
-            minLines={tall ? lines : 1}
+            minLines={tall && !working ? lines : 1}
             maxLines={lines}
             onValueChange={change}
             onSelectionChange={(sel) => { selection.current = sel; }}
@@ -692,7 +754,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
             modifiers={[
               font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),
               // A growing field takes the height of its lines rather than what it is offered.
-              ...(grows ? [lineLimit(lines, { reservesSpace: tall }), fixedSize({ horizontal: false, vertical: true })] : []),
+              ...(grows ? [lineLimit(lines, { reservesSpace: tall && !working }), fixedSize({ horizontal: false, vertical: true })] : []),
               ...(state.keyboard && state.keyboard !== "default" ? [keyboardType(state.keyboard)] : []),
               // A number, code or formula: no word suggestions, corrections or capitals.
               ...(state.suggestions === false ? [autocorrectionDisabled(true), textInputAutocapitalization("never")] : []),
@@ -721,6 +783,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
           ) : null}
         </HStack>
       ) : null}
+      {working ? <Working working={working} onFieldSettings={onFieldSettings} /> : null}
       {tall ? <Spacer /> : null}
       {tall ? <CardActions state={state} editor={editor} onCancel={onCancel} onSave={onSave} onChip={onChip} /> : null}
     </VStack>

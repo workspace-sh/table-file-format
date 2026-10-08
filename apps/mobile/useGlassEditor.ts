@@ -5,8 +5,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
-import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
-import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
+import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus, FormulaDetails } from "@workspace.sh/table-ui";
+import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "@workspace.sh/glass-bar";
+import { expectsReference } from "@workspace.sh/table-ui/shared";
 import { formulaSpans } from "@workspace.sh/table-core";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
@@ -18,13 +19,36 @@ const OPERATORS = [
   { id: "()", label: "Brackets", symbol: "parentheses", insert: "()", cursorBack: 1 },
 ];
 
-/** After one of these, a tap on a cell adds a reference to it rather than selecting it. */
-const EXPECTS_REFERENCE = /[-+*/(=,]\s*$/;
 
 function sameSelection(a: CellEditorSelection | null, b: CellEditorSelection | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.rowId === b.rowId && a.name === b.name && a.text === b.text && a.label === b.label && a.rowLabel === b.rowLabel;
+  return (
+    a.rowId === b.rowId &&
+    a.name === b.name &&
+    a.text === b.text &&
+    a.label === b.label &&
+    a.rowLabel === b.rowLabel &&
+    a.description === b.description &&
+    a.facts === b.facts
+  );
+}
+
+/** A formula's working, as the glass bar lists it. */
+function workingOf(d: FormulaDetails): GlassBarWorking {
+  const rows = (items: { label: string; shown: string }[]) => items.map((i) => ({ label: i.label, value: i.shown }));
+  return {
+    sections: [
+      ...(d.thisRow.length ? [{ title: "In this row", rows: rows(d.thisRow) }] : []),
+      ...(d.otherRows.length ? [{ title: "From other rows", rows: rows(d.otherRows) }] : []),
+      {
+        rows: [
+          { label: "Result", value: d.result, strong: true },
+          ...(d.after !== undefined ? [{ label: "After saving", value: d.after, strong: true }] : []),
+        ],
+      },
+    ],
+  };
 }
 
 export interface GlassEditorOptions {
@@ -142,7 +166,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         setTimeout(() => settle(Keyboard.metrics()?.height ?? 0), 1500);
       },
       tapWhileEditing: (_rowId, _name, reference) => {
-        if (open.current?.mode !== "formula" || !EXPECTS_REFERENCE.test(typed.current)) return false;
+        if (open.current?.mode !== "formula" || !expectsReference(typed.current)) return false;
         bar.current?.insert(reference);
         return true;
       },
@@ -159,7 +183,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   let state: GlassBarState;
   if (searching) state = { kind: "searching", query };
   else if (session?.date) {
-    state = { kind: "dating", label: session.label, detail: session.rowLabel, value: session.date.value, components: session.date.components, shown: shownDate };
+    state = { kind: "dating", label: session.label, detail: session.rowLabel, value: session.date.value, components: session.date.components, shown: shownDate, canClear: !!session.clear };
   } else if (session?.choices) {
     state = {
       kind: "choosing",
@@ -169,23 +193,32 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       selected: session.multiple ? many : session.selected,
       multiple: session.multiple,
       canAdd: !!session.addChoice,
+      canClear: !!session.clear,
     };
   } else if (session) {
     const formula = session.mode === "formula";
     state = {
       kind: "editing",
       editKey: session.key,
-      label: formula && EXPECTS_REFERENCE.test(typed.current) ? "Tap a column to add it" : session.label,
+      label: formula && expectsReference(typed.current) ? "Tap a column to add it" : session.label,
       detail: status.result !== undefined ? `${session.rowLabel}  ${status.result}` : session.rowLabel,
       initialValue: session.initial,
       mode: session.mode,
       keyboard: session.keyboard,
+      prefix: session.prefix,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       highlight: formula ? formulaSpans : undefined,
+      // Shown while expanded, as the formula is typed.
+      working: session.details ? workingOf(session.details(typed.current)) : undefined,
       // Any text can run long; a number, an email or a link can't.
       expandable: session.mode === "line" && (!session.keyboard || session.keyboard === "default"),
-      error: status.error ? { message: status.error.message, fixLabel: status.error.fix ? `Add ${status.error.fix}` : undefined } : undefined,
+      error: status.error
+        ? {
+            message: status.error.message,
+            fixLabel: status.error.replace ? `Use ${status.error.replace.slice(0, 4)}` : status.error.fix ? `Add ${status.error.fix}` : undefined,
+          }
+        : undefined,
     };
   } else if (selection) {
     state = {
@@ -193,6 +226,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       label: selection.formula ? `ƒ ${selection.label} · every row · ${selection.rowLabel}` : `${selection.label} · ${selection.rowLabel}`,
       value: selection.text,
       monospaced: selection.formula,
+      about: selection.description,
+      info: !!selection.facts,
     };
   } else state = { kind: "rest", query };
 
@@ -227,6 +262,26 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     },
     onClearQuery: () => onQuery(""),
     onDeselect: () => commands.current?.deselect(),
+    // From a formula's working: the edit ends, and the field's settings open.
+    onFieldSettings: () => {
+      const s = open.current;
+      const settings = commands.current?.openFieldSettings;
+      if (!s || !settings) return;
+      s.cancel();
+      close();
+      Keyboard.dismiss();
+      settings(s.name);
+    },
+    // What the field is, as the web says on hover, and a way into its settings.
+    onInfo: () => {
+      const sel = selection;
+      if (!sel?.facts) return;
+      const toSettings = commands.current?.openFieldSettings;
+      Alert.alert(sel.label, sel.facts, [
+        ...(toSettings ? [{ text: "Field Settings…", onPress: () => toSettings(sel.name) }] : []),
+        { text: "OK", style: "cancel" as const },
+      ]);
+    },
     onEdit: () => commands.current?.editSelected(),
     onCancel: () => {
       open.current?.cancel();
@@ -239,13 +294,21 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       if (s) setStatus(s.change(text));
     },
     onSave: (text) => save(text),
+    // Empty a single choice, link or date, and close: there's nothing left to edit.
+    onClear: () => {
+      open.current?.clear?.();
+      close();
+    },
     // Return: a value saves and moves down a row, still editing; a formula saves.
     onSubmit: (text) => {
       const s = open.current;
       save(text, s && s.mode === "line" ? () => s.next() : undefined);
     },
+    // A missing piece goes in at the cursor; a corrected value is saved as it stands.
     onFix: () => {
-      if (status.error?.fix) bar.current?.insert(status.error.fix);
+      const s = open.current;
+      if (status.error?.replace) save(status.error.replace, s && s.mode === "line" ? () => s.next() : undefined);
+      else if (status.error?.fix) bar.current?.insert(status.error.fix);
     },
     // One choice saves and closes; a multi-select toggles and stays open.
     onChoose: (id) => {

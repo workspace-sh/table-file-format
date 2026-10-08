@@ -32,4 +32,5 @@ export {
   type CellEditorSelection,
   type CellEditSession,
   type CellEditStatus,
+  type FormulaDetails,
 } from "./cellEditor";

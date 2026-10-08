@@ -7,14 +7,17 @@ export type GlassBarState =
   | { kind: "rest"; query?: string }
   /** Search raised above the keyboard. */
   | { kind: "searching"; query: string }
-  /** A selected cell: its label ("Owner · iOS Pro launch") and value or formula. */
-  | { kind: "selected"; label: string; value: string; monospaced?: boolean }
+  /**
+   * A selected cell: its label ("Owner · iOS Pro launch") and value or
+   * formula; a line about the field when it has one; `info`, an ⓘ for more.
+   */
+  | { kind: "selected"; label: string; value: string; monospaced?: boolean; about?: string; info?: boolean }
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
-  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean; canAdd?: boolean }
+  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean; canAdd?: boolean; canClear?: boolean }
   /** Picking a date or time with the system's calendar: no keyboard. */
-  | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string };
+  | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string; canClear?: boolean };
 
 export type GlassBarEditing = {
   kind: "editing";
@@ -39,10 +42,17 @@ export type GlassBarEditing = {
    */
   expandable?: boolean;
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
+  /** Shown before the field, in the field's own type: a currency's symbol. */
+  prefix?: string;
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
   chips?: GlassBarChip[];
+  /**
+   * How the value is worked out (a formula: what it read, its result and
+   * what saving gives), shown under the field while the bar is expanded.
+   */
+  working?: GlassBarWorking;
   /**
    * A formula: where its colours go, worked out from its text as it is
    * typed. iOS draws them in the bar's own field (Expo UI's TextField takes
@@ -68,6 +78,11 @@ export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => vo
 /** A choice, optionally in its own colours (a light wash of `bg`, the label in `fg`). */
 export type GlassBarChoice = { id: string; label: string; colors?: { light: { bg: string; fg: string }; dark: { bg: string; fg: string } } };
 
+/** A formula's working, a section at a time: rows of a label and the value it stands for. */
+export type GlassBarWorking = {
+  sections: { title?: string; rows: { label: string; value: string; strong?: boolean }[] }[];
+};
+
 /** A stretch of a formula to colour, by UTF-16 offsets. */
 export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
@@ -91,6 +106,10 @@ export type GlassBarProps = {
   onEdit?: () => void;
   /** Selected: ✕. */
   onDeselect?: () => void;
+  /** Selected: the ⓘ, for what the field is. */
+  onInfo?: () => void;
+  /** Expanded, under a formula's working: open the field's settings. */
+  onFieldSettings?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */
   onCancel?: () => void;
   onChange?: (value: string) => void;
@@ -107,6 +126,8 @@ export type GlassBarProps = {
   onChoose?: (id: string) => void;
   /** The "+" after the choices: add a new one. */
   onAddChoice?: () => void;
+  /** Choosing one, or a date: "None" or Clear empties the cell. */
+  onClear?: () => void;
   onPickDate?: (date: Date) => void;
   /** The editor expanded or collapsed: a host can scroll what's edited into view above it. */
   onExpandChange?: (expanded: boolean) => void;
