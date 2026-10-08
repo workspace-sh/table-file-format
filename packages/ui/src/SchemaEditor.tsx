@@ -12,7 +12,7 @@ import {
   printFormula,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
-import { explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
+import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -1467,6 +1467,12 @@ interface FormulaCellPanelProps {
   allRows?: Row[];
   /** The other tables, so lookups and linked rows preview too (D36). */
   computeOptions?: ComputeOptions;
+  /**
+   * The reference to the cell at a point on the page (its column, or its
+   * coordinate in a sheet), or null where there's no cell: a click on a
+   * cell while the formula waits for one adds it, rather than closing.
+   */
+  referenceAt?: (x: number, y: number) => string | null;
 }
 
 /**
@@ -1486,6 +1492,7 @@ export function FormulaCellPanel({
   grid,
   allRows,
   computeOptions,
+  referenceAt,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1504,10 +1511,34 @@ export function FormulaCellPanel({
   const save = () => {
     if (onSave && explained.save) onSave(explained.save);
   };
+  const input = useRef<HTMLInputElement | null>(null);
+  // A click outside the panel closes it, unless the formula is waiting for
+  // something to work on and the click is on a cell: then the cell's
+  // reference goes in at the cursor, as a spreadsheet's formula bar does.
+  const outside = (e: { clientX?: number; clientY?: number }) => {
+    const el = input.current;
+    if (onSave && referenceAt && el && e.clientX !== undefined && e.clientY !== undefined) {
+      const start = el.selectionStart ?? draft.length;
+      const end = el.selectionEnd ?? start;
+      if (expectsReference(draft.slice(0, start))) {
+        const reference = referenceAt(e.clientX, e.clientY);
+        if (reference) {
+          setDraft(draft.slice(0, start) + reference + draft.slice(end));
+          const at = start + reference.length;
+          requestAnimationFrame(() => {
+            el.focus();
+            el.setSelectionRange(at, at);
+          });
+          return;
+        }
+      }
+    }
+    onClose();
+  };
 
   return (
     <Portal>
-      <html.button onClick={onClose} style={styles.backdrop} />
+      <html.button onClick={outside} style={styles.backdrop} />
       <html.div
         style={[
           styles.popover,
@@ -1528,7 +1559,9 @@ export function FormulaCellPanel({
         {onSave ? (
           <>
             <html.input
-        dir="auto"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={input as any}
+              dir="auto"
               type="text"
               value={draft}
               onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
@@ -1539,6 +1572,7 @@ export function FormulaCellPanel({
               style={[styles.input, styles.formulaInput]}
             />
             <FormulaStatus result={compiled} typed={draft} />
+            {referenceAt && expectsReference(draft) && <html.span style={styles.hintText}>Click a cell to add it.</html.span>}
           </>
         ) : (
           <>
