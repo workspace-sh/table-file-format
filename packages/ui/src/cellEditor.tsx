@@ -41,6 +41,18 @@ export interface CellEditStatus {
   result?: string;
 }
 
+/** A formula's working, as the web's formula panel shows it: what it read, and what it gives. */
+export interface FormulaDetails {
+  /** What it read in this row, each as the cell shows it. */
+  thisRow: { label: string; shown: string }[];
+  /** What it read in other rows. */
+  otherRows: { label: string; shown: string }[];
+  /** This row's value now. */
+  result: string;
+  /** This row's value once the draft is saved, when the draft differs. */
+  after?: string;
+}
+
 /** One edit, handed to the editor by a cell. */
 export interface CellEditSession {
   /** Changes for every edit, so the editor starts a fresh field. */
@@ -85,6 +97,8 @@ export interface CellEditSession {
    * single choice, a single link or a date, which have nothing to type away.
    */
   clear?(): void;
+  /** A formula's working with `draft`, for the editor to show on request. */
+  details?(draft: string): FormulaDetails;
   /** Discard the edit. */
   cancel(): void;
   /** After a save by Return: move down a row and edit there. */
