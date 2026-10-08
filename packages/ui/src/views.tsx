@@ -2510,6 +2510,21 @@ export function TableView({
   const [barFormula, setBarFormula] = useState<{ rowId: string; name: string; draft: string } | null>(null);
   const barSession = useRef<CellEditSession | null>(null);
   const barSeq = useRef(0);
+  // Another view or table on screen (or this one gone): the open edit ends
+  // with it, discarded. Without this the editor kept editing a field that
+  // was no longer shown. Not saved: by now the app's active table may be
+  // another, and a save writes to the active table.
+  useEffect(
+    () => () => {
+      const open = barSession.current;
+      if (!open) return;
+      barSession.current = null;
+      open.cancel();
+      editor?.end(open.key);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, view.id, tableKey],
+  );
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
