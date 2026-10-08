@@ -11,7 +11,7 @@ export { sheetDirectory, sheetDependents, canInsertAt, insertRowAt, placeCells, 
 export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
 export type { DisplayChoiceRow, DisplaySettingKind, DisplaySettings } from "./DisplaySettings";
 export * from "./viewEdit";
-export type { ViewProps } from "./viewProps";
+export type { PlaceMeasure, ViewProps } from "./viewProps";
 export * from "./cards";
 export { firstDayOfWeek, monthNameLong, rotateWeekdays, weekdayNamesShort } from "./internal/calendarLocale";
 export { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled, type Commit, type EditorKind, type InputKind } from "./cellEdit";
