@@ -9,7 +9,8 @@ export type MaterialSymbol =
   | "table"
   | "note_add"
   | "folder_open"
-  | "share";
+  | "share"
+  | "settings";
 
 export interface MenuItem {
   label: string;

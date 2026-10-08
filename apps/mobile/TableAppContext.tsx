@@ -14,6 +14,7 @@ import {
   STORAGE_KEY,
   archiveFileName,
   bundleOf,
+  clearSaved,
   derive,
   exportFailedText,
   fromBundle,
@@ -62,6 +63,10 @@ export interface TableAppContextValue {
   labelOf: (id: AppCommandId) => string;
   openZip: () => Promise<void>;
   exportZip: () => Promise<void>;
+  /** The phone's own language, which "System" in the display settings means. */
+  systemLocale: string;
+  /** Start again from the example tables, after asking; what the phone saved goes too. */
+  resetDemo: () => void;
 }
 
 const Context = createContext<TableAppContextValue | null>(null);
@@ -136,7 +141,13 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
   useEffect(() => {
     const asking = state.asking;
     if (!asking) return;
-    if (asking.kind === "confirm") return ask(asking.confirm, (response) => dispatch({ type: "answer", response }));
+    if (asking.kind === "confirm")
+      return ask(asking.confirm, (response) => {
+        // Starting again from the examples: what the phone saved goes too,
+        // or the old edits would come back at the next launch.
+        if (asking.on.type === "reset" && response === "reset") clearSaved(store);
+        dispatch({ type: "answer", response });
+      });
     if (Platform.OS !== "ios") return;
     Alert.prompt(asking.prompt.heading, undefined, [
       { text: "Cancel", style: "cancel", onPress: () => dispatch({ type: "answer", response: "cancel" }) },
@@ -155,6 +166,9 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     derived,
     display,
     labelOf: (id) => derived.commands.find((c) => c.id === id)!.label,
+    systemLocale,
+    // The reducer asks first; on yes the saved edits are cleared above.
+    resetDemo: () => dispatch({ type: "reset", fresh: { tables: initialTables, bundles: bundleMetas, paths: {}, problems: {} } }),
     // A .table.zip from the Files app or elsewhere becomes one more file here, saying what was skipped (D25).
     openZip: async () => {
       try {
