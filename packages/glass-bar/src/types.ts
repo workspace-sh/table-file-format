@@ -32,6 +32,12 @@ export type GlassBarEditing = {
    * `text`: long text, grows; Return is a new line, so only Save saves.
    */
   mode: "line" | "formula" | "text";
+  /**
+   * A one-line value that may still run long (any text): it wraps as it
+   * grows and can expand, though Return still saves and moves on. Formulas
+   * and `text` always can; numbers, dates and the like never.
+   */
+  expandable?: boolean;
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
   suggestions?: boolean;
