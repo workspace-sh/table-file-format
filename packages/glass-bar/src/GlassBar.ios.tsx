@@ -314,7 +314,7 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   );
 }
 
-function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor, expansion }: Part) {
+function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, onClear, editor, expansion }: Part) {
   const dark = useColorScheme() === "dark";
   // Expanded, the operators are inside the capsule. Collapsing, they wait
   // until it's slim: a glass piece that appears grows out of its nearest
@@ -323,16 +323,22 @@ function Chips({ state, ns, onChip, onChoose, onPickDate, onAddChoice, editor, e
   const chips =
     state.kind === "editing" ? (state.chips ?? []).map((c) => ({ ...c, on: false, tone: undefined, press: () => { if (c.insert) editor?.current?.insert(c.insert, c.cursorBack); onChip?.(c.id); } }))
     : state.kind === "choosing"
-      ? state.choices.map((c) => ({
-          ...c,
-          detail: undefined,
-          symbol: undefined,
-          on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
-          tone: c.colors ? (dark ? c.colors.dark : c.colors.light) : undefined,
-          press: () => onChoose?.(c.id),
-        }))
+      ? [
+          // One choice can be none: first, as an empty option leads a menu.
+          ...(state.canClear && !state.multiple
+            ? [{ id: "\u0000none", label: "None", detail: undefined, symbol: undefined, on: !state.selected, tone: undefined, press: () => onClear?.() }]
+            : []),
+          ...state.choices.map((c) => ({
+            ...c,
+            detail: undefined,
+            symbol: undefined,
+            on: Array.isArray(state.selected) ? state.selected.includes(c.id) : c.id === state.selected,
+            tone: c.colors ? (dark ? c.colors.dark : c.colors.light) : undefined,
+            press: () => onChoose?.(c.id),
+          })),
+        ]
     : [];
-  if (state.kind === "dating") return <DateCard state={state} ns={ns} onPickDate={onPickDate} />;
+  if (state.kind === "dating") return <DateCard state={state} ns={ns} onPickDate={onPickDate} onClear={onClear} />;
   if (chips.length === 0) return null;
   // Symbols share one glass background, as a toolbar group does: one
   // larger, steadier piece of glass reads better over a busy table than a
@@ -520,7 +526,7 @@ function chipLabel(c: ChipLook) {
 }
 
 /** The system's calendar (and clock), in glass above the capsule; a pick saves. */
-function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void }) {
+function DateCard({ state, ns, onPickDate, onClear }: { state: Extract<GlassBarState, { kind: "dating" }>; ns: string; onPickDate?: (d: Date) => void; onClear?: () => void }) {
   return (
     <VStack
       modifiers={[
@@ -535,6 +541,13 @@ function DateCard({ state, ns, onPickDate }: { state: Extract<GlassBarState, { k
         onDateChange={(d) => onPickDate?.(d)}
         modifiers={[datePickerStyle("graphical")]}
       />
+      {/* Only when there's a date to clear: the calendar can't show "none". */}
+      {state.canClear && state.value ? (
+        <HStack modifiers={[padding({ horizontal: 8, bottom: 2 })]}>
+          <Spacer />
+          <Button label="Clear" role="destructive" onPress={() => onClear?.()} />
+        </HStack>
+      ) : null}
     </VStack>
   );
 }

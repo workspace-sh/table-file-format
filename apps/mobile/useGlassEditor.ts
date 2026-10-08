@@ -158,7 +158,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   let state: GlassBarState;
   if (searching) state = { kind: "searching", query };
   else if (session?.date) {
-    state = { kind: "dating", label: session.label, detail: session.rowLabel, value: session.date.value, components: session.date.components, shown: shownDate };
+    state = { kind: "dating", label: session.label, detail: session.rowLabel, value: session.date.value, components: session.date.components, shown: shownDate, canClear: !!session.clear };
   } else if (session?.choices) {
     state = {
       kind: "choosing",
@@ -168,6 +168,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       selected: session.multiple ? many : session.selected,
       multiple: session.multiple,
       canAdd: !!session.addChoice,
+      canClear: !!session.clear,
     };
   } else if (session) {
     const formula = session.mode === "formula";
@@ -237,6 +238,11 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       if (s) setStatus(s.change(text));
     },
     onSave: (text) => save(text),
+    // Empty a single choice, link or date, and close: there's nothing left to edit.
+    onClear: () => {
+      open.current?.clear?.();
+      close();
+    },
     // Return: a value saves and moves down a row, still editing; a formula saves.
     onSubmit: (text) => {
       const s = open.current;
