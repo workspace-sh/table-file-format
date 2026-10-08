@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
-import { attachmentAt, attachmentShown, fileKind, fileText, filesTree, flattenFilesTree, type FilesTreeDir } from "./filesTree.ts";
+import { attachmentAt, attachmentShown, fileKind, fileOfNode, fileText, filesNodes, filesTree, flattenFilesTree, type FilesNode, type FilesTreeDir } from "./filesTree.ts";
 
 const table = (title: string, rows: number, bodies: Record<string, string> = {}): ParsedTable => ({
   path: "x",
@@ -111,4 +111,18 @@ test("an attachment shows as its image, or a note when it isn't one or isn't the
 test("what counts as drawable is the platform's: a HEIC is a note in a browser, an image where it can be drawn", () => {
   assert.deepEqual(attachmentShown("scan.heic", "x"), { note: "Not an image, so there's nothing to preview." });
   assert.deepEqual(attachmentShown("scan.heic", "x", (n) => /\.(heic|tiff?)$/i.test(n)), { image: "x" });
+});
+
+test("the tree as plain nodes for a file browser, ids reading back to bundle and path", () => {
+  const tree = filesTree(tables, bundles, { activeTable: "crm/companies" });
+  const nodes = filesNodes(tree);
+  assert.equal(nodes[0]!.name, tree[0]!.name);
+  const walk = (list: FilesNode[]): FilesNode[] => list.flatMap((n) => [n, ...(n.children ? walk(n.children) : [])]);
+  const all = walk(nodes);
+  const rows = all.find((n) => n.name === "rows.ndjson" && n.id.includes("companies"))!;
+  assert.deepEqual(fileOfNode(rows.id), { bundle: "crm", path: "tables/companies/rows.ndjson" });
+  assert.equal(rows.opens, "text");
+  assert.match(rows.note ?? "", /row/);
+  const logo = all.find((n) => n.id.includes("/attachments/") && !n.children);
+  if (logo) assert.ok(logo.opens === "image" || logo.opens === "none");
 });
