@@ -3,6 +3,7 @@
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import type { SheetGridShown } from "@workspace.sh/table-app";
+import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { BoardView, CalendarView, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
 
 export interface ViewCallbacks {
@@ -26,6 +27,10 @@ export interface ViewCallbacks {
   tableKey: string;
   sheet?: SheetGridShown;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  /** Where you are in the table, for history (the cell selected), and putting it back. */
+  onPlace?: (place: { rowId?: string; field?: string }) => void;
+  restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
+  onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
 }
 
 export function renderView(
@@ -76,6 +81,9 @@ export function renderView(
           tableKey={cb.tableKey}
           sheet={cb.sheet}
           onInsertRow={cb.onInsertRow}
+          onPlace={cb.onPlace}
+          restorePlace={cb.restorePlace}
+          onPlaceMeasure={cb.onPlaceMeasure}
         />
       );
   }

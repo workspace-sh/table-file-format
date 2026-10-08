@@ -4,7 +4,7 @@
 // in the stack's search field. What's below is
 // table-ui's views, scrolling under the glass bars.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView } from "react-native";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
@@ -13,6 +13,7 @@ import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
 import { BodyEditor, CellEditorContext, PageGutter, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
+import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
@@ -28,6 +29,9 @@ const MOBILE_H_PADDING = 16;
 const GLASS = Platform.OS === "ios";
 /** How many validation errors a tap on the count lists. */
 const ERRORS_LISTED = 8;
+
+/** The line under the navigation bar that "how far down" is measured at, in window points. */
+const PLACE_LINE = 140;
 
 export default function TableScreen() {
   const app = useTableAppContext();
@@ -53,6 +57,45 @@ export default function TableScreen() {
   // The table's scroll position, so the editor can keep its cell in view.
   const scroller = useRef<ScrollView>(null);
   const scrollY = useRef(0);
+  // How far down, kept for history as the row at a fixed line under the
+  // navigation bar and how far into it: rows measured, not pixels, so it
+  // survives rows drawn a window at a time.
+  const measure = useRef<PlaceMeasure | null>(null);
+  const onPlaceMeasure = useCallback((m: PlaceMeasure | null) => {
+    measure.current = m;
+  }, []);
+  const notePlace = () => {
+    const m = measure.current;
+    if (!m || !app) return;
+    void m.rowAt(PLACE_LINE).then((top) => {
+      if (top) app.dispatch({ type: "place", place: { top } });
+    });
+  };
+  // Gone back or forward to a view: scroll it to where it was left.
+  const restoring = app?.state.restoring;
+  useEffect(() => {
+    if (!restoring) return;
+    const top = restoring.place.top;
+    // After the view has drawn the rows it was left at.
+    const t = setTimeout(() => {
+      if (!top) {
+        scroller.current?.scrollTo({ y: 0, animated: false });
+        return;
+      }
+      // Twice: the first move can collapse the large title, which shifts the rows; the second puts them right.
+      const settle = (left: number) =>
+        void measure.current?.topOf(top.rowId).then((at) => {
+          if (at === null) return;
+          const off = at + top.offset - PLACE_LINE;
+          if (Math.abs(off) < 2) return;
+          scroller.current?.scrollTo({ y: Math.max(0, scrollY.current + off), animated: false });
+          if (left > 0) setTimeout(() => settle(left - 1), 120);
+        });
+      settle(2);
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoring?.n]);
   const glass = useGlassEditor({
     onScrollBy: (dy) => scroller.current?.scrollTo({ y: scrollY.current + dy, animated: true }),
     query: search ?? "",
@@ -130,6 +173,11 @@ export default function TableScreen() {
             scrollY.current = e.nativeEvent.contentOffset.y;
           }}
           scrollEventThrottle={16}
+          // Where a scroll comes to rest is where you are, for history.
+          onScrollEndDrag={(e) => {
+            if (e.nativeEvent.velocity?.y === 0) notePlace();
+          }}
+          onMomentumScrollEnd={notePlace}
           // Tracked by the large title, which collapses as it scrolls.
           contentInsetAdjustmentBehavior="automatic"
           style={{ flex: 1 }}
@@ -217,6 +265,9 @@ export default function TableScreen() {
             tableKey: tableNameOf(state.active),
             sheet,
             onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+            onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+            restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+            onPlaceMeasure,
           })}
           </Pressable>
         </ScrollView>
@@ -255,6 +306,10 @@ export default function TableScreen() {
           {/* The tables, in a sheet of their own. */}
           <Stack.Toolbar placement="left">
             <Stack.Toolbar.Button icon="sidebar.left" accessibilityLabel="Tables" onPress={showTables} />
+            {/* Back to where you were before following a link or changing view: the view, the cell, the page, the search, how far down. */}
+            {derived.canGoBack ? (
+              <Stack.Toolbar.Button icon="chevron.backward" accessibilityLabel="Back" onPress={() => dispatch({ type: "back" })} />
+            ) : null}
           </Stack.Toolbar>
           {/* This table's views, and a new one. */}
           <Stack.Toolbar placement="right">

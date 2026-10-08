@@ -16,6 +16,7 @@ import {
   TableView,
   canInsertAt,
 } from "@workspace.sh/table-ui";
+import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import {
   addressTarget,
@@ -57,6 +58,9 @@ import { Sidebar } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
 import { useNarrow } from "./useNarrow";
+
+/** The line under the window's top that "how far down" is measured at, in pixels. */
+const PLACE_LINE = 60;
 
 // How long after the last edit the demo saves, as the Mac and Linux apps do (400 ms): typing is one write, not one a key.
 const SAVE_AFTER_MS = 400;
@@ -481,6 +485,47 @@ export function App() {
   }, [toggleSidebar]);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  // How far down the page the view is, kept for history as the row at a
+  // line under the window's top and how far into it, and put back on the
+  // browser's Back or Forward. The page itself scrolls, sidebar and all.
+  const measure = useRef<PlaceMeasure | null>(null);
+  const onPlaceMeasure = useCallback((m: PlaceMeasure | null) => {
+    measure.current = m;
+  }, []);
+  useEffect(() => {
+    let rest: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (rest) clearTimeout(rest);
+      rest = setTimeout(() => {
+        void measure.current?.rowAt(PLACE_LINE).then((top) => {
+          if (top) dispatch({ type: "place", place: { top } });
+        });
+      }, 150);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rest) clearTimeout(rest);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const restoringN = state.restoring?.n;
+  useEffect(() => {
+    const top = state.restoring?.place.top;
+    if (restoringN === undefined) return;
+    // After the view has drawn the rows it was left at.
+    const t = setTimeout(() => {
+      if (!top) {
+        window.scrollTo({ top: 0 });
+        return;
+      }
+      void measure.current?.topOf(top.rowId).then((at) => {
+        if (at !== null) window.scrollBy({ top: at + top.offset - PLACE_LINE });
+      });
+    }, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoringN]);
   // Going wide shows the sidebar in place; coming back narrow starts closed.
   useEffect(() => {
     if (!narrow) setDrawerOpen(false);
@@ -517,7 +562,17 @@ export function App() {
       const target = addressTarget(addr, tables, bundles, bundleOf(activeTablePath));
       if (target) dispatch({ type: "follow", target });
     },
+    // The browser's Back and Forward are the app's, which put back where the
+    // view was left. Beyond what this visit remembers (after a reload), the
+    // address the browser kept is followed instead.
+    onBack: () => (derived.canGoBack ? dispatch({ type: "back" }) : followHash()),
+    onForward: () => (derived.canGoForward ? dispatch({ type: "forward" }) : followHash()),
   });
+  function followHash() {
+    const addr = addressInHash();
+    const target = addr && addressTarget(addr, tables, bundles, bundleOf(activeTablePath));
+    if (target) dispatch({ type: "follow", target });
+  }
 
   // The view on screen's callbacks, each an action (table-app's viewCallbacks).
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, activeTablePath]);
@@ -712,6 +767,9 @@ export function App() {
           tableKey: tableNameOf(activeTablePath),
           sheet,
           onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+          onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+          restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+          onPlaceMeasure,
         })}
         </>
         )}
@@ -739,6 +797,10 @@ interface ViewCallbacks {
   onAddEnumValue: (fieldName: string, value: string) => void;
   onRemoveEnumValue: (fieldName: string, value: string) => void;
   onDeleteField: (fieldName: string) => void;
+  /** Where you are in the table, for history (the cell selected), and putting it back. */
+  onPlace?: (place: { rowId?: string; field?: string }) => void;
+  restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
+  onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
   onAddField: (field: Field) => void;
@@ -828,6 +890,9 @@ function renderView(
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
+          onPlace={cb.onPlace}
+          restorePlace={cb.restorePlace}
+          onPlaceMeasure={cb.onPlaceMeasure}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
