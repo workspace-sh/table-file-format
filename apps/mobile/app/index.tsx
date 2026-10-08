@@ -181,7 +181,16 @@ export default function TableScreen() {
               </html.button>
             )}
             {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-            {summary.schemaChanged && <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>}
+            {/* What it means, which the web says on hover: a tap says it here. */}
+            {summary.schemaChanged && (
+              <html.button
+                aria-label={`${summary.schemaChangedLabel}: what this means`}
+                onClick={() => Alert.alert(summary.schemaChangedLabel, summary.schemaChangedHint)}
+                style={styles.validityButton}
+              >
+                <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>
+              </html.button>
+            )}
           </html.div>
           {appSettings && <AppSettings onClose={() => setAppSettings(false)} />}
           {state.settingsOpen && (

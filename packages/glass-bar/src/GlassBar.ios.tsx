@@ -486,10 +486,23 @@ function Capsule(props: Part) {
       );
     case "selected":
       return (
-        <VStack alignment="leading" spacing={1} modifiers={[padding({ horizontal: 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
-          <Label text={state.label} size={11} />
-          <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
-        </VStack>
+        <HStack spacing={8} modifiers={[padding({ leading: 16, trailing: state.info ? 10 : 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
+          <VStack alignment="leading" spacing={1}>
+            <Label text={state.label} size={11} />
+            <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            {/* The field's own help, as the web shows it on hover. */}
+            {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
+          </VStack>
+          <Spacer />
+          {state.info ? (
+            <Image
+              systemName="info.circle"
+              size={19}
+              onPress={() => props.onInfo?.()}
+              modifiers={[frame({ width: 32, height: 32 }), secondary, contentShape(shapes.circle()), accessibilityLabel("About this field")]}
+            />
+          ) : null}
+        </HStack>
       );
     case "choosing": {
       const picked = Array.isArray(state.selected) ? state.selected : state.selected ? [state.selected] : [];
