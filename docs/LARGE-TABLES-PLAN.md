@@ -90,7 +90,7 @@ In order, the first that works:
 2. **No index, or a stale one, and space to build it:** build it in the background. The build streams, so memory stays flat. It takes 7 s at 100,000 rows and 89 s at 1M in the browser.
 3. **No space** (a browser that won't grant the quota, a full disk), or no SQLite at all: hold the table in memory and say so. A build that fails with a SQLite error falls to this.
 
-Two things a person sees here are product decisions, listed at the end: what shows while the first build runs, and what the app says when it works without an index.
+What a person sees here was decided (section 10): progress until the first build is done, and a notice when a table opens in memory because there was no space.
 
 ## 4. Where an edit is saved
 
@@ -128,7 +128,7 @@ SPEC section 14 fixes the file and its events. What is left is who writes them a
 - **L2.** A `SqlDriver` over `node:sqlite`, which is built into Node and needs no native addon. It is synchronous, and a filter over 1M rows scans for most of a second, so it belongs off the UI's thread, behind the same message shape as the web worker. GTKX bundles a worker written as `new Worker(new URL("./x.ts", import.meta.url))` into the app (its `worker` build plugin), so the Linux worker can be written as the web one is.
 - **L3 and L4.** As W3 and W4, with real files.
 
-### iOS (unowned: Leslie assigns)
+### iOS (the Linux rig implements, after web and Linux; Primary or Secondary tests on devices)
 
 - **I1.** The shared list from W1 on the phone (LegendList native; `apps/mobile/app/bench.tsx` already measures it).
 - **I2.** A `SqlDriver` over expo-sqlite. To check before starting: that its SQLite has FTS5 with the trigram tokenizer and `json_each`, by running the indexer's tests through the driver on a device.
@@ -175,11 +175,11 @@ Two known gaps against the bar, with what closes them:
 
 ## 10. Decisions wanted
 
-For Leslie:
+For Leslie (decided 8 Oct 2026):
 
-1. **While a large table's index is first being built:** show its rows in file order straight away, with sorting, filtering and search waiting on the index (proposed), or show progress until everything works.
-2. **When the browser or disk won't give the space:** open in memory with a notice (proposed), or decline to open tables above some size.
-3. **Who does iOS** (I1 to I4).
+1. **While a large table's index is first being built:** show progress until everything works. (Showing rows in file order first was the other option.)
+2. **When the browser or disk won't give the space:** open in memory with a notice.
+3. **Who does iOS** (I1 to I4): the Linux rig specifies and implements it, after web and Linux; Primary or Secondary tests it on devices.
 
 For review by whoever implements web and Linux (accepted by the Linux rig, 8 Oct 2026):
 
