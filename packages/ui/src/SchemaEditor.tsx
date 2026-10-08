@@ -1515,13 +1515,14 @@ export function FormulaCellPanel({
   // A click outside the panel closes it, unless the formula is waiting for
   // something to work on and the click is on a cell: then the cell's
   // reference goes in at the cursor, as a spreadsheet's formula bar does.
-  const outside = (e: { clientX?: number; clientY?: number }) => {
+  const outside = (e: { pageX: number; pageY: number }) => {
     const el = input.current;
-    if (onSave && referenceAt && el && e.clientX !== undefined && e.clientY !== undefined) {
+    if (onSave && referenceAt && el && typeof window !== "undefined") {
       const start = el.selectionStart ?? draft.length;
       const end = el.selectionEnd ?? start;
       if (expectsReference(draft.slice(0, start))) {
-        const reference = referenceAt(e.clientX, e.clientY);
+        // The page's point, as the window shows it.
+        const reference = referenceAt(e.pageX - window.scrollX, e.pageY - window.scrollY);
         if (reference) {
           setDraft(draft.slice(0, start) + reference + draft.slice(end));
           const at = start + reference.length;
