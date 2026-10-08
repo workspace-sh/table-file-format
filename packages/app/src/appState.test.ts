@@ -36,7 +36,7 @@ test("starts on the default table's first view, with its address recorded and it
   const s = start({ stored: { sidebar: { foldedFiles: ["projects", "crm"] } } });
   assert.equal(s.active, "projects/projects");
   assert.equal(viewOf(s), "v1");
-  assert.equal(s.history.at, viewAddress("projects/projects", "v1"));
+  assert.deepEqual(s.history.at, { address: viewAddress("projects/projects", "v1") });
   assert.deepEqual(s.sidebar.foldedFiles, ["crm"]);
   assert.deepEqual(s.dirty, []);
   assert.equal(s.asking, null);
@@ -126,14 +126,16 @@ test("leaving: choosing the view already on screen keeps both", () => {
   assert.equal(s.settingsOpen, true);
 });
 
-test("leaving: back and forward clear them too", () => {
+test("leaving: back and forward put back each view's own search, and close the settings", () => {
   let s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "search", text: "x" }, { type: "back" });
   assert.equal(s.active, "projects/projects");
-  assert.equal(s.search, "");
+  assert.equal(s.search, "", "this view was left with no search");
   s = run(s, { type: "search", text: "y" }, { type: "settings", open: true }, { type: "forward" });
   assert.equal(s.active, "crm/deals");
-  assert.equal(s.search, "");
+  assert.equal(s.search, "x", "the search it was left with");
   assert.equal(s.settingsOpen, false);
+  s = run(s, { type: "back" });
+  assert.equal(s.search, "y");
 });
 
 test("leaving: a new view is the exception, opening on its settings", () => {
@@ -162,7 +164,7 @@ test("history: each view shown is recorded once, and back and forward walk it", 
     { type: "showTable", key: "crm/deals" },
     { type: "showView", key: "crm/deals", viewId: "open" },
   );
-  assert.deepEqual(s.history.back, [viewAddress("projects/projects", "v1"), viewAddress("crm/deals", "pipeline")]);
+  assert.deepEqual(s.history.back.map((e) => e.address), [viewAddress("projects/projects", "v1"), viewAddress("crm/deals", "pipeline")]);
   s = run(s, { type: "back" }, { type: "back" });
   assert.equal(s.active, "projects/projects");
   assert.equal(derive(s).canGoBack, false);
@@ -177,19 +179,19 @@ test("history: back with nowhere to go changes nothing", () => {
   assert.equal(tableApp(s, { type: "forward" }), s);
 });
 
-test("history: back skips a view deleted since, and leaves a page open behind", () => {
+test("history: back skips a view deleted since, and opens again the page it was left with", () => {
   let s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "dl-1" }, { type: "showTable", key: "projects/projects" });
   s = run(s, { type: "addView", id: "gone" }, { type: "deleteView" }, { type: "answer", response: "delete" });
   assert.equal(viewOf(s), "v1");
   s = run(s, { type: "back" });
   assert.equal(s.active, "crm/deals");
   assert.equal(viewOf(s), "pipeline");
-  assert.equal(s.openPage, null);
+  assert.equal(s.openPage, "dl-1");
 });
 
 test("history: a reset starts it again", () => {
   const s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
-  assert.deepEqual(s.history, { back: [], at: viewAddress("projects/projects", "v1"), forward: [] });
+  assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "v1") }, forward: [] });
 });
 
 // Rule 3: the file on screen unfolds
@@ -281,7 +283,7 @@ test("a page open closes when another table shows, even one with a row of the sa
   assert.equal(s.openPage, null);
   const back = run(s, { type: "openPage", rowId: "co-atlas" }, { type: "back" });
   assert.equal(back.active, "crm/companies");
-  assert.equal(back.openPage, null);
+  assert.equal(back.openPage, "co-atlas", "the page this table was left with, not the other table's row of the same id");
 });
 
 test("deleteRow asks first; cancel keeps the row, delete removes it and closes its page", () => {
@@ -610,4 +612,20 @@ test("viewCallbacks dispatch the named actions, with the adapter's ids", () => {
     { type: "follow", target: { key: "crm/deals", viewId: "all", openBody: null } },
     { type: "addChoice", name: "status", value: "New" },
   ]);
+});
+
+test("history: the cell selected and how far down come back with a view, and a new view starts at its top", () => {
+  let s = run(
+    start(),
+    { type: "place", place: { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } } },
+    { type: "showTable", key: "crm/deals" },
+  );
+  assert.deepEqual(s.place, {}, "a view arrived at afresh starts at its top");
+  s = run(s, { type: "place", place: { rowId: "dl-2", field: "value" } }, { type: "back" });
+  assert.deepEqual(s.place, { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } });
+  assert.deepEqual(s.restoring?.place, { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } });
+  const n = s.restoring!.n;
+  s = run(s, { type: "forward" });
+  assert.deepEqual(s.place, { rowId: "dl-2", field: "value" });
+  assert.equal(s.restoring!.n, n + 1);
 });
