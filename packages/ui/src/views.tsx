@@ -2518,6 +2518,9 @@ export function TableView({
   sheet,
   onInsertRow,
   onAttachFile,
+  onPlace,
+  restorePlace,
+  onPlaceMeasure,
 }: ViewProps) {
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
@@ -3212,6 +3215,56 @@ export function TableView({
   // as Sheets and Airtable have it. Columns in display order, rows as shown.
   const rowIds = displayed.map((d) => d.row.id);
   const lastRow = rowIds.length - 1;
+
+  // Where you are, for history: the cell selected, reported as it changes,
+  // and put back when the view is gone back to.
+  const placeReport = useRef(onPlace);
+  placeReport.current = onPlace;
+  useEffect(() => {
+    placeReport.current?.(sel ? { rowId: sel.rowId, field: sel.name } : {});
+    // Again for a new view: the app starts each view's place afresh.
+  }, [sel?.rowId, sel?.name, view.id]);
+  useEffect(() => {
+    const p = restorePlace?.place;
+    if (!p) return;
+    if (p.rowId && p.field && rowIds.includes(p.rowId) && fields.includes(p.field)) setSel({ rowId: p.rowId, name: p.field });
+    else setSel(null);
+    // Each place once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restorePlace?.n]);
+  // How far down, as a row and an offset: measured from the rows' first
+  // cells, which run top to bottom, so a halving search needs few.
+  const measureRows = useRef({ rowIds, first: fields[0] });
+  measureRows.current = { rowIds, first: fields[0] };
+  useEffect(() => {
+    if (!onPlaceMeasure) return;
+    const topOf = async (rowId: string) => {
+      const { first } = measureRows.current;
+      const rect = first ? await measureAnchor(cellRefs.current[`${rowId}\u0000${first}`]) : null;
+      return rect ? rect.top : null;
+    };
+    onPlaceMeasure({
+      topOf,
+      rowAt: async (y) => {
+        const ids = measureRows.current.rowIds;
+        let lo = 0;
+        let hi = ids.length - 1;
+        let found: { rowId: string; offset: number } | null = null;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const top = await topOf(ids[mid]!);
+          if (top === null) return found;
+          if (top <= y) {
+            found = { rowId: ids[mid]!, offset: Math.round(y - top) };
+            lo = mid + 1;
+          } else hi = mid - 1;
+        }
+        return found ?? (ids[0] ? { rowId: ids[0], offset: 0 } : null);
+      },
+    });
+    return () => onPlaceMeasure(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onPlaceMeasure]);
   const lastCol = fields.length - 1;
   const cellAt = (r: number, c: number) => ({
     rowId: rowIds[Math.max(0, Math.min(lastRow, r))]!,
