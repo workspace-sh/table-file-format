@@ -48,8 +48,11 @@ export type GlassBarEditing = {
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
   chips?: GlassBarChip[];
-  /** An ⓘ in the header, for more about what's being edited (a formula's working). */
-  info?: boolean;
+  /**
+   * How the value is worked out (a formula: what it read, its result and
+   * what saving gives), shown under the field while the bar is expanded.
+   */
+  working?: GlassBarWorking;
   /** Why it can't be saved, with an optional fix. */
   error?: { message: string; fixLabel?: string };
 };
@@ -68,6 +71,11 @@ export type GlassBarChip = { id: string; label: string; detail?: string; insert?
 export type GlassBarHandle = { insert: (text: string, cursorBack?: number) => void };
 /** A choice, optionally in its own colours (a light wash of `bg`, the label in `fg`). */
 export type GlassBarChoice = { id: string; label: string; colors?: { light: { bg: string; fg: string }; dark: { bg: string; fg: string } } };
+
+/** A formula's working, a section at a time: rows of a label and the value it stands for. */
+export type GlassBarWorking = {
+  sections: { title?: string; rows: { label: string; value: string; strong?: boolean }[] }[];
+};
 
 /** One action in the More menu. */
 export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
@@ -89,8 +97,10 @@ export type GlassBarProps = {
   onEdit?: () => void;
   /** Selected: ✕. */
   onDeselect?: () => void;
-  /** The ⓘ: selected, what the field is; editing, more about the edit. */
+  /** Selected: the ⓘ, for what the field is. */
   onInfo?: () => void;
+  /** Expanded, under a formula's working: open the field's settings. */
+  onFieldSettings?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */
   onCancel?: () => void;
   onChange?: (value: string) => void;

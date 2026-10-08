@@ -64,7 +64,7 @@ import {
   shapes,
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
-import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState } from "./types";
+import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 
 const SIZE = 48;
 const GAP = 8;
@@ -576,20 +576,12 @@ function Label({ text, size }: { text: string; size: number }) {
   );
 }
 
-function Header({ label, detail, expansion, onInfo }: { label: string; detail?: string; expansion?: Expansion; onInfo?: () => void }) {
+function Header({ label, detail, expansion }: { label: string; detail?: string; expansion?: Expansion }) {
   return (
     <HStack spacing={8}>
       <Label text={label} size={12} />
       <Spacer />
       {detail ? <Text modifiers={[font({ size: 12, weight: "semibold" }), lineLimit(1)]}>{detail}</Text> : null}
-      {onInfo ? (
-        <Image
-          systemName="info.circle"
-          size={15}
-          onPress={onInfo}
-          modifiers={[frame({ width: 26, height: 26 }), foregroundStyle({ type: "hierarchical", style: "secondary" }), contentShape(shapes.circle()), accessibilityLabel("How this is worked out")]}
-        />
-      ) : null}
       {expansion?.can ? (
         <Image
           systemName={expansion.on ? "arrow.up.right.and.arrow.down.left" : "arrow.down.left.and.arrow.up.right"}
@@ -608,12 +600,42 @@ function Header({ label, detail, expansion, onInfo }: { label: string; detail?: 
   );
 }
 
+/**
+ * A formula's working, under the field in the expanded bar: what it read,
+ * its result and what saving gives, as the web's formula panel lists them,
+ * kept up to date as the formula is typed. Scrolls when there's more than
+ * room for.
+ */
+function Working({ working, onFieldSettings }: { working: GlassBarWorking; onFieldSettings?: () => void }) {
+  return (
+    <ScrollView>
+      <VStack alignment="leading" spacing={10} modifiers={[padding({ top: 4, trailing: 6 })]}>
+        {working.sections.map((section, i) => (
+          <VStack key={section.title ?? `section-${i}`} alignment="leading" spacing={4}>
+            {section.title ? <Text modifiers={[font({ size: 11, weight: "semibold" }), secondary]}>{section.title.toUpperCase()}</Text> : null}
+            {section.rows.map((row, j) => (
+              <HStack key={`${row.label}-${j}`} spacing={8}>
+                <Text modifiers={[font({ size: 14 }), row.strong ? foregroundStyle("primary") : secondary, lineLimit(1)]}>{row.label}</Text>
+                <Spacer />
+                <Text modifiers={[font({ size: 14, weight: row.strong ? "semibold" : "regular" }), lineLimit(1)]}>{row.value || "—"}</Text>
+              </HStack>
+            ))}
+          </VStack>
+        ))}
+        {onFieldSettings ? (
+          <Text modifiers={[font({ size: 14 }), foregroundStyle("#0A84FF"), onTapGesture(onFieldSettings), accessibilityLabel("Field Settings")]}>Field Settings…</Text>
+        ) : null}
+      </VStack>
+    </ScrollView>
+  );
+}
+
 /** Roughly one line of the editor's text, to fit as many as the expanded capsule holds. */
 const LINE = { mono: 19, prose: 22 };
 /** The expanded capsule's header, its actions along the foot, and padding. */
 const EXPANDED_CHROME = 116;
 
-function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onInfo, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
   const field = useRef<TextFieldRef>(null);
   const value = useRef(state.initialValue);
   // A new edit (the next row) starts from its own value.
@@ -665,7 +687,9 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     return () => clearTimeout(t);
   }, [tall]);
   // Expanded: as many lines as fit, held open even when there are fewer; past that, the field scrolls.
-  const lines = tall ? Math.max(3, Math.floor((expansion!.height - EXPANDED_CHROME - (state.error ? 24 : 0)) / (mono ? LINE.mono : LINE.prose))) : 5;
+  // Expanded with a formula's working under it, the field takes a few lines and the working the rest.
+  const working = tall ? state.working : undefined;
+  const lines = working ? 4 : tall ? Math.max(3, Math.floor((expansion!.height - EXPANDED_CHROME - (state.error ? 24 : 0)) / (mono ? LINE.mono : LINE.prose))) : 5;
 
   const change = (next: string) => {
     // A growing field types Return as a new line. In a formula or a short
@@ -691,7 +715,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
         ...shape,
       ]}
     >
-      <Header label={state.label} detail={state.detail} expansion={expansion} onInfo={state.info ? onInfo : undefined} />
+      <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
         {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
         {state.prefix ? (
@@ -708,7 +732,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
           modifiers={[
             font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),
             // A growing field takes the height of its lines rather than what it is offered.
-            ...(grows ? [lineLimit(lines, { reservesSpace: tall }), fixedSize({ horizontal: false, vertical: true })] : []),
+            ...(grows ? [lineLimit(lines, { reservesSpace: tall && !working }), fixedSize({ horizontal: false, vertical: true })] : []),
             ...(state.keyboard && state.keyboard !== "default" ? [keyboardType(state.keyboard)] : []),
             // A number, code or formula: no word suggestions, corrections or capitals.
             ...(state.suggestions === false ? [autocorrectionDisabled(true), textInputAutocapitalization("never")] : []),
@@ -736,6 +760,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
           ) : null}
         </HStack>
       ) : null}
+      {working ? <Working working={working} onFieldSettings={onFieldSettings} /> : null}
       {tall ? <Spacer /> : null}
       {tall ? <CardActions state={state} editor={editor} onCancel={onCancel} onSave={onSave} onChip={onChip} /> : null}
     </VStack>

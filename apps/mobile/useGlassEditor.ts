@@ -5,8 +5,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
-import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
-import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
+import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus, FormulaDetails } from "@workspace.sh/table-ui";
+import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "@workspace.sh/glass-bar";
 import { expectsReference } from "@workspace.sh/table-ui/shared";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
@@ -31,6 +31,23 @@ function sameSelection(a: CellEditorSelection | null, b: CellEditorSelection | n
     a.description === b.description &&
     a.facts === b.facts
   );
+}
+
+/** A formula's working, as the glass bar lists it. */
+function workingOf(d: FormulaDetails): GlassBarWorking {
+  const rows = (items: { label: string; shown: string }[]) => items.map((i) => ({ label: i.label, value: i.shown }));
+  return {
+    sections: [
+      ...(d.thisRow.length ? [{ title: "In this row", rows: rows(d.thisRow) }] : []),
+      ...(d.otherRows.length ? [{ title: "From other rows", rows: rows(d.otherRows) }] : []),
+      {
+        rows: [
+          { label: "Result", value: d.result, strong: true },
+          ...(d.after !== undefined ? [{ label: "After saving", value: d.after, strong: true }] : []),
+        ],
+      },
+    ],
+  };
 }
 
 export interface GlassEditorOptions {
@@ -190,7 +207,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       prefix: session.prefix,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
-      info: !!session.details,
+      // Shown while expanded, as the formula is typed.
+      working: session.details ? workingOf(session.details(typed.current)) : undefined,
       // Any text can run long; a number, an email or a link can't.
       expandable: session.mode === "line" && (!session.keyboard || session.keyboard === "default"),
       error: status.error
@@ -242,33 +260,18 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     },
     onClearQuery: () => onQuery(""),
     onDeselect: () => commands.current?.deselect(),
+    // From a formula's working: the edit ends, and the field's settings open.
+    onFieldSettings: () => {
+      const s = open.current;
+      const settings = commands.current?.openFieldSettings;
+      if (!s || !settings) return;
+      s.cancel();
+      close();
+      Keyboard.dismiss();
+      settings(s.name);
+    },
     // What the field is, as the web says on hover, and a way into its settings.
     onInfo: () => {
-      // Editing a formula: its working, as the web's formula panel shows it.
-      const s = open.current;
-      if (s?.details) {
-        const d = s.details(typed.current);
-        const lines = (title: string, items: { label: string; shown: string }[]) =>
-          items.length ? [`${title}\n${items.map((i) => `${i.label}: ${i.shown || "—"}`).join("\n")}`] : [];
-        const settings = commands.current?.openFieldSettings;
-        Alert.alert(
-          `${s.label.replace(/^ƒ /, "").replace(/ · every row$/, "")} · ${s.rowLabel}`,
-          [
-            ...lines("In this row", d.thisRow),
-            ...lines("From other rows", d.otherRows),
-            `Result: ${d.result || "—"}`,
-            ...(d.after !== undefined ? [`After saving: ${d.after || "—"}`] : []),
-            "One formula for the whole column: saving it changes every row.",
-          ].join("\n\n"),
-          [
-            ...(settings
-              ? [{ text: "Field Settings…", onPress: () => { s.cancel(); close(); Keyboard.dismiss(); settings(s.name); } }]
-              : []),
-            { text: "OK", style: "cancel" as const },
-          ],
-        );
-        return;
-      }
       const sel = selection;
       if (!sel?.facts) return;
       const toSettings = commands.current?.openFieldSettings;
