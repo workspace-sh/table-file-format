@@ -67,6 +67,11 @@ export interface CellEditSession {
   change(text: string): CellEditStatus;
   /** Save. Refused, the edit stays open with the reason (the draft can't be held). */
   save(text: string): { ok: true } | { ok: false; error: { message: string; fix?: string } };
+  /**
+   * Empty the cell and end the edit, as the Delete key does on the web: a
+   * single choice, a single link or a date, which have nothing to type away.
+   */
+  clear?(): void;
   /** Discard the edit. */
   cancel(): void;
   /** After a save by Return: move down a row and edit there. */

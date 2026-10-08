@@ -3253,6 +3253,17 @@ export function TableView({
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
           return { ok: true };
         },
+        // Emptied as the Delete key does (the value goes, not ""), required or not:
+        // the table then reports a required one as missing, as on the web.
+        ...((kind === "choice" && !many) || linksOne || dated
+          ? {
+              clear: () => {
+                setBarDraft(null);
+                barSession.current = null;
+                if (row[name] !== undefined) onUpdateRow!(rowId, name, undefined);
+              },
+            }
+          : {}),
         cancel: () => {
           setBarDraft(null);
           barSession.current = null;
