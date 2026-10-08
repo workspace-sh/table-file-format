@@ -1,5 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+// Inter, for every platform without SF (see strict.css); fetched only where used.
+import "@fontsource-variable/inter";
 import "./strict.css";
 import { App } from "./App";
 

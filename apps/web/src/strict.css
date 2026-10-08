@@ -39,6 +39,14 @@ body,
   }
 }
 
+/* Form controls take the page's font, not the browser's own control font. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 /* Dropdowns draw their own chevron, inset from the edge with room for the
  * text: the browser's arrow sat hard against the border. The rest of a
  * select (border, fill, font) stays with its component. !important on the
@@ -63,8 +71,18 @@ select {
 body {
   background-color: #ffffff;
   color: #1c1c1e;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Inter, except on Apple's platforms (below). Bundled, and downloaded
+   * only where it is used. */
+  font-family: "Inter Variable", Inter, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* SF on Apple's platforms (macOS, iOS, iPadOS), marked by index.html
+ * before the first paint. Only system-ui reaches SF in every browser there
+ * (Chrome ignores -apple-system), and elsewhere system-ui is the platform's
+ * own font (Segoe UI, Roboto), so it can't go in the shared stack. */
+:root[data-apple] body {
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
