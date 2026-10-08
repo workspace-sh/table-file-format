@@ -23,7 +23,15 @@ const EXPECTS_REFERENCE = /[-+*/(=,]\s*$/;
 function sameSelection(a: CellEditorSelection | null, b: CellEditorSelection | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.rowId === b.rowId && a.name === b.name && a.text === b.text && a.label === b.label && a.rowLabel === b.rowLabel;
+  return (
+    a.rowId === b.rowId &&
+    a.name === b.name &&
+    a.text === b.text &&
+    a.label === b.label &&
+    a.rowLabel === b.rowLabel &&
+    a.description === b.description &&
+    a.facts === b.facts
+  );
 }
 
 export interface GlassEditorOptions {
@@ -198,6 +206,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       label: selection.formula ? `ƒ ${selection.label} · every row · ${selection.rowLabel}` : `${selection.label} · ${selection.rowLabel}`,
       value: selection.text,
       monospaced: selection.formula,
+      about: selection.description,
+      info: !!selection.facts,
     };
   } else state = { kind: "rest", query };
 
@@ -232,6 +242,16 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     },
     onClearQuery: () => onQuery(""),
     onDeselect: () => commands.current?.deselect(),
+    // What the field is, as the web says on hover, and a way into its settings.
+    onInfo: () => {
+      const sel = selection;
+      if (!sel?.facts) return;
+      const open = commands.current?.openFieldSettings;
+      Alert.alert(sel.label, sel.facts, [
+        ...(open ? [{ text: "Field Settings…", onPress: () => open(sel.name) }] : []),
+        { text: "OK", style: "cancel" as const },
+      ]);
+    },
     onEdit: () => commands.current?.editSelected(),
     onCancel: () => {
       open.current?.cancel();

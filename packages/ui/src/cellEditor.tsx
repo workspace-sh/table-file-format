@@ -20,6 +20,13 @@ export interface CellEditorSelection {
   text: string;
   /** A formula column: `text` is its formula. */
   formula: boolean;
+  /** The field's description (SPEC section 2: its help), if it has one. */
+  description?: string;
+  /**
+   * What the column is, a line each: its kind and rules, description,
+   * formula and stored key; what the web shows when a header is hovered.
+   */
+  facts?: string;
 }
 
 /** What the editor shows about a draft as it changes. */
@@ -91,6 +98,8 @@ export interface CellEditorCommands {
   editSelected(): void;
   /** Report where the selected cell is again (`reveal`), as when the editor changes size. */
   revealSelected?(): void;
+  /** Open a field's settings, as clicking its heading does. Absent where the schema can't be edited. */
+  openFieldSettings?(name: string): void;
 }
 
 export interface CellEditor {
