@@ -576,12 +576,20 @@ function Label({ text, size }: { text: string; size: number }) {
   );
 }
 
-function Header({ label, detail, expansion }: { label: string; detail?: string; expansion?: Expansion }) {
+function Header({ label, detail, expansion, onInfo }: { label: string; detail?: string; expansion?: Expansion; onInfo?: () => void }) {
   return (
     <HStack spacing={8}>
       <Label text={label} size={12} />
       <Spacer />
       {detail ? <Text modifiers={[font({ size: 12, weight: "semibold" }), lineLimit(1)]}>{detail}</Text> : null}
+      {onInfo ? (
+        <Image
+          systemName="info.circle"
+          size={15}
+          onPress={onInfo}
+          modifiers={[frame({ width: 26, height: 26 }), foregroundStyle({ type: "hierarchical", style: "secondary" }), contentShape(shapes.circle()), accessibilityLabel("How this is worked out")]}
+        />
+      ) : null}
       {expansion?.can ? (
         <Image
           systemName={expansion.on ? "arrow.up.right.and.arrow.down.left" : "arrow.down.left.and.arrow.up.right"}
@@ -605,7 +613,7 @@ const LINE = { mono: 19, prose: 22 };
 /** The expanded capsule's header, its actions along the foot, and padding. */
 const EXPANDED_CHROME = 116;
 
-function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onInfo, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
   const field = useRef<TextFieldRef>(null);
   const value = useRef(state.initialValue);
   // A new edit (the next row) starts from its own value.
@@ -683,7 +691,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
         ...shape,
       ]}
     >
-      <Header label={state.label} detail={state.detail} expansion={expansion} />
+      <Header label={state.label} detail={state.detail} expansion={expansion} onInfo={state.info ? onInfo : undefined} />
       <HStack spacing={8} alignment="bottom">
         {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
         {state.prefix ? (

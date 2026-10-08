@@ -191,6 +191,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       prefix: session.prefix,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
+      info: !!session.details,
       // Any text can run long; a number, an email or a link can't.
       expandable: session.mode === "line" && (!session.keyboard || session.keyboard === "default"),
       error: status.error
@@ -244,11 +245,36 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     onDeselect: () => commands.current?.deselect(),
     // What the field is, as the web says on hover, and a way into its settings.
     onInfo: () => {
+      // Editing a formula: its working, as the web's formula panel shows it.
+      const s = open.current;
+      if (s?.details) {
+        const d = s.details(typed.current);
+        const lines = (title: string, items: { label: string; shown: string }[]) =>
+          items.length ? [`${title}\n${items.map((i) => `${i.label}: ${i.shown || "—"}`).join("\n")}`] : [];
+        const settings = commands.current?.openFieldSettings;
+        Alert.alert(
+          `${s.label.replace(/^ƒ /, "").replace(/ · every row$/, "")} · ${s.rowLabel}`,
+          [
+            ...lines("In this row", d.thisRow),
+            ...lines("From other rows", d.otherRows),
+            `Result: ${d.result || "—"}`,
+            ...(d.after !== undefined ? [`After saving: ${d.after || "—"}`] : []),
+            "One formula for the whole column: saving it changes every row.",
+          ].join("\n\n"),
+          [
+            ...(settings
+              ? [{ text: "Field Settings…", onPress: () => { s.cancel(); close(); Keyboard.dismiss(); settings(s.name); } }]
+              : []),
+            { text: "OK", style: "cancel" as const },
+          ],
+        );
+        return;
+      }
       const sel = selection;
       if (!sel?.facts) return;
-      const open = commands.current?.openFieldSettings;
+      const toSettings = commands.current?.openFieldSettings;
       Alert.alert(sel.label, sel.facts, [
-        ...(open ? [{ text: "Field Settings…", onPress: () => open(sel.name) }] : []),
+        ...(toSettings ? [{ text: "Field Settings…", onPress: () => toSettings(sel.name) }] : []),
         { text: "OK", style: "cancel" as const },
       ]);
     },
