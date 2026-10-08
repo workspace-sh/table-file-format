@@ -182,3 +182,13 @@ export function viewGrid(
 export function formulaPlaceholder(syntax: "excel" | "stored" | undefined): string {
   return syntax === "stored" ? "(round (/ budget 12) 0)" : "=round(budget / 12, 0)";
 }
+
+/**
+ * Whether a formula, typed up to the cursor, is waiting for something to
+ * work on (after `=`, an operator, `(` or `,`): a tap or click on a cell
+ * then adds a reference to it, as a spreadsheet's formula bar does, rather
+ * than selecting the cell.
+ */
+export function expectsReference(beforeCursor: string): boolean {
+  return /[-+*/(=,&<>^]\s*$/.test(beforeCursor);
+}

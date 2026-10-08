@@ -15,7 +15,7 @@ export type { ViewProps } from "./viewProps";
 export * from "./cards";
 export { firstDayOfWeek, monthNameLong, rotateWeekdays, weekdayNamesShort } from "./internal/calendarLocale";
 export { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled, type Commit, type EditorKind, type InputKind } from "./cellEdit";
-export { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaPlaceholder, formulaInputCells, formulaStatus, typeFamily, viewGrid, type FormulaExplained, type FormulaInput, type FormulaStatus } from "./formulaCell";
+export { expectsReference, explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaPlaceholder, formulaInputCells, formulaStatus, typeFamily, viewGrid, type FormulaExplained, type FormulaInput, type FormulaStatus } from "./formulaCell";
 export * from "./fieldEdit";
 export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl } from "./Attachments";
 export { pageSave, type PageSave } from "./pageEdit";
