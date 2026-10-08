@@ -125,7 +125,7 @@ SPEC section 14 fixes the file and its events. What is left is who writes them a
 ### Linux (the Linux rig implements)
 
 - **L1.** The GTK table draws only the rows in view. It is plain boxes in a `GtkScrolledWindow`, not a `GtkColumnView`, so this is a window of row boxes between two spacers sized from the row heights, moved as the scroll position changes. How is the implementer's call.
-- **L2.** A `SqlDriver` over `node:sqlite`, which is built into Node and needs no native addon. It is synchronous, and a filter over 1M rows scans for most of a second, so it belongs off the UI's thread, behind the same message shape as the web worker.
+- **L2.** A `SqlDriver` over `node:sqlite`, which is built into Node and needs no native addon. It is synchronous, and a filter over 1M rows scans for most of a second, so it belongs off the UI's thread, behind the same message shape as the web worker. GTKX bundles a worker written as `new Worker(new URL("./x.ts", import.meta.url))` into the app (its `worker` build plugin), so the Linux worker can be written as the web one is.
 - **L3 and L4.** As W3 and W4, with real files.
 
 ### iOS (unowned: Leslie assigns)
@@ -181,8 +181,8 @@ For Leslie:
 2. **When the browser or disk won't give the space:** open in memory with a notice (proposed), or decline to open tables above some size.
 3. **Who does iOS** (I1 to I4).
 
-For review by whoever implements web and Linux:
+For review by whoever implements web and Linux (accepted by the Linux rig, 8 Oct 2026):
 
-4. The `ViewRows` shape in section 1.
-5. The 50,000-row threshold and the 200-row page, both starting points for measurement.
-6. Saving by rewriting `rows.ndjson` (section 4) until Phase B's numbers say otherwise.
+4. The `ViewRows` shape in section 1. Accepted; it may gain or lose a method once W1 has a real list reading it, and any change is recorded here.
+5. The 50,000-row threshold and the 200-row page, both starting points for measurement. Accepted as starting points.
+6. Saving by rewriting `rows.ndjson` (section 4) until Phase B's numbers say otherwise. Accepted.
