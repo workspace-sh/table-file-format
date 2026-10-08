@@ -8,6 +8,7 @@ import { Alert, Dimensions, Keyboard } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus, FormulaDetails } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "@workspace.sh/glass-bar";
 import { expectsReference } from "@workspace.sh/table-ui/shared";
+import { formulaSpans } from "@workspace.sh/table-core";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
 const OPERATORS = [
@@ -207,6 +208,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       prefix: session.prefix,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
+      highlight: formula ? formulaSpans : undefined,
       // Shown while expanded, as the formula is typed.
       working: session.details ? workingOf(session.details(typed.current)) : undefined,
       // Any text can run long; a number, an email or a link can't.
