@@ -26,6 +26,16 @@ export default function Layout() {
           <Stack>
             <Stack.Screen name="index" options={{ headerLargeTitleEnabled: true }} />
             <Stack.Screen
+              name="files"
+              options={{
+                title: "Files",
+                presentation: "formSheet",
+                sheetAllowedDetents: [0.6, 1],
+                sheetGrabberVisible: true,
+                headerLargeTitleEnabled: false,
+              }}
+            />
+            <Stack.Screen
               name="tables"
               options={{
                 title: "Tables",

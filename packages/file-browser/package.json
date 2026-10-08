@@ -1,0 +1,29 @@
+{
+  "name": "@workspace.sh/file-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A file browser for React Native: a headless hook that holds the tree, and native default views (SwiftUI's List on iOS) that an app can replace with its own.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "react-native": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --test src/*.test.ts"
+  },
+  "peerDependencies": {
+    "@expo/ui": ">=55.0.0",
+    "react": ">=19.0.0",
+    "react-native": ">=0.81.0"
+  }
+}
