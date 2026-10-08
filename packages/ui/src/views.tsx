@@ -3174,6 +3174,20 @@ export function TableView({
           }
           return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name]) };
         },
+        // The web panel's working, as text: each input as its cell shows it.
+        details: (t) => {
+          const ex = explain(t);
+          const shown = (i: { field: string; value: unknown }) => {
+            const f = fieldMap.get(i.field);
+            return f ? formatCellValue(f, i.value) : i.value == null ? "" : String(i.value);
+          };
+          return {
+            thisRow: ex.thisRow.map((i) => ({ label: i.label, shown: shown(i) })),
+            otherRows: ex.otherRows.map((i) => ({ label: i.label, shown: shown(i) })),
+            result: formatCellValue(field, row[name]),
+            ...(ex.changed && ex.preview ? { after: formatCellValue(field, ex.preview.value) } : {}),
+          };
+        },
         save: (t) => {
           const ex = explain(t);
           if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
