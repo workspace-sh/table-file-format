@@ -1,7 +1,6 @@
-// The cases live in formulaSpans.cases.json so that every implementation of
-// the scanner checks against the same list: this one, and the native
-// mirrors that colour inside a platform's own text field (iOS: the glass
-// bar's FormulaFieldView.swift, checked by scripts/check-formula-spans.sh).
+// The cases live in formulaSpans.cases.json, data any platform's tests can
+// read. The scanner itself exists once, here: native text fields draw the
+// spans it gives them and only move them along with each edit.
 
 import test from "node:test";
 import assert from "node:assert/strict";
