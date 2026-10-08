@@ -12,9 +12,9 @@ export type GlassBarState =
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
-  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean; canAdd?: boolean }
+  | { kind: "choosing"; label: string; detail?: string; choices: GlassBarChoice[]; selected?: string | string[]; multiple?: boolean; canAdd?: boolean; canClear?: boolean }
   /** Picking a date or time with the system's calendar: no keyboard. */
-  | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string };
+  | { kind: "dating"; label: string; detail?: string; value?: Date; components: ("date" | "hourAndMinute")[]; shown?: string; canClear?: boolean };
 
 export type GlassBarEditing = {
   kind: "editing";
@@ -98,6 +98,8 @@ export type GlassBarProps = {
   onChoose?: (id: string) => void;
   /** The "+" after the choices: add a new one. */
   onAddChoice?: () => void;
+  /** Choosing one, or a date: "None" or Clear empties the cell. */
+  onClear?: () => void;
   onPickDate?: (date: Date) => void;
   /** The editor expanded or collapsed: a host can scroll what's edited into view above it. */
   onExpandChange?: (expanded: boolean) => void;
