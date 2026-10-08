@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState } from "@workspace.sh/glass-bar";
+import { expectsReference } from "@workspace.sh/table-ui/shared";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
 const OPERATORS = [
@@ -17,8 +18,6 @@ const OPERATORS = [
   { id: "()", label: "Brackets", symbol: "parentheses", insert: "()", cursorBack: 1 },
 ];
 
-/** After one of these, a tap on a cell adds a reference to it rather than selecting it. */
-const EXPECTS_REFERENCE = /[-+*/(=,]\s*$/;
 
 function sameSelection(a: CellEditorSelection | null, b: CellEditorSelection | null): boolean {
   if (a === b) return true;
@@ -149,7 +148,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         setTimeout(() => settle(Keyboard.metrics()?.height ?? 0), 1500);
       },
       tapWhileEditing: (_rowId, _name, reference) => {
-        if (open.current?.mode !== "formula" || !EXPECTS_REFERENCE.test(typed.current)) return false;
+        if (open.current?.mode !== "formula" || !expectsReference(typed.current)) return false;
         bar.current?.insert(reference);
         return true;
       },
@@ -183,7 +182,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     state = {
       kind: "editing",
       editKey: session.key,
-      label: formula && EXPECTS_REFERENCE.test(typed.current) ? "Tap a column to add it" : session.label,
+      label: formula && expectsReference(typed.current) ? "Tap a column to add it" : session.label,
       detail: status.result !== undefined ? `${session.rowLabel}  ${status.result}` : session.rowLabel,
       initialValue: session.initial,
       mode: session.mode,

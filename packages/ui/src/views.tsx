@@ -3588,6 +3588,21 @@ export function TableView({
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
+            // The cell under a click, named as a tap names it on iOS: its
+            // coordinate in a sheet, else its column. Only a page has points.
+            referenceAt={
+              typeof document === "undefined"
+                ? undefined
+                : (x, y) => {
+                    const under = document.elementsFromPoint(x, y);
+                    for (const [key, node] of Object.entries(cellRefs.current)) {
+                      if (!node || !under.some((el) => node === el || (node as Element).contains?.(el))) continue;
+                      const [rowId, field] = key.split("\u0000") as [string, string];
+                      return coords && grid ? (coordinateOf(field, rowId, grid) ?? field) : field;
+                    }
+                    return null;
+                  }
+            }
             onMoreOptions={
               schemaEditable
                 ? async () => {
