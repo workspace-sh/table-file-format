@@ -1288,6 +1288,29 @@ const styles = css.create({
     boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
   },
   cellProblemAt: (top: number, left: number) => ({ top, left }),
+  /** Long text being written: a box over its cell, at least as wide, growing with its lines. */
+  cellLongText: {
+    position: "fixed",
+    zIndex: 60,
+    minHeight: 120,
+    maxHeight: "50vh",
+    paddingInline: 10,
+    paddingBlock: 8,
+    fontSize: 13,
+    lineHeight: 1.45,
+    fontFamily: "inherit",
+    resize: "none",
+    boxSizing: "border-box",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: { default: "#3478f6", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+    borderRadius: 6,
+    outlineStyle: "none",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#1c1c1e" },
+    boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+  },
+  cellLongTextAt: (top: number, left: number, width: number) => ({ top, left, width }),
   cellProblemRefused: {
     color: "#ffffff",
     backgroundColor: { default: "#c62828", "@media (prefers-color-scheme: dark)": "#b3261e" },
@@ -1776,7 +1799,11 @@ function EditableCell({
   // Once the edit is saved or cancelled, the input's blur (which fires as
   // it goes away) mustn't save the draft again over what was chosen.
   const closed = useRef(false);
-  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null);
+  // Long text (a markdown string) is written in a box over the cell, where
+  // lines have room; the cell itself is a row high. Measured from the cell.
+  const cellAnchor = useRef<HTMLElement | null>(null);
+  const [longAt, setLongAt] = useState<AnchorRect | null>(null);
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
@@ -2071,6 +2098,60 @@ function EditableCell({
   // how it's shown. While editing, show the symbol beside the input so
   // it's clear what the number is in.
   const currencySymbol = currencySymbolOf(field);
+  // Long text: the cell shows its value as it stands, and the writing is
+  // done in a box over it. Enter is a new line, as in a row's page;
+  // ⌘/Ctrl+Enter saves and moves down; Escape cancels; clicking away saves.
+  if (field?.format === "markdown" && kind === "text") {
+    return (
+      <>
+        <html.span
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ref={(el: any) => {
+            if (el && !cellAnchor.current) {
+              cellAnchor.current = el;
+              void measureAnchor(el).then(setLongAt);
+            }
+          }}
+          style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}
+        >
+          <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
+        </html.span>
+        {longAt && (
+          <Portal>
+            <html.textarea
+              dir="auto"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ref={(el: any) => {
+                if (el && inputRef.current !== el) {
+                  inputRef.current = el;
+                  focusInput(el);
+                  const end = el.value.length;
+                  el.setSelectionRange?.(caretAtEnd.current ? end : 0, end);
+                }
+              }}
+              aria-label={field.title ?? field.name}
+              value={draft}
+              onChange={(e: { target: { value: string } }) => {
+                setDraft(e.target.value);
+                setProblem(null);
+              }}
+              onBlur={() => {
+                if (!closed.current) commit(draft, "blur");
+              }}
+              onKeyDown={(e: KeyEventLike) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault?.();
+                  if (commit(draft)) onEditEnd?.("enter");
+                } else if (e.key === "Enter") return;
+                else onEditKey(e);
+              }}
+              style={[styles.cellLongText, styles.cellLongTextAt(longAt.top - 2, longAt.left - 2, Math.max(longAt.width + 4, 320))]}
+            />
+          </Portal>
+        )}
+      </>
+    );
+  }
   const input = (
     <html.input
         dir="auto"
