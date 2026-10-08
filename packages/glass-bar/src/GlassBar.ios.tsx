@@ -74,7 +74,7 @@ const LIFT = 8;
 /** The navigation bar under the status bar: an expanded editor stops short of it. */
 const NAV = 60;
 /** And short of one row more, so the cell being edited can stay in view above it. */
-const PEEK = 56;
+const PEEK = 84;
 /** How long the bar's spring between states takes. */
 const SPRING_MS = 400;
 const secondary = foregroundStyle({ type: "hierarchical", style: "secondary" });
@@ -143,7 +143,7 @@ export function GlassBar(props: GlassBarProps) {
   const { lift, keyboard } = useKeyboardLift(rest);
   const window = useWindowDimensions();
   // Long text and formulas can take more of the screen; a short value never needs it.
-  const canExpand = state.kind === "editing" && state.mode !== "line";
+  const canExpand = state.kind === "editing" && (state.mode !== "line" || !!state.expandable);
   const [expandedWanted, setExpanded] = useState(false);
   useEffect(() => { if (!canExpand) setExpanded(false); }, [canExpand]);
   const expanded = canExpand && expandedWanted;
@@ -608,7 +608,8 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     };
     return () => { editor.current = null; };
   });
-  const grows = state.mode !== "line";
+  // Text wraps and grows; a number or a date stays on one line.
+  const grows = state.mode !== "line" || !!state.expandable;
   const mono = state.mode === "formula";
   const tall = !!expansion?.on;
   // The modifiers below keep one shape in both sizes, so SwiftUI keeps the
