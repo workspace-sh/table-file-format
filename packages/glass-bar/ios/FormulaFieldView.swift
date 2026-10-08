@@ -196,8 +196,11 @@ struct FormulaTextView: UIViewRepresentable {
   }
 }
 
-/// Where a formula's colours go: the same rules as core's `formulaSpans`, in
-/// Swift so they apply on the keystroke. Never refuses: a half-typed formula
+/// Where a formula's colours go. Core's TypeScript `formulaSpans` is the
+/// source of these rules and runs on every platform; this mirror exists only
+/// so a native text field can colour on the keystroke. Both are checked
+/// against packages/core/src/formulaSpans.cases.json
+/// (scripts/check-formula-spans.sh). Never refuses: a half-typed formula
 /// colours up to where it stops. Ranges are UTF-16, as UIKit and JavaScript count.
 enum FormulaScanner {
   private static let ops = ["<=", ">=", "<>", "!=", "==", "=", "<", ">", "+", "-", "*", "/", "&", "(", ")", ",", ":", "^", "%"]
