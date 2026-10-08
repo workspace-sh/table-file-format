@@ -672,6 +672,10 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     >
       <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
+        {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
+        {state.prefix ? (
+          <Text modifiers={[font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }), secondary, padding({ vertical: 4 })]}>{state.prefix}</Text>
+        ) : null}
         <TextField
           key={state.editKey}
           ref={field}
