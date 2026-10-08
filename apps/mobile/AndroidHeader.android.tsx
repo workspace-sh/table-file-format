@@ -36,6 +36,7 @@ const symbols = {
   note_add: require("./assets/symbols/note_add.xml"),
   folder_open: require("./assets/symbols/folder_open.xml"),
   share: require("./assets/symbols/share.xml"),
+  settings: require("./assets/symbols/settings.xml"),
 } satisfies Record<MaterialSymbol, ImageSourcePropType>;
 
 /** The navigation icon: the tables list. */
