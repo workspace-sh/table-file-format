@@ -53,6 +53,12 @@ export type GlassBarEditing = {
    * what saving gives), shown under the field while the bar is expanded.
    */
   working?: GlassBarWorking;
+  /**
+   * A formula: where its colours go, worked out from its text as it is
+   * typed. iOS draws them in the bar's own field (Expo UI's TextField takes
+   * plain text only).
+   */
+  highlight?: (text: string) => GlassBarSpan[];
   /** Why it can't be saved, with an optional fix. */
   error?: { message: string; fixLabel?: string };
 };
@@ -76,6 +82,9 @@ export type GlassBarChoice = { id: string; label: string; colors?: { light: { bg
 export type GlassBarWorking = {
   sections: { title?: string; rows: { label: string; value: string; strong?: boolean }[] }[];
 };
+
+/** A stretch of a formula to colour, by UTF-16 offsets. */
+export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
 /** One action in the More menu. */
 export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };

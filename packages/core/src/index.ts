@@ -78,4 +78,5 @@ export {
   type CompileResult,
   type FormulaRef,
 } from "./formula.js";
+export { formulaSpans, type FormulaSpan } from "./formulaSpans.js";
 export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";
