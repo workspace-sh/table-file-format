@@ -7,8 +7,11 @@ export type GlassBarState =
   | { kind: "rest"; query?: string }
   /** Search raised above the keyboard. */
   | { kind: "searching"; query: string }
-  /** A selected cell: its label ("Owner · iOS Pro launch") and value or formula. */
-  | { kind: "selected"; label: string; value: string; monospaced?: boolean }
+  /**
+   * A selected cell: its label ("Owner · iOS Pro launch") and value or
+   * formula; a line about the field when it has one; `info`, an ⓘ for more.
+   */
+  | { kind: "selected"; label: string; value: string; monospaced?: boolean; about?: string; info?: boolean }
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
@@ -84,6 +87,8 @@ export type GlassBarProps = {
   onEdit?: () => void;
   /** Selected: ✕. */
   onDeselect?: () => void;
+  /** Selected: the ⓘ, for what the field is. */
+  onInfo?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */
   onCancel?: () => void;
   onChange?: (value: string) => void;

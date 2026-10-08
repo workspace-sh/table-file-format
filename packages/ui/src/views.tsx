@@ -2532,6 +2532,12 @@ export function TableView({
             })()
           : formatCellValue(field, row[sel.name]),
       formula: field.computed !== undefined,
+      ...(field.description ? { description: field.description } : {}),
+      // What the web's header hover says, for a platform with no hover.
+      facts: (() => {
+        const hint = fieldHint({ field, name: sel.name, schema, editable: false, formulaSyntax });
+        return [hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
+      })(),
     });
   });
   useEffect(() => {
@@ -2540,6 +2546,19 @@ export function TableView({
       deselect: () => setSel(null),
       editSelected: () => void (sel && openCell(sel.rowId, sel.name)),
       revealSelected: () => void (sel && measureAnchor(cellRefs.current[`${sel.rowId}\u0000${sel.name}`]).then((rect) => rect && editor.reveal?.(rect))),
+      // As clicking the heading does; a sheet ignores where the heading is,
+      // but the editor waits for a place, so a heading scrolled away still opens it.
+      ...(schemaEditable
+        ? {
+            openFieldSettings: (name: string) => {
+              setFormulaCell(null);
+              void measureAnchor(headerButtonRefs.current[name]).then((rect) => {
+                setAnchorRect(rect ?? { top: 0, left: 0, width: 0, height: 0 });
+                setEditingFieldName(name);
+              });
+            },
+          }
+        : {}),
     });
   });
   useEffect(() => () => editor?.attach(null), [editor]);
