@@ -21,6 +21,7 @@ export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile } fro
 export {
   buildIndex,
   queryIndex,
+  buildSearchIndex,
   setIndexKey,
   storedRows,
   isIndexStale,

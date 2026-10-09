@@ -915,7 +915,10 @@ objects as JSON. `""` is kept apart from an absent value, since
 filters tell them apart. A sort's index is made the first time that
 sort is asked for. A full-text table (trigram) over the id, the
 string, date and datetime fields and the page narrows a search; an
-exact substring test over the same text answers it.
+exact substring test over the same text answers it. A build may leave the
+full-text table for after (`search: "later"`, then `buildSearchIndex` a
+step at a time): until it is whole, the exact test alone answers a
+search, with the same rows.
 
 ### Staleness contract
 

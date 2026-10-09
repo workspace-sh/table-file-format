@@ -88,6 +88,8 @@ export function useIndexedTables(input: {
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
             setFirst(({ [key]: _shown, ...rest }) => rest);
+            // The search's own index is made after, behind whatever the window asks for.
+            void host.search(tableNameOf(key)).catch(() => {});
           },
           async (error: unknown) => {
             // No index to be had (no space, no SQLite): the table is held in memory instead, and says so.
@@ -201,6 +203,7 @@ export function useIndexedTables(input: {
               latest.current.dispatch({ type: "indexed", key, count });
               setMade((m) => ({ ...m, [key]: "ready" }));
               setFirst(({ [key]: _shown, ...rest }) => rest);
+              void host.search(tableNameOf(key)).catch(() => {});
             },
             (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
           );
