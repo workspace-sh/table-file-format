@@ -106,3 +106,23 @@ index 0dd5223..2a13675 100644
        for (RCTPlatformView *subview in self.subviews) { // [macOS]
          [_containerView addSubview:subview];
        }
+diff --git a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm b/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
+index 2d83643..ed1e75a 100644
+--- a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
++++ b/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
+@@ -68,7 +68,14 @@ static void UpdateActiveTouchWithUITouch(
+ #else // [macOS
+   CGPoint offsetPoint = [activeTouch.componentView convertPoint:uiTouch.locationInWindow fromView:nil];
+   CGPoint screenPoint = uiTouch.locationInWindow;
+-  CGPoint pagePoint = CGPointMake(screenPoint.x, CGRectGetHeight(rootComponentView.window.frame) - screenPoint.y);
++  // [table-file-format patch] A touch's page point is where it is in the
++  // React root view, which is what layout and measure() count from. Upstream
++  // counts from the window's top left instead, so the two differ by wherever
++  // the root sits in the window (beside a sidebar, under a title bar): a
++  // press then looks as if it left its target as soon as the pointer moves,
++  // and anything placed from a touch lands that far off. Drop this patch
++  // once react-native-macos does the same.
++  CGPoint pagePoint = [rootComponentView convertPoint:screenPoint fromView:nil];
+ #endif // macOS]
+ 
+   activeTouch.touch.offsetPoint = RCTPointFromCGPoint(offsetPoint);

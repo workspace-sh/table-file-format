@@ -85,7 +85,12 @@ function Editor({
   const [text, setText] = useState(state.initialValue);
   // Where the cursor is, for an operator or a clicked cell's name to go in at.
   const caret = useRef({ start: state.initialValue.length, end: state.initialValue.length });
-  const [moveTo, setMoveTo] = useState<{ start: number; end: number } | undefined>(undefined);
+  // Placed at the end as the field opens (a Mac text field would otherwise
+  // select everything, and the first key typed would replace the formula).
+  const [moveTo, setMoveTo] = useState<{ start: number; end: number } | undefined>({
+    start: state.initialValue.length,
+    end: state.initialValue.length,
+  });
   const field = useRef<TextInput>(null);
 
   const change = (next: string) => {
