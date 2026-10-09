@@ -10,10 +10,44 @@ import { useContext, type ReactElement } from "react";
 import { PanelSurface } from "../panelSurface";
 import { html, css } from "react-strict-dom";
 import type { SheetProps } from "../controlSlots";
+import { passThrough } from "./passThrough";
 import { Portal } from "./Portal";
 
 export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, onDismiss, children }: SheetProps): ReactElement {
   const Surface = useContext(PanelSurface);
+  const card = (
+    <>
+      <html.div style={styles.header}>
+        <html.div style={styles.headerLeft}>
+          <html.span style={styles.title}>{title}</html.span>
+          {subtitle !== undefined && <html.span style={styles.subtitle}>{subtitle}</html.span>}
+        </html.div>
+        <html.button style={styles.closeButton} onClick={cancel?.onPress ?? onDismiss}>
+          ✕
+        </html.button>
+      </html.div>
+      {children}
+      <html.div style={styles.footer}>
+        <html.span style={styles.footerHint}>{status}</html.span>
+        <html.div style={styles.buttonRow}>
+          {cancel && (
+            <html.button style={styles.button} onClick={cancel.onPress}>
+              {cancel.label}
+            </html.button>
+          )}
+          {confirm && (
+            <html.button
+              disabled={confirm.disabled}
+              style={[styles.button, !confirm.disabled && styles.primary]}
+              onClick={confirm.onPress}
+            >
+              {confirm.label}
+            </html.button>
+          )}
+        </html.div>
+      </html.div>
+    </>
+  );
   return (
     <Portal>
       {/* Backdrop sibling: a tap outside the card closes it, when that
@@ -25,39 +59,10 @@ export function Sheet({ title, subtitle, cancel, confirm, status, dismissible, o
         style={styles.backdrop}
       />
       {/* The wrapper centres the card and lets taps around it through to
-          the backdrop (pointer-events: none). */}
-      <html.div style={styles.modalWrapper}>
+          the backdrop (passThrough). */}
+      <html.div style={[styles.modalWrapper, passThrough]}>
         <html.div style={[styles.modal, Surface && styles.modalOnSurface]}>
-          {Surface && <Surface radius={CARD_RADIUS} />}
-          <html.div style={styles.header}>
-            <html.div style={styles.headerLeft}>
-              <html.span style={styles.title}>{title}</html.span>
-              {subtitle !== undefined && <html.span style={styles.subtitle}>{subtitle}</html.span>}
-            </html.div>
-            <html.button style={styles.closeButton} onClick={cancel?.onPress ?? onDismiss}>
-              ✕
-            </html.button>
-          </html.div>
-          {children}
-          <html.div style={styles.footer}>
-            <html.span style={styles.footerHint}>{status}</html.span>
-            <html.div style={styles.buttonRow}>
-              {cancel && (
-                <html.button style={styles.button} onClick={cancel.onPress}>
-                  {cancel.label}
-                </html.button>
-              )}
-              {confirm && (
-                <html.button
-                  disabled={confirm.disabled}
-                  style={[styles.button, !confirm.disabled && styles.primary]}
-                  onClick={confirm.onPress}
-                >
-                  {confirm.label}
-                </html.button>
-              )}
-            </html.div>
-          </html.div>
+          {Surface ? <Surface radius={CARD_RADIUS}>{card}</Surface> : card}
         </html.div>
       </html.div>
     </Portal>
@@ -98,10 +103,6 @@ const styles = css.create({
     alignItems: "center",
     justifyContent: "center",
     zIndex: 100,
-    // Pointer-events: none so the wrapper passes clicks through to the
-    // backdrop underneath; the modal child re-enables them via
-    // `pointer-events: auto`.
-    pointerEvents: "none",
   },
   modal: {
     width: "90%",

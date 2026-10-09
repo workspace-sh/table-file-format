@@ -1,13 +1,28 @@
-// A panel's glass, behind what it holds: Liquid Glass on macOS 26
+// A panel's glass, holding what the panel shows: Liquid Glass on macOS 26
 // (NSGlassEffectView), the popover material before it (NSVisualEffectView).
-// It has no children of its own; JS draws it first inside the panel, filling
-// it, and the panel's content goes on top (see GlassSurface.tsx).
+// The panel's content is this view's React children, and they go inside the
+// glass's contentView, the one place AppKit keeps content above the glass.
+// Drawn as siblings over a childless glass they were composited under it
+// (seen on macOS 27.2): the page's text was blurred away with the backdrop.
 //
 // cornerRadius: the panel's corners, which the glass follows.
 
 #import <AppKit/AppKit.h>
 #import <React/RCTView.h>
 #import <React/RCTViewManager.h>
+
+// React lays children out from the top left, so what holds them is flipped.
+@interface TableGlassContentView : NSView
+@end
+
+@implementation TableGlassContentView
+
+- (BOOL)isFlipped
+{
+  return YES;
+}
+
+@end
 
 // An RCTView, so the manager's standard props (pointerEvents and the rest)
 // have the setters they call: a plain NSView threw on pointerEvents.
@@ -17,6 +32,7 @@
 
 @implementation TableGlassView {
   NSView *_effect;
+  NSView *_content;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame
@@ -34,8 +50,24 @@
     }
     _effect.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [self addSubview:_effect];
+
+    _content = [[TableGlassContentView alloc] initWithFrame:self.bounds];
+    _content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    if (@available(macOS 26.0, *)) {
+      ((NSGlassEffectView *)_effect).contentView = _content;
+    } else {
+      [self addSubview:_content];
+    }
   }
   return self;
+}
+
+// React's children go in the content view, in their order, not in this view.
+- (void)didUpdateReactSubviews
+{
+  for (NSView *subview in self.reactSubviews) {
+    [_content addSubview:subview];
+  }
 }
 
 - (void)setCornerRadius:(CGFloat)cornerRadius
@@ -53,6 +85,9 @@
 {
   [super layout];
   _effect.frame = self.bounds;
+  if (_content.superview == self) {
+    _content.frame = self.bounds;
+  }
 }
 
 @end
