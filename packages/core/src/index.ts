@@ -21,6 +21,8 @@ export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile } fro
 export {
   buildIndex,
   queryIndex,
+  setIndexKey,
+  storedRows,
   isIndexStale,
   dropIndex,
   indexKey,
@@ -61,7 +63,7 @@ export {
   type Place,
   type PlaceRow,
 } from "./expr.js";
-export { computeRows, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { computeRows, rowLocal, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
   compileFormula,

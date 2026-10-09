@@ -51,6 +51,12 @@ export function visibleFields(view: View, schema: TableSchema): string[] {
  * Rows in the order a grouped view shows them (SPEC section 4, `group`),
  * each marked with the group it starts, if any. Ungrouped: as they are.
  */
+/** A group's heading, from its key as applyGroup (and a ViewRows' groups) names it. */
+export function groupLabel(key: string, field: string, schema: TableSchema): string {
+  if (key === "(empty)") return EMPTY_GROUP;
+  return enumOptions(schema.fields.find((f) => f.name === field)).find((o) => o.value === key)?.label ?? key;
+}
+
 export function groupedRows(
   view: View,
   rows: Row[],
@@ -220,7 +226,11 @@ export function describeCell(
  * shown in the field's own format; counts are shown as they are.
  */
 export function totalFor(rows: Row[], name: string, kind: ViewTotal): { value: unknown; numeric: boolean } {
-  const value = viewTotal(rows, name, kind);
+  return shownTotal(viewTotal(rows, name, kind), kind);
+}
+
+/** A total as its footer cell shows it, from the value viewTotal (or a ViewRows' totals) gave. */
+export function shownTotal(value: number | undefined, kind: ViewTotal): { value: unknown; numeric: boolean } {
   const numeric = kind === "sum" || kind === "average" || kind === "min" || kind === "max";
   const shown = kind === "average" && typeof value === "number" ? Math.round(value * 100) / 100 : value;
   return { value: shown, numeric };

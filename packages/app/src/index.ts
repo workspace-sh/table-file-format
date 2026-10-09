@@ -26,3 +26,5 @@ export * from "./history.ts";
 export * from "./starting.ts";
 export * from "./leaving.ts";
 export * from "./appState.ts";
+
+export { INDEXED_FROM, addIndexedRow, canBeIndexed, indexedViewRows, makeIndexEdits, removeIndexedRow, setIndexedBody, setIndexedCell, viewQuery, type IndexEdit } from "./indexed.ts";

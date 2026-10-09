@@ -899,6 +899,41 @@ export async function queryIndex(
   };
 }
 
+/** Say what the source is now, after a save: the index is fresh for that content. */
+export async function setIndexKey(db: SqlDriver, name: string, key: string): Promise<void> {
+  const n = await tableNumber(db, name, false);
+  if (n === null) throw new Error(`no index for ${name}`);
+  await db.run("update _tables set key = ? where n = ?", [key, n]);
+}
+
+/**
+ * A table's rows out of its index as `rows.ndjson` text, in file order, a
+ * piece at a time: saving a large table never holds all of it. Computed
+ * fields are left out, as serializeRows leaves them.
+ */
+export async function* storedRows(db: SqlDriver, options: { name: string; schema: TableSchema; batchSize?: number }): AsyncIterable<string> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  const size = options.batchSize ?? BATCH;
+  const computed = options.schema.fields.filter((f) => f.computed).map((f) => f.name);
+  let after = -1;
+  for (;;) {
+    const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
+    if (found.length === 0) return;
+    after = found[found.length - 1]!.pos as number;
+    let text = "";
+    for (const r of found) {
+      if (computed.length === 0) text += `${r.j as string}\n`;
+      else {
+        const row = JSON.parse(r.j as string) as Row;
+        for (const field of computed) delete row[field];
+        text += `${JSON.stringify(row)}\n`;
+      }
+    }
+    yield text;
+  }
+}
+
 /** A parsed table's rows as the index holds them: handy for the apps' first build. */
 export function indexSource(table: ParsedTable, name: string, key: string): BuildOptions {
   return { name, schema: table.schema, rows: table.rows, bodies: table.bodies, key };

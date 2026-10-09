@@ -343,6 +343,13 @@ export interface ParsedTable {
    */
   bodies?: Record<string, string>;
   /**
+   * Set when the table's rows are not in `rows` (it is empty) but in the
+   * bundle's index (SPEC section 8), as an app holds a large table:
+   * how many there are, and a number that changes with every edit to
+   * them. A writer leaves such a table's `rows.ndjson` alone.
+   */
+  indexed?: { count: number; version: number };
+  /**
    * Parse-level diagnostics from the skip-and-collect reader —
    * malformed NDJSON lines, rows missing a system id, malformed
    * optional files. Absent when the parse was clean. A caller that

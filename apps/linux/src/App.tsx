@@ -23,7 +23,7 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkEntry, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkProgressBar, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
@@ -61,11 +61,12 @@ import {
   type NamePrompt,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
-import { attachFile, attachmentsIn, bundlesIn, loadLibrary, saveBundle, type Library } from "@workspace.sh/table-app/node";
+import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { newId, type ParsedTable, type View } from "@workspace.sh/table-core";
+import { newId, type ParsedTable, type View, type ViewRows } from "@workspace.sh/table-core";
+import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
   BoardView,
@@ -199,7 +200,12 @@ function TablePane({
   revision,
   navigation,
   menu,
+  source,
+  building,
 }: {
+  /** For a table held in the index: its view's rows once read, and how far its index has got while it's being made. */
+  source?: ViewRows;
+  building: { done: number; total: number } | null;
   /** What table-app's derive gives for the view on screen. */
   derived: Derived;
   tables: Record<string, ParsedTable>;
@@ -246,7 +252,8 @@ function TablePane({
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
-          <GtkBox spacing={6} hexpand>
+          {/* Nothing to count until a large table's index is made. */}
+          <GtkBox spacing={6} hexpand visible={!building}>
             <GtkLabel label={summary.count} cssClasses={["dim-label"]} />
             <GtkLabel label="·" cssClasses={["dim-label"]} />
             <GtkLabel label={summary.validity} tooltipText={summary.validityHint} cssClasses={[summary.valid ? "success" : "error"]} />
@@ -259,19 +266,56 @@ function TablePane({
           </GtkBox>
           <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
-        <LayoutView
-          key={view.id}
-          layout={view.layout}
-          view={shown.view}
-          rows={shown.rows}
-          schema={table.schema}
-          bodies={table.bodies}
-          relatedTables={related}
-          allRows={table.rows}
-          tableKey={tableNameOf(tableKey)}
-          sheet={shown.sheet}
-          {...callbacks}
-        />
+        {building ? (
+          // A large table's index is made before its rows show (LARGE-TABLES-PLAN, decision 1).
+          <AdwStatusPage
+            vexpand
+            title="Getting This Table Ready"
+            description={
+              building.total > 0
+                ? `${building.done.toLocaleString()} of ${building.total.toLocaleString()} rows read. This happens once; it opens straight away after.`
+                : "Reading its rows. This happens once; it opens straight away after."
+            }
+          >
+            <GtkProgressBar halign={Gtk.Align.CENTER} widthRequest={320} fraction={building.total > 0 ? building.done / building.total : 0} />
+          </AdwStatusPage>
+        ) : table.indexed && view.layout !== "table" ? (
+          <AdwStatusPage
+            vexpand
+            title="Not Shown for a Table This Large"
+            description="Only the Table layout reads a table of this size. Change this view's layout in View Settings."
+          />
+        ) : table.indexed && !source ? (
+          <GtkBox vexpand />
+        ) : (
+          <LayoutView
+            key={view.id}
+            layout={view.layout}
+            view={shown.view}
+            rows={shown.rows}
+            schema={table.schema}
+            bodies={table.bodies}
+            relatedTables={related}
+            allRows={table.rows}
+            tableKey={tableNameOf(tableKey)}
+            sheet={shown.sheet}
+            {...callbacks}
+            {...(table.indexed
+              ? {
+                  source,
+                  // Its fields stay as they are for now: a change to them means making the index again.
+                  onUpdateField: undefined,
+                  onAddEnumValue: undefined,
+                  onRemoveEnumValue: undefined,
+                  onDeleteField: undefined,
+                  onMoveField: undefined,
+                  onRestoreSchema: undefined,
+                  onAddField: undefined,
+                  onInsertRow: undefined,
+                }
+              : {})}
+          />
+        )}
       </GtkBox>
       {settingsOpen ? (
         <ViewSettings
@@ -396,7 +440,13 @@ export function App({
   chooseZip = chooseZipToOpen,
   chooseZipSaveAs = chooseZipToSave,
   resetExamples,
+  openIndex = openIndexHost,
+  indexedFrom,
 }: {
+  /** Opens a bundle's index: in a worker in the app, in place where nothing else is drawing. */
+  openIndex?: (bundleDir: string) => IndexHost;
+  /** Tables with this many rows or more, opened from here on, are read through the index. Absent: every table is held in memory. */
+  indexedFrom?: number;
   library: Library;
   initialTable?: string;
   initialView?: string;
@@ -429,6 +479,8 @@ export function App({
   const resetting = useRef(false);
   // Closed once, and not everything could be written: a second close quits anyway.
   const closing = useRef(false);
+  // Set once the indexed tables' hook below has run: a write can only come after.
+  const saveIndexed = useRef<(bundles: string[], tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(() => {
     // The examples, in newFilesIn, are the demo's own, and a reset puts them
     // back; a folder named on the command line or opened is the viewer's.
@@ -451,6 +503,7 @@ export function App({
       if (resetting.current) return false;
       const paths = Object.fromEntries(bundles.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
       await Promise.all(bundles.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
+      await saveIndexed.current(bundles, tables);
     },
   }, ownLocale);
   const { tables, bundles } = state;
@@ -460,11 +513,19 @@ export function App({
   // A table's own folder, where its attachments/ is.
   const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
 
-  const derived = derive(state, {
+  const deriveOptions = {
     locale: ownLocale,
-    newTableIn: "none",
-    attachmentsOf: (key) => (pathOf(bundleOf(key)) ? attachmentsIn(tableDir(key)) : []),
-    fileNameOf: (bundle) => pathOf(bundle)?.split("/").pop(),
+    newTableIn: "none" as const,
+    attachmentsOf: (key: string) => (pathOf(bundleOf(key)) ? attachmentsIn(tableDir(key)) : []),
+    fileNameOf: (bundle: string) => pathOf(bundle)?.split("/").pop(),
+  };
+  const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
+  // Tables held in the index: their rows are read, edited and saved there.
+  const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
+  saveIndexed.current = indexed.save;
+  const derived = derive(state, {
+    ...deriveOptions,
+    ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   // The layout reads the way the display language does (D40), the whole app included.
   useEffect(() => {
@@ -478,7 +539,6 @@ export function App({
   const [confirmReset, setConfirmReset] = useState(false);
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
-  const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
 
   const callbacks = {
     ...viewCallbacks(state, dispatch, newId),
@@ -507,7 +567,7 @@ export function App({
   const openFolder = async () => {
     const path = await chooseFolder();
     if (!path) return;
-    const opened = await loadLibrary([path], Object.keys(bundles));
+    const opened = await loadLibrary([path], Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
     const problems = Object.values(opened.problems).flat();
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
@@ -529,6 +589,8 @@ export function App({
   // The open table's .table, every table in it, as one .table.zip.
   const exportZip = async () => {
     const key = bundleOf(state.active);
+    // A table held in the index has no rows here to put in the archive.
+    if (Object.entries(tables).some(([k, t]) => bundleOf(k) === key && t.indexed)) return tell("Not exported", "A file with a table this large can't be exported as a .table.zip yet.");
     const path = await chooseZipSaveAs(archiveFileName(key));
     if (!path) return;
     try {
@@ -707,6 +769,8 @@ export function App({
                 revision={refused}
                 navigation={navigation}
                 menu={primaryMenu}
+                source={indexed.source}
+                building={indexed.building}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
