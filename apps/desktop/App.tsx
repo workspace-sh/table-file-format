@@ -701,20 +701,45 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         : null,
     [openPage, pageTable, table],
   );
+  // And the view's settings, while they're open.
+  const settingsShown = state.settingsOpen && !shown;
+  const viewCount = table.views.length;
+  const settingsView = derived.shown.view;
+  const settings = useMemo(
+    () =>
+      settingsShown
+        ? {
+            key: view.id,
+            view: settingsView,
+            schema: table.schema,
+            // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+            onChange: (patch: Partial<View>) => dispatch({ type: "updateView", patch }),
+            onArrange: (patch: Partial<View>) => dispatch({ type: "arrange", patch }),
+            personal: derived.arranged,
+            onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
+            onReset: () => dispatch({ type: "resetArrangement" }),
+            onDelete: viewCount > 1 ? () => dispatch({ type: "deleteView" }) : undefined,
+            onClose: () => dispatch({ type: "settings", open: false }),
+            onCancel: () => dispatch({ type: "settings", open: false, revert: true }),
+          }
+        : null,
+    [settingsShown, view.id, settingsView, table.schema, derived.arranged, viewCount],
+  );
   const cellKind = glass.props.state.kind;
   useEffect(() => {
-    inspectorStore.set({ page, cell: glass.props, cellRef: glass.bar, display: shownDisplay });
+    inspectorStore.set({ page, settings, cell: glass.props, cellRef: glass.bar, display: shownDisplay });
   });
   // It opens for a page or a formula being written, and for a cell once it
   // has been opened; closing it (its toolbar button) lets go of both.
   const editingFormula = cellKind === "editing";
   useEffect(() => {
-    if (page !== null || editingFormula) setInspectorShown(true);
-  }, [page, editingFormula]);
+    if (page !== null || editingFormula || settingsShown) setInspectorShown(true);
+  }, [page, editingFormula, settingsShown]);
   const closeInspected = useRef(() => {});
   closeInspected.current = () => {
     if (openPage) dispatch({ type: "openPage", rowId: null });
     if (editingFormula) glass.props.onCancel?.();
+    if (settingsShown) dispatch({ type: "settings", open: false });
   };
 
   // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
@@ -1035,23 +1060,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                     onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </html.div>
-              )}
-              {/* Scrolls with the view: above it, a tall panel squeezed every control into the window. */}
-              {state.settingsOpen && (
-                <ViewSettings
-                  key={view.id}
-                  view={shownView}
-                  schema={table.schema}
-                  // Turning a Sheet view into anything else asks first (D41): the reducer's question.
-                  onChange={(patch) => dispatch({ type: "updateView", patch })}
-                  onArrange={(patch) => dispatch({ type: "arrange", patch })}
-                  personal={derived.arranged}
-                  onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
-                  onReset={() => dispatch({ type: "resetArrangement" })}
-                  onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
-                  onClose={() => dispatch({ type: "settings", open: false })}
-                  onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
-                />
               )}
               <CellEditorContext.Provider value={glass.editor}>
               {renderView(shownView, visibleRows, table.schema, table.bodies, {

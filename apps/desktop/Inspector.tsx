@@ -1,12 +1,12 @@
 // The inspector: the window's trailing pane, for what's selected. A row's
-// page is written here, and a selected cell says what it is and is where
-// its formula is written. It is the system's inspector (TableShell.swift),
+// page is written here, the view's settings are changed here, and a
+// selected cell says what it is and is where its formula is written. It is the system's inspector (TableShell.swift),
 // so it has the pane's own material and place under the toolbar; this is
 // only what goes in it.
 import { useSyncExternalStore, type ReactElement } from "react";
 import { ScrollView, StyleSheet, Text, View, useColorScheme } from "react-native";
 import { GlassBar } from "@workspace.sh/glass-bar";
-import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost } from "@workspace.sh/table-ui";
+import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost, ViewSettings } from "@workspace.sh/table-ui";
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
 import { inspectorStore } from "./inspectorStore";
@@ -46,8 +46,14 @@ const CONTROLS: Partial<PlatformControls> = { Sheet: InspectorSheet };
 /** The page is written on the pane's own material, so its field has no fill of its own. */
 const OnPane = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
+/** The view's settings, a fresh form for each view. */
+function SettingsOf({ settings }: { settings: NonNullable<ReturnType<typeof inspectorStore.get>["settings"]> }) {
+  const { key, ...props } = settings;
+  return <ViewSettings key={key} {...props} />;
+}
+
 export function Inspector() {
-  const { page, cell, cellRef, display } = useSyncExternalStore(inspectorStore.subscribe, inspectorStore.get);
+  const { page, settings, cell, cellRef, display } = useSyncExternalStore(inspectorStore.subscribe, inspectorStore.get);
   const dark = useColorScheme() === "dark";
   const body = page ? (
     <PlatformControlsProvider value={CONTROLS}>
@@ -55,6 +61,11 @@ export function Inspector() {
         <BodyEditor key={page.key} rowId={page.rowId} rowTitle={page.rowTitle} content={page.content} onSave={page.onSave} onClose={page.onClose} />
       </PanelSurface.Provider>
     </PlatformControlsProvider>
+  ) : settings ? (
+    // The view's settings change as they're made, beside the view they change.
+    <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
+      <SettingsOf settings={settings} />
+    </ScrollView>
   ) : cell && (cell.state.kind === "selected" || cell.state.kind === "editing") ? (
     <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
       <GlassBar {...cell} ref={cellRef as never} />

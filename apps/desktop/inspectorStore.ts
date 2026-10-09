@@ -3,7 +3,7 @@
 // (Inspector.tsx), in the system's trailing pane. The app puts here what's
 // selected, and the inspector draws it; callbacks cross as they are.
 import type { GlassBarProps } from "@workspace.sh/glass-bar";
-import type { DisplaySettings } from "@workspace.sh/table-ui";
+import type { DisplaySettings, ViewSettingsProps } from "@workspace.sh/table-ui";
 
 /** A row's page, as table-ui's BodyEditor takes it. */
 export interface InspectorPage {
@@ -18,6 +18,8 @@ export interface InspectorPage {
 
 export interface InspectorShown {
   page: InspectorPage | null;
+  /** The view's settings, while they're open: table-ui's ViewSettings as it is. */
+  settings?: (ViewSettingsProps & { key: string }) | null;
   /** The selected cell, and a formula being written: glass-bar's state and callbacks. */
   cell: GlassBarProps | null;
   /** The ref glass-bar's hook hands its bar, for a clicked cell to go into a formula. */
