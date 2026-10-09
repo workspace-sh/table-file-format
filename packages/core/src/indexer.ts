@@ -75,6 +75,8 @@ export const INDEX_FORMAT = 1;
 
 const SEP = "\u0001";
 const BATCH = 5000;
+/** How far into every row, in file order, a window is before it is found by position and not by skipping to it. */
+const DEEP = 2000;
 /** The longest manual order the index sorts by; past it the view is computed in memory. */
 const MAX_ORDER = 5000;
 const NEVER = 1e9;
@@ -301,6 +303,8 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
       }
     }
     await flush(chunk);
+    // Positions alone, for finding a window deep in file order (see `page`): made with the build, not at the first jump.
+    await sortIndex(db, n, ["pos"], "p");
     await db.exec(`create virtual table x${n} using fts5(s, content='r${n}', content_rowid='pos', tokenize='trigram');`);
     if (options.search === "later") await db.run("insert into _fts(n, upto) values(?, -1)", [n]);
     else await db.exec(`insert into x${n}(x${n}) values('rebuild');`);
@@ -736,14 +740,24 @@ export async function queryIndex(
   }
 
   /** A window of the rows matching `extra` as well, in the view's order. */
-  const page = (column: string, extra: string | null, extraParams: SqlValue[], limit: number, offset: number) =>
-    db.all(`select ${column} as v from r${n} r ${join} ${and(extra)} order by ${order} limit ? offset ?`, [
+  const page = async (column: string, extra: string | null, extraParams: SqlValue[], limit: number, offset: number) => {
+    // Every row, in file order: skipping to a window deep in a large table
+    // would pass over every row before it, whole. Its first row is found in
+    // an index of positions alone, and the window read from there.
+    if (offset >= DEEP && limit >= 0 && where.length === 0 && extra === null && join === "" && orderTerms.length === 1) {
+      await sortIndex(db, n, ["pos"], "p");
+      const first = await db.all(`select pos from r${n} indexed by r${n}_p order by pos limit 1 offset ?`, [offset]);
+      if (!first[0]) return [];
+      return db.all(`select ${column} as v from r${n} r where r.pos >= ? order by r.pos limit ?`, [first[0].pos as number, limit]);
+    }
+    return db.all(`select ${column} as v from r${n} r ${join} ${and(extra)} order by ${order} limit ? offset ?`, [
       ...joinParams,
       ...whereParams,
       ...extraParams,
       limit,
       offset,
     ]);
+  };
   /** A row's number, from 1, among the rows matching `extra` as well; null when it isn't one of them. */
   const rankOf = async (id: string, extra: string | null, extraParams: SqlValue[]): Promise<number | null> => {
     if (orderTerms.length === 1) {

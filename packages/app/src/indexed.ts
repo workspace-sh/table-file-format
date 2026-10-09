@@ -140,25 +140,58 @@ const NEWLINE = 10;
  * a line that doesn't parse, or has no id, is skipped as the reader skips
  * it (SPEC section 3).
  */
-export function* rowsInBytes(bytes: Uint8Array): Iterable<Row> {
+export function rowsInBytes(bytes: Uint8Array): Iterable<Row> {
+  return rowsInChunks([bytes]);
+}
+
+/** The same, for a `rows.ndjson` that comes in pieces: a line may be split across two. */
+export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: number) => void): Iterable<Row> {
   const decoder = new TextDecoder();
-  let start = 0;
-  while (start < bytes.length) {
-    let end = bytes.indexOf(NEWLINE, start);
-    if (end < 0) end = bytes.length;
-    if (end > start) {
-      const line = decoder.decode(bytes.subarray(start, end));
-      if (line.trim().length > 0) {
-        try {
-          const row: unknown = JSON.parse(line);
-          if (row !== null && typeof row === "object" && typeof (row as Row).id === "string") yield row as Row;
-        } catch {
-          // Skipped.
-        }
-      }
+  const rowOf = (line: Uint8Array): Row | undefined => {
+    if (line.length === 0) return undefined;
+    const text = decoder.decode(line);
+    if (text.trim().length === 0) return undefined;
+    try {
+      const row: unknown = JSON.parse(text);
+      return row !== null && typeof row === "object" && typeof (row as Row).id === "string" ? (row as Row) : undefined;
+    } catch {
+      return undefined;
     }
-    start = end + 1;
+  };
+  // The start of a line whose end is in the next piece.
+  let carry: Uint8Array | null = null;
+  for (const chunk of chunks) {
+    let start = 0;
+    for (;;) {
+      const end = chunk.indexOf(NEWLINE, start);
+      if (end < 0) break;
+      let line = chunk.subarray(start, end);
+      if (carry) {
+        const joined: Uint8Array = new Uint8Array(carry.length + line.length);
+        joined.set(carry);
+        joined.set(line, carry.length);
+        line = joined;
+        carry = null;
+      }
+      // Said a line at a time, not a piece at a time: a piece can be most of the file.
+      onBytes?.(line.length + 1);
+      const row = rowOf(line);
+      if (row) yield row;
+      start = end + 1;
+    }
+    if (start < chunk.length) {
+      const rest = chunk.subarray(start);
+      if (carry) {
+        const joined: Uint8Array = new Uint8Array(carry.length + rest.length);
+        joined.set(carry);
+        joined.set(rest, carry.length);
+        carry = joined;
+      } else carry = rest.slice();
+    }
   }
+  if (carry) onBytes?.(carry.length);
+  const last = carry ? rowOf(carry) : undefined;
+  if (last) yield last;
 }
 
 /** How many lines of `bytes` hold something: its rows, near enough to say how far a build has got. */
@@ -186,25 +219,45 @@ export function firstRowsInBytes(bytes: Uint8Array, count: number): Row[] {
 }
 
 /**
- * Build a table's index from the bytes of its `rows.ndjson`, streaming
- * them in, with its search index left for after (`buildSearchIndex`).
- * Resolves with how many rows went in.
+ * Build a table's index from its `rows.ndjson`, as bytes or in pieces
+ * (`chunks`, each also handed to `keep` as it's read, for a copy), with its
+ * search index left for after (`buildSearchIndex`). `size` is the whole
+ * file's, for saying how far along a build from pieces is: its row count
+ * isn't known until the end, so the total it reports is worked out from the
+ * rows so far. Resolves with how many rows went in.
  */
 export async function buildIndexFromBytes(
   db: SqlDriver,
-  options: { name: string; schema: TableSchema; rows: Uint8Array; bodies?: Record<string, string>; key: string; onProgress?: (done: number, total: number) => void },
+  options: {
+    name: string;
+    schema: TableSchema;
+    rows: Uint8Array | { chunks: Iterable<Uint8Array>; size: number; keep?: (chunk: Uint8Array) => void };
+    bodies?: Record<string, string>;
+    key: string;
+    onProgress?: (done: number, total: number) => void;
+  },
 ): Promise<number> {
-  const total = options.onProgress ? linesInBytes(options.rows) : 0;
+  const whole = options.rows instanceof Uint8Array ? options.rows : null;
+  const pieces = options.rows instanceof Uint8Array ? null : options.rows;
+  const counted = whole && options.onProgress ? linesInBytes(whole) : 0;
   let done = 0;
-  options.onProgress?.(0, total);
+  let read = 0;
+  const total = () => (pieces ? (read > 0 ? Math.max(done, Math.round((done / read) * pieces.size)) : 0) : counted);
+  options.onProgress?.(0, total());
+  function* taken(): Iterable<Uint8Array> {
+    for (const chunk of pieces!.chunks) {
+      pieces!.keep?.(chunk);
+      yield chunk;
+    }
+  }
   async function* streamed(): AsyncIterable<Row> {
-    for (const row of rowsInBytes(options.rows)) {
+    for (const row of whole ? rowsInBytes(whole) : rowsInChunks(taken(), (bytes) => (read += bytes))) {
       done++;
-      if (done % 5000 === 0) options.onProgress?.(done, total);
+      if (done % 5000 === 0) options.onProgress?.(done, total());
       yield row;
     }
   }
   await buildIndex(db, { name: options.name, schema: options.schema, rows: streamed(), bodies: options.bodies, key: options.key, search: "later" });
-  options.onProgress?.(done, total);
+  options.onProgress?.(done, done);
   return done;
 }

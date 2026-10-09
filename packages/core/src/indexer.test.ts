@@ -466,3 +466,19 @@ test("a search index left for later answers the same before, while and after it'
     assert.deepEqual((await a!.ids(0, a!.count)).sort(), (await b!.ids(0, b!.count)).sort(), search);
   }
 });
+
+test("a window deep in file order is the same rows as skipping to it, through edits", { skip }, async () => {
+  const rows = Array.from({ length: 6000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
+  const db = driver();
+  await buildIndex(db, { name: "t", schema, rows, key: "k" });
+  // Gaps in the positions, and rows at the end: a place is not a position.
+  await removeRows(db, { name: "t", schema, ids: ["r10", "r2500", "r2501", "r4999"], key: "k2" });
+  await putRows(db, { name: "t", schema, rows: [{ id: "new-a", name: "A" }, { id: "new-b", name: "B" }], key: "k3" });
+  const want = [...rows.filter((r) => !["r10", "r2500", "r2501", "r4999"].includes(r.id)).map((r) => r.id), "new-a", "new-b"];
+  const all = (await queryIndex(db, { name: "t", schema }))!;
+  assert.equal(all.count, want.length);
+  for (const [a, b] of [[0, 50], [1999, 2003], [2000, 2200], [2490, 2510], [5990, 6100], [3000, 3000]] as const) {
+    assert.deepEqual(await all.ids(a, b), want.slice(a, b), `ids ${a} to ${b}`);
+    assert.deepEqual((await all.rows(a, b)).map((r) => r.id), want.slice(a, b), `rows ${a} to ${b}`);
+  }
+});
