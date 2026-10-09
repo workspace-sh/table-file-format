@@ -225,13 +225,13 @@ Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cel
 
 A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held in the bundle's `index.sqlite` instead of in memory, as long as its formulas read only their own row and it has no Sheet view.
 
-- **Opening.** Its `rows.ndjson` isn't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows, and the window shows how many rows are in until it's done. A fresh index opens at once.
+- **Opening.** Its `rows.ndjson` isn't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows. Meanwhile the table shows its first 200 rows as the file has them (`firstRows`), in the view's columns, under a count of rows read and a progress bar; nothing in them takes the keyboard, and search waits. A fresh index opens at once.
 - **Reading.** The table view reads a window of rows, its groups and its totals from a `ViewRows` (`indexedViewRows`), 200 rows at a time, and draws an empty row of the right height for one that hasn't arrived. Sorting, filtering, grouping and searching are queries. When the index can't promise an answer, every row is read out and the view is worked out in memory.
 - **Editing.** A cell edit, a new row and a deleted row are made in the index and show at once. 400 ms after the last one the rows are written back to `rows.ndjson` in file order, and the index is stamped fresh for them.
 - **Scrolling.** GTK places widgets with single-precision numbers, so rows more than some millions of pixels down sat a few pixels off. Rows are laid out in a body of at most 8 million pixels, and the scroller's travel is mapped onto the whole table: dragging the bar goes anywhere, and scrolling moves a pixel a pixel.
 - **If the index can't be made** (no space, no SQLite), the table is read into memory and a notice says so.
 
-Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the build's progress, the first rows, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
+Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
 
 Not there yet for an indexed table: changing its fields, layouts other than Table (they say so), exporting a `.table.zip` (refused with a notice), and checking its rows against the schema (the summary says "not checked"). No timings from the app itself yet; the index's own are above.
 

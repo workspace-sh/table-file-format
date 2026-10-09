@@ -1,6 +1,6 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
-import { loadLibrary } from "@workspace.sh/table-app/node";
+import { loadLibrary, openIndexHost, type IndexHost } from "@workspace.sh/table-app/node";
 import { parseRowsText } from "@workspace.sh/table-core";
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,6 +40,9 @@ async function openTasks() {
   // Small tables beside it are held in memory as ever.
   expect(library.tables["projects/projects"]!.rows.length).toBeGreaterThan(0);
   await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
+  // Past the first rows shown while its index is made: the view itself.
+  await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+  await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
 }
 
 async function cellOf(text: string): Promise<Gtk.Widget> {
@@ -66,6 +69,44 @@ describe("a table held in the index on Linux", () => {
     expect(rowsOnDisk()).toHaveLength(ROWS + 8);
   });
 
+  it("shows the first rows as stored while the index is being made, then the view itself", async () => {
+    const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
+    // An index that takes as long as the test says.
+    let finish = () => {};
+    const held = new Promise<void>((resolve) => (finish = resolve));
+    const slow = (dir: string): IndexHost => {
+      const host = openIndexHost(dir);
+      return {
+        ...host,
+        ensure: async (name, tableDir, onProgress) => {
+          onProgress?.(1000, ROWS + 8);
+          await held;
+          return host.ensure(name, tableDir, onProgress);
+        },
+      };
+    };
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} openIndex={slow} />);
+    // The head of the file, in file order: t1 first, though the view sorts by priority.
+    await screen.findAllByText("Land .table extension");
+    await screen.findAllByText("1,000 of 3,008 rows read");
+    await screen.findAllByText(/first rows as stored\. This view's sorting/);
+    await screen.findAllByText("Big 5");
+    // Two hundred of them, not the table: the scroller is that long.
+    const upper = scrollerOf(await cellOf("Big 5")).getVadjustment().getUpper();
+    expect(upper).toBeGreaterThan(199 * 45);
+    expect(upper).toBeLessThan(203 * 45);
+    expect(((await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry).getSensitive()).toBe(false);
+    // To look at only: no cell takes the keyboard.
+    const first = await cellOf("Land .table extension");
+    first.grabFocus();
+    expect((first.getRoot() as unknown as Gtk.Window).getFocus()).not.toBe(first);
+
+    finish();
+    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
+    expect(((await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry).getSensitive()).toBe(true);
+  });
+
   it("scrolls to rows read from the index as they're wanted", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
@@ -90,7 +131,6 @@ describe("a table held in the index on Linux", () => {
     expect(saved).toHaveLength(ROWS + 8);
     expect(saved.at(-1)).toEqual({ id: `b${ROWS - 1}`, title: `Big ${ROWS - 1}`, project: "p1", status: "todo", priority: 9, assignee: "sam" });
     // Saved, the index is fresh for the file: opening again builds nothing.
-    const { openIndexHost } = await import("@workspace.sh/table-app/node");
     const host = openIndexHost(bundle);
     let built = false;
     await host.ensure("tasks", join(bundle, "tables", "tasks"), () => (built = true));
