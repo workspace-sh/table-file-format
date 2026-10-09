@@ -71,6 +71,14 @@ export function useViewWindow(source: ViewRows, start: number, end: number): (Ro
   }, [source, immediate, first, last]);
 
   if (immediate) return to > from ? (source.rows(from, to) as Row[]) : [];
+  // Pages the source already holds are taken as they are, with no wait.
+  if (source.peek) {
+    for (let p = first; p <= last; p++) {
+      if (now.current.pages.has(p)) continue;
+      const held = source.peek(p * VIEW_PAGE, (p + 1) * VIEW_PAGE);
+      if (held) now.current.pages.set(p, held);
+    }
+  }
   let complete = true;
   for (let p = first; p <= last; p++) if (!now.current.pages.has(p)) complete = false;
   if (complete) shown.current = now.current;

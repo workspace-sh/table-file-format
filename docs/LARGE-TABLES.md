@@ -240,6 +240,33 @@ Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows wh
 
 Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an archive of more than 250,000 rows. No timings from the app itself yet; the index's own are above.
 
+### What the web does (W2 and W3, 9 Oct 2026)
+
+A `.table.zip` of 256 KB or more is read in a worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps the bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
+
+- **Opening.** The worker unzips the archive, takes the table's `rows.ndjson` as bytes, and hands the page the rest of the bundle with the table's first 200 rows. Those show at once, to look at, under a count of rows read and a bar. The bytes are streamed into the index and kept as a file beside it, which stays the truth.
+- **Reading and editing.** The indexer runs in the worker. The page holds a `ViewRows` whose every answer is one message (`remoteViewRows`), and an edit is one message that comes back with the next snapshot's rows for what's on screen already read (`peek`), so it shows in one draw.
+- **After a reload** the table is as it was left: the index and the rows file are still in the browser's storage, and nothing is built again. If the browser gave no storage, the index is in memory and a notice says the table goes with the page.
+- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the rows are placed in a body of at most 8 million pixels and the page's scrolling is mapped onto the whole list (`TallRows` in `RowList.web.tsx`), as the GTK table does.
+- **The search index** is made after the table is ready, in steps of 5,000 rows, each waiting until the page has asked for nothing for a quarter of a second.
+
+A production build made with `VITE_TABLE_MEASURE=1`, headless Firefox at 1280 × 800 on the Linux rig, its profile on disk. Each time is from the pick (or the action) to the result on screen.
+
+| | 50,000 rows | 100,000 rows | 1,000,000 rows |
+|---|---|---|---|
+| First rows | 0.56 s | 0.78 s | 4.4 s |
+| Table ready (sort, filter, edit) | 3.2 s | 5.8 s | 50 s |
+| Jump to the middle | 0.95 s before the fixes below; not run again | 136 ms | 107 ms |
+| A search, before its index is whole | 132 ms | 85 ms | 515 ms |
+| An edit shown | not run again | 35 ms | 84 ms |
+| Page elements | 1,317 | 1,341 | 1,139 |
+
+- **What it took to get there.** Asked a statement at a time, the worker made an edit take 250 to 470 ms and a jump 1 to 2 s: a dozen messages to open a view, and a list that asked for every page between the top and where it had jumped to (it keeps the items scrolled away, so they can't say what is on screen; the list's own state can). With the indexer in the worker and the list saying what it draws, the worker's part of an edit is 6 ms.
+- **At a million rows the wait to be ready is the build** (46 s in the worker, against 15 s in Node with `node:sqlite`), after 4 s to unzip 165 MB. First rows are on screen for all of it.
+- Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
+
+Not there yet on the web for an indexed table: layouts other than Table (it says so), removing a choice or a field, and `Download .table.zip`. Chromium and Safari are not measured.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.

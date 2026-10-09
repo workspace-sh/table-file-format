@@ -4,7 +4,7 @@
 // progress shown; the view on screen reads its rows from it; queued edits
 // are made in it; and a save writes its rows back to rows.ndjson.
 
-import { bundleOf, indexedViewRows, makeIndexEdits, tableNameOf, type AppAction, type AppState, type IndexWork } from "@workspace.sh/table-app";
+import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import { queryIndex } from "@workspace.sh/table-core";
 import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
@@ -88,8 +88,8 @@ export function useIndexedTables(input: {
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
             setFirst(({ [key]: _shown, ...rest }) => rest);
-            // The search's own index is made after, behind whatever the window asks for.
-            void host.search(tableNameOf(key)).catch(() => {});
+            // The search's own index is made after the view has its first rows, behind whatever the window asks for.
+            setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
           },
           async (error: unknown) => {
             // No index to be had (no space, no SQLite): the table is held in memory instead, and says so.
@@ -108,8 +108,12 @@ export function useIndexedTables(input: {
   // The view on screen's rows.
   const active = state.tables[state.active];
   const ready = !!active?.indexed && made[state.active] === "ready";
-  const [source, setSource] = useState<{ key: string; rows: ViewRows } | undefined>(undefined);
-  const asking = `${state.active}\u0000${active?.indexed?.version ?? ""}\u0000${JSON.stringify([view.filter, view.sort, view.order, view.group, view.totals])}\u0000${state.search}`;
+  const [source, setSource] = useState<{ key: string; asked: string; rows: RemoteViewRows } | undefined>(undefined);
+  const askingOf = (version: number | string) =>
+    `${state.active}\u0000${version}\u0000${JSON.stringify([view.filter, view.sort, view.order, view.group, view.totals])}\u0000${state.search}`;
+  const asking = askingOf(active?.indexed?.version ?? "");
+  const shownNow = useRef({ source, view, search: state.search, askingOf });
+  shownNow.current = { source, view, search: state.search, askingOf };
   // Whether a table's index holds what its schema now says: not from a change to its fields until it's made again.
   const fits = (key: string, table: ParsedTable) => {
     const was = madeFor.current.get(key);
@@ -119,11 +123,13 @@ export function useIndexedTables(input: {
     if (!ready || !active) return;
     // Its fields just changed: the rows on screen stay until the index is made again.
     if (!fits(state.active, active)) return;
+    // Already here: an edit brings the next snapshot's rows with it (below).
+    if (source?.asked === asking) return;
     const host = hostOf(bundleOf(state.active));
     if (!host) return;
     let current = true;
-    indexedViewRows(host, tableNameOf(state.active), active, view, state.search).then(
-      (rows) => current && setSource({ key: state.active, rows }),
+    remoteViewRows(host.rows, tableNameOf(state.active), active, view, state.search).then(
+      (rows) => current && setSource({ key: state.active, asked: asking, rows }),
       (error: unknown) => current && latest.current.tell("Couldn't read this table's rows", error instanceof Error ? error.message : String(error)),
     );
     return () => {
@@ -144,11 +150,22 @@ export function useIndexedTables(input: {
     const host = hostOf(bundleOf(first.key));
     if (!table || !host || !fits(first.key, table)) return;
     busy.current = true;
-    makeIndexEdits(host, tableNameOf(first.key), table, work)
+    (async () => {
+      const count = await remoteEdits(host.rows, tableNameOf(first.key), table, work);
+      // The table on screen: its next snapshot is opened here, with the rows it is
+      // showing read ahead, so the edit shows in one draw and not after three.
+      const shown = shownNow.current;
+      if (first.key !== state.active || !shown.source || shown.source.key !== first.key) return { count, then: undefined };
+      const version = (table.indexed?.version ?? 0) + 1;
+      const rows = await remoteViewRows(host.rows, tableNameOf(first.key), { ...table, indexed: { count, version } }, shown.view, shown.search);
+      await rows.readAhead(shown.source.rows.recent());
+      return { count, then: { key: first.key, asked: shown.askingOf(version), rows } };
+    })()
       .then(
-        (count) => {
+        ({ count, then }) => {
           if (work.some((w) => w.kind !== "body")) unsaved.current.add(first.key);
           latest.current.dispatch({ type: "indexed", key: first.key, count, done: work.at(-1)!.n });
+          if (then) setSource(then);
         },
         (error: unknown) => {
           latest.current.tell("Couldn't make that change", error instanceof Error ? error.message : String(error));
@@ -203,7 +220,7 @@ export function useIndexedTables(input: {
               latest.current.dispatch({ type: "indexed", key, count });
               setMade((m) => ({ ...m, [key]: "ready" }));
               setFirst(({ [key]: _shown, ...rest }) => rest);
-              void host.search(tableNameOf(key)).catch(() => {});
+              setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
             },
             (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
           );
