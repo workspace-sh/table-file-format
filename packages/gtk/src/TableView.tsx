@@ -3,9 +3,11 @@
 // totals footer. Columns are sized by the same rule as the web grid
 // (`columnWidths`), so a view saved on one looks the same on the other.
 //
-// Plain boxes rather than GtkColumnView, as the web grid is plain elements:
-// every row is built. Large tables (docs/LARGE-TABLES.md) will want the
-// recycling list instead; the cells stay as they are when that comes.
+// Plain boxes rather than GtkColumnView, as the web grid is plain elements.
+// Only the rows near what's on screen are built (LARGE-TABLES-PLAN, L1):
+// every row's height is known without drawing it, so the rows above and
+// below are two empty boxes of their heights, and the scroller is as long
+// as the whole table.
 
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
@@ -59,7 +61,7 @@ import {
   type GridPlace,
   useDisplaySettings,
 } from "@workspace.sh/table-ui/shared";
-import { useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
 import { EditableCell } from "./EditableCell.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
@@ -70,6 +72,14 @@ import { gridKeyOf } from "./gridKeys.js";
 /** The web grid's rule for the chrome: its two outer borders. */
 const TABLE_CHROME = 2;
 const HEADER_HEIGHT = 36;
+/** A body row's bottom rule. */
+const ROW_RULE = 1;
+/** A group's heading above its first row, rule included. */
+const GROUP_ROW_HEIGHT = 33;
+/** How far past the screen rows are kept built, in pixels. */
+const DRAW_DISTANCE = 900;
+/** How close the screen's edge comes to the last built row before more are built. */
+const DRAW_MARGIN = 300;
 /** A row menu's circular button and its margin. */
 const ROW_MENU_WIDTH = 42;
 
@@ -247,6 +257,48 @@ export function TableView({
   const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
   const coords = view.coordinates === true;
   const displayed = groupedRows(view, rows, schema);
+  // Each row's top within the body, past its own group heading, and the
+  // body's whole height: where a row is, built or not.
+  const rowTops = new Float64Array(displayed.length);
+  let bodyHeight = 0;
+  for (let i = 0; i < displayed.length; i++) {
+    const d = displayed[i]!;
+    if (d.starts) bodyHeight += GROUP_ROW_HEIGHT;
+    rowTops[i] = bodyHeight;
+    bodyHeight += heightOf(d.row.id) + ROW_RULE;
+  }
+  // The stretch of the body that is built, in pixels from its top. It moves
+  // only when scrolling brings the screen's edge near its own, not on every
+  // pixel scrolled.
+  const scroller = useRef<Gtk.ScrolledWindow | null>(null);
+  const [built, setBuilt] = useState({ from: 0, to: 3 * DRAW_DISTANCE });
+  const follow = () => {
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment) return;
+    const top = adjustment.getValue() - HEADER_HEIGHT - ROW_RULE;
+    const bottom = top + adjustment.getPageSize();
+    setBuilt((was) =>
+      (top - DRAW_MARGIN >= was.from || was.from <= 0) && (bottom + DRAW_MARGIN <= was.to || was.to >= bodyHeight)
+        ? was
+        : { from: top - DRAW_DISTANCE, to: bottom + DRAW_DISTANCE },
+    );
+  };
+  // The first row ending after `y`.
+  const rowAt = (y: number) => {
+    let lo = 0;
+    let hi = displayed.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rowTops[mid]! + heightOf(displayed[mid]!.row.id) + ROW_RULE <= y) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const firstBuilt = Math.min(rowAt(built.from), Math.max(0, displayed.length - 1));
+  const lastBuilt = Math.min(rowAt(built.to), displayed.length - 1);
+  const itemTop = (i: number) => rowTops[i]! - (displayed[i]!.starts ? GROUP_ROW_HEIGHT : 0);
+  const before = displayed.length ? itemTop(firstBuilt) : 0;
+  const after = displayed.length ? bodyHeight - (rowTops[lastBuilt]! + heightOf(displayed[lastBuilt]!.row.id) + ROW_RULE) : 0;
   const totals = view.totals ?? {};
   const showTotals = Object.keys(totals).length > 0;
 
@@ -406,11 +458,33 @@ export function TableView({
   const [editRequest, setEditRequest] = useState<{ key: string; n: number; text?: string } | null>(null);
   const cellKey = (rowId: string, name: string) => `${rowId}\u0000${name}`;
   const rowIds = displayed.map((d) => d.row.id);
+  // A cell to take the focus once its row is built.
+  const focusWhenBuilt = useRef<string | null>(null);
   const focusCell = (at: GridPlace) => {
     const rowId = rowIds[at.row];
     const name = fields[at.col];
-    if (rowId !== undefined && name !== undefined) cells.current.get(cellKey(rowId, name))?.grabFocus();
+    if (rowId === undefined || name === undefined) return;
+    const cell = cells.current.get(cellKey(rowId, name));
+    if (cell) {
+      cell.grabFocus();
+      return;
+    }
+    // Not built: scroll to its row, which builds it, and focus it then.
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment) return;
+    focusWhenBuilt.current = cellKey(rowId, name);
+    const top = rowTops[at.row]!;
+    const page = adjustment.getPageSize();
+    setBuilt({ from: top - DRAW_DISTANCE, to: top + page + DRAW_DISTANCE });
+    adjustment.setValue(Math.max(0, top + HEADER_HEIGHT + ROW_RULE - (page - heightOf(rowId)) / 2));
   };
+  useLayoutEffect(() => {
+    const key = focusWhenBuilt.current;
+    const cell = key ? cells.current.get(key) : undefined;
+    if (!cell) return;
+    focusWhenBuilt.current = null;
+    cell.grabFocus();
+  });
   const placeOf = (key: string): GridPlace | null => {
     const [rowId, name] = key.split("\u0000") as [string, string];
     const row = rowIds.indexOf(rowId);
@@ -463,7 +537,8 @@ export function TableView({
   // While a formula is open: its column tinted, the cells it read outlined.
   const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
 
-  const body = displayed.map(({ row, starts }, index) => {
+  const body = displayed.slice(firstBuilt, lastBuilt + 1).map(({ row, starts }, i) => {
+    const index = firstBuilt + i;
     const rowHeight = heightOf(row.id);
     const lines = linesFor(rowHeight);
     return (
@@ -472,6 +547,7 @@ export function TableView({
         <GtkLabel
           label={`${starts.label}  ·  ${starts.count}`}
           xalign={0}
+          heightRequest={GROUP_ROW_HEIGHT}
           cssClasses={[styles.groupRow]}
         />
       ) : null}
@@ -609,9 +685,11 @@ export function TableView({
 
   return (
     <GtkScrolledWindow
+      ref={scroller}
       hexpand
       vexpand
       cssClasses={[styles.table]}
+      vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} />}
       hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))} />}
     >
       <GtkBox
@@ -621,7 +699,9 @@ export function TableView({
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}
+        {before > 0 ? <GtkBox heightRequest={before} /> : null}
         {body}
+        {after > 0 ? <GtkBox heightRequest={after} /> : null}
         {addRow}
         {footer}
       </GtkBox>
