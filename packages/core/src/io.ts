@@ -101,7 +101,17 @@ export function memoryFs(): TableFs & { files: Map<string, string>; dirs: Set<st
  * diagnostics and otherwise ignored, as SPEC section 1 says. Hidden
  * entries (`.DS_Store` and the like) are ignored silently.
  */
-export async function readBundle(fs: TableFs, dir: string): Promise<ParsedBundle> {
+export interface ReadOptions {
+  /**
+   * Asked for each table's directory: true leaves its `rows.ndjson`
+   * unread, for a table too large to hold, whose rows the caller reads
+   * through the index instead. The table comes back with no rows and
+   * `indexed` set, its count for the caller to fill in.
+   */
+  rowsElsewhere?: (tableDir: string) => boolean | Promise<boolean>;
+}
+
+export async function readBundle(fs: TableFs, dir: string, options: ReadOptions = {}): Promise<ParsedBundle> {
   const diagnostics: ValidationError[] = [];
   const meta = parseOptionalJsonText<BundleMeta>("meta.json", (await fs.readText(joinPath(dir, "meta.json"))) ?? undefined, diagnostics) ?? {};
   const tables: Record<string, ParsedTable> = {};
@@ -116,7 +126,7 @@ export async function readBundle(fs: TableFs, dir: string): Promise<ParsedBundle
       diagnostics.push({ rowIndex: -1, message: `tables/${entry.name} isn't a table: it needs schema.json and rows.ndjson` });
       continue;
     }
-    tables[entry.name] = await readTable(fs, tableDir);
+    tables[entry.name] = await readTable(fs, tableDir, options);
   }
   const bundle: ParsedBundle = { meta, tables, path: dir };
   if (diagnostics.length > 0) bundle.diagnostics = diagnostics;
@@ -137,7 +147,7 @@ export async function readBundle(fs: TableFs, dir: string): Promise<ParsedBundle
  * directory without a readable schema is not a table: there is
  * nothing sound to degrade to.
  */
-export async function readTable(fs: TableFs, dir: string): Promise<ParsedTable> {
+export async function readTable(fs: TableFs, dir: string, options: ReadOptions = {}): Promise<ParsedTable> {
   const diagnostics: ValidationError[] = [];
 
   // Fatal by design — do not wrap.
@@ -146,12 +156,14 @@ export async function readTable(fs: TableFs, dir: string): Promise<ParsedTable> 
   if (schemaRaw === null) throw new Error(`${schemaPath}: no schema.json, so this isn't a table`);
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
-  const rows = parseRowsText((await fs.readText(joinPath(dir, "rows.ndjson"))) ?? "", diagnostics);
+  const elsewhere = (await options.rowsElsewhere?.(dir)) === true;
+  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, "rows.ndjson"))) ?? "", diagnostics);
   const views = parseOptionalJsonText<View[]>("views.json", (await fs.readText(joinPath(dir, "views.json"))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>("meta.json", (await fs.readText(joinPath(dir, "meta.json"))) ?? undefined, diagnostics) ?? {};
   const bodies = await readBodies(fs, joinPath(dir, "bodies"));
 
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
+  if (elsewhere) parsed.indexed = { count: 0, version: 0 };
   if (bodies) parsed.bodies = bodies;
   if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
   return parsed;
@@ -246,7 +258,8 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
 
   try {
     await stage(joinPath(dir, "schema.json"), pretty(input.schema));
-    await stage(joinPath(dir, "rows.ndjson"), serializeRows(input.rows, input.schema));
+    // Rows held in the index aren't here to write: whoever holds them saves them.
+    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, "rows.ndjson"), serializeRows(input.rows, input.schema));
     await stage(joinPath(dir, "views.json"), pretty(input.views ?? []));
     await stage(joinPath(dir, "meta.json"), pretty(meta));
     if (haveBodies) {

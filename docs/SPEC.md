@@ -864,7 +864,8 @@ joins inside one database. Where this section says `schema.json` and
   the fallback rule.
 
 The interface (`buildIndex`, `queryIndex`, `isIndexStale`, `dropIndex`,
-`putRows`, `removeRows`) lives in `@workspace.sh/table-core`. It is one
+`putRows`, `removeRows`, `storedRows`, `setIndexKey`) lives in
+`@workspace.sh/table-core`. It is one
 implementation, written against a small `SqlDriver` (`exec`, `run`,
 `all`, optionally `batch`) that each platform fills with its SQLite:
 `node:sqlite` on Node, op-sqlite or expo-sqlite on React Native,
@@ -878,7 +879,10 @@ structures defined for `views.json` (section 4), the view's manual
 `order`, and an optional free-text `search` string — and compiles to
 SQL internally. It returns the number of rows that match and a way to
 read any window of them (`rows(start, end)`), so a screen never needs
-the whole result.
+the whole result. With the view's `group` field and its `totals`, it
+also answers the view's groups (each one's first place and row count,
+in the order `applyGroup` gives them), its totals, a row by id and the
+place of a row: everything a view reads of its rows (`ViewRows`).
 
 Consumers MUST NOT be handed raw SQL access. Rationale:
 
@@ -943,6 +947,18 @@ this way sit at the end of the file order. Schemas with formulas that
 read other rows (a change to one row changes others) refuse in-place
 edits and are rebuilt; so is a table whose schema changed or whose rows
 were inserted mid-file.
+
+### A table held in the index
+
+An app MAY hold a large table's rows in the index alone, not in memory,
+reading `rows.ndjson` only to build it. `rows.ndjson` stays the truth:
+after edits the app writes the rows back out of the index in file order
+(`storedRows`), replaces `rows.ndjson` in one rename, and stamps the
+index with the new content's key (`setIndexKey`), so it is fresh for
+what was written. An index whose edits were never written is stale on
+the next open and is rebuilt from the file. The index file's journal
+(`index.sqlite-wal`, `-shm`) sits beside it and is ignored with it
+(`index.sqlite*`).
 
 ### Full-text search includes bodies
 
