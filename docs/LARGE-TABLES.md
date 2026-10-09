@@ -173,6 +173,22 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 - **The web demo and the phone save 400 ms after the last edit**, not on every key. Every table is still one stored value, written whole (about 1 s to stringify at 1M rows); Phase 3's index replaces that.
 - **What's left at a million rows:** an edit still passes over every row (filter, sort, ids) for about half a second, and the first open takes 4 s.
 
+### Drawing only the rows on screen, on the web (W1, 9 Oct 2026)
+
+The web's table draws its rows through LegendList (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. Native and Linux still draw every row.
+
+A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280 × 800 on the Linux rig (a 2017 MacBook, 8 GB), opening the same `.table.zip` files. "First rows" is from the pick to two frames after the rows are on screen. A jump sets the page's scroll position and waits two frames.
+
+| Rows | Read (unzip, parse) | First rows | Page elements | After scrolling to the end | Jump to the middle | Edit a title |
+|---|---|---|---|---|---|---|
+| 10,000 | 72 ms | 0.24 s | 1,401 | 1,720 | 101 ms | 72 ms |
+| 50,000 | 0.32 s | 0.77 s | 1,401 | 1,720 | 119 ms | 137 ms |
+| 100,000 | 0.63 s | 1.44 s | 1,401 | 1,720 | 143 ms | 273 ms |
+
+- **The page no longer grows with the table.** 10,000 rows were 250k elements and 15 s; they are 1,401 elements whatever the row count.
+- **What's left is the data.** At 100,000 rows nearly half the time to first rows is unzipping and parsing, and an edit takes 273 ms because the view is worked out again over every row. That is past the 135 ms bar from 50,000 rows up, which is where the index takes over (Phase B).
+- Arrow keys, and Ctrl with an arrow to the table's first or last row, bring a row into view whether or not it was drawn. Back and Forward put the page back by row: a row's place comes from the heights before it, so it needn't be drawn to be found.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
