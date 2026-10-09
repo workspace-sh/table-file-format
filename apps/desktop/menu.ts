@@ -5,6 +5,11 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 
 type Modifier = "command" | "shift" | "option" | "control";
 
+/** One line of a pop-up menu: something to choose, or a separator. */
+export type PopUpItem =
+  | { id: string; title: string; checked?: boolean; disabled?: boolean; /** An SF Symbol's name. */ symbol?: string }
+  | { separator: true };
+
 interface TableMenuModule {
   setItem(
     id: string,
@@ -18,6 +23,10 @@ interface TableMenuModule {
   ): void;
   copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
+  popUp(items: PopUpItem[], at: { x: number; y: number } | null): Promise<string | null>;
+  popUpTitles(): Promise<string[]>;
+  popUpChoose(title: string, seconds: number): void;
+  postRightClick(x: number, y: number): void;
   postClick(x: number, y: number): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
@@ -141,6 +150,42 @@ export function focusSearch(): void {
 export function onSearch(then: (text: string) => void): () => void {
   const sub = events?.addListener("search", (e: { text: string }) => then(e.text));
   return () => sub?.remove();
+}
+
+/**
+ * The system's menu of `items`; resolves with the id chosen, or null when
+ * it's dismissed. With `at` (a point in the content, as React measures)
+ * the ticked item opens over it, as a pop-up button's does; without, the
+ * menu opens at the pointer, as a context menu does.
+ */
+export function popUpMenu(items: PopUpItem[], at: { x: number; y: number } | null = null): Promise<string | null> {
+  return TableMenu?.popUp(items, at) ?? Promise.resolve(null);
+}
+
+/**
+ * A right-click (or Control-click) in the content. `target` is the `id`
+ * of the nearest element up from the one clicked whose id starts "menu-",
+ * or "" when there's none.
+ */
+export function onContextMenu(then: (target: string) => void): () => void {
+  const sub = events?.addListener("contextMenu", (e: { target: string }) => then(e.target));
+  return () => sub?.remove();
+}
+
+/**
+ * Development only: the last pop-up menu's titles; choosing from the next
+ * one by title, `seconds` after it opens ("" dismisses it), set before it
+ * opens since nothing reaches the app while a menu is open; a right-click
+ * at a point.
+ */
+export function popUpTitles(): Promise<string[]> {
+  return TableMenu?.popUpTitles() ?? Promise.resolve([]);
+}
+export function popUpChoose(title: string, seconds = 1): void {
+  TableMenu?.popUpChoose(title, seconds);
+}
+export function postRightClick(x: number, y: number): void {
+  TableMenu?.postRightClick(x, y);
 }
 
 /** Development only: what has the keyboard. */

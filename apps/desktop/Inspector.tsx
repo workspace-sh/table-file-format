@@ -9,6 +9,7 @@ import { GlassBar } from "@workspace.sh/glass-bar";
 import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost, ViewSettings } from "@workspace.sh/table-ui";
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
+import { macControls } from "./MacControls";
 import { inspectorStore } from "./inspectorStore";
 
 /**
@@ -42,7 +43,7 @@ function InspectorSheet({ title, subtitle, cancel, confirm, status, children }: 
   );
 }
 
-const CONTROLS: Partial<PlatformControls> = { Sheet: InspectorSheet };
+const CONTROLS: Partial<PlatformControls> = { ...macControls, Sheet: InspectorSheet };
 /** The page is written on the pane's own material, so its field has no fill of its own. */
 const OnPane = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
@@ -56,11 +57,9 @@ export function Inspector() {
   const { page, settings, cell, cellRef, display } = useSyncExternalStore(inspectorStore.subscribe, inspectorStore.get);
   const dark = useColorScheme() === "dark";
   const body = page ? (
-    <PlatformControlsProvider value={CONTROLS}>
-      <PanelSurface.Provider value={OnPane}>
-        <BodyEditor key={page.key} rowId={page.rowId} rowTitle={page.rowTitle} content={page.content} onSave={page.onSave} onClose={page.onClose} />
-      </PanelSurface.Provider>
-    </PlatformControlsProvider>
+    <PanelSurface.Provider value={OnPane}>
+      <BodyEditor key={page.key} rowId={page.rowId} rowTitle={page.rowTitle} content={page.content} onSave={page.onSave} onClose={page.onClose} />
+    </PanelSurface.Provider>
   ) : settings ? (
     // The view's settings change as they're made, beside the view they change.
     <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
@@ -77,7 +76,9 @@ export function Inspector() {
   );
   return (
     <PortalHost>
-      <DisplaySettingsProvider value={display ?? {}}>{body}</DisplaySettingsProvider>
+      <PlatformControlsProvider value={CONTROLS}>
+        <DisplaySettingsProvider value={display ?? {}}>{body}</DisplaySettingsProvider>
+      </PlatformControlsProvider>
     </PortalHost>
   );
 }
