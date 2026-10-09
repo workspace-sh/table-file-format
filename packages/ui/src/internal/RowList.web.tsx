@@ -1,5 +1,5 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { useCallback, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { RowListProps } from "./RowList";
 
 export type { RowListHandle, RowListProps } from "./RowList";
@@ -20,7 +20,7 @@ const DRAW_DISTANCE = 600;
  * Every height is given up front (`getFixedItemSize`): LegendList stays fast at
  * a million rows only when it never has to measure one.
  */
-export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, handle }: RowListProps<T>) {
+export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, handle, onShown }: RowListProps<T>) {
   const anchor = useRef<HTMLDivElement | null>(null);
   const list = useRef<LegendListRef | null>(null);
   // `undefined` until the anchor is in the page; `null` when nothing scrolls
@@ -43,9 +43,41 @@ export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, hand
     [],
   );
 
+  // Which places are drawn: each item says when it comes and goes, and the
+  // first and last are passed on once per frame, when they've changed.
+  const drawn = useRef(new Map<number, number>());
+  const told = useRef({ first: -1, last: -1, due: false });
+  const latestOnShown = useRef(onShown);
+  latestOnShown.current = onShown;
+  const track = useCallback((index: number, here: boolean) => {
+    const count = (drawn.current.get(index) ?? 0) + (here ? 1 : -1);
+    if (count > 0) drawn.current.set(index, count);
+    else drawn.current.delete(index);
+    if (told.current.due || !latestOnShown.current) return;
+    told.current.due = true;
+    requestAnimationFrame(() => {
+      told.current.due = false;
+      if (drawn.current.size === 0) return;
+      let first = Infinity;
+      let last = -Infinity;
+      for (const i of drawn.current.keys()) {
+        if (i < first) first = i;
+        if (i > last) last = i;
+      }
+      if (first === told.current.first && last === told.current.last) return;
+      told.current.first = first;
+      told.current.last = last;
+      latestOnShown.current?.(first, last);
+    });
+  }, []);
+
   const renderItem = useCallback(
-    ({ item, index }: { item: T; index: number }) => <Lift on={raised?.(item) ?? false}>{render(item, index)}</Lift>,
-    [render, raised],
+    ({ item, index }: { item: T; index: number }) => (
+      <Lift on={raised?.(item) ?? false} index={index} track={onShown ? track : undefined}>
+        {render(item, index)}
+      </Lift>
+    ),
+    [render, raised, track, onShown === undefined],
   );
 
   return (
@@ -100,7 +132,7 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
 
 /**
  * Raises the list's own box around an item above the boxes after it, and lets
- * it draw outside its bounds.
+ * it draw outside its bounds. It also says when its item is drawn (`track`).
  *
  * Each item sits in a positioned box of LegendList's, with paint containment,
  * so anything hanging below the item (the selected row's grip) is clipped at
@@ -108,8 +140,13 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
  * box is LegendList's and is reused for other items, so it changes only while
  * `on`, and is put back.
  */
-function Lift({ on, children }: { on: boolean; children: ReactNode }) {
+function Lift({ on, index, track, children }: { on: boolean; index: number; track?: (index: number, here: boolean) => void; children: ReactNode }) {
   const self = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!track) return;
+    track(index, true);
+    return () => track(index, false);
+  }, [index, track]);
   useLayoutEffect(() => {
     const box = self.current?.parentElement;
     if (!on || !box) return;

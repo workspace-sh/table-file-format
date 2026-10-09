@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -9,7 +9,10 @@ import {
   fieldsByName,
   fittedRowHeight,
   formatValue,
+  DEFAULT_ROW_HEIGHT,
+  groupLabel,
   groupedRows,
+  shownTotal,
   pillFor,
   type Pill,
   type RelationLink,
@@ -70,7 +73,10 @@ import {
   computeRows,
   coordinateOf,
   formatValue as formatCellValue,
+  memoryViewRows,
 } from "@workspace.sh/table-core";
+import { rowLayout, type RowMark } from "./rowLayout";
+import { useViewFacts, useViewWindow } from "./useViewRows";
 import type {
   SheetRef,
   ViewTotal,
@@ -2500,6 +2506,12 @@ const BAR_KEYBOARD: Partial<Record<InputHintKind, NonNullable<CellEditSession["k
   phone: "phone-pad",
 };
 
+/** A row at its place, with the group it starts, if any. */
+type RowEntry = { row: Row; starts?: { label: string; count: number } };
+const NO_SOURCE = memoryViewRows([]);
+const NO_IDS: readonly string[] = [];
+const NO_ENTRIES: RowEntry[] = [];
+
 export function TableView({
   view,
   rows,
@@ -2520,6 +2532,7 @@ export function TableView({
   onOpenRelation,
   onUpdateView,
   allRows,
+  source: given,
   tableKey,
   sheet,
   onInsertRow,
@@ -2618,7 +2631,7 @@ export function TableView({
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
-    const row = sel ? rows.find((r) => r.id === sel.rowId) : undefined;
+    const row = sel ? rowOf(sel.rowId) : undefined;
     const field = sel ? fieldMap.get(sel.name) : undefined;
     if (!sel || !row || !field) return editor.select(null);
     editor.select({
@@ -2670,11 +2683,12 @@ export function TableView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gridRef = useRef<any>(null);
   useEffect(() => {
-    if (focusRowId && rows.some((r) => r.id === focusRowId)) {
+    // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
+    if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
       setSel({ rowId: focusRowId, name: fields[0]! });
       setFocusRowId(null);
     }
-  }, [rows, focusRowId]);
+  }, [rows, focusRowId, given?.version]);
   const [newRowHot, setNewRowHot] = useState(false);
   const addRow = onAddRow
     ? () => {
@@ -2696,27 +2710,112 @@ export function TableView({
   // A sheet (SPEC section 4, `coordinates`): lettered columns, numbered
   // rows, in this view's order, and formulas typed and shown as =B7.
   const coords = view.coordinates === true;
-  // In group order when the view groups; row numbers follow what's shown.
-  const displayed = groupedRows(view, rows, schema);
+  // The rows, by place: in group order when the view groups, and row numbers
+  // follow what's shown. They are either all here (`rows`), or in the index
+  // (`source`), read a window at a time around what the list is showing. A
+  // row of the index that hasn't arrived has no entry, and is drawn empty at
+  // its height.
+  const indexed = given !== undefined;
+  const [shownRange, setShownRange] = useState({ start: 0, end: 80 });
+  const windowRows = useViewWindow(given ?? NO_SOURCE, shownRange.start, shownRange.end);
+  const windowStart = Math.max(0, shownRange.start);
+  // Rows with a height of their own, by id: their places come from the source.
+  const ownHeights = useMemo(
+    () => [...new Set([...Object.keys(view.rowHeights ?? {}), ...(liveRow ? [liveRow.rowId] : [])])],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.rowHeights, liveRow?.rowId],
+  );
+  const facts = useViewFacts(given ?? NO_SOURCE, indexed ? ownHeights : NO_IDS);
+  const inMemory = indexed ? NO_ENTRIES : groupedRows(view, rows, schema);
+  const total = indexed ? given.count : inMemory.length;
+  const groupStarts = indexed
+    ? new Map(facts.groups.map((g) => [g.start, { label: groupLabel(g.key, view.group?.field ?? "", schema), count: g.count }] as const))
+    : null;
+  const startsAt = (place: number) => (groupStarts ? groupStarts.get(place) : inMemory[place]?.starts);
+  const entryAt = (place: number): RowEntry | undefined => {
+    if (!groupStarts) return inMemory[place];
+    const row = windowRows[place - windowStart];
+    if (!row) return undefined;
+    const starts = groupStarts.get(place);
+    return starts ? { row, starts } : { row };
+  };
+  const idAt = (place: number) => entryAt(place)?.row.id;
+  // The rows held, by id: all of them in memory, the window's of an index.
+  let heldById: { place: Map<string, number>; row: Map<string, Row> } | null = null;
+  const held = () => {
+    if (heldById) return heldById;
+    const place = new Map<string, number>();
+    const row = new Map<string, Row>();
+    const hold = (r: Row, at: number) => {
+      if (place.has(r.id)) return;
+      place.set(r.id, at);
+      row.set(r.id, r);
+    };
+    if (indexed) windowRows.forEach((r, i) => r && hold(r, windowStart + i));
+    else inMemory.forEach((d, i) => hold(d.row, i));
+    return (heldById = { place, row });
+  };
+  const placeOfId = (id: string) => held().place.get(id) ?? -1;
+  const rowOf = (id: string) => held().row.get(id);
   // The rows go through a list that draws only what's on screen (RowList):
-  // each item is a row and, when it starts a group, the band above it.
-  const rowKeyOf = (d: (typeof displayed)[number]) => d.row.id;
+  // each item is a place: its row and, when it starts a group, the band above it.
+  const places = useMemo(() => Array.from({ length: total }, (_, i) => i), [total]);
+  const rowKeyOf = (place: number) => (indexed ? String(place) : (idAt(place) ?? String(place)));
+  const defaultHeight = view.rowHeight ?? DEFAULT_ROW_HEIGHT;
+  // The places of the rows with a height of their own.
+  const tallAt = new Map<number, number>();
+  for (const id of ownHeights) {
+    const place = indexed ? (facts.places.get(id) ?? -1) : placeOfId(id);
+    if (place >= 0) tallAt.set(place, heightOf(id));
+  }
   // A row's border is outside its height, so it adds its 1 px, except under
   // the last row when nothing follows it (tableRowLast). A group's band adds
   // its height and border likewise.
-  const rowItemHeight = (d: (typeof displayed)[number], i: number) =>
-    heightOf(d.row.id) +
-    (i === displayed.length - 1 && !onAddRow ? 0 : ROW_BORDER) +
-    (d.starts ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
-  const rowsVersion = `${view.rowHeight ?? ""}|${JSON.stringify(view.rowHeights ?? {})}|${liveRow?.rowId ?? ""}:${liveRow?.h ?? ""}`;
+  const rowItemHeight = (place: number) =>
+    (tallAt.get(place) ?? defaultHeight) +
+    (place === total - 1 && !onAddRow ? 0 : ROW_BORDER) +
+    (startsAt(place) ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
+  const rowsVersion = `${view.rowHeight ?? ""}|${JSON.stringify(view.rowHeights ?? {})}|${liveRow?.rowId ?? ""}:${liveRow?.h ?? ""}|${
+    indexed ? `${given.version}:${facts.groups.length}:${[...facts.places.values()].join(",")}` : ""
+  }`;
   // The selected row's grip hangs below it, over the next row.
-  const rowRaised = (d: (typeof displayed)[number]) => sel?.rowId === d.row.id;
+  const rowRaised = (place: number) => !!sel && idAt(place) === sel.rowId;
+  // Every place's top, without drawing any: for going to a row and for saying where one is.
+  const layoutOf = () => {
+    const marks: RowMark[] = [];
+    if (groupStarts) for (const place of groupStarts.keys()) marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER });
+    else inMemory.forEach((d, place) => d.starts && marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER }));
+    for (const [place, height] of tallAt) marks.push({ place, taller: height - defaultHeight });
+    return rowLayout(total, defaultHeight + ROW_BORDER, marks);
+  };
+  /** A place's item: its row as `draw` draws it, or an empty row of its height while it's on its way from the index. */
+  const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode): ReactNode => {
+    const entry = entryAt(place);
+    if (entry) return draw(entry, place);
+    return (
+      <>
+        {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow]} />}
+        <html.div
+          style={[styles.tableRow, styles.rowHeight(tallAt.get(place) ?? defaultHeight), place === total - 1 && !onAddRow && styles.tableRowLast]}
+        />
+      </>
+    );
+  };
+  // What the list is showing decides the window read from an index, with room either side.
+  const onShown = indexed
+    ? (first: number, last: number) => {
+        const start = Math.max(0, Math.floor((first - 60) / 40) * 40);
+        const end = Math.ceil((last + 60) / 40) * 40;
+        setShownRange((was) => (was.start === start && was.end === end ? was : { start, end }));
+      }
+    : undefined;
   const frozenRows = useRef<RowListHandle | null>(null);
   const paneRows = useRef<RowListHandle | null>(null);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
-  const grid = viewGrid(view, fields, displayed.map((d) => d.row.id), sheet);
+  // (A Sheet view is never held in an index, so only rows in memory have a grid.)
+  const grid = viewGrid(view, fields, indexed ? [] : inMemory.map((d) => d.row.id), sheet);
   // The cells the open formula reads, outlined: by row id, this row, or by place (D41).
   const inputCells = formulaCell
     ? formulaInputCells(openFormulaField, formulaCell.rowId, view, fields, sheet?.order)
@@ -2728,7 +2827,7 @@ export function TableView({
   const barColumn = (() => {
     if (!barFormula) return null;
     const field = fieldMap.get(barFormula.name);
-    const row = rows.find((r) => r.id === barFormula.rowId);
+    const row = rowOf(barFormula.rowId);
     if (!field || !row) return null;
     const ex = explainFormula({
       field, row, fields: schema.fields, draft: barFormula.draft, editable: true,
@@ -3056,7 +3155,11 @@ export function TableView({
   const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
     const kind = totals[name];
-    const { value: shown, numeric } = kind ? totalFor(rows, name, kind) : { value: undefined, numeric: false };
+    const { value: shown, numeric } = kind
+      ? indexed
+        ? shownTotal(facts.totals[name], kind)
+        : totalFor(rows, name, kind)
+      : { value: undefined, numeric: false };
     const content = kind ? (
       <>
         <html.span style={styles.totalLabel}>{TOTAL_LABELS[kind]}</html.span>
@@ -3234,8 +3337,7 @@ export function TableView({
 
   // ---- keyboard: a selected cell, moved and opened from the keyboard,
   // as Sheets and Airtable have it. Columns in display order, rows as shown.
-  const rowIds = displayed.map((d) => d.row.id);
-  const lastRow = rowIds.length - 1;
+  const lastRow = total - 1;
 
   // Where you are, for history: the cell selected, reported as it changes,
   // and put back when the view is gone back to.
@@ -3248,7 +3350,7 @@ export function TableView({
   useEffect(() => {
     const p = restorePlace?.place;
     if (!p) return;
-    if (p.rowId && p.field && rowIds.includes(p.rowId) && fields.includes(p.field)) setSel({ rowId: p.rowId, name: p.field });
+    if (p.rowId && p.field && (indexed || placeOfId(p.rowId) >= 0) && fields.includes(p.field)) setSel({ rowId: p.rowId, name: p.field });
     else setSel(null);
     // Each place once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3257,64 +3359,77 @@ export function TableView({
   // (the web), a row's top is the list's top plus the heights before it, so
   // a row that isn't drawn has a place too. Elsewhere it's measured from the
   // rows' first cells, which run top to bottom, so a halving search needs few.
-  const measureRows = useRef({ rowIds, first: fields[0], displayed, sizeOf: rowItemHeight });
-  measureRows.current = { rowIds, first: fields[0], displayed, sizeOf: rowItemHeight };
-  const rowTops = useRef<{ of: typeof displayed; tops: Float64Array } | null>(null);
+  const measureRows = useRef({ first: fields[0], total, layoutOf, placeOfId, idAt, source: given });
+  measureRows.current = { first: fields[0], total, layoutOf, placeOfId, idAt, source: given };
   useEffect(() => {
     if (!onPlaceMeasure) return;
-    // Each row's top within the list: past the heights before it, and past
-    // its own group band. Worked out when asked, once per set of rows.
-    const tops = () => {
-      const { displayed: of, sizeOf } = measureRows.current;
-      if (rowTops.current?.of === of) return rowTops.current.tops;
-      const tops = new Float64Array(of.length);
-      let y = 0;
-      for (let i = 0; i < of.length; i++) {
-        tops[i] = y + (of[i]!.starts ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
-        y += sizeOf(of[i]!, i);
-      }
-      rowTops.current = { of, tops };
-      return tops;
-    };
     const listTop = () => (paneRows.current ?? frozenRows.current)?.top() ?? null;
-    const topOf = async (rowId: string) => {
-      const { first, rowIds: ids } = measureRows.current;
-      const from = listTop();
-      if (from !== null) {
-        const at = ids.indexOf(rowId);
-        return at < 0 ? null : from + tops()[at]!;
-      }
+    const measured = async (rowId: string) => {
+      const { first } = measureRows.current;
       const rect = first ? await measureAnchor(cellRefs.current[`${rowId}\u0000${first}`]) : null;
       return rect ? rect.top : null;
+    };
+    const topOf = async (rowId: string) => {
+      const now = measureRows.current;
+      const from = listTop();
+      if (from === null) return measured(rowId);
+      let at = now.placeOfId(rowId);
+      // In an index, and not among the rows on screen: the index says where it is.
+      if (at < 0 && now.source) at = await now.source.placeOf(rowId);
+      return at < 0 ? null : from + now.layoutOf().topOf(at);
     };
     onPlaceMeasure({
       topOf,
       rowAt: async (y) => {
-        const ids = measureRows.current.rowIds;
+        const now = measureRows.current;
+        if (now.total === 0) return null;
         const from = listTop();
-        const known = from === null ? null : tops();
+        if (from !== null) {
+          const layout = now.layoutOf();
+          const at = Math.min(now.total - 1, layout.at(y - from));
+          const rowId = now.idAt(at) ?? (now.source ? (await now.source.ids(at, at + 1))[0] : undefined);
+          return rowId === undefined ? null : { rowId, offset: Math.round(y - (from + layout.topOf(at))) };
+        }
         let lo = 0;
-        let hi = ids.length - 1;
+        let hi = now.total - 1;
         let found: { rowId: string; offset: number } | null = null;
         while (lo <= hi) {
           const mid = (lo + hi) >> 1;
-          const top = known ? from! + known[mid]! : await topOf(ids[mid]!);
-          if (top === null) return found;
+          const rowId = now.idAt(mid);
+          const top = rowId === undefined ? null : await measured(rowId);
+          if (rowId === undefined || top === null) return found;
           if (top <= y) {
-            found = { rowId: ids[mid]!, offset: Math.round(y - top) };
+            found = { rowId, offset: Math.round(y - top) };
             lo = mid + 1;
           } else hi = mid - 1;
         }
-        return found ?? (ids[0] ? { rowId: ids[0], offset: 0 } : null);
+        const firstId = now.idAt(0);
+        return found ?? (firstId ? { rowId: firstId, offset: 0 } : null);
       },
     });
     return () => onPlaceMeasure(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onPlaceMeasure]);
   const lastCol = fields.length - 1;
-  const cellAt = (r: number, c: number) => ({
-    rowId: rowIds[Math.max(0, Math.min(lastRow, r))]!,
-    name: fields[Math.max(0, Math.min(lastCol, c))]!,
+  // A place to select once its row has arrived from the index.
+  const selectWhenHere = useRef<{ place: number; name: string } | null>(null);
+  /** Select the cell at a place, wherever it is: a row of an index that isn't here yet is gone to, and selected as it arrives. */
+  const selectAt = (r: number, c: number) => {
+    const place = Math.max(0, Math.min(lastRow, r));
+    const name = fields[Math.max(0, Math.min(lastCol, c))]!;
+    const rowId = idAt(place);
+    if (rowId !== undefined) return setSel({ rowId, name });
+    if (!indexed || total === 0) return;
+    selectWhenHere.current = { place, name };
+    paneRows.current?.scrollIndexIntoView(place);
+    frozenRows.current?.scrollIndexIntoView(place);
+  };
+  useEffect(() => {
+    const wanted = selectWhenHere.current;
+    const rowId = wanted ? idAt(wanted.place) : undefined;
+    if (!wanted || rowId === undefined) return;
+    selectWhenHere.current = null;
+    setSel({ rowId, name: wanted.name });
   });
   const editable = (name: string) => !!onUpdateRow && fieldMap.get(name)?.computed === undefined;
   /**
@@ -3326,7 +3441,7 @@ export function TableView({
   const beginBar = (rowId: string, name: string, text?: string): boolean => {
     if (!editor) return false;
     const field = fieldMap.get(name);
-    const row = rows.find((r) => r.id === rowId);
+    const row = rowOf(rowId);
     if (!field || !row) return false;
     const label = field.title ?? field.name;
     const rowLabel = titleField ? formatValue(row[titleField]) : row.id;
@@ -3505,7 +3620,7 @@ export function TableView({
         },
         // Return: down a row, still editing, as a spreadsheet does.
         next: () => {
-          const below = rowIds[rowIds.indexOf(rowId) + 1];
+          const below = idAt(placeOfId(rowId) + 1);
           setSel({ rowId: below ?? rowId, name });
           if (below) beginBar(below, name);
         },
@@ -3534,7 +3649,7 @@ export function TableView({
     }
     if (!editable(name)) return;
     if (field?.type === "boolean") {
-      const row = rows.find((r) => r.id === rowId);
+      const row = rowOf(rowId);
       onUpdateRow!(rowId, name, !(row?.[name] === true));
       return;
     }
@@ -3543,20 +3658,20 @@ export function TableView({
   // Where the selection goes when editing ends from the keyboard; the
   // table takes the keyboard back either way.
   const endEdit = (rowId: string, name: string) => (how: EditEnd) => {
-    const next = afterEdit({ row: rowIds.indexOf(rowId), col: fields.indexOf(name) }, how, rowIds.length, fields.length);
-    setSel(cellAt(next.row, next.col));
+    const next = afterEdit({ row: placeOfId(rowId), col: fields.indexOf(name) }, how, total, fields.length);
+    selectAt(next.row, next.col);
     gridRef.current?.focus?.({ preventScroll: true });
   };
   const onGridKey = (e: KeyEventLike) => {
     const tag = (e.target as { tagName?: string } | undefined)?.tagName;
     // Typing in a cell editor, a picker or a header button is theirs.
     if (tag && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(tag)) return;
-    const cur = sel && rowIds.includes(sel.rowId) && fields.includes(sel.name) ? sel : null;
+    const cur = sel && placeOfId(sel.rowId) >= 0 && fields.includes(sel.name) ? sel : null;
     const field = cur ? fieldMap.get(cur.name) : undefined;
     // What the key does is table-ui/shared's gridKey, as table-gtk's grid has it.
     const action = gridKey(
-      cur ? { row: rowIds.indexOf(cur.rowId), col: fields.indexOf(cur.name) } : null,
-      rowIds.length,
+      cur ? { row: placeOfId(cur.rowId), col: fields.indexOf(cur.name) } : null,
+      total,
       fields.length,
       { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey },
       { editable: !!cur && editable(cur.name), boolean: field?.type === "boolean", picks: cellPicks(field), computed: !!field?.computed },
@@ -3564,7 +3679,7 @@ export function TableView({
     if (!action || action.kind === "leave") return;
     if (action.kind === "deselect") return setSel(null);
     e.preventDefault?.();
-    if (action.kind === "select") return setSel(cellAt(action.at.row, action.at.col));
+    if (action.kind === "select") return selectAt(action.at.row, action.at.col);
     if (!cur) return;
     if (action.kind === "clear") return onUpdateRow!(cur.rowId, cur.name, undefined);
     void openCell(cur.rowId, cur.name, action.kind === "open" ? action.text : undefined);
@@ -3590,8 +3705,10 @@ export function TableView({
     }
     // Off screen, the row isn't drawn and has no cell to scroll to: ask the
     // list. Both panes follow one scroller, so either list will do.
-    const at = displayed.findIndex((d) => d.row.id === sel.rowId);
+    const at = placeOfId(sel.rowId);
     if (at >= 0) paneRows.current?.scrollIndexIntoView(at);
+    // In an index and not on screen: it says where the row is.
+    else if (given) void Promise.resolve(given.placeOf(sel.rowId)).then((place) => place >= 0 && paneRows.current?.scrollIndexIntoView(place));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
@@ -3652,13 +3769,13 @@ export function TableView({
               {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
             <RowList
-              items={displayed}
+              items={places}
               keyOf={rowKeyOf}
               sizeOf={rowItemHeight}
               version={rowsVersion}
               raised={rowRaised}
               handle={frozenRows}
-              render={({ row, starts }, i) => (
+              render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
                     <html.div style={[styles.tableRow, styles.groupRow]}>
@@ -3674,7 +3791,7 @@ export function TableView({
                         styles.tableRow,
                         styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
-                        i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                        i === total - 1 && !onAddRow && styles.tableRowLast,
                       ]}
                     >
                       {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -3685,7 +3802,7 @@ export function TableView({
                     <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
                   )}
                 </>
-              )}
+              ))}
             />
             {addRow && newRowBand(true)}
             {showTotals && (
@@ -3709,13 +3826,14 @@ export function TableView({
                 )}
               </html.div>
               <RowList
-                items={displayed}
+                items={places}
                 keyOf={rowKeyOf}
                 sizeOf={rowItemHeight}
                 version={rowsVersion}
                 raised={rowRaised}
                 handle={paneRows}
-                render={({ row, starts }, i) => (
+                onShown={onShown}
+                render={(place) => drawn(place, ({ row, starts }, i) => (
                   <>
                     {starts && (
                       // The frozen pane labels the group; this pane's band
@@ -3735,7 +3853,7 @@ export function TableView({
                           styles.tableRow,
                           styles.rowHeight(heightOf(row.id)),
                           styles.positioned,
-                            i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                            i === total - 1 && !onAddRow && styles.tableRowLast,
                         ]}
                       >
                         {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -3750,7 +3868,7 @@ export function TableView({
                       </html.div>
                     )}
                   </>
-                )}
+                ))}
               />
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
@@ -3773,7 +3891,7 @@ export function TableView({
         it, on the page's margin, rather than taking a strip beside it. */}
     {canAddField && edgeToEdge && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
       {formulaCell && openFormulaField && (() => {
-        const openRow = rows.find((r) => r.id === formulaCell.rowId);
+        const openRow = rowOf(formulaCell.rowId);
         if (!openRow) return null;
         const name = formulaCell.name;
         return (
