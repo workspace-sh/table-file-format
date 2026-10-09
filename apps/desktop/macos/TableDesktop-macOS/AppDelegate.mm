@@ -38,7 +38,11 @@
 
   self.window.toolbar = TableShellToolbar();
   self.window.toolbarStyle = NSWindowToolbarStyleUnified;
-  self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleAutomatic;
+  // No backing and no line under the toolbar: its buttons float over the
+  // content, which shows through to the top of the window, and the only
+  // thing between them is the system's blur where content passes beneath.
+  self.window.titlebarAppearsTransparent = YES;
+  self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
 
   [self.window makeKeyAndOrderFront:self];
   if (![self.window setFrameUsingName:@"TableDesktopMainWindow"]) {
