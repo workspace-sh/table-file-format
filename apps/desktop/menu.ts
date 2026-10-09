@@ -23,6 +23,7 @@ interface TableMenuModule {
   setWindowWidth(width: number): void;
   setWindowTitle(title: string, subtitle: string): void;
   topInset(): Promise<number>;
+  setContentUnderToolbar(under: boolean): void;
   setToolbarLabel(commandId: string, label: string): void;
   setFilesMode(files: boolean): void;
   setSearchText(text: string): void;
@@ -143,6 +144,11 @@ export function onSearch(then: (text: string) => void): () => void {
 /** Development only: a toolbar button pressed, by its command's id. */
 export function postCommand(commandId: string): void {
   TableMenu?.postCommand(commandId);
+}
+
+/** Content has scrolled up behind the toolbar (it's blurred there), or is back clear of it. */
+export function setContentUnderToolbar(under: boolean): void {
+  TableMenu?.setContentUnderToolbar(under);
 }
 
 /** How far the toolbar comes down over the content, in points. */

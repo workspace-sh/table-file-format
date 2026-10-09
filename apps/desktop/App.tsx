@@ -84,7 +84,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, setContentUnderToolbar, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -580,6 +580,13 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     void toolbarInset().then((inset) => inset > 0 && setTopInset(inset));
   }, []);
+  // Whether the view has scrolled up behind the toolbar, said only when it changes.
+  const wasUnder = useRef(false);
+  const underToolbar = useCallback((under: boolean) => {
+    if (under === wasUnder.current) return;
+    wasUnder.current = under;
+    setContentUnderToolbar(under);
+  }, []);
   const sidebarShown = !sidebarCollapsed;
   const toggleSidebar = toggleNativeSidebar;
   const filesMode = sidebarPrefs.files === true;
@@ -942,6 +949,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               contentContainerStyle={{ paddingTop: topInset + 12, paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
               scrollIndicatorInsets={{ top: topInset }}
               showsVerticalScrollIndicator
+              scrollEventThrottle={16}
+              onScroll={(e) => underToolbar(e.nativeEvent.contentOffset.y > 1)}
             >
               <html.div style={styles.subtitle}>
                 <html.span>{summary.count}</html.span>

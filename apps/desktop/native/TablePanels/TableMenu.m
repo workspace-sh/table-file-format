@@ -293,6 +293,12 @@ RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
   [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
 }
 
+/// Content has scrolled up behind the toolbar, or is back clear of it.
+RCT_EXPORT_METHOD(setContentUnderToolbar:(BOOL)under)
+{
+  [TableShell setContentUnderToolbar:under];
+}
+
 /// How far the toolbar comes down over the content, in points: what's under it starts this far down.
 RCT_EXPORT_METHOD(topInset:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
