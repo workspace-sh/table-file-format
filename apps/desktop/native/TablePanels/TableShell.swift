@@ -117,7 +117,35 @@ public class TableShell: NSObject {
       }
       return event
     }
+    // A right-click (or Control-click) in the content asks for the menu of
+    // what's under the pointer; React draws no menu of its own for it.
+    contextMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { event in
+      guard event.type == .rightMouseDown || event.modifierFlags.contains(.control) else { return event }
+      if let root = rootView, let window = root.window, event.window === window,
+         event.locationInWindow.y <= window.contentLayoutRect.maxY,
+         root.bounds.contains(root.convert(event.locationInWindow, from: nil)) {
+        // What it's for: the nearest view up from the one clicked that React
+        // marked as having a menu (its `id`, MacControls.tsx).
+        var target = ""
+        let nativeId = NSSelectorFromString("nativeId")
+        var view = root.superview?.hitTest(root.convert(root.convert(event.locationInWindow, from: nil), to: root.superview))
+        while let at = view, at !== root.superview {
+          if at.responds(to: nativeId), let id = at.value(forKey: "nativeId") as? String, id.hasPrefix("menu-") {
+            target = id
+            break
+          }
+          view = at.superview
+        }
+        NotificationCenter.default.post(name: NSNotification.Name("TableDesktopContextMenu"), object: nil, userInfo: ["target": target])
+        // A Control-click is not also a click; and a right-click that has
+        // a menu goes no further (in a development build React Native
+        // would show its own menu for it as well).
+        return event.type == .leftMouseDown || !target.isEmpty ? nil : event
+      }
+      return event
+    }
   }
+  private static var contextMonitor: Any?
 
   /// Open or close the inspector, as its toolbar button does.
   @objc public static func setInspectorShown(_ shown: Bool) {

@@ -21,6 +21,7 @@ import {
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
+  PlatformControlsProvider,
   PortalHost,
   TableView,
   ViewSettings,
@@ -29,6 +30,7 @@ import {
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
+import { macControls, watchRowMenus } from "./MacControls";
 import { onSidebar, pickInSidebar, setInspectorShown, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
@@ -85,7 +87,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, popUpChoose, popUpTitles, postRightClick, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -707,6 +709,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }, 150);
   };
   useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  // A right-click on a row shows its menu (MacControls.tsx).
+  useEffect(() => watchRowMenus(), []);
   const restoringN = state.restoring?.n;
   useEffect(() => {
     const top = state.restoring?.place.top;
@@ -975,6 +979,18 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         postClick(x, y);
         return `clicked ${x}, ${y}`;
       },
+      // A right-click there. The system menu it (or a choice cell) opens:
+      // the last one's titles, and choosing from the next one by title,
+      // `seconds` after it opens ("" dismisses), set before it opens.
+      rightClick: (x: number, y: number) => {
+        postRightClick(x, y);
+        return `right-clicked ${x}, ${y}`;
+      },
+      popUpTitles,
+      popUpChoose: (title: string, seconds = 1) => {
+        popUpChoose(title, seconds);
+        return `will choose ${title || "nothing"}`;
+      },
       menuTitles,
       // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.
       pressAlert: (title: string) => {
@@ -1070,6 +1086,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
       <PortalHost>
+        <PlatformControlsProvider value={macControls}>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
           <html.div style={styles.content}>
@@ -1145,6 +1162,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
           </html.div>
         </html.div>
         </DisplaySettingsProvider>
+        </PlatformControlsProvider>
       </PortalHost>
       </AttachmentsProvider>
     </GestureHandlerRootView>
