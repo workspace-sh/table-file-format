@@ -120,6 +120,10 @@ public class TableShell: NSObject {
     // A right-click (or Control-click) in the content asks for the menu of
     // what's under the pointer; React draws no menu of its own for it.
     contextMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { event in
+      if event.window != nil {
+        lastClick = event.locationInWindow
+        lastClickTime = event.timestamp
+      }
       guard event.type == .rightMouseDown || event.modifierFlags.contains(.control) else { return event }
       if let root = rootView, let window = root.window, event.window === window,
          event.locationInWindow.y <= window.contentLayoutRect.maxY,
@@ -146,6 +150,16 @@ public class TableShell: NSObject {
     }
   }
   private static var contextMonitor: Any?
+  private static var lastClick = NSPoint.zero
+  private static var lastClickTime: TimeInterval = 0
+
+  /// Where the click a menu is opening for landed, in the window: the
+  /// pointer may have moved since, and the menu belongs where it was
+  /// asked for. Nil when there's been no click in the last moment (the
+  /// menu was asked for from the keyboard).
+  @objc public static var recentClick: NSValue? {
+    ProcessInfo.processInfo.systemUptime - lastClickTime < 1 ? NSValue(point: lastClick) : nil
+  }
 
   /// Open or close the inspector, as its toolbar button does.
   @objc public static func setInspectorShown(_ shown: Bool) {

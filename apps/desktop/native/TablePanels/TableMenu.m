@@ -283,7 +283,8 @@ RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
 /// disabled, symbol (an SF Symbol's name) } or { separator: true }.
 /// `at` is a point in the content, measured as React measures, where the
 /// ticked item (else the menu's top) goes: what a pop-up button does.
-/// Without it the menu opens at the pointer, as a context menu does.
+/// Without it the menu opens where the click that asked for it landed
+/// (else at the pointer), as a context menu does.
 RCT_EXPORT_METHOD(popUp:(NSArray<NSDictionary *> *)items
                   at:(nullable NSDictionary *)at
                   resolve:(RCTPromiseResolveBlock)resolve
@@ -312,7 +313,8 @@ RCT_EXPORT_METHOD(popUp:(NSArray<NSDictionary *> *)items
   }
   NSWindow *window = NSApp.keyWindow ?: NSApp.mainWindow ?: NSApp.windows.firstObject;
   NSView *view = window.contentView;
-  NSPoint point = [view convertPoint:window.mouseLocationOutsideOfEventStream fromView:nil];
+  NSValue *clicked = TableShell.recentClick;
+  NSPoint point = [view convertPoint:clicked != nil ? clicked.pointValue : window.mouseLocationOutsideOfEventStream fromView:nil];
   NSView *root = TableShell.rootView;
   if (at != nil && root != nil) {
     view = root;
