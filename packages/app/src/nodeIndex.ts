@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, readFileSync, readdirS
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { buildIndex, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { buildIndex, buildSearchIndex, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -22,6 +22,13 @@ export interface IndexHost extends SqlDriver {
    * `onProgress` hears how many rows are in, of how many, while it builds.
    */
   ensure(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /**
+   * Make what's left of table `name`'s search index, which a build leaves
+   * for after: the table is read and answering before a search has its
+   * own index, and until then a search reads every row's text. Resolves
+   * when it's whole; safe to ask of one that already is.
+   */
+  search(name: string): Promise<void>;
   /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields. */
   build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
@@ -138,6 +145,8 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     }),
     bodies,
     key,
+    // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
+    search: "later",
   });
   onProgress?.(done, total);
   return done;
@@ -209,6 +218,12 @@ export function openIndexHost(bundleDir: string): IndexHost {
       // The build is in the file itself, not left in its journal beside it.
       await db.exec("pragma wal_checkpoint(truncate)");
       return count;
+    },
+    async search(name) {
+      while (await buildSearchIndex(db, name)) {
+        // A step at a time.
+      }
+      await db.exec("pragma wal_checkpoint(truncate)");
     },
     async build(name, tableDir, onProgress) {
       const count = await buildTableIndex(db, name, tableDir, onProgress);
