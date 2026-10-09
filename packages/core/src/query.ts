@@ -72,12 +72,53 @@ export function applyView(
   return rows;
 }
 
+/**
+ * The sum of some numbers, exactly: what they add up to as real numbers,
+ * rounded once to the nearest double. Adding them one at a time rounds at
+ * every step, so the answer would depend on their order, and a total would
+ * change in its last digits when a view is sorted. (Shewchuk's exact
+ * summation, as Python's math.fsum has it.)
+ */
+export function exactSum(values: Iterable<number>): number {
+  const partials: number[] = [];
+  for (let x of values) {
+    let kept = 0;
+    for (let y of partials) {
+      if (Math.abs(x) < Math.abs(y)) [x, y] = [y, x];
+      const hi = x + y;
+      const lo = y - (hi - x);
+      if (lo !== 0) partials[kept++] = lo;
+      x = hi;
+    }
+    partials.length = kept;
+    partials.push(x);
+  }
+  let n = partials.length;
+  if (n === 0) return 0;
+  let hi = partials[--n]!;
+  let lo = 0;
+  while (n > 0) {
+    const x = hi;
+    const y = partials[--n]!;
+    hi = x + y;
+    lo = y - (hi - x);
+    if (lo !== 0) break;
+  }
+  // Half way between two doubles: what's left says which way to round.
+  if (n > 0 && ((lo < 0 && partials[n - 1]! < 0) || (lo > 0 && partials[n - 1]! > 0))) {
+    const y = lo * 2;
+    const x = hi + y;
+    if (y === x - hi) hi = x;
+  }
+  return hi;
+}
+
 const isBlank = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
 
 /**
  * A totals footer's value for one column (SPEC section 4, `totals`), over
  * the rows a view shows. Sums and averages read numbers and skip anything
- * else; counts count values, or blanks. Undefined when there's nothing to
+ * else, and are exact (exactSum), so they don't depend on the rows' order; counts count values, or blanks. Undefined when there's nothing to
  * total.
  */
 export function viewTotal(rows: Row[], field: string, kind: ViewTotal): number | undefined {
@@ -88,9 +129,9 @@ export function viewTotal(rows: Row[], field: string, kind: ViewTotal): number |
   if (nums.length === 0) return undefined;
   switch (kind) {
     case "sum":
-      return nums.reduce((a, b) => a + b, 0);
+      return exactSum(nums);
     case "average":
-      return nums.reduce((a, b) => a + b, 0) / nums.length;
+      return exactSum(nums) / nums.length;
     case "min":
       return Math.min(...nums);
     case "max":
