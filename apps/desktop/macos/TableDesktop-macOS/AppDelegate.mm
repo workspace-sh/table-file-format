@@ -47,8 +47,7 @@
   // No line under the toolbar. The title bar stays the system's own (not
   // transparent): a transparent one opts the window out of the system's
   // scroll-edge effect, so content passes sharp behind the title.
-  // TODO(toolbar blur): the soft blur behind the toolbar is NOT DONE. What
-  // was tried and where to look next is in TableShell.swift, at the pane.
+  // TODO(#383): the soft effect behind the toolbar; see TableShell.swift.
   self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
 
   [self.window makeKeyAndOrderFront:self];
