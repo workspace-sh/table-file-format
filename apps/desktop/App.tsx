@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { ScrollView } from "react-native";
+// React Native's View, under another name: View here is a table's view.
+import { ScrollView, View as Box } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
 // for the entire subtree. Required once per app at the root.
 import "react-native-gesture-handler";
@@ -84,7 +85,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -830,6 +831,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         postSearch(text);
         return `searched ${text}`;
       },
+      // What has the keyboard, left in globalThis.__responder (the debugger connection can't await).
+      responder: () => {
+        void firstResponder().then((said) => ((globalThis as { __responder?: unknown }).__responder = said));
+        return "asking";
+      },
       // A toolbar button, by its command's id, as pressing it would send it.
       command: (id: string) => {
         postCommand(id);
@@ -1019,15 +1025,22 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
             </>
             )}
           </html.div>
+          {/* A row's page opens over the pane below the toolbar, not under
+              it: its own portal host, in a box that starts at the toolbar's
+              foot, so the page's card and the dimming behind it stop there. */}
           {state.openPage && (
-            <BodyEditor
-              key={`${state.active}/${state.openPage}`}
-              rowId={state.openPage}
-              rowTitle={rowTitleFor(table, state.openPage)}
-              content={table.bodies?.[state.openPage] ?? ""}
-              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
-              onClose={() => dispatch({ type: "openPage", rowId: null })}
-            />
+            <Box style={{ position: "absolute", top: topInset, left: 0, right: 0, bottom: 0 }}>
+              <PortalHost>
+                <BodyEditor
+                  key={`${state.active}/${state.openPage}`}
+                  rowId={state.openPage}
+                  rowTitle={rowTitleFor(table, state.openPage)}
+                  content={table.bodies?.[state.openPage] ?? ""}
+                  onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
+                  onClose={() => dispatch({ type: "openPage", rowId: null })}
+                />
+              </PortalHost>
+            </Box>
           )}
         </html.div>
         </DisplaySettingsProvider>

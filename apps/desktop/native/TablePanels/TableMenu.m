@@ -287,6 +287,23 @@ RCT_EXPORT_METHOD(focusSearch)
   [TableToolbar.shared focusSearch];
 }
 
+/// What has the keyboard: development only. Resolves with the first
+/// responder's class, and for a text view whether it can be edited and how
+/// much text it holds.
+RCT_EXPORT_METHOD(firstResponder:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSResponder *first = window.firstResponder;
+  NSMutableDictionary *said = [@{ @"class" : NSStringFromClass(first.class) ?: @"none", @"key" : @(window.isKeyWindow) } mutableCopy];
+  if ([first isKindOfClass:NSTextView.class]) {
+    NSTextView *text = (NSTextView *)first;
+    said[@"editable"] = @(text.isEditable);
+    said[@"length"] = @(text.string.length);
+    said[@"fieldEditor"] = @(text.isFieldEditor);
+  }
+  resolve(said);
+}
+
 /// Text typed in the toolbar's search field: development only, as postKey is.
 RCT_EXPORT_METHOD(postSearch:(NSString *)text)
 {

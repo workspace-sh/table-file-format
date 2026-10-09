@@ -58,7 +58,34 @@ public class TableShell: NSObject {
     split.addSplitViewItem(sidebarItem)
     split.addSplitViewItem(detailItem)
     split.splitView.autosaveName = "TableDesktopSplitView"
+    watchClicks()
     return split
+  }
+
+  /// Give the keyboard to the content, unless something in it already has
+  /// it. The sidebar's list is the window's first choice for the keyboard,
+  /// and holds on to it when a click lands on a part of the React view
+  /// that doesn't take focus itself: arrow keys and typing would then move
+  /// about the sidebar while the table looked selected.
+  @objc public static func focusContent() {
+    guard let root = rootView, let window = root.window else { return }
+    if let first = window.firstResponder as? NSView, first.isDescendant(of: root) { return }
+    if !window.makeFirstResponder(root) { window.makeFirstResponder(nil) }
+  }
+
+  /// A click in the content takes the keyboard from the sidebar before the
+  /// click itself is handled, so whatever it lands on can then claim it.
+  private static var clickMonitor: Any?
+  static func watchClicks() {
+    guard clickMonitor == nil else { return }
+    clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+      if let root = rootView, let window = root.window, event.window === window,
+         event.locationInWindow.y <= window.contentLayoutRect.maxY,
+         root.bounds.contains(root.convert(event.locationInWindow, from: nil)) {
+        focusContent()
+      }
+      return event
+    }
   }
 
   /// Whether the sidebar is showing, for the View menu's Hide/Show Sidebar.

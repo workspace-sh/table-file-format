@@ -70,8 +70,17 @@ final class TableSidebarModel: ObservableObject {
   /// A click, as an event for JS: its name and what it was on.
   var send: (String, [String: Any]) -> Void = { _, _ in }
 
+  /// After a pick made with the mouse, the keyboard goes to what was
+  /// picked: the view, not the sidebar. A pick made with the arrow keys
+  /// leaves it in the sidebar, to keep moving through it.
+  private func handOverKeyboard() {
+    guard let type = NSApp.currentEvent?.type, type == .leftMouseDown || type == .leftMouseUp else { return }
+    DispatchQueue.main.async { TableShell.focusContent() }
+  }
+
   /// A row picked in the Tables side, by its tag: `table:<key>` or `view:<key>:<viewId>`.
   func pick(_ tag: String) {
+    defer { handOverKeyboard() }
     let parts = tag.split(separator: ":", maxSplits: 2).map(String.init)
     if parts.first == "table", parts.count == 2 {
       send("selectTable", ["key": parts[1]])
@@ -83,6 +92,7 @@ final class TableSidebarModel: ObservableObject {
   /// A line picked in the Files side, by its id.
   func pickFile(_ id: String) {
     guard let row = data.files.first(where: { $0.id == id }) else { return }
+    defer { if row.kind == "file" { handOverKeyboard() } }
     if row.kind == "file" {
       send("showFile", ["bundle": row.bundle, "path": row.path])
     } else if row.kind == "dir" {
