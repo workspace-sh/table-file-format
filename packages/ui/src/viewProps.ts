@@ -2,11 +2,17 @@
 // Native, and table-gtk's on Linux. An app wires one set of callbacks and
 // hands them to either.
 
-import type { Field, ParsedTable, Row, SheetRef, TableSchema, View } from "@workspace.sh/table-core";
+import type { Field, ParsedTable, Row, SheetRef, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 
 export interface ViewProps {
   view: View;
   rows: Row[];
+  /**
+   * For a table whose rows are in the index (`ParsedTable.indexed`): what
+   * the view reads them from, a window at a time. `rows` is then empty.
+   * A view that can't read a source draws from `rows`.
+   */
+  source?: ViewRows;
   schema: TableSchema;
   bodies?: Record<string, string>;
   /**

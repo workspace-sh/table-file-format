@@ -37,6 +37,11 @@
       "types": "./dist/node-fs.d.ts",
       "default": "./dist/node-fs.js"
     },
+    "./sqlite-node": {
+      "source": "./src/sqlite-node.ts",
+      "types": "./dist/sqlite-node.d.ts",
+      "default": "./dist/sqlite-node.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

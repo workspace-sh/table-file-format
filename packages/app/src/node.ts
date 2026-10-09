@@ -9,9 +9,11 @@ import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
+import { largeTables } from "./nodeIndex.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
+export { buildTableIndex, countRows, firstRows, largeTables, mayHoldRows, openIndexHost, saveTableRows, tableContentKey, type IndexHost } from "./nodeIndex.ts";
 
 /** The `.table` folders in `dir`, sorted by name. */
 export function bundlesIn(dir: string): string[] {
@@ -21,9 +23,19 @@ export function bundlesIn(dir: string): string[] {
     .sort();
 }
 
-/** Read each `.table` folder in `paths` from disk (relative to the working directory). `held`: see openLibrary. */
-export function loadLibrary(paths: string[], held: Iterable<string> = []): Promise<Library> {
-  return openLibrary(nodeFs, paths.map((p) => resolve(p)), held);
+/**
+ * Read each `.table` folder in `paths` from disk (relative to the working
+ * directory). `held`: see openLibrary. With `indexedFrom`, a table of that
+ * many rows or more comes back without them (`ParsedTable.indexed`), for
+ * the app to read through the bundle's index.
+ */
+export function loadLibrary(paths: string[], held: Iterable<string> = [], options: { indexedFrom?: number } = {}): Promise<Library> {
+  return openLibrary(
+    nodeFs,
+    paths.map((p) => resolve(p)),
+    held,
+    options.indexedFrom === undefined ? {} : { rowsElsewhere: largeTables(options.indexedFrom) },
+  );
 }
 
 /**

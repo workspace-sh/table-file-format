@@ -629,3 +629,58 @@ test("history: the cell selected and how far down come back with a view, and a n
   assert.deepEqual(s.place, { rowId: "dl-2", field: "value" });
   assert.equal(s.restoring!.n, n + 1);
 });
+
+// Tables held in the index
+
+const indexedStart = (): AppState => {
+  const { tables, bundles } = examples();
+  const key = "projects/projects";
+  return initialAppState({ tables: { ...tables, [key]: { ...tables[key]!, rows: [], indexed: { count: 17, version: 0 } } }, bundles });
+};
+
+test("edits to an indexed table's rows are queued for the index, in order, and its rows stay out of the state", () => {
+  const s = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "p1", field: "name", value: "Renamed" },
+    { type: "addRow", id: "p-new" },
+    { type: "updateBody", rowId: "p1", content: "A page" },
+  );
+  assert.deepEqual(s.tables["projects/projects"]!.rows, []);
+  assert.deepEqual(
+    s.indexWork.map(({ n, kind, rowId }) => [n, kind, rowId]),
+    [[1, "cell", "p1"], [2, "add", "p-new"], [3, "body", "p1"]],
+  );
+  assert.equal(s.tables["projects/projects"]!.bodies?.p1, "A page");
+  // Nothing to write until the index has them.
+  assert.equal(s.dirty.includes("projects") && s.indexWork.length === 0, false);
+});
+
+test("deleting an indexed table's row asks first, then queues it", () => {
+  const asked = run(indexedStart(), { type: "deleteRow", rowId: "p3" });
+  assert.equal(asked.asking?.kind, "confirm");
+  assert.deepEqual(asked.indexWork, []);
+  const s = run(asked, { type: "answer", response: "delete" });
+  assert.deepEqual(s.indexWork.map(({ kind, rowId }) => [kind, rowId]), [["remove", "p3"]]);
+});
+
+test("once the app has made them, the edits leave the queue and the table is to be written", () => {
+  const edited = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "name", value: "A" }, { type: "addRow", id: "p-new" });
+  const during = run(edited, { type: "addRow", id: "later" });
+  const s = run(during, { type: "indexed", key: "projects/projects", count: 18, done: 2 });
+  assert.deepEqual(s.indexWork.map((w) => w.rowId), ["later"]);
+  assert.deepEqual(s.tables["projects/projects"]!.indexed, { count: 18, version: 1 });
+  assert.ok(s.dirty.includes("projects"));
+  // A build's count is news to the views, and nothing to write.
+  const built = run(indexedStart(), { type: "indexed", key: "projects/projects", count: 17 });
+  assert.deepEqual(built.dirty, []);
+  assert.equal(built.tables["projects/projects"]!.indexed!.version, 1);
+});
+
+test("an indexed table's summary counts what the index holds, and says its rows weren't checked", () => {
+  const s = indexedStart();
+  assert.equal(derive(s).summary.count, "17 of 17 rows");
+  assert.equal(derive(s).summary.validity, "not checked");
+  const searching = run(s, { type: "search", text: "x" });
+  assert.equal(derive(searching, { indexedShown: { count: 3, inView: 12 } }).summary.count, "3 of 12 matching");
+  assert.deepEqual(derive(s).shown.rows, []);
+});

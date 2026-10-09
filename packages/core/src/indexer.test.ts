@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyView, searchRows } from "./query.js";
-import { arraySource } from "./row-source.js";
+import { arraySource, memoryViewRows } from "./row-source.js";
 import { oo1Driver } from "./sqlite-wasm.js";
-import { buildIndex, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
+import { buildIndex, buildSearchIndex, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 
 // node:sqlite arrived in Node 22.5 and has no types here; where it's missing the index is simply untested.
@@ -365,5 +365,120 @@ test("a RowSource over memory and one over the index give the same windows", { s
   assert.equal(memory.count, indexed.count);
   for (const [a, b] of [[0, 10], [35, 60], [5, 5], [-3, 2]] as const) {
     assert.deepEqual(await indexed.rows(Math.max(a, 0), b), memory.rows(a, b));
+  }
+});
+
+test("groups, totals, ids and places are what the rows in memory give", { skip }, async () => {
+  let compared = 0;
+  let fell = 0;
+  const totalKinds = ["sum", "average", "min", "max", "count", "count_empty"] as const;
+  for (const seed of [11, 12]) {
+    const rows = makeRows(seed, 300);
+    // Fractions, which don't add up the same in any order.
+    const f = random(seed);
+    for (const row of rows) if (typeof row.n === "number" && f.int(3) === 0) row.n = f.pick([0.1, 0.2, 0.3, 1e16, -1e16, 1 / 3]);
+    const bodies = bodiesFor(rows, seed);
+    const table = tableOf(rows, bodies);
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, bodies, key: "k1", batchSize: 64 });
+    const r = random(seed * 31);
+    for (let q = 0; q < 300; q++) {
+      const filter = Array.from({ length: r.int(2) }, () => randomFilter(r));
+      const sort = Array.from({ length: r.int(3) }, () => ({ field: r.pick(["name", "n", "flag", "when", "day", "level"]), direction: r.pick(["asc", "desc"] as const) }));
+      const order = r.int(8) === 0 ? Array.from({ length: 1 + r.int(8) }, () => r.pick(rows).id) : undefined;
+      const group = r.int(4) === 0 ? undefined : r.pick(["name", "n", "flag", "when", "day", "level", "tags", "double", "nope"]);
+      const totals = Object.fromEntries(
+        Array.from({ length: r.int(4) }, () => [r.pick(["name", "n", "flag", "level", "tags", "double", "nope"]), r.pick(totalKinds)]),
+      );
+      const search = r.int(5) === 0 ? r.pick(["needle", "ap", "x", "r1"]) : undefined;
+      const view: View = { id: "v", name: "v", layout: "table", filter, sort, order };
+      const query = { filter, sort, order, search, group, totals };
+      const label = `seed ${seed}: ${JSON.stringify(query)}`;
+      const got = await queryIndex(db, { name: "t", schema, query });
+      if (!got) {
+        fell++;
+        continue;
+      }
+      compared++;
+      const inView = applyView(table, view);
+      const shown = search ? searchRows(inView, search, { schema, bodies }) : inView;
+      const want = memoryViewRows(plain(shown), { inView: inView.length, group, schema, totals });
+      assert.equal(got.count, want.count, `count, ${label}`);
+      assert.equal(got.inView, want.inView, `inView, ${label}`);
+      assert.deepEqual(await got.groups(), want.groups(), `groups, ${label}`);
+      assert.deepEqual(await got.ids(0, want.count), want.ids(0, want.count), `ids, ${label}`);
+      const a = r.int(want.count + 1);
+      const b = a + r.int(40);
+      assert.deepEqual(await got.rows(a, b), want.rows(a, b), `rows ${a} to ${b}, ${label}`);
+      assert.deepEqual(await got.totals(), want.totals(), `totals, ${label}`);
+      for (const id of [r.pick(rows).id, r.pick(rows).id, "nobody"]) {
+        assert.equal(await got.placeOf(id), want.placeOf(id), `place of ${id}, ${label}`);
+        assert.deepEqual(await got.row(id), want.row(id), `row ${id}, ${label}`);
+      }
+    }
+  }
+  assert.ok(compared > fell, `index answered ${compared}, fell back ${fell}`);
+});
+
+test("a search index left for later answers the same before, while and after it's made, through edits", { skip }, async () => {
+  const rows = makeRows(21, 400);
+  const bodies = bodiesFor(rows, 21);
+  let table = tableOf(rows, bodies);
+  const db = driver();
+  await buildIndex(db, { name: "t", schema, rows, bodies, key: "k", search: "later" });
+  const r = random(5);
+  const searches = ["needle", " NEEDLE ", "ünï", "ap", "a b", "x", "r1", "100%", "edited", "zzz"];
+  const compare = async (label: string) => {
+    for (const search of searches) {
+      const view: View = { id: "v", name: "v", layout: "table", sort: [{ field: "name", direction: r.pick(["asc", "desc"] as const) }] };
+      assert.equal(await check(db, table, view, search, `${label}, "${search}"`), true);
+    }
+  };
+  await compare("before");
+  let steps = 0;
+  for (;;) {
+    // Edits land on rows the search index has reached, and on rows it hasn't. (Only so many: each adds a row to reach.)
+    if (steps >= 5) {
+      steps++;
+      if (!(await buildSearchIndex(db, "t", 64))) break;
+      continue;
+    }
+    const edited = r.pick(table.rows);
+    const next = { ...edited, name: `edited ${steps}` };
+    const added = { id: `new-${steps}`, name: "needle added" };
+    const gone = r.pick(table.rows.filter((x) => x.id !== edited.id)).id;
+    await putRows(db, { name: "t", schema, rows: [next, added], key: `k${steps}` });
+    await removeRows(db, { name: "t", schema, ids: [gone], key: `k${steps}b` });
+    table = tableOf([...table.rows.map((x) => (x.id === edited.id ? next : x)).filter((x) => x.id !== gone), added], bodies);
+    await compare(`after ${steps} steps`);
+    steps++;
+    if (!(await buildSearchIndex(db, "t", 64))) break;
+  }
+  assert.ok(steps > 4, `made in ${steps} steps`);
+  assert.equal(await buildSearchIndex(db, "t", 64), false);
+  await compare("whole");
+  // Whole, it is what a build that made it at once holds: the same rows found by the same text.
+  const fresh = driver();
+  await buildIndex(fresh, { name: "t", schema, rows: table.rows, bodies, key: "k" });
+  for (const search of ["needle", "edited", "ünï"]) {
+    const a = await queryIndex(db, { name: "t", schema, query: { search } });
+    const b = await queryIndex(fresh, { name: "t", schema, query: { search } });
+    assert.deepEqual((await a!.ids(0, a!.count)).sort(), (await b!.ids(0, b!.count)).sort(), search);
+  }
+});
+
+test("a window deep in file order is the same rows as skipping to it, through edits", { skip }, async () => {
+  const rows = Array.from({ length: 6000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
+  const db = driver();
+  await buildIndex(db, { name: "t", schema, rows, key: "k" });
+  // Gaps in the positions, and rows at the end: a place is not a position.
+  await removeRows(db, { name: "t", schema, ids: ["r10", "r2500", "r2501", "r4999"], key: "k2" });
+  await putRows(db, { name: "t", schema, rows: [{ id: "new-a", name: "A" }, { id: "new-b", name: "B" }], key: "k3" });
+  const want = [...rows.filter((r) => !["r10", "r2500", "r2501", "r4999"].includes(r.id)).map((r) => r.id), "new-a", "new-b"];
+  const all = (await queryIndex(db, { name: "t", schema }))!;
+  assert.equal(all.count, want.length);
+  for (const [a, b] of [[0, 50], [1999, 2003], [2000, 2200], [2490, 2510], [5990, 6100], [3000, 3000]] as const) {
+    assert.deepEqual(await all.ids(a, b), want.slice(a, b), `ids ${a} to ${b}`);
+    assert.deepEqual((await all.rows(a, b)).map((r) => r.id), want.slice(a, b), `rows ${a} to ${b}`);
   }
 });

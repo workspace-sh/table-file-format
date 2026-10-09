@@ -26,3 +26,6 @@ export * from "./history.ts";
 export * from "./starting.ts";
 export * from "./leaving.ts";
 export * from "./appState.ts";
+
+export { INDEXED_FROM, buildIndexFromBytes, firstRowsInBytes, linesInBytes, rowsInBytes, rowsInChunks, addIndexedRow, canBeIndexed, indexedViewRows, makeIndexEdits, removeIndexedRow, setIndexedBody, setIndexedCell, viewQuery, type IndexEdit } from "./indexed.ts";
+export { remoteEdits, remoteViewRows, rowsServer, type RemoteViewRows, type RowsRequest, type TableFacts } from "./remoteRows.ts";

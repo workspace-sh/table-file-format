@@ -187,13 +187,88 @@ A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280
 
 - **The page no longer grows with the table.** 10,000 rows were 250k elements and 15 s; they are 1,401 elements whatever the row count.
 - **What's left is the data.** At 100,000 rows nearly half the time to first rows is unzipping and parsing, and an edit takes 273 ms because the view is worked out again over every row. That is past the 135 ms bar from 50,000 rows up, which is where the index takes over (Phase B).
+- **Since then (9 Oct, later), an edit in memory is 52, 60 and 95 ms** at 10,000, 50,000 and 100,000 rows: the table reads its rows by place from one source (`ViewRows`), in memory or in the index, and no longer makes a list of every row's id and top on each draw. First rows are as they were (0.24, 0.78, 1.44 s).
 - Arrow keys, and Ctrl with an arrow to the table's first or last row, bring a row into view whether or not it was drawn. Back and Forward put the page back by row: a row's place comes from the heights before it, so it needn't be drawn to be found.
 
 ### Building only the rows near the screen, on Linux (L1, 9 Oct 2026)
 
 The GTK table (`packages/gtk/src/TableView.tsx`) builds the rows within 900 px of what's on screen, between two empty boxes as tall as the rows above and below, so its scroller is as long as the whole table. The built stretch moves when scrolling brings the screen within 300 px of its edge. A key that goes to a row that isn't built (Ctrl with an arrow, or an arrow at the edge) scrolls there and gives that row's cell the focus once it's built.
 
-Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows, and by opening the 100,000-row table in the built app. Not timed yet, and not tried at a million rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
+Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
+
+### A view read through the index (Phase B, core; 9 Oct 2026)
+
+`queryIndex` answers everything a view asks of its rows (`ViewRows`): a window of rows or of ids, a row by id, a row's place, the view's groups and its totals. Each is what the rows in memory give (`memoryViewRows`), checked over random filters, sorts, groups, totals and searches on both SQLite engines, or `queryIndex` returns null.
+
+`scripts/big-table-index.mts <folder.table> <index.sqlite>` builds the index with `node:sqlite`, streaming the rows, and times each. Node 24 on the Linux rig, milliseconds. The first time a view groups by, sorts by or totals a field, an index for it is made and kept in the file; "after" is every time after that.
+
+| | 100,000 rows | 1,000,000 rows |
+|---|---|---|
+| Build | 3.2 s | 37 s |
+| Open a view (its counts) | 2 | 4 |
+| 200 rows from the middle | 4 | 35 |
+| A row by id | 0.2 | 0.2 |
+| A row's place, file order | 5 | 47 |
+| Groups (by stage), first → after | 84 → 8 | 1,019 → 90 |
+| 200 rows from the middle, grouped | 2 | 11 |
+| The same, sorted by amount | 3 | 12 |
+| Totals (a sum, an average, a count), first → after | 161 → 40 | 2,328 → 310 |
+| Totals under a filter | 23 | 260 |
+| A row's place in a sorted, grouped view | 88 | 940 |
+| An edit (`putRows`) | 2 to 4 | 2 to 3 |
+| 200 rows again after the edit | 5 | 34 |
+
+- **An edit is a few milliseconds at any size**, against 273 ms at 100,000 rows in memory.
+- **The first group, sort or total of a field at a million rows costs a second or two**, once per file. The apps can make those indexes while they build, from the fields the table's views use.
+- **A row's place in a sorted view is the slow one** (0.9 s at 1M): every row before it is counted. It is asked only when going to a row by id, not while scrolling.
+
+### What Linux does (L2, 9 Oct 2026)
+
+A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held in the bundle's `index.sqlite` instead of in memory, as long as its formulas read only their own row and it has no Sheet view.
+
+- **Opening.** Its `rows.ndjson` isn't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows. Meanwhile the table shows its first 200 rows as the file has them (`firstRows`), in the view's columns, under a count of rows read and a progress bar; nothing in them takes the keyboard, and search waits. A fresh index opens at once. The table is ready when its rows are in: the search's own index, most of a build's time, is made after, a step at a time behind whatever the window asks for (`buildSearchIndex`), and until it is whole a search reads every row's text. At 1,000,000 rows on the rig: counting from 2.3 s, rows in and the table ready at 17.7 s (39 s when the search index was made first), a search 0.7 s until its index is whole about 30 s later, then 22 ms.
+- **Reading.** The table view reads a window of rows, its groups and its totals from a `ViewRows` (`indexedViewRows`), 200 rows at a time, and draws an empty row of the right height for one that hasn't arrived. Sorting, filtering, grouping and searching are queries. When the index can't promise an answer, every row is read out and the view is worked out in memory.
+- **Editing.** A cell edit, a new row and a deleted row are made in the index and show at once. 400 ms after the last one the rows are written back to `rows.ndjson` in file order, and the index is stamped fresh for them.
+- **Scrolling.** GTK places widgets with single-precision numbers, so rows more than some millions of pixels down sat a few pixels off. Rows are laid out in a body of at most 8 million pixels, and the scroller's travel is mapped onto the whole table: dragging the bar goes anywhere, and scrolling moves a pixel a pixel.
+- **If the index can't be made** (no space, no SQLite), the table is read into memory and a notice says so.
+
+Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
+
+- **Its fields.** A field's title, choices and place change in place. A field added or removed, or a formula changed, makes the index again from the saved rows (a removed field's values leave `rows.ndjson` first); the first rows show meanwhile, and edits made then wait for it.
+- **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
+- **Export.** A `.table.zip` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
+
+Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an archive of more than 250,000 rows. No timings from the app itself yet; the index's own are above.
+
+### What the web does (W2 and W3, 9 Oct 2026)
+
+A `.table.zip` of 256 KB or more is read in the page's worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps each bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
+
+- **Opening.** The worker reads the archive's directory and its small files, and inflates only the start of a large table's `rows.ndjson` (`LazyZipEntry.head`): enough for the first 200 rows and to judge how many there are. The page has those to show in a few hundred milliseconds, whatever the table's size, under a count of rows read and a bar. The rest is inflated a piece at a time, each piece going into the index and into a file kept beside it, which stays the truth. Its CRC is checked at the end; a damaged archive keeps nothing.
+- **Reading and editing.** The indexer runs in the worker. The page holds a `ViewRows` whose every answer is one message (`remoteViewRows`), and an edit is one message that comes back with the next snapshot's rows for what's on screen already read (`peek`), so it shows in one draw.
+- **After a reload** the table is as it was left: the index and the rows file are still in the browser's storage, and nothing is built again. A rows file cut short (the page closed while it was written) isn't taken for the table. If the browser gave no storage, the index is in memory and a notice says the table goes with the page.
+- **One worker for every bundle.** The storage's pool of files belongs to the worker that opens it first; a second one would get memory only. (A second tab of the app does.)
+- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the rows are placed in a body of at most 8 million pixels and the page's scrolling is mapped onto the whole list (`TallRows` in `RowList.web.tsx`), as the GTK table does.
+- **A window deep in file order** is found by position in an index of positions alone, not by skipping to it: skipping passed over every whole row before it, and a jump to the middle of a million rows took from 100 to 700 ms depending on what was cached.
+- **The search index** is made after the table is ready, in steps of 5,000 rows, each waiting until the page has asked for nothing for a quarter of a second.
+
+A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux rig, each browser headless with an empty profile on disk. Each time is from the pick (or the action) to the result on screen.
+
+| | Firefox 100,000 | Firefox 1,000,000 | Chrome 100,000 | Chrome 1,000,000 |
+|---|---|---|---|---|
+| First rows | 0.3 s | 0.32 s | 0.28 s | 0.50 s |
+| Table ready (sort, filter, edit) | 5.8 s | 61 s | 9.7 s | 85 to 102 s |
+| Jump to the middle | 136 ms | 92 ms | 106 ms | 105 ms |
+| A search, before its index is whole | 85 ms | 1.1 to 1.6 s | 87 ms | 0.6 to 0.9 s |
+| An edit shown | 35 ms | 71 ms | 31 ms | 67 ms |
+| Reopened after the browser was restarted | yes | yes | yes | yes |
+
+- **First rows no longer wait on the table's size.** Reading the whole archive first, a million rows took 4.4 s to show anything.
+- **What it took to get the rest there.** Asked a statement at a time, the worker made an edit take 250 to 470 ms and a jump 1 to 2 s: a dozen messages to open a view, and a list that asked for every page between the top and where it had jumped to (it keeps the items scrolled away, so they can't say what is on screen; the list's own state can). With the indexer in the worker and the list saying what it draws, the worker's part of an edit is 6 ms.
+- **At a million rows the wait to be ready is the build**, slower in the browser than in Node (15 s with `node:sqlite`) and slower in Chrome than in Firefox. First rows are on screen for all of it. A search in that time, and until its own index is whole some tens of seconds after, reads every row's text: about a second.
+- Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
+
+Not there yet on the web for an indexed table: layouts other than Table (it says so), removing a choice or a field, and `Download .table.zip`. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 

@@ -45,8 +45,9 @@ async function main() {
   const schema = (await (await fetch(`${base}/schema.json`)).json()) as TableSchema;
   const result: Record<string, unknown> = { n, userAgent: navigator.userAgent };
   const db = await openWebDatabase(`harness-${n}${params.get("tag") ?? ""}`);
-  result.persistent = db.persistent;
-  say(`database: ${db.persistent ? "OPFS (survives a reload)" : "memory only"}`);
+  const persistent = await db.persistent();
+  result.persistent = persistent;
+  say(`database: ${persistent ? "OPFS (survives a reload)" : "memory only"}`);
   if (params.get("fresh")) await dropIndex(db, "deals");
 
   // The edit below moves the key on, so a reload finds "harness-2" and must accept it.
