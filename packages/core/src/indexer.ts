@@ -63,6 +63,12 @@ export interface BuildOptions {
   key: string;
   /** Rows per transaction step; 5,000 by default. */
   batchSize?: number;
+  /**
+   * "later" leaves the search's own index (the slow part of a build)
+   * unmade: the table answers everything at once, a search by reading
+   * each row's text, and `buildSearchIndex` makes it a step at a time.
+   */
+  search?: "now" | "later";
 }
 
 export const INDEX_FORMAT = 1;
@@ -206,6 +212,46 @@ async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await db.exec(`drop table if exists x${n}; drop table if exists r${n};`);
   await db.exec("create table if not exists _bad(n integer, fld integer, bad integer, primary key(n, fld))");
   await db.run("delete from _bad where n = ?", [n]);
+  await searchUpTo(db, n);
+  await db.run("delete from _fts where n = ?", [n]);
+}
+
+/**
+ * How far a table's search index has got, for one being made a step at a
+ * time: the last row position in it. Null when it's whole, as it is unless
+ * the build left it for later.
+ */
+async function searchUpTo(db: SqlDriver, n: number): Promise<number | null> {
+  await db.exec("create table if not exists _fts(n integer primary key, upto integer not null)");
+  const found = await db.all("select upto from _fts where n = ?", [n]);
+  return found[0] ? (found[0].upto as number) : null;
+}
+
+/**
+ * Make the next piece of a search index left for later (`search: "later"`).
+ * Resolves true while there is more to make. Each call is one short
+ * transaction, so whatever else is asked of the database between calls is
+ * answered between them.
+ */
+export async function buildSearchIndex(db: SqlDriver, name: string, batchSize = 20_000): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  if (n === null) return false;
+  const upto = await searchUpTo(db, n);
+  if (upto === null) return false;
+  const last = (await db.all(`select max(pos) as m from (select pos from r${n} where pos > ? order by pos limit ?)`, [upto, batchSize]))[0]?.m as number | null;
+  await db.exec("begin");
+  try {
+    if (last === null || last === undefined) await db.run("delete from _fts where n = ?", [n]);
+    else {
+      await db.run(`insert into x${n}(rowid, s) select pos, s from r${n} where pos > ? and pos <= ? order by pos`, [upto, last]);
+      await db.run("update _fts set upto = ? where n = ?", [last, n]);
+    }
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback").catch(() => {});
+    throw error;
+  }
+  return last !== null && last !== undefined;
 }
 
 async function createTables(db: SqlDriver, n: number, plan: Plan): Promise<void> {
@@ -255,9 +301,9 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
       }
     }
     await flush(chunk);
-    await db.exec(
-      `create virtual table x${n} using fts5(s, content='r${n}', content_rowid='pos', tokenize='trigram'); insert into x${n}(x${n}) values('rebuild');`,
-    );
+    await db.exec(`create virtual table x${n} using fts5(s, content='r${n}', content_rowid='pos', tokenize='trigram');`);
+    if (options.search === "later") await db.run("insert into _fts(n, upto) values(?, -1)", [n]);
+    else await db.exec(`insert into x${n}(x${n}) values('rebuild');`);
     for (const [fld, count] of bad) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, fld, count]);
     await db.run("update _tables set key = ?, format = ?, sig = ?, built_at = ? where n = ?", [
       key,
@@ -318,6 +364,9 @@ export async function putRows(
   if (sig !== signature(schema)) throw new Error("the schema changed: rebuild the index");
   const computed = schema.fields.some((f) => f.computed);
   const cols = plan.columns;
+  // A search index still being made holds only the rows up to here; the rest reach it as it gets to them.
+  const upto = await searchUpTo(db, n);
+  const searched = (pos: number) => upto === null || pos <= upto;
   await db.exec("begin");
   try {
     for (const raw of rows) {
@@ -329,19 +378,19 @@ export async function putRows(
       if (old) {
         const was = encode(plan, JSON.parse(old.j as string) as Row, undefined);
         await shiftBad(db, n, was.bad, -1);
-        await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
+        if (searched(old.pos as number)) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
         await db.run(
           `update r${n} set j = ?, s = ?, ${cols.map((c) => `${c} = ?`).join(", ")} where pos = ?`,
           [JSON.stringify(row), e.search, ...e.values, old.pos as number],
         );
-        await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [old.pos as number, e.search]);
+        if (searched(old.pos as number)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [old.pos as number, e.search]);
       } else {
         await db.run(
           `insert into r${n}(id, j, s, ${cols.join(", ")}) values(?, ?, ?, ${cols.map(() => "?").join(", ")})`,
           [String(row.id), JSON.stringify(row), e.search, ...e.values],
         );
         const pos = (await db.all(`select pos from r${n} where id = ?`, [String(row.id)]))[0]!.pos as number;
-        await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [pos, e.search]);
+        if (searched(pos)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [pos, e.search]);
       }
       await shiftBad(db, n, e.bad, 1);
     }
@@ -364,13 +413,14 @@ export async function removeRows(db: SqlDriver, options: { name: string; schema:
   const plan = planOf(schema);
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
+  const upto = await searchUpTo(db, n);
   await db.exec("begin");
   try {
     for (const id of ids) {
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
       await shiftBad(db, n, encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, -1);
-      await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
+      if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
@@ -607,10 +657,13 @@ export async function queryIndex(
   }
 
   const needle = (query.search ?? "").trim().toLowerCase();
+  let narrowed = false;
   if (needle.length > 0) {
     if (needle.includes(SEP) || needle.includes("\u0002")) return null;
     // The trigram index finds candidates (it folds a little more than lower case does); instr is the exact test.
-    if ([...needle].length >= 3) {
+    // (While a search index is still being made, every row's text is read instead.)
+    narrowed = [...needle].length >= 3 && (await searchUpTo(db, n)) === null;
+    if (narrowed) {
       where.push(`r.pos in (select rowid from x${n} where x${n} match ?)`);
       whereParams.push(`"${needle.replace(/"/g, '""')}"`);
     }
@@ -673,7 +726,7 @@ export async function queryIndex(
   let inView = count;
   if (needle.length > 0) {
     // The search's two terms are the last in `where`, and its parameters the last bound.
-    const searchTerms = [...needle].length >= 3 ? 2 : 1;
+    const searchTerms = narrowed ? 2 : 1;
     const before = where.slice(0, where.length - searchTerms);
     const found = await db.all(
       `select count(*) as n from r${n} r ${before.length > 0 ? `where ${before.join(" and ")}` : ""}`,

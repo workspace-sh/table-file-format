@@ -44,6 +44,7 @@ export function openWorkerIndexHost(bundleDir: string): IndexHost {
     all: (sql, params = []) => call<Record<string, SqlValue>[]>({ op: "all", sql, params }),
     batch: (sql, params) => call({ op: "batch", sql, params }),
     ensure: (name, tableDir, onProgress) => call<number>({ op: "ensure", name, tableDir }, onProgress),
+    search: (name) => call({ op: "search", name }),
     build: (name, tableDir, onProgress) => call<number>({ op: "build", name, tableDir }, onProgress),
     save: (name, tableDir, rows, omit) => call({ op: "save", name, tableDir, rows, ...(omit ? { omit } : {}) }),
     close: async () => {

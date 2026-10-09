@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { applyView, searchRows } from "./query.js";
 import { arraySource, memoryViewRows } from "./row-source.js";
 import { oo1Driver } from "./sqlite-wasm.js";
-import { buildIndex, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
+import { buildIndex, buildSearchIndex, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 
 // node:sqlite arrived in Node 22.5 and has no types here; where it's missing the index is simply untested.
@@ -418,4 +418,51 @@ test("groups, totals, ids and places are what the rows in memory give", { skip }
     }
   }
   assert.ok(compared > fell, `index answered ${compared}, fell back ${fell}`);
+});
+
+test("a search index left for later answers the same before, while and after it's made, through edits", { skip }, async () => {
+  const rows = makeRows(21, 400);
+  const bodies = bodiesFor(rows, 21);
+  let table = tableOf(rows, bodies);
+  const db = driver();
+  await buildIndex(db, { name: "t", schema, rows, bodies, key: "k", search: "later" });
+  const r = random(5);
+  const searches = ["needle", " NEEDLE ", "ünï", "ap", "a b", "x", "r1", "100%", "edited", "zzz"];
+  const compare = async (label: string) => {
+    for (const search of searches) {
+      const view: View = { id: "v", name: "v", layout: "table", sort: [{ field: "name", direction: r.pick(["asc", "desc"] as const) }] };
+      assert.equal(await check(db, table, view, search, `${label}, "${search}"`), true);
+    }
+  };
+  await compare("before");
+  let steps = 0;
+  for (;;) {
+    // Edits land on rows the search index has reached, and on rows it hasn't. (Only so many: each adds a row to reach.)
+    if (steps >= 5) {
+      steps++;
+      if (!(await buildSearchIndex(db, "t", 64))) break;
+      continue;
+    }
+    const edited = r.pick(table.rows);
+    const next = { ...edited, name: `edited ${steps}` };
+    const added = { id: `new-${steps}`, name: "needle added" };
+    const gone = r.pick(table.rows.filter((x) => x.id !== edited.id)).id;
+    await putRows(db, { name: "t", schema, rows: [next, added], key: `k${steps}` });
+    await removeRows(db, { name: "t", schema, ids: [gone], key: `k${steps}b` });
+    table = tableOf([...table.rows.map((x) => (x.id === edited.id ? next : x)).filter((x) => x.id !== gone), added], bodies);
+    await compare(`after ${steps} steps`);
+    steps++;
+    if (!(await buildSearchIndex(db, "t", 64))) break;
+  }
+  assert.ok(steps > 4, `made in ${steps} steps`);
+  assert.equal(await buildSearchIndex(db, "t", 64), false);
+  await compare("whole");
+  // Whole, it is what a build that made it at once holds: the same rows found by the same text.
+  const fresh = driver();
+  await buildIndex(fresh, { name: "t", schema, rows: table.rows, bodies, key: "k" });
+  for (const search of ["needle", "edited", "ünï"]) {
+    const a = await queryIndex(db, { name: "t", schema, query: { search } });
+    const b = await queryIndex(fresh, { name: "t", schema, query: { search } });
+    assert.deepEqual((await a!.ids(0, a!.count)).sort(), (await b!.ids(0, b!.count)).sort(), search);
+  }
 });
