@@ -17,7 +17,9 @@
 // macOS asks before ending the app.
 // Development only: postKey(characters, keyCode, modifiers) brings the app
 // forward (a typed key implies it's frontmost) and posts a key press to its
-// own event queue, so it goes where a typed one would; titles(menu)
+// own event queue, so it goes where a typed one would; postClick(x, y)
+// posts a click there too, at a point measured from the content's top
+// left as React measures, so it lands on whatever is under it; titles(menu)
 // resolves with a menu's item titles; setWindowWidth(width) resizes the
 // main window, as dragging its edge would; pressAlertButton(title) clicks
 // the button titled so in a sheet shown on a window (an alert), resolving
@@ -217,6 +219,26 @@ RCT_EXPORT_METHOD(postKey:(NSString *)characters
                                    isARepeat:NO
                                      keyCode:(unsigned short)keyCode.unsignedShortValue];
   [NSApp postEvent:event atStart:NO];
+}
+
+RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
+{
+  [NSApp activateIgnoringOtherApps:YES];
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  // React's points run down from the content's top; a window's run up from its bottom.
+  NSPoint at = NSMakePoint(x.doubleValue, window.contentView.bounds.size.height - y.doubleValue);
+  for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
+    NSEvent *event = [NSEvent mouseEventWithType:(NSEventType)type.unsignedIntegerValue
+                                        location:at
+                                   modifierFlags:0
+                                       timestamp:NSProcessInfo.processInfo.systemUptime
+                                    windowNumber:window.windowNumber
+                                         context:nil
+                                     eventNumber:0
+                                      clickCount:1
+                                        pressure:1];
+    [NSApp postEvent:event atStart:NO];
+  }
 }
 
 RCT_EXPORT_METHOD(setWindowWidth:(nonnull NSNumber *)width)

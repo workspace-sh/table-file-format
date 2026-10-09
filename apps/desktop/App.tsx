@@ -84,7 +84,7 @@ import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { Sidebar } from "./Sidebar";
-import { copyText, menuTitles, onMenu, onQuit, postKey, pressAlertButton, setUnsaved, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, menuTitles, onMenu, onQuit, postClick, postKey, pressAlertButton, setUnsaved, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -795,6 +795,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       postKey: (characters: string, keyCode: number, modifiers: ("command" | "shift" | "option" | "control")[]) => {
         postKey(characters, keyCode, modifiers);
         return `posted ${modifiers.join("+")}+${characters}`;
+      },
+      // A click at a point, as the mouse would make it: it lands on whatever is under it.
+      click: (x: number, y: number) => {
+        postClick(x, y);
+        return `clicked ${x}, ${y}`;
       },
       menuTitles,
       // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.

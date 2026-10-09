@@ -18,6 +18,7 @@ interface TableMenuModule {
   ): void;
   copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
+  postClick(x: number, y: number): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
   replyToQuit(quit: boolean): void;
@@ -93,6 +94,11 @@ export function setUnsaved(unsaved: boolean): void {
 /** Development: press a key, as typed (keyCode is the Mac virtual key: b is 11). */
 export function postKey(characters: string, keyCode: number, modifiers: Modifier[]): void {
   TableMenu?.postKey(characters, keyCode, modifiers);
+}
+
+/** Development only: click at a point, measured from the content's top left. */
+export function postClick(x: number, y: number): void {
+  TableMenu?.postClick(x, y);
 }
 
 /** Development: a menu's item titles, with their keys, as the menu bar has them. */
