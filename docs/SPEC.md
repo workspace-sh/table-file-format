@@ -892,6 +892,53 @@ every row costs more than building it.
   folder with no `index.sqlite`, or with one deleted a moment ago, is
   whole.
 
+### Ways to open a table (guidance, not a requirement)
+
+How a reader gets from the files to rows on screen is its own choice.
+None of these changes what is on disk, and a `.table` written by one is
+read by any other. Three that work, from least to most machinery:
+
+1. **Hold it in memory.** Parse `rows.ndjson`, keep the rows, and
+   filter, sort and search them in place (`applyView`, `searchRows`).
+   Nothing to build and nothing beside the files. This is the whole of a
+   correct reader, and the right one for small tables, scripts,
+   converters and anything that reads a table once. Its limit is that
+   every row is held and every edit passes over them: fine into the tens
+   of thousands of rows, not at a million.
+
+2. **Index first, then show.** Build `index.sqlite` from the files
+   (`buildIndex`, streaming the rows so memory stays flat), and read
+   everything through it (`queryIndex`). Simple to reason about: one
+   path once the table is open. Its cost is the wait before anything
+   shows, which grows with the table (tens of seconds at a million rows
+   on a modest laptop), so it suits a tool that opens a table to work in
+   it at length, or builds the index ahead of time.
+
+3. **Show at once, index behind.** What the reference apps do for a
+   table past their line (see "When to index"):
+   - show the first rows straight from the head of `rows.ndjson`, in
+     file order, while the index is built off the thread that draws,
+     with how far it has got;
+   - make the table usable as soon as its rows are in the index, and
+     build the full-text table after, a step at a time
+     (`search: "later"`, then `buildSearchIndex`); a search is right
+     meanwhile, only slower;
+   - read a window of rows at a time, drawing an empty row of the right
+     height for one that hasn't arrived;
+   - make edits in the index (`putRows`, `removeRows`), write them back
+     to `rows.ndjson` (`storedRows`), and stamp the index fresh
+     (`setIndexKey`);
+   - open from memory instead when the index can't be made, and say so.
+
+   On reopening, a fresh index means none of the build is repeated.
+
+A reader may mix them: memory below a line it has measured and the
+index above it is what "When to index" recommends. Whichever it
+chooses, the same question gets the same rows in the same order: that
+is what the index's "never guesses" rule, below, is for. Measurements
+from the reference apps, and what each choice cost them, are in
+`docs/LARGE-TABLES.md`.
+
 ### Query interface — structured, not raw SQL
 
 `queryIndex` accepts the **view query AST** — the `filter` / `sort`
