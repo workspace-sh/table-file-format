@@ -422,13 +422,14 @@ export function App() {
     input.click();
   }, [bundles]);
 
-  // Development only: opens a .table.zip from a URL as a chosen file is
-  // opened, and says how long each step took (ms), for measuring large
-  // tables (#126): fetching it, reading it (unzip and parse), and showing
-  // it (React's render and commit, synchronously: a hidden tab has no
-  // frames to wait for).
+  // Development, or a production build made with VITE_TABLE_MEASURE=1 (the
+  // numbers that count come from production builds, BENCHMARKING.md): opens
+  // a .table.zip from a URL as a chosen file is opened, and says how long
+  // each step took (ms), for measuring large tables (#126): fetching it,
+  // reading it (unzip and parse), and showing it (React's render and commit,
+  // synchronously: a hidden tab has no frames to wait for).
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    if (!import.meta.env.DEV && import.meta.env.VITE_TABLE_MEASURE !== "1") return;
     (window as { __tableWeb?: unknown }).__tableWeb = {
       openZipFrom: async (url: string) => {
         const t0 = performance.now();
