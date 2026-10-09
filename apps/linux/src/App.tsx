@@ -65,7 +65,7 @@ import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveB
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { newId, type ParsedTable, type View, type ViewRows } from "@workspace.sh/table-core";
+import { computeRows, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
@@ -202,7 +202,10 @@ function TablePane({
   menu,
   source,
   building,
+  firstRows,
 }: {
+  /** While a large table's index is made: its first rows as stored, shown meanwhile. */
+  firstRows?: Row[];
   /** For a table held in the index: its view's rows once read, and how far its index has got while it's being made. */
   source?: ViewRows;
   building: { done: number; total: number } | null;
@@ -252,7 +255,16 @@ function TablePane({
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
-          {/* Nothing to count until a large table's index is made. */}
+          {/* While a large table is read, how far that has got is in the count's place. */}
+          {building ? (
+            <GtkBox spacing={12} hexpand>
+              <GtkLabel
+                label={building.total > 0 ? `${building.done.toLocaleString()} of ${building.total.toLocaleString()} rows read` : "Reading rows"}
+                cssClasses={["dim-label"]}
+              />
+              <GtkProgressBar valign={Gtk.Align.CENTER} widthRequest={160} fraction={building.total > 0 ? building.done / building.total : 0} />
+            </GtkBox>
+          ) : null}
           <GtkBox spacing={6} hexpand visible={!building}>
             <GtkLabel label={summary.count} cssClasses={["dim-label"]} />
             <GtkLabel label="·" cssClasses={["dim-label"]} />
@@ -264,10 +276,28 @@ function TablePane({
               </>
             ) : null}
           </GtkBox>
-          <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => onSearch(entry.getText())} />
+          <GtkSearchEntry placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
-        {building ? (
-          // A large table's index is made before its rows show (LARGE-TABLES-PLAN, decision 1).
+        {building && firstRows && view.layout === "table" ? (
+          // A large table shows its first rows at once, as its file has them, while its
+          // index is made (LARGE-TABLES-PLAN, decision 1). The view's own order, filters
+          // and groups need the index, so they wait for it; nothing here can be edited yet.
+          <>
+            <GtkLabel label={ingestingText(shown.view)} xalign={0} wrap marginStart={12} marginEnd={12} marginBottom={6} cssClasses={["dim-label", "caption"]} />
+            {/* To look at, not to work in: nothing in it takes the keyboard. */}
+            <GtkBox canFocus={false} vexpand>
+              <LayoutView
+                key={`${view.id}-first`}
+                layout="table"
+                view={asStored(shown.view)}
+                rows={preview(table, firstRows)}
+                schema={table.schema}
+                relatedTables={related}
+                tableKey={tableNameOf(tableKey)}
+              />
+            </GtkBox>
+          </>
+        ) : building ? (
           <AdwStatusPage
             vexpand
             title="Getting This Table Ready"
@@ -334,6 +364,25 @@ function TablePane({
       ) : null}
     </AdwToolbarView>
   );
+}
+
+/** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
+function asStored(view: View): View {
+  const { sort: _sort, order: _order, filter: _filter, group: _group, totals: _totals, ...rest } = view;
+  return rest;
+}
+
+/** The first rows with their formulas worked out; a large table's formulas read only their own row. */
+function preview(table: ParsedTable, rows: Row[]): Row[] {
+  return computeRows(table.schema, rows).rows;
+}
+
+/** What the line above the first rows says while the index is made. */
+function ingestingText(view: View): string {
+  const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
+  return arranged
+    ? "Showing the first rows as stored. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
+    : "Showing the first rows as stored. Search and editing are ready once the table is read. This happens once.";
 }
 
 /** A path from GTK's file chooser, set up by `ask`; null when it's dismissed. */
@@ -771,6 +820,7 @@ export function App({
                 menu={primaryMenu}
                 source={indexed.source}
                 building={indexed.building}
+                firstRows={indexed.firstRows}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />

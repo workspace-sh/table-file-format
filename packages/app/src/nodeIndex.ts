@@ -79,8 +79,12 @@ export async function tableContentKey(tableDir: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function* rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> {
-  for await (const line of createInterface({ input: createReadStream(join(tableDir, "rows.ndjson")), crlfDelay: Infinity })) {
+function rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> {
+  return rowsFrom(createReadStream(join(tableDir, "rows.ndjson")), onRow);
+}
+
+async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}): AsyncIterable<Row> {
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
     if (line.trim().length === 0) continue;
     let row: unknown;
     try {
@@ -93,6 +97,24 @@ async function* rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> 
     onRow();
     yield row as Row;
   }
+}
+
+/**
+ * A table's first `count` rows as its file has them, without reading the
+ * rest: what an app shows while a large table's index is being made.
+ */
+export async function firstRows(tableDir: string, count: number): Promise<Row[]> {
+  const rows: Row[] = [];
+  const input = createReadStream(join(tableDir, "rows.ndjson"));
+  try {
+    for await (const row of rowsFrom(input)) {
+      rows.push(row);
+      if (rows.length >= count) break;
+    }
+  } finally {
+    input.destroy();
+  }
+  return rows;
 }
 
 /** Build table `name`'s index from the files in `tableDir`, streaming its rows. Resolves with how many went in. */

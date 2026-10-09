@@ -5,15 +5,20 @@
 // are made in it; and a save writes its rows back to rows.ndjson.
 
 import { bundleOf, indexedViewRows, makeIndexEdits, tableNameOf, type AppAction, type AppState, type IndexWork } from "@workspace.sh/table-app";
-import type { IndexHost } from "@workspace.sh/table-app/node";
+import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
-import type { ParsedTable, View, ViewRows } from "@workspace.sh/table-core";
+import type { ParsedTable, Row, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+/** Rows shown from the head of the file while a table's index is made. */
+const FIRST_ROWS = 200;
 
 export interface IndexedTables {
   /** The table on screen is held in the index, and its index is being made: how far along. */
   building: { done: number; total: number } | null;
+  /** While it's being made: the table's first rows as its file has them, to show meanwhile. */
+  firstRows: Row[] | undefined;
   /** The view on screen's rows, once read; undefined for a table in memory, or while they're on their way. */
   source: ViewRows | undefined;
   /** After a bundle's other files are written: its indexed tables' rows, and their indexes said fresh. */
@@ -36,6 +41,7 @@ export function useIndexedTables(input: {
   const [made, setMade] = useState<Record<string, "building" | "ready">>({});
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
   const asked = useRef(new Set<string>());
+  const [first, setFirst] = useState<Record<string, Row[]>>({});
   // Tables whose rows changed in the index since they were last written.
   const unsaved = useRef(new Set<string>());
   const latest = useRef({ pathOf, tell, dispatch });
@@ -60,12 +66,18 @@ export function useIndexedTables(input: {
       if (!host) continue;
       asked.current.add(key);
       setMade((was) => ({ ...was, [key]: "building" }));
+      // Something to look at meanwhile: the head of the file, which is read in a moment.
+      void firstRows(dirOf(key), FIRST_ROWS).then(
+        (rows) => setFirst((was) => ({ ...was, [key]: rows })),
+        () => {},
+      );
       host
         .ensure(tableNameOf(key), dirOf(key), (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } })))
         .then(
           (count) => {
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
+            setFirst(({ [key]: _shown, ...rest }) => rest);
           },
           async (error: unknown) => {
             // No index to be had (no space, no SQLite): the table is held in memory instead, and says so.
@@ -159,6 +171,7 @@ export function useIndexedTables(input: {
 
   return {
     building: active?.indexed && !ready ? (progress[state.active] ?? { done: 0, total: 0 }) : null,
+    firstRows: active?.indexed && !ready ? first[state.active] : undefined,
     source: ready && source?.key === state.active ? source.rows : undefined,
     save,
   };
