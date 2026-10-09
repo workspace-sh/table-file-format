@@ -8,6 +8,7 @@ import type { FilesTreeEntry, SidebarBundle } from "@workspace.sh/table-app";
 interface TableSidebarModule {
   setModel(json: string): void;
   toggle(): void;
+  pick(tag: string): void;
   addListener(event: string): void;
   removeListeners(count: number): void;
 }
@@ -106,4 +107,9 @@ export function onSidebar(then: (event: SidebarEvent) => void): () => void {
 /** Show or hide the sidebar, as the toolbar's button does. */
 export function toggleNativeSidebar(): void {
   TableSidebar?.toggle();
+}
+
+/** Development only: pick a sidebar row as a click on it does (`table:<key>`, `view:<key>:<viewId>`, or a Files line's id). */
+export function pickInSidebar(tag: string): void {
+  TableSidebar?.pick(tag);
 }

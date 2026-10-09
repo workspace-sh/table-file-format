@@ -3,6 +3,8 @@
 import "react-native-get-random-values";
 // Before anything formats a date or a currency name: see intl.ts.
 import "./intl";
+// Before App, whose styles are made as it's imported: see quietWarnings.js.
+import "./quietWarnings";
 import { AppRegistry } from "react-native";
 import App from "./App";
 
