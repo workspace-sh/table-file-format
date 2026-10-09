@@ -1,4 +1,4 @@
-import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
+import { Inflate, deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 
 /**
  * Minimal zip read/write for the `.table.zip` transport convention
@@ -71,10 +71,79 @@ function assertSafeEntryName(name: string): void {
   }
 }
 
+/**
+ * An entry left compressed: read a piece at a time, so a very large file in
+ * an archive is never held whole, and its start can be had at once.
+ */
+export interface LazyZipEntry {
+  name: string;
+  /** Its size once inflated, as the archive declares it. */
+  size: number;
+  /** Its first `bytes` bytes or so (at least that many, unless it is shorter), unchecked. */
+  head(bytes: number): Uint8Array;
+  /** All of it, in order, in pieces. Throws at the end if its size or CRC-32 isn't what the archive declares. */
+  chunks(): Iterable<Uint8Array>;
+}
+
+/** How much compressed data is inflated at a time. */
+const INFLATE_STEP = 1 << 18;
+
+function lazyEntry(name: string, method: number, raw: Uint8Array, size: number, crc: number): LazyZipEntry {
+  function* pieces(): Generator<Uint8Array> {
+    if (method === 0) {
+      for (let at = 0; at < raw.length; at += INFLATE_STEP) yield raw.subarray(at, Math.min(raw.length, at + INFLATE_STEP));
+      return;
+    }
+    let out: Uint8Array[] = [];
+    const inflate = new Inflate((chunk) => out.push(chunk));
+    for (let at = 0; at < raw.length; at += INFLATE_STEP) {
+      const end = Math.min(raw.length, at + INFLATE_STEP);
+      inflate.push(raw.subarray(at, end), end === raw.length);
+      const made = out;
+      out = [];
+      yield* made;
+    }
+  }
+  return {
+    name,
+    size,
+    head(bytes) {
+      const got: Uint8Array[] = [];
+      let have = 0;
+      for (const piece of pieces()) {
+        got.push(piece);
+        have += piece.length;
+        if (have >= bytes) break;
+      }
+      const all = new Uint8Array(have);
+      let at = 0;
+      for (const piece of got) {
+        all.set(piece, at);
+        at += piece.length;
+      }
+      return all;
+    },
+    *chunks() {
+      let sum = 0xffffffff;
+      let length = 0;
+      for (const piece of pieces()) {
+        for (let i = 0; i < piece.length; i++) sum = CRC_TABLE[(sum ^ piece[i]!) & 0xff]! ^ (sum >>> 8);
+        length += piece.length;
+        yield piece;
+      }
+      if (length !== size) throw new Error(`corrupt zip: size mismatch for ${name}`);
+      if (((sum ^ 0xffffffff) >>> 0) !== crc) throw new Error(`corrupt zip: CRC mismatch for ${name}`);
+    },
+  };
+}
+
+export function readZip(source: Uint8Array, opts?: { maxTotalBytes?: number }): ZipEntry[];
+/** With `lazy`: the entries it says yes to are left compressed (a LazyZipEntry), to be read a piece at a time. */
+export function readZip(source: Uint8Array, opts: { maxTotalBytes?: number; lazy: (name: string, size: number) => boolean }): (ZipEntry | LazyZipEntry)[];
 export function readZip(
   source: Uint8Array,
-  opts?: { maxTotalBytes?: number },
-): ZipEntry[] {
+  opts?: { maxTotalBytes?: number; lazy?: (name: string, size: number) => boolean },
+): (ZipEntry | LazyZipEntry)[] {
   const buf = source;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const u16 = (o: number) => dv.getUint16(o, true);
@@ -99,7 +168,7 @@ export function readZip(
     throw new Error("zip64 archives are not supported");
   }
 
-  const entries: ZipEntry[] = [];
+  const entries: (ZipEntry | LazyZipEntry)[] = [];
   let pos = cdOffset;
   let declaredTotal = 0;
 
@@ -143,6 +212,11 @@ export function readZip(
     const raw = buf.subarray(dataStart, dataStart + compSize);
     if (raw.length !== compSize) throw new Error(`corrupt zip: truncated data for ${name}`);
 
+    if (method !== 0 && method !== 8) throw new Error(`unsupported compression method ${method} for ${name}`);
+    if (opts?.lazy?.(name, uncompSize)) {
+      entries.push(lazyEntry(name, method, raw, uncompSize, crc));
+      continue;
+    }
     let data: Uint8Array;
     if (method === 0) {
       data = raw.slice();

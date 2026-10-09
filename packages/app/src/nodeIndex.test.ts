@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { applyView, parseRowsText } from "@workspace.sh/table-core";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
-import { addIndexedRow, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, indexedViewRows, linesInBytes, removeIndexedRow, setIndexedCell } from "./indexed.ts";
+import { addIndexedRow, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, indexedViewRows, linesInBytes, removeIndexedRow, rowsInChunks, setIndexedCell } from "./indexed.ts";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
 import { queryIndex } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
@@ -170,6 +170,89 @@ test("an archive's large table is handed over as bytes, unparsed, and indexed fr
     const all = await queryIndex(host, { name: "tasks", schema: whole.tables.tasks!.schema });
     assert.deepEqual(await all!.rows(0, 8), JSON.parse(JSON.stringify(whole.tables.tasks!.rows)));
     await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a large table in an archive is handed over compressed: its start at once, the rest a piece at a time", async () => {
+  const s = scratch();
+  try {
+    const whole = await readBundle(nodeFs, s.bundle);
+    // Rows enough that the file is inflated in several pieces, with lines split across them.
+    let seed = 9;
+    const noise = () => Array.from({ length: 6 }, () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff)).toString(36)).join("");
+    const many = Array.from({ length: 30_000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ünï ${noise()}`, priority: i % 7 }));
+    whole.tables.tasks!.rows = many;
+    const zip = await bundleToArchive("projects", whole);
+    let entry: import("@workspace.sh/table-core").LazyZipEntry | undefined;
+    const opened = await openArchive(zip, [], {
+      lazyFrom: 1000,
+      rowsLazily: (name, _table, rows) => {
+        if (name !== "tasks") return false;
+        entry = rows;
+        return true;
+      },
+    });
+    assert.deepEqual(opened.bundle.tables.tasks!.rows, []);
+    assert.ok(opened.bundle.tables.tasks!.indexed);
+    // The small table beside it was offered too, declined, and read as usual.
+    assert.equal(opened.bundle.tables.projects!.rows.length, whole.tables.projects!.rows.length);
+    // The start, without the rest.
+    assert.deepEqual(firstRowsInBytes(entry!.head(4096), 5), many.slice(0, 5));
+    // All of it, in pieces.
+    let pieces = 0;
+    const counted = (function* () {
+      for (const chunk of entry!.chunks()) {
+        pieces++;
+        yield chunk;
+      }
+    })();
+    assert.deepEqual([...rowsInChunks(counted)], many);
+    assert.ok(pieces >= 1);
+    // However the pieces fall, a line split across two (or a character split across two) is one row.
+    const bytes = new TextEncoder().encode(many.slice(0, 300).map((r) => JSON.stringify(r)).join("\n") + "\n\n");
+    for (const size of [1, 7, 64, 1000]) {
+      const cut = (function* () {
+        for (let at = 0; at < bytes.length; at += size) yield bytes.subarray(at, at + size);
+      })();
+      assert.deepEqual([...rowsInChunks(cut)], many.slice(0, 300), `pieces of ${size}`);
+    }
+
+    const host = openIndexHost(s.bundle);
+    const kept: Uint8Array[] = [];
+    const progress: [number, number][] = [];
+    const count = await buildIndexFromBytes(host, {
+      name: "tasks",
+      schema: whole.tables.tasks!.schema,
+      rows: { chunks: entry!.chunks(), size: entry!.size, keep: (c) => kept.push(c.slice()) },
+      key: "k",
+      onProgress: (d, t) => progress.push([d, t]),
+    });
+    assert.equal(count, many.length);
+    assert.deepEqual(progress.at(-1), [many.length, many.length]);
+    // On the way, the total is an estimate near the truth.
+    const midway = progress[Math.floor(progress.length / 2)]!;
+    assert.ok(Math.abs(midway[1] - many.length) < many.length * 0.2, `estimated ${midway[1]}`);
+    assert.equal(kept.reduce((a, c) => a + c.length, 0), entry!.size);
+    const all = await queryIndex(host, { name: "tasks", schema: whole.tables.tasks!.schema });
+    assert.equal(all!.count, many.length);
+    assert.deepEqual(await all!.rows(29_990, 30_000), many.slice(29_990));
+    await host.close();
+
+    // A damaged archive is caught at the end of the reading.
+    const bad = zip.slice();
+    const at = bad.length >> 1;
+    bad[at] = bad[at]! ^ 0xff;
+    let caught = "";
+    try {
+      const again = await openArchive(bad, [], { lazyFrom: 1000, rowsLazily: (name, _t, rows) => name === "tasks" && (entry = rows, true) });
+      void again;
+      for (const _ of entry!.chunks()) void _;
+    } catch (error) {
+      caught = String(error);
+    }
+    assert.match(caught, /corrupt|invalid|unexpected/i);
   } finally {
     s.done();
   }
