@@ -3,7 +3,7 @@
 // every table in it (D37). The DOM parts stay in App; this is what can be
 // tested without a browser.
 
-import { orderedTables, readTableArchive, writeTableArchive } from "@workspace.sh/table-core";
+import { orderedTables, readTableArchive, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
 import type { ParsedBundle, ValidationError } from "@workspace.sh/table-core";
 
 import { tableKeyFor } from "./tableKey.ts";
@@ -33,8 +33,8 @@ export interface OpenedBundle {
  * Read archive bytes. Throws only when there's nothing to show: not a zip,
  * or a bundle with no table in it.
  */
-export async function openArchive(bytes: Uint8Array, taken: Iterable<string>): Promise<OpenedBundle> {
-  const read = await readTableArchive(bytes);
+export async function openArchive(bytes: Uint8Array, taken: Iterable<string>, options: ReadArchiveOptions = {}): Promise<OpenedBundle> {
+  const read = await readTableArchive(bytes, options);
   const names = orderedTables(read);
   if (names.length === 0) {
     throw new Error((read.diagnostics ?? []).map((d) => d.message).join("; ") || "there's no table in it");

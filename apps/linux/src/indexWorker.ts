@@ -6,6 +6,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { openIndexHost } from "@workspace.sh/table-app/node";
 import { buildSearchIndex } from "@workspace.sh/table-core";
+import type { RowsRequest } from "@workspace.sh/table-app";
 import type { SqlValue } from "@workspace.sh/table-core";
 
 export type IndexRequest = { id: number } & (
@@ -16,6 +17,7 @@ export type IndexRequest = { id: number } & (
   | { op: "ensure"; name: string; tableDir: string }
   | { op: "build"; name: string; tableDir: string }
   | { op: "search"; name: string }
+  | { op: "rows"; request: RowsRequest }
   | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[] }
   | { op: "close" }
 );
@@ -40,6 +42,8 @@ async function answer(request: IndexRequest): Promise<unknown> {
       return host.batch!(request.sql, request.params);
     case "ensure":
       return host.ensure(request.name, request.tableDir, (done, total) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse));
+    case "rows":
+      return host.rows(request.request);
     case "search":
       // Not reached: made a step at a time, below.
       return undefined;
@@ -54,6 +58,7 @@ async function answer(request: IndexRequest): Promise<unknown> {
 
 // One at a time, in the order asked: a query never lands in the middle of a build's transaction.
 let last: Promise<unknown> = Promise.resolve();
+let lastAsked = 0;
 
 /**
  * A search index is made a step at a time, each step taking its turn behind
@@ -61,8 +66,11 @@ let last: Promise<unknown> = Promise.resolve();
  * between steps, not after the whole of it.
  */
 function searchStep(request: IndexRequest & { op: "search" }): void {
+  // The window comes first: a step waits until it has asked for nothing for a moment.
+  if (Date.now() - lastAsked < 250) return void setTimeout(() => searchStep(request), 125);
   last = last
-    .then(() => buildSearchIndex(host, request.name))
+    // Small steps: what the window asks between them isn't kept waiting.
+    .then(() => buildSearchIndex(host, request.name, 5000))
     .then(
       async (more) => {
         // After the messages already waiting, which the event loop hands over first.
@@ -78,6 +86,7 @@ function searchStep(request: IndexRequest & { op: "search" }): void {
 
 port.on("message", (request: IndexRequest) => {
   if (request.op === "search") return searchStep(request);
+  lastAsked = Date.now();
   last = last
     .then(() => answer(request))
     .then(

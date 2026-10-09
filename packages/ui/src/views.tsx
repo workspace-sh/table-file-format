@@ -118,6 +118,7 @@ import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
+import { MAX_LIST_HEIGHT } from "./internal/listLimits";
 import { RowList, type RowListHandle } from "./internal/RowList";
 
 /**
@@ -2776,7 +2777,8 @@ export function TableView({
     (place === total - 1 && !onAddRow ? 0 : ROW_BORDER) +
     (startsAt(place) ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
   const rowsVersion = `${view.rowHeight ?? ""}|${JSON.stringify(view.rowHeights ?? {})}|${liveRow?.rowId ?? ""}:${liveRow?.h ?? ""}|${
-    indexed ? `${given.version}:${facts.groups.length}:${[...facts.places.values()].join(",")}` : ""
+    // Not the source's own version: an edit changes that, and no row's height.
+    indexed ? `${given.count}:${facts.groups.map((g) => g.start).join(",")}:${[...facts.places.values()].join(",")}` : ""
   }`;
   // The selected row's grip hangs below it, over the next row.
   const rowRaised = (place: number) => !!sel && idAt(place) === sel.rowId;
@@ -2788,6 +2790,8 @@ export function TableView({
     for (const [place, height] of tallAt) marks.push({ place, taller: height - defaultHeight });
     return rowLayout(total, defaultHeight + ROW_BORDER, marks);
   };
+  // A table too tall for a list to lay out as it is gives the list where every row is.
+  const tallLayout = total * (defaultHeight + ROW_BORDER) > MAX_LIST_HEIGHT ? layoutOf : undefined;
   /** A place's item: its row as `draw` draws it, or an empty row of its height while it's on its way from the index. */
   const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode): ReactNode => {
     const entry = entryAt(place);
@@ -3775,6 +3779,7 @@ export function TableView({
               version={rowsVersion}
               raised={rowRaised}
               handle={frozenRows}
+              layout={tallLayout}
               render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
@@ -3832,6 +3837,7 @@ export function TableView({
                 version={rowsVersion}
                 raised={rowRaised}
                 handle={paneRows}
+                layout={tallLayout}
                 onShown={onShown}
                 render={(place) => drawn(place, ({ row, starts }, i) => (
                   <>

@@ -13,6 +13,7 @@ import { buildIndex, buildSearchIndex, isIndexStale, queryIndex, setIndexKey, st
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
+import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 
 /** What an app asks of a bundle's index: the indexer's SqlDriver, and the work on files that goes with it. */
 export interface IndexHost extends SqlDriver {
@@ -22,6 +23,8 @@ export interface IndexHost extends SqlDriver {
    * `onProgress` hears how many rows are in, of how many, while it builds.
    */
   ensure(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /** A view's rows, or edits to rows, asked in one message each (remoteViewRows, remoteEdits): the indexer runs where the index is. */
+  rows(request: RowsRequest): Promise<unknown>;
   /**
    * Make what's left of table `name`'s search index, which a build leaves
    * for after: the table is read and answering before a search has its
@@ -204,7 +207,9 @@ function ignoreIndex(bundleDir: string): void {
 export function openIndexHost(bundleDir: string): IndexHost {
   const db = openNodeDatabase(join(bundleDir, "index.sqlite"));
   ignoreIndex(bundleDir);
+  const serve = rowsServer(db);
   return {
+    rows: serve,
     exec: db.exec,
     run: db.run,
     all: db.all,

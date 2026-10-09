@@ -196,3 +196,5 @@ Changed while building it (9 Oct 2026):
 10. Row edits to an indexed table go through the reducer like any other (`updateRow`, `addRow`, `deleteRow`, `updateBody`), which queues them (`AppState.indexWork`) for the app to make in the index (`makeIndexEdits`) and then say so (`indexed`). So `viewCallbacks` and every view are unchanged, and each platform only supplies its `SqlDriver`.
 11. `ParsedTable.indexed` marks a table whose rows aren't in `rows`. The writer leaves such a table's `rows.ndjson` alone; the app that holds the index writes it.
 12. Linux (L2, L3 in part): what's built is in "What Linux does" in LARGE-TABLES.md. Left for later there: removing a choice, validation of its rows, and an archive past 250,000 rows.
+13. The indexer runs where the index is. A page asks its worker for a view's rows a message an answer (`rowsServer`, `remoteViewRows`), not a statement a message; an edit comes back with the rows on screen already read (`ViewRows.peek`).
+14. The web (W2, W3) and tall lists: "What the web does" in LARGE-TABLES.md.

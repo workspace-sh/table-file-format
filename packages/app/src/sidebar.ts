@@ -86,7 +86,8 @@ export function sidebarTree(
               key,
               title: table.meta.title ?? key,
               folder: `${tableNameOf(key)}/`,
-              rowCount: table.rows.length,
+              // A table held in the index has its rows there, and says how many.
+              rowCount: table.indexed ? table.indexed.count : table.rows.length,
               expanded: isExpanded,
               views: isExpanded
                 ? table.views.map((view) => ({

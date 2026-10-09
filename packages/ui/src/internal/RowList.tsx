@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useImperativeHandle, type ReactNode, type Ref } from "react";
+import type { RowLayout } from "../rowLayout";
 
 /** What a row list can be asked to do from outside. */
 export interface RowListHandle {
@@ -23,6 +24,13 @@ export interface RowListProps<T> {
   /** Whether an item is drawn above its neighbours: what hangs below it (the row grip) isn't covered by the next. */
   raised?: (item: T) => boolean;
   handle?: Ref<RowListHandle>;
+  /**
+   * Where every item is, for a list too tall to lay out as it is: a
+   * browser stops placing things some millions of pixels down. Given, the
+   * list lays out a body of at most MAX_LIST_HEIGHT and maps scrolling onto
+   * the whole of it. Left out for a list that fits.
+   */
+  layout?: () => RowLayout;
   /** Told the first and last places drawn, as they change: what a list reading its rows from an index asks it for. */
   onShown?: (first: number, last: number) => void;
 }

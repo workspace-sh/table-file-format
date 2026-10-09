@@ -54,6 +54,12 @@ export interface ViewRows extends RowSource {
   totals(): Record<string, number | undefined> | Promise<Record<string, number | undefined>>;
   /** When the view groups: its groups in the order shown. Empty otherwise. */
   groups(): RowGroup[] | Promise<RowGroup[]>;
+  /**
+   * For a source whose rows arrive late: a window it already holds, at
+   * once, or undefined. A list asks this first, so rows read ahead of a
+   * change (the ones on screen, after an edit) show with no wait.
+   */
+  peek?(start: number, end: number): Row[] | undefined;
 }
 
 export interface ViewRowsOptions {
