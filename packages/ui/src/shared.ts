@@ -24,3 +24,5 @@ export { afterEdit, cellPicks, clampPlace, gridKey, type EditEnd as GridEditEnd,
 export { inputHints, inputModeOf, type InputHintKind, type InputHints } from "./inputHints";
 export { rowActions, type DateInputProps, type DateInputSlot, type PlatformControls, type RowAction, type RowActionsProps, type RowActionsSlot, type SelectHandle, type SelectOption, type SelectProps, type SelectSlot, type SettingsFormProps, type SettingsFormSlot, type SettingsRow, type SettingsSection, type SheetProps, type SheetSlot, type ToggleProps, type ToggleSlot } from "./controlSlots";
 export { dateOfStored, localDate, storedOfDate, type DateKind } from "./dateEntry";
+export { rowLayout, type RowLayout, type RowMark } from "./rowLayout";
+export { isImmediate, useViewFacts, useViewWindow, VIEW_PAGE, type ViewFacts } from "./useViewRows";

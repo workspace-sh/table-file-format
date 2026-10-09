@@ -4,7 +4,7 @@
 // a bundle back. No Node here: a React Native app passes its own TableFs.
 // `./node` runs the same over node:fs.
 
-import { readBundle, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
+import { readBundle, writeBundleTo, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 import type { BundleMeta, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 
 import { fromBundle, toBundle } from "./bundles.ts";
@@ -35,7 +35,7 @@ export function bundleKey(path: string, taken: Set<string>): string {
  * folder named like one gets a new key (`projects-2`) instead of replacing
  * it when the two libraries are merged.
  */
-export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<string> = []): Promise<Library> {
+export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<string> = [], options: ReadOptions = {}): Promise<Library> {
   const library: Library = { tables: {}, bundles: {}, paths: {}, problems: {} };
   const taken = new Set<string>(held);
   for (const path of paths) {
@@ -43,7 +43,7 @@ export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<s
     taken.add(key);
     let bundle: ParsedBundle;
     try {
-      bundle = await readBundle(fs, path);
+      bundle = await readBundle(fs, path, options);
     } catch (error) {
       library.problems[key] = [error instanceof Error ? error.message : String(error)];
       continue;

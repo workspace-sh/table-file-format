@@ -193,7 +193,7 @@ A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280
 
 The GTK table (`packages/gtk/src/TableView.tsx`) builds the rows within 900 px of what's on screen, between two empty boxes as tall as the rows above and below, so its scroller is as long as the whole table. The built stretch moves when scrolling brings the screen within 300 px of its edge. A key that goes to a row that isn't built (Ctrl with an arrow, or an arrow at the edge) scrolls there and gives that row's cell the focus once it's built.
 
-Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows, and by opening the 100,000-row table in the built app. Not timed yet, and not tried at a million rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
+Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
 
 ### A view read through the index (Phase B, core; 9 Oct 2026)
 
@@ -220,6 +220,20 @@ Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows, and by opening
 - **An edit is a few milliseconds at any size**, against 273 ms at 100,000 rows in memory.
 - **The first group, sort or total of a field at a million rows costs a second or two**, once per file. The apps can make those indexes while they build, from the fields the table's views use.
 - **A row's place in a sorted view is the slow one** (0.9 s at 1M): every row before it is counted. It is asked only when going to a row by id, not while scrolling.
+
+### What Linux does (L2, 9 Oct 2026)
+
+A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held in the bundle's `index.sqlite` instead of in memory, as long as its formulas read only their own row and it has no Sheet view.
+
+- **Opening.** Its `rows.ndjson` isn't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows, and the window shows how many rows are in until it's done. A fresh index opens at once.
+- **Reading.** The table view reads a window of rows, its groups and its totals from a `ViewRows` (`indexedViewRows`), 200 rows at a time, and draws an empty row of the right height for one that hasn't arrived. Sorting, filtering, grouping and searching are queries. When the index can't promise an answer, every row is read out and the view is worked out in memory.
+- **Editing.** A cell edit, a new row and a deleted row are made in the index and show at once. 400 ms after the last one the rows are written back to `rows.ndjson` in file order, and the index is stamped fresh for them.
+- **Scrolling.** GTK places widgets with single-precision numbers, so rows more than some millions of pixels down sat a few pixels off. Rows are laid out in a body of at most 8 million pixels, and the scroller's travel is mapped onto the whole table: dragging the bar goes anywhere, and scrolling moves a pixel a pixel.
+- **If the index can't be made** (no space, no SQLite), the table is read into memory and a notice says so.
+
+Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the build's progress, the first rows, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
+
+Not there yet for an indexed table: changing its fields, layouts other than Table (they say so), exporting a `.table.zip` (refused with a notice), and checking its rows against the schema (the summary says "not checked"). No timings from the app itself yet; the index's own are above.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
