@@ -13,7 +13,7 @@ export {
   instantOf,
   completeSeconds,
 } from "./encoding.js";
-export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal } from "./query.js";
+export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal, exactSum } from "./query.js";
 export { formatValue, stringFormatKind, tryIntl, type DisplayOptions } from "./format.js";
 export { textDirection, type TextDirection } from "./direction.js";
 export { compareText, type TextOrder } from "./collate.js";
@@ -33,7 +33,7 @@ export {
   type SqlDriver,
   type SqlValue,
 } from "./indexer.js";
-export { arraySource, type RowSource } from "./row-source.js";
+export { arraySource, memoryViewRows, type RowGroup, type RowSource, type ViewRows, type ViewRowsOptions } from "./row-source.js";
 export { oo1Driver, type Oo1Database, type Oo1Statement } from "./sqlite-wasm.js";
 export {
   toCSV,

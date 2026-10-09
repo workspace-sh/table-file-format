@@ -47,9 +47,10 @@ interface ViewRows extends RowSource {
   /** The place of a row, or -1 when the view doesn't show it. */
   placeOf(id: string): number | Promise<number>;
   row(id: string): Row | undefined | Promise<Row | undefined>;
-  totals(wanted: Record<string, TotalKind>): Totals | Promise<Totals>;
-  /** When the view groups: each group's value, first place and row count, in order. */
-  groups(): Group[] | Promise<Group[]>;
+  /** The view's totals, by field. */
+  totals(): Record<string, number | undefined> | Promise<Record<string, number | undefined>>;
+  /** When the view groups: each group's key, first place and row count, in order. */
+  groups(): RowGroup[] | Promise<RowGroup[]>;
 }
 ```
 
@@ -186,3 +187,9 @@ For review by whoever implements web and Linux (accepted by the Linux rig, 8 Oct
 4. The `ViewRows` shape in section 1. Accepted; it may gain or lose a method once W1 has a real list reading it, and any change is recorded here.
 5. The 50,000-row threshold and the 200-row page, both starting points for measurement. Accepted as starting points.
 6. Saving by rewriting `rows.ndjson` (section 4) until Phase B's numbers say otherwise. Accepted.
+
+Changed while building it (9 Oct 2026):
+
+7. `totals()` takes nothing. A source is made for one view, so the totals it wants, like its group, are given when the source is made (`IndexQuery.totals` and `group`, `ViewRowsOptions`). That lets `queryIndex` say up front that it can't promise a total, and return null.
+8. Places in a grouped view count one group after another, in `applyGroup`'s order, so a window of a grouped view is a window of what it shows.
+9. A total's sum is exact (`exactSum`, SPEC section 4): what the numbers add up to, rounded once. Added one at a time a sum depended on the rows' order, so it changed in its last digits when a view was sorted, and the index could only match it by reading every number in the view's order (2 to 5 s at 1M rows). Now it reads the column's distinct numbers and their counts off an index (0.1 s).

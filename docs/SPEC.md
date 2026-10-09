@@ -718,7 +718,10 @@ given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
   "count_empty" }`: a footer under a table layout, one calculation per
   column, over the rows the view shows (after its filters). `sum`,
   `average`, `min` and `max` read the numbers and skip anything else;
-  `count` counts values and `count_empty` blanks. Display-only: only the
+  `count` counts values and `count_empty` blanks. A sum is exact: what
+  the numbers add up to, rounded once to the nearest double, so it is the
+  same whatever order the rows are in; an average is that sum over how
+  many numbers there were. Display-only: only the
   choice is stored, never a result (reference: `viewTotal()`).
 - `coordinates: true`: this table layout is a **Sheet view** (below).
 
