@@ -112,6 +112,7 @@ import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
+import { RowList, type RowListHandle } from "./internal/RowList";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -146,6 +147,11 @@ const CELL_LINE_HEIGHT = 20;
 function hasWindowSize(): boolean {
   return typeof window !== "undefined" && typeof window.innerWidth === "number";
 }
+
+/** A group's heading band, above its first row (the row list adds it, with its border, to that row's height). */
+const GROUP_ROW_HEIGHT = 32;
+/** The line under each row (tableRow's borderBottomWidth). */
+const ROW_BORDER = 1;
 
 const styles = css.create({
   // Table
@@ -348,7 +354,7 @@ const styles = css.create({
   tableRow: {
     display: "flex",
     flexDirection: "row",
-    borderBottomWidth: 1,
+    borderBottomWidth: ROW_BORDER,
     borderBottomStyle: "solid",
     borderBottomColor: {
       default: "#e5e5ea",
@@ -1094,7 +1100,7 @@ const styles = css.create({
   // the frozen and scrolling panes stay in line).
   groupRow: {
     display: "flex",
-    height: 32,
+    height: GROUP_ROW_HEIGHT,
     alignItems: "center",
     paddingInline: 16,
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#141417" },
@@ -2692,6 +2698,21 @@ export function TableView({
   const coords = view.coordinates === true;
   // In group order when the view groups; row numbers follow what's shown.
   const displayed = groupedRows(view, rows, schema);
+  // The rows go through a list that draws only what's on screen (RowList):
+  // each item is a row and, when it starts a group, the band above it.
+  const rowKeyOf = (d: (typeof displayed)[number]) => d.row.id;
+  // A row's border is outside its height, so it adds its 1 px, except under
+  // the last row when nothing follows it (tableRowLast). A group's band adds
+  // its height and border likewise.
+  const rowItemHeight = (d: (typeof displayed)[number], i: number) =>
+    heightOf(d.row.id) +
+    (i === displayed.length - 1 && !onAddRow ? 0 : ROW_BORDER) +
+    (d.starts ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
+  const rowsVersion = `${view.rowHeight ?? ""}|${JSON.stringify(view.rowHeights ?? {})}|${liveRow?.rowId ?? ""}:${liveRow?.h ?? ""}`;
+  // The selected row's grip hangs below it, over the next row.
+  const rowRaised = (d: (typeof displayed)[number]) => sel?.rowId === d.row.id;
+  const frozenRows = useRef<RowListHandle | null>(null);
+  const paneRows = useRef<RowListHandle | null>(null);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
@@ -3232,14 +3253,37 @@ export function TableView({
     // Each place once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restorePlace?.n]);
-  // How far down, as a row and an offset: measured from the rows' first
-  // cells, which run top to bottom, so a halving search needs few.
-  const measureRows = useRef({ rowIds, first: fields[0] });
-  measureRows.current = { rowIds, first: fields[0] };
+  // How far down, as a row and an offset. Where the rows are a windowed list
+  // (the web), a row's top is the list's top plus the heights before it, so
+  // a row that isn't drawn has a place too. Elsewhere it's measured from the
+  // rows' first cells, which run top to bottom, so a halving search needs few.
+  const measureRows = useRef({ rowIds, first: fields[0], displayed, sizeOf: rowItemHeight });
+  measureRows.current = { rowIds, first: fields[0], displayed, sizeOf: rowItemHeight };
+  const rowTops = useRef<{ of: typeof displayed; tops: Float64Array } | null>(null);
   useEffect(() => {
     if (!onPlaceMeasure) return;
+    // Each row's top within the list: past the heights before it, and past
+    // its own group band. Worked out when asked, once per set of rows.
+    const tops = () => {
+      const { displayed: of, sizeOf } = measureRows.current;
+      if (rowTops.current?.of === of) return rowTops.current.tops;
+      const tops = new Float64Array(of.length);
+      let y = 0;
+      for (let i = 0; i < of.length; i++) {
+        tops[i] = y + (of[i]!.starts ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
+        y += sizeOf(of[i]!, i);
+      }
+      rowTops.current = { of, tops };
+      return tops;
+    };
+    const listTop = () => (paneRows.current ?? frozenRows.current)?.top() ?? null;
     const topOf = async (rowId: string) => {
-      const { first } = measureRows.current;
+      const { first, rowIds: ids } = measureRows.current;
+      const from = listTop();
+      if (from !== null) {
+        const at = ids.indexOf(rowId);
+        return at < 0 ? null : from + tops()[at]!;
+      }
       const rect = first ? await measureAnchor(cellRefs.current[`${rowId}\u0000${first}`]) : null;
       return rect ? rect.top : null;
     };
@@ -3247,12 +3291,14 @@ export function TableView({
       topOf,
       rowAt: async (y) => {
         const ids = measureRows.current.rowIds;
+        const from = listTop();
+        const known = from === null ? null : tops();
         let lo = 0;
         let hi = ids.length - 1;
         let found: { rowId: string; offset: number } | null = null;
         while (lo <= hi) {
           const mid = (lo + hi) >> 1;
-          const top = await topOf(ids[mid]!);
+          const top = known ? from! + known[mid]! : await topOf(ids[mid]!);
           if (top === null) return found;
           if (top <= y) {
             found = { rowId: ids[mid]!, offset: Math.round(y - top) };
@@ -3537,7 +3583,16 @@ export function TableView({
   }, []);
   useEffect(() => {
     if (!sel) return;
-    cellRefs.current[`${sel.rowId}\u0000${sel.name}`]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const cell = cellRefs.current[`${sel.rowId}\u0000${sel.name}`];
+    if (cell) {
+      cell.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    // Off screen, the row isn't drawn and has no cell to scroll to: ask the
+    // list. Both panes follow one scroller, so either list will do.
+    const at = displayed.findIndex((d) => d.row.id === sel.rowId);
+    if (at >= 0) paneRows.current?.scrollIndexIntoView(at);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
   // "+ New row", in the table under the last row, as Notion and Airtable
@@ -3596,34 +3651,42 @@ export function TableView({
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {renderHeaderCell(primaryName, 0, 1)}
             </html.div>
-            {displayed.map(({ row, starts }, i) => (
-              <Fragment key={row.id}>
-                {starts && (
-                  <html.div style={[styles.tableRow, styles.groupRow]}>
-                    <html.span style={styles.groupLabel}>
-                      {groupTitle} · {starts.label}
-                      <html.span style={styles.groupCount}>{starts.count}</html.span>
-                    </html.span>
-                  </html.div>
-                )}
-                <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
-                  <html.div
-                    style={[
-                      styles.tableRow,
-                      styles.rowHeight(heightOf(row.id)),
-                      styles.positioned,
-                      i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
-                    ]}
-                  >
-                    {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                    {renderBodyCell(row, primaryName, 0, 1)}
-                  </html.div>
-                </RowActions>
-                {sel?.rowId === row.id && sel.name === primaryName && (
-                  <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
-                )}
-              </Fragment>
-            ))}
+            <RowList
+              items={displayed}
+              keyOf={rowKeyOf}
+              sizeOf={rowItemHeight}
+              version={rowsVersion}
+              raised={rowRaised}
+              handle={frozenRows}
+              render={({ row, starts }, i) => (
+                <>
+                  {starts && (
+                    <html.div style={[styles.tableRow, styles.groupRow]}>
+                      <html.span style={styles.groupLabel}>
+                        {groupTitle} · {starts.label}
+                        <html.span style={styles.groupCount}>{starts.count}</html.span>
+                      </html.span>
+                    </html.div>
+                  )}
+                  <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
+                    <html.div
+                      style={[
+                        styles.tableRow,
+                        styles.rowHeight(heightOf(row.id)),
+                        styles.positioned,
+                        i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                      ]}
+                    >
+                      {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                      {renderBodyCell(row, primaryName, 0, 1)}
+                    </html.div>
+                  </RowActions>
+                  {sel?.rowId === row.id && sel.name === primaryName && (
+                    <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
+                  )}
+                </>
+              )}
+            />
             {addRow && newRowBand(true)}
             {showTotals && (
               <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
@@ -3645,42 +3708,50 @@ export function TableView({
                   renderHeaderCell(name, idx, restNames.length),
                 )}
               </html.div>
-              {displayed.map(({ row, starts }, i) => (
-                <Fragment key={row.id}>
-                  {starts && (
-                    // The frozen pane labels the group; this pane's band
-                    // matches its height so the rows stay in line.
-                    <html.div style={[styles.tableRow, styles.groupRow]}>
-                      {!primaryName && (
-                        <html.span style={styles.groupLabel}>
-                          {groupTitle} · {starts.label}
-                          <html.span style={styles.groupCount}>{starts.count}</html.span>
-                        </html.span>
-                      )}
-                    </html.div>
-                  )}
-                  <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
-                    <html.div
-                      style={[
-                        styles.tableRow,
-                        styles.rowHeight(heightOf(row.id)),
-                        styles.positioned,
-                          i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
-                      ]}
-                    >
-                      {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                      {restNames.map((name, idx) =>
-                        renderBodyCell(row, name, idx, restNames.length),
-                      )}
-                    </html.div>
-                  </RowActions>
-                  {sel?.rowId === row.id && sel.name !== primaryName && (
-                    <html.div style={styles.rowGripAnchor}>
-                      {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
-                    </html.div>
-                  )}
-                </Fragment>
-              ))}
+              <RowList
+                items={displayed}
+                keyOf={rowKeyOf}
+                sizeOf={rowItemHeight}
+                version={rowsVersion}
+                raised={rowRaised}
+                handle={paneRows}
+                render={({ row, starts }, i) => (
+                  <>
+                    {starts && (
+                      // The frozen pane labels the group; this pane's band
+                      // matches its height so the rows stay in line.
+                      <html.div style={[styles.tableRow, styles.groupRow]}>
+                        {!primaryName && (
+                          <html.span style={styles.groupLabel}>
+                            {groupTitle} · {starts.label}
+                            <html.span style={styles.groupCount}>{starts.count}</html.span>
+                          </html.span>
+                        )}
+                      </html.div>
+                    )}
+                    <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
+                      <html.div
+                        style={[
+                          styles.tableRow,
+                          styles.rowHeight(heightOf(row.id)),
+                          styles.positioned,
+                            i === displayed.length - 1 && !onAddRow && styles.tableRowLast,
+                        ]}
+                      >
+                        {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                        {restNames.map((name, idx) =>
+                          renderBodyCell(row, name, idx, restNames.length),
+                        )}
+                      </html.div>
+                    </RowActions>
+                    {sel?.rowId === row.id && sel.name !== primaryName && (
+                      <html.div style={styles.rowGripAnchor}>
+                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
+                      </html.div>
+                    )}
+                  </>
+                )}
+              />
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
                 <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>

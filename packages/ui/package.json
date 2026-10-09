@@ -29,6 +29,7 @@
   },
   "peerDependencies": {
     "@expo/ui": ">=55.0.0",
+    "@legendapp/list": ">=3.6.0",
     "expo-haptics": ">=55.0.0",
     "expo-symbols": ">=55.0.0",
     "react": ">=19.0.0",
@@ -80,6 +81,10 @@
     "react-native-screens": {
       "optional": true,
       "comment": "iOS only: a view's settings as a form sheet with detents (Sheet.ios.tsx). Web, macOS and Android never load it."
+    },
+    "@legendapp/list": {
+      "optional": true,
+      "comment": "Web for now: a table draws only the rows on screen (RowList.web.tsx). Native follows with LARGE-TABLES-PLAN I1."
     }
   },
   "devDependencies": {
