@@ -12,7 +12,7 @@ import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
-import { readZip, writeZip } from "./zip.js";
+import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
 
 /**
  * `.table.zip` archive transport (SPEC section 13). Portable — Node,
@@ -48,10 +48,42 @@ function isJunk(name: string): boolean {
  * malformed `schema.json` stays fatal. `path` on the result is the
  * root directory name from inside the archive.
  */
+export interface ReadArchiveOptions {
+  /**
+   * Asked for each table, with its `rows.ndjson` as bytes: true leaves the
+   * rows unparsed, for a table too large to hold, whose bytes the caller
+   * has now taken to index. The table comes back with no rows and
+   * `indexed` set, its count for the caller to fill in.
+   */
+  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: Uint8Array) => boolean | Promise<boolean>;
+  /**
+   * The same question, asked before a large `rows.ndjson` (of `lazyFrom`
+   * bytes or more, 1 MB when left out) is inflated at all: it is handed
+   * still compressed, to be read a piece at a time, so its start can be
+   * shown while the rest is read. False inflates and parses it as usual.
+   */
+  rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: LazyZipEntry) => boolean | Promise<boolean>;
+  lazyFrom?: number;
+}
+
+function whole(entry: LazyZipEntry): Uint8Array {
+  const all = new Uint8Array(entry.size);
+  let at = 0;
+  for (const piece of entry.chunks()) {
+    all.set(piece, at);
+    at += piece.length;
+  }
+  return all;
+}
+
 export async function readTableArchive(
   source: Uint8Array,
+  options: ReadArchiveOptions = {},
 ): Promise<ParsedBundle> {
-  const entries = readZip(source).filter((e) => !isJunk(e.name));
+  const lazyFrom = options.lazyFrom ?? 1 << 20;
+  const entries = readZip(source, {
+    lazy: (name, size) => !!options.rowsLazily && size >= lazyFrom && /^[^/]+\/tables\/[^/]+\/rows\.ndjson$/.test(name),
+  }).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
   }
@@ -71,8 +103,11 @@ export async function readTableArchive(
   }
 
   const files = new Map<string, Uint8Array>();
+  // The large rows files, still compressed: read only when their table is.
+  const compressed = new Map<string, LazyZipEntry>();
   for (const e of entries) {
-    files.set(e.name.slice(root.length + 1), e.data);
+    if ("data" in e) files.set(e.name.slice(root.length + 1), e.data);
+    else compressed.set(e.name.slice(root.length + 1), e);
   }
   const text = (name: string): string | undefined => {
     const data = files.get(name);
@@ -84,7 +119,7 @@ export async function readTableArchive(
     parseOptionalJsonText<BundleMeta>("meta.json", text("meta.json"), diagnostics) ?? {};
 
   const names = new Set<string>();
-  for (const name of files.keys()) {
+  for (const name of [...files.keys(), ...compressed.keys()]) {
     const m = /^tables\/([^/]+)\//.exec(name);
     if (m && isTableName(m[1]!)) names.add(m[1]!);
   }
@@ -93,7 +128,8 @@ export async function readTableArchive(
   for (const name of [...names].sort()) {
     const prefix = `tables/${name}/`;
     const schemaRaw = text(`${prefix}schema.json`);
-    if (schemaRaw === undefined || text(`${prefix}rows.ndjson`) === undefined) {
+    const lazyRows = compressed.get(`${prefix}rows.ndjson`);
+    if (schemaRaw === undefined || (text(`${prefix}rows.ndjson`) === undefined && !lazyRows)) {
       diagnostics.push({
         rowIndex: -1,
         message: `tables/${name} isn't a table: it needs schema.json and rows.ndjson`,
@@ -103,7 +139,6 @@ export async function readTableArchive(
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
     const schema = JSON.parse(schemaRaw) as TableSchema;
-    const rows = parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
     const views =
       parseOptionalJsonText<View[]>("views.json", text(`${prefix}views.json`), tableDiagnostics) ?? [];
     const tableMeta =
@@ -118,7 +153,16 @@ export async function readTableArchive(
       bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(file)!);
     }
 
+    let elsewhere = false;
+    if (lazyRows) {
+      elsewhere = (await options.rowsLazily!(name, { schema, views, bodies }, lazyRows)) === true;
+      // Not taken: read as any other.
+      if (!elsewhere) files.set(`${prefix}rows.ndjson`, whole(lazyRows));
+    }
+    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}rows.ndjson`)!)) === true;
+    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/tables/${name}` };
+    if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
     if (tableDiagnostics.length > 0) table.diagnostics = tableDiagnostics;
     tables[name] = table;

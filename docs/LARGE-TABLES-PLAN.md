@@ -47,9 +47,10 @@ interface ViewRows extends RowSource {
   /** The place of a row, or -1 when the view doesn't show it. */
   placeOf(id: string): number | Promise<number>;
   row(id: string): Row | undefined | Promise<Row | undefined>;
-  totals(wanted: Record<string, TotalKind>): Totals | Promise<Totals>;
-  /** When the view groups: each group's value, first place and row count, in order. */
-  groups(): Group[] | Promise<Group[]>;
+  /** The view's totals, by field. */
+  totals(): Record<string, number | undefined> | Promise<Record<string, number | undefined>>;
+  /** When the view groups: each group's key, first place and row count, in order. */
+  groups(): RowGroup[] | Promise<RowGroup[]>;
 }
 ```
 
@@ -177,7 +178,7 @@ Two known gaps against the bar, with what closes them:
 
 For Leslie (decided 8 Oct 2026):
 
-1. **While a large table's index is first being built:** show progress until everything works. (Showing rows in file order first was the other option.)
+1. **While a large table's index is first being built:** its first rows show at once, as the file has them, with how far the reading has got above them; they can be looked at, not worked in. The view's own order, filters and groups, and search and editing, come when the index is ready. (Changed by Leslie on 9 Oct 2026, from progress alone until everything works. Making the first rows interactive is to be revisited.)
 2. **When the browser or disk won't give the space:** open in memory with a notice.
 3. **Who does iOS** (I1 to I4): the Linux rig specifies and implements it, after web and Linux; Primary or Secondary tests it on devices.
 
@@ -186,3 +187,14 @@ For review by whoever implements web and Linux (accepted by the Linux rig, 8 Oct
 4. The `ViewRows` shape in section 1. Accepted; it may gain or lose a method once W1 has a real list reading it, and any change is recorded here.
 5. The 50,000-row threshold and the 200-row page, both starting points for measurement. Accepted as starting points.
 6. Saving by rewriting `rows.ndjson` (section 4) until Phase B's numbers say otherwise. Accepted.
+
+Changed while building it (9 Oct 2026):
+
+7. `totals()` takes nothing. A source is made for one view, so the totals it wants, like its group, are given when the source is made (`IndexQuery.totals` and `group`, `ViewRowsOptions`). That lets `queryIndex` say up front that it can't promise a total, and return null.
+8. Places in a grouped view count one group after another, in `applyGroup`'s order, so a window of a grouped view is a window of what it shows.
+9. A total's sum is exact (`exactSum`, SPEC section 4): what the numbers add up to, rounded once. Added one at a time a sum depended on the rows' order, so it changed in its last digits when a view was sorted, and the index could only match it by reading every number in the view's order (2 to 5 s at 1M rows). Now it reads the column's distinct numbers and their counts off an index (0.1 s).
+10. Row edits to an indexed table go through the reducer like any other (`updateRow`, `addRow`, `deleteRow`, `updateBody`), which queues them (`AppState.indexWork`) for the app to make in the index (`makeIndexEdits`) and then say so (`indexed`). So `viewCallbacks` and every view are unchanged, and each platform only supplies its `SqlDriver`.
+11. `ParsedTable.indexed` marks a table whose rows aren't in `rows`. The writer leaves such a table's `rows.ndjson` alone; the app that holds the index writes it.
+12. Linux (L2, L3 in part): what's built is in "What Linux does" in LARGE-TABLES.md. Left for later there: removing a choice, validation of its rows, and an archive past 250,000 rows.
+13. The indexer runs where the index is. A page asks its worker for a view's rows a message an answer (`rowsServer`, `remoteViewRows`), not a statement a message; an edit comes back with the rows on screen already read (`ViewRows.peek`).
+14. The web (W2, W3) and tall lists: "What the web does" in LARGE-TABLES.md.

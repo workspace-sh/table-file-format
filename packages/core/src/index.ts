@@ -13,14 +13,18 @@ export {
   instantOf,
   completeSeconds,
 } from "./encoding.js";
-export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal } from "./query.js";
+export { applyFilters, applySort, applyGroup, applyView, applyOrder, searchRows, viewTotal, exactSum } from "./query.js";
 export { formatValue, stringFormatKind, tryIntl, type DisplayOptions } from "./format.js";
 export { textDirection, type TextDirection } from "./direction.js";
 export { compareText, type TextOrder } from "./collate.js";
-export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile } from "./archive.js";
+export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile, type ReadArchiveOptions } from "./archive.js";
+export type { LazyZipEntry } from "./zip.js";
 export {
   buildIndex,
   queryIndex,
+  buildSearchIndex,
+  setIndexKey,
+  storedRows,
   isIndexStale,
   dropIndex,
   indexKey,
@@ -33,7 +37,7 @@ export {
   type SqlDriver,
   type SqlValue,
 } from "./indexer.js";
-export { arraySource, type RowSource } from "./row-source.js";
+export { arraySource, memoryViewRows, type RowGroup, type RowSource, type ViewRows, type ViewRowsOptions } from "./row-source.js";
 export { oo1Driver, type Oo1Database, type Oo1Statement } from "./sqlite-wasm.js";
 export {
   toCSV,
@@ -61,7 +65,7 @@ export {
   type Place,
   type PlaceRow,
 } from "./expr.js";
-export { computeRows, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { computeRows, rowLocal, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
   compileFormula,

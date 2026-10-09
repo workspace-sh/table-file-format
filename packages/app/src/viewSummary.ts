@@ -39,8 +39,22 @@ const HINT_ERRORS = 5;
 
 export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSummary {
   const errors = validate(table.schema, table.rows);
-  const total = table.rows.length;
+  // Rows held in the index aren't here to count, or to check.
+  const total = table.indexed ? table.indexed.count : table.rows.length;
   const valid = errors.length === 0;
+  if (table.indexed) {
+    return {
+      count: input.searching ? `${input.shown} of ${input.inView} matching` : `${input.shown} of ${total} ${total === 1 ? "row" : "rows"}`,
+      valid: true,
+      validity: "not checked",
+      validityHint: "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
+      schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
+      schemaChangedLabel: "schema changed",
+      schemaChangedHint:
+        "A column was added, moved, retyped or given new rules since this table was opened. The table's schema-version goes up by one for each such change (D22).",
+      errors,
+    };
+  }
   return {
     count: input.searching
       ? `${input.shown} of ${input.inView} matching`

@@ -718,7 +718,10 @@ given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
   "count_empty" }`: a footer under a table layout, one calculation per
   column, over the rows the view shows (after its filters). `sum`,
   `average`, `min` and `max` read the numbers and skip anything else;
-  `count` counts values and `count_empty` blanks. Display-only: only the
+  `count` counts values and `count_empty` blanks. A sum is exact: what
+  the numbers add up to, rounded once to the nearest double, so it is the
+  same whatever order the rows are in; an average is that sum over how
+  many numbers there were. Display-only: only the
   choice is stored, never a result (reference: `viewTotal()`).
 - `coordinates: true`: this table layout is a **Sheet view** (below).
 
@@ -861,12 +864,80 @@ joins inside one database. Where this section says `schema.json` and
   the fallback rule.
 
 The interface (`buildIndex`, `queryIndex`, `isIndexStale`, `dropIndex`,
-`putRows`, `removeRows`) lives in `@workspace.sh/table-core`. It is one
+`putRows`, `removeRows`, `storedRows`, `setIndexKey`) lives in
+`@workspace.sh/table-core`. It is one
 implementation, written against a small `SqlDriver` (`exec`, `run`,
 `all`, optionally `batch`) that each platform fills with its SQLite:
 `node:sqlite` on Node, op-sqlite or expo-sqlite on React Native,
 SQLite WASM on the web — or no cache at all; the in-memory query path
 is always sufficient.
+
+### When to index
+
+The text is the table. A reader that parses `rows.ndjson` and holds its
+rows in memory is a complete reader, and for a small table it is the
+fast one: nothing to build, and every read immediate. An index earns
+its place when a table is large enough that holding and re-reading
+every row costs more than building it.
+
+- An implementation SHOULD read a table through the index once it is
+  large enough that a view, a search or an edit is no longer immediate
+  from memory, and SHOULD NOT build one for a table that is. Where that
+  line falls is the implementation's to measure. The reference apps
+  start at 50,000 rows (`INDEXED_FROM`) and move it by measurement.
+- An implementation MUST keep the in-memory path: it is the fallback
+  when there is no SQLite, no space for the file, or a question the
+  index can't promise an answer to.
+- An index is never required to read, write or exchange a `.table`. A
+  folder with no `index.sqlite`, or with one deleted a moment ago, is
+  whole.
+
+### Ways to open a table (guidance, not a requirement)
+
+How a reader gets from the files to rows on screen is its own choice.
+None of these changes what is on disk, and a `.table` written by one is
+read by any other. Three that work, from least to most machinery:
+
+1. **Hold it in memory.** Parse `rows.ndjson`, keep the rows, and
+   filter, sort and search them in place (`applyView`, `searchRows`).
+   Nothing to build and nothing beside the files. This is the whole of a
+   correct reader, and the right one for small tables, scripts,
+   converters and anything that reads a table once. Its limit is that
+   every row is held and every edit passes over them: fine into the tens
+   of thousands of rows, not at a million.
+
+2. **Index first, then show.** Build `index.sqlite` from the files
+   (`buildIndex`, streaming the rows so memory stays flat), and read
+   everything through it (`queryIndex`). Simple to reason about: one
+   path once the table is open. Its cost is the wait before anything
+   shows, which grows with the table (tens of seconds at a million rows
+   on a modest laptop), so it suits a tool that opens a table to work in
+   it at length, or builds the index ahead of time.
+
+3. **Show at once, index behind.** What the reference apps do for a
+   table past their line (see "When to index"):
+   - show the first rows straight from the head of `rows.ndjson`, in
+     file order, while the index is built off the thread that draws,
+     with how far it has got;
+   - make the table usable as soon as its rows are in the index, and
+     build the full-text table after, a step at a time
+     (`search: "later"`, then `buildSearchIndex`); a search is right
+     meanwhile, only slower;
+   - read a window of rows at a time, drawing an empty row of the right
+     height for one that hasn't arrived;
+   - make edits in the index (`putRows`, `removeRows`), write them back
+     to `rows.ndjson` (`storedRows`), and stamp the index fresh
+     (`setIndexKey`);
+   - open from memory instead when the index can't be made, and say so.
+
+   On reopening, a fresh index means none of the build is repeated.
+
+A reader may mix them: memory below a line it has measured and the
+index above it is what "When to index" recommends. Whichever it
+chooses, the same question gets the same rows in the same order: that
+is what the index's "never guesses" rule, below, is for. Measurements
+from the reference apps, and what each choice cost them, are in
+`docs/LARGE-TABLES.md`.
 
 ### Query interface — structured, not raw SQL
 
@@ -875,7 +946,10 @@ structures defined for `views.json` (section 4), the view's manual
 `order`, and an optional free-text `search` string — and compiles to
 SQL internally. It returns the number of rows that match and a way to
 read any window of them (`rows(start, end)`), so a screen never needs
-the whole result.
+the whole result. With the view's `group` field and its `totals`, it
+also answers the view's groups (each one's first place and row count,
+in the order `applyGroup` gives them), its totals, a row by id and the
+place of a row: everything a view reads of its rows (`ViewRows`).
 
 Consumers MUST NOT be handed raw SQL access. Rationale:
 
@@ -908,7 +982,10 @@ objects as JSON. `""` is kept apart from an absent value, since
 filters tell them apart. A sort's index is made the first time that
 sort is asked for. A full-text table (trigram) over the id, the
 string, date and datetime fields and the page narrows a search; an
-exact substring test over the same text answers it.
+exact substring test over the same text answers it. A build may leave the
+full-text table for after (`search: "later"`, then `buildSearchIndex` a
+step at a time): until it is whole, the exact test alone answers a
+search, with the same rows.
 
 ### Staleness contract
 
@@ -940,6 +1017,18 @@ this way sit at the end of the file order. Schemas with formulas that
 read other rows (a change to one row changes others) refuse in-place
 edits and are rebuilt; so is a table whose schema changed or whose rows
 were inserted mid-file.
+
+### A table held in the index
+
+An app MAY hold a large table's rows in the index alone, not in memory,
+reading `rows.ndjson` only to build it. `rows.ndjson` stays the truth:
+after edits the app writes the rows back out of the index in file order
+(`storedRows`), replaces `rows.ndjson` in one rename, and stamps the
+index with the new content's key (`setIndexKey`), so it is fresh for
+what was written. An index whose edits were never written is stale on
+the next open and is rebuilt from the file. The index file's journal
+(`index.sqlite-wal`, `-shm`) sits beside it and is ignored with it
+(`index.sqlite*`).
 
 ### Full-text search includes bodies
 

@@ -125,7 +125,21 @@ export interface AppState {
   telling: Telling | null;
   /** Bundles edited since they were last written. */
   dirty: string[];
+  /**
+   * Edits to rows of tables held in the index (`ParsedTable.indexed`),
+   * in order, for the app to make there: their rows aren't in `tables`
+   * to change. Each goes once the app says it's made (`indexed`).
+   */
+  indexWork: IndexWork[];
 }
+
+/** One edit to a row of an indexed table; `n` counts them. */
+export type IndexWork = { n: number; key: string } & (
+  | { kind: "cell"; rowId: string; field: string; value: unknown }
+  | { kind: "add"; rowId: string }
+  | { kind: "remove"; rowId: string }
+  | { kind: "body"; rowId: string; content: string }
+);
 
 /** One of the Display controls' choices. */
 export interface DisplayChoice {
@@ -185,7 +199,15 @@ export type AppAction =
   | { type: "answer"; response: string; text?: string }
   | { type: "tell"; message: Telling }
   | { type: "told" }
-  | { type: "written"; bundles: string[]; tables?: Record<string, ParsedTable> };
+  | { type: "written"; bundles: string[]; tables?: Record<string, ParsedTable> }
+  /**
+   * An indexed table's rows as they now are: how many, after a build or
+   * after the edits up to `done` (an IndexWork's `n`) were made, which
+   * then leave the queue and the table is to be written.
+   */
+  | { type: "indexed"; key: string; count: number; done?: number }
+  /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
+  | { type: "reloaded"; key: string; table: ParsedTable };
 
 /** The viewer's own settings, as the app loaded them from its store. */
 export interface StoredPrefs {
@@ -228,6 +250,7 @@ export function initialAppState(input: AppStart): AppState {
     asking: null,
     telling: null,
     dirty: [],
+    indexWork: [],
   };
   const target = input.start ? addressTarget(input.start, tables, bundles, "") : null;
   const state = target ? follow(base, target) : base;
@@ -316,6 +339,21 @@ function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key 
   return tables === state.tables ? state : { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
 }
 
+/** An edit to an indexed table's row, for the app to make in the index. */
+function queued(state: AppState, work: IndexWork extends infer W ? (W extends { n: number } ? Omit<W, "n"> : never) : never): AppState {
+  const n = (state.indexWork.at(-1)?.n ?? 0) + 1;
+  return { ...state, indexWork: [...state.indexWork, { ...work, n } as IndexWork] };
+}
+
+/** A page of an indexed table's row, whose rows aren't here to check it against. */
+function withIndexedBody(table: ParsedTable, rowId: string, content: string): ParsedTable {
+  if ((table.bodies?.[rowId] ?? "") === content) return table;
+  const bodies = { ...(table.bodies ?? {}) };
+  if (content.length === 0) delete bodies[rowId];
+  else bodies[rowId] = content;
+  return { ...table, bodies };
+}
+
 function marked(dirty: string[], bundle: string): string[] {
   return dirty.includes(bundle) ? dirty : [...dirty, bundle];
 }
@@ -401,8 +439,10 @@ function step(state: AppState, action: AppAction): AppState {
     }
 
     case "updateRow":
+      if (state.tables[state.active]?.indexed) return queued(state, { key: state.active, kind: "cell", rowId: action.rowId, field: action.field, value: action.value });
       return edit(state, (t) => withCell(t, action.rowId, action.field, action.value));
     case "addRow":
+      if (state.tables[state.active]?.indexed) return queued(state, { key: state.active, kind: "add", rowId: action.id });
       return edit(state, (t) => withRow(t, action.id));
     case "insertRow": {
       // Only in a Sheet view whose order isn't decided by a sort (D41).
@@ -412,12 +452,19 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "deleteRow": {
       const table = state.tables[state.active];
-      if (!table?.rows.some((r) => r.id === action.rowId)) return state;
+      if (!table || (!table.indexed && !table.rows.some((r) => r.id === action.rowId))) return state;
       const { prompt } = deletingRow(table, action.rowId, state.openPage);
       return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "deleteRow", key: state.active, rowId: action.rowId } } };
     }
-    case "updateBody":
+    case "updateBody": {
+      const key = action.table ?? state.active;
+      if (state.tables[key]?.indexed) {
+        // The page is held here; the index hears of it for its search.
+        const held = edit(state, (t) => withIndexedBody(t, action.rowId, action.content), key);
+        return held === state ? state : queued(held, { key, kind: "body", rowId: action.rowId, content: action.content });
+      }
       return edit(state, (t) => withBody(t, action.rowId, action.content), action.table);
+    }
     case "updateField":
       return edit(state, (t) => withFieldPatch(t, action.name, action.patch));
     case "addField":
@@ -548,6 +595,23 @@ function step(state: AppState, action: AppAction): AppState {
       const dirty = state.dirty.filter((b) => !action.bundles.includes(b) || stale(b));
       return dirty.length === state.dirty.length ? state : { ...state, dirty };
     }
+    case "reloaded":
+      if (!state.tables[action.key]) return state;
+      return { ...state, tables: { ...state.tables, [action.key]: action.table }, indexWork: state.indexWork.filter((w) => w.key !== action.key) };
+    case "indexed": {
+      const table = state.tables[action.key];
+      if (!table) return state;
+      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1 };
+      const tables = { ...state.tables, [action.key]: { ...table, indexed } };
+      if (action.done === undefined) return { ...state, tables };
+      const done = action.done;
+      return {
+        ...state,
+        tables,
+        indexWork: state.indexWork.filter((w) => w.key !== action.key || w.n > done),
+        dirty: marked(state.dirty, bundleOf(action.key)),
+      };
+    }
   }
 }
 
@@ -558,6 +622,7 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
   switch (on.type) {
     case "deleteRow":
       // Its page, if open, goes with it (settle's rule).
+      if (state.tables[on.key]?.indexed) return queued(edit(state, (t) => withoutRow(t, on.rowId), on.key), { key: on.key, kind: "remove", rowId: on.rowId });
       return edit(state, (t) => withoutRow(t, on.rowId), on.key);
     case "deleteField":
       return edit(state, (t) => withoutField(t, on.name), on.key);
@@ -613,6 +678,8 @@ export interface DeriveOptions {
   attachmentsOf?: (tableKey: string) => string[];
   /** What a bundle's file is called where it is (an opened folder's own name), for the breadcrumb. */
   fileNameOf?: (bundle: string) => string | undefined;
+  /** For a table held in the index: how many rows its view shows now, and before the search, once the app has read them. */
+  indexedShown?: { count: number; inView: number };
 }
 
 /** What the drawing needs, from the state. */
@@ -685,9 +752,11 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const arrangement = state.arrangements[state.active]?.[view.id];
   const locale = viewerLocale(state.display, options.locale);
   const held = state.tables[state.active] !== undefined;
-  const shown: ShownView = held
-    ? shownLast(state.tables, state.active, view, arrangement, state.search, locale)
-    : { view: arrangedView(view, arrangement), rows: [], inView: 0 };
+  // An indexed table's rows aren't here: the app reads them through the index (indexedViewRows).
+  const shown: ShownView =
+    held && !table.indexed
+      ? shownLast(state.tables, state.active, view, arrangement, state.search, locale)
+      : { view: arrangedView(view, arrangement), rows: [], inView: options.indexedShown?.inView ?? table.indexed?.count ?? 0 };
   const live = (a: string) => addressLive(a, state.tables, state.bundles);
   const canGoBack = goBack(state.history, live) !== null;
   const canGoForward = goForward(state.history, live) !== null;
@@ -704,7 +773,13 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     arrangement,
     arranged: isArranged(arrangement),
     shown,
-    summary: summaryLast(table, shown.rows.length, shown.inView, state.search.trim().length > 0, state.openedAt[state.active]),
+    summary: summaryLast(
+      table,
+      table.indexed ? (options.indexedShown?.count ?? table.indexed.count) : shown.rows.length,
+      shown.inView,
+      state.search.trim().length > 0,
+      state.openedAt[state.active],
+    ),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
     mode,
     locale,

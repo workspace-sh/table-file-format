@@ -3,7 +3,9 @@ import { rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
+import { openWorkerIndexHost } from "./indexClient.js";
 import { fixturesDir } from "./fixtures.js";
 
 // `.table` folders named on the command line, or the repo's fixtures.
@@ -25,7 +27,7 @@ const settings = jsonFileStore(join(dataHome, "settings.json"));
 const fixtures = fixturesDir();
 const paths = named.length > 0 ? named : fixtures ? copiesOf(fixtures, examples) : [];
 
-const library = await loadLibrary(paths);
+const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM });
 for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
@@ -48,5 +50,7 @@ createRoot().render(
     settings={settings}
     newFilesIn={named.length > 0 ? undefined : examples}
     resetExamples={resetExamples}
+    openIndex={openWorkerIndexHost}
+    indexedFrom={INDEXED_FROM}
   />,
 );
