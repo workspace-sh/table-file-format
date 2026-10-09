@@ -10,3 +10,8 @@ NSToolbar *TableShellToolbar(void)
 {
   return [TableToolbar.shared make];
 }
+
+void TableShellFocusContent(void)
+{
+  [TableShell focusContent];
+}

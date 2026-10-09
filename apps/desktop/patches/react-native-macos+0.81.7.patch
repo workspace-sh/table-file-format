@@ -72,6 +72,23 @@ index a14a864..a06a072 100644
  #endif // [macOS]
    }
  }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm
+index c4bfeb1..d6f1cd9 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm
+@@ -818,7 +818,11 @@ - (void)focus
+   [_backedTextInputView becomeFirstResponder];
+ #else // [macOS
+   NSWindow *window = [_backedTextInputView window];
+-  [window makeFirstResponder:_backedTextInputView];
++  // [table-file-format patch] The responder, as autoFocus above uses: for a
++  // multiline field the backed view is a wrapper around the text view, and
++  // making the wrapper first responder leaves typed keys with nowhere to go.
++  // Drop this patch once react-native-macos does the same.
++  [window makeFirstResponder:_backedTextInputView.responder];
+ #endif // macOS]
+ 
+   const auto &props = static_cast<const TextInputProps &>(*_props);
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 index 0dd5223..2a13675 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm

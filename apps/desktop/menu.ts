@@ -30,6 +30,7 @@ interface TableMenuModule {
   focusSearch(): void;
   postCommand(commandId: string): void;
   postSearch(text: string): void;
+  firstResponder(): Promise<Record<string, unknown>>;
   replyToQuit(quit: boolean): void;
   setUnsaved(unsaved: boolean): void;
   pressAlertButton(title: string): Promise<boolean>;
@@ -140,6 +141,11 @@ export function focusSearch(): void {
 export function onSearch(then: (text: string) => void): () => void {
   const sub = events?.addListener("search", (e: { text: string }) => then(e.text));
   return () => sub?.remove();
+}
+
+/** Development only: what has the keyboard. */
+export function firstResponder(): Promise<Record<string, unknown>> {
+  return TableMenu?.firstResponder() ?? Promise.resolve({});
 }
 
 /** Development only: text typed in the toolbar's search field. */

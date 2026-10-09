@@ -56,6 +56,8 @@
     [self.window center];
   }
   [self.window setFrameAutosaveName:@"TableDesktopMainWindow"];
+  // The table, not the sidebar, starts with the keyboard.
+  TableShellFocusContent();
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
