@@ -5,6 +5,7 @@
 
 RCT_EXTERN_METHOD(setModel:(NSString *)json)
 RCT_EXTERN_METHOD(pick:(NSString *)tag)
+RCT_EXTERN_METHOD(setInspectorShown:(BOOL)shown)
 RCT_EXTERN_METHOD(toggle)
 
 @end

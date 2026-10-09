@@ -8,6 +8,7 @@ import type { FilesTreeEntry, SidebarBundle } from "@workspace.sh/table-app";
 interface TableSidebarModule {
   setModel(json: string): void;
   toggle(): void;
+  setInspectorShown(shown: boolean): void;
   pick(tag: string): void;
   addListener(event: string): void;
   removeListeners(count: number): void;
@@ -25,7 +26,9 @@ export type SidebarEvent =
   | { type: "filesMode"; files: boolean }
   | { type: "toggleDir"; bundle: string; path: string; open: boolean }
   | { type: "showFile"; bundle: string; path: string }
-  | { type: "shown"; shown: boolean };
+  | { type: "shown"; shown: boolean }
+  /** The inspector opened or closed, by its toolbar button or by the app. */
+  | { type: "inspector"; shown: boolean };
 
 export interface SidebarShown {
   tree: SidebarBundle[];
@@ -112,4 +115,9 @@ export function toggleNativeSidebar(): void {
 /** Development only: pick a sidebar row as a click on it does (`table:<key>`, `view:<key>:<viewId>`, or a Files line's id). */
 export function pickInSidebar(tag: string): void {
   TableSidebar?.pick(tag);
+}
+
+/** Open or close the inspector pane. */
+export function setInspectorShown(shown: boolean): void {
+  TableSidebar?.setInspectorShown(shown);
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-// React Native's View, under another name: View here is a table's view.
-import { ScrollView, View as Box } from "react-native";
+import { ScrollView } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
 // for the entire subtree. Required once per app at the root.
 import "react-native-gesture-handler";
@@ -11,25 +10,25 @@ import { newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
-  BodyEditor,
   BoardView,
   CalendarView,
   GalleryView,
   ListView,
   AttachmentsProvider,
+  CellEditorContext,
   DisplayControls,
   Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
-  PanelSurface,
   PortalHost,
   TableView,
   ViewSettings,
   canInsertAt,
 } from "@workspace.sh/table-ui";
-import { GlassSurface } from "./GlassSurface";
-import { onSidebar, pickInSidebar, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
+import { useGlassEditor } from "@workspace.sh/glass-bar";
+import { inspectorStore } from "./inspectorStore";
+import { onSidebar, pickInSidebar, setInspectorShown, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -673,6 +672,51 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The view on screen's callbacks, each an action (table-app's viewCallbacks).
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, activeTablePath]);
 
+  // What's selected goes to the inspector, the window's trailing pane
+  // (Inspector.tsx): a cell says what it is there, and a formula is written
+  // there, with its colours, its working and the click-a-cell-to-add-it of
+  // iOS, from the same logic (glass-bar's useGlassEditor). Everything else
+  // is edited in its cell, as a Mac expects, so only formulas are taken
+  // over. Search is the toolbar's.
+  const glass = useGlassEditor({
+    query: state.search,
+    onQuery: (text) => dispatch({ type: "search", text }),
+    onFilter: () => dispatch({ type: "settings", open: true }),
+    accepts: (session) => session.mode === "formula",
+  });
+  // A row's page is written there too.
+  const openPage = state.openPage;
+  const pageTable = state.active;
+  const page = useMemo(
+    () =>
+      openPage
+        ? {
+            key: `${pageTable}/${openPage}`,
+            rowId: openPage,
+            rowTitle: rowTitleFor(table, openPage),
+            content: table.bodies?.[openPage] ?? "",
+            onSave: (content: string) => dispatch({ type: "updateBody", rowId: openPage, content, table: pageTable }),
+            onClose: () => dispatch({ type: "openPage", rowId: null }),
+          }
+        : null,
+    [openPage, pageTable, table],
+  );
+  const cellKind = glass.props.state.kind;
+  useEffect(() => {
+    inspectorStore.set({ page, cell: glass.props, cellRef: glass.bar, display: shownDisplay });
+  });
+  // It opens for a page or a formula being written, and for a cell once it
+  // has been opened; closing it (its toolbar button) lets go of both.
+  const editingFormula = cellKind === "editing";
+  useEffect(() => {
+    if (page !== null || editingFormula) setInspectorShown(true);
+  }, [page, editingFormula]);
+  const closeInspected = useRef(() => {});
+  closeInspected.current = () => {
+    if (openPage) dispatch({ type: "openPage", rowId: null });
+    if (editingFormula) glass.props.onCancel?.();
+  };
+
   // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
   // File before Close and in View before Enter Full Screen. Choosing one,
   // or pressing its key wherever focus is, does what its button does.
@@ -924,6 +968,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "toggleDir") dispatch({ type: "toggleDir", id: `${e.bundle}/${e.path}`, open: e.open });
         else if (e.type === "showFile") dispatch({ type: "showFile", file: { bundle: e.bundle, path: e.path } });
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
+        else if (e.type === "inspector" && !e.shown) closeInspected.current();
       }),
     [chooseFilesMode],
   );
@@ -939,9 +984,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   return (
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
-      {/* Panels (a row's page) are Liquid Glass, as macOS 26's own are.
-          Outside the PortalHost: a panel is drawn there. */}
-      <PanelSurface.Provider value={GlassSurface}>
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
@@ -1011,6 +1053,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                   onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
                 />
               )}
+              <CellEditorContext.Provider value={glass.editor}>
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
                 ...callbacks,
                 relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
@@ -1020,32 +1063,15 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                 onAttachFile: attachFile,
               })}
+              </CellEditorContext.Provider>
             </ScrollView>
             </PageGutter.Provider>
             </>
             )}
           </html.div>
-          {/* A row's page opens over the pane below the toolbar, not under
-              it: its own portal host, in a box that starts at the toolbar's
-              foot, so the page's card and the dimming behind it stop there. */}
-          {state.openPage && (
-            <Box style={{ position: "absolute", top: topInset, left: 0, right: 0, bottom: 0 }}>
-              <PortalHost>
-                <BodyEditor
-                  key={`${state.active}/${state.openPage}`}
-                  rowId={state.openPage}
-                  rowTitle={rowTitleFor(table, state.openPage)}
-                  content={table.bodies?.[state.openPage] ?? ""}
-                  onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
-                  onClose={() => dispatch({ type: "openPage", rowId: null })}
-                />
-              </PortalHost>
-            </Box>
-          )}
         </html.div>
         </DisplaySettingsProvider>
       </PortalHost>
-      </PanelSurface.Provider>
       </AttachmentsProvider>
     </GestureHandlerRootView>
   );

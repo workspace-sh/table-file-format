@@ -114,12 +114,13 @@ public class TableToolbar: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
 
   public func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     [.toggleSidebar, .tableMode, .sidebarTrackingSeparator, .tableNavigate, .flexibleSpace, .space,
-     .tableNewRow, .tableViewSettings, .tableExport, .tableSearch]
+     .tableNewRow, .tableViewSettings, .tableExport, .tableSearch, .inspectorTrackingSeparator, .toggleInspector]
   }
 
   public func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     [.toggleSidebar, .tableMode, .sidebarTrackingSeparator, .tableNavigate, .flexibleSpace,
-     .tableNewRow, .tableViewSettings, .tableExport, .tableSearch]
+     .tableNewRow, .tableViewSettings, .tableExport, .tableSearch,
+     .inspectorTrackingSeparator, .flexibleSpace, .toggleInspector]
   }
 
   public func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,

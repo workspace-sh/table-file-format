@@ -27,10 +27,18 @@
                                                      initialProperties:self.initialProps
                                                          launchOptions:launchOptions];
 
-  // The React view paints no background of its own (its default is white):
-  // the pane behind it paints the content's (TableShell), under the toolbar too.
-  if ([rootView respondsToSelector:@selector(setBackgroundColor:)]) {
-    [rootView setValue:NSColor.clearColor forKey:@"backgroundColor"];
+  // A second React view, for the inspector: the same app and runtime,
+  // registered under its own name (index.js).
+  RCTPlatformView *inspectorView = [self.rootViewFactory viewWithModuleName:@"TableInspector"
+                                                         initialProperties:@{}
+                                                             launchOptions:launchOptions];
+
+  // Neither React view paints a background of its own (the default is
+  // white): each sits on its pane's, which is the system's.
+  for (NSView *view in @[rootView, inspectorView]) {
+    if ([view respondsToSelector:@selector(setBackgroundColor:)]) {
+      [view setValue:NSColor.clearColor forKey:@"backgroundColor"];
+    }
   }
 
   self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1280, 760)
@@ -40,7 +48,7 @@
                                                 defer:NO];
   self.window.title = @".table";
   self.window.autorecalculatesKeyViewLoop = YES;
-  self.window.contentViewController = TableShellCreate(rootView);
+  self.window.contentViewController = TableShellCreate(rootView, inspectorView);
 
   self.window.toolbar = TableShellToolbar();
   self.window.toolbarStyle = NSWindowToolbarStyleUnified;

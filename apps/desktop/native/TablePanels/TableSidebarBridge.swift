@@ -50,6 +50,13 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// Open or close the inspector.
+  @objc func setInspectorShown(_ shown: Bool) {
+    DispatchQueue.main.async {
+      TableShell.setInspectorShown(shown)
+    }
+  }
+
   /// Show or hide the sidebar, as View › Hide Sidebar and the toolbar's button do.
   @objc func toggle() {
     DispatchQueue.main.async {

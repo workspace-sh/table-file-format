@@ -1,9 +1,9 @@
 #import "TableShellEntry.h"
 #import "TablePanels-Swift.h"
 
-NSViewController *TableShellCreate(NSView *rootView)
+NSViewController *TableShellCreate(NSView *rootView, NSView *inspectorView)
 {
-  return [TableShell createWithRootView:rootView];
+  return [TableShell createWithRootView:rootView inspectorView:inspectorView];
 }
 
 NSToolbar *TableShellToolbar(void)

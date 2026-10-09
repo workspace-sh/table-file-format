@@ -7,5 +7,8 @@ import "./intl";
 import "./quietWarnings";
 import { AppRegistry } from "react-native";
 import App from "./App";
+import { Inspector } from "./Inspector";
 
 AppRegistry.registerComponent("TableDesktop", () => App);
+// The inspector pane's own React view (TableShell.swift).
+AppRegistry.registerComponent("TableInspector", () => Inspector);

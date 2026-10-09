@@ -9,8 +9,9 @@ NS_ASSUME_NONNULL_BEGIN
 extern "C" {
 #endif
 
-/// The split view controller for the window: a sidebar, and the React view.
-NSViewController *TableShellCreate(NSView *rootView);
+/// The split view controller for the window: a sidebar, the React view, and
+/// an inspector holding a second React view.
+NSViewController *TableShellCreate(NSView *rootView, NSView *inspectorView);
 
 /// Give the keyboard to the content, as the window opens.
 void TableShellFocusContent(void);
