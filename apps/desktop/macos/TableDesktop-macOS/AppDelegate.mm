@@ -27,6 +27,12 @@
                                                      initialProperties:self.initialProps
                                                          launchOptions:launchOptions];
 
+  // The React view paints no background of its own (its default is white):
+  // the pane behind it paints the content's (TableShell), under the toolbar too.
+  if ([rootView respondsToSelector:@selector(setBackgroundColor:)]) {
+    [rootView setValue:NSColor.clearColor forKey:@"backgroundColor"];
+  }
+
   self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1280, 760)
                                             styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskClosable |
                                                       NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView
@@ -39,8 +45,8 @@
   self.window.toolbar = TableShellToolbar();
   self.window.toolbarStyle = NSWindowToolbarStyleUnified;
   // No backing and no line under the toolbar: its buttons float over the
-  // content, which shows through to the top of the window, and the only
-  // thing between them is the system's blur where content passes beneath.
+  // content, whose colour runs to the top of the window. What scrolls up
+  // behind them is softened there (TableShell's ToolbarEdgeView).
   self.window.titlebarAppearsTransparent = YES;
   self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
 
