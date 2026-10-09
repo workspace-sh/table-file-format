@@ -187,6 +187,7 @@ A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280
 
 - **The page no longer grows with the table.** 10,000 rows were 250k elements and 15 s; they are 1,401 elements whatever the row count.
 - **What's left is the data.** At 100,000 rows nearly half the time to first rows is unzipping and parsing, and an edit takes 273 ms because the view is worked out again over every row. That is past the 135 ms bar from 50,000 rows up, which is where the index takes over (Phase B).
+- **Since then (9 Oct, later), an edit in memory is 52, 60 and 95 ms** at 10,000, 50,000 and 100,000 rows: the table reads its rows by place from one source (`ViewRows`), in memory or in the index, and no longer makes a list of every row's id and top on each draw. First rows are as they were (0.24, 0.78, 1.44 s).
 - Arrow keys, and Ctrl with an arrow to the table's first or last row, bring a row into view whether or not it was drawn. Back and Forward put the page back by row: a row's place comes from the heights before it, so it needn't be drawn to be found.
 
 ### Building only the rows near the screen, on Linux (L1, 9 Oct 2026)

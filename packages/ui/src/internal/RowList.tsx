@@ -1,4 +1,4 @@
-import { Fragment, useImperativeHandle, type ReactNode, type Ref } from "react";
+import { Fragment, useEffect, useImperativeHandle, type ReactNode, type Ref } from "react";
 
 /** What a row list can be asked to do from outside. */
 export interface RowListHandle {
@@ -23,6 +23,8 @@ export interface RowListProps<T> {
   /** Whether an item is drawn above its neighbours: what hangs below it (the row grip) isn't covered by the next. */
   raised?: (item: T) => boolean;
   handle?: Ref<RowListHandle>;
+  /** Told the first and last places drawn, as they change: what a list reading its rows from an index asks it for. */
+  onShown?: (first: number, last: number) => void;
 }
 
 /**
@@ -30,8 +32,13 @@ export interface RowListProps<T> {
  * variant (RowList.web.tsx) draws only the rows on screen. Native gets its
  * own when the phone reads large tables (LARGE-TABLES-PLAN, I1).
  */
-export function RowList<T>({ items, keyOf, render, handle }: RowListProps<T>) {
+export function RowList<T>({ items, keyOf, render, handle, onShown }: RowListProps<T>) {
   useImperativeHandle(handle, () => ({ scrollIndexIntoView: () => {}, top: () => null }), []);
+  // Every row is drawn here, so every place is shown.
+  useEffect(() => {
+    if (items.length > 0) onShown?.(0, items.length - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
   return (
     <>
       {items.map((item, i) => (
