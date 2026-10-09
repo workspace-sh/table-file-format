@@ -28,6 +28,7 @@
 #import <AppKit/AppKit.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
+#import "TablePanels-Swift.h"
 
 @interface TableMenu : RCTEventEmitter <RCTBridgeModule>
 @end
@@ -53,7 +54,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"menu", @"quit" ];
+  return @[ @"menu", @"quit", @"search" ];
 }
 
 - (void)startObserving
@@ -63,12 +64,29 @@ RCT_EXPORT_MODULE();
                                            selector:@selector(shouldTerminate:)
                                                name:@"TableDesktopShouldTerminate"
                                              object:nil];
+  // The toolbar's buttons and its search field (TableToolbar.swift).
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarCommand:) name:@"TableDesktopCommand" object:nil];
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarSearch:) name:@"TableDesktopSearch" object:nil];
 }
 
 - (void)stopObserving
 {
   _observed = NO;
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopShouldTerminate" object:nil];
+  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopCommand" object:nil];
+  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopSearch" object:nil];
+}
+
+- (void)toolbarCommand:(NSNotification *)notification
+{
+  if (!_observed) return;
+  [self sendEventWithName:@"menu" body:@{ @"id" : notification.userInfo[@"id"] ?: @"" }];
+}
+
+- (void)toolbarSearch:(NSNotification *)notification
+{
+  if (!_observed) return;
+  [self sendEventWithName:@"search" body:@{ @"text" : notification.userInfo[@"text"] ?: @"" }];
 }
 
 - (void)shouldTerminate:(NSNotification *)notification
@@ -169,6 +187,8 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
   if (_disabled == nil) _disabled = [NSMutableSet new];
   if (enabled) [_disabled removeObject:itemId];
   else [_disabled addObject:itemId];
+  // The toolbar's buttons are on and off as their menu items are.
+  TableToolbar.disabled = _disabled;
   NSMenuItem *item = _items[itemId];
   if (item == nil) {
     NSMenu *menu = topLevelMenuMade(menuTitle);
@@ -225,8 +245,10 @@ RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
 {
   [NSApp activateIgnoringOtherApps:YES];
   NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
-  // React's points run down from the content's top; a window's run up from its bottom.
-  NSPoint at = NSMakePoint(x.doubleValue, window.contentView.bounds.size.height - y.doubleValue);
+  // The point is in the React view, which measures down from its top left.
+  NSView *root = TableShell.rootView ?: window.contentView;
+  NSPoint inRoot = NSMakePoint(x.doubleValue, root.isFlipped ? y.doubleValue : root.bounds.size.height - y.doubleValue);
+  NSPoint at = [root convertPoint:inRoot toView:nil];
   for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
     NSEvent *event = [NSEvent mouseEventWithType:(NSEventType)type.unsignedIntegerValue
                                         location:at
@@ -239,6 +261,44 @@ RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
                                         pressure:1];
     [NSApp postEvent:event atStart:NO];
   }
+}
+
+/// A toolbar button's label and hint, by its command's id.
+RCT_EXPORT_METHOD(setToolbarLabel:(NSString *)commandId label:(NSString *)label)
+{
+  [TableToolbar.shared setLabel:label for:commandId];
+}
+
+/// Which side of the sidebar the toolbar's switch shows: tables, or files.
+RCT_EXPORT_METHOD(setFilesMode:(BOOL)files)
+{
+  [TableToolbar.shared setFilesMode:files];
+}
+
+/// The search field's text, when the app changes it.
+RCT_EXPORT_METHOD(setSearchText:(NSString *)text)
+{
+  [TableToolbar.shared setSearch:text];
+}
+
+/// Put the cursor in the toolbar's search field.
+RCT_EXPORT_METHOD(focusSearch)
+{
+  [TableToolbar.shared focusSearch];
+}
+
+/// A toolbar button pressed, by its command's id: development only, as postKey is.
+RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
+{
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
+}
+
+/// The window's title and the line under it: the view on screen, and where it lives.
+RCT_EXPORT_METHOD(setWindowTitle:(NSString *)title subtitle:(NSString *)subtitle)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  window.title = title;
+  window.subtitle = subtitle;
 }
 
 RCT_EXPORT_METHOD(setWindowWidth:(nonnull NSNumber *)width)

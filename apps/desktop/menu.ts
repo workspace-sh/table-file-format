@@ -21,6 +21,12 @@ interface TableMenuModule {
   postClick(x: number, y: number): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
+  setWindowTitle(title: string, subtitle: string): void;
+  setToolbarLabel(commandId: string, label: string): void;
+  setFilesMode(files: boolean): void;
+  setSearchText(text: string): void;
+  focusSearch(): void;
+  postCommand(commandId: string): void;
   replyToQuit(quit: boolean): void;
   setUnsaved(unsaved: boolean): void;
   pressAlertButton(title: string): Promise<boolean>;
@@ -107,6 +113,42 @@ export function menuTitles(menu: string): Promise<string[]> {
 }
 
 /** Development: resize the window to this width in points, as dragging its edge would. */
+/** A toolbar button's label and hint, by its command's id. */
+export function setToolbarLabel(commandId: string, label: string): void {
+  TableMenu?.setToolbarLabel(commandId, label);
+}
+
+/** Which side of the sidebar the toolbar's switch shows. */
+export function setToolbarFilesMode(files: boolean): void {
+  TableMenu?.setFilesMode(files);
+}
+
+/** The toolbar's search field's text, when the app changes it. */
+export function setSearchText(text: string): void {
+  TableMenu?.setSearchText(text);
+}
+
+/** Put the cursor in the toolbar's search field. */
+export function focusSearch(): void {
+  TableMenu?.focusSearch();
+}
+
+/** Call `then` with the search field's text as it's typed. Returns the unsubscribe. */
+export function onSearch(then: (text: string) => void): () => void {
+  const sub = events?.addListener("search", (e: { text: string }) => then(e.text));
+  return () => sub?.remove();
+}
+
+/** Development only: a toolbar button pressed, by its command's id. */
+export function postCommand(commandId: string): void {
+  TableMenu?.postCommand(commandId);
+}
+
+/** The window's title, and the line under it: the view on screen and where it lives. */
+export function setWindowTitle(title: string, subtitle: string): void {
+  TableMenu?.setWindowTitle(title, subtitle);
+}
+
 export function setWindowWidth(width: number): void {
   TableMenu?.setWindowWidth(width);
 }

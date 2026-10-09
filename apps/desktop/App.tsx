@@ -28,6 +28,7 @@ import {
   canInsertAt,
 } from "@workspace.sh/table-ui";
 import { GlassSurface } from "./GlassSurface";
+import { onSidebar, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -83,8 +84,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { Sidebar } from "./Sidebar";
-import { copyText, menuTitles, onMenu, onQuit, postClick, postKey, pressAlertButton, setUnsaved, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, setSearchText, setToolbarFilesMode, setToolbarLabel, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -99,8 +99,6 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
-/** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
-const NARROW_AT_MOST = 760;
 /** The content's side margin, which what scrolls sideways runs over (PageGutter). */
 const CONTENT_GUTTER = 24;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
@@ -571,22 +569,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const toggleDisplay = useCallback(() => dispatch({ type: "setDisplayFolded", folded: showDisplay }), [showDisplay]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
-  // A narrow window (the web's breakpoint) hides the sidebar on its own, as
-  // a Mac sidebar collapses, without touching that choice: widening again
-  // brings back what was chosen. ⌘B while narrow shows it anyway, until
-  // the window next narrows. The window's width, not the screen's
-  // (useWindowDimensions is the screen on macOS), from the root's layout.
+  // The sidebar is the window's own (nativeSidebar): the split view shows,
+  // hides and narrows it, and says so, which is what this choice follows.
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
-  const narrow = windowWidth !== null && windowWidth <= NARROW_AT_MOST;
-  const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
-  useEffect(() => {
-    if (narrow) setShownWhileNarrow(false);
-  }, [narrow]);
-  const sidebarShown = narrow ? shownWhileNarrow : !sidebarCollapsed;
-  const toggleSidebar = useCallback(() => {
-    if (narrow) return setShownWhileNarrow((shown) => !shown);
-    dispatch({ type: "setSidebarCollapsed", collapsed: !sidebarCollapsed });
-  }, [narrow, sidebarCollapsed]);
+  const sidebarShown = !sidebarCollapsed;
+  const toggleSidebar = toggleNativeSidebar;
   const filesMode = sidebarPrefs.files === true;
   const chooseFilesMode = useCallback((files: boolean) => dispatch({ type: "setFilesSide", files }), []);
   // Attachments of tables opened from disk, as their folders list them; fixtures' come with the app.
@@ -693,7 +680,33 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       });
     }
   }, [sidebarShown, filesMode, canGoBack, canGoForward]);
-  const commands: Record<AppCommandId, () => void> = {
+  // The Mac's own commands, beside table-app's: each is a toolbar button and a menu item.
+  const settingsOpen = state.settingsOpen;
+  useEffect(() => {
+    const own: { id: string; menu: AppCommand["menu"]; title: string; key: string; modifiers: ("command" | "shift" | "option")[] }[] = [
+      { id: "new-row", menu: "File", title: "New Row", key: "N", modifiers: ["command"] },
+      { id: "view-settings", menu: "View", title: settingsOpen ? "Hide View Settings" : "Show View Settings", key: "v", modifiers: ["command", "option"] },
+      { id: "find", menu: "Edit", title: "Find in View…", key: "f", modifiers: ["command"] },
+      { id: "display", menu: "View", title: showDisplay ? "Hide Display Options" : "Show Display Options", key: "", modifiers: [] },
+      { id: "reset-demo", menu: "File", title: "Reset Demo Data…", key: "", modifiers: [] },
+    ];
+    for (const c of own) setMenuItem({ ...c, before: MENU_BEFORE[c.menu] });
+    setToolbarLabel("new-row", "New Row");
+    setToolbarLabel("view-settings", "View Settings");
+    setToolbarLabel("export-zip", commandOf("export-zip").label);
+  }, [settingsOpen, showDisplay]);
+  useEffect(() => setToolbarFilesMode(filesMode), [filesMode]);
+  // The toolbar's search field: what's typed in it searches the view, and
+  // leaving a view (which clears the search) clears it.
+  useEffect(() => onSearch((text) => dispatch({ type: "search", text })), []);
+  const searchText = state.search;
+  useEffect(() => setSearchText(searchText), [searchText]);
+  const commands: Record<AppCommandId | "new-row" | "view-settings" | "find" | "display" | "reset-demo", () => void> = {
+    "new-row": () => void callbacks.onAddRow(),
+    "view-settings": () => dispatch({ type: "settings", open: !stateRef.current.settingsOpen }),
+    find: focusSearch,
+    display: toggleDisplay,
+    "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
     "open-zip": () => void importZip(),
@@ -710,7 +723,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
-  useEffect(() => onMenu((id) => commandsRef.current[id as AppCommandId]?.()), []);
+  useEffect(() => onMenu((id) => commandsRef.current[id as keyof typeof commands]?.()), []);
 
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without
@@ -796,6 +809,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         postKey(characters, keyCode, modifiers);
         return `posted ${modifiers.join("+")}+${characters}`;
       },
+      // A toolbar button, by its command's id, as pressing it would send it.
+      command: (id: string) => {
+        postCommand(id);
+        return `sent ${id}`;
+      },
       // A click at a point, as the mouse would make it: it lands on whatever is under it.
       click: (x: number, y: number) => {
         postClick(x, y);
@@ -819,7 +837,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         resizeWindow(width);
         return `resizing to ${width}`;
       },
-      sidebarState: () => ({ windowWidth, narrow, shownWhileNarrow, chosenCollapsed: sidebarCollapsed, shown: sidebarShown }),
+      sidebarState: () => ({ windowWidth, shown: sidebarShown }),
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
       reset: () => {
         clearSaved(store);
@@ -851,10 +869,43 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, openFolder, exportZip, importZip, attachFile, chooseFilesMode, toggleSidebar, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown]);
+  }, [store, openFolder, exportZip, importZip, attachFile, chooseFilesMode, toggleSidebar, windowWidth, sidebarShown]);
 
   // Hint wording, shared with the web and Linux (table-app's commands).
   const commandOf = (id: AppCommandId) => derived.commands.find((c) => c.id === id)!;
+  // The sidebar's lines, as table-app works them out; an opened folder under its own name.
+  const sidebarTree = useMemo(
+    () => derived.sidebarTree.map((file) => ({ ...file, file: folderName(file.bundle) ?? file.file })),
+    [derived.sidebarTree, folderPaths],
+  );
+  const filesLines = useMemo(() => flattenFilesTree(files), [files]);
+  useEffect(() => {
+    setSidebar({ tree: sidebarTree, active: activeTablePath, filesMode, files: filesLines, shownFile });
+  }, [sidebarTree, activeTablePath, filesMode, filesLines, shownFile]);
+  // What's clicked in it, each as the action its row stands for.
+  const activeRef = useRef(activeTablePath);
+  activeRef.current = activeTablePath;
+  useEffect(
+    () =>
+      onSidebar((e) => {
+        if (e.type === "selectTable") dispatch({ type: "showTable", key: e.key });
+        else if (e.type === "selectView") dispatch({ type: "showView", key: e.key, viewId: e.viewId });
+        else if (e.type === "toggleFile") dispatch({ type: "toggleFile", bundle: e.bundle });
+        else if (e.type === "newView") dispatch({ type: "addView", id: newId() });
+        else if (e.type === "newTable") dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeRef.current) } });
+        else if (e.type === "filesMode") chooseFilesMode(e.files);
+        else if (e.type === "toggleDir") dispatch({ type: "toggleDir", id: `${e.bundle}/${e.path}`, open: e.open });
+        else if (e.type === "showFile") dispatch({ type: "showFile", file: { bundle: e.bundle, path: e.path } });
+        else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
+      }),
+    [chooseFilesMode],
+  );
+  // The window is titled for the view on screen, with where it lives under it (D37).
+  const windowTitle = shown ? shown.file.name : view.name;
+  useEffect(() => {
+    setWindowTitle(windowTitle, derived.breadcrumb.text);
+  }, [windowTitle, derived.breadcrumb.text]);
+
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
 
@@ -867,53 +918,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       <PortalHost>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
-          {sidebarShown && (
-            <Sidebar
-              tree={derived.sidebarTree.map((file) => ({ ...file, file: folderName(file.bundle) ?? file.file }))}
-              onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
-              filesMode={filesMode}
-              onFilesMode={chooseFilesMode}
-              files={flattenFilesTree(files)}
-              onToggleDir={(bundle, path, open) => dispatch({ type: "toggleDir", id: `${bundle}/${path}`, open })}
-              shownFile={shownFile}
-              onShowFile={(bundle, path) => dispatch({ type: "showFile", file: { bundle, path } })}
-              onSelectTable={(key) => dispatch({ type: "showTable", key })}
-              onSelectView={(key, viewId) => dispatch({ type: "showView", key, viewId })}
-              onNewTable={() => dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeTablePath) } })}
-              onNewView={() => dispatch({ type: "addView", id: newId() })}
-              footer={[
-                // Worded as the menu bar words them (table-app's appCommands).
-                { label: commandOf("new-file").label, onPress: commands["new-file"] },
-                { label: commandOf("open-folder").label, onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
-                { label: commandOf("open-zip").label, onPress: () => void importZip() },
-                { label: "Display", onPress: toggleDisplay, active: showDisplay },
-                { label: "Reset demo data…", onPress: () => dispatch({ type: "reset", fresh }) },
-              ]}
-              footerNote="Edits are kept on this Mac."
-            />
-          )}
           <html.div style={styles.content}>
             {shown ? (
               <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
             ) : (
             <>
-            {/* Where this view is: its file and its table (D37); an opened folder by its own name. */}
-            <html.span style={styles.breadcrumb}>
-              {derived.breadcrumb.text}
-            </html.span>
-            <html.div style={styles.titleRow}>
-              <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "mac")}>
-                <html.button
-                  aria-label={sidebarShown ? "Hide the sidebar" : "Show the sidebar"}
-                  aria-expanded={sidebarShown}
-                  onClick={toggleSidebar}
-                  style={styles.sidebarTrigger}
-                >
-                  ◧
-                </html.button>
-              </Hinted>
-              <html.span dir="auto" style={styles.title}>{view.name}</html.span>
-            </html.div>
             <html.div style={styles.subtitle}>
               <html.span>{summary.count}</html.span>
               <html.span>·</html.span>
@@ -931,29 +940,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 </>
               )}
             </html.div>
-            {/* The view's own actions; the tables, views and files are in the sidebar. */}
-            <html.div style={styles.toolbar}>
-              <Tip text={TOOLBAR_HINTS.viewSettings}>
-                <html.button
-                  onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
-                  style={[styles.tab, state.settingsOpen && styles.tabActive]}
-                >
-                  View settings
-                </html.button>
-              </Tip>
-              <Tip text={hintWithShortcut(commandOf("export-zip"), "mac")}>
-                <html.button onClick={() => void exportZip()} style={styles.tab}>
-                  Export .table.zip…
-                </html.button>
-              </Tip>
-            </html.div>
-            <html.input
-              type="text"
-              placeholder="Search…"
-              value={state.search}
-              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
-              style={styles.searchInput}
-            />
             {/* Out to the content's edges, its margin inside, so what scrolls
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
