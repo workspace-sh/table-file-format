@@ -28,7 +28,7 @@ import {
   canInsertAt,
 } from "@workspace.sh/table-ui";
 import { GlassSurface } from "./GlassSurface";
-import { onSidebar, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
+import { onSidebar, pickInSidebar, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -84,7 +84,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -291,6 +291,9 @@ interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue: (fieldName: string, value: string) => void;
+  /** Remove a choice, or a field: table-app asks first when rows hold it. */
+  onRemoveEnumValue: (fieldName: string, value: string) => void;
+  onDeleteField: (fieldName: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
   onAddField: (field: Field) => void;
@@ -343,6 +346,8 @@ function renderView(
           onUpdateRow={cb.onUpdateRow}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
+          onRemoveEnumValue={cb.onRemoveEnumValue}
+          onDeleteField={cb.onDeleteField}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
@@ -815,6 +820,15 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       postKey: (characters: string, keyCode: number, modifiers: ("command" | "shift" | "option" | "control")[]) => {
         postKey(characters, keyCode, modifiers);
         return `posted ${modifiers.join("+")}+${characters}`;
+      },
+      // A sidebar row picked, or text typed in the search field, as a click or typing would send it.
+      pick: (tag: string) => {
+        pickInSidebar(tag);
+        return `picked ${tag}`;
+      },
+      typeSearch: (text: string) => {
+        postSearch(text);
+        return `searched ${text}`;
       },
       // A toolbar button, by its command's id, as pressing it would send it.
       command: (id: string) => {

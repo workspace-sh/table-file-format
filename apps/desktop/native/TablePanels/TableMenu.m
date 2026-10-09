@@ -287,6 +287,13 @@ RCT_EXPORT_METHOD(focusSearch)
   [TableToolbar.shared focusSearch];
 }
 
+/// Text typed in the toolbar's search field: development only, as postKey is.
+RCT_EXPORT_METHOD(postSearch:(NSString *)text)
+{
+  [TableToolbar.shared setSearch:text];
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopSearch" object:nil userInfo:@{ @"text" : text }];
+}
+
 /// A toolbar button pressed, by its command's id: development only, as postKey is.
 RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
 {

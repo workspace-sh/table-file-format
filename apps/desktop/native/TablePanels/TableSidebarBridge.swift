@@ -38,6 +38,18 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// Development only: pick a row as a click on it does, by its tag
+  /// (`table:<key>`, `view:<key>:<viewId>`) or a Files line's id.
+  @objc func pick(_ tag: String) {
+    DispatchQueue.main.async {
+      if tag.hasPrefix("table:") || tag.hasPrefix("view:") {
+        TableShell.sidebar.pick(tag)
+      } else {
+        TableShell.sidebar.pickFile(tag)
+      }
+    }
+  }
+
   /// Show or hide the sidebar, as View › Hide Sidebar and the toolbar's button do.
   @objc func toggle() {
     DispatchQueue.main.async {

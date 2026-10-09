@@ -29,6 +29,7 @@ interface TableMenuModule {
   setSearchText(text: string): void;
   focusSearch(): void;
   postCommand(commandId: string): void;
+  postSearch(text: string): void;
   replyToQuit(quit: boolean): void;
   setUnsaved(unsaved: boolean): void;
   pressAlertButton(title: string): Promise<boolean>;
@@ -139,6 +140,11 @@ export function focusSearch(): void {
 export function onSearch(then: (text: string) => void): () => void {
   const sub = events?.addListener("search", (e: { text: string }) => then(e.text));
   return () => sub?.remove();
+}
+
+/** Development only: text typed in the toolbar's search field. */
+export function postSearch(text: string): void {
+  TableMenu?.postSearch(text);
 }
 
 /** Development only: a toolbar button pressed, by its command's id. */

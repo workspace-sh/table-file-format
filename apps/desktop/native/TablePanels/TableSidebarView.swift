@@ -69,6 +69,28 @@ final class TableSidebarModel: ObservableObject {
     tablesLabel: "Tables", filesLabel: "Files", newViewLabel: "New View", newTableLabel: "New Table")
   /// A click, as an event for JS: its name and what it was on.
   var send: (String, [String: Any]) -> Void = { _, _ in }
+
+  /// A row picked in the Tables side, by its tag: `table:<key>` or `view:<key>:<viewId>`.
+  func pick(_ tag: String) {
+    let parts = tag.split(separator: ":", maxSplits: 2).map(String.init)
+    if parts.first == "table", parts.count == 2 {
+      send("selectTable", ["key": parts[1]])
+    } else if parts.first == "view", parts.count == 3 {
+      send("selectView", ["key": parts[1], "viewId": parts[2]])
+    }
+  }
+
+  /// A line picked in the Files side, by its id.
+  func pickFile(_ id: String) {
+    guard let row = data.files.first(where: { $0.id == id }) else { return }
+    if row.kind == "file" {
+      send("showFile", ["bundle": row.bundle, "path": row.path])
+    } else if row.kind == "dir" {
+      send("toggleDir", ["bundle": row.bundle, "path": row.path, "open": !row.open])
+    } else {
+      send("toggleFile", ["bundle": row.bundle])
+    }
+  }
 }
 
 /// The symbol for a view's layout.
@@ -119,12 +141,7 @@ struct TableSidebarView: View {
       get: { selection },
       set: { picked in
         guard let picked, picked != selection else { return }
-        let parts = picked.split(separator: ":", maxSplits: 2).map(String.init)
-        if parts.first == "table", parts.count == 2 {
-          model.send("selectTable", ["key": parts[1]])
-        } else if parts.first == "view", parts.count == 3 {
-          model.send("selectView", ["key": parts[1], "viewId": parts[2]])
-        }
+        model.pick(picked)
       }
     )) {
       ForEach(model.data.bundles) { bundle in
@@ -175,14 +192,8 @@ struct TableSidebarView: View {
     List(selection: Binding<String?>(
       get: { model.data.files.first(where: { $0.selected })?.id },
       set: { picked in
-        guard let picked, let row = model.data.files.first(where: { $0.id == picked }) else { return }
-        if row.kind == "file" {
-          model.send("showFile", ["bundle": row.bundle, "path": row.path])
-        } else if row.kind == "dir" {
-          model.send("toggleDir", ["bundle": row.bundle, "path": row.path, "open": !row.open])
-        } else {
-          model.send("toggleFile", ["bundle": row.bundle])
-        }
+        guard let picked else { return }
+        model.pickFile(picked)
       }
     )) {
       ForEach(model.data.files) { row in
