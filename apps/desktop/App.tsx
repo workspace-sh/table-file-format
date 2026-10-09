@@ -26,6 +26,7 @@ import {
   ViewSettings,
   canInsertAt,
 } from "@workspace.sh/table-ui";
+import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { onSidebar, pickInSidebar, setInspectorShown, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
@@ -101,6 +102,8 @@ const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
 );
 /** The content's side margin, which what scrolls sideways runs over (PageGutter). */
 const CONTENT_GUTTER = 24;
+/** The line under the toolbar that "how far down" is measured at, in window points. */
+const PLACE_LINE = 100;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
 const MENU_BEFORE: Record<AppCommand["menu"], string> = {
   File: "Close",
@@ -294,6 +297,10 @@ interface ViewCallbacks {
   /** Remove a choice, or a field: table-app asks first when rows hold it. */
   onRemoveEnumValue: (fieldName: string, value: string) => void;
   onDeleteField: (fieldName: string) => void;
+  /** Where you are in the table, for history (the cell selected), and putting it back. */
+  onPlace?: (place: { rowId?: string; field?: string }) => void;
+  restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
+  onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
   onAddField: (field: Field) => void;
@@ -348,6 +355,9 @@ function renderView(
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
+          onPlace={cb.onPlace}
+          restorePlace={cb.restorePlace}
+          onPlaceMeasure={cb.onPlaceMeasure}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
@@ -671,6 +681,56 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   );
   // The view on screen's callbacks, each an action (table-app's viewCallbacks).
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, activeTablePath]);
+
+  // How far down the view is, kept for history as the row at a line under
+  // the toolbar and how far into it (rows measured, not pixels, so it
+  // survives rows drawn a window at a time), and put back on Back or Forward.
+  const scroller = useRef<ScrollView>(null);
+  const scrollY = useRef(0);
+  // Where the scroll rests at its top: the system insets it under the
+  // toolbar, so that is above zero by the toolbar's height.
+  const restY = useRef(0);
+  const measure = useRef<PlaceMeasure | null>(null);
+  const onPlaceMeasure = useCallback((m: PlaceMeasure | null) => {
+    measure.current = m;
+  }, []);
+  const placeRest = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A Mac's scroll has no "came to rest" of its own: a pause in it is one.
+  const onScrolled = (y: number) => {
+    scrollY.current = y;
+    if (y < restY.current) restY.current = y;
+    if (placeRest.current) clearTimeout(placeRest.current);
+    placeRest.current = setTimeout(() => {
+      void measure.current?.rowAt(PLACE_LINE).then((top) => {
+        if (top) dispatch({ type: "place", place: { top } });
+      });
+    }, 150);
+  };
+  useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  const restoringN = state.restoring?.n;
+  useEffect(() => {
+    const top = state.restoring?.place.top;
+    if (restoringN === undefined) return;
+    // After the view has drawn the rows it was left at.
+    const t = setTimeout(() => {
+      if (!top) {
+        scroller.current?.scrollTo({ y: restY.current, animated: false });
+        return;
+      }
+      // Twice: rows drawn on the first move can shift the rest; the second puts them right.
+      const settle = (left: number) =>
+        void measure.current?.topOf(top.rowId).then((at) => {
+          if (at === null) return;
+          const off = at + top.offset - PLACE_LINE;
+          if (Math.abs(off) < 2) return;
+          scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + off), animated: false });
+          if (left > 0) setTimeout(() => settle(left - 1), 120);
+        });
+      settle(1);
+    }, 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoringN]);
 
   // What's selected goes to the inspector, the window's trailing pane
   // (Inspector.tsx): a cell says what it is there, and a formula is written
@@ -1024,6 +1084,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
             <ScrollView
+              ref={scroller}
+              onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
+              scrollEventThrottle={16}
               style={{ flex: 1, marginHorizontal: -CONTENT_GUTTER }}
               contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
               showsVerticalScrollIndicator
@@ -1064,6 +1127,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               <CellEditorContext.Provider value={glass.editor}>
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
                 ...callbacks,
+                onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                onPlaceMeasure,
                 relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
                 allRows: table.rows,
                 tableKey: tableNameOf(activeTablePath),
