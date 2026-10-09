@@ -309,12 +309,26 @@ function TablePane({
           >
             <GtkProgressBar halign={Gtk.Align.CENTER} widthRequest={320} fraction={building.total > 0 ? building.done / building.total : 0} />
           </AdwStatusPage>
-        ) : table.indexed && view.layout !== "table" ? (
-          <AdwStatusPage
-            vexpand
-            title="Not Shown for a Table This Large"
-            description="Only the Table layout reads a table of this size. Change this view's layout in View Settings."
-          />
+        ) : table.indexed && view.layout !== "table" && source ? (
+          // The other layouts draw every row they're given, so they get a large
+          // table's rows only when its view has narrowed them to few enough.
+          <FewRows source={source}>
+            {(rows) => (
+              <LayoutView
+                key={view.id}
+                layout={view.layout}
+                view={shown.view}
+                rows={rows}
+                schema={table.schema}
+                bodies={table.bodies}
+                relatedTables={related}
+                tableKey={tableNameOf(tableKey)}
+                {...callbacks}
+                onRemoveEnumValue={undefined}
+                onInsertRow={undefined}
+              />
+            )}
+          </FewRows>
         ) : table.indexed && !source ? (
           <GtkBox vexpand />
         ) : (
@@ -333,14 +347,8 @@ function TablePane({
             {...(table.indexed
               ? {
                   source,
-                  // Its fields stay as they are for now: a change to them means making the index again.
-                  onUpdateField: undefined,
-                  onAddEnumValue: undefined,
+                  // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
                   onRemoveEnumValue: undefined,
-                  onDeleteField: undefined,
-                  onMoveField: undefined,
-                  onRestoreSchema: undefined,
-                  onAddField: undefined,
                   onInsertRow: undefined,
                 }
               : {})}
@@ -364,6 +372,40 @@ function TablePane({
       ) : null}
     </AdwToolbarView>
   );
+}
+
+/** The most rows of a table held in the index that an archive is made of: it is put together in memory. */
+const ARCHIVE_ROWS = 250_000;
+
+/** The most rows a layout that draws every row it's given is handed, of a table held in the index. */
+const LAYOUT_ROWS = 5000;
+
+/**
+ * A view's rows out of the index, all of them, for a layout that isn't the
+ * table's: when there are few enough. Otherwise it says how to get there.
+ */
+function FewRows({ source, children }: { source: ViewRows; children: (rows: Row[]) => ReactNode }) {
+  const [read, setRead] = useState<{ version: string; rows: Row[] } | null>(null);
+  const few = source.count <= LAYOUT_ROWS;
+  useEffect(() => {
+    if (!few) return;
+    let current = true;
+    void Promise.resolve(source.rows(0, source.count)).then((rows) => current && setRead({ version: source.version, rows }));
+    return () => {
+      current = false;
+    };
+  }, [source, few]);
+  if (!few) {
+    return (
+      <AdwStatusPage
+        vexpand
+        title="Too Many Rows for This Layout"
+        description={`This view shows ${source.count.toLocaleString()} rows. Layouts other than Table show up to ${LAYOUT_ROWS.toLocaleString()}: add a filter in View Settings, search, or change the layout to Table.`}
+      />
+    );
+  }
+  // The last rows read stay until the next arrive, so an edit doesn't blank the view.
+  return read ? <>{children(read.rows)}</> : <GtkBox vexpand />;
 }
 
 /** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
@@ -638,12 +680,20 @@ export function App({
   // The open table's .table, every table in it, as one .table.zip.
   const exportZip = async () => {
     const key = bundleOf(state.active);
-    // A table held in the index has no rows here to put in the archive.
-    if (Object.entries(tables).some(([k, t]) => bundleOf(k) === key && t.indexed)) return tell("Not exported", "A file with a table this large can't be exported as a .table.zip yet.");
     const path = await chooseZipSaveAs(archiveFileName(key));
     if (!path) return;
     try {
-      writeFileSync(path, await bundleToArchive(key, toBundle(tables, bundles, key)));
+      // A table held in the index has its rows read out of it for the archive, which is made in memory.
+      const whole = { ...tables };
+      for (const [k, t] of Object.entries(tables)) {
+        if (bundleOf(k) !== key || !t.indexed) continue;
+        if (t.indexed.count > ARCHIVE_ROWS) {
+          return tell("Not exported", `${tableNameOf(k)} has ${t.indexed.count.toLocaleString()} rows. A .table.zip can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now; the .table folder itself can be copied as it is.`);
+        }
+        const { indexed: _held, ...rest } = t;
+        whole[k] = { ...rest, rows: await indexed.everyRow(k) };
+      }
+      writeFileSync(path, await bundleToArchive(key, toBundle(whole, bundles, key)));
     } catch (error) {
       tell(exportFailedText(basename(path), error));
     }

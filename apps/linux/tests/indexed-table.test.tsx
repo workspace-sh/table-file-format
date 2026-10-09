@@ -1,5 +1,7 @@
+import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
+import { openArchive } from "@workspace.sh/table-app";
 import { loadLibrary, openIndexHost, type IndexHost } from "@workspace.sh/table-app/node";
 import { parseRowsText } from "@workspace.sh/table-core";
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -136,6 +138,60 @@ describe("a table held in the index on Linux", () => {
     await host.ensure("tasks", join(bundle, "tables", "tasks"), () => (built = true));
     await host.close();
     expect(built).toBe(false);
+  });
+
+  it("a field can be added: the index is made again, and the rows are all still there", async () => {
+    await openTasks();
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
+    let name: Adw.EntryRow | undefined;
+    await waitFor(async () => {
+      const rows = (await screen.findAllByRole(Gtk.AccessibleRole.LIST_ITEM)).filter((w) => w instanceof Adw.EntryRow) as Adw.EntryRow[];
+      name = rows.find((r) => r.getTitle() === "Name");
+      expect(name).toBeDefined();
+    });
+    await userEvent.type(name!, "Due soon");
+    await userEvent.click((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" })).at(-1)!);
+    await screen.findAllByText("Due soon");
+    const schemaOnDisk = () => JSON.parse(readFileSync(join(bundle, "tables", "tasks", "schema.json"), "utf8")) as { fields: { name: string }[] };
+    await waitFor(() => expect(schemaOnDisk().fields.at(-1)?.name).toBe("due_soon"), { timeout: 5000 });
+    // Made again for the new field, and answering: an edit to it is saved.
+    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
+    const host = openIndexHost(bundle);
+    const { queryIndex } = await import("@workspace.sh/table-core");
+    await waitFor(async () => expect((await queryIndex(host, { name: "tasks", schema: schemaOnDisk() as never }))?.count).toBe(ROWS + 8), { timeout: 5000 });
+    await host.close();
+    expect(rowsOnDisk()).toHaveLength(ROWS + 8);
+  });
+
+  it("a layout that isn't the table's says so until a search narrows the rows, then shows them", async () => {
+    // Past what such a layout is given at once.
+    let more = "";
+    for (let i = ROWS; i < ROWS + 3000; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, status: "todo", priority: 9 })}\n`;
+    appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), more);
+    const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
+    // v2 is the board by status.
+    await render(<App library={library} initialTable="projects/tasks" initialView="v2" indexedFrom={1000} />);
+    await screen.findAllByText("Too Many Rows for This Layout");
+    await screen.findAllByText(/This view shows 6,008 rows\./);
+    const search = (await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry;
+    await userEvent.type(search, "Big 299");
+    await screen.findAllByText("Big 2999");
+    expect(screen.queryAllByText("Too Many Rows for This Layout")).toHaveLength(0);
+    expect(screen.queryAllByText(/^Big 299\d?$/)).toHaveLength(11);
+  });
+
+  it("exports as a .table.zip with every row", async () => {
+    const out = join(dir, "out.table.zip");
+    const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} chooseZipSaveAs={async () => out} />);
+    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    const button = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" });
+    (button.getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.export-zip", null);
+    await waitFor(() => expect(existsSync(out)).toBe(true));
+    const opened = await openArchive(new Uint8Array(readFileSync(out)), []);
+    expect(opened.bundle.tables.tasks!.rows).toEqual(rowsOnDisk());
+    expect(opened.bundle.tables.tasks!.indexed).toBeUndefined();
   });
 
   it("a search is answered by the index", async () => {

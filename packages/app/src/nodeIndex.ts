@@ -22,12 +22,15 @@ export interface IndexHost extends SqlDriver {
    * `onProgress` hears how many rows are in, of how many, while it builds.
    */
   ensure(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields. */
+  build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the table's rows out of the index to its
-   * `rows.ndjson` (when `rows` is true), and say the index is fresh for
-   * the files as they now are.
+   * `rows.ndjson` (when `rows` is true), without the keys in `omit`
+   * (fields the table no longer has), and say the index is fresh for the
+   * files as they now are.
    */
-  save(name: string, tableDir: string, rows: boolean): Promise<void>;
+  save(name: string, tableDir: string, rows: boolean, omit?: string[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -141,12 +144,12 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
 }
 
 /** Write table `name`'s rows out of the index to `tableDir`'s `rows.ndjson`, replacing it in one rename. */
-export async function saveTableRows(db: SqlDriver, name: string, tableDir: string): Promise<void> {
+export async function saveTableRows(db: SqlDriver, name: string, tableDir: string, omit: string[] = []): Promise<void> {
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
   const target = join(tableDir, "rows.ndjson");
   const out = createWriteStream(`${target}.tmp`);
   try {
-    for await (const text of storedRows(db, { name, schema })) {
+    for await (const text of storedRows(db, { name, schema, omit })) {
       if (!out.write(text)) await once(out, "drain");
     }
     out.end();
@@ -207,8 +210,13 @@ export function openIndexHost(bundleDir: string): IndexHost {
       await db.exec("pragma wal_checkpoint(truncate)");
       return count;
     },
-    async save(name, tableDir, rows) {
-      if (rows) await saveTableRows(db, name, tableDir);
+    async build(name, tableDir, onProgress) {
+      const count = await buildTableIndex(db, name, tableDir, onProgress);
+      await db.exec("pragma wal_checkpoint(truncate)");
+      return count;
+    },
+    async save(name, tableDir, rows, omit) {
+      if (rows) await saveTableRows(db, name, tableDir, omit);
       await setIndexKey(db, name, await tableContentKey(tableDir));
     },
     async close() {

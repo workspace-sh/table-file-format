@@ -13,7 +13,8 @@ export type IndexRequest = { id: number } & (
   | { op: "all"; sql: string; params: SqlValue[] }
   | { op: "batch"; sql: string; params: SqlValue[][] }
   | { op: "ensure"; name: string; tableDir: string }
-  | { op: "save"; name: string; tableDir: string; rows: boolean }
+  | { op: "build"; name: string; tableDir: string }
+  | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[] }
   | { op: "close" }
 );
 
@@ -37,8 +38,10 @@ async function answer(request: IndexRequest): Promise<unknown> {
       return host.batch!(request.sql, request.params);
     case "ensure":
       return host.ensure(request.name, request.tableDir, (done, total) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse));
+    case "build":
+      return host.build(request.name, request.tableDir, (done, total) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse));
     case "save":
-      return host.save(request.name, request.tableDir, request.rows);
+      return host.save(request.name, request.tableDir, request.rows, request.omit);
     case "close":
       return host.close();
   }

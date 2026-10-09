@@ -911,11 +911,14 @@ export async function setIndexKey(db: SqlDriver, name: string, key: string): Pro
  * piece at a time: saving a large table never holds all of it. Computed
  * fields are left out, as serializeRows leaves them.
  */
-export async function* storedRows(db: SqlDriver, options: { name: string; schema: TableSchema; batchSize?: number }): AsyncIterable<string> {
+export async function* storedRows(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; batchSize?: number; /** Keys left out of every row: fields the table no longer has. */ omit?: string[] },
+): AsyncIterable<string> {
   const n = await tableNumber(db, options.name, false);
   if (n === null) throw new Error(`no index for ${options.name}`);
   const size = options.batchSize ?? BATCH;
-  const computed = options.schema.fields.filter((f) => f.computed).map((f) => f.name);
+  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? [])];
   let after = -1;
   for (;;) {
     const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
