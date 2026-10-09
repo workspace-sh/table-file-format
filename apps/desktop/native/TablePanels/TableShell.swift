@@ -10,7 +10,6 @@ import SwiftUI
 public class TableShell: NSObject {
   static let sidebar = TableSidebarModel()
   static weak var split: NSSplitViewController?
-  static weak var blur: ToolbarBlurView?
   /// The React Native view, for the development hooks that click in it.
   @objc public static weak var rootView: NSView?
 
@@ -27,9 +26,11 @@ public class TableShell: NSObject {
 
     // The content runs the pane's full height, under the toolbar, so the
     // toolbar floats over it as the system draws one; what's in it keeps
-    // its own top clear by the toolbar's height (TableMenu.topInset).
+    // its own top clear by the toolbar's height (TableMenu.topInset). The
+    // pane paints the content's background and the React view paints none,
+    // so the toolbar and the content under it are one surface.
     let detail = NSViewController()
-    let holder = NSView()
+    let holder = ContentBackgroundView()
     rootView.translatesAutoresizingMaskIntoConstraints = false
     holder.addSubview(rootView)
     NSLayoutConstraint.activate([
@@ -38,19 +39,19 @@ public class TableShell: NSObject {
       rootView.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
       rootView.bottomAnchor.constraint(equalTo: holder.bottomAnchor),
     ])
-    // Where content has scrolled up behind the toolbar's buttons it is
-    // blurred, fading out below them, so they stay legible without the
-    // toolbar having a backing or an edge of its own (setContentUnderToolbar).
-    let blur = ToolbarBlurView()
-    blur.alphaValue = 0
-    self.blur = blur
-    blur.translatesAutoresizingMaskIntoConstraints = false
-    holder.addSubview(blur, positioned: .above, relativeTo: rootView)
+    // Behind the toolbar, content that has scrolled up is softened: a light
+    // blur and a fade toward the content's own colour, strongest at the top
+    // and gone just below the toolbar, so its title and buttons stay
+    // legible and what's beneath still shows through. At rest the fade is
+    // the colour already there, so nothing shows.
+    let edge = ToolbarEdgeView()
+    edge.translatesAutoresizingMaskIntoConstraints = false
+    holder.addSubview(edge, positioned: .above, relativeTo: rootView)
     NSLayoutConstraint.activate([
-      blur.topAnchor.constraint(equalTo: holder.topAnchor),
-      blur.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
-      blur.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
-      blur.bottomAnchor.constraint(equalTo: holder.safeAreaLayoutGuide.topAnchor, constant: ToolbarBlurView.fade),
+      edge.topAnchor.constraint(equalTo: holder.topAnchor),
+      edge.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+      edge.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+      edge.bottomAnchor.constraint(equalTo: holder.safeAreaLayoutGuide.topAnchor, constant: ToolbarEdgeView.reach),
     ])
     detail.view = holder
     let detailItem = NSSplitViewItem(viewController: detail)
@@ -62,49 +63,88 @@ public class TableShell: NSObject {
     return split
   }
 
-  /// Whether content has scrolled up behind the toolbar: the blur is there
-  /// only then, so at rest nothing sits between the toolbar and the content.
-  @objc public static func setContentUnderToolbar(_ under: Bool) {
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = 0.18
-      blur?.animator().alphaValue = under ? 1 : 0
-    }
-  }
-
   /// Whether the sidebar is showing, for the View menu's Hide/Show Sidebar.
   @objc public static var sidebarShown: Bool {
     !(split?.splitViewItems.first?.isCollapsed ?? false)
   }
 }
 
-/// A blur of what's behind it in the window, full strength behind the
-/// toolbar and fading to nothing just below it. It takes no clicks.
-final class ToolbarBlurView: NSVisualEffectView {
-  /// How far below the toolbar the blur takes to fade out.
-  static let fade: CGFloat = 18
+/// The soft edge under the toolbar: what's behind it blurred a little and
+/// faded toward the content's colour, both easing out downward. It takes
+/// no clicks.
+final class ToolbarEdgeView: NSView {
+  /// How far below the toolbar the softening reaches before it's gone.
+  static let reach: CGFloat = 22
+  private let scrim = CAGradientLayer()
+  private let fade = CAGradientLayer()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
-    material = .headerView
-    blendingMode = .withinWindow
-    state = .active
+    wantsLayer = true
+    layerUsesCoreImageFilters = true
+    if let blur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 7]) {
+      backgroundFilters = [blur]
+    }
+    layer?.addSublayer(scrim)
+    // Both ease out toward the bottom edge: full at the top, none at the foot.
+    fade.colors = [NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor]
+    fade.locations = [0, 0.45, 1]
+    layer?.mask = fade
   }
 
   required init?(coder: NSCoder) { fatalError("not from a nib") }
 
+  override var isFlipped: Bool { true }
+
   override func layout() {
     super.layout()
-    let height = max(bounds.height, 1)
-    let solid = max(height - ToolbarBlurView.fade, 0) / height
-    // The mask's alpha: opaque down to the toolbar's foot, then fading.
-    let mask = NSImage(size: NSSize(width: 1, height: height), flipped: false) { rect in
-      NSGradient(colorsAndLocations: (NSColor.clear, 0), (NSColor.black, 1 - solid), (NSColor.black, 1))?
-        .draw(in: rect, angle: 90)
-      return true
+    scrim.frame = bounds
+    fade.frame = bounds
+    recolour()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    recolour()
+  }
+
+  private func recolour() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let fill = ContentBackgroundView.fill
+      scrim.colors = [fill.withAlphaComponent(0.82).cgColor, fill.withAlphaComponent(0.55).cgColor, fill.withAlphaComponent(0).cgColor]
+      scrim.locations = [0, 0.6, 1]
     }
-    mask.resizingMode = .stretch
-    maskImage = mask
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// The content's background: white, or near black in the dark appearance,
+/// as table-ui's views are drawn on.
+final class ContentBackgroundView: NSView {
+  static let fill = NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      ? NSColor(srgbRed: 0x0e / 255, green: 0x0e / 255, blue: 0x10 / 255, alpha: 1)
+      : .white
+  }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+  }
+
+  required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+  override var wantsUpdateLayer: Bool { true }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    needsDisplay = true
+  }
+
+  override func updateLayer() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer?.backgroundColor = ContentBackgroundView.fill.cgColor
+    }
+  }
 }

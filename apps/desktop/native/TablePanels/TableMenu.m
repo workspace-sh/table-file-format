@@ -293,10 +293,29 @@ RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
   [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
 }
 
-/// Content has scrolled up behind the toolbar, or is back clear of it.
-RCT_EXPORT_METHOD(setContentUnderToolbar:(BOOL)under)
+static void adoptScrollViews(NSView *view, NSView *root, NSMutableArray<NSString *> *found)
 {
-  [TableShell setContentUnderToolbar:under];
+  if ([view isKindOfClass:NSScrollView.class]) {
+    NSScrollView *scroll = (NSScrollView *)view;
+    NSRect inRoot = [scroll convertRect:scroll.bounds toView:root];
+    // The one that starts at the pane's top and fills it: the view's own scroll, not a table's sideways one.
+    if (NSMinY(inRoot) <= 1 && NSHeight(inRoot) > NSHeight(root.bounds) * 0.6) {
+      scroll.automaticallyAdjustsContentInsets = YES;
+      [found addObject:[NSString stringWithFormat:@"%@ %@ insets top %.0f", scroll.class, NSStringFromRect(inRoot), scroll.contentInsets.top]];
+    }
+  }
+  for (NSView *sub in view.subviews) adoptScrollViews(sub, root, found);
+}
+
+/// Let the system inset the view's scroll under the toolbar itself, which is
+/// what it softens content behind a toolbar for: React Native's scroll view
+/// turns that off. Resolves with what it found, for a script to read.
+RCT_EXPORT_METHOD(adoptToolbarInsets:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSMutableArray<NSString *> *found = [NSMutableArray new];
+  NSView *root = TableShell.rootView;
+  if (root != nil) adoptScrollViews(root, root, found);
+  resolve(found);
 }
 
 /// How far the toolbar comes down over the content, in points: what's under it starts this far down.
