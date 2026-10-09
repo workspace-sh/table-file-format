@@ -942,9 +942,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               showsVerticalScrollIndicator
               // The system keeps this scroll's top clear of the toolbar once
               // it's told this is the pane's own scroll (React Native turns
-              // that off). It is also meant to soften what scrolls up behind
-              // the toolbar. TODO(toolbar blur): that part is NOT DONE; see
-              // native/TablePanels/TableShell.swift, at the pane.
+              // that off). It is also what the system's scroll-edge effect
+              // behind the toolbar needs. TODO(#383): the soft style; see
+              // native/TablePanels/TableShell.swift.
               onLayout={() => void adoptToolbarInsets()}
             >
               <html.div style={styles.subtitle}>
