@@ -119,3 +119,21 @@ test("saving writes the rows in file order and leaves the index fresh", async ()
     s.done();
   }
 });
+
+test("a save can leave out a field the table no longer has, and a build makes the index again", async () => {
+  const s = scratch();
+  try {
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    await host.save("tasks", s.tasks, true, ["assignee"]);
+    const after = rowsOnDisk(s.tasks);
+    assert.equal(after.length, 8);
+    assert.ok(after.every((r) => !("assignee" in r) && typeof r.title === "string"));
+    let progressed = false;
+    assert.equal(await host.build("tasks", s.tasks, () => (progressed = true)), 8);
+    assert.equal(progressed, true);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});

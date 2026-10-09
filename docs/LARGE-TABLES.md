@@ -233,7 +233,11 @@ A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held i
 
 Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
 
-Not there yet for an indexed table: changing its fields, layouts other than Table (they say so), exporting a `.table.zip` (refused with a notice), and checking its rows against the schema (the summary says "not checked"). No timings from the app itself yet; the index's own are above.
+- **Its fields.** A field's title, choices and place change in place. A field added or removed, or a formula changed, makes the index again from the saved rows (a removed field's values leave `rows.ndjson` first); the first rows show meanwhile, and edits made then wait for it.
+- **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
+- **Export.** A `.table.zip` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
+
+Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an archive of more than 250,000 rows. No timings from the app itself yet; the index's own are above.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 

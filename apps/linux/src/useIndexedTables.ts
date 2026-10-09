@@ -5,11 +5,15 @@
 // are made in it; and a save writes its rows back to rows.ndjson.
 
 import { bundleOf, indexedViewRows, makeIndexEdits, tableNameOf, type AppAction, type AppState, type IndexWork } from "@workspace.sh/table-app";
+import { queryIndex } from "@workspace.sh/table-core";
 import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
-import type { ParsedTable, Row, View, ViewRows } from "@workspace.sh/table-core";
+import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+/** What of a schema an index is made for: its fields' names and types, and their formulas, whose results it holds. */
+const indexedFor = (schema: TableSchema) => JSON.stringify(schema.fields.map((f) => [f.name, f.type, f.computed ?? null]));
 
 /** Rows shown from the head of the file while a table's index is made. */
 const FIRST_ROWS = 200;
@@ -23,6 +27,8 @@ export interface IndexedTables {
   source: ViewRows | undefined;
   /** After a bundle's other files are written: its indexed tables' rows, and their indexes said fresh. */
   save(bundles: string[], tables: Record<string, ParsedTable>): Promise<void>;
+  /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
+  everyRow(key: string): Promise<Row[]>;
 }
 
 export function useIndexedTables(input: {
@@ -41,6 +47,8 @@ export function useIndexedTables(input: {
   const [made, setMade] = useState<Record<string, "building" | "ready">>({});
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
   const asked = useRef(new Set<string>());
+  // The schema each table's index was made for.
+  const madeFor = useRef(new Map<string, TableSchema>());
   const [first, setFirst] = useState<Record<string, Row[]>>({});
   // Tables whose rows changed in the index since they were last written.
   const unsaved = useRef(new Set<string>());
@@ -71,10 +79,12 @@ export function useIndexedTables(input: {
         (rows) => setFirst((was) => ({ ...was, [key]: rows })),
         () => {},
       );
+      const schema = table.schema;
       host
         .ensure(tableNameOf(key), dirOf(key), (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } })))
         .then(
           (count) => {
+            madeFor.current.set(key, schema);
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
             setFirst(({ [key]: _shown, ...rest }) => rest);
@@ -98,8 +108,15 @@ export function useIndexedTables(input: {
   const ready = !!active?.indexed && made[state.active] === "ready";
   const [source, setSource] = useState<{ key: string; rows: ViewRows } | undefined>(undefined);
   const asking = `${state.active}\u0000${active?.indexed?.version ?? ""}\u0000${JSON.stringify([view.filter, view.sort, view.order, view.group, view.totals])}\u0000${state.search}`;
+  // Whether a table's index holds what its schema now says: not from a change to its fields until it's made again.
+  const fits = (key: string, table: ParsedTable) => {
+    const was = madeFor.current.get(key);
+    return !!was && indexedFor(was) === indexedFor(table.schema);
+  };
   useEffect(() => {
     if (!ready || !active) return;
+    // Its fields just changed: the rows on screen stay until the index is made again.
+    if (!fits(state.active, active)) return;
     const host = hostOf(bundleOf(state.active));
     if (!host) return;
     let current = true;
@@ -123,7 +140,7 @@ export function useIndexedTables(input: {
     const work: IndexWork[] = state.indexWork.filter((w) => w.key === first.key);
     const table = state.tables[first.key];
     const host = hostOf(bundleOf(first.key));
-    if (!table || !host) return;
+    if (!table || !host || !fits(first.key, table)) return;
     busy.current = true;
     makeIndexEdits(host, tableNameOf(first.key), table, work)
       .then(
@@ -155,21 +172,56 @@ export function useIndexedTables(input: {
         if (!table.indexed || !bundles.includes(bundleOf(key))) continue;
         const host = hosts.current.get(bundleOf(key));
         if (!host) continue;
-        const rows = unsaved.current.has(key);
+        // Its fields changed: rows lose the fields that went, and the index
+        // is made again when what it holds no longer fits (indexedFor).
+        const was = madeFor.current.get(key);
+        const gone = was ? was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name) : [];
+        const rows = unsaved.current.has(key) || gone.length > 0;
         unsaved.current.delete(key);
         try {
-          await host.save(tableNameOf(key), dirOf(key), rows);
+          await host.save(tableNameOf(key), dirOf(key), rows, gone);
         } catch (error) {
           if (rows) unsaved.current.add(key);
           throw error;
         }
+        if (!was || indexedFor(was) === indexedFor(table.schema)) {
+          madeFor.current.set(key, table.schema);
+          continue;
+        }
+        // Not awaited: the save is done, and the table shows its first rows while this runs.
+        setMade((m) => ({ ...m, [key]: "building" }));
+        setProgress(({ [key]: _old, ...rest }) => rest);
+        void firstRows(dirOf(key), FIRST_ROWS).then((first) => setFirst((f) => ({ ...f, [key]: first })), () => {});
+        const schema = table.schema;
+        void host
+          .build(tableNameOf(key), dirOf(key), (done, total) => setProgress((p) => ({ ...p, [key]: { done, total } })))
+          .then(
+            (count) => {
+              madeFor.current.set(key, schema);
+              latest.current.dispatch({ type: "indexed", key, count });
+              setMade((m) => ({ ...m, [key]: "ready" }));
+              setFirst(({ [key]: _shown, ...rest }) => rest);
+            },
+            (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
+          );
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
+  const tables = useRef(state.tables);
+  tables.current = state.tables;
+  const everyRow = useCallback(async (key: string): Promise<Row[]> => {
+    const host = hosts.current.get(bundleOf(key));
+    const table = tables.current[key];
+    const all = host && table ? await queryIndex(host, { name: tableNameOf(key), schema: table.schema }) : null;
+    if (!all) throw new Error(`${tableNameOf(key)} isn't ready to read`);
+    return all.rows(0, all.count);
+  }, []);
+
   return {
+    everyRow,
     building: active?.indexed && !ready ? (progress[state.active] ?? { done: 0, total: 0 }) : null,
     firstRows: active?.indexed && !ready ? first[state.active] : undefined,
     source: ready && source?.key === state.active ? source.rows : undefined,
