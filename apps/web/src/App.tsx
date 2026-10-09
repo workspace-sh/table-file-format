@@ -466,7 +466,10 @@ export function App() {
       const read = await openArchiveInWorker(bytes, Object.keys(bundles));
       if (read.index) {
         indexed.hold(read.opened.key, read.index, Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])));
-        if (!read.persistent) tell("Kept only while this page is open", "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded.");
+        // Asked after, not before the rows show: the database opens behind them.
+        void read.index.persistent().then(
+          (kept) => kept || tell("Kept only while this page is open", "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded."),
+        );
       }
       return read.opened;
     },

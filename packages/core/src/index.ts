@@ -18,6 +18,7 @@ export { formatValue, stringFormatKind, tryIntl, type DisplayOptions } from "./f
 export { textDirection, type TextDirection } from "./direction.js";
 export { compareText, type TextOrder } from "./collate.js";
 export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile, type ReadArchiveOptions } from "./archive.js";
+export type { LazyZipEntry } from "./zip.js";
 export {
   buildIndex,
   queryIndex,
