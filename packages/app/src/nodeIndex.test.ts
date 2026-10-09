@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { applyView, parseRowsText } from "@workspace.sh/table-core";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
-import { addIndexedRow, canBeIndexed, indexedViewRows, removeIndexedRow, setIndexedCell } from "./indexed.ts";
+import { addIndexedRow, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, indexedViewRows, linesInBytes, removeIndexedRow, setIndexedCell } from "./indexed.ts";
+import { bundleToArchive, openArchive } from "./tableFiles.ts";
+import { queryIndex } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -132,6 +134,41 @@ test("a save can leave out a field the table no longer has, and a build makes th
     let progressed = false;
     assert.equal(await host.build("tasks", s.tasks, () => (progressed = true)), 8);
     assert.equal(progressed, true);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("an archive's large table is handed over as bytes, unparsed, and indexed from them", async () => {
+  const s = scratch();
+  try {
+    const whole = await readBundle(nodeFs, s.bundle);
+    const zip = await bundleToArchive("projects", whole);
+    const taken: Record<string, Uint8Array> = {};
+    const opened = await openArchive(zip, [], {
+      rowsElsewhere: (name, _table, rows) => {
+        if (name !== "tasks") return false;
+        taken[name] = rows;
+        return true;
+      },
+    });
+    assert.deepEqual(opened.bundle.tables.tasks!.rows, []);
+    assert.ok(opened.bundle.tables.tasks!.indexed);
+    assert.equal(opened.bundle.tables.projects!.rows.length, whole.tables.projects!.rows.length);
+    const bytes = taken.tasks!;
+    assert.equal(linesInBytes(bytes), 8);
+    assert.deepEqual(firstRowsInBytes(bytes, 3), whole.tables.tasks!.rows.slice(0, 3));
+    // Lines that aren't rows are skipped, as the reader skips them.
+    const messy = new TextEncoder().encode('{"id":"a","title":"ünï"}\n\nnot json\n{"title":"no id"}\r\n{"id":"b"}');
+    assert.deepEqual(firstRowsInBytes(messy, 10), [{ id: "a", title: "ünï" }, { id: "b" }]);
+
+    const host = openIndexHost(s.bundle);
+    const progress: [number, number][] = [];
+    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: whole.tables.tasks!.schema, rows: bytes, key: "k", onProgress: (d, t) => progress.push([d, t]) }), 8);
+    assert.deepEqual(progress.at(-1), [8, 8]);
+    const all = await queryIndex(host, { name: "tasks", schema: whole.tables.tasks!.schema });
+    assert.deepEqual(await all!.rows(0, 8), JSON.parse(JSON.stringify(whole.tables.tasks!.rows)));
     await host.close();
   } finally {
     s.done();

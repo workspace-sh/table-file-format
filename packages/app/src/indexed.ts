@@ -4,6 +4,7 @@
 
 import {
   applyView,
+  buildIndex,
   memoryViewRows,
   putRows,
   queryIndex,
@@ -12,7 +13,9 @@ import {
   searchRows,
   type IndexQuery,
   type ParsedTable,
+  type Row,
   type SqlDriver,
+  type TableSchema,
   type View,
   type ViewRows,
 } from "@workspace.sh/table-core";
@@ -126,4 +129,82 @@ export async function makeIndexEdits(db: SqlDriver, name: string, table: ParsedT
   const all = await queryIndex(db, { name, schema: table.schema });
   if (!all) throw new Error(`no index for ${name}`);
   return all.count;
+}
+
+// -- A table's rows as the bytes of its rows.ndjson: what an archive holds, and a browser's file storage ----
+
+const NEWLINE = 10;
+
+/**
+ * The rows in `bytes`, a `rows.ndjson`, one at a time, never as one string:
+ * a line that doesn't parse, or has no id, is skipped as the reader skips
+ * it (SPEC section 3).
+ */
+export function* rowsInBytes(bytes: Uint8Array): Iterable<Row> {
+  const decoder = new TextDecoder();
+  let start = 0;
+  while (start < bytes.length) {
+    let end = bytes.indexOf(NEWLINE, start);
+    if (end < 0) end = bytes.length;
+    if (end > start) {
+      const line = decoder.decode(bytes.subarray(start, end));
+      if (line.trim().length > 0) {
+        try {
+          const row: unknown = JSON.parse(line);
+          if (row !== null && typeof row === "object" && typeof (row as Row).id === "string") yield row as Row;
+        } catch {
+          // Skipped.
+        }
+      }
+    }
+    start = end + 1;
+  }
+}
+
+/** How many lines of `bytes` hold something: its rows, near enough to say how far a build has got. */
+export function linesInBytes(bytes: Uint8Array): number {
+  let count = 0;
+  let blank = true;
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i]!;
+    if (byte === NEWLINE) {
+      if (!blank) count++;
+      blank = true;
+    } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
+  }
+  return blank ? count : count + 1;
+}
+
+/** The first `count` rows in `bytes`: what shows while the rest are read. */
+export function firstRowsInBytes(bytes: Uint8Array, count: number): Row[] {
+  const rows: Row[] = [];
+  for (const row of rowsInBytes(bytes)) {
+    rows.push(row);
+    if (rows.length >= count) break;
+  }
+  return rows;
+}
+
+/**
+ * Build a table's index from the bytes of its `rows.ndjson`, streaming
+ * them in, with its search index left for after (`buildSearchIndex`).
+ * Resolves with how many rows went in.
+ */
+export async function buildIndexFromBytes(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; rows: Uint8Array; bodies?: Record<string, string>; key: string; onProgress?: (done: number, total: number) => void },
+): Promise<number> {
+  const total = options.onProgress ? linesInBytes(options.rows) : 0;
+  let done = 0;
+  options.onProgress?.(0, total);
+  async function* streamed(): AsyncIterable<Row> {
+    for (const row of rowsInBytes(options.rows)) {
+      done++;
+      if (done % 5000 === 0) options.onProgress?.(done, total);
+      yield row;
+    }
+  }
+  await buildIndex(db, { name: options.name, schema: options.schema, rows: streamed(), bodies: options.bodies, key: options.key, search: "later" });
+  options.onProgress?.(done, total);
+  return done;
 }

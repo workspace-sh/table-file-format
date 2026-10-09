@@ -48,8 +48,19 @@ function isJunk(name: string): boolean {
  * malformed `schema.json` stays fatal. `path` on the result is the
  * root directory name from inside the archive.
  */
+export interface ReadArchiveOptions {
+  /**
+   * Asked for each table, with its `rows.ndjson` as bytes: true leaves the
+   * rows unparsed, for a table too large to hold, whose bytes the caller
+   * has now taken to index. The table comes back with no rows and
+   * `indexed` set, its count for the caller to fill in.
+   */
+  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: Uint8Array) => boolean | Promise<boolean>;
+}
+
 export async function readTableArchive(
   source: Uint8Array,
+  options: ReadArchiveOptions = {},
 ): Promise<ParsedBundle> {
   const entries = readZip(source).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
@@ -103,7 +114,6 @@ export async function readTableArchive(
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
     const schema = JSON.parse(schemaRaw) as TableSchema;
-    const rows = parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
     const views =
       parseOptionalJsonText<View[]>("views.json", text(`${prefix}views.json`), tableDiagnostics) ?? [];
     const tableMeta =
@@ -118,7 +128,10 @@ export async function readTableArchive(
       bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(file)!);
     }
 
+    const elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}rows.ndjson`)!)) === true;
+    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/tables/${name}` };
+    if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
     if (tableDiagnostics.length > 0) table.diagnostics = tableDiagnostics;
     tables[name] = table;

@@ -160,7 +160,7 @@ function openByDefault(dir: FilesTreeDir, bundle: string, activeTable: string | 
 
 function noteFor(kind: BundleFileKind, table: ParsedTable): string | undefined {
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  if (kind === "rows") return plural(table.rows.length, "row");
+  if (kind === "rows") return plural(table.indexed ? table.indexed.count : table.rows.length, "row");
   if (kind === "schema") return plural(table.schema.fields.length, "field");
   if (kind === "views") return plural(table.views.length, "view");
   return undefined;
