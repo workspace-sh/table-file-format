@@ -293,6 +293,13 @@ RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
   [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
 }
 
+/// How far the toolbar comes down over the content, in points: what's under it starts this far down.
+RCT_EXPORT_METHOD(topInset:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  resolve(@(window == nil ? 0 : NSHeight(window.frame) - NSMaxY(window.contentLayoutRect)));
+}
+
 /// The window's title and the line under it: the view on screen, and where it lives.
 RCT_EXPORT_METHOD(setWindowTitle:(NSString *)title subtitle:(NSString *)subtitle)
 {

@@ -24,14 +24,15 @@ public class TableShell: NSObject {
     sidebarItem.maximumThickness = 360
     sidebarItem.canCollapse = true
 
-    // The content keeps clear of the toolbar: the React view is pinned to
-    // the safe area, which the window's full-size content otherwise ignores.
+    // The content runs the pane's full height, under the toolbar, so the
+    // toolbar floats over it as the system draws one; what's in it keeps
+    // its own top clear by the toolbar's height (TableMenu.topInset).
     let detail = NSViewController()
     let holder = NSView()
     rootView.translatesAutoresizingMaskIntoConstraints = false
     holder.addSubview(rootView)
     NSLayoutConstraint.activate([
-      rootView.topAnchor.constraint(equalTo: holder.safeAreaLayoutGuide.topAnchor),
+      rootView.topAnchor.constraint(equalTo: holder.topAnchor),
       rootView.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
       rootView.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
       rootView.bottomAnchor.constraint(equalTo: holder.bottomAnchor),

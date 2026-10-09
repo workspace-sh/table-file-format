@@ -22,6 +22,7 @@ interface TableMenuModule {
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
   setWindowTitle(title: string, subtitle: string): void;
+  topInset(): Promise<number>;
   setToolbarLabel(commandId: string, label: string): void;
   setFilesMode(files: boolean): void;
   setSearchText(text: string): void;
@@ -142,6 +143,11 @@ export function onSearch(then: (text: string) => void): () => void {
 /** Development only: a toolbar button pressed, by its command's id. */
 export function postCommand(commandId: string): void {
   TableMenu?.postCommand(commandId);
+}
+
+/** How far the toolbar comes down over the content, in points. */
+export function toolbarInset(): Promise<number> {
+  return TableMenu?.topInset() ?? Promise.resolve(0);
 }
 
 /** The window's title, and the line under it: the view on screen and where it lives. */

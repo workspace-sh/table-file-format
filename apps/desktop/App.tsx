@@ -84,7 +84,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, setSearchText, setToolbarFilesMode, setToolbarLabel, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, pressAlertButton, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -128,8 +128,10 @@ const styles = css.create({
     flexDirection: "column",
     flex: 1,
     paddingInline: CONTENT_GUTTER,
-    paddingBlock: 20,
   },
+  // A file shown in place of the view fills the pane, clear of the toolbar.
+  fileShown: { display: "flex", flexDirection: "column", flex: 1, paddingBottom: 20 },
+  under: (top: number) => ({ paddingTop: top + 12 }),
   breadcrumb: {
     fontSize: 12,
     marginBottom: 2,
@@ -572,6 +574,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The sidebar is the window's own (nativeSidebar): the split view shows,
   // hides and narrows it, and says so, which is what this choice follows.
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
+  // The toolbar floats over the content, which runs under it: what's in the
+  // content starts this far down, and scrolls up behind the toolbar.
+  const [topInset, setTopInset] = useState(52);
+  useEffect(() => {
+    void toolbarInset().then((inset) => inset > 0 && setTopInset(inset));
+  }, []);
   const sidebarShown = !sidebarCollapsed;
   const toggleSidebar = toggleNativeSidebar;
   const filesMode = sidebarPrefs.files === true;
@@ -920,35 +928,39 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         <html.div dir={direction} style={styles.root}>
           <html.div style={styles.content}>
             {shown ? (
-              <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
+              <html.div style={[styles.fileShown, styles.under(topInset)]}>
+                <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
+              </html.div>
             ) : (
             <>
-            <html.div style={styles.subtitle}>
-              <html.span>{summary.count}</html.span>
-              <html.span>·</html.span>
-              {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
-              <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
-                {summary.validity}
-              </Hinted>
-              {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-              {summary.schemaChanged && (
-                <>
-                  <html.span>·</html.span>
-                  <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
-                    {summary.schemaChangedLabel}
-                  </Hinted>
-                </>
-              )}
-            </html.div>
             {/* Out to the content's edges, its margin inside, so what scrolls
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
             <ScrollView
               style={{ flex: 1, marginHorizontal: -CONTENT_GUTTER }}
-              contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
+              contentContainerStyle={{ paddingTop: topInset + 12, paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
+              scrollIndicatorInsets={{ top: topInset }}
               showsVerticalScrollIndicator
             >
+              <html.div style={styles.subtitle}>
+                <html.span>{summary.count}</html.span>
+                <html.span>·</html.span>
+                {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
+                <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                  {summary.validity}
+                </Hinted>
+                {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
+                {summary.schemaChanged && (
+                  <>
+                    <html.span>·</html.span>
+                    <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
+                      {summary.schemaChangedLabel}
+                    </Hinted>
+                  </>
+                )}
+              </html.div>
+
               {/* The viewer's own language, dates and formula syntax: the web's Display group. */}
               {showDisplay && (
                 <html.div style={styles.displayPanel}>
