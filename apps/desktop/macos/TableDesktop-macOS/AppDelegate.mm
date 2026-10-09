@@ -44,10 +44,10 @@
 
   self.window.toolbar = TableShellToolbar();
   self.window.toolbarStyle = NSWindowToolbarStyleUnified;
-  // No backing and no line under the toolbar: its buttons float over the
-  // content, whose colour runs to the top of the window. What scrolls up
-  // behind them is softened there (TableShell's ToolbarEdgeView).
-  self.window.titlebarAppearsTransparent = YES;
+  // No line under the toolbar. The title bar stays the system's own (not
+  // transparent): that is what lets macOS soften content scrolling behind
+  // the toolbar with its scroll-edge effect. A transparent title bar opts
+  // the window out of it.
   self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
 
   [self.window makeKeyAndOrderFront:self];
