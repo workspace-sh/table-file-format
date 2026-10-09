@@ -178,7 +178,7 @@ Two known gaps against the bar, with what closes them:
 
 For Leslie (decided 8 Oct 2026):
 
-1. **While a large table's index is first being built:** show progress until everything works. (Showing rows in file order first was the other option.)
+1. **While a large table's index is first being built:** its first rows show at once, as the file has them, with how far the reading has got above them; they can be looked at, not worked in. The view's own order, filters and groups, and search and editing, come when the index is ready. (Changed by Leslie on 9 Oct 2026, from progress alone until everything works. Making the first rows interactive is to be revisited.)
 2. **When the browser or disk won't give the space:** open in memory with a notice.
 3. **Who does iOS** (I1 to I4): the Linux rig specifies and implements it, after web and Linux; Primary or Secondary tests it on devices.
 

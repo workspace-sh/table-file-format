@@ -13,7 +13,7 @@ import { largeTables } from "./nodeIndex.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
-export { buildTableIndex, countRows, largeTables, mayHoldRows, openIndexHost, saveTableRows, tableContentKey, type IndexHost } from "./nodeIndex.ts";
+export { buildTableIndex, countRows, firstRows, largeTables, mayHoldRows, openIndexHost, saveTableRows, tableContentKey, type IndexHost } from "./nodeIndex.ts";
 
 /** The `.table` folders in `dir`, sorted by name. */
 export function bundlesIn(dir: string): string[] {
