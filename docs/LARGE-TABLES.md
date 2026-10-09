@@ -195,6 +195,32 @@ The GTK table (`packages/gtk/src/TableView.tsx`) builds the rows within 900 px o
 
 Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows, and by opening the 100,000-row table in the built app. Not timed yet, and not tried at a million rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
 
+### A view read through the index (Phase B, core; 9 Oct 2026)
+
+`queryIndex` answers everything a view asks of its rows (`ViewRows`): a window of rows or of ids, a row by id, a row's place, the view's groups and its totals. Each is what the rows in memory give (`memoryViewRows`), checked over random filters, sorts, groups, totals and searches on both SQLite engines, or `queryIndex` returns null.
+
+`scripts/big-table-index.mts <folder.table> <index.sqlite>` builds the index with `node:sqlite`, streaming the rows, and times each. Node 24 on the Linux rig, milliseconds. The first time a view groups by, sorts by or totals a field, an index for it is made and kept in the file; "after" is every time after that.
+
+| | 100,000 rows | 1,000,000 rows |
+|---|---|---|
+| Build | 3.2 s | 37 s |
+| Open a view (its counts) | 2 | 4 |
+| 200 rows from the middle | 4 | 35 |
+| A row by id | 0.2 | 0.2 |
+| A row's place, file order | 5 | 47 |
+| Groups (by stage), first → after | 84 → 8 | 1,019 → 90 |
+| 200 rows from the middle, grouped | 2 | 11 |
+| The same, sorted by amount | 3 | 12 |
+| Totals (a sum, an average, a count), first → after | 161 → 40 | 2,328 → 310 |
+| Totals under a filter | 23 | 260 |
+| A row's place in a sorted, grouped view | 88 | 940 |
+| An edit (`putRows`) | 2 to 4 | 2 to 3 |
+| 200 rows again after the edit | 5 | 34 |
+
+- **An edit is a few milliseconds at any size**, against 273 ms at 100,000 rows in memory.
+- **The first group, sort or total of a field at a million rows costs a second or two**, once per file. The apps can make those indexes while they build, from the fields the table's views use.
+- **A row's place in a sorted view is the slow one** (0.9 s at 1M): every row before it is counted. It is asked only when going to a row by id, not while scrolling.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.

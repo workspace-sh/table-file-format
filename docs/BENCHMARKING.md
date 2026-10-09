@@ -35,5 +35,6 @@ A development build can show whether something works at all before a Release bui
 
 - `scripts/big-table.mts`: seeded large tables, as a folder and a `.table.zip`.
 - `scripts/big-table-read.mts`: the data side alone (reading and computing), with no drawing.
+- `scripts/big-table-index.mts`: a view read through the index (windows, groups, totals, places, an edit), with no drawing.
 - `scripts/measure-server.py <dir>`: serves test files to a measuring build. `GET /next` names what to open, and `POST /result` collects what it reports into `results.ndjson`.
 - `apps/mobile/measure.ts`: in a build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, opens what the server names and reports the times. `bench <flash|legend> <rows>` opens the list benchmark (`apps/mobile/app/bench.tsx`) instead. Ordinary builds run none of it.

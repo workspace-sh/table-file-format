@@ -10,9 +10,10 @@
 // ever approximately right.
 
 import { instantOf } from "./encoding.js";
-import type { Field, ParsedTable, Row, TableSchema, ViewFilter, ViewSort } from "./types.js";
+import type { Field, ParsedTable, Row, TableSchema, ViewFilter, ViewSort, ViewTotal } from "./types.js";
 import { enumValues } from "./types.js";
-import type { RowSource } from "./row-source.js";
+import type { RowGroup, ViewRows } from "./row-source.js";
+import { exactSum } from "./query.js";
 import { computeRows, rowLocal } from "./workbook.js";
 
 export type SqlValue = string | number | null;
@@ -34,10 +35,21 @@ export interface IndexQuery {
   order?: string[];
   /** Case-insensitive substring over string, date and datetime fields, the row id and the page: searchRows' scope. */
   search?: string;
+  /** The field a view groups by: rows come a group at a time, in applyGroup's order. */
+  group?: string;
+  /** The view's totals, by field. */
+  totals?: Record<string, ViewTotal>;
 }
 
-/** The rows a query matches, as a list reads them: a count and any window (a RowSource). */
-export type IndexedRows = RowSource & { rows(start: number, end: number): Promise<Row[]> };
+/** The rows a query matches, as a view reads them (a ViewRows), every answer a promise. */
+export interface IndexedRows extends ViewRows {
+  rows(start: number, end: number): Promise<Row[]>;
+  ids(start: number, end: number): Promise<string[]>;
+  placeOf(id: string): Promise<number>;
+  row(id: string): Promise<Row | undefined>;
+  totals(): Promise<Record<string, number | undefined>>;
+  groups(): Promise<RowGroup[]>;
+}
 
 export interface BuildOptions {
   /** The table's name in its bundle; one database holds every table of a bundle. */
@@ -484,6 +496,30 @@ function filterSql(kind: Kind, col: string, f: ViewFilter): Compiled {
   }
 }
 
+/** `value` added `count` times, as numbers whose sum is exactly that: the product and what rounding it lost. */
+function* times(value: number, count: number): Iterable<number> {
+  const product = value * count;
+  // Dekker's product: each factor split in two halves whose products are exact.
+  const split = (a: number): [number, number] => {
+    const c = 134217729 * a;
+    const high = c - (c - a);
+    return [high, a - high];
+  };
+  const [vh, vl] = split(value);
+  const [ch, cl] = split(count);
+  const lost = vl * cl - (product - vh * ch - vl * ch - vh * cl);
+  if (Number.isFinite(lost) && Number.isFinite(product)) {
+    yield product;
+    yield lost;
+  } else {
+    // Too large to split: one at a time.
+    for (let i = 0; i < count; i++) yield value;
+  }
+}
+
+/** A number as the driver hands it back: some give a whole number too large for a double's exact range as a bigint. */
+const num = (v: unknown): number => (typeof v === "bigint" ? Number(v) : (v as number));
+
 const literal = (v: string) => `'${v.replace(/'/g, "''")}'`;
 
 /**
@@ -543,7 +579,7 @@ async function badFields(db: SqlDriver, n: number): Promise<Set<number>> {
  */
 export async function queryIndex(
   db: SqlDriver,
-  options: { name: string; schema: TableSchema; query?: IndexQuery },
+  options: { name: string; schema: TableSchema; query?: IndexQuery; version?: string },
 ): Promise<IndexedRows | null> {
   const { name, schema } = options;
   const query = options.query ?? {};
@@ -583,6 +619,7 @@ export async function queryIndex(
   }
 
   let join = "";
+  let firstSort: { terms: string[]; name: string } | null = null;
   const joinParams: SqlValue[] = [];
   const orderTerms: string[] = [];
   if (query.order && query.order.length > 0) {
@@ -600,25 +637,265 @@ export async function queryIndex(
       if (i === null) return null;
       const terms = sortTerms(plan, schema.fields[i]!, i, s.direction, "r.");
       if (!terms) return null;
-      if (at === 0) await sortIndex(db, n, sortTerms(plan, schema.fields[i]!, i, s.direction, "")!, `o${i}${s.direction === "desc" ? "d" : "a"}`);
+      if (at === 0) {
+        firstSort = { terms: sortTerms(plan, schema.fields[i]!, i, s.direction, "")!, name: `o${i}${s.direction === "desc" ? "d" : "a"}` };
+        await sortIndex(db, n, firstSort.terms, firstSort.name);
+      }
       orderTerms.push(...terms);
     }
   }
   orderTerms.push("r.pos asc");
 
-  const clause = where.length > 0 ? `where ${where.join(" and ")}` : "";
+  // A grouped view: only fields whose cells have one string each, as applyGroup names a group.
+  let groupAt: number | null = null;
+  if (query.group !== undefined) {
+    groupAt = usable(query.group);
+    if (groupAt === null) return null;
+    const kind = plan.kinds[groupAt]!;
+    if (kind === "array" || kind === "opaque") return null;
+  }
+  // Totals the index can promise: counts of anything, and sums of a number field.
+  for (const [fieldName, kind] of Object.entries(query.totals ?? {})) {
+    const i = index.get(fieldName);
+    if (i === undefined) continue;
+    if (bad.has(i)) return null;
+    if (kind !== "count" && kind !== "count_empty" && plan.kinds[i] === "opaque") return null;
+  }
+
+  const order = orderTerms.join(", ");
+  const and = (extra: string | null) => {
+    const all = extra ? [...where, extra] : where;
+    return all.length > 0 ? `where ${all.join(" and ")}` : "";
+  };
+  const clause = and(null);
   const total = await db.all(`select count(*) as n from r${n} r ${clause}`, whereParams);
   const count = total[0]!.n as number;
+  let inView = count;
+  if (needle.length > 0) {
+    // The search's two terms are the last in `where`, and its parameters the last bound.
+    const searchTerms = [...needle].length >= 3 ? 2 : 1;
+    const before = where.slice(0, where.length - searchTerms);
+    const found = await db.all(
+      `select count(*) as n from r${n} r ${before.length > 0 ? `where ${before.join(" and ")}` : ""}`,
+      whereParams.slice(0, whereParams.length - searchTerms),
+    );
+    inView = found[0]!.n as number;
+  }
+
+  /** A window of the rows matching `extra` as well, in the view's order. */
+  const page = (column: string, extra: string | null, extraParams: SqlValue[], limit: number, offset: number) =>
+    db.all(`select ${column} as v from r${n} r ${join} ${and(extra)} order by ${order} limit ? offset ?`, [
+      ...joinParams,
+      ...whereParams,
+      ...extraParams,
+      limit,
+      offset,
+    ]);
+  /** A row's number, from 1, among the rows matching `extra` as well; null when it isn't one of them. */
+  const rankOf = async (id: string, extra: string | null, extraParams: SqlValue[]): Promise<number | null> => {
+    if (orderTerms.length === 1) {
+      // File order: the rows before it are the ones stored before it.
+      const at = await db.all(`select r.pos as pos from r${n} r ${and(extra ? `${extra} and r.id = ?` : "r.id = ?")}`, [...whereParams, ...extraParams, id]);
+      if (!at[0]) return null;
+      const before = await db.all(`select count(*) as n from r${n} r ${and(extra ? `${extra} and r.pos < ?` : "r.pos < ?")}`, [...whereParams, ...extraParams, at[0].pos as number]);
+      return (before[0]!.n as number) + 1;
+    }
+    const found = await db.all(
+      `select rn from (select r.id as id, row_number() over (order by ${order}) as rn from r${n} r ${join} ${and(extra)}) where id = ?`,
+      [...joinParams, ...whereParams, ...extraParams, id],
+    );
+    return found[0] ? (found[0].rn as number) : null;
+  };
+
+  // Groups, as applyGroup makes them: a cell's value as a string names its
+  // group, declared choices come first in their order, then the rest as
+  // they first appear, and blank cells last.
+  interface Bucket extends RowGroup {
+    blank: boolean;
+    raws: SqlValue[];
+    first: number;
+  }
+  let buckets: Promise<Bucket[]> | null = null;
+  // A cell's group: its value, with every blank cell as NULL.
+  const groupColumn = groupAt === null ? "" : `nullif(r.${plan.c[groupAt]}, '')`;
+  const keyOf = (raw: SqlValue): string =>
+    raw === null || raw === "" ? "(empty)" : plan.kinds[groupAt!] === "boolean" ? (raw ? "true" : "false") : String(raw);
+  const inBucket = (b: Bucket): { sql: string; params: SqlValue[] } => {
+    const parts: string[] = [];
+    if (b.blank) parts.push(`${groupColumn} is null`);
+    for (const _ of b.raws) parts.push(`${groupColumn} = ?`);
+    return { sql: parts.length === 1 ? parts[0]! : `(${parts.join(" or ")})`, params: b.raws };
+  };
+  /** Past this many groups to put in order of first appearance, one pass over the rows is cheaper than asking for each. */
+  const MAX_FIRSTS = 200;
+  const loadBuckets = (): Promise<Bucket[]> => {
+    if (groupAt === null) return Promise.resolve([]);
+    return (buckets ??= (async () => {
+      // An index on the group and then the view's first sort: a group's
+      // count, and any page of it, is read straight off it.
+      const bare = `nullif(${plan.c[groupAt!]}, '')`;
+      await sortIndex(db, n, [bare, ...(firstSort?.terms ?? []), "pos"], `g${groupAt}${firstSort?.name ?? ""}`);
+      const found = await db.all(`select ${groupColumn} as g, count(*) as n from r${n} r ${clause} group by 1`, whereParams);
+      const byKey = new Map<string, Bucket>();
+      for (const row of found) {
+        const raw = (typeof row.g === "bigint" ? Number(row.g) : row.g) as SqlValue;
+        const key = keyOf(raw);
+        let bucket = byKey.get(key);
+        if (!bucket) byKey.set(key, (bucket = { key, start: 0, count: 0, blank: false, raws: [], first: Infinity }));
+        if (raw === null) bucket.blank = true;
+        else bucket.raws.push(raw);
+        bucket.count += row.n as number;
+      }
+      const declared = enumValues(schema.fields[groupAt!]);
+      // applyGroup hands its groups back as an object's keys, and those come
+      // out with whole numbers first, smallest first, whatever went in.
+      const whole = (key: string) => /^(0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295;
+      const rank = (b: Bucket) => (whole(b.key) ? 0 : b.key === "(empty)" ? 3 : declared.includes(b.key) ? 1 : 2);
+      // The rest come as they first appear in the view's order.
+      const rest = [...byKey.values()].filter((b) => rank(b) === 2);
+      if (rest.length > MAX_FIRSTS) {
+        const firsts = await db.all(
+          `select g, min(rn) as first from (select ${groupColumn} as g, row_number() over (order by ${order}) as rn from r${n} r ${join} ${clause}) group by g`,
+          [...joinParams, ...whereParams],
+        );
+        for (const row of firsts) {
+          const bucket = byKey.get(keyOf((typeof row.g === "bigint" ? Number(row.g) : row.g) as SqlValue))!;
+          bucket.first = Math.min(bucket.first, row.first as number);
+        }
+      } else if (rest.length > 1) {
+        const owner = new Map<string, Bucket>();
+        for (const b of rest) {
+          for (const raw of b.raws) {
+            const first = await page("r.id", `${groupColumn} = ?`, [raw], 1, 0);
+            if (first[0]) owner.set(first[0].v as string, b);
+          }
+        }
+        const ids = [...owner.keys()];
+        const inOrder = await db.all(
+          `select r.id as id from r${n} r ${join} where r.id in (${ids.map(() => "?").join(", ")}) order by ${order}`,
+          [...joinParams, ...ids],
+        );
+        inOrder.forEach((row, at) => {
+          const bucket = owner.get(row.id as string)!;
+          bucket.first = Math.min(bucket.first, at);
+        });
+      }
+      const ordered = [...byKey.values()].sort((a, b) => {
+        const by = rank(a) - rank(b);
+        if (by !== 0) return by;
+        if (rank(a) === 0) return Number(a.key) - Number(b.key);
+        return rank(a) === 1 ? declared.indexOf(a.key) - declared.indexOf(b.key) : a.first - b.first;
+      });
+      let start = 0;
+      for (const b of ordered) {
+        b.start = start;
+        start += b.count;
+      }
+      return ordered;
+    })());
+  };
+
+  const windowOf = async (column: string, start: number, end: number): Promise<SqlValue[]> => {
+    const from = Math.max(0, start);
+    if (end <= from) return [];
+    if (groupAt === null) return (await page(column, null, [], end - from, from)).map((r) => r.v as SqlValue);
+    const out: SqlValue[] = [];
+    for (const b of await loadBuckets()) {
+      const lo = Math.max(from, b.start);
+      const hi = Math.min(end, b.start + b.count);
+      if (hi <= lo) continue;
+      const within = inBucket(b);
+      for (const r of await page(column, within.sql, within.params, hi - lo, lo - b.start)) out.push(r.v as SqlValue);
+    }
+    return out;
+  };
+
+  let totals: Promise<Record<string, number | undefined>> | null = null;
+  const loadTotals = async (): Promise<Record<string, number | undefined>> => {
+    const out: Record<string, number | undefined> = {};
+    for (const [fieldName, kind] of Object.entries(query.totals ?? {})) {
+      const i = index.get(fieldName);
+      const counting = kind === "count" || kind === "count_empty";
+      if (i === undefined) {
+        // No such field: every cell is blank.
+        out[fieldName] = kind === "count" ? 0 : kind === "count_empty" ? count : undefined;
+        continue;
+      }
+      const c = `r.${plan.c[i]}`;
+      if (counting) {
+        // A blank cell, as viewTotal has it: nothing, "" or an empty list.
+        const held = plan.kinds[i] === "array" || plan.kinds[i] === "opaque" ? `(${c} is not null and ${c} <> '' and ${c} <> '[]')` : `(${c} is not null and ${c} <> '')`;
+        if (where.length === 0) await sortIndex(db, n, [plan.c[i]!], `t${i}`);
+        const found = await db.all(`select count(*) as n from r${n} r ${and(held)}`, whereParams);
+        const have = found[0]!.n as number;
+        out[fieldName] = kind === "count" ? have : count - have;
+        continue;
+      }
+      if (plan.kinds[i] !== "number") {
+        out[fieldName] = undefined;
+        continue;
+      }
+      // The column's distinct numbers and how many rows hold each, read off
+      // an index on the column alone: a total doesn't pass over the rows.
+      // With a filter or a search the rows are passed over once, as the filter needs anyway.
+      if (where.length === 0) await sortIndex(db, n, [plan.c[i]!], `t${i}`);
+      const found = await db.all(
+        `select ${c} as v, count(*) as k from r${n} r ${where.length === 0 ? "" : "not indexed"} ${and(`typeof(${c}) in ('integer', 'real')`)} group by ${c}`,
+        whereParams,
+      );
+      let have = 0;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const r of found) {
+        const v = num(r.v);
+        have += r.k as number;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      if (have === 0) out[fieldName] = undefined;
+      else if (kind === "min") out[fieldName] = lo;
+      else if (kind === "max") out[fieldName] = hi;
+      else {
+        const sum = exactSum(
+          (function* () {
+            for (const r of found) yield* times(num(r.v), r.k as number);
+          })(),
+        );
+        out[fieldName] = kind === "sum" ? sum : sum / have;
+      }
+    }
+    return out;
+  };
+
   return {
     count,
+    inView,
+    version: options.version ?? `${(await indexKey(db, name)) ?? ""}|${JSON.stringify(query)}`,
     async rows(start, end) {
-      if (end <= start) return [];
-      const found = await db.all(
-        `select r.j as j from r${n} r ${join} ${clause} order by ${orderTerms.join(", ")} limit ? offset ?`,
-        [...joinParams, ...whereParams, end - start, start],
-      );
-      return found.map((r) => JSON.parse(r.j as string) as Row);
+      return (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
     },
+    async ids(start, end) {
+      return (await windowOf("r.id", start, end)) as string[];
+    },
+    async placeOf(id) {
+      if (groupAt === null) {
+        const rank = await rankOf(id, null, []);
+        return rank === null ? -1 : rank - 1;
+      }
+      const cell = await db.all(`select ${groupColumn} as g from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
+      if (!cell[0]) return -1;
+      const bucket = (await loadBuckets()).find((b) => b.key === keyOf((typeof cell[0]!.g === "bigint" ? Number(cell[0]!.g) : cell[0]!.g) as SqlValue));
+      if (!bucket) return -1;
+      const within = inBucket(bucket);
+      const rank = await rankOf(id, within.sql, within.params);
+      return rank === null ? -1 : bucket.start + rank - 1;
+    },
+    async row(id) {
+      const found = await db.all(`select r.j as j from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
+      return found[0] ? (JSON.parse(found[0].j as string) as Row) : undefined;
+    },
+    totals: () => (totals ??= loadTotals()),
+    groups: async () => (await loadBuckets()).map(({ key, start, count }) => ({ key, start, count })),
   };
 }
 
