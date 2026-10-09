@@ -1174,7 +1174,7 @@ The file is `tables/{name}/history.ndjson`, in the table's own directory because
 
 **Decided (9 Oct 2026, with the first apps reading a million rows through `index.sqlite`). Open to revisit.**
 
-**Builds on** D31's stance that the text is the table and the index a cache (SPEC section 8).
+**Builds on** D6 (the SQLite cache is optional and rebuildable) and D15 (how it's kept fresh); SPEC section 8.
 
 A table is read through the index once it is large enough that memory is no longer immediate, and from memory below that. The line is the implementation's to measure; the reference apps start at 50,000 rows. The in-memory path stays in every implementation, as the fallback and for small tables.
 
