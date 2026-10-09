@@ -13,7 +13,10 @@ public class TableShell: NSObject {
   /// The React Native view, for the development hooks that click in it.
   @objc public static weak var rootView: NSView?
 
-  @objc public static func create(rootView: NSView) -> NSViewController {
+  static weak var inspectorItem: NSSplitViewItem?
+  private static var inspectorWatch: NSKeyValueObservation?
+
+  @objc public static func create(rootView: NSView, inspectorView: NSView) -> NSViewController {
     self.rootView = rootView
     let split = NSSplitViewController()
     self.split = split
@@ -55,8 +58,36 @@ public class TableShell: NSObject {
     let detailItem = NSSplitViewItem(viewController: detail)
     detailItem.minimumThickness = 420
 
+    // The inspector: the system's trailing pane, for what's selected (a
+    // cell and its formula, a row's page). Its own React view, in the same
+    // JavaScript runtime as the main one, so it shows what the app hands it
+    // (inspectorStore.ts). It starts closed, and keeps clear of the toolbar.
+    let inspector = NSViewController()
+    let pane = NSView()
+    inspectorView.translatesAutoresizingMaskIntoConstraints = false
+    pane.addSubview(inspectorView)
+    NSLayoutConstraint.activate([
+      inspectorView.topAnchor.constraint(equalTo: pane.safeAreaLayoutGuide.topAnchor),
+      inspectorView.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+      inspectorView.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+      inspectorView.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
+    ])
+    inspector.view = pane
+    let inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
+    inspectorItem.minimumThickness = 300
+    inspectorItem.maximumThickness = 560
+    inspectorItem.canCollapse = true
+    inspectorItem.isCollapsed = true
+    self.inspectorItem = inspectorItem
+    // Closed by its toolbar button or by dragging: the app is told, so it
+    // can let go of what the inspector was showing.
+    inspectorWatch = inspectorItem.observe(\.isCollapsed, options: [.new]) { item, _ in
+      sidebar.send("inspector", ["shown": !item.isCollapsed])
+    }
+
     split.addSplitViewItem(sidebarItem)
     split.addSplitViewItem(detailItem)
+    split.addSplitViewItem(inspectorItem)
     split.splitView.autosaveName = "TableDesktopSplitView"
     watchClicks()
     return split
@@ -86,6 +117,12 @@ public class TableShell: NSObject {
       }
       return event
     }
+  }
+
+  /// Open or close the inspector, as its toolbar button does.
+  @objc public static func setInspectorShown(_ shown: Bool) {
+    guard let item = inspectorItem, item.isCollapsed == shown else { return }
+    item.animator().isCollapsed = !shown
   }
 
   /// Whether the sidebar is showing, for the View menu's Hide/Show Sidebar.
