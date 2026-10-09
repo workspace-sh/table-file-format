@@ -1169,3 +1169,15 @@ The file is `tables/{name}/history.ndjson`, in the table's own directory because
 **Not decided:** compaction of a large log, whether schema and view changes are recorded, and how an app presents it. Adding ops is additive (readers skip unknown ones).
 
 **Revisit when:** the first app builds a history UI, or the Workspace op log's event vocabulary needs something this lacks.
+
+## D45: the index is used where it pays, not for every table
+
+**Decided (9 Oct 2026, with the first apps reading a million rows through `index.sqlite`). Open to revisit.**
+
+**Builds on** D6 (the SQLite cache is optional and rebuildable) and D15 (how it's kept fresh); SPEC section 8.
+
+A table is read through the index once it is large enough that memory is no longer immediate, and from memory below that. The line is the implementation's to measure; the reference apps start at 50,000 rows. The in-memory path stays in every implementation, as the fallback and for small tables.
+
+**Considered:** an index behind every table, for one path through the apps. Against it: a small table is already immediate from text, and would gain a worker, a file about four times the size of its rows, and reads that arrive a moment late; the in-memory path can't go anyway (no SQLite, no space, formulas that read other rows, Sheet views); and on the web everyone would fetch the SQLite engine to open twenty rows.
+
+**To revisit when** the index answers what forces memory today (formulas across rows, Sheet views), and when edit history (D44) and sync are built, which a database behind every table would simplify.

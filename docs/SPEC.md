@@ -872,6 +872,26 @@ implementation, written against a small `SqlDriver` (`exec`, `run`,
 SQLite WASM on the web — or no cache at all; the in-memory query path
 is always sufficient.
 
+### When to index
+
+The text is the table. A reader that parses `rows.ndjson` and holds its
+rows in memory is a complete reader, and for a small table it is the
+fast one: nothing to build, and every read immediate. An index earns
+its place when a table is large enough that holding and re-reading
+every row costs more than building it.
+
+- An implementation SHOULD read a table through the index once it is
+  large enough that a view, a search or an edit is no longer immediate
+  from memory, and SHOULD NOT build one for a table that is. Where that
+  line falls is the implementation's to measure. The reference apps
+  start at 50,000 rows (`INDEXED_FROM`) and move it by measurement.
+- An implementation MUST keep the in-memory path: it is the fallback
+  when there is no SQLite, no space for the file, or a question the
+  index can't promise an answer to.
+- An index is never required to read, write or exchange a `.table`. A
+  folder with no `index.sqlite`, or with one deleted a moment ago, is
+  whole.
+
 ### Query interface — structured, not raw SQL
 
 `queryIndex` accepts the **view query AST** — the `filter` / `sort`
