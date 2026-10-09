@@ -2,6 +2,7 @@
 
 #import <React/RCTBundleURLProvider.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
+#import <TablePanels/TableShellEntry.h>
 
 @implementation AppDelegate
 
@@ -14,6 +15,37 @@
   self.dependencyProvider = [RCTAppDependencyProvider new];
   
   return [super applicationDidFinishLaunching:notification];
+}
+
+/// The window, as a Mac app's: a split view with a real sidebar and the
+/// React view beside it (TableShell), under one toolbar that shares the
+/// title bar's row. The content is full size, so the sidebar runs the
+/// window's height and the toolbar floats over it, as the system draws them.
+- (void)loadReactNativeWindow:(NSDictionary *)launchOptions
+{
+  RCTPlatformView *rootView = [self.rootViewFactory viewWithModuleName:self.moduleName
+                                                     initialProperties:self.initialProps
+                                                         launchOptions:launchOptions];
+
+  self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1280, 760)
+                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskClosable |
+                                                      NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView
+                                              backing:NSBackingStoreBuffered
+                                                defer:NO];
+  self.window.title = @".table";
+  self.window.autorecalculatesKeyViewLoop = YES;
+  self.window.contentViewController = TableShellCreate(rootView);
+
+  self.window.toolbar = TableShellToolbar();
+  self.window.toolbarStyle = NSWindowToolbarStyleUnified;
+  self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleAutomatic;
+
+  [self.window makeKeyAndOrderFront:self];
+  if (![self.window setFrameUsingName:@"TableDesktopMainWindow"]) {
+    [self.window setContentSize:NSMakeSize(1280, 760)];
+    [self.window center];
+  }
+  [self.window setFrameAutosaveName:@"TableDesktopMainWindow"];
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
