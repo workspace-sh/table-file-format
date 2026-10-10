@@ -7,6 +7,7 @@
 
 import { openDatabaseSync } from "expo-sqlite";
 import { File, Paths } from "expo-file-system";
+import { Linking } from "react-native";
 import { buildIndex, buildSearchIndex, putRows, queryIndex, rowsBeingBuilt, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
 import { expoDriver, type ExpoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { indexerCases, type CaseAssert } from "@workspace.sh/table-core/indexer-cases";
@@ -202,32 +203,96 @@ async function* bigRows(n: number): AsyncIterable<Row> {
 }
 
 /** The longest the JS thread went without running a timer while `run` ran: how long a frame's JS would have waited. */
-async function longestStall<T>(run: () => Promise<T>): Promise<[number, T]> {
-  let last = performance.now();
+// What the driver is doing, for reading a stall: the statement in flight, the last one done, and time spent waiting on SQLite.
+const trace = { inFlight: "", lastDone: "", waitingMs: 0, calls: 0 };
+const label = (sql: string) => sql.replace(/\s+/g, " ").slice(0, 70);
+
+async function longestStall<T>(run: () => Promise<T>, stalls?: Results[]): Promise<[number, T]> {
+  const start = performance.now();
+  let last = start;
   let longest = 0;
+  const note = (now: number) => {
+    const gap = now - last;
+    longest = Math.max(longest, gap);
+    if (stalls && gap > 250 && stalls.length < 40)
+      stalls.push({ atMs: Math.round(last - start), gapMs: Math.round(gap), inFlight: trace.inFlight, lastDone: trace.lastDone, calls: trace.calls });
+  };
   const timer = setInterval(() => {
     const now = performance.now();
-    longest = Math.max(longest, now - last);
+    note(now);
     last = now;
   }, 8);
+  // Two more clocks, to tell which thread a stall is on. iOS fires React Native's timers from the
+  // main thread, and frames come from its display link; a ping on another SQLite connection comes
+  // back to JS from a background queue and needs no main thread at all.
+  const clocks = { frameGapMs: 0, pingGapMs: 0, mainGapMs: 0 };
+  let running = true;
+  let lastFrame = start;
+  const frame = (t: number) => {
+    clocks.frameGapMs = Math.max(clocks.frameGapMs, t - lastFrame);
+    lastFrame = t;
+    if (running) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  const pingDb = stalls ? openDatabaseSync(":memory:", OPEN) : null;
+  const pinging = (async () => {
+    let lastPing = performance.now();
+    while (running && pingDb) {
+      await pingDb.getFirstAsync("select 1 as x");
+      const now = performance.now();
+      clocks.pingGapMs = Math.max(clocks.pingGapMs, now - lastPing);
+      lastPing = now;
+      await new Promise<void>((go) => queueMicrotask(go));
+    }
+  })();
+  // And the main thread itself: RCTLinkingManager answers on the main queue.
+  const onMain = (async () => {
+    let lastMain = performance.now();
+    while (running && stalls) {
+      await Linking.getInitialURL();
+      const now = performance.now();
+      clocks.mainGapMs = Math.max(clocks.mainGapMs, now - lastMain);
+      lastMain = now;
+      await new Promise<void>((go) => queueMicrotask(go));
+    }
+  })();
   try {
     const out = await run();
     // A thread held to the end never ran the timer at all: that wait counts too.
-    longest = Math.max(longest, performance.now() - last);
+    note(performance.now());
+    if (stalls)
+      stalls.push({
+        clocks: { timerGapMs: Math.round(longest), frameGapMs: Math.round(clocks.frameGapMs), pingGapMs: Math.round(clocks.pingGapMs), mainGapMs: Math.round(clocks.mainGapMs) },
+      });
     return [Math.round(longest), out];
   } finally {
+    running = false;
     clearInterval(timer);
+    await pinging;
+    await onMain;
+    pingDb?.closeSync();
   }
 }
 
 /** A driver that counts the statements asked of it: each is a crossing to SQLite and back. */
 function counting(driver: ExpoDriver): ExpoDriver & { crossings: number } {
+  const track = <T,>(sql: string, call: () => Promise<T>): Promise<T> => {
+    out.crossings++;
+    trace.calls++;
+    const t = performance.now();
+    trace.inFlight = label(sql);
+    return call().finally(() => {
+      trace.waitingMs += performance.now() - t;
+      trace.lastDone = label(sql);
+      trace.inFlight = "";
+    });
+  };
   const out = {
     crossings: 0,
-    exec: (sql: string) => (out.crossings++, driver.exec(sql)),
-    run: (sql: string, params?: Parameters<ExpoDriver["run"]>[1]) => (out.crossings++, driver.run(sql, params)),
-    all: (sql: string, params?: Parameters<ExpoDriver["all"]>[1]) => (out.crossings++, driver.all(sql, params)),
-    batch: (sql: string, lists: Parameters<NonNullable<ExpoDriver["batch"]>>[1]) => (out.crossings++, driver.batch!(sql, lists)),
+    exec: (sql: string) => track(sql, () => driver.exec(sql)),
+    run: (sql: string, params?: Parameters<ExpoDriver["run"]>[1]) => track(sql, () => driver.run(sql, params)),
+    all: (sql: string, params?: Parameters<ExpoDriver["all"]>[1]) => track(sql, () => driver.all(sql, params)),
+    batch: (sql: string, lists: Parameters<NonNullable<ExpoDriver["batch"]>>[1]) => track(`batch of ${lists.length}: ${sql}`, () => driver.batch!(sql, lists)),
     close: () => driver.close(),
   };
   return out;
@@ -250,7 +315,10 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
   try {
     // While it builds: rows 20,000 to 20,200 as soon as they're in, read on the build's own connection.
     const started = performance.now();
-    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })));
+    const stalls: Results[] = [];
+    trace.waitingMs = 0;
+    trace.calls = 0;
+    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })), stalls);
     let done = false;
     void building.then(() => (done = true));
     const midBuild: Results[] = [];
@@ -265,6 +333,9 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
     }
     const [stall, [buildMs]] = await building;
     out.rowsInMs = buildMs;
+    out.buildWaitingOnSqliteMs = Math.round(trace.waitingMs);
+    out.buildCalls = trace.calls;
+    out.stallsOver250Ms = stalls;
     out.longestJsStallWhileBuildingMs = stall;
     const open = (query: IndexQuery) => queryIndex(driver, { name: "deals", schema, query });
 
