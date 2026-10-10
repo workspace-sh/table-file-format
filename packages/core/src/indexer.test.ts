@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { applyView, searchRows } from "./query.js";
 import { arraySource, memoryViewRows } from "./row-source.js";
 import { oo1Driver } from "./sqlite-wasm.js";
-import { buildIndex, buildSearchIndex, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
+import { buildIndex, buildSearchIndex, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver, type SqlValue } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 
 // node:sqlite arrived in Node 22.5 and has no types here; where it's missing the index is simply untested.
@@ -481,4 +481,29 @@ test("a window deep in file order is the same rows as skipping to it, through ed
     assert.deepEqual(await all.ids(a, b), want.slice(a, b), `ids ${a} to ${b}`);
     assert.deepEqual((await all.rows(a, b)).map((r) => r.id), want.slice(a, b), `rows ${a} to ${b}`);
   }
+});
+
+test("rows are read in file order while their index is still being built", { skip }, async () => {
+  const rows = Array.from({ length: 1000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
+  const db = driver();
+  assert.deepEqual(await rowsBeingBuilt(db, "t", 0, 10), []);
+  const seen: number[] = [];
+  async function* streamed() {
+    for (const [i, row] of rows.entries()) {
+      // After each batch of 100 has gone in: those rows are there to read, the build not yet done.
+      if (i > 0 && i % 250 === 0) {
+        const got = await rowsBeingBuilt(db, "t", i - 150, i - 100);
+        seen.push(got.length);
+        assert.deepEqual(got.map((r) => r.id), rows.slice(i - 150, i - 100).map((r) => r.id), `at ${i}`);
+        assert.equal(await queryIndex(db, { name: "t", schema }), null, "not a whole index yet");
+        // Past what's in: only what there is.
+        assert.ok((await rowsBeingBuilt(db, "t", i - 100, i + 500)).length <= 100 + 100);
+      }
+      yield row;
+    }
+  }
+  await buildIndex(db, { name: "t", schema, rows: streamed(), key: "k", batchSize: 100 });
+  assert.deepEqual(seen, [50, 50, 50]);
+  assert.equal((await queryIndex(db, { name: "t", schema }))!.count, 1000);
+  assert.deepEqual((await rowsBeingBuilt(db, "t", 990, 1010)).map((r) => r.id), rows.slice(990).map((r) => r.id));
 });

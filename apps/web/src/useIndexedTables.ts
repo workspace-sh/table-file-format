@@ -11,14 +11,17 @@
 
 import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openWebDatabase, type WebDatabase } from "./sqlite/client";
 
 export interface IndexedTables {
   /** The table on screen is held in the index, and it's being read into it: how far along. */
   building: { done: number; total: number } | null;
-  /** While it's read: its first rows as stored, to show meanwhile. */
-  firstRows: Row[] | undefined;
+  /**
+   * While it's read: its rows as stored, as many as are in so far, to show
+   * and scroll through meanwhile. They grow as the reading goes on.
+   */
+  reading: ViewRows | undefined;
   /** The view on screen's rows, once read; undefined for a table in memory, or while they're on their way. */
   source: ViewRows | undefined;
   /** The rows on screen are from before the last change to the view or the search: the new ones are on their way. */
@@ -32,6 +35,9 @@ export interface IndexedTables {
   /** After the rest is saved: the indexed tables' rows, to the files kept beside their indexes. */
   save(tables: Record<string, ParsedTable>): Promise<void>;
 }
+
+/** Rows a build puts in at a time: the last of them may not be in yet when its count is told. */
+const BUILD_BATCH = 5000;
 
 /** How long after a table is ready its search index is started: the view's first rows come first. */
 const SEARCH_AFTER_MS = 1500;
@@ -74,7 +80,6 @@ export function useIndexedTables(input: {
     madeFor.current.set(key, schema);
     latest.current.dispatch({ type: "indexed", key, count });
     setMade((was) => ({ ...was, [key]: "ready" }));
-    setFirst(({ [key]: _shown, ...rest }) => rest);
     // The search's own index is made after the view has its first rows, behind whatever the page asks for.
     setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), SEARCH_AFTER_MS);
   };
@@ -201,12 +206,49 @@ export function useIndexedTables(input: {
   );
 
   const state_ = active?.indexed ? made[state.active] : undefined;
+  // The rows read so far, as a source the table view can scroll through: the
+  // first ones are here already, the rest are asked of the worker, which sees
+  // what its build has put in. One snapshot that only grows, so what the view
+  // has read of it stays good.
+  const firstHere = first[state.active];
+  // (Kept past the end of the reading, until the view's own rows have arrived: nothing blanks between the two.)
+  const stillReading = state_ === "building" || (state_ === "ready" && source?.key !== state.active);
+  const readSoFar =
+    active?.indexed && stillReading && firstHere
+      ? state_ === "ready"
+        ? active.indexed.count
+        : Math.max(firstHere.length, (progress[state.active]?.done ?? 0) - BUILD_BATCH)
+      : 0;
+  const reading = useMemo((): ViewRows | undefined => {
+    if (readSoFar === 0 || !firstHere) return undefined;
+    const key = state.active;
+    const rows = async (start: number, end: number): Promise<Row[]> => {
+      const from = Math.max(0, start);
+      const to = Math.min(end, readSoFar);
+      if (to <= from) return [];
+      if (to <= firstHere.length) return firstHere.slice(from, to);
+      return (await hostOf(bundleOf(key))).peek(tableNameOf(key), from, to);
+    };
+    return {
+      count: readSoFar,
+      inView: readSoFar,
+      version: `reading ${key}`,
+      rows,
+      peek: (start, end) => (Math.min(end, readSoFar) <= firstHere.length ? firstHere.slice(Math.max(0, start), Math.min(end, readSoFar)) : undefined),
+      ids: async (start, end) => (await rows(start, end)).map((r) => r.id),
+      placeOf: async (id) => firstHere.findIndex((r) => r.id === id),
+      row: async (id) => firstHere.find((r) => r.id === id),
+      totals: async () => ({}),
+      groups: async () => [],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.active, readSoFar, firstHere]);
   return {
     hold,
     save,
     timings: (bundle) => hostOf(bundle).then((host) => host.timings()),
     building: active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
-    firstRows: active?.indexed && state_ !== "ready" ? first[state.active] : undefined,
+    reading,
     source: isReady && source?.key === state.active ? source.rows : undefined,
     lost: state_ === "lost",
     stale: isReady && source?.key === state.active && source.asked !== asking,
