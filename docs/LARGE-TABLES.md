@@ -304,18 +304,32 @@ The phone has a real file system and its own SQLite (expo-sqlite, through core's
 - **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
 - **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
 
-iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, the 50,000-row table. These say that it works; a Release build on a phone is still to be measured, and `batchSize` and `commitEvery` are core's defaults until it is.
+iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that it works; a Release build on a phone is still to be measured.
 
-| | 50,000 rows |
-|---|---|
-| Read (the archive's directory, small files and the rows' head) | 0.5 s (12.1 s when every row was parsed) |
-| First rows | 1.2 s after |
-| Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile |
-| An edit | shown at once; in `rows.ndjson` after the save, with no staged file left |
-| Reopened after the app was ended | within 2 s, with the edit, not read again |
-| Export `.table.zip` | all 50,000 rows, with the edit: 976 KB |
+| | 50,000 rows | 1,000,000 rows |
+|---|---|---|
+| Read (the archive's directory, small files and the rows' head) | 0.5 s (12.1 s when every row was parsed) | 0.5 s |
+| First rows | 1.2 s after | 0.9 s after |
+| Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile | 7.6 minutes, scrolling through the rows read so far meanwhile |
+| Search index whole | | about 2.5 minutes after that |
+| An edit | shown at once; in `rows.ndjson` after the save, with no staged file left | the same; the save rewrites all 165 MB |
+| Reopened after the app was ended | within 2 s, with the edit, not read again | 0.6 s, not read again |
+| Export `.table.zip` | all 50,000 rows, with the edit: 976 KB | none made; it says a table of up to 250,000 rows can be |
+| On the phone | | 822 MB: `rows.ndjson` 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
 
-Not there yet on iOS for an indexed table: the million-row table and any timing on a phone; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+- **The build commits every 20,000 rows** (`commitEvery`). As one transaction, all of a build sits in SQLite's write-ahead log until its end: at a million rows the log reached 445 MB beside a 444 MB index, and a log keeps its size once written. In steps the log is folded into the index as the build goes and stayed under 38 MB; it is emptied when the build ends, and capped at 16 MB after (`journal_size_limit`). The build took 457 s in steps against 480 s as one transaction.
+- **The step's size is not what the screen waits on.** On an iPhone 16 Pro, a Release build, 100,000 rows built from memory through the async driver:
+
+  | `batchSize` | `commitEvery` | Yield every | Rows in | Longest timer gap | Longest wait for a React render |
+  |---|---|---|---|---|---|
+  | 5,000 | none | never | 11.4 s | 7.4 s | 3.7 s |
+  | 2,000 | 20,000 | never | 11.3 s | 8.9 s | 4.4 s |
+  | 2,000 | 20,000 | 100 ms | 38.4 s | 0.9 s | 0.27 s |
+
+  On the phone a build holds React's renders up for seconds whatever the batch or the commit; the Simulator never showed more than 0.13 s. Only yielding between statements shortens the wait, at more than three times the build. `batchSize` is core's default here for that reason. This is open: see "Not there yet".
+- **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
+
+Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (above), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
 

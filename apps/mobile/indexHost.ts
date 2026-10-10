@@ -102,6 +102,19 @@ let lastAsked = 0;
 // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows.ndjson, still compressed.
 const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
 
+/**
+ * Rows per transaction in a build. One transaction for the whole build
+ * leaves all of it in the write-ahead log until the end: at a million rows
+ * the log was 445 MB beside a 444 MB index, and stayed that size. Committed
+ * in steps, the log is folded into the index as the build goes. The step's
+ * size doesn't change how long a build takes or how long the screen waits
+ * during one (measured on an iPhone 16 Pro, Release, 100,000 rows: 11.3 s
+ * at 20,000 against 11.4 s for one transaction; see docs/LARGE-TABLES.md).
+ */
+const COMMIT_EVERY = 20_000;
+/** The most of its write-ahead log an index keeps on disk once the log has been folded in, in bytes. */
+const WAL_KEPT = 16 * 1024 * 1024;
+
 function open(bundle: string): Promise<Held> {
   let on = held.get(bundle);
   if (!on) {
@@ -110,7 +123,7 @@ function open(bundle: string): Promise<Held> {
       await expoFs.mkdir(dir);
       const db = openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(dir));
       // The page size is set before the first table; the rows file is the truth, so the index needn't outlive a crash whole.
-      db.execSync("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
+      db.execSync(`pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal; pragma journal_size_limit = ${WAL_KEPT};`);
       const driver = expoDriver(db, "async");
       return { driver, serve: rowsServer(driver) };
     })();
@@ -241,6 +254,7 @@ async function ensure(
         },
         bodies: fresh.bodies,
         key: "saved",
+        commitEvery: COMMIT_EVERY,
         ...(onProgress ? { onProgress } : {}),
       });
       handle.close();
@@ -265,7 +279,7 @@ async function ensure(
   }
   const rows = await keptRows(db, bundle, name);
   if (!rows) throw new Error("its rows are no longer on this phone");
-  return buildIndexFromBytes(db, { name, schema, rows, key: "saved", ...(onProgress ? { onProgress } : {}) });
+  return buildIndexFromBytes(db, { name, schema, rows, key: "saved", commitEvery: COMMIT_EVERY, ...(onProgress ? { onProgress } : {}) });
 }
 
 function build(
@@ -283,7 +297,11 @@ function build(
       all: (sql, params) => inTurn(() => driver.all(sql, params)),
       batch: (sql, params) => inTurn(() => driver.batch!(sql, params)),
     };
-    return ensure(bundle, stepped, name, schema, again, onProgress);
+    return ensure(bundle, stepped, name, schema, again, onProgress).then(async (count) => {
+      // What a build left in the log goes into the index, and the log is emptied.
+      await stepped.exec("pragma wal_checkpoint(truncate)").catch(() => {});
+      return count;
+    });
   });
   building.set(
     bundle,
