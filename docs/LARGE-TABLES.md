@@ -251,7 +251,7 @@ A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held i
 - **Scrolling.** GTK places widgets with single-precision numbers, so rows more than some millions of pixels down sat a few pixels off. Rows are laid out in a body of at most 8 million pixels, and the scroller's travel is mapped onto the whole table: dragging the bar goes anywhere, and scrolling moves a pixel a pixel.
 - **If the index can't be made** (no space, no SQLite), the table is read into memory and a notice says so.
 
-Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is 667 MB beside a 165 MB `rows.ndjson`.
+Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is about 680 MB beside a 165 MB `rows.ndjson`. A build commits every 20,000 rows, so the write-ahead log beside the index stays small while it runs (38 MB at its largest for a million rows; as one transaction it grew as large as the index).
 
 - **Its fields.** A field's title, choices and place change in place. A field added or removed, or a formula changed, makes the index again from the saved rows (a removed field's values leave `rows.ndjson` first); the first rows show meanwhile, and edits made then wait for it.
 - **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.

@@ -46,6 +46,9 @@ export interface IndexHost extends SqlDriver {
   close(): Promise<void>;
 }
 
+/** Rows a build commits at a time (buildIndex's `commitEvery`). */
+const BUILD_STEP = 20_000;
+
 /** How many rows a table's `rows.ndjson` holds: its lines that aren't blank. */
 export async function countRows(tableDir: string): Promise<number> {
   let count = 0;
@@ -152,6 +155,8 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     key,
     // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
     search: "later",
+    // In steps: as one transaction the log beside the index grows as large as the index itself.
+    commitEvery: BUILD_STEP,
   });
   onProgress?.(done, total);
   return done;

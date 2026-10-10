@@ -87,6 +87,7 @@ export {
   printFormula,
   formatExpr,
   formulaType,
+  formulaTypeIfKnown,
   formulaFields,
   formulaRefs,
   columnLetter,

@@ -29,7 +29,8 @@ export interface NodeDatabase extends SqlDriver {
  */
 export function openNodeDatabase(path: string): NodeDatabase {
   const db = new DatabaseSync(path);
-  db.exec("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
+  // The write-ahead log keeps whatever size it grows to; past 16 MB it is cut back when it is next emptied.
+  db.exec("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal; pragma journal_size_limit = 16777216;");
   const cache = new Map<string, StatementSync>();
   const prepared = (sql: string) => {
     let statement = cache.get(sql);
