@@ -593,6 +593,23 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleSidebar]);
+  // Undo and redo: ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z too).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const redo = (key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.shiftKey);
+      if (!redo && (key !== "z" || e.shiftKey)) return;
+      const t = e.target as HTMLElement | null;
+      // In a text box, undo belongs to the text.
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      dispatch({ type: redo ? "redo" : "undo" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dispatch]);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   // How far down the page the view is, kept for history as the row at a
