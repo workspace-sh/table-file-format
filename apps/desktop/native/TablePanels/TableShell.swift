@@ -122,6 +122,7 @@ public class TableShell: NSObject {
     split.addSplitViewItem(inspectorItem)
     split.splitView.autosaveName = "TableDesktopSplitView"
     watchClicks()
+    watchEscape()
     return split
   }
 
@@ -134,6 +135,23 @@ public class TableShell: NSObject {
     guard let root = rootView, let window = root.window else { return }
     if let first = window.firstResponder as? NSView, first.isDescendant(of: root) { return }
     if !window.makeFirstResponder(root) { window.makeFirstResponder(nil) }
+  }
+
+  /// Escape, wherever the keyboard is in the window, unless text is being
+  /// typed (a cell's editor, a formula, search, a form's field), which takes
+  /// its own: the app is told, and backs out one level (App.tsx, `escape`).
+  /// Left to whatever had the keyboard, it did nothing as often as not.
+  private static var escapeMonitor: Any?
+  static func watchEscape() {
+    guard escapeMonitor == nil else { return }
+    escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      guard event.keyCode == 53,
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+            let window = rootView?.window, event.window === window else { return event }
+      if window.firstResponder is NSText { return event }
+      sidebar.send("escape", [:])
+      return nil
+    }
   }
 
   /// A click in the content takes the keyboard from the sidebar before the

@@ -34,7 +34,7 @@ import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
 import { watchRowMenus } from "./MacControls";
-import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
+import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
 import { onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
@@ -845,6 +845,17 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     if (page !== null || editingFormula || settingsShown) setInspectorShown(true);
   }, [page, editingFormula, settingsShown]);
+  // Escape backs out one level, the innermost first, and never leaves the
+  // view: a field's settings (as Cancel), a formula being edited, a row's
+  // page, the view's settings, then the selected cell.
+  const escape = useRef(() => {});
+  escape.current = () => {
+    if (settingsFormShown()) return cancelSettingsForm();
+    if (editingFormula) return void glass.props.onCancel?.();
+    if (openPage) return dispatch({ type: "openPage", rowId: null });
+    if (settingsShown) return dispatch({ type: "settings", open: false });
+    glass.props.onDeselect?.();
+  };
   const closeInspected = useRef(() => {});
   closeInspected.current = () => {
     if (openPage) dispatch({ type: "openPage", rowId: null });
@@ -1150,6 +1161,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
         else if (e.type === "inspectorCell") inspectorCell.current(e.action);
+        else if (e.type === "escape") escape.current();
         else if (e.type === "settingsForm") onSettingsFormEvent(e);
       }),
     [chooseFilesMode],

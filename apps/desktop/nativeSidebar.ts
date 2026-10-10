@@ -35,6 +35,8 @@ export type SidebarEvent =
   | { type: "inspector"; shown: boolean }
   /** A button pressed in the inspector's account of the selected cell. */
   | { type: "inspectorCell"; action: "edit" | "settings" }
+  // Escape pressed in the window while no text is being typed (TableShell.watchEscape).
+  | { type: "escape" }
   /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
   | SettingsFormEvent;
 
