@@ -5,7 +5,7 @@
 // does (apps/linux's index worker), or in place for a test.
 
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -41,8 +41,14 @@ export interface IndexHost extends SqlDriver {
    * `rows.ndjson` (when `rows` is true), without the keys in `omit`
    * (fields the table no longer has), and say the index is fresh for the
    * files as they now are.
+   *
+   * With turns to take (IndexHostOptions.turn), reads and edits are
+   * answered while it writes. An edit to the table made meanwhile stops
+   * it, the file left as it was: false then, and it's asked again after
+   * the edit. `whole` is the save a build is about to read, which nothing
+   * stops; the caller holds edits for it.
    */
-  save(name: string, tableDir: string, rows: boolean, omit?: string[]): Promise<void>;
+  save(name: string, tableDir: string, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -162,13 +168,28 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
   return done;
 }
 
-/** Write table `name`'s rows out of the index to `tableDir`'s `rows.ndjson`, replacing it in one rename. */
-export async function saveTableRows(db: SqlDriver, name: string, tableDir: string, omit: string[] = []): Promise<void> {
+/**
+ * Write table `name`'s rows out of the index to `tableDir`'s `rows.ndjson`,
+ * replacing it in one rename. `stop` is asked before each piece is written:
+ * true leaves the file as it was, and gives false.
+ */
+export async function saveTableRows(
+  db: SqlDriver,
+  name: string,
+  tableDir: string,
+  omit: string[] = [],
+  options: { stop?: () => boolean; batchSize?: number } = {},
+): Promise<boolean> {
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
   const target = join(tableDir, "rows.ndjson");
   const out = createWriteStream(`${target}.tmp`);
+  let stopped = false;
   try {
-    for await (const text of storedRows(db, { name, schema, omit })) {
+    for await (const text of storedRows(db, { name, schema, omit, ...(options.batchSize ? { batchSize: options.batchSize } : {}) })) {
+      if (options.stop?.()) {
+        stopped = true;
+        break;
+      }
       if (!out.write(text)) await once(out, "drain");
     }
     out.end();
@@ -177,7 +198,12 @@ export async function saveTableRows(db: SqlDriver, name: string, tableDir: strin
     out.destroy();
     throw error;
   }
+  if (stopped) {
+    rmSync(`${target}.tmp`, { force: true });
+    return false;
+  }
   renameSync(`${target}.tmp`, target);
+  return true;
 }
 
 /**
@@ -219,13 +245,17 @@ export interface IndexHostOptions {
    * caller holds writes to the database until the build is done.
    */
   turn?: <T>(run: () => Promise<T>) => Promise<T>;
+  /** Rows a save reads at a time (storedRows' batch), where the default isn't wanted. */
+  saveBatch?: number;
 }
 
 export function openIndexHost(bundleDir: string, options: IndexHostOptions = {}): IndexHost {
   const whole = openNodeDatabase(join(bundleDir, "index.sqlite"));
   ignoreIndex(bundleDir);
   const serve = rowsServer(whole);
-  const { turn } = options;
+  const { turn, saveBatch } = options;
+  // How many edits each table has had, for a save to know one was made while it wrote.
+  const edits = new Map<string, number>();
   // What a build asks through: each statement in its turn, when there are turns to take.
   const db: SqlDriver & { close(): void } = turn
     ? {
@@ -237,7 +267,10 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
       }
     : whole;
   return {
-    rows: serve,
+    rows: (request) => {
+      if (request.ask === "edits") edits.set(request.name, (edits.get(request.name) ?? 0) + 1);
+      return serve(request);
+    },
     peek: (name, start, end) => rowsBeingBuilt(whole, name, start, end),
     exec: whole.exec,
     run: whole.run,
@@ -264,9 +297,20 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
       await db.exec("pragma wal_checkpoint(truncate)");
       return count;
     },
-    async save(name, tableDir, rows, omit) {
-      if (rows) await saveTableRows(whole, name, tableDir, omit);
-      await setIndexKey(whole, name, await tableContentKey(tableDir));
+    async save(name, tableDir, rows, omit, wholeFile) {
+      const had = edits.get(name) ?? 0;
+      const editedSince = () => !wholeFile && (edits.get(name) ?? 0) !== had;
+      // Read through `db`: a piece of rows in each turn, the rest of what's asked between them.
+      if (rows && !(await saveTableRows(db, name, tableDir, omit, { stop: editedSince, ...(saveBatch ? { batchSize: saveBatch } : {}) }))) return false;
+      const key = await tableContentKey(tableDir);
+      // Stamped in one turn with the last look, so no edit comes between them:
+      // an index stamped fresh while it held an edit the file hadn't would keep it from the file.
+      const stamp = async () => {
+        if (editedSince()) return false;
+        await setIndexKey(whole, name, key);
+        return true;
+      };
+      return turn ? turn(stamp) : stamp();
     },
     async close() {
       await whole.exec("pragma wal_checkpoint(truncate)").catch(() => {});

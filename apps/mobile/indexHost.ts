@@ -28,6 +28,7 @@ import {
   TableEntry,
   buildSearchIndex,
   queryIndex,
+  indexKey,
   rowsBeingBuilt,
   setIndexKey,
   storedRows,
@@ -48,7 +49,13 @@ export interface IndexDatabase {
   /** Make it again from the rows kept here: after a change to its fields. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /** After edits: write the rows out of the index to the file kept beside it (when `rows`), without the keys in `omit`. */
-  save(name: string, schema: TableSchema, rows: boolean, omit?: string[]): Promise<void>;
+  /**
+   * Write a table's rows out to its file and say the index is as the file
+   * is. False when an edit landed meanwhile: nothing is said, and the next
+   * save writes it. `whole`: the save a build is about to read, which runs
+   * to its end whatever happens (the screen holds edits for it).
+   */
+  save(name: string, schema: TableSchema, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
   /** Rows of a table still being read, in file order, from those in so far. */
   peek(name: string, start: number, end: number): Promise<Row[]>;
   /** A view's rows, or edits to rows (table-app's remoteViewRows, remoteEdits). */
@@ -334,33 +341,73 @@ function build(
 }
 
 /** Write a table's rows out of the index to the file beside it: staged, then moved over it in one step. */
-async function writeRows(bundle: string, db: SqlDriver, name: string, schema: TableSchema, omit?: string[]): Promise<void> {
+async function writeRows(
+  bundle: string,
+  name: string,
+  schema: TableSchema,
+  omit: string[] | undefined,
+  stop: () => boolean,
+): Promise<{ bytes: number; key: string | null } | null> {
   await expoFs.mkdir(tableDir(bundle, name));
   const staged = new File(`${rowsPath(bundle, name)}.tmp`);
   if (staged.exists) staged.delete();
   staged.create();
   const handle = staged.open();
   const encoder = new TextEncoder();
+  // Read on a connection of its own, in one read transaction: the rows as
+  // they stood when the save began, however long the writing takes, while
+  // the bundle's own connection goes on answering the screen and taking
+  // edits. (On that one connection a save held every read behind it.)
+  const reader = expoDriver(openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(bundleDir(bundle))), "async");
   let at = 0;
+  let stopped = false;
+  // The index's key as these rows have it: the file is this index and no later one.
+  let key: string | null = null;
   try {
-    for await (const text of storedRows(db, { name, schema, ...(omit ? { omit } : {}) })) {
+    // The reader's first look is what fixes what it sees, so it takes a turn of
+    // the bundle's own queue: every edit asked before this save has had its
+    // turn by then and is in the file, and none comes between.
+    await inTurn(async () => {
+      await reader.exec("begin");
+      key = await indexKey(reader, name);
+    });
+    for await (const text of storedRows(reader, { name, schema, ...(omit ? { omit } : {}) })) {
+      // An edit has landed: this file would be out of date as it was finished, and the next save writes it.
+      if (stop()) {
+        stopped = true;
+        break;
+      }
       const bytes = encoder.encode(text);
       handle.writeBytes(bytes);
       at += bytes.length;
     }
+    await reader.exec("commit");
   } finally {
     handle.close();
+    await reader.close().catch(() => {});
+  }
+  if (stopped) {
+    // The file from the save before stays as it is, whole.
+    if (staged.exists) staged.delete();
+    return null;
   }
   renameOver(pathOfUri(staged.uri), pathOfUri(rowsPath(bundle, name)));
-  await kept(db, name, at);
+  return { bytes: at, key };
 }
+
+// A bundle's saves, one after another, and how many are under way.
+const saving = new Map<string, Promise<unknown>>();
+let savesUnderWay = 0;
+// Edits asked of each table (`bundle/table`), counted: a save looks before and after.
+const edited = new Map<string, number>();
 
 /** A search index is made a step at a time, each behind whatever the screen asked meanwhile. */
 function searchSteps(bundle: string, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const step = (): void => {
       // The screen comes first: a step waits until it has asked for nothing for a moment.
-      if (Date.now() - lastAsked < QUIET_MS) return void setTimeout(step, QUIET_MS / 2);
+      // So does a save: its rows are the person's edits on their way to the file.
+      if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(step, QUIET_MS / 2);
       afterBuild(bundle, () => inTurn(async () => buildSearchIndex((await open(bundle)).driver, name, SEARCH_STEP))).then(
         (more) => (more ? void setTimeout(step, 0) : resolve()),
         reject,
@@ -379,16 +426,50 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
   return {
     ensure: (name, schema, onProgress) => build(bundle, name, schema, false, onProgress),
     build: (name, schema, onProgress) => build(bundle, name, schema, true, onProgress),
-    save: (name, schema, rows, omit) =>
-      afterBuild(bundle, () =>
-        asked(async ({ driver }) => {
-          if (rows) await writeRows(bundle, driver, name, schema, omit);
+    save: (name, schema, rows, omit, whole) => {
+      const run = async (): Promise<boolean> => {
+        // After a build of its bundle; then the rows are written beside what the screen asks, not ahead of it.
+        await afterBuild(bundle, () => Promise.resolve());
+        const table = `${bundle}/${name}`;
+        const had = edited.get(table) ?? 0;
+        const editedSince = () => !whole && (edited.get(table) ?? 0) !== had;
+        // Rows the file doesn't have yet are written whether or not the screen knows of them: the
+        // index says (edits made before the app was ended, whose save was stopped or never began).
+        const write = rows || (await asked(({ driver }) => indexKey(driver, name))) !== "saved";
+        const written = write ? await writeRows(bundle, name, schema, omit, editedSince) : null;
+        if (write && written === null) return false;
+        // Said in one turn with the last look, so no edit comes between them.
+        return asked(async ({ driver }) => {
+          if (editedSince()) return false;
+          // The file is the index as the reader saw it, and every edit gives the index a
+          // new key: one that has moved on says the index holds something the file doesn't.
+          // Not asked of the save a build is about to read: the screen holds edits for that
+          // one, and it always ends saved.
+          if (!whole && written !== null && (await indexKey(driver, name)) !== written.key) return false;
+          if (written !== null) await kept(driver, name, written.bytes);
           await setIndexKey(driver, name, "saved");
-        }),
-      ),
+          return true;
+        });
+      };
+      savesUnderWay++;
+      const done = (saving.get(bundle) ?? Promise.resolve()).then(run, run).finally(() => {
+        savesUnderWay--;
+      });
+      saving.set(
+        bundle,
+        done.catch(() => {}),
+      );
+      return done;
+    },
     peek: (name, start, end) => asked(({ driver }) => rowsBeingBuilt(driver, name, start, end)),
     // An edit waits for a build of its bundle; a read is answered between the build's statements.
-    rows: (request) => (request.ask === "edits" ? afterBuild(bundle, () => asked(({ serve }) => serve(request))) : asked(({ serve }) => serve(request))),
+    rows: (request) => {
+      if (request.ask !== "edits") return asked(({ serve }) => serve(request));
+      // Counted as it's asked, before its turn: a save under way sees it at once.
+      const table = `${bundle}/${request.name}`;
+      edited.set(table, (edited.get(table) ?? 0) + 1);
+      return afterBuild(bundle, () => asked(({ serve }) => serve(request)));
+    },
     search: (name) => searchSteps(bundle, name),
     heldRows: (name) => {
       const entry = waiting.get(`${bundle}/${name}`);
@@ -398,13 +479,14 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
       return rows;
     },
     close: () =>
-      afterBuild(bundle, () =>
-        inTurn(async () => {
+      afterBuild(bundle, async () => {
+        await saving.get(bundle);
+        return inTurn(async () => {
           const on = held.get(bundle);
           held.delete(bundle);
           if (on) await (await on).driver.close();
-        }),
-      ),
+        });
+      }),
   };
 }
 

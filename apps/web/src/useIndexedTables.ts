@@ -26,8 +26,8 @@ export interface IndexedTables {
   source: ViewRows | undefined;
   /** The rows on screen are from before the last change to the view or the search: the new ones are on their way. */
   stale: boolean;
-  /** The table on screen was held in the index, and this browser no longer has it. */
-  lost: boolean;
+  /** The table on screen was held in the index, and this page can't read it: this browser no longer has it ("gone"), or another tab of the app holds the storage ("elsewhere"). */
+  lost: "gone" | "elsewhere" | null;
   /** A bundle just read in a worker: its database, and its large tables' first rows by `bundle/table` key. */
   hold(bundle: string, index: WebDatabase, first: Record<string, Row[]>): void;
   /** What the worker's answers for a bundle took, for measuring. */
@@ -56,7 +56,7 @@ export function useIndexedTables(input: {
 }): IndexedTables {
   const { state, dispatch, view, tell } = input;
   const hosts = useRef(new Map<string, WebDatabase | Promise<WebDatabase>>());
-  const [made, setMade] = useState<Record<string, "building" | "ready" | "lost">>({});
+  const [made, setMade] = useState<Record<string, "building" | "ready" | "lost" | "elsewhere">>({});
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
   const [first, setFirst] = useState<Record<string, Row[]>>({});
   const asked = useRef(new Set<string>());
@@ -95,7 +95,16 @@ export function useIndexedTables(input: {
       const schema = table.schema;
       void hostOf(bundleOf(key))
         .then(async (host) => ready(key, schema, await host.ensure(tableNameOf(key), schema, (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } }))), host))
-        .catch(() => setMade((was) => ({ ...was, [key]: "lost" })));
+        .catch(() => {
+          setMade((was) => ({ ...was, [key]: "lost" }));
+          // Not gone if another tab holds the storage: it's there, and this tab can't reach it.
+          void hostOf(bundleOf(key))
+            .then((host) => host.storage())
+            .then(
+              (storage) => storage === "elsewhere" && setMade((was) => ({ ...was, [key]: "elsewhere" })),
+              () => {},
+            );
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tables]);
@@ -180,19 +189,28 @@ export function useIndexedTables(input: {
         const was = madeFor.current.get(key)!;
         const gone = was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
         const rows = unsaved.current.has(key) || gone.length > 0;
+        // Its fields changed in a way the index holds: it's made again from the rows
+        // saved here, so edits wait from now (they'd be lost between the two).
+        const again = indexedFor(was) !== indexedFor(table.schema);
+        if (again) setMade((m) => ({ ...m, [key]: "building" }));
         unsaved.current.delete(key);
+        let saved: boolean;
         try {
-          await host.save(tableNameOf(key), was, rows, gone);
+          saved = await host.save(tableNameOf(key), was, rows, gone, again);
         } catch (error) {
           if (rows) unsaved.current.add(key);
+          if (again) setMade((m) => ({ ...m, [key]: "ready" }));
           throw error;
         }
-        if (indexedFor(was) === indexedFor(table.schema)) {
+        if (!saved) {
+          // An edit landed while it was written: it's saved again after that edit.
+          if (rows) unsaved.current.add(key);
+          continue;
+        }
+        if (!again) {
           madeFor.current.set(key, table.schema);
           continue;
         }
-        // Its fields changed in a way the index holds: made again from the rows just saved.
-        setMade((m) => ({ ...m, [key]: "building" }));
         setProgress(({ [key]: _old, ...rest }) => rest);
         const schema = table.schema;
         void host
@@ -264,10 +282,10 @@ export function useIndexedTables(input: {
     save,
     everyRow,
     timings: (bundle) => hostOf(bundle).then((host) => host.timings()),
-    building: active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
+    building: active?.indexed && state_ !== "ready" && state_ !== "lost" && state_ !== "elsewhere" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
     reading,
     source: isReady && source?.key === state.active ? source.rows : undefined,
-    lost: state_ === "lost",
+    lost: state_ === "lost" ? "gone" : state_ === "elsewhere" ? "elsewhere" : null,
     stale: isReady && source?.key === state.active && source.asked !== asking,
   };
 }
