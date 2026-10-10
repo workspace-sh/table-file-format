@@ -22,7 +22,7 @@ import {
   type IndexEdit,
 } from "./indexed.ts";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { queryIndex } from "@workspace.sh/table-core";
+import { isIndexStale, queryIndex } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -181,6 +181,76 @@ test("saving writes the rows in file order and leaves the index fresh", async ()
     assert.equal(await host.ensure("tasks", s.tasks, () => (built = true)), after.length);
     assert.equal(built, false);
     assert.equal(await tableContentKey(s.tasks), await tableContentKey(s.tasks));
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a save takes turns, and an edit made while it writes stops it: the file stays as it was until a save no edit comes into", async () => {
+  const s = scratch();
+  try {
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const facts = { schema: held.schema };
+    const before = rowsOnDisk(s.tasks);
+    // Turns as a worker gives them, one after another, and a few rows a piece so a save takes several.
+    let last: Promise<unknown> = Promise.resolve();
+    let turns = 0;
+    const host = openIndexHost(s.bundle, {
+      saveBatch: 2,
+      turn: (run) => {
+        turns++;
+        const turn = last.then(run);
+        last = turn.catch(() => {});
+        return turn;
+      },
+    });
+    await host.ensure("tasks", s.tasks);
+    const stale = async () => (await isIndexStale(host, "tasks", await tableContentKey(s.tasks)));
+    const edit = (rowId: string, value: string) => host.rows({ ask: "edits", name: "tasks", table: facts, edits: [{ kind: "cell", rowId, field: "title", value }] });
+
+    await edit("t1", "First");
+    turns = 0;
+    const stopped = host.save("tasks", s.tasks, true);
+    // While it's on its first rows, another edit.
+    await edit("t2", "Second");
+    assert.equal(await stopped, false);
+    assert.deepEqual(rowsOnDisk(s.tasks), before, "the file is as it was");
+    assert.equal(existsSync(join(s.tasks, "rows.ndjson.tmp")), false);
+    assert.equal(await stale(), true, "and the index isn't said to be fresh for it");
+
+    // Asked again with nothing coming into it: both edits are written, a piece a turn.
+    turns = 0;
+    assert.equal(await host.save("tasks", s.tasks, true), true);
+    assert.ok(turns >= before.length / 2, `${turns} turns`);
+    assert.deepEqual(
+      rowsOnDisk(s.tasks).map((r) => r.title),
+      before.map((r) => (r.id === "t1" ? "First" : r.id === "t2" ? "Second" : r.title)),
+    );
+    assert.equal(await stale(), false);
+
+    // The save a build is about to read isn't stopped: it has what the index had when it began or since, and is stamped.
+    await edit("t1", "Third");
+    const whole = host.save("tasks", s.tasks, true, undefined, true);
+    await edit("t2", "Fourth");
+    assert.equal(await whole, true);
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t1")!.title, "Third");
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a save that only stamps (pages changed, not rows) leaves the index unstamped when an edit came into it", async () => {
+  const s = scratch();
+  try {
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    const saving = host.save("tasks", s.tasks, false);
+    await host.rows({ ask: "edits", name: "tasks", table: { schema: held.schema }, edits: [{ kind: "cell", rowId: "t1", field: "title", value: "Edited" }] });
+    assert.equal(await saving, false);
+    assert.equal(await isIndexStale(host, "tasks", await tableContentKey(s.tasks)), true);
     await host.close();
   } finally {
     s.done();
