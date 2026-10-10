@@ -50,6 +50,50 @@ index 779480a..cdcc4cd 100644
    }
  #endif // macOS]
  }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+index 1ab801d..3802f1f 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+@@ -15,6 +15,9 @@ @interface RCTEnhancedScrollView () <RCTUIScrollViewDelegate> // [macOS]
+ @implementation RCTEnhancedScrollView {
+   __weak id<RCTUIScrollViewDelegate> _publicDelegate; // [macOS]
+   BOOL _isSetContentOffsetDisabled;
++#if TARGET_OS_OSX // [macOS
++  BOOL _passingGestureOn;
++#endif // macOS]
+ }
+ 
+ + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key
+@@ -375,4 +378,29 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
+       scrollView.contentSize.width > self.frame.size.width;
+ }
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] A scroll gesture this view can't scroll (a vertical swipe over a horizontal
++// ScrollView, say) goes to the scroll view around it, all of it, momentum included: decided once, as the
++// gesture begins, by which way it mostly runs. Upstream lets AppKit's default take it, and a table's
++// sideways pane held vertical swipes over it instead of the page scrolling. Drop once upstream does this.
++- (void)scrollWheel:(NSEvent *)event
++{
++  BOOL starts = event.phase == NSEventPhaseBegan || (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone);
++  if (starts) {
++    CGFloat dx = fabs(event.scrollingDeltaX);
++    CGFloat dy = fabs(event.scrollingDeltaY);
++    NSSize content = self.documentView.frame.size;
++    NSSize visible = self.contentView.bounds.size;
++    BOOL canX = content.width > visible.width + 0.5;
++    BOOL canY = content.height > visible.height + 0.5;
++    _passingGestureOn = (dy > dx && !canY) || (dx > dy && !canX);
++  }
++  if (_passingGestureOn) {
++    [self.nextResponder scrollWheel:event];
++    return;
++  }
++  [super scrollWheel:event];
++}
++#endif // macOS]
++
+ @end
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
 index a14a864..988a451 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
