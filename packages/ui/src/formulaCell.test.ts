@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, sheetOrder } from "@workspace.sh/table-core";
-import { tables } from "@workspace.sh/table-fixtures";
+import { bundles, tables } from "@workspace.sh/table-fixtures";
 import { explainFormula, formulaDraftOf, formulaInputCells, formulaStatus, viewGrid } from "./formulaCell";
 
 const budget = tables["budget"]!;
@@ -56,4 +56,29 @@ test("by place in a Sheet view, the row above's balance is outlined for this row
   const grid = viewGrid(view, view.fields!, [], { order, sheets: [] });
   assert.equal(grid?.rows[0], order[0]);
   assert.equal(viewGrid({ ...view, coordinates: undefined }, view.fields!, []), undefined);
+});
+
+test("saving a lookup leaves a number field a number", () => {
+  // Shop, Order lines, Unit price: a number shown as pounds, looked up from the product.
+  const shop = bundles["shop"]!.tables;
+  const lines = shop["lines"]!;
+  const price = field(lines, "unit_price");
+  assert.equal(price.type, "number");
+  const options = { tables: shop, self: "lines" };
+  const row = computeRows(lines.schema, lines.rows, options).rows[0]!;
+  const explain = (from: typeof price, draft: string, computeOptions?: typeof options) =>
+    explainFormula({ field: from, row, fields: lines.schema.fields.map((f) => (f.name === from.name ? from : f)), draft, editable: true, allRows: lines.rows, ...(computeOptions ? { computeOptions } : {}) });
+  // To a number by arithmetic, and back to the bare lookup: its type is the product's price's, a number, either way.
+  const times = explain(price, '=lookup("product", "price") * 1', options);
+  assert.ok(times.save);
+  assert.equal(times.save!.type, undefined);
+  const back = explain({ ...price, ...times.save! }, '=lookup("product", "price")', options);
+  assert.ok(back.save);
+  assert.equal(back.save!.type, undefined, "the field stays a number");
+  // Without the other table at hand the lookup's type is a guess, and a guess changes nothing.
+  const blind = explain({ ...price, ...times.save! }, '=lookup("product", "price")');
+  assert.equal(blind.save!.type, undefined);
+  // A lookup that reads text does make a number field text, when that is known.
+  const name = explain(price, '=lookup("product", "name")', options);
+  assert.equal(name.save!.type, "string");
 });
