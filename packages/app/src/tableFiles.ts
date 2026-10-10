@@ -85,3 +85,18 @@ export function openFailedText(fileName: string, error: unknown): string {
   return `Couldn't open ${fileName}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
+
+/** The most rows of a table held in the index that an archive is made of: it is put together in memory. */
+export const ARCHIVE_ROWS = 250_000;
+
+/**
+ * What an app says when asked to make a `.table.zip` of a file with a table
+ * too large for that. It makes none: an archive missing a table's rows
+ * would look like a copy of the file and not be one.
+ */
+export function tooLargeToArchiveText(tableName: string, rows: number): { heading: string; body: string } {
+  return {
+    heading: "Can't make a .table.zip of this file yet",
+    body: `${tableName} has ${rows.toLocaleString()} rows, and a .table.zip can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now.`,
+  };
+}

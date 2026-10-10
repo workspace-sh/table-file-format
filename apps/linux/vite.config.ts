@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defaultServerConditions, defineConfig } from "vite";
+// @ts-expect-error a plain script, shared with the other apps' builds
+import { buildInfo } from "../../scripts/build-version.mjs";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -15,6 +17,8 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
  * or worse, where a second React is.
  */
 export default defineConfig({
+  // Which build this is, shown in About (docs/VERSIONING.md).
+  define: { __TABLE_BUILD__: JSON.stringify(buildInfo()) },
   resolve: {
     alias: [
       { find: /^@workspace\.sh\/table-core$/, replacement: here("../../packages/core/src/index.ts") },

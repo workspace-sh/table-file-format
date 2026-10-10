@@ -3,7 +3,7 @@ import { html, css } from "react-strict-dom";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.sh/table-ui";
 import type { DisplaySettingKind } from "@workspace.sh/table-ui/shared";
-import { displayChoices, sidebarTree, type ShownFile } from "@workspace.sh/table-app";
+import { buildLabel, displayChoices, sidebarTree, type ShownFile } from "@workspace.sh/table-app";
 import { filesTree, type FilesTreeDir } from "@workspace.sh/table-app";
 
 const styles = css.create({
@@ -555,6 +555,8 @@ export function Sidebar({
           Reset demo data
         </html.button>
         <html.span style={styles.resetNote}>Edits are kept in this browser.</html.span>
+        {/* Which build this is (docs/VERSIONING.md): what a person testing it quotes. */}
+        <html.span style={styles.resetNote}>Build {buildLabel()}</html.span>
       </html.div>
     </html.div>
   );

@@ -1,6 +1,8 @@
 import { defaultClientConditions, defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import babel from "vite-plugin-babel";
+// @ts-expect-error a plain script, shared with the other apps' builds
+import { buildInfo } from "../../scripts/build-version.mjs";
 
 export default defineConfig(() => ({
   // Where the built demo is served from: "/" locally, and
@@ -23,6 +25,8 @@ export default defineConfig(() => ({
     }),
     babel(),
   ],
+  // Which build this is, shown in the sidebar (docs/VERSIONING.md).
+  define: { __TABLE_BUILD__: JSON.stringify(buildInfo()) },
   build: {
     outDir: "dist-web",
   },
