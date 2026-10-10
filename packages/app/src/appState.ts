@@ -131,7 +131,25 @@ export interface AppState {
    * to change. Each goes once the app says it's made (`indexed`).
    */
   indexWork: IndexWork[];
+  /**
+   * What undo puts back, for each table: the table as it was before each
+   * edit to its rows, its fields or its views, newest last, and what redo
+   * puts back after an undo. Where you are (the cell selected, the view,
+   * the page open) isn't an edit, and isn't here.
+   */
+  undo: Record<string, { past: UndoStep[]; future: UndoStep[] }>;
 }
+
+/** A table as it was before an edit. `run` is given to edits that are one stretch of the same thing (typing in a page), which undo as one. */
+export interface UndoStep {
+  table: ParsedTable;
+  run?: string;
+}
+
+/** The most steps kept for a table, the fewest, and the rows those steps may list between them. */
+const UNDO_STEPS = 100;
+const UNDO_FEWEST = 20;
+const UNDO_ROWS = 2_000_000;
 
 /** One edit to a row of an indexed table; `n` counts them. */
 export type IndexWork = { n: number; key: string } & (
@@ -205,6 +223,9 @@ export type AppAction =
    * after the edits up to `done` (an IndexWork's `n`) were made, which
    * then leave the queue and the table is to be written.
    */
+  /** Put the table on screen back as it was before its last edit; and forward again. */
+  | { type: "undo" }
+  | { type: "redo" }
   | { type: "indexed"; key: string; count: number; done?: number }
   /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
   | { type: "reloaded"; key: string; table: ParsedTable };
@@ -251,6 +272,7 @@ export function initialAppState(input: AppStart): AppState {
     telling: null,
     dirty: [],
     indexWork: [],
+    undo: {},
   };
   const target = input.start ? addressTarget(input.start, tables, bundles, "") : null;
   const state = target ? follow(base, target) : base;
@@ -334,9 +356,72 @@ function placeOf(state: AppState): Place {
 }
 
 /** An edit to the table on screen: made, and its bundle marked to write. Nothing when it changes nothing. */
-function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key = state.active): AppState {
+/**
+ * An edit to a table: made, the table to be written, and what it was
+ * before kept for undo. `run` names a stretch of edits that undo as one
+ * (each save of the same page while it's typed in).
+ *
+ * A table held in the index has its rows there, not here, so only an edit
+ * to its views is kept; an edit to its fields changes what the index
+ * holds, and what was kept before it is let go.
+ */
+function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
   const tables = onTable(state.tables, key, change);
-  return tables === state.tables ? state : { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
+  if (tables === state.tables) return state;
+  const next = { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
+  const before = state.tables[key]!;
+  if (before.indexed) {
+    const after = tables[key]!;
+    if (after.schema !== before.schema) return { ...next, undo: without(state.undo, [key]) };
+    if (after.views === before.views) return next;
+  }
+  const stack = state.undo[key] ?? { past: [], future: [] };
+  const last = stack.past.at(-1);
+  // Another edit of the same stretch: the step already kept is where undo goes back to.
+  const past =
+    run !== undefined && last?.run === run
+      ? stack.past
+      : [...stack.past, { table: before, ...(run !== undefined ? { run } : {}) }].slice(-stepsKept(before));
+  return { ...next, undo: { ...state.undo, [key]: { past, future: [] } } };
+}
+
+/** How many steps a table keeps: fewer for a long one, each of whose row edits keeps a list of every row. */
+function stepsKept(table: ParsedTable): number {
+  return Math.max(UNDO_FEWEST, Math.min(UNDO_STEPS, Math.floor(UNDO_ROWS / Math.max(1, table.rows.length))));
+}
+
+function without<T>(record: Record<string, T>, keys: string[]): Record<string, T> {
+  if (!keys.some((k) => k in record)) return record;
+  return Object.fromEntries(Object.entries(record).filter(([k]) => !keys.includes(k)));
+}
+
+/** Undo or redo on the table on screen: the table from one stack put back, and the one it replaces put on the other. */
+function stepBack(state: AppState, from: "past" | "future"): AppState {
+  const key = state.active;
+  const now = state.tables[key];
+  const stack = state.undo[key];
+  const step = stack?.[from].at(-1);
+  if (!now || !stack || !step || state.sidebar.files) return state;
+  const to = from === "past" ? "future" : "past";
+  // A table held in the index: its views go back, and the rest stays what the index holds.
+  const table = now.indexed ? { ...now, views: step.table.views } : step.table;
+  return {
+    ...state,
+    tables: { ...state.tables, [key]: table },
+    dirty: marked(state.dirty, bundleOf(key)),
+    undo: {
+      ...state.undo,
+      [key]: { ...stack, [from]: stack[from].slice(0, -1), [to]: [...stack[to], { table: now, ...(step.run !== undefined ? { run: step.run } : {}) }] },
+    },
+  };
+}
+
+/** A stretch of edits is over (the page being typed in was closed): the next edit like it is its own step. */
+function runEnded(state: AppState, key: string): AppState {
+  const stack = state.undo[key];
+  const last = stack?.past.at(-1);
+  if (!stack || last?.run === undefined) return state;
+  return { ...state, undo: { ...state.undo, [key]: { ...stack, past: [...stack.past.slice(0, -1), { table: last.table }] } } };
 }
 
 /** An edit to an indexed table's row, for the app to make in the index. */
@@ -421,7 +506,7 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "openPage":
       if (action.rowId !== null && !state.tables[state.active]?.rows.some((r) => r.id === action.rowId)) return state;
-      return action.rowId === state.openPage ? state : { ...state, openPage: action.rowId };
+      return action.rowId === state.openPage ? state : { ...runEnded(state, state.active), openPage: action.rowId };
     case "search":
       return action.text === state.search ? state : { ...state, search: action.text };
     case "settings": {
@@ -463,7 +548,8 @@ function step(state: AppState, action: AppAction): AppState {
         const held = edit(state, (t) => withIndexedBody(t, action.rowId, action.content), key);
         return held === state ? state : queued(held, { key, kind: "body", rowId: action.rowId, content: action.content });
       }
-      return edit(state, (t) => withBody(t, action.rowId, action.content), action.table);
+      // Each save of a page while it's typed in is one stretch: undo takes it back whole.
+      return edit(state, (t) => withBody(t, action.rowId, action.content), action.table, `page:${action.rowId}`);
     }
     case "updateField":
       return edit(state, (t) => withFieldPatch(t, action.name, action.patch));
@@ -563,6 +649,7 @@ function step(state: AppState, action: AppAction): AppState {
         {
           ...state,
           tables: { ...state.tables, ...library.tables },
+          undo: without(state.undo, Object.keys(library.tables)),
           bundles: { ...state.bundles, ...library.bundles },
           opened: { ...state.opened, ...library.paths },
           openedAt: { ...state.openedAt, ...schemaVersions(library.tables) },
@@ -597,13 +684,23 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "reloaded":
       if (!state.tables[action.key]) return state;
-      return { ...state, tables: { ...state.tables, [action.key]: action.table }, indexWork: state.indexWork.filter((w) => w.key !== action.key) };
+      return {
+        ...state,
+        tables: { ...state.tables, [action.key]: action.table },
+        indexWork: state.indexWork.filter((w) => w.key !== action.key),
+        undo: without(state.undo, [action.key]),
+      };
+    case "undo":
+      return stepBack(state, "past");
+    case "redo":
+      return stepBack(state, "future");
     case "indexed": {
       const table = state.tables[action.key];
       if (!table) return state;
       const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1 };
       const tables = { ...state.tables, [action.key]: { ...table, indexed } };
-      if (action.done === undefined) return { ...state, tables };
+      // Its rows have just gone to the index: the steps kept list them as they were here.
+      if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };
       const done = action.done;
       return {
         ...state,
@@ -645,6 +742,7 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
         {
           ...state,
           tables: after.tables,
+          undo: {},
           bundles: after.bundles,
           openedAt: schemaVersions(after.tables),
           viewIds: firstViews(after.tables),
@@ -704,6 +802,9 @@ export interface Derived {
   filesTree: FilesTreeBundle[];
   canGoBack: boolean;
   canGoForward: boolean;
+  /** Whether the table on screen has an edit to undo, or one undone to redo. */
+  canUndo: boolean;
+  canRedo: boolean;
   commands: AppCommand[];
   /** The address of what's on screen, with the open page's row: Copy Link's. */
   address: string;
@@ -761,6 +862,8 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const canGoBack = goBack(state.history, live) !== null;
   const canGoForward = goForward(state.history, live) !== null;
   const mode = state.sidebar.files ? "files" : "tables";
+  const canUndo = mode === "tables" && (state.undo[state.active]?.past.length ?? 0) > 0;
+  const canRedo = mode === "tables" && (state.undo[state.active]?.future.length ?? 0) > 0;
   const tree = sidebarTree(state.tables, state.bundles, {
     folded: state.sidebar.foldedFiles,
     expanded: [state.active],
@@ -797,7 +900,9 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
         : [],
     canGoBack,
     canGoForward,
-    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward }),
+    canUndo,
+    canRedo,
+    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward, canUndo, canRedo }),
     address: viewAddress(state.active, view.id, state.openPage ?? undefined),
   };
 }
