@@ -17,6 +17,7 @@ import {
   buildSearchIndex,
   oo1Driver,
   queryIndex,
+  rowsBeingBuilt,
   setIndexKey,
   storedRows,
   type LazyZipEntry,
@@ -40,6 +41,7 @@ export type Request = { id: number } & (
       | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[] }
       | { op: "search"; name: string }
       | { op: "rows"; request: RowsRequest }
+      | { op: "peek"; name: string; start: number; end: number }
       | { op: "persistent" }
       | { op: "close" }
     ))
@@ -148,20 +150,34 @@ async function use(name: string): Promise<void> {
 
 type SyncHandle = { getSize(): number; read(into: Uint8Array, at: { at: number }): number; write(from: Uint8Array, at: { at: number }): number; truncate(size: number): void; flush(): void; close(): void };
 
-async function rowsFile(table: string, create: boolean): Promise<SyncHandle | null> {
-  if (!persistent) return null;
+/** A bundle, and the database to ask: the one in hand, or a build's own way of asking (a statement at a time). */
+interface On {
+  bundle: string;
+  db: SqlDriver;
+  persistent: boolean;
+}
+const here = (): On => ({ bundle, db: driver!, persistent });
+
+async function rowsFile(on: On, table: string, create: boolean): Promise<SyncHandle | null> {
+  if (!on.persistent) return null;
   try {
     const root = await navigator.storage.getDirectory();
     const dir = await root.getDirectoryHandle("table-rows", { create: true });
-    const file = await dir.getFileHandle(`${bundle}--${table}.ndjson`, { create });
+    const file = await dir.getFileHandle(`${on.bundle}--${table}.ndjson`, { create });
     return (await (file as unknown as { createSyncAccessHandle(): Promise<SyncHandle> }).createSyncAccessHandle()) as SyncHandle;
   } catch {
     return null;
   }
 }
 
-async function writeRows(table: string, pieces: AsyncIterable<Uint8Array> | Iterable<Uint8Array>): Promise<void> {
-  const file = await rowsFile(table, true);
+/** Say a table's rows file is whole, at this many bytes: one cut short (the page closed while it was written) isn't taken for the table. */
+async function kept(on: On, table: string, bytes: number): Promise<void> {
+  await on.db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
+  await on.db.run("insert or replace into _kept(name, bytes) values(?, ?)", [table, bytes]);
+}
+
+async function writeRows(on: On, table: string, pieces: AsyncIterable<Uint8Array> | Iterable<Uint8Array>): Promise<void> {
+  const file = await rowsFile(on, table, true);
   if (!file) return;
   let at = 0;
   try {
@@ -171,19 +187,13 @@ async function writeRows(table: string, pieces: AsyncIterable<Uint8Array> | Iter
   } finally {
     file.close();
   }
-  await kept(table, at);
+  await kept(on, table, at);
 }
 
-/** Say a table's rows file is whole, at this many bytes: one cut short (the page closed while it was written) isn't taken for the table. */
-async function kept(table: string, bytes: number): Promise<void> {
-  await driver!.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
-  await driver!.run("insert or replace into _kept(name, bytes) values(?, ?)", [table, bytes]);
-}
-
-async function readRows(table: string): Promise<Uint8Array | null> {
-  await driver!.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
-  const whole = (await driver!.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
-  const file = await rowsFile(table, false);
+async function readRows(on: On, table: string): Promise<Uint8Array | null> {
+  await on.db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
+  const whole = (await on.db.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
+  const file = await rowsFile(on, table, false);
   if (!file) return null;
   try {
     if (whole === undefined || file.getSize() !== Number(whole)) return null;
@@ -212,7 +222,10 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
       if (!canBeIndexed(table)) return false;
       const head = rows.head(HEAD_BYTES);
       // How many rows it holds isn't known until it's all read: judged from how many its start holds.
-      const count = head.length >= rows.size ? linesInBytes(head) : Math.round((linesInBytes(head) / head.length) * rows.size);
+      // (To two figures, when judged: it is shown until the reading is done.)
+      const judged = Math.round((linesInBytes(head) / head.length) * rows.size);
+      const figures = 10 ** Math.max(0, String(judged).length - 2);
+      const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
       if (count < from) return false;
       large.set(name, { rows, bodies: table.bodies });
       first[name] = firstRowsInBytes(head, FIRST_ROWS);
@@ -227,29 +240,27 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
   return { opened, first };
 }
 
-async function build(id: number, name: string, schema: TableSchema, rows: Uint8Array, bodies: Record<string, string> | undefined): Promise<number> {
-  return buildIndexFromBytes(driver!, { name, schema, rows, ...(bodies ? { bodies } : {}), key: "saved", onProgress: (done, total) => post({ id, progress: [done, total] }) });
-}
-
-async function ensure(req: Request & { op: "ensure" }): Promise<number> {
-  const fresh = waiting.get(`${bundle}/${req.name}`);
+/** Make a table's index: from an archive just read, kept from before, or again from its rows kept here. */
+async function ensure(on: On, id: number, name: string, schema: TableSchema, again: boolean): Promise<number> {
+  const progress = (done: number, total: number) => post({ id, progress: [done, total] });
+  const fresh = again ? undefined : waiting.get(`${on.bundle}/${name}`);
   if (fresh) {
     // Read a piece at a time: into the index, and into the file kept beside it.
-    const file = await rowsFile(req.name, true);
+    const file = await rowsFile(on, name, true);
     let at = 0;
     file?.truncate(0);
     try {
-      const count = await buildIndexFromBytes(driver!, {
-        name: req.name,
-        schema: req.schema,
+      const count = await buildIndexFromBytes(on.db, {
+        name,
+        schema,
         rows: { chunks: fresh.rows.chunks(), size: fresh.rows.size, keep: (chunk) => file && (at += file.write(chunk, { at })) },
         bodies: fresh.bodies,
         key: "saved",
-        onProgress: (done, total) => post({ id: req.id, progress: [done, total] }),
+        onProgress: progress,
       });
       file?.flush();
-      await kept(req.name, at);
-      waiting.delete(`${bundle}/${req.name}`);
+      await kept(on, name, at);
+      waiting.delete(`${on.bundle}/${name}`);
       return count;
     } catch (error) {
       // A damaged archive is found out at its end: nothing of it is kept.
@@ -259,12 +270,14 @@ async function ensure(req: Request & { op: "ensure" }): Promise<number> {
       file?.close();
     }
   }
-  // Opened before: the index kept in this browser, or its rows to make it from again.
-  const held = await queryIndex(driver!, { name: req.name, schema: req.schema });
-  if (held) return held.count;
-  const rows = await readRows(req.name);
+  if (!again) {
+    // Opened before: the index kept in this browser.
+    const held = await queryIndex(on.db, { name, schema });
+    if (held) return held.count;
+  }
+  const rows = await readRows(on, name);
   if (!rows) throw new Error("its rows are no longer in this browser's storage");
-  return build(req.id, req.name, req.schema, rows, undefined);
+  return buildIndexFromBytes(on.db, { name, schema, rows, key: "saved", onProgress: progress });
 }
 
 async function handle(req: Request & { bundle: string }): Promise<unknown> {
@@ -283,18 +296,14 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
       return driver.batch!(req.sql, req.params);
     case "rows":
       return serve!(req.request);
-    case "ensure":
-      return ensure(req);
-    case "build": {
-      const kept = await readRows(req.name);
-      if (!kept) throw new Error("its rows are no longer in this browser's storage");
-      return build(req.id, req.name, req.schema, kept, undefined);
-    }
+    case "peek":
+      return rowsBeingBuilt(driver, req.name, req.start, req.end);
     case "save": {
       if (req.rows) {
         const encoder = new TextEncoder();
         const source = storedRows(driver, { name: req.name, schema: req.schema, ...(req.omit ? { omit: req.omit } : {}) });
         await writeRows(
+          here(),
           req.name,
           (async function* () {
             for await (const text of source) yield encoder.encode(text);
@@ -313,33 +322,91 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
 
 // Requests run one at a time, in the order they came: the indexer's begin/commit pairs depend on it.
 let queue: Promise<unknown> = Promise.resolve();
+/** Take a turn in the queue. */
+const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
+  const turn = queue.then(run);
+  queue = turn.catch(() => {});
+  return turn;
+};
+
+// Bundles with a build under way, and when each is done. A build doesn't hold
+// the queue: each of its statements takes a turn, so the page's reads are
+// answered between them, and see the rows it has put in so far (they are on
+// its connection). Anything that would write to that bundle waits for it:
+// a build is one transaction, and would take the write with it if it failed.
+const building = new Map<string, Promise<unknown>>();
+const writes = (req: Request): boolean =>
+  req.op === "ensure" || req.op === "build" || req.op === "save" || req.op === "search" || req.op === "run" || req.op === "exec" || req.op === "batch" || (req.op === "rows" && req.request.ask === "edits");
+
+/** Resolves once the messages already sent to this worker have been taken in. (A channel to itself: a timer would be held back to 4 ms a time.) */
+const turnstile = new MessageChannel();
+const hearing: (() => void)[] = [];
+turnstile.port1.onmessage = () => hearing.shift()?.();
+const heard = (): Promise<void> =>
+  new Promise((resolve) => {
+    hearing.push(resolve);
+    turnstile.port2.postMessage(0);
+  });
+
+function build(req: Request & { op: "ensure" | "build" }): void {
+  const after = building.get(req.bundle) ?? Promise.resolve();
+  const done = after
+    .then(() => open(req.bundle))
+    .then((h) => {
+      const d = h.driver;
+      // The database, asked a statement at a time, each in its turn.
+      // Before each, the worker hears what the page has sent: SQLite here answers
+      // without ever waiting, so a build would otherwise run from start to end
+      // with every message from the page left unread.
+      const stepped: SqlDriver = {
+        exec: (sql) => heard().then(() => inTurn(() => d.exec(sql))),
+        run: (sql, params) => heard().then(() => inTurn(() => d.run(sql, params))),
+        all: (sql, params) => heard().then(() => inTurn(() => d.all(sql, params))),
+        batch: (sql, params) => heard().then(() => inTurn(() => d.batch!(sql, params))),
+      };
+      const from = performance.now();
+      return ensure({ bundle: req.bundle, db: stepped, persistent: h.persistent }, req.id, req.name, req.schema, req.op === "build").then((count) => {
+        if (timings.length < 500) timings.push({ what: req.op, ms: Math.round(performance.now() - from), waited: 0 });
+        return count;
+      });
+    });
+  building.set(
+    req.bundle,
+    done.then(
+      () => {},
+      () => {},
+    ),
+  );
+  done.then(
+    (value) => post({ id: req.id, ok: true, value }),
+    (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
+  );
+}
 
 /** A search index is made a step at a time, each behind whatever the page asked meanwhile. */
 function searchStep(req: Request & { op: "search" }): void {
   // The page comes first: a step waits until it has asked for nothing for a moment.
   if (Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => searchStep(req), QUIET_MS / 2);
-  queue = queue
-    .then(async () => {
-      await use(req.bundle);
-      const from = performance.now();
-      const more = driver ? await buildSearchIndex(driver, req.name, SEARCH_STEP) : false;
-      if (timings.length < 500) timings.push({ what: "search step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
-      return more;
-    })
-    .then(
-      (more) => {
-        if (more) setTimeout(() => searchStep(req), 0);
-        else post({ id: req.id, ok: true });
-      },
-      (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
-    );
+  inTurn(async () => {
+    await use(req.bundle);
+    const from = performance.now();
+    const more = driver ? await buildSearchIndex(driver, req.name, SEARCH_STEP) : false;
+    if (timings.length < 500) timings.push({ what: "search step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
+    return more;
+  }).then(
+    (more) => {
+      if (more) setTimeout(() => searchStep(req), 0);
+      else post({ id: req.id, ok: true });
+    },
+    (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
+  );
 }
 
-self.onmessage = (e: MessageEvent<Request>) => {
-  const req = e.data;
+function take(req: Request): void {
+  if (req.op === "ensure" || req.op === "build") return build(req);
   if (req.op === "search") return searchStep(req);
   lastAsked = Date.now();
-  queue = queue.then(async () => {
+  void inTurn(async () => {
     try {
       if (req.op === "timings") return post({ id: req.id, ok: true, value: timings.splice(0) });
       const waited = Date.now() - lastAsked;
@@ -352,4 +419,12 @@ self.onmessage = (e: MessageEvent<Request>) => {
       post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) });
     }
   });
+}
+
+self.onmessage = (e: MessageEvent<Request>) => {
+  const req = e.data;
+  // A write to a bundle that is being built waits for the build.
+  const busy = "bundle" in req && writes(req) ? building.get(req.bundle) : undefined;
+  if (busy) void busy.then(() => take(req));
+  else take(req);
 };

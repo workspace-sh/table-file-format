@@ -22,6 +22,7 @@ export type { LazyZipEntry } from "./zip.js";
 export {
   buildIndex,
   queryIndex,
+  rowsBeingBuilt,
   buildSearchIndex,
   setIndexKey,
   storedRows,
