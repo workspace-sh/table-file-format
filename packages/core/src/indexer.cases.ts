@@ -484,4 +484,38 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     assert.equal((await queryIndex(db, { name: "t", schema }))!.count, 1000);
     assert.deepEqual((await rowsBeingBuilt(db, "t", 990, 1010)).map((r) => r.id), rows.slice(990).map((r) => r.id));
   });
+  test("a build committed in steps is no index until its last step, and none if it fails", async () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
+    const db = driver();
+    // An index from before, which the new build replaces.
+    await buildIndex(db, { name: "t", schema, rows: rows.slice(0, 10), key: "old" });
+    assert.equal((await queryIndex(db, { name: "t", schema }))!.count, 10);
+    let midway = 0;
+    async function* streamed(fail: boolean) {
+      for (const [i, row] of rows.entries()) {
+        if (i === 600) {
+          // Steps have been committed by now: the rows are there to read as they arrive, and it is nobody's index yet.
+          midway = (await rowsBeingBuilt(db, "t", 0, 1000)).length;
+          assert.equal(await queryIndex(db, { name: "t", schema }), null, "no index part-way");
+          assert.equal(await isIndexStale(db, "t", "old"), true, "the old key is gone");
+          if (fail) throw new Error("the file ended early");
+        }
+        yield row;
+      }
+    }
+    await assert.rejects(buildIndex(db, { name: "t", schema, rows: streamed(true), key: "new", batchSize: 50, commitEvery: 200 }), /ended early/);
+    assert.ok(midway >= 400 && midway <= 600, `${midway} rows in at row 600`);
+    // Failed: nothing of it is left, and there is no index, old or new.
+    assert.equal(await queryIndex(db, { name: "t", schema }), null);
+    assert.deepEqual(await rowsBeingBuilt(db, "t", 0, 10), []);
+    // Whole: the same index a single transaction makes.
+    await buildIndex(db, { name: "t", schema, rows: streamed(false), key: "new", batchSize: 50, commitEvery: 200, search: "later" });
+    const stepped = (await queryIndex(db, { name: "t", schema }))!;
+    const once = driver();
+    await buildIndex(once, { name: "t", schema, rows, key: "new" });
+    const whole = (await queryIndex(once, { name: "t", schema }))!;
+    assert.equal(stepped.count, 1000);
+    assert.deepEqual(await stepped.rows(0, 1000), await whole.rows(0, 1000));
+    assert.equal(await isIndexStale(db, "t", "new"), false);
+  });
 }
