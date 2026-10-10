@@ -526,7 +526,13 @@ export function TableView({
   // what each key does is table-ui/shared's gridKey, as the web's is.
   const cells = useRef(new Map<string, Gtk.Box>());
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  // A cell asked to open for editing. It clears once the cell has heard it
+  // (the cell's effect runs first), so the cell doesn't open again when its
+  // row is scrolled away and built anew.
   const [editRequest, setEditRequest] = useState<{ key: string; n: number; text?: string } | null>(null);
+  useEffect(() => {
+    if (editRequest) setEditRequest(null);
+  }, [editRequest]);
   const cellKey = (rowId: string, name: string) => `${rowId}\u0000${name}`;
   // A place to take the focus once its row is built.
   const focusWhenBuilt = useRef<GridPlace | null>(null);
