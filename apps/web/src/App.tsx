@@ -496,9 +496,15 @@ export function App() {
       if (read.index) {
         indexed.hold(read.opened.key, read.index, Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])));
         // Asked after, not before the rows show: the database opens behind them.
-        void read.index.persistent().then(
-          (kept) => kept || tell("Kept only while this page is open", "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded."),
-        );
+        void read.index.storage().then((storage) => {
+          if (storage === "kept") return;
+          tell(
+            "Kept only while this page is open",
+            storage === "elsewhere"
+              ? "Another tab of this app holds this browser's storage for large tables, so this one is held for now and gone when the page is closed or reloaded. Open it in that tab to keep it."
+              : "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded.",
+          );
+        });
       }
       return read.opened;
     },
@@ -913,7 +919,9 @@ export function App() {
         )}
         {indexed.lost ? (
           <html.div style={styles.indexedNote}>
-            This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back.
+            {indexed.lost === "elsewhere"
+              ? "This table is open in another tab, which holds this browser's storage for it. Use it there, or close that tab and reload this page."
+              : "This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back."}
           </html.div>
         ) : table.indexed && view.layout !== "table" ? (
           <html.div style={styles.indexedNote}>
