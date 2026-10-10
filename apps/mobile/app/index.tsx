@@ -12,7 +12,7 @@ import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
-import { BodyEditor, CellEditorContext, PageGutter, PortalHost, ViewSettings, canInsertAt } from "@workspace.sh/table-ui";
+import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
 import { useTableAppContext } from "../TableAppContext";
@@ -57,6 +57,9 @@ export default function TableScreen() {
   // The table's scroll position, so the editor can keep its cell in view.
   const scroller = useRef<ScrollView>(null);
   const scrollY = useRef(0);
+  // Where this screen is scrolled, for the table's rows: they are drawn
+  // only where they're on screen (RowList.native.tsx).
+  const page = useMemo(() => pageScrollOver(scroller), []);
   // How far down, kept for history as the row at a fixed line under the
   // navigation bar and how far into it: rows measured, not pixels, so it
   // survives rows drawn a window at a time.
@@ -171,8 +174,17 @@ export default function TableScreen() {
           ref={scroller}
           onScroll={(e) => {
             scrollY.current = e.nativeEvent.contentOffset.y;
+            page.onScroll(e);
           }}
           scrollEventThrottle={16}
+          onLayout={(e) => {
+            page.onLayout(e);
+            // (The scroll view measures as any view does; its type doesn't say so.)
+            (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.(
+              (_x, y) => page.setWindowTop(y),
+            );
+          }}
+          onContentSizeChange={page.onContentSizeChange}
           // Where a scroll comes to rest is where you are, for history.
           onScrollEndDrag={(e) => {
             if (e.nativeEvent.velocity?.y === 0) notePlace();
@@ -195,6 +207,7 @@ export default function TableScreen() {
           // iOS: scrolling puts the keyboard away and saves what was typed.
           {...(GLASS ? { keyboardDismissMode: "on-drag" as const, onScrollBeginDrag: glass.onScrollBegin } : {})}
         >
+          <PageScrollContext.Provider value={page.pageScroll}>
           {/* iOS: a tap on empty space (around or below the table) closes the editor and deselects. */}
           <Pressable onPress={GLASS ? glass.dismiss : undefined} disabled={!GLASS} style={{ flexGrow: 1 }} accessible={false}>
           <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
@@ -270,6 +283,7 @@ export default function TableScreen() {
             onPlaceMeasure,
           })}
           </Pressable>
+          </PageScrollContext.Provider>
         </ScrollView>
         {state.openPage && (
           <BodyEditor
