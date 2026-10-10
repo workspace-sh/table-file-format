@@ -176,6 +176,31 @@ describe("a table held in the index on Linux", () => {
     expect(built).toBe(false);
   });
 
+  it("an edit is undone and made again, on screen and in rows.ndjson", async () => {
+    await openTasks();
+    const first = await cellOf("Land .table extension");
+    const window = first.getRoot() as unknown as Gtk.ApplicationWindow;
+    first.grabFocus();
+    await userEvent.keyboard(first, "Z");
+    const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
+    await userEvent.type(entry, "ed");
+    await userEvent.keyboard(entry, "{Enter}");
+    await screen.findAllByText("Zed");
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+    await waitFor(() => expect(window.getActionEnabled("undo")).toBe(true));
+
+    window.activateAction("win.undo", null);
+    await screen.findAllByText("Land .table extension");
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Land .table extension"), { timeout: 5000 });
+    expect(rowsOnDisk()).toHaveLength(ROWS + 8);
+    await waitFor(() => expect(window.getActionEnabled("redo")).toBe(true));
+    expect(window.getActionEnabled("undo")).toBe(false);
+
+    window.activateAction("win.redo", null);
+    await screen.findAllByText("Zed");
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+  });
+
   it("a field can be added: the index is made again, and the rows are all still there", async () => {
     await openTasks();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
