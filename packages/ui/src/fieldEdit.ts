@@ -9,7 +9,7 @@ import {
   currencyOf,
   enumValues,
   formatValue,
-  formulaType,
+  formulaType, formulaTypeIfKnown,
   inputCurrency,
   type CompileResult,
   type DisplayOptions,
@@ -245,12 +245,13 @@ export function newChoice(field: Field, typed: string): string | null {
 export function fieldFormula(field: Field, fields: Field[], draft: string, grid?: Grid): { compiled: CompileResult; save?: Partial<Field> } {
   const compiled = compileFormula(draft, { fields: fields.map((f) => f.name), grid });
   if (!compiled.ok || compiled.stored === field.computed?.expr) return { compiled };
-  const produced = formulaType(compiled.expr, new Map(fields.map((f) => [f.name, f.type] as const)));
+  // Only a type that is known changes the field's (formulaTypeIfKnown): a lookup's isn't, from here.
+  const produced = formulaTypeIfKnown(compiled.expr, new Map(fields.map((f) => [f.name, f.type] as const)));
   return {
     compiled,
     save: {
       computed: { expr: compiled.stored, dialect: FORMULA_DIALECT },
-      ...(typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
+      ...(produced !== null && typeFamily(produced) !== typeFamily(field.type) ? { type: produced } : {}),
     },
   };
 }

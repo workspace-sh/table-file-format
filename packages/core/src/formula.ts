@@ -870,38 +870,70 @@ const LIST_FNS = new Set(["column", "linked"]);
 const TEXT_FNS = new Set(["concat", "upper", "lower"]);
 const BOOLEAN_FNS = new Set(["=", "<>", "<", "<=", ">", ">=", "and", "or", "not", "isblank"]);
 
+export interface FormulaTypeOptions {
+  /**
+   * The type of the field a lookup reads: `relation` is this table's field
+   * that points at the other table, `target` the field read there.
+   * Undefined when it can't be told (no such table at hand).
+   */
+  lookup?: (relation: string, target: string) => FieldType | undefined;
+}
+
+/** A formula's type, and whether it was worked out or is only the likeliest. */
+function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: FormulaTypeOptions): { type: FieldType; known: boolean } {
+  const of = (name: string): { type: FieldType; known: boolean } => {
+    const type = fieldTypes.get(name);
+    return type === undefined ? { type: "number", known: false } : { type, known: true };
+  };
+  switch (expr.kind) {
+    case "number":
+      return { type: "number", known: true };
+    case "string":
+      return { type: "string", known: true };
+    case "boolean":
+      return { type: "boolean", known: true };
+    case "nil":
+      return { type: "number", known: false };
+    case "field":
+      return of(expr.name);
+    case "call": {
+      if (TEXT_FNS.has(expr.fn)) return { type: "string", known: true };
+      if (BOOLEAN_FNS.has(expr.fn)) return { type: "boolean", known: true };
+      if (NUMBER_FNS.has(expr.fn)) return { type: "number", known: true };
+      if (LIST_FNS.has(expr.fn) || expr.fn === "range") return { type: "array", known: true };
+      // A place reads one cell of a field, of whatever type it is (D41).
+      if (expr.fn === "at" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
+      // A lookup is whatever it reads in the other table; not knowing, text is the safe guess.
+      if (expr.fn === "lookup") {
+        const [relation, target] = expr.args;
+        const read = relation?.kind === "string" && target?.kind === "string" ? options.lookup?.(relation.value, target.value) : undefined;
+        return read === undefined ? { type: "string", known: false } : { type: read, known: true };
+      }
+      if (expr.fn === "field" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
+      if (expr.fn === "if" && expr.args[1]) return typeOf(expr.args[1], fieldTypes, options);
+      return { type: "number", known: false };
+    }
+  }
+}
+
 /**
  * The field type a formula produces, for declaring a new computed field.
  * `fieldTypes` resolves references to other fields; anything unknown is
- * taken as a number, which is what most formulas make.
+ * taken as a number, which is what most formulas make, and a lookup whose
+ * target isn't known as text.
  */
-export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new Map()): FieldType {
-  switch (expr.kind) {
-    case "number":
-      return "number";
-    case "string":
-      return "string";
-    case "boolean":
-      return "boolean";
-    case "nil":
-      return "number";
-    case "field":
-      return fieldTypes.get(expr.name) ?? "number";
-    case "call":
-      if (TEXT_FNS.has(expr.fn)) return "string";
-      if (BOOLEAN_FNS.has(expr.fn)) return "boolean";
-      if (NUMBER_FNS.has(expr.fn)) return "number";
-      if (LIST_FNS.has(expr.fn) || expr.fn === "range") return "array";
-      // A place reads one cell of a field, of whatever type it is (D41).
-      if (expr.fn === "at" && expr.args[0]?.kind === "string") return fieldTypes.get(expr.args[0].value) ?? "number";
-      // A lookup is whatever it reads; not knowing, text is the safe guess.
-      if (expr.fn === "lookup") return "string";
-      if (expr.fn === "field" && expr.args[0]?.kind === "string") {
-        return fieldTypes.get(expr.args[0].value) ?? "number";
-      }
-      if (expr.fn === "if" && expr.args[1]) return formulaType(expr.args[1], fieldTypes);
-      return "number";
-  }
+export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new Map(), options: FormulaTypeOptions = {}): FieldType {
+  return typeOf(expr, fieldTypes, options).type;
+}
+
+/**
+ * The same, when it can be worked out, and null when it would be a guess
+ * (a lookup into a table that isn't at hand, a field that isn't there).
+ * For a field that has a type already: a guess is no reason to change it.
+ */
+export function formulaTypeIfKnown(expr: Expr, fieldTypes: Map<string, FieldType> = new Map(), options: FormulaTypeOptions = {}): FieldType | null {
+  const { type, known } = typeOf(expr, fieldTypes, options);
+  return known ? type : null;
 }
 
 /** One cell a formula reads: a field of this row, or of another row by its id (D34), or cells by place (D41). */

@@ -8,7 +8,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseExpr } from "./expr.js";
-import { compileFormula, formatExpr, formulaFields, formulaType, printFormula } from "./formula.js";
+import { compileFormula, formatExpr, formulaFields, formulaType, formulaTypeIfKnown, printFormula } from "./formula.js";
 
 const stored = (text: string, fields?: string[]) => {
   const r = compileFormula(text, fields ? { fields } : {});
@@ -273,4 +273,26 @@ test("unbalanced stored form is refused with where it went wrong", () => {
   const r = compileFormula("(round budget 2");
   assert.ok(!r.ok);
   assert.ok(r.at >= 0);
+});
+
+test("a formula's type is told apart from a guess at it", () => {
+  const known = (text: string, types: Record<string, "string" | "number" | "boolean"> = {}, lookup?: (relation: string, target: string) => "number" | "string" | undefined) => {
+    const r = compileFormula(text, { fields: [...Object.keys(types), "product"] });
+    assert.ok(r.ok, text);
+    return formulaTypeIfKnown(r.expr, new Map(Object.entries(types)), lookup ? { lookup } : {});
+  };
+  // Worked out.
+  assert.equal(known("=1 + 2"), "number");
+  assert.equal(known("=UPPER(status)", { status: "string" }), "string");
+  assert.equal(known("=owner", { owner: "string" }), "string");
+  // A lookup reads a field of another table: its type when that table is at hand, a guess when it isn't.
+  assert.equal(known('=lookup("product", "price")'), null);
+  assert.equal(known('=lookup("product", "price")', {}, () => undefined), null);
+  assert.equal(known('=lookup("product", "price")', {}, (relation, target) => (relation === "product" && target === "price" ? "number" : undefined)), "number");
+  assert.equal(known('=lookup("product", "price") * 1'), "number");
+  // The guess is still what a new field is given.
+  const r = compileFormula('=lookup("product", "price")', { fields: ["product"] });
+  assert.ok(r.ok);
+  assert.equal(formulaType(r.expr), "string");
+  assert.equal(formulaType(r.expr, new Map(), { lookup: () => "number" }), "number");
 });
