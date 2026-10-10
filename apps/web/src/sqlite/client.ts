@@ -3,7 +3,7 @@
 // never runs on the thread that draws.
 
 import type { RowsRequest } from "@workspace.sh/table-app";
-import type { SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
+import type { Row, SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
 import type { OpenedLarge, Request, Response } from "./worker";
 
 export interface WebDatabase extends SqlDriver {
@@ -15,6 +15,8 @@ export interface WebDatabase extends SqlDriver {
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /** After edits: write the rows out of the index to the file kept beside it (when `rows`), without the keys in `omit`. */
   save(name: string, schema: TableSchema, rows: boolean, omit?: string[]): Promise<void>;
+  /** Rows of a table still being read, in file order, from those in so far. */
+  peek(name: string, start: number, end: number): Promise<Row[]>;
   /** A view's rows, or edits to rows, asked of the worker in one message each (table-app's remoteViewRows, remoteEdits). */
   rows(request: RowsRequest): Promise<unknown>;
   /** What each thing asked of the worker took since this was last asked, for measuring. */
@@ -80,6 +82,7 @@ function database(bundle: string): WebDatabase {
     save: (name, schema, rows, omit) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}) }),
     search: (name) => ask({ op: "search", name }),
     rows: (request) => ask({ op: "rows", request }),
+    peek: (name, start, end) => ask<Row[]>({ op: "peek", name, start, end }),
     timings: () => call({ op: "timings" }),
     close: () => ask({ op: "close" }),
   };

@@ -69,6 +69,16 @@ export interface BuildOptions {
    * each row's text, and `buildSearchIndex` makes it a step at a time.
    */
   search?: "now" | "later";
+  /**
+   * Rows per transaction. Left out, the build is one transaction: a
+   * reader sees the old index or the new one. Given, it commits every so
+   * many rows, so no commit is larger than that (a phone stops its timers
+   * for the whole of a long one). The table then has no key from the
+   * build's first step to its last: a reader sees no index, and reads from
+   * memory, until it is whole; never half of one. A build that fails
+   * part-way leaves none.
+   */
+  commitEvery?: number;
 }
 
 export const INDEX_FORMAT = 1;
@@ -273,6 +283,15 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
   await db.exec("begin");
   try {
     await createTables(db, n, plan);
+    // Positions alone, for finding a window deep in file order (see `page`).
+    // Made before the rows, so it grows with them a little at a time: made
+    // after, it is one statement that takes seconds at a million rows, and
+    // on a phone nothing scheduled runs until it's done.
+    await sortIndex(db, n, ["pos"], "p");
+    const steps = options.commitEvery !== undefined && options.commitEvery > 0 ? options.commitEvery : 0;
+    // In steps, what's there is nobody's index until the last one says so.
+    if (steps) await db.run("update _tables set key = null where n = ?", [n]);
+    let uncommitted = 0;
     const computed = schema.fields.filter((f) => f.computed);
     // Formulas that read other rows are computed over every row at once; others, a batch at a time.
     const across = computed.length > 0 && !rowLocal(schema, computed);
@@ -299,12 +318,16 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
       chunk.push(row);
       if (chunk.length >= size) {
         await flush(chunk);
+        uncommitted += chunk.length;
         chunk = [];
+        if (steps && uncommitted >= steps) {
+          await db.exec("commit");
+          await db.exec("begin");
+          uncommitted = 0;
+        }
       }
     }
     await flush(chunk);
-    // Positions alone, for finding a window deep in file order (see `page`): made with the build, not at the first jump.
-    await sortIndex(db, n, ["pos"], "p");
     await db.exec(`create virtual table x${n} using fts5(s, content='r${n}', content_rowid='pos', tokenize='trigram');`);
     if (options.search === "later") await db.run("insert into _fts(n, upto) values(?, -1)", [n]);
     else await db.exec(`insert into x${n}(x${n}) values('rebuild');`);
@@ -319,6 +342,8 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
+    // Steps already committed are taken out again: a build leaves a whole index or none.
+    if (options.commitEvery) await dropTables(db, n).catch(() => {});
     throw error;
   }
 }
@@ -964,6 +989,27 @@ export async function queryIndex(
     totals: () => (totals ??= loadTotals()),
     groups: async () => (await loadBuckets()).map(({ key, start, count }) => ({ key, start, count })),
   };
+}
+
+/**
+ * Rows of a table whose index is being built, in file order, from those in
+ * so far: for showing a large table as it is read. Asked on the connection
+ * that is building, it sees the rows the build has put in and not yet
+ * committed. `start` and `end` are places among the rows in, which for a
+ * build are their positions. Empty when there is no such table yet.
+ */
+export async function rowsBeingBuilt(db: SqlDriver, name: string, start: number, end: number): Promise<Row[]> {
+  const from = Math.max(0, start);
+  if (end <= from) return [];
+  const n = await tableNumber(db, name, false);
+  if (n === null) return [];
+  try {
+    const found = await db.all(`select j from r${n} where pos > ? order by pos limit ?`, [from, end - from]);
+    return found.map((r) => JSON.parse(r.j as string) as Row);
+  } catch {
+    // Its table isn't made yet.
+    return [];
+  }
 }
 
 /** Say what the source is now, after a save: the index is fresh for that content. */

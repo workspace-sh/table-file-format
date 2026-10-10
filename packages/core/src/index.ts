@@ -2,6 +2,20 @@ export * from "./types.js";
 export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
 export { newTable, newBundle } from "./new-table.js";
 export { isTableName, tableOrder, orderedTables } from "./bundle.js";
+export {
+  ARCHIVE_EXTENSION,
+  BODY_EXTENSION,
+  BUNDLE_EXTENSION,
+  BundleEntry,
+  REQUIRED_TABLE_FILES,
+  TableEntry,
+  bodyPath,
+  bundleNameOf,
+  isArchivedRowsFile,
+  tableEntryPath,
+  tableNameIn,
+  tablePath,
+} from "./layout.js";
 export { validate, validateBodies } from "./validator.js";
 export {
   isDate,
@@ -22,6 +36,7 @@ export type { LazyZipEntry } from "./zip.js";
 export {
   buildIndex,
   queryIndex,
+  rowsBeingBuilt,
   buildSearchIndex,
   setIndexKey,
   storedRows,

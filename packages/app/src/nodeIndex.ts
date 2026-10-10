@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, readFileSync, readdirS
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { buildIndex, buildSearchIndex, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { buildIndex, buildSearchIndex, rowsBeingBuilt, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -23,6 +23,8 @@ export interface IndexHost extends SqlDriver {
    * `onProgress` hears how many rows are in, of how many, while it builds.
    */
   ensure(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /** Rows of a table still being read, in file order, from those in so far (core's rowsBeingBuilt). */
+  peek(name: string, start: number, end: number): Promise<Row[]>;
   /** A view's rows, or edits to rows, asked in one message each (remoteViewRows, remoteEdits): the indexer runs where the index is. */
   rows(request: RowsRequest): Promise<unknown>;
   /**
@@ -43,6 +45,9 @@ export interface IndexHost extends SqlDriver {
   save(name: string, tableDir: string, rows: boolean, omit?: string[]): Promise<void>;
   close(): Promise<void>;
 }
+
+/** Rows a build commits at a time (buildIndex's `commitEvery`). */
+const BUILD_STEP = 20_000;
 
 /** How many rows a table's `rows.ndjson` holds: its lines that aren't blank. */
 export async function countRows(tableDir: string): Promise<number> {
@@ -150,6 +155,8 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     key,
     // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
     search: "later",
+    // In steps: as one transaction the log beside the index grows as large as the index itself.
+    commitEvery: BUILD_STEP,
   });
   onProgress?.(done, total);
   return done;
@@ -204,16 +211,38 @@ function ignoreIndex(bundleDir: string): void {
 }
 
 /** The bundle at `bundleDir`'s index, opened (or made) in this thread. */
-export function openIndexHost(bundleDir: string): IndexHost {
-  const db = openNodeDatabase(join(bundleDir, "index.sqlite"));
+export interface IndexHostOptions {
+  /**
+   * Given, a build asks the database a statement at a time through this,
+   * so whoever runs the host (a worker) can answer other things between a
+   * build's statements: reads then see the rows it has put in so far. The
+   * caller holds writes to the database until the build is done.
+   */
+  turn?: <T>(run: () => Promise<T>) => Promise<T>;
+}
+
+export function openIndexHost(bundleDir: string, options: IndexHostOptions = {}): IndexHost {
+  const whole = openNodeDatabase(join(bundleDir, "index.sqlite"));
   ignoreIndex(bundleDir);
-  const serve = rowsServer(db);
+  const serve = rowsServer(whole);
+  const { turn } = options;
+  // What a build asks through: each statement in its turn, when there are turns to take.
+  const db: SqlDriver & { close(): void } = turn
+    ? {
+        exec: (sql) => turn(() => whole.exec(sql)),
+        run: (sql, params) => turn(() => whole.run(sql, params)),
+        all: (sql, params) => turn(() => whole.all(sql, params)),
+        batch: (sql, params) => turn(() => whole.batch!(sql, params)),
+        close: () => whole.close(),
+      }
+    : whole;
   return {
     rows: serve,
-    exec: db.exec,
-    run: db.run,
-    all: db.all,
-    batch: db.batch!,
+    peek: (name, start, end) => rowsBeingBuilt(whole, name, start, end),
+    exec: whole.exec,
+    run: whole.run,
+    all: whole.all,
+    batch: whole.batch!,
     async ensure(name, tableDir, onProgress) {
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const fresh = !(await isIndexStale(db, name, await tableContentKey(tableDir)));
@@ -225,10 +254,10 @@ export function openIndexHost(bundleDir: string): IndexHost {
       return count;
     },
     async search(name) {
-      while (await buildSearchIndex(db, name)) {
+      while (await buildSearchIndex(whole, name)) {
         // A step at a time.
       }
-      await db.exec("pragma wal_checkpoint(truncate)");
+      await whole.exec("pragma wal_checkpoint(truncate)");
     },
     async build(name, tableDir, onProgress) {
       const count = await buildTableIndex(db, name, tableDir, onProgress);
@@ -236,12 +265,12 @@ export function openIndexHost(bundleDir: string): IndexHost {
       return count;
     },
     async save(name, tableDir, rows, omit) {
-      if (rows) await saveTableRows(db, name, tableDir, omit);
-      await setIndexKey(db, name, await tableContentKey(tableDir));
+      if (rows) await saveTableRows(whole, name, tableDir, omit);
+      await setIndexKey(whole, name, await tableContentKey(tableDir));
     },
     async close() {
-      await db.exec("pragma wal_checkpoint(truncate)").catch(() => {});
-      db.close();
+      await whole.exec("pragma wal_checkpoint(truncate)").catch(() => {});
+      whole.close();
     },
   };
 }

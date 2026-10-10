@@ -12,6 +12,7 @@ import * as Gio from "@gtkx/gi/gio";
 import {
   AdwAlertDialog,
   AdwApplication,
+  AdwAboutDialog,
   AdwApplicationWindow,
   AdwBreakpoint,
   AdwDialog,
@@ -30,6 +31,9 @@ import {
   derive,
   initialAppState,
   viewCallbacks,
+  buildLabel,
+  ARCHIVE_ROWS,
+  tooLargeToArchiveText,
   type Derived,
   type ViewCallbacks,
   archiveFileName,
@@ -65,7 +69,7 @@ import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveB
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { computeRows, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
+import { newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
@@ -202,10 +206,10 @@ function TablePane({
   menu,
   source,
   building,
-  firstRows,
+  reading,
 }: {
-  /** While a large table's index is made: its first rows as stored, shown meanwhile. */
-  firstRows?: Row[];
+  /** While a large table's index is made: its rows as stored, as many as are read so far, shown meanwhile. */
+  reading?: ViewRows;
   /** For a table held in the index: its view's rows once read, and how far its index has got while it's being made. */
   source?: ViewRows;
   building: { done: number; total: number } | null;
@@ -230,6 +234,8 @@ function TablePane({
   menu: ReactNode;
 }) {
   const { table, view, shown, summary, breadcrumb } = derived;
+  // The rows of a large table still being read, shown until its own view's rows are here.
+  const showReading = view.layout === "table" && !source && !!reading;
   const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
 
   return (
@@ -278,26 +284,7 @@ function TablePane({
           </GtkBox>
           <GtkSearchEntry placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
-        {building && firstRows && view.layout === "table" ? (
-          // A large table shows its first rows at once, as its file has them, while its
-          // index is made (LARGE-TABLES-PLAN, decision 1). The view's own order, filters
-          // and groups need the index, so they wait for it; nothing here can be edited yet.
-          <>
-            <GtkLabel label={ingestingText(shown.view)} xalign={0} wrap marginStart={12} marginEnd={12} marginBottom={6} cssClasses={["dim-label", "caption"]} />
-            {/* To look at, not to work in: nothing in it takes the keyboard. */}
-            <GtkBox canFocus={false} vexpand>
-              <LayoutView
-                key={`${view.id}-first`}
-                layout="table"
-                view={asStored(shown.view)}
-                rows={preview(table, firstRows)}
-                schema={table.schema}
-                relatedTables={related}
-                tableKey={tableNameOf(tableKey)}
-              />
-            </GtkBox>
-          </>
-        ) : building ? (
+        {building && !showReading ? (
           <AdwStatusPage
             vexpand
             title="Getting This Table Ready"
@@ -329,30 +316,56 @@ function TablePane({
               />
             )}
           </FewRows>
-        ) : table.indexed && !source ? (
+        ) : table.indexed && !source && !showReading ? (
           <GtkBox vexpand />
         ) : (
-          <LayoutView
-            key={view.id}
-            layout={view.layout}
-            view={shown.view}
-            rows={shown.rows}
-            schema={table.schema}
-            bodies={table.bodies}
-            relatedTables={related}
-            allRows={table.rows}
-            tableKey={tableNameOf(tableKey)}
-            sheet={shown.sheet}
-            {...callbacks}
-            {...(table.indexed
-              ? {
-                  source,
-                  // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
-                  onRemoveEnumValue: undefined,
-                  onInsertRow: undefined,
-                }
-              : {})}
-          />
+          // A large table shows its rows at once, as its file has them, and as many as have
+          // been read so far, while its index is made (LARGE-TABLES-PLAN, decision 1): to
+          // scroll through and look at. The view's own order, filters and groups, search
+          // and editing come with the index. One table view for both, so where you had
+          // scrolled to is where you still are when the reading is done.
+          <>
+            {showReading ? (
+              <GtkLabel label={ingestingText(shown.view)} xalign={0} wrap marginStart={12} marginEnd={12} marginBottom={6} cssClasses={["dim-label", "caption"]} />
+            ) : null}
+            {/* While it's read it is to look at, not to work in: nothing in it takes the keyboard. */}
+            <GtkBox canFocus={!showReading} vexpand>
+              {showReading ? (
+                <LayoutView
+                  key={view.id}
+                  layout="table"
+                  view={asStored(shown.view)}
+                  rows={NO_ROWS}
+                  source={reading}
+                  schema={table.schema}
+                  relatedTables={related}
+                  tableKey={tableNameOf(tableKey)}
+                />
+              ) : (
+                <LayoutView
+                  key={view.id}
+                  layout={view.layout}
+                  view={shown.view}
+                  rows={shown.rows}
+                  schema={table.schema}
+                  bodies={table.bodies}
+                  relatedTables={related}
+                  allRows={table.rows}
+                  tableKey={tableNameOf(tableKey)}
+                  sheet={shown.sheet}
+                  {...callbacks}
+                  {...(table.indexed
+                    ? {
+                        source,
+                        // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
+                        onRemoveEnumValue: undefined,
+                        onInsertRow: undefined,
+                      }
+                    : {})}
+                />
+              )}
+            </GtkBox>
+          </>
         )}
       </GtkBox>
       {settingsOpen ? (
@@ -373,9 +386,6 @@ function TablePane({
     </AdwToolbarView>
   );
 }
-
-/** The most rows of a table held in the index that an archive is made of: it is put together in memory. */
-const ARCHIVE_ROWS = 250_000;
 
 /** The most rows a layout that draws every row it's given is handed, of a table held in the index. */
 const LAYOUT_ROWS = 5000;
@@ -414,17 +424,14 @@ function asStored(view: View): View {
   return rest;
 }
 
-/** The first rows with their formulas worked out; a large table's formulas read only their own row. */
-function preview(table: ParsedTable, rows: Row[]): Row[] {
-  return computeRows(table.schema, rows).rows;
-}
+const NO_ROWS: Row[] = [];
 
 /** What the line above the first rows says while the index is made. */
 function ingestingText(view: View): string {
   const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
   return arranged
-    ? "Showing the first rows as stored. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
-    : "Showing the first rows as stored. Search and editing are ready once the table is read. This happens once.";
+    ? "Showing rows as stored, as they're read. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
+    : "Showing rows as stored, as they're read. Search and editing are ready once the table is read. This happens once.";
 }
 
 /** A path from GTK's file chooser, set up by `ask`; null when it's dismissed. */
@@ -627,6 +634,7 @@ export function App({
   const [narrow, setNarrow] = useState(false);
   const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
@@ -688,7 +696,8 @@ export function App({
       for (const [k, t] of Object.entries(tables)) {
         if (bundleOf(k) !== key || !t.indexed) continue;
         if (t.indexed.count > ARCHIVE_ROWS) {
-          return tell("Not exported", `${tableNameOf(k)} has ${t.indexed.count.toLocaleString()} rows. A .table.zip can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now; the .table folder itself can be copied as it is.`);
+          const { heading, body } = tooLargeToArchiveText(tableNameOf(k), t.indexed.count);
+          return tell(heading, `${body} The .table folder itself can be copied as it is.`);
         }
         const { indexed: _held, ...rest } = t;
         whole[k] = { ...rest, rows: await indexed.everyRow(k) };
@@ -734,6 +743,8 @@ export function App({
     .map((menu) => ({ section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })) }))
     .filter((s) => s.section.length > 0);
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
+  // The app's own: this viewer's display settings, and what build this is.
+  menuSections.push({ section: [{ label: "Display…", action: "win.display" }, { label: "About Tables", action: "win.about" }] });
   const primaryMenu = (
     <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
   );
@@ -791,6 +802,8 @@ export function App({
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
+          <GSimpleAction key="display" name="display" onActivate={() => setDisplayOpen(true)} />,
+          <GSimpleAction key="about" name="about" onActivate={() => setAboutOpen(true)} />,
         ]}
       >
         <DisplaySettingsProvider value={shownDisplay}>
@@ -817,7 +830,6 @@ export function App({
                       </GtkBox>
                     }
                     start={newFilesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
-                    end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
                   />
                 }
               >
@@ -870,12 +882,23 @@ export function App({
                 menu={primaryMenu}
                 source={indexed.source}
                 building={indexed.building}
-                firstRows={indexed.firstRows}
+                reading={indexed.reading}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {aboutOpen ? (
+            // Which build this is (docs/VERSIONING.md): what a person testing it quotes.
+            <AdwAboutDialog
+              applicationName="Tables"
+              applicationIcon="x-office-spreadsheet"
+              version={buildLabel()}
+              comments="A demo of the .table file format."
+              website="https://github.com/workspace-sh/table-file-format"
+              onClosed={() => setAboutOpen(false)}
+            />
+          ) : null}
           {displayOpen ? (
             <AdwDialog title="Display" contentWidth={460} onClosed={() => setDisplayOpen(false)}>
               <AdwToolbarView topBar={<AdwHeaderBar />}>

@@ -170,6 +170,9 @@ function Lift({ on, children }: { on: boolean; children: ReactNode }) {
   );
 }
 
+/** The last move a tall list made of a page to settle it, for the lists beside it. */
+const settles = new WeakMap<object, { to: number; shift: number; when: number }>();
+
 /**
  * A list taller than a browser lays out (it stops placing things some
  * millions of pixels down): its rows are placed in a body of
@@ -190,9 +193,12 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
   const [scroller, setScroller] = useState<HTMLElement | null | undefined>(undefined);
   // What is drawn: a stretch of the list, in its own pixels, and the shift it is drawn at.
   const [drawn, setDrawn] = useState({ from: 0, to: 3 * DRAW_DISTANCE, shift: 0 });
-  const last = useRef({ at: 0, jump: false });
+  // Where the page was when last looked at; `jump` and `settled` are moves this list made itself.
+  const last = useRef<{ at: number | null; jump: boolean; settled: number | null }>({ at: null, jump: false, settled: null });
   const now = useRef({ laidOut, extra, layout });
   now.current = { laidOut, extra, layout };
+  const drawnShift = useRef(0);
+  drawnShift.current = drawn.shift;
 
   useLayoutEffect(() => {
     setScroller(scrollParent(anchor.current));
@@ -210,11 +216,15 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
     const { at, page } = where();
     const { laidOut: height, extra: more } = now.current;
     const range = Math.max(1, height - page);
-    const jumped = last.current.jump || Math.abs(at - last.current.at) > 3 * page;
+    // The first look is where the page already was, not a jump to it: a list
+    // that has just become this tall (rows still arriving) keeps its place.
+    const jumped = last.current.jump || (last.current.at !== null && Math.abs(at - last.current.at) > 3 * page);
     const atAnEnd = at <= 0 || at >= range - 0.5;
-    last.current = { at, jump: false };
+    const settled = last.current.settled;
+    last.current = { at, jump: false, settled: null };
     setDrawn((was) => {
-      const shift = more <= 0 ? 0 : jumped || atAnEnd ? more * Math.min(1, Math.max(0, at / range)) : Math.min(was.shift, more);
+      const shift =
+        more <= 0 ? 0 : settled !== null ? settled : jumped || atAnEnd ? more * Math.min(1, Math.max(0, at / range)) : Math.min(was.shift, more);
       const top = at + shift;
       return shift === was.shift && top - DRAW_DISTANCE / 2 >= was.from && top + page + DRAW_DISTANCE / 2 <= was.to
         ? was
@@ -222,11 +232,41 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
     });
   }, [where]);
 
+  // Once scrolling rests, the page is put where the rows on screen are in the
+  // whole list, with the rows left where they are: the scrollbar then says
+  // how far down the table you are, and scrolling on never runs out of body
+  // short of the table's end.
+  const settle = useCallback(() => {
+    const { at, page } = where();
+    const { laidOut: height, extra: more } = now.current;
+    if (more <= 0) return;
+    const range = Math.max(1, height - page);
+    // Two lists side by side follow one page: the first to rest moves it, and
+    // the other takes the same shift, not a second move.
+    const page_ = scroller ?? window;
+    const moved = settles.get(page_);
+    if (moved && performance.now() - moved.when < 100 && Math.abs(at - moved.to) < 1) {
+      last.current.settled = moved.shift;
+      follow();
+      return;
+    }
+    const top = at + drawnShift.current;
+    const to = Math.min(range, Math.max(0, top / (1 + more / range)));
+    if (Math.abs(to - at) < 2) return;
+    last.current.settled = top - to;
+    settles.set(page_, { to, shift: top - to, when: performance.now() });
+    if (scroller) scroller.scrollTop += to - at;
+    else window.scrollBy({ top: to - at });
+  }, [scroller, where, follow]);
+
   useEffect(() => {
     if (scroller === undefined) return;
     const target: HTMLElement | Window = scroller ?? window;
     let due = false;
+    let rest: ReturnType<typeof setTimeout> | null = null;
     const onScroll = () => {
+      if (rest) clearTimeout(rest);
+      rest = setTimeout(settle, 160);
       if (due) return;
       due = true;
       requestAnimationFrame(() => {
@@ -238,10 +278,11 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
     window.addEventListener("resize", onScroll);
     follow();
     return () => {
+      if (rest) clearTimeout(rest);
       target.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [scroller, follow]);
+  }, [scroller, follow, settle]);
 
   const count = items.length;
   const first = count ? Math.min(layout.at(drawn.from), count - 1) : 0;
@@ -277,9 +318,6 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
     }),
     [scroller, where, follow],
   );
-  const drawnShift = useRef(0);
-  drawnShift.current = drawn.shift;
-
   const rows: ReactNode[] = [];
   for (let i = first; i <= lastDrawn; i++) {
     const item = items[i]!;

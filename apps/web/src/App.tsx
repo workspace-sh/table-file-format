@@ -42,6 +42,8 @@ import {
   loadSaved,
   loadSidebarPrefs,
   openArchive,
+  ARCHIVE_ROWS,
+  tooLargeToArchiveText,
   openFailedText,
   rowTitleFor,
   save,
@@ -72,6 +74,8 @@ const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 // as saving writes them, and fixture tables' attachments.
 const attachmentsOf = (key: string) => Object.keys(attachmentUrls[key] ?? {}).sort();
 
+const NO_ROWS: Row[] = [];
+
 /** An archive smaller than this can't hold a table large enough to index, and is read on the page. */
 const WORKER_FROM_BYTES = 256 * 1024;
 
@@ -81,12 +85,25 @@ function asStored(view: View): View {
   return rest;
 }
 
+/**
+ * How far the reading has got. How many rows there are isn't known until the
+ * last is read, so until then the total is "about", to two figures: a number
+ * that changed with every step would read as a fault.
+ */
+function readingText(building: { done: number; total: number }): string {
+  if (building.total <= 0) return "Reading rows";
+  if (building.done >= building.total) return `${building.done.toLocaleString()} rows read`;
+  const digits = Math.max(0, String(Math.round(building.total)).length - 2);
+  const about = Math.round(building.total / 10 ** digits) * 10 ** digits;
+  return `${building.done.toLocaleString()} of about ${Math.max(about, building.done).toLocaleString()} rows read`;
+}
+
 /** What the line above the first rows says while a large table is read. */
 function ingestingText(view: View): string {
   const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
   return arranged
-    ? "Showing the first rows as stored. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
-    : "Showing the first rows as stored. Search and editing are ready once the table is read. This happens once.";
+    ? "Showing rows as stored, as they're read. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
+    : "Showing rows as stored, as they're read. Search and editing are ready once the table is read. This happens once.";
 }
 
 const styles = css.create({
@@ -444,7 +461,19 @@ export function App() {
     const bundle = bundleOf(activeTablePath);
     let bytes: Uint8Array;
     try {
-      bytes = await bundleToArchive(bundle, toBundle(tables, bundles, bundle));
+      // A table held in the index has its rows read out of it for the archive, which is made in
+      // memory; one too large for that is refused, since an archive without its rows is no copy.
+      const whole = { ...tables };
+      for (const [key, held] of Object.entries(tables)) {
+        if (bundleOf(key) !== bundle || !held.indexed) continue;
+        if (held.indexed.count > ARCHIVE_ROWS) {
+          const { heading, body } = tooLargeToArchiveText(tableNameOf(key), held.indexed.count);
+          return tell(heading, body);
+        }
+        const { indexed: _index, ...rest } = held;
+        whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+      }
+      bytes = await bundleToArchive(bundle, toBundle(whole, bundles, bundle));
     } catch (error) {
       dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       return;
@@ -455,7 +484,7 @@ export function App() {
     a.download = archiveFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [tables, bundles, activeTablePath]);
+  }, [tables, bundles, activeTablePath, indexed.everyRow, tell]);
 
   // An archive's bytes, read. A small one is read here. One that could hold
   // a large table is read in a worker, where such a table's rows stay, on
@@ -661,6 +690,8 @@ export function App() {
   // A Sheet view's grid as saved, for its row numbers and for formulas
   // typed in it (D41); and every Sheet view a formula may name.
   const { view: shownView, rows: visibleRows, sheet } = shownArranged;
+  // The rows of a large table still being read, shown until its own view's rows are here.
+  const reading = view.layout === "table" && !indexed.source ? indexed.reading : undefined;
 
   // A file of a .table, opened from the Files side of the sidebar, shown
   // in place of the view while that side is.
@@ -811,9 +842,7 @@ export function App() {
             {indexed.building ? (
               <>
                 <html.span>
-                  {indexed.building.total > 0
-                    ? `${indexed.building.done.toLocaleString()} of ${indexed.building.total.toLocaleString()} rows read`
-                    : "Reading rows"}
+                  {readingText(indexed.building)}
                 </html.span>
                 <html.div style={styles.readTrack}>
                   <html.div style={[styles.readDone, styles.readWidth(indexed.building.total > 0 ? indexed.building.done / indexed.building.total : 0)]} />
@@ -823,10 +852,15 @@ export function App() {
               // A search of a large table takes a moment: the count waits for its rows.
               <html.span>{indexed.stale && state.search.trim().length > 0 ? "Searching…" : summary.count}</html.span>
             )}
-            <html.span>·</html.span>
-            <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
-              {summary.validity}
-            </Hinted>
+            {/* Nothing to say of its rows until they're read. */}
+            {!indexed.building && (
+              <>
+                <html.span>·</html.span>
+                <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                  {summary.validity}
+                </Hinted>
+              </>
+            )}
             {summary.schemaChanged && (
               <>
                 <html.span>·</html.span>
@@ -858,47 +892,54 @@ export function App() {
           <html.div style={styles.indexedNote}>
             This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back.
           </html.div>
-        ) : indexed.building && indexed.firstRows && view.layout === "table" ? (
-          // A large table shows its first rows at once, as its file has them, while
-          // it is read into its index (LARGE-TABLES-PLAN, decision 1): to look at, not
-          // to work in. The view's own order, filters and groups come with the index.
-          <>
-            <html.div style={styles.indexedNote}>{ingestingText(shownView)}</html.div>
-            <html.div inert style={styles.firstRows}>
-              {renderView(asStored(shownView), computeRows(table.schema, indexed.firstRows).rows, table.schema, undefined, {
-                relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
-                onOpenRelation: () => {},
-                allRows: [],
-                tableKey: tableNameOf(activeTablePath),
-              })}
-            </html.div>
-          </>
         ) : table.indexed && view.layout !== "table" ? (
           <html.div style={styles.indexedNote}>
             This layout isn't shown for a table this large yet. Change the view's layout to Table in its settings.
           </html.div>
-        ) : table.indexed && !indexed.source ? null : (
-          renderView(shownView, visibleRows, table.schema, table.bodies, {
-            ...callbacks,
-            // The bundle's tables by name, so lookups and rollups reach the ones
-            // they name (D36), within this bundle (D37).
-            relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
-            allRows: table.rows,
-            tableKey: tableNameOf(activeTablePath),
-            sheet,
-            onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
-            onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
-            restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
-            onPlaceMeasure,
-            ...(table.indexed
-              ? {
-                  source: indexed.source,
-                  // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
-                  onRemoveEnumValue: undefined,
-                  onDeleteField: undefined,
-                }
-              : {}),
-          })
+        ) : table.indexed && !indexed.source && !indexed.reading ? null : (
+          // A large table shows its rows at once, as its file has them, and as many as
+          // have been read so far, while it is read into its index (LARGE-TABLES-PLAN,
+          // decision 1): to scroll through and look at. The view's own order, filters and
+          // groups, search and editing come with the index. One table view for both, so
+          // where you had scrolled to is where you still are when the reading is done.
+          <>
+            {reading && <html.div style={styles.indexedNote}>{ingestingText(shownView)}</html.div>}
+            {renderView(
+              reading ? asStored(shownView) : shownView,
+              reading ? NO_ROWS : visibleRows,
+              table.schema,
+              reading ? undefined : table.bodies,
+              reading
+                ? {
+                    source: reading,
+                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    onOpenRelation: () => {},
+                    allRows: NO_ROWS,
+                    tableKey: tableNameOf(activeTablePath),
+                  }
+                : {
+                    ...callbacks,
+                    // The bundle's tables by name, so lookups and rollups reach the ones
+                    // they name (D36), within this bundle (D37).
+                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    allRows: table.rows,
+                    tableKey: tableNameOf(activeTablePath),
+                    sheet,
+                    onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+                    onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                    restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                    onPlaceMeasure,
+                    ...(table.indexed
+                      ? {
+                          source: indexed.source,
+                          // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
+                          onRemoveEnumValue: undefined,
+                          onDeleteField: undefined,
+                        }
+                      : {}),
+                  },
+            )}
+          </>
         )}
         </>
         )}

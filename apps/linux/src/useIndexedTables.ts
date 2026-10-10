@@ -5,15 +5,18 @@
 // are made in it; and a save writes its rows back to rows.ndjson.
 
 import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
-import { queryIndex } from "@workspace.sh/table-core";
+import { computeRows, queryIndex } from "@workspace.sh/table-core";
 import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** What of a schema an index is made for: its fields' names and types, and their formulas, whose results it holds. */
 const indexedFor = (schema: TableSchema) => JSON.stringify(schema.fields.map((f) => [f.name, f.type, f.computed ?? null]));
+
+/** Rows a build puts in at a time: the last of them may not be in yet when its count is told. */
+const BUILD_BATCH = 5000;
 
 /** Rows shown from the head of the file while a table's index is made. */
 const FIRST_ROWS = 200;
@@ -21,8 +24,12 @@ const FIRST_ROWS = 200;
 export interface IndexedTables {
   /** The table on screen is held in the index, and its index is being made: how far along. */
   building: { done: number; total: number } | null;
-  /** While it's being made: the table's first rows as its file has them, to show meanwhile. */
-  firstRows: Row[] | undefined;
+  /**
+   * While it's being made: the table's rows as its file has them, as many
+   * as are in so far, to show and scroll through meanwhile. They grow as
+   * the reading goes on.
+   */
+  reading: ViewRows | undefined;
   /** The view on screen's rows, once read; undefined for a table in memory, or while they're on their way. */
   source: ViewRows | undefined;
   /** After a bundle's other files are written: its indexed tables' rows, and their indexes said fresh. */
@@ -76,7 +83,8 @@ export function useIndexedTables(input: {
       setMade((was) => ({ ...was, [key]: "building" }));
       // Something to look at meanwhile: the head of the file, which is read in a moment.
       void firstRows(dirOf(key), FIRST_ROWS).then(
-        (rows) => setFirst((was) => ({ ...was, [key]: rows })),
+        // With their formulas worked out, as the rows in the index are.
+        (rows) => setFirst((was) => ({ ...was, [key]: computeRows(schema, rows).rows })),
         () => {},
       );
       const schema = table.schema;
@@ -87,7 +95,6 @@ export function useIndexedTables(input: {
             madeFor.current.set(key, schema);
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
-            setFirst(({ [key]: _shown, ...rest }) => rest);
             // The search's own index is made after the view has its first rows, behind whatever the window asks for.
             setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
           },
@@ -210,8 +217,8 @@ export function useIndexedTables(input: {
         // Not awaited: the save is done, and the table shows its first rows while this runs.
         setMade((m) => ({ ...m, [key]: "building" }));
         setProgress(({ [key]: _old, ...rest }) => rest);
-        void firstRows(dirOf(key), FIRST_ROWS).then((first) => setFirst((f) => ({ ...f, [key]: first })), () => {});
         const schema = table.schema;
+        void firstRows(dirOf(key), FIRST_ROWS).then((first) => setFirst((f) => ({ ...f, [key]: computeRows(schema, first).rows })), () => {});
         void host
           .build(tableNameOf(key), dirOf(key), (done, total) => setProgress((p) => ({ ...p, [key]: { done, total } })))
           .then(
@@ -219,7 +226,6 @@ export function useIndexedTables(input: {
               madeFor.current.set(key, schema);
               latest.current.dispatch({ type: "indexed", key, count });
               setMade((m) => ({ ...m, [key]: "ready" }));
-              setFirst(({ [key]: _shown, ...rest }) => rest);
               setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
             },
             (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
@@ -240,10 +246,48 @@ export function useIndexedTables(input: {
     return all.rows(0, all.count);
   }, []);
 
+  // The rows read so far, as a source the table view can scroll through: the
+  // first ones are here already, the rest are asked of the index's host, which
+  // sees what its build has put in. One snapshot that only grows, so what the
+  // view has read of it stays good. Kept past the end of the reading until the
+  // view's own rows have arrived, so nothing blanks between the two.
+  const firstHere = first[state.active];
+  const stillReading = !!active?.indexed && (!ready || source?.key !== state.active);
+  const readSoFar =
+    active?.indexed && stillReading && firstHere
+      ? ready
+        ? active.indexed.count
+        : Math.max(firstHere.length, (progress[state.active]?.done ?? 0) - BUILD_BATCH)
+      : 0;
+  const reading = useMemo((): ViewRows | undefined => {
+    if (readSoFar === 0 || !firstHere) return undefined;
+    const key = state.active;
+    const rows = async (start: number, end: number): Promise<Row[]> => {
+      const from = Math.max(0, start);
+      const to = Math.min(end, readSoFar);
+      if (to <= from) return [];
+      if (to <= firstHere.length) return firstHere.slice(from, to);
+      return (await hostOf(bundleOf(key))?.peek(tableNameOf(key), from, to)) ?? [];
+    };
+    return {
+      count: readSoFar,
+      inView: readSoFar,
+      version: `reading ${key}`,
+      rows,
+      peek: (start, end) => (Math.min(end, readSoFar) <= firstHere.length ? firstHere.slice(Math.max(0, start), Math.min(end, readSoFar)) : undefined),
+      ids: async (start, end) => (await rows(start, end)).map((r) => r.id),
+      placeOf: async (id) => firstHere.findIndex((r) => r.id === id),
+      row: async (id) => firstHere.find((r) => r.id === id),
+      totals: async () => ({}),
+      groups: async () => [],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.active, readSoFar, firstHere]);
+
   return {
     everyRow,
     building: active?.indexed && !ready ? (progress[state.active] ?? { done: 0, total: 0 }) : null,
-    firstRows: active?.indexed && !ready ? first[state.active] : undefined,
+    reading,
     source: ready && source?.key === state.active ? source.rows : undefined,
     save,
   };
