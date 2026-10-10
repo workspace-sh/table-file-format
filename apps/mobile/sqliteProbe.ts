@@ -299,7 +299,13 @@ function counting(driver: ExpoDriver): ExpoDriver & { crossings: number } {
 }
 
 /** big-table-index.mts's timings, at `n` rows, into a file in the app's documents, plus a search before and after its index is whole. */
-export async function timings(n: number, mode: Mode): Promise<Results> {
+/** How a timing run builds: the driver's yield budget (ms between macrotasks, 0 for none) and buildIndex's batch size. */
+export interface Build {
+  yieldAfterMs?: number;
+  batchSize?: number;
+}
+
+export async function timings(n: number, mode: Mode, build: Build = {}): Promise<Results> {
   const name = `probe-${n}-${mode}.sqlite`;
   const file = new File(Paths.document, "SQLite", name);
   if (file.exists) file.delete();
@@ -309,16 +315,16 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
   }
   const raw = openDatabaseSync(name, OPEN);
   raw.execSync("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
-  const driver = counting(expoDriver(raw, mode));
+  const driver = counting(expoDriver(raw, mode, { yieldAfterMs: build.yieldAfterMs }));
   const schema = BIG_SCHEMA;
-  const out: Results = { rows: n, mode };
+  const out: Results = { rows: n, mode, ...build };
   try {
     // While it builds: rows 20,000 to 20,200 as soon as they're in, read on the build's own connection.
     const started = performance.now();
     const stalls: Results[] = [];
     trace.waitingMs = 0;
     trace.calls = 0;
-    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })), stalls);
+    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later", batchSize: build.batchSize })), stalls);
     let done = false;
     void building.then(() => (done = true));
     const midBuild: Results[] = [];
