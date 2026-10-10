@@ -341,7 +341,13 @@ function build(
 }
 
 /** Write a table's rows out of the index to the file beside it: staged, then moved over it in one step. */
-async function writeRows(bundle: string, name: string, schema: TableSchema, omit: string[] | undefined, stop: () => boolean): Promise<number | null> {
+async function writeRows(
+  bundle: string,
+  name: string,
+  schema: TableSchema,
+  omit: string[] | undefined,
+  stop: () => boolean,
+): Promise<{ bytes: number; key: string | null } | null> {
   await expoFs.mkdir(tableDir(bundle, name));
   const staged = new File(`${rowsPath(bundle, name)}.tmp`);
   if (staged.exists) staged.delete();
@@ -355,8 +361,11 @@ async function writeRows(bundle: string, name: string, schema: TableSchema, omit
   const reader = expoDriver(openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(bundleDir(bundle))), "async");
   let at = 0;
   let stopped = false;
+  // The index's key as these rows have it: the file is this index and no later one.
+  let key: string | null = null;
   try {
     await reader.exec("begin");
+    key = await indexKey(reader, name);
     for await (const text of storedRows(reader, { name, schema, ...(omit ? { omit } : {}) })) {
       // An edit has landed: this file would be out of date as it was finished, and the next save writes it.
       if (stop()) {
@@ -378,7 +387,7 @@ async function writeRows(bundle: string, name: string, schema: TableSchema, omit
     return null;
   }
   renameOver(pathOfUri(staged.uri), pathOfUri(rowsPath(bundle, name)));
-  return at;
+  return { bytes: at, key };
 }
 
 // A bundle's saves, one after another, and how many are under way.
@@ -422,12 +431,16 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
         // Rows the file doesn't have yet are written whether or not the screen knows of them: the
         // index says (edits made before the app was ended, whose save was stopped or never began).
         const write = rows || (await asked(({ driver }) => indexKey(driver, name))) !== "saved";
-        const bytes = write ? await writeRows(bundle, name, schema, omit, editedSince) : null;
-        if (write && bytes === null) return false;
+        const written = write ? await writeRows(bundle, name, schema, omit, editedSince) : null;
+        if (write && written === null) return false;
         // Said in one turn with the last look, so no edit comes between them.
         return asked(async ({ driver }) => {
           if (editedSince()) return false;
-          if (bytes !== null) await kept(driver, name, bytes);
+          // The file is the index as the reader saw it. An edit asked before the save began
+          // may have had its turn after the reader looked: every edit gives the index a new
+          // key, so a key that has moved on says the index holds something the file doesn't.
+          if (written !== null && (await indexKey(driver, name)) !== written.key) return false;
+          if (written !== null) await kept(driver, name, written.bytes);
           await setIndexKey(driver, name, "saved");
           return true;
         });
