@@ -378,13 +378,15 @@ export async function dropIndex(db: SqlDriver, name: string): Promise<void> {
  * New rows go at the end of the file order. Not for schemas with formulas
  * that read other rows (a change in one row changes others): rebuild.
  * `bodies` sets the page of a row (an empty string removes it); a row
- * given without an entry keeps its page.
+ * given without an entry keeps its page. `at` gives a new row its place
+ * in the file order (a row removed, put back where removeRows found it);
+ * a place another row has since taken is not used, and it goes at the end.
  */
 export async function putRows(
   db: SqlDriver,
-  options: { name: string; schema: TableSchema; rows: Row[]; bodies?: Record<string, string>; key: string },
+  options: { name: string; schema: TableSchema; rows: Row[]; bodies?: Record<string, string>; at?: Record<string, number>; key: string },
 ): Promise<void> {
-  const { name, schema, rows, bodies, key } = options;
+  const { name, schema, rows, bodies, at, key } = options;
   const plan = planOf(schema);
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
@@ -414,9 +416,11 @@ export async function putRows(
         );
         if (searched(old.pos as number)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [old.pos as number, e.search]);
       } else {
+        const wanted = at?.[row.id];
+        const free = wanted !== undefined && (await db.all(`select 1 from r${n} where pos = ?`, [wanted])).length === 0;
         await db.run(
-          `insert into r${n}(id, j, s, ${cols.join(", ")}) values(?, ?, ?, ${cols.map(() => "?").join(", ")})`,
-          [String(row.id), JSON.stringify(row), e.search, ...e.values],
+          `insert into r${n}(pos, id, j, s, ${cols.join(", ")}) values(?, ?, ?, ?, ${cols.map(() => "?").join(", ")})`,
+          [free ? wanted : null, String(row.id), JSON.stringify(row), e.search, ...e.values],
         );
         const pos = (await db.all(`select pos from r${n} where id = ?`, [String(row.id)]))[0]!.pos as number;
         if (searched(pos)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [pos, e.search]);
@@ -436,18 +440,23 @@ function bodyOf(search: string): string {
   return search.slice(search.lastIndexOf(SEP) + 1);
 }
 
-/** Remove rows by id, and their pages. */
-export async function removeRows(db: SqlDriver, options: { name: string; schema: TableSchema; ids: string[]; key: string }): Promise<void> {
+/** Remove rows by id, and their pages. Gives back each row removed and its place in the file order, which putRows' `at` puts it back at. */
+export async function removeRows(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; ids: string[]; key: string },
+): Promise<{ row: Row; at: number }[]> {
   const { name, schema, ids, key } = options;
   const plan = planOf(schema);
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
   const upto = await searchUpTo(db, n);
+  const removed: { row: Row; at: number }[] = [];
   await db.exec("begin");
   try {
     for (const id of ids) {
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
+      removed.push({ row: JSON.parse(old.j as string) as Row, at: num(old.pos) });
       await shiftBad(db, n, encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, -1);
       if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
@@ -458,6 +467,7 @@ export async function removeRows(db: SqlDriver, options: { name: string; schema:
     await db.exec("rollback").catch(() => {});
     throw error;
   }
+  return removed;
 }
 
 async function shiftBad(db: SqlDriver, n: number, fields: number[], by: 1 | -1): Promise<void> {
