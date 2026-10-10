@@ -390,10 +390,14 @@ function edit(state: AppState, name: string, change: (table: ParsedTable) => Par
   return { ...next, undo: { ...state.undo, [key]: { past, future: [] } } };
 }
 
-/** What an edit to a cell is called: "Edit Title", by the field's title. */
+/**
+ * What an edit to a cell is called: "Edit Title", by the field's title. A
+ * field with no title of its own is called by its key, written as a menu
+ * writes a name: `close_date` is "Close Date".
+ */
 function cellEditName(state: AppState, field: string, key = state.active): string {
   const title = state.tables[key]?.schema.fields.find((f) => f.name === field)?.title;
-  return `Edit ${title ?? field}`;
+  return `Edit ${title ?? field.replace(/[_-]+/g, " ").replace(/(^|\s)\p{Ll}/gu, (letter) => letter.toUpperCase())}`;
 }
 
 /** A change that is only a new title: a rename. */
