@@ -30,8 +30,10 @@ import {
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
-import { macControls, watchRowMenus } from "./MacControls";
-import { onSidebar, pickInSidebar, pressInspectorCell, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+import { windowControls } from "./Inspector";
+import { watchRowMenus } from "./MacControls";
+import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
+import { onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -87,7 +89,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -833,6 +835,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     if (openPage) dispatch({ type: "openPage", rowId: null });
     if (editingFormula) glass.props.onCancel?.();
     if (settingsShown) dispatch({ type: "settings", open: false });
+    // A field's settings, or a new field: dismissed, as a tap outside a sheet does.
+    dismissSettingsForm();
   };
 
   // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
@@ -1015,6 +1019,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         postRightClick(x, y);
         return `right-clicked ${x}, ${y}`;
       },
+      // The scroll wheel turned over a point in the window (from its top left), for panes outside React's view.
+      scroll: (x: number, y: number, lines: number) => {
+        postScroll(x, y, lines);
+        return `scrolled ${lines}`;
+      },
       popUpTitles,
       popUpChoose: (title: string, seconds = 1) => {
         popUpChoose(title, seconds);
@@ -1032,6 +1041,13 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       datePickerClose: () => {
         datePickerClose();
         return "closed";
+      },
+      // The inspector's settings form: what it was sent, and what a control in it would send back
+      // ({ what: "change", id, value }, { what: "press", id }, { what: "confirm" }, ...).
+      settingsForm: settingsFormJson,
+      sendSettingsForm: (event: object) => {
+        sendSettingsForm(event);
+        return "sent";
       },
       // The inspector's account of the selected cell: what it was sent, and pressing its buttons.
       inspectorCell: () => cellJsonRef.current,
@@ -1119,6 +1135,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
         else if (e.type === "inspectorCell") inspectorCell.current(e.action);
+        else if (e.type === "settingsForm") onSettingsFormEvent(e);
       }),
     [chooseFilesMode],
   );
@@ -1135,7 +1152,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
       <PortalHost>
-        <PlatformControlsProvider value={macControls}>
+        <PlatformControlsProvider value={windowControls}>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
           <html.div style={styles.content}>

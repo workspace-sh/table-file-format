@@ -10,6 +10,7 @@ import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProv
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
 import { macControls } from "./MacControls";
+import { MacSettingsForm, macSheet } from "./MacSettings";
 import { inspectorStore } from "./inspectorStore";
 
 /**
@@ -43,7 +44,16 @@ function InspectorSheet({ title, subtitle, cancel, confirm, status, children }: 
   );
 }
 
-const CONTROLS: Partial<PlatformControls> = { ...macControls, Sheet: InspectorSheet };
+/**
+ * The window's controls, for both of its React views: the Mac's menus and
+ * date picker, settings as the inspector's own form, and a row's page in
+ * the inspector's sheet.
+ */
+export const windowControls: Partial<PlatformControls> = {
+  ...macControls,
+  Sheet: macSheet(InspectorSheet),
+  SettingsForm: MacSettingsForm,
+};
 /** The page is written on the pane's own material, so its field has no fill of its own. */
 const OnPane = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
@@ -62,9 +72,8 @@ export function Inspector() {
     </PanelSurface.Provider>
   ) : settings ? (
     // The view's settings change as they're made, beside the view they change.
-    <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
-      <SettingsOf settings={settings} />
-    </ScrollView>
+    // Drawn by the inspector's own form (MacSettings.tsx); this only describes them.
+    <SettingsOf settings={settings} />
   ) : cell && cell.state.kind === "selected" ? (
     // Said in the system's form, over this view (TableCellInspector.swift).
     <View />
@@ -79,7 +88,7 @@ export function Inspector() {
   );
   return (
     <PortalHost>
-      <PlatformControlsProvider value={CONTROLS}>
+      <PlatformControlsProvider value={windowControls}>
         <DisplaySettingsProvider value={display ?? {}}>{body}</DisplaySettingsProvider>
       </PlatformControlsProvider>
     </PortalHost>

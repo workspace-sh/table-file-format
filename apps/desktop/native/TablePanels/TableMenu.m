@@ -402,6 +402,24 @@ RCT_EXPORT_METHOD(popUpChoose:(NSString *)title after:(nonnull NSNumber *)second
   _armedDelay = seconds.doubleValue;
 }
 
+/// Development only: turn the scroll wheel by `lines` (positive scrolls
+/// down the page) over a point in the window, measured from its top left,
+/// so it reaches panes outside React's view too (the inspector).
+RCT_EXPORT_METHOD(postScroll:(nonnull NSNumber *)x y:(nonnull NSNumber *)y lines:(nonnull NSNumber *)lines)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSPoint inWindow = NSMakePoint(x.doubleValue, NSHeight(window.frame) - y.doubleValue);
+  CGEventRef scroll = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 1, -lines.intValue);
+  if (scroll == NULL) return;
+  NSPoint onScreen = [window convertPointToScreen:inWindow];
+  // Quartz measures down from the top of the main screen.
+  CGEventSetLocation(scroll, CGPointMake(onScreen.x, NSMaxY(NSScreen.screens.firstObject.frame) - onScreen.y));
+  NSEvent *event = [NSEvent eventWithCGEvent:scroll];
+  CFRelease(scroll);
+  NSView *under = [window.contentView.superview hitTest:inWindow] ?: window.contentView;
+  [under scrollWheel:event];
+}
+
 /// Development only: a right-click at a point in the content, as postClick's left one.
 RCT_EXPORT_METHOD(postRightClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
 {
