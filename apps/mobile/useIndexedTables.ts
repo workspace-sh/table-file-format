@@ -31,6 +31,8 @@ export interface IndexedTables {
   lost: boolean;
   /** A bundle just read from an archive: its large tables' first rows by `bundle/table` key. */
   hold(first: Record<string, Row[]>): void;
+  /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
+  everyRow(key: string, table: ParsedTable): Promise<Row[]>;
   /** After the rest is saved: the indexed tables' rows, to the files kept beside their indexes. */
   save(tables: Record<string, ParsedTable>): Promise<void>;
 }
@@ -261,9 +263,24 @@ export function useIndexedTables(input: {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.active, readSoFar, firstHere]);
+  const everyRow = useCallback(
+    async (key: string, table: ParsedTable): Promise<Row[]> => {
+      const host = await hostOf(bundleOf(key));
+      // The table as stored: no view's order, filters or search.
+      const all = await remoteViewRows(host.rows, tableNameOf(key), table, { id: "", name: "", layout: "table" }, "");
+      try {
+        return await all.rows(0, all.count);
+      } finally {
+        all.release();
+      }
+    },
+    [hostOf],
+  );
+
   return {
     hold,
     save,
+    everyRow,
     building: active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
     reading,
     source: isReady && source?.key === state.active ? source.rows : undefined,

@@ -302,6 +302,7 @@ The phone has a real file system and its own SQLite (expo-sqlite, through core's
 - **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
 - **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
 - **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
+- **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
 
 iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, the 50,000-row table. These say that it works; a Release build on a phone is still to be measured, and `batchSize` and `commitEvery` are core's defaults until it is.
 
@@ -312,8 +313,9 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, the 50,000-row t
 | Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile |
 | An edit | shown at once; in `rows.ndjson` after the save, with no staged file left |
 | Reopened after the app was ended | within 2 s, with the edit, not read again |
+| Export `.table.zip` | all 50,000 rows, with the edit: 976 KB |
 
-Not there yet on iOS for an indexed table: the million-row table and any timing on a phone; layouts other than Table (it says so); removing a choice or a field; sharing the bundle as a `.table.zip` (refused with a notice, since its rows aren't in memory to pack); removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+Not there yet on iOS for an indexed table: the million-row table and any timing on a phone; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
 
