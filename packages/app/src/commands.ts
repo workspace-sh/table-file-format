@@ -9,6 +9,8 @@ export type AppCommandId =
   | "open-folder"
   | "open-zip"
   | "export-zip"
+  | "undo"
+  | "redo"
   | "toggle-sidebar"
   | "tables-mode"
   | "files-mode"
@@ -45,6 +47,9 @@ export interface AppCommandState {
   /** From history's canGoBack and canGoForward; both false when absent. */
   canGoBack?: boolean;
   canGoForward?: boolean;
+  /** Whether the table on screen has an edit to undo, or to redo; both false when absent. */
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 /** The commands in menu order, labelled and ticked for the state they're shown in. */
@@ -61,6 +66,8 @@ export function appCommands(state: AppCommandState): AppCommand[] {
       shift: true,
       hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, pages) that any .table reader opens.",
     },
+    { id: "undo", menu: "Edit", label: "Undo", key: "z", enabled: state.canUndo ?? false, hint: "Put the table back as it was before its last edit" },
+    { id: "redo", menu: "Edit", label: "Redo", key: "z", shift: true, enabled: state.canRedo ?? false, hint: "Make the edit just undone again" },
     { id: "copy-link", menu: "Edit", label: "Copy Link to View", key: "c", option: true },
     { id: "tables-mode", menu: "View", label: "Tables", key: "1", checked: !state.filesMode },
     { id: "files-mode", menu: "View", label: "Files", key: "2", checked: state.filesMode },

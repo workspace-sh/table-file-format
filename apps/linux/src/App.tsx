@@ -721,6 +721,15 @@ export function App({
     }
   };
 
+  // Ctrl+Z while typing is the text's: the window's accelerator comes before
+  // the widget's own key, so it's handed on to the text with the keyboard.
+  const windowRef = useRef<Adw.ApplicationWindow | null>(null);
+  const textsOwn = (action: "text.undo" | "text.redo"): boolean => {
+    const focus = windowRef.current?.getFocus();
+    if (!(focus instanceof Gtk.Text) && !(focus instanceof Gtk.TextView)) return false;
+    focus.activateAction(action, null);
+    return true;
+  };
   // The app's commands (table-app's appCommands), each an action on the
   // window with its accelerator, and in the primary menu. Those Linux
   // doesn't do are left out.
@@ -737,6 +746,8 @@ export function App({
       narrow ? setShownWhileNarrow(!shownWhileNarrow) : dispatch({ type: "setSidebarCollapsed", collapsed: state.sidebar.collapsed !== true }),
     "go-back": () => dispatch({ type: "back" }),
     "go-forward": () => dispatch({ type: "forward" }),
+    undo: () => textsOwn("text.undo") || dispatch({ type: "undo" }),
+    redo: () => textsOwn("text.redo") || dispatch({ type: "redo" }),
   };
   const commands: AppCommand[] = derived.commands.filter((c) => run[c.id]);
   const menuSections = ["File", "Edit", "View", "Go"]
@@ -771,6 +782,7 @@ export function App({
   return (
     <AdwApplication actionAccels={commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] }))}>
       <AdwApplicationWindow
+        ref={windowRef}
         title="Tables"
         defaultWidth={1280}
         defaultHeight={800}
