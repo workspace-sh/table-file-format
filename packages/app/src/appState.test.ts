@@ -938,7 +938,7 @@ test("undo says what it would take back: the step's name, and the commands' labe
   assert.equal(label(before, "undo"), "Undo");
   assert.equal(label(before, "redo"), "Redo");
 
-  const title = before.tables["crm/deals"]!.schema.fields.find((f) => f.name === "title")!.title ?? "title";
+  const title = before.tables["crm/deals"]!.schema.fields.find((f) => f.name === "title")!.title ?? "Title";
   const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
   assert.equal(derive(edited).undoName, "Add Row");
   assert.equal(label(edited, "undo"), "Undo Add Row");
@@ -968,9 +968,12 @@ test("undo names on an indexed table: its rows' edits are named as any are", () 
   const key = indexedStart().active;
   const field = indexedStart().tables[key]!.schema.fields[0]!;
   const cell = run(indexedStart(), { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
-  assert.equal(derive(cell).undoName, `Edit ${field.title ?? field.name}`);
-  // A field the table doesn't have is named as it was given.
-  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "p1", field: "nope", value: "A" })).undoName, "Edit nope");
+  assert.equal(field.title, undefined);
+  assert.equal(derive(cell).undoName, `Edit ${field.name[0]!.toUpperCase()}${field.name.slice(1)}`);
+  // A field with no title is called by its key, as a menu writes a name.
+  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "p1", field: "close_date", value: "A" })).undoName, "Edit Close Date");
+  const titled = run(indexedStart(), { type: "updateField", name: field.name, patch: { title: "the name" } }, { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  assert.equal(derive(titled).undoName, "Edit the name");
   assert.equal(derive(run(indexedStart(), { type: "addRow", id: "p-new" })).undoName, "Add Row");
   assert.equal(derive(run(indexedStart(), { type: "updateBody", rowId: "p1", content: "a" })).undoName, "Edit Page");
   const removed = run(indexedStart(), { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
