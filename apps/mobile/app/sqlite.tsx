@@ -13,6 +13,7 @@ import { PlatformColor, ScrollView, Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { MEASURING, report } from "../measure";
 import { cases, features, heartbeat, saveResults, timings, type Mode, type Results } from "../sqliteProbe";
+import { saveProbe } from "../saveProbe";
 
 // React's own clock (sqliteProbe.ts's heartbeat): renders when asked, and says when it has committed.
 function Heartbeat() {
@@ -28,7 +29,7 @@ function Heartbeat() {
 }
 
 export default function SqliteProbe() {
-  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string; ckpt?: string; commit?: string }>();
+  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string; ckpt?: string; commit?: string; save?: string }>();
   const [lines, setLines] = useState<string[]>([]);
   const ran = useRef(false);
 
@@ -50,6 +51,12 @@ export default function SqliteProbe() {
     };
     void (async () => {
       try {
+        if (params.save) {
+          // Only how long reads wait during a save, of the archive at this address.
+          await keep("save", await saveProbe(params.save, say));
+          await keep("done", true);
+          return;
+        }
         await keep("features", await features());
         if (params.cases !== "0") for (const mode of modes) await keep(`cases-${mode}`, await cases(mode, say));
         const build = { yieldAfterMs: Number(params.yield ?? 0) || undefined, batchSize: Number(params.batch ?? 0) || undefined, autocheckpoint: params.ckpt === undefined ? undefined : Number(params.ckpt), commitEvery: Number(params.commit ?? 0) || undefined };
@@ -59,7 +66,7 @@ export default function SqliteProbe() {
         await keep("error", String(error));
       }
     })();
-  }, [params.rows, params.modes, params.cases, params.yield, params.batch, params.ckpt, params.commit]);
+  }, [params.rows, params.modes, params.cases, params.yield, params.batch, params.ckpt, params.commit, params.save]);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16 }}>
