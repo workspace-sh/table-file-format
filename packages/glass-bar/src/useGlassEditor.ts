@@ -358,6 +358,15 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     editor,
     bar,
     props,
+    /** The selected cell as the table reported it, for a host that says it in a form of its own (the Mac's inspector). */
+    selection,
+    /** Open the selected cell's field settings, as the bar's info does; false where the schema can't be edited. */
+    fieldSettings: (probe = false): boolean => {
+      const settings = commands.current?.openFieldSettings;
+      if (!selection || !settings) return false;
+      if (!probe) settings(selection.name);
+      return true;
+    },
     /** Room to leave under the table while an editor stands above the keyboard, so any cell can scroll clear of it. */
     // Kept while a cell is selected, not only while it's edited: Return closes
     // one edit before opening the next, and dropping the room between them

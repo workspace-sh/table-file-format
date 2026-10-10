@@ -65,7 +65,10 @@ export function Inspector() {
     <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 24 }}>
       <SettingsOf settings={settings} />
     </ScrollView>
-  ) : cell && (cell.state.kind === "selected" || cell.state.kind === "editing") ? (
+  ) : cell && cell.state.kind === "selected" ? (
+    // Said in the system's form, over this view (TableCellInspector.swift).
+    <View />
+  ) : cell && cell.state.kind === "editing" ? (
     <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
       <GlassBar {...cell} ref={cellRef as never} />
     </ScrollView>

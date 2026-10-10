@@ -72,6 +72,23 @@ public class TableShell: NSObject {
       inspectorView.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
       inspectorView.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
     ])
+    // A selected cell is said in the system's form, over React's view.
+    let cellHost = NSHostingView(rootView: TableCellInspectorView(model: cellInspector))
+    cellHost.translatesAutoresizingMaskIntoConstraints = false
+    // Sized by the pane, never the other way: left to itself a hosting view
+    // holds its window to its content's size, and with nothing to say that
+    // is no height at all.
+    cellHost.sizingOptions = []
+    cellHost.isHidden = true
+    pane.addSubview(cellHost)
+    NSLayoutConstraint.activate([
+      cellHost.topAnchor.constraint(equalTo: pane.safeAreaLayoutGuide.topAnchor),
+      cellHost.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+      cellHost.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+      cellHost.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
+    ])
+    self.cellHost = cellHost
+    cellInspector.send = { action in sidebar.send("inspectorCell", ["action": action]) }
     inspector.view = pane
     let inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
     inspectorItem.minimumThickness = 300
@@ -159,6 +176,15 @@ public class TableShell: NSObject {
   /// menu was asked for from the keyboard).
   @objc public static var recentClick: NSValue? {
     ProcessInfo.processInfo.systemUptime - lastClickTime < 1 ? NSValue(point: lastClick) : nil
+  }
+
+  static let cellInspector = TableCellInspectorModel()
+  private static weak var cellHost: NSView?
+
+  /// What the inspector says of the selected cell; nil hands the pane back to React's view.
+  static func setInspectorCell(_ data: CellInspectorData?) {
+    cellInspector.data = data
+    cellHost?.isHidden = data == nil
   }
 
   /// Open or close the inspector, as its toolbar button does.
