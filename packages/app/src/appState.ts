@@ -39,6 +39,7 @@ import {
   withViewPatch,
 } from "./edits.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
+import type { IndexEdit } from "./indexed.ts";
 import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History, type Place } from "./history.ts";
 import { leaving } from "./leaving.ts";
 import type { Library } from "./library.ts";
@@ -132,19 +133,25 @@ export interface AppState {
    */
   indexWork: IndexWork[];
   /**
-   * What undo puts back, for each table: the table as it was before each
-   * edit to its rows, its fields or its views, newest last, and what redo
-   * puts back after an undo. Where you are (the cell selected, the view,
-   * the page open) isn't an edit, and isn't here.
+   * What undo puts back, for each table: a step for each edit to its rows,
+   * its fields or its views, newest last, and what redo puts back after an
+   * undo. Where you are (the cell selected, the view, the page open) isn't
+   * an edit, and isn't here.
    */
   undo: Record<string, { past: UndoStep[]; future: UndoStep[] }>;
 }
 
-/** A table as it was before an edit. `run` is given to edits that are one stretch of the same thing (typing in a page), which undo as one. */
-export interface UndoStep {
-  table: ParsedTable;
-  run?: string;
-}
+/**
+ * One edit, to take back. `table` is the table as it was before it. `rows`
+ * is an edit to a row of a table held in the index, whose rows aren't
+ * here: the edit itself (`forth`, which redo makes again) and the one that
+ * undoes it (`back`), which for a cell or a row removed only the index
+ * knows, so it's null until the app has made the edit (`n`) and said;
+ * `page` is the page of a row removed, to go back with it. `run` is given
+ * to edits that are one stretch of the same thing (typing in a page),
+ * which undo as one.
+ */
+export type UndoStep = { run?: string } & ({ table: ParsedTable } | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } });
 
 /** The most steps kept for a table, the fewest, and the rows those steps may list between them. */
 const UNDO_STEPS = 100;
@@ -152,12 +159,7 @@ const UNDO_FEWEST = 20;
 const UNDO_ROWS = 2_000_000;
 
 /** One edit to a row of an indexed table; `n` counts them. */
-export type IndexWork = { n: number; key: string } & (
-  | { kind: "cell"; rowId: string; field: string; value: unknown }
-  | { kind: "add"; rowId: string }
-  | { kind: "remove"; rowId: string }
-  | { kind: "body"; rowId: string; content: string }
-);
+export type IndexWork = { n: number; key: string } & IndexEdit;
 
 /** One of the Display controls' choices. */
 export interface DisplayChoice {
@@ -221,12 +223,13 @@ export type AppAction =
   /**
    * An indexed table's rows as they now are: how many, after a build or
    * after the edits up to `done` (an IndexWork's `n`) were made, which
-   * then leave the queue and the table is to be written.
+   * then leave the queue and the table is to be written. `back` is what
+   * undoes each of them, by its `n` (table-app's remoteEdits gives it).
    */
   /** Put the table on screen back as it was before its last edit; and forward again. */
   | { type: "undo" }
   | { type: "redo" }
-  | { type: "indexed"; key: string; count: number; done?: number }
+  | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
   /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
   | { type: "reloaded"; key: string; table: ParsedTable };
 
@@ -361,9 +364,10 @@ function placeOf(state: AppState): Place {
  * before kept for undo. `run` names a stretch of edits that undo as one
  * (each save of the same page while it's typed in).
  *
- * A table held in the index has its rows there, not here, so only an edit
- * to its views is kept; an edit to its fields changes what the index
- * holds, and what was kept before it is let go.
+ * A table held in the index has its rows there, not here: an edit to its
+ * views is kept here, one to its rows as it's queued for the index
+ * (`queued`), and an edit to its fields changes what the index holds, so
+ * what was kept before it is let go.
  */
 function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
   const tables = onTable(state.tables, key, change);
@@ -395,7 +399,7 @@ function without<T>(record: Record<string, T>, keys: string[]): Record<string, T
   return Object.fromEntries(Object.entries(record).filter(([k]) => !keys.includes(k)));
 }
 
-/** Undo or redo on the table on screen: the table from one stack put back, and the one it replaces put on the other. */
+/** Undo or redo on the table on screen: its last step taken back (or made again), and put on the other stack. */
 function stepBack(state: AppState, from: "past" | "future"): AppState {
   const key = state.active;
   const now = state.tables[key];
@@ -403,16 +407,24 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
   const step = stack?.[from].at(-1);
   if (!now || !stack || !step || state.sidebar.files) return state;
   const to = from === "past" ? "future" : "past";
+  const run = step.run !== undefined ? { run: step.run } : {};
+  const moved = (other: UndoStep) => ({ ...state.undo, [key]: { ...stack, [from]: stack[from].slice(0, -1), [to]: [...stack[to], other] } });
+  if ("rows" in step) {
+    // A row in the index: the edit that undoes it, or the edit again, is queued as the edit was.
+    const made = from === "past" ? step.rows.back : step.rows.forth;
+    // Not yet known: the app is still making the edit this would undo.
+    if (!made) return state;
+    const tables = onTable(state.tables, key, (t) => withIndexEdit(t, made));
+    const held = tables === state.tables ? state : { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
+    return { ...queued(held, key, made), undo: moved(step) };
+  }
   // A table held in the index: its views go back, and the rest stays what the index holds.
   const table = now.indexed ? { ...now, views: step.table.views } : step.table;
   return {
     ...state,
     tables: { ...state.tables, [key]: table },
     dirty: marked(state.dirty, bundleOf(key)),
-    undo: {
-      ...state.undo,
-      [key]: { ...stack, [from]: stack[from].slice(0, -1), [to]: [...stack[to], { table: now, ...(step.run !== undefined ? { run: step.run } : {}) }] },
-    },
+    undo: moved({ table: now, ...run }),
   };
 }
 
@@ -421,13 +433,55 @@ function runEnded(state: AppState, key: string): AppState {
   const stack = state.undo[key];
   const last = stack?.past.at(-1);
   if (!stack || last?.run === undefined) return state;
-  return { ...state, undo: { ...state.undo, [key]: { ...stack, past: [...stack.past.slice(0, -1), { table: last.table }] } } };
+  const { run: _, ...ended } = last;
+  return { ...state, undo: { ...state.undo, [key]: { ...stack, past: [...stack.past.slice(0, -1), ended] } } };
 }
 
-/** An edit to an indexed table's row, for the app to make in the index. */
-function queued(state: AppState, work: IndexWork extends infer W ? (W extends { n: number } ? Omit<W, "n"> : never) : never): AppState {
+/**
+ * An edit to an indexed table's row, for the app to make in the index.
+ * `step` keeps it for undo, with the edit that undoes it where that's
+ * known here (`back`; null where only the index knows, which the app says
+ * once it's made). Without `step` nothing is kept: the edit is an undo or
+ * a redo itself.
+ */
+function queued(state: AppState, key: string, edit: IndexEdit, step?: { back: IndexEdit | null; run?: string; page?: string }): AppState {
   const n = (state.indexWork.at(-1)?.n ?? 0) + 1;
-  return { ...state, indexWork: [...state.indexWork, { ...work, n } as IndexWork] };
+  const next = { ...state, indexWork: [...state.indexWork, { ...edit, n, key }] };
+  if (!step) return next;
+  const { back, run, page } = step;
+  const stack = state.undo[key] ?? { past: [], future: [] };
+  const last = stack.past.at(-1);
+  // Another edit of the same stretch: undo still goes back to before the first, and redo makes the last.
+  const past =
+    run !== undefined && last?.run === run && "rows" in last
+      ? [...stack.past.slice(0, -1), { ...last, rows: { ...last.rows, forth: edit } }]
+      : [...stack.past, { rows: { n, back, forth: edit, ...(page !== undefined ? { page } : {}) }, ...(run !== undefined ? { run } : {}) }].slice(-UNDO_STEPS);
+  return { ...next, undo: { ...state.undo, [key]: { past, future: [] } } };
+}
+
+/** What an edit to an indexed table's row changes of what's held here: its page. */
+function withIndexEdit(table: ParsedTable, edit: IndexEdit): ParsedTable {
+  if (edit.kind === "body") return withIndexedBody(table, edit.rowId, edit.content);
+  if (edit.kind === "remove") return withoutRow(table, edit.rowId);
+  if (edit.kind === "restore" && edit.content !== undefined) return withIndexedBody(table, edit.rowId, edit.content);
+  return table;
+}
+
+/**
+ * The app has made the edits up to `done`: each step waiting to hear what
+ * undoes its edit has it now, a row removed going back with its page. A
+ * step whose edit changed nothing, or failed, has nothing to undo, and goes.
+ */
+function stepsHeard(stack: { past: UndoStep[]; future: UndoStep[] } | undefined, done: number, back: Record<number, IndexEdit> | undefined) {
+  if (!stack?.past.some((s) => "rows" in s && s.rows.back === null && s.rows.n <= done)) return stack;
+  const past = stack.past.flatMap((step): UndoStep[] => {
+    if (!("rows" in step) || step.rows.back !== null || step.rows.n > done) return [step];
+    const edit = back?.[step.rows.n];
+    if (!edit) return [];
+    const { page } = step.rows;
+    return [{ ...step, rows: { ...step.rows, back: edit.kind === "restore" && page !== undefined ? { ...edit, content: page } : edit } }];
+  });
+  return { ...stack, past };
 }
 
 /** A page of an indexed table's row, whose rows aren't here to check it against. */
@@ -524,10 +578,14 @@ function step(state: AppState, action: AppAction): AppState {
     }
 
     case "updateRow":
-      if (state.tables[state.active]?.indexed) return queued(state, { key: state.active, kind: "cell", rowId: action.rowId, field: action.field, value: action.value });
+      if (state.tables[state.active]?.indexed) {
+        return queued(state, state.active, { kind: "cell", rowId: action.rowId, field: action.field, value: action.value }, { back: null });
+      }
       return edit(state, (t) => withCell(t, action.rowId, action.field, action.value));
     case "addRow":
-      if (state.tables[state.active]?.indexed) return queued(state, { key: state.active, kind: "add", rowId: action.id });
+      if (state.tables[state.active]?.indexed) {
+        return queued(state, state.active, { kind: "add", rowId: action.id }, { back: { kind: "remove", rowId: action.id } });
+      }
       return edit(state, (t) => withRow(t, action.id));
     case "insertRow": {
       // Only in a Sheet view whose order isn't decided by a sort (D41).
@@ -545,10 +603,12 @@ function step(state: AppState, action: AppAction): AppState {
       const key = action.table ?? state.active;
       if (state.tables[key]?.indexed) {
         // The page is held here; the index hears of it for its search.
+        const was = state.tables[key]!.bodies?.[action.rowId] ?? "";
         const held = edit(state, (t) => withIndexedBody(t, action.rowId, action.content), key);
-        return held === state ? state : queued(held, { key, kind: "body", rowId: action.rowId, content: action.content });
+        if (held === state) return state;
+        // Each save of a page while it's typed in is one stretch: undo takes it back whole.
+        return queued(held, key, { kind: "body", rowId: action.rowId, content: action.content }, { back: { kind: "body", rowId: action.rowId, content: was }, run: `page:${action.rowId}` });
       }
-      // Each save of a page while it's typed in is one stretch: undo takes it back whole.
       return edit(state, (t) => withBody(t, action.rowId, action.content), action.table, `page:${action.rowId}`);
     }
     case "updateField":
@@ -702,11 +762,13 @@ function step(state: AppState, action: AppAction): AppState {
       // Its rows have just gone to the index: the steps kept list them as they were here.
       if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };
       const done = action.done;
+      const heard = stepsHeard(state.undo[action.key], done, action.back);
       return {
         ...state,
         tables,
         indexWork: state.indexWork.filter((w) => w.key !== action.key || w.n > done),
         dirty: marked(state.dirty, bundleOf(action.key)),
+        ...(heard && heard !== state.undo[action.key] ? { undo: { ...state.undo, [action.key]: heard } } : {}),
       };
     }
   }
@@ -719,7 +781,11 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
   switch (on.type) {
     case "deleteRow":
       // Its page, if open, goes with it (settle's rule).
-      if (state.tables[on.key]?.indexed) return queued(edit(state, (t) => withoutRow(t, on.rowId), on.key), { key: on.key, kind: "remove", rowId: on.rowId });
+      if (state.tables[on.key]?.indexed) {
+        // What undoes it is the index's to say (the row, and where it was); its page is here, and kept to go back with it.
+        const page = state.tables[on.key]!.bodies?.[on.rowId];
+        return queued(edit(state, (t) => withoutRow(t, on.rowId), on.key), on.key, { kind: "remove", rowId: on.rowId }, { back: null, ...(page !== undefined ? { page } : {}) });
+      }
       return edit(state, (t) => withoutRow(t, on.rowId), on.key);
     case "deleteField":
       return edit(state, (t) => withoutField(t, on.name), on.key);
