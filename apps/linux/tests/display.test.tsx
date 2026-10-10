@@ -1,6 +1,6 @@
 import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
-import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
+import { cleanup, render, screen, waitFor } from "@gtkx/testing";
 import { loadDisplay } from "@workspace.sh/table-app";
 import { jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
 import { mkdtempSync, rmSync } from "node:fs";
