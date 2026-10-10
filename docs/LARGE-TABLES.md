@@ -175,7 +175,7 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 
 ### Drawing only the rows on screen, on the web (W1, 9 Oct 2026)
 
-The web's table draws its rows through LegendList (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS, macOS and Android still draw every row.
+The web's table draws its rows through LegendList (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS has since followed (below); macOS and Android still draw every row.
 
 A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280 × 800 on the Linux rig (a 2017 MacBook, 8 GB), opening the same `.table.zip` files. "First rows" is from the pick to two frames after the rows are on screen. A jump sets the page's scroll position and waits two frames.
 
@@ -195,6 +195,25 @@ A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280
 The GTK table (`packages/gtk/src/TableView.tsx`) builds the rows within 900 px of what's on screen, between two empty boxes as tall as the rows above and below, so its scroller is as long as the whole table. The built stretch moves when scrolling brings the screen within 300 px of its edge. A key that goes to a row that isn't built (Ctrl with an arrow, or an arrow at the edge) scrolls there and gives that row's cell the focus once it's built.
 
 Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cell scrolled far out of view is dropped with its row, so the table has no cell selected until one is clicked.
+
+### Drawing only the rows on screen, on iOS (I1, 10 Oct 2026)
+
+The phone's table draws the rows near the screen (`packages/ui/src/internal/RowList.native.tsx`): a body as tall as the list, with those rows placed in it by their known heights. It is the web's renderer for a list too tall for a browser (`TallRows`), with the same mapping past `MAX_LIST_HEIGHT`, since a million rows is more points than a 32-bit layout places exactly.
+
+- **The screen's own scroll view stays the scroller**, so the large title, the insets and Back's return to place are as they were. It says where it is scrolled through `PageScrollContext` (`packages/ui/src/pageScroll.ts`), and the table's two panes each draw from that same offset, so they show the same rows.
+- **Not LegendList, which the web uses.** Its React Native build draws only what it scrolls itself, and a list inside the screen's scroll view has no height of its own to window by.
+- **An app that gives no `PageScrollContext` draws every row**, as before: macOS and Android today.
+
+iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, opening the same `.table.zip` files in memory. These times are a Debug build's on a Mac's processor and say only that the tables open; a Release build on a phone is still to be measured.
+
+| Rows | Read (unzip, parse) | Shown | Cells mounted at the top / middle / end |
+|---|---|---|---|
+| 10,000 | 2.4 s | 0.9 s | 248 / 376 / 304 |
+| 50,000 | 12.1 s | 2.6 s | 296 / 376 / 304 |
+
+- **What's mounted no longer grows with the table.** 10,000 rows used to end the app; every row's cells were drawn.
+- **What's left is the data**, as on the web: reading is most of the time at 50,000 rows, which is where the index takes over (I2).
+- Selecting, editing, Return moving down a row, group headings, totals, a row's grip and Back's return to a row deep in the table work as at 17 rows, checked at 10,000.
 
 ### A view read through the index (Phase B, core; 9 Oct 2026)
 
