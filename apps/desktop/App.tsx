@@ -21,6 +21,8 @@ import {
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
+  PageReveal,
+  type PageRevealRect,
   PlatformControlsProvider,
   PortalHost,
   TableView,
@@ -711,6 +713,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }, 150);
   };
   useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  // A rect the view wants on screen (the cell the keyboard moved to): the
+  // least scroll that brings it clear of the toolbar, which covers the top
+  // of this scroll by as much as the scroll rests above zero.
+  const pageReveal = useCallback((rect: PageRevealRect) => {
+    const view = scroller.current as unknown as { measure?: (cb: (...a: number[]) => void) => void } | null;
+    view?.measure?.((_x, _y, _w, height, _px, pageY) => {
+      const margin = 12;
+      const top = pageY - restY.current + margin;
+      const bottom = pageY + height - margin;
+      const dy = rect.top < top ? rect.top - top : rect.top + rect.height > bottom ? rect.top + rect.height - bottom : 0;
+      if (dy !== 0) scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + dy), animated: false });
+    });
+  }, []);
   // A right-click on a row shows its menu (MacControls.tsx).
   useEffect(() => watchRowMenus(), []);
   const restoringN = state.restoring?.n;
@@ -1166,6 +1181,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
+            <PageReveal.Provider value={pageReveal}>
             <ScrollView
               ref={scroller}
               onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
@@ -1222,6 +1238,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               })}
               </CellEditorContext.Provider>
             </ScrollView>
+            </PageReveal.Provider>
             </PageGutter.Provider>
             </>
             )}
