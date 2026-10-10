@@ -460,6 +460,32 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     }
   });
 
+  test("rows removed go back where they were, with their pages, and at the end if another row has the place", async () => {
+    const rows = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, bodies: { r2500: "a needle here" }, key: "k" });
+    const removed = await removeRows(db, { name: "t", schema, ids: ["r10", "nope", "r2500", "r2999"], key: "k2" });
+    assert.deepEqual(removed.map((r) => r.row.id), ["r10", "r2500", "r2999"]);
+    assert.deepEqual(removed[1]!.row, { ...rows[2500], double: 5000 });
+    // The last row's place is taken by a row added since.
+    await putRows(db, { name: "t", schema, rows: [{ id: "new", name: "New" }], key: "k3" });
+    await putRows(db, {
+      name: "t",
+      schema,
+      rows: removed.map((r) => r.row),
+      bodies: { r2500: "a needle here" },
+      at: Object.fromEntries(removed.map((r) => [r.row.id, r.at])),
+      key: "k4",
+    });
+    const all = (await queryIndex(db, { name: "t", schema }))!;
+    assert.deepEqual(await all.ids(0, all.count), [...rows.slice(0, 2999).map((r) => r.id), "new", "r2999"]);
+    assert.deepEqual(await all.ids(2490, 2510), rows.slice(2490, 2510).map((r) => r.id));
+    const found = (await queryIndex(db, { name: "t", schema, query: { search: "needle" } }))!;
+    assert.deepEqual(await found.ids(0, found.count), ["r2500"]);
+    const sorted = (await queryIndex(db, { name: "t", schema, query: { sort: [{ field: "n", direction: "desc" }] } }))!;
+    assert.deepEqual(await sorted.ids(0, 3), ["r2999", "r2998", "r2997"]);
+  });
+
   test("rows are read in file order while their index is still being built", async () => {
     const rows = Array.from({ length: 1000 }, (_, i) => ({ id: `r${i}`, name: `Row ${i}`, n: i }));
     const db = driver();

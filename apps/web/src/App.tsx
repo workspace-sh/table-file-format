@@ -535,6 +535,8 @@ export function App() {
   // each step took (ms), for measuring large tables (#126): fetching it,
   // reading it (unzip and parse), and showing it (React's render and commit,
   // synchronously: a hidden tab has no frames to wait for).
+  const measured = useRef({ canUndo: false, canRedo: false, queued: 0 });
+  measured.current = { canUndo: derived.canUndo, canRedo: derived.canRedo, queued: state.indexWork.length };
   useEffect(() => {
     if (!import.meta.env.DEV && import.meta.env.VITE_TABLE_MEASURE !== "1") return;
     (window as { __tableWeb?: unknown }).__tableWeb = {
@@ -551,6 +553,8 @@ export function App() {
       },
       // What the index worker's answers took, for a bundle held in it.
       workerTimings: (bundle: string) => indexed.timings(bundle),
+      // Whether there's a step to undo or redo, and how many edits wait on the index.
+      undoing: () => ({ canUndo: measured.current.canUndo, canRedo: measured.current.canRedo, queued: measured.current.queued }),
       // Milliseconds to edit a row's title in the table on screen and render it.
       timeEdit: (rowId: string) => {
         const t0 = performance.now();

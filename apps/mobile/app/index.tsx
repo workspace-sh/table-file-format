@@ -153,8 +153,12 @@ export default function TableScreen() {
     })),
     { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newId() }) },
   ];
-  const fileActions: { label: string; sf: SFSymbol; material: MaterialSymbol; onPress: () => void }[] = [
+  const fileActions: { label: string; sf: SFSymbol; material?: MaterialSymbol; disabled?: boolean; startsGroup?: boolean; onPress: () => void }[] = [
+    // The table on screen, back a step and forward again (APP-STATE, "Undo").
+    { label: labelOf("undo"), sf: "arrow.uturn.backward", disabled: !derived.canUndo, onPress: () => dispatch({ type: "undo" }) },
+    { label: labelOf("redo"), sf: "arrow.uturn.forward", disabled: !derived.canRedo, onPress: () => dispatch({ type: "redo" }) },
     {
+      startsGroup: true,
       label: `New Table in ${state.bundles[bundle]?.title ?? bundle}`,
       sf: "tablecells.badge.ellipsis",
       material: "table",
@@ -400,7 +404,7 @@ export default function TableScreen() {
         <GlassBar
           ref={glass.bar}
           {...glass.props}
-          moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, onPress: a.onPress }))}
+          moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
         />
       )}
     </>
