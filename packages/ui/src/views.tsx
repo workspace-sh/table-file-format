@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -1751,6 +1751,8 @@ interface EditableCellProps {
   onAttach?: () => void;
   /** Start editing; `text` replaces the value (a key typed on the cell). */
   editRequest?: EditRequest;
+  /** Told once the cell has taken `editRequest`, for the table to let it go. */
+  onEditHeard?: () => void;
   /** How editing ended from the keyboard, so the table can move on. */
   onEditEnd?: (how: EditEnd) => void;
   /**
@@ -1793,6 +1795,7 @@ function EditableCell({
   onSelect,
   onAttach,
   editRequest,
+  onEditHeard,
   onEditEnd,
   editOutside,
   outsideDraft,
@@ -1897,6 +1900,7 @@ function EditableCell({
       if (kind === "attachment" && onAttach) onAttach();
       else startEdit(editRequest.text);
     }
+    if (editRequest) onEditHeard?.();
     // Each request once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRequest?.n]);
@@ -2607,7 +2611,11 @@ export function TableView({
   // The selected cell, as a spreadsheet has one: arrows move it, Enter or
   // typing edits it (#85). Cleared when focus leaves the table.
   const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
+  // A cell asked to open for editing (Enter, or a key typed on it). It clears
+  // once the cell has heard it (`onEditHeard`), so the cell doesn't open
+  // again when its row is scrolled away and drawn anew.
   const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  const editHeard = useCallback(() => setEditReq(null), []);
   // An editor outside the table (#352), when the host provides one: the
   // draft it is typing into a cell, or into a formula column, shown live.
   const editor = useCellEditor();
@@ -3325,6 +3333,7 @@ export function TableView({
             onSelect={select}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
+            onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
             editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
