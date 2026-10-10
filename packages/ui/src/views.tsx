@@ -119,6 +119,7 @@ import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
+import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
 
 /**
@@ -3786,7 +3787,7 @@ export function TableView({
                     <html.div style={[styles.tableRow, styles.groupRow]}>
                       <html.span style={styles.groupLabel}>
                         {groupTitle} · {starts.label}
-                        <html.span style={styles.groupCount}>{starts.count}</html.span>
+                        <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
                       </html.span>
                     </html.div>
                   )}
@@ -3848,7 +3849,7 @@ export function TableView({
                         {!primaryName && (
                           <html.span style={styles.groupLabel}>
                             {groupTitle} · {starts.label}
-                            <html.span style={styles.groupCount}>{starts.count}</html.span>
+                            <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
                           </html.span>
                         )}
                       </html.div>
@@ -4471,7 +4472,7 @@ export function ListView({
             <html.div style={styles.listGroup}>
               <html.span style={styles.groupLabel}>
                 {view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : ""} · {starts.label}
-                <html.span style={styles.groupCount}>{starts.count}</html.span>
+                <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
               </html.span>
             </html.div>
           )}
