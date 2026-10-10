@@ -136,7 +136,7 @@ public class TableShell: NSObject {
     split.addSplitViewItem(inspectorItem)
     split.splitView.autosaveName = "TableDesktopSplitView"
     watchClicks()
-    watchScrolls()
+    watchEscape()
     return split
   }
 
@@ -149,6 +149,23 @@ public class TableShell: NSObject {
     guard let root = rootView, let window = root.window else { return }
     if let first = window.firstResponder as? NSView, first.isDescendant(of: root) { return }
     if !window.makeFirstResponder(root) { window.makeFirstResponder(nil) }
+  }
+
+  /// Escape, wherever the keyboard is in the window, unless text is being
+  /// typed (a cell's editor, a formula, search, a form's field), which takes
+  /// its own: the app is told, and backs out one level (App.tsx, `escape`).
+  /// Left to whatever had the keyboard, it did nothing as often as not.
+  private static var escapeMonitor: Any?
+  static func watchEscape() {
+    guard escapeMonitor == nil else { return }
+    escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      guard event.keyCode == 53,
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+            let window = rootView?.window, event.window === window else { return event }
+      if window.firstResponder is NSText { return event }
+      sidebar.send("escape", [:])
+      return nil
+    }
   }
 
   /// A click in the content takes the keyboard from the sidebar before the
@@ -198,57 +215,6 @@ public class TableShell: NSObject {
   }
   private static var contextMonitor: Any?
 
-  /// Scrolling up or down over something that scrolls only sideways (a
-  /// table's columns, a board) scrolls the page it is in. AppKit gives the
-  /// whole gesture to the scroll view under the pointer, which has nowhere
-  /// to go that way and drops it.
-  private static var scrollMonitor: Any?
-  private static weak var scrollsFor: NSScrollView?
-  private static var scrollDecided = false
-  static func watchScrolls() {
-    guard scrollMonitor == nil else { return }
-    scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-      guard let root = rootView, let window = root.window, event.window === window else { return event }
-      return routeScroll(event, at: event.locationInWindow) ? nil : event
-    }
-  }
-
-  /// True when the event was given to the page's scroll view in place of
-  /// the sideways one under `inWindow`. A gesture goes one way from its
-  /// first movement to its last (its momentum included), so a slanted
-  /// swipe doesn't switch between the two.
-  @objc public static func routeScroll(_ event: NSEvent, at inWindow: NSPoint) -> Bool {
-    // A new gesture, or a wheel's click (which has no phases), is decided afresh.
-    if event.phase == .began || event.phase == .mayBegin || (event.phase == [] && event.momentumPhase == []) {
-      scrollsFor = nil
-      scrollDecided = false
-    }
-    if !scrollDecided {
-      let dx = abs(event.scrollingDeltaX), dy = abs(event.scrollingDeltaY)
-      // Nothing has moved yet: the scroll view under the pointer hears the gesture begin.
-      guard dx > 0 || dy > 0 else { return false }
-      scrollDecided = true
-      if dy > dx, let root = rootView, let top = root.superview {
-        var view = top.hitTest(top.convert(inWindow, from: nil))
-        var sideways = false
-        while let at = view, at !== top {
-          if let scroll = at as? NSScrollView {
-            let canGoDown = (scroll.documentView?.frame.height ?? 0) > scroll.contentView.bounds.height + 0.5
-            if canGoDown {
-              if sideways { scrollsFor = scroll }
-              break
-            }
-            sideways = true
-          }
-          view = at.superview
-        }
-      }
-    }
-    guard let page = scrollsFor else { return false }
-    page.scrollWheel(with: event)
-    return true
-  }
-
   private static var lastClick = NSPoint.zero
   private static var lastClickTime: TimeInterval = 0
 
@@ -282,8 +248,15 @@ public class TableShell: NSObject {
 
   /// The formula being written in the inspector; nil for none.
   static func setFormulaEditor(_ data: FormulaEditorData?) {
+    let field = formulaEditor.textView
+    let hadKeyboard = field.window?.firstResponder === field
     formulaEditor.data = data
     layInspector()
+    // The edit is over: the keyboard goes back to the table. Left to AppKit
+    // it goes to the next field that takes it, the toolbar's search.
+    if data == nil && hadKeyboard, let root = rootView {
+      root.window?.makeFirstResponder(root)
+    }
   }
 
   /// One thing at a time in the inspector: a settings form, else a formula

@@ -49,15 +49,33 @@ public final class TableDatePicker: NSObject, NSPopoverDelegate {
     }
     let day = kind == "time" ? nil : make(.clockAndCalendar, [.yearMonthDay])
     let time = kind == "date" ? nil : make(.textFieldAndStepper, [.hourMinute])
-    let stack = NSStackView(views: [day, time].compactMap { $0 })
-    stack.orientation = .vertical
-    stack.alignment = .centerX
-    stack.spacing = 10
-    let fit = stack.fittingSize
+    // AppKit's calendar comes at one fixed, small size. It's drawn a quarter as large again here by giving
+    // its holder a frame 1.25 times its bounds: AppKit redraws it at that size, crisply, and maps clicks
+    // back. The time field keeps the system's size.
+    let scale: CGFloat = 1.25
+    var parts: [NSView] = []
+    if let day {
+      let size = day.frame.size
+      let scaled = NSView(frame: NSRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
+      scaled.bounds = NSRect(origin: .zero, size: size)
+      day.frame = NSRect(origin: .zero, size: size)
+      scaled.addSubview(day)
+      parts.append(scaled)
+    }
+    if let time { parts.append(time) }
+    // Top to bottom in a holder whose y runs up: the calendar first, the time under it.
+    let spacing: CGFloat = 10
     let margin: CGFloat = 14
-    let holder = NSView(frame: NSRect(x: 0, y: 0, width: fit.width + margin * 2, height: fit.height + margin * 2))
-    stack.frame = NSRect(x: margin, y: margin, width: fit.width, height: fit.height)
-    holder.addSubview(stack)
+    let width = parts.map(\.frame.width).max() ?? 0
+    let height = parts.map(\.frame.height).reduce(0, +) + spacing * CGFloat(max(parts.count - 1, 0))
+    let holder = NSView(frame: NSRect(x: 0, y: 0, width: width + margin * 2, height: height + margin * 2))
+    var top = margin + height
+    for part in parts {
+      top -= part.frame.height
+      part.setFrameOrigin(NSPoint(x: margin + (width - part.frame.width) / 2, y: top))
+      top -= spacing
+      holder.addSubview(part)
+    }
     let controller = NSViewController()
     controller.view = holder
 

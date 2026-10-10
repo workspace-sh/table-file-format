@@ -72,6 +72,13 @@ export function dismissSettingsForm(): void {
   shown?.sheet.onDismiss();
 }
 
+/** Escape on a settings form: its Cancel, else dismissed. */
+export function cancelSettingsForm(): void {
+  if (!shown) return;
+  if (shown.sheet.cancel) shown.sheet.cancel.onPress();
+  else shown.sheet.onDismiss();
+}
+
 /** Whether a settings form is in the inspector. */
 export function settingsFormShown(): boolean {
   return shown !== null;

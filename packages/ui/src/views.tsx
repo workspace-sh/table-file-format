@@ -102,6 +102,8 @@ import { HOVERS } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { Platform } from "react-native";
+import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { afterEdit, cellPicks, gridKey } from "./gridNav";
@@ -1160,6 +1162,10 @@ const styles = css.create({
     fontWeight: "600",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
+  // On native the letter stacks above the name instead of sitting before it: without the gap, so the two share an edge.
+  columnLetterStacked: {
+    marginInlineEnd: 0,
+  },
   // The 14 symbolic enum colours (SPEC section 2, DECISIONS D43), mapped onto light and dark.
   pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
   pillBrown: { backgroundColor: { default: "#eee3d8", "@media (prefers-color-scheme: dark)": "#3b2a1d" }, color: { default: "#7a4a21", "@media (prefers-color-scheme: dark)": "#d9b08c" } },
@@ -1466,6 +1472,12 @@ const styles = css.create({
     cursor: "pointer",
   },
   bodyBadge: {
+    // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
+    display: "flex",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
     paddingInline: 6,
     paddingBlock: 1,
     marginInlineStart: 6,
@@ -2470,8 +2482,25 @@ function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
-function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
-  return on ? <HScroll>{children}</HScroll> : <>{children}</>;
+function PaneScroll({ on, children, scroll }: { on: boolean; children: ReactNode; scroll?: { ref: { current: unknown }; x: { current: number } } }) {
+  return on ? (
+    <HScroll
+      // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scrollProps={
+        scroll &&
+        ({
+          ref: scroll.ref,
+          onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
+          scrollEventThrottle: 16,
+        } as any)
+      }
+    >
+      {children}
+    </HScroll>
+  ) : (
+    <>{children}</>
+  );
 }
 
 /** A cell's draft ("2026-03-01", "09:30", "2026-03-01T09:30") as a Date for the system's picker. */
@@ -2687,6 +2716,15 @@ export function TableView({
   const gridRef = useRef<any>(null);
   // Where the keys come from on macOS, which needs a view of its own for them (GridKeys).
   const keysRef = useRef<GridKeysHandle | null>(null);
+  // On the Mac, a table that comes into view takes the keyboard, so the first
+  // arrow selects its first cell (gridKey) without a click first. Not on the
+  // web, where focusing would scroll the page, nor on a phone.
+  useEffect(() => {
+    if (Platform.OS !== "macos") return;
+    const t = setTimeout(() => keysRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.id]);
   useEffect(() => {
     // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
     if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
@@ -2825,6 +2863,9 @@ export function TableView({
     : undefined;
   const frozenRows = useRef<RowListHandle | null>(null);
   const paneRows = useRef<RowListHandle | null>(null);
+  // The columns beside the frozen one, when they scroll sideways in their own pane, and how far.
+  const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
+  const pageReveal = useContext(PageReveal);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
@@ -3077,7 +3118,7 @@ export function TableView({
             !isLast && styles.tableCellSeparator,
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
           {columnResizer(name)}
@@ -3115,7 +3156,7 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
         </html.button>
@@ -3716,8 +3757,31 @@ export function TableView({
   useEffect(() => {
     if (!sel) return;
     const cell = cellRefs.current[`${sel.rowId}\u0000${sel.name}`];
+    if (cell?.scrollIntoView) {
+      cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
     if (cell) {
-      cell.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      // Native has no scrollIntoView: the columns' own pane scrolls sideways
+      // here, and the page, which the app scrolls, is asked for the rest.
+      void measureAnchor(cell).then(async (rect) => {
+        if (!rect) return;
+        const pane = sel.name === primaryName ? null : await measureAnchor(paneScroll.ref.current);
+        if (pane) {
+          const margin = 8;
+          const dx =
+            rect.left < pane.left
+              ? rect.left - pane.left - margin
+              : rect.left + rect.width > pane.left + pane.width
+                ? rect.left + rect.width - (pane.left + pane.width) + margin
+                : 0;
+          if (dx !== 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (paneScroll.ref.current as any)?.scrollTo?.({ x: Math.max(0, paneScroll.x.current + dx), animated: false });
+          }
+        }
+        pageReveal?.(rect);
+      });
       return;
     }
     // Off screen, the row isn't drawn and has no cell to scroll to: ask the
@@ -3836,7 +3900,7 @@ export function TableView({
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
-          <PaneScroll on={!edgeToEdge}>
+          <PaneScroll on={!edgeToEdge} scroll={paneScroll}>
             <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
