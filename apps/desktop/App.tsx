@@ -31,7 +31,7 @@ import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { macControls, watchRowMenus } from "./MacControls";
-import { onSidebar, pickInSidebar, setInspectorShown, setSidebar, toggleNativeSidebar } from "./nativeSidebar";
+import { onSidebar, pickInSidebar, pressInspectorCell, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -793,6 +793,35 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     inspectorStore.set({ page, settings, cell: glass.props, cellRef: glass.bar, display: shownDisplay });
   });
+  // A cell that's only selected is said in the inspector's own form
+  // (TableCellInspector.swift): its field and row, its value, what the
+  // field is, and the ways on from there. The same selection the iOS bar
+  // shows.
+  const selected = cellKind === "selected" && page === null && !settingsShown ? glass.selection : null;
+  const cellJson = selected
+    ? JSON.stringify({
+        field: selected.label,
+        row: selected.rowLabel,
+        rowLabel: "Row",
+        value: selected.text,
+        valueLabel: selected.formula ? "Formula" : "Value",
+        formula: selected.formula,
+        aboutLabel: "About This Field",
+        about: (selected.facts ?? "").split("\n\n").filter(Boolean),
+        editLabel: selected.formula ? "Edit Formula…" : "Edit",
+        ...(glass.fieldSettings(true) ? { settingsLabel: "Field Settings…" } : {}),
+      } satisfies InspectorCell)
+    : null;
+  useEffect(() => {
+    setInspectorCell(cellJson ? (JSON.parse(cellJson) as InspectorCell) : null);
+  }, [cellJson]);
+  const cellJsonRef = useRef<string | null>(null);
+  cellJsonRef.current = cellJson;
+  const inspectorCell = useRef((_action: "edit" | "settings") => {});
+  inspectorCell.current = (action) => {
+    if (action === "edit") glass.props.onEdit?.();
+    else glass.fieldSettings();
+  };
   // It opens for a page or a formula being written, and for a cell once it
   // has been opened; closing it (its toolbar button) lets go of both.
   const editingFormula = cellKind === "editing";
@@ -1004,6 +1033,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         datePickerClose();
         return "closed";
       },
+      // The inspector's account of the selected cell: what it was sent, and pressing its buttons.
+      inspectorCell: () => cellJsonRef.current,
+      pressInspectorCell: (action: "edit" | "settings") => {
+        pressInspectorCell(action);
+        return `pressed ${action}`;
+      },
       menuTitles,
       // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.
       pressAlert: (title: string) => {
@@ -1083,6 +1118,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "showFile") dispatch({ type: "showFile", file: { bundle: e.bundle, path: e.path } });
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
+        else if (e.type === "inspectorCell") inspectorCell.current(e.action);
       }),
     [chooseFilesMode],
   );

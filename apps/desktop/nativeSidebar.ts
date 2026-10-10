@@ -9,6 +9,8 @@ interface TableSidebarModule {
   setModel(json: string): void;
   toggle(): void;
   setInspectorShown(shown: boolean): void;
+  setInspectorCell(json: string): void;
+  pressInspectorCell(action: string): void;
   pick(tag: string): void;
   addListener(event: string): void;
   removeListeners(count: number): void;
@@ -28,7 +30,9 @@ export type SidebarEvent =
   | { type: "showFile"; bundle: string; path: string }
   | { type: "shown"; shown: boolean }
   /** The inspector opened or closed, by its toolbar button or by the app. */
-  | { type: "inspector"; shown: boolean };
+  | { type: "inspector"; shown: boolean }
+  /** A button pressed in the inspector's account of the selected cell. */
+  | { type: "inspectorCell"; action: "edit" | "settings" };
 
 export interface SidebarShown {
   tree: SidebarBundle[];
@@ -120,4 +124,28 @@ export function pickInSidebar(tag: string): void {
 /** Open or close the inspector pane. */
 export function setInspectorShown(shown: boolean): void {
   TableSidebar?.setInspectorShown(shown);
+}
+
+/** The selected cell as the inspector says it (TableCellInspector.swift). */
+export interface InspectorCell {
+  field: string;
+  row: string;
+  rowLabel: string;
+  value: string;
+  valueLabel: string;
+  formula: boolean;
+  aboutLabel: string;
+  about: string[];
+  editLabel: string;
+  settingsLabel?: string;
+}
+
+/** Say the selected cell in the inspector's own form; null hands the pane back to React's view. */
+export function setInspectorCell(cell: InspectorCell | null): void {
+  TableSidebar?.setInspectorCell(cell ? JSON.stringify(cell) : "");
+}
+
+/** Development only: press one of the cell inspector's buttons. */
+export function pressInspectorCell(action: "edit" | "settings"): void {
+  TableSidebar?.pressInspectorCell(action);
 }

@@ -50,6 +50,21 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// The selected cell, for the inspector to say (TableCellInspector.swift); "" for none.
+  @objc func setInspectorCell(_ json: String) {
+    let data = json.data(using: .utf8).flatMap { try? JSONDecoder().decode(CellInspectorData.self, from: $0) }
+    DispatchQueue.main.async {
+      TableShell.setInspectorCell(data)
+    }
+  }
+
+  /// Development only: press one of the cell inspector's buttons ("edit" or "settings").
+  @objc func pressInspectorCell(_ action: String) {
+    DispatchQueue.main.async {
+      TableShell.cellInspector.send(action)
+    }
+  }
+
   /// Open or close the inspector.
   @objc func setInspectorShown(_ shown: Bool) {
     DispatchQueue.main.async {
