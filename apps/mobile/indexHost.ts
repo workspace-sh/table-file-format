@@ -21,8 +21,21 @@
 
 import { openDatabaseSync } from "expo-sqlite";
 import { Directory, File, type FileHandle } from "expo-file-system";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
-import { buildSearchIndex, queryIndex, rowsBeingBuilt, setIndexKey, storedRows, type LazyZipEntry, type Row, type SqlDriver, type TableSchema } from "@workspace.sh/table-core";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, rowsInChunks, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
+import {
+  BUNDLE_EXTENSION,
+  BundleEntry,
+  TableEntry,
+  buildSearchIndex,
+  queryIndex,
+  rowsBeingBuilt,
+  setIndexKey,
+  storedRows,
+  type LazyZipEntry,
+  type Row,
+  type SqlDriver,
+  type TableSchema,
+} from "@workspace.sh/table-core";
 import { joinPath, writeBundleTo } from "@workspace.sh/table-core/io";
 import { expoDriver, type ExpoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { expoFs, pathOfUri, tablesHome } from "./expoFs";
@@ -42,6 +55,13 @@ export interface IndexDatabase {
   rows(request: RowsRequest): Promise<unknown>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /**
+   * Every row of a table just read from an archive and not yet in the
+   * index, inflated into memory: for holding the table there when no index
+   * can be made of it. Null when its archive is no longer held (after a
+   * relaunch); throws when the archive is damaged.
+   */
+  heldRows(name: string): Row[] | null;
   close(): Promise<void>;
 }
 
@@ -67,8 +87,9 @@ const READ_STEP = 1 << 20;
 const OPEN = { useNewConnection: true, finalizeUnusedStatementsBeforeClosing: false };
 
 /** Where a bundle's folder is. */
-export const bundleDir = (bundle: string): string => joinPath(tablesHome(), `${bundle}.table`);
-const rowsPath = (bundle: string, table: string): string => joinPath(bundleDir(bundle), "tables", table, "rows.ndjson");
+export const bundleDir = (bundle: string): string => joinPath(tablesHome(), `${bundle}${BUNDLE_EXTENSION}`);
+const tableDir = (bundle: string, table: string): string => joinPath(bundleDir(bundle), BundleEntry.tables, table);
+const rowsPath = (bundle: string, table: string): string => joinPath(tableDir(bundle, table), TableEntry.rows);
 
 /** One bundle's database, open. */
 interface Held {
@@ -87,7 +108,7 @@ function open(bundle: string): Promise<Held> {
     on = (async (): Promise<Held> => {
       const dir = bundleDir(bundle);
       await expoFs.mkdir(dir);
-      const db = openDatabaseSync("index.sqlite", OPEN, pathOfUri(dir));
+      const db = openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(dir));
       // The page size is set before the first table; the rows file is the truth, so the index needn't outlive a crash whole.
       db.execSync("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
       const driver = expoDriver(db, "async");
@@ -125,7 +146,7 @@ async function kept(db: SqlDriver, table: string, bytes: number): Promise<void> 
 
 /** A table's rows file, emptied and open for writing to its end. */
 async function emptied(bundle: string, table: string): Promise<{ file: File; handle: FileHandle }> {
-  await expoFs.mkdir(joinPath(bundleDir(bundle), "tables", table));
+  await expoFs.mkdir(tableDir(bundle, table));
   const file = new File(rowsPath(bundle, table));
   if (file.exists) file.delete();
   file.create();
@@ -276,7 +297,7 @@ function build(
 
 /** Write a table's rows out of the index to the file beside it: staged, then moved over it in one step. */
 async function writeRows(bundle: string, db: SqlDriver, name: string, schema: TableSchema, omit?: string[]): Promise<void> {
-  await expoFs.mkdir(joinPath(bundleDir(bundle), "tables", name));
+  await expoFs.mkdir(tableDir(bundle, name));
   const staged = new File(`${rowsPath(bundle, name)}.tmp`);
   if (staged.exists) staged.delete();
   staged.create();
@@ -331,6 +352,13 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
     // An edit waits for a build of its bundle; a read is answered between the build's statements.
     rows: (request) => (request.ask === "edits" ? afterBuild(bundle, () => asked(({ serve }) => serve(request))) : asked(({ serve }) => serve(request))),
     search: (name) => searchSteps(bundle, name),
+    heldRows: (name) => {
+      const entry = waiting.get(`${bundle}/${name}`);
+      if (!entry) return null;
+      const rows = [...rowsInChunks(entry.rows.chunks())];
+      waiting.delete(`${bundle}/${name}`);
+      return rows;
+    },
     close: () =>
       afterBuild(bundle, () =>
         inTurn(async () => {

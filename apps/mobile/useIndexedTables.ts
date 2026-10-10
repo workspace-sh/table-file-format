@@ -91,7 +91,27 @@ export function useIndexedTables(input: {
       const schema = table.schema;
       void hostOf(bundleOf(key))
         .then(async (host) => ready(key, schema, await host.ensure(tableNameOf(key), schema, (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } }))), host))
-        .catch(() => setMade((was) => ({ ...was, [key]: "lost" })));
+        .catch(async (error: unknown) => {
+          // No index to be had (no space, say): while the archive it came in is still
+          // held, the table is read from it into memory instead, and says so. With
+          // nothing to read it from (the app was started again), or an archive that
+          // turns out damaged, its rows are lost to this phone.
+          let rows: Row[] | null = null;
+          try {
+            rows = (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));
+          } catch {
+            rows = null;
+          }
+          if (!rows) return setMade((was) => ({ ...was, [key]: "lost" }));
+          const { indexed: _indexed, ...rest } = table;
+          asked.current.delete(key);
+          setMade(({ [key]: _was, ...others }) => others);
+          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, rows } });
+          latest.current.tell(
+            "Opened without its index",
+            `${tableNameOf(key)} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`,
+          );
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tables]);

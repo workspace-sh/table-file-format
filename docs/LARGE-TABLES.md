@@ -292,6 +292,31 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 
 Not there yet on the web for an indexed table: layouts other than Table (it says so), removing a choice or a field, and `Download .table.zip`. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
+### What iOS does (I2, 10 Oct 2026)
+
+The phone has a real file system and its own SQLite (expo-sqlite, through core's `expoDriver`), so it does what the web does with a folder in place of the browser's storage and no worker: expo-sqlite runs each statement on its own queue. `apps/mobile/indexHost.ts` is the counterpart of the web's worker and its client; `apps/mobile/useIndexedTables.ts` is the web's hook over it.
+
+- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own documents when its `.table.zip` is opened: `index.sqlite` at its root, the large table's `rows.ndjson` under `tables/<name>/`, and the rest of the bundle's files written by core's writer. A bundle with no large table is held as before, in memory and the phone's key-value store.
+- **Opening** is the web's: the large table's rows stay compressed, their head gives the first 200 rows and a judged count, and the rest is inflated a piece at a time into the index and into the rows file. While it's read, every row read so far can be scrolled through.
+- **Reading and editing** go through `rowsServer`, `remoteViewRows` and `remoteEdits` in the app's own thread: there is no message to cross, only the turn each request takes.
+- **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
+- **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
+- **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
+
+iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, the 50,000-row table. These say that it works; a Release build on a phone is still to be measured, and `batchSize` and `commitEvery` are core's defaults until it is.
+
+| | 50,000 rows |
+|---|---|
+| Read (the archive's directory, small files and the rows' head) | 0.5 s (12.1 s when every row was parsed) |
+| First rows | 1.2 s after |
+| Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile |
+| An edit | shown at once; in `rows.ndjson` after the save, with no staged file left |
+| Reopened after the app was ended | within 2 s, with the edit, not read again |
+
+Not there yet on iOS for an indexed table: the million-row table and any timing on a phone; layouts other than Table (it says so); removing a choice or a field; sharing the bundle as a `.table.zip` (refused with a notice, since its rows aren't in memory to pack); removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+
+**Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
