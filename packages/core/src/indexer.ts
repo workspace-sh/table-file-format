@@ -273,6 +273,11 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
   await db.exec("begin");
   try {
     await createTables(db, n, plan);
+    // Positions alone, for finding a window deep in file order (see `page`).
+    // Made before the rows, so it grows with them a little at a time: made
+    // after, it is one statement that takes seconds at a million rows, and
+    // on a phone nothing scheduled runs until it's done.
+    await sortIndex(db, n, ["pos"], "p");
     const computed = schema.fields.filter((f) => f.computed);
     // Formulas that read other rows are computed over every row at once; others, a batch at a time.
     const across = computed.length > 0 && !rowLocal(schema, computed);
@@ -303,8 +308,6 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
       }
     }
     await flush(chunk);
-    // Positions alone, for finding a window deep in file order (see `page`): made with the build, not at the first jump.
-    await sortIndex(db, n, ["pos"], "p");
     await db.exec(`create virtual table x${n} using fts5(s, content='r${n}', content_rowid='pos', tokenize='trigram');`);
     if (options.search === "later") await db.run("insert into _fts(n, upto) values(?, -1)", [n]);
     else await db.exec(`insert into x${n}(x${n}) values('rebuild');`);
