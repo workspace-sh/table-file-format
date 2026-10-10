@@ -304,6 +304,13 @@ The phone has a real file system and its own SQLite (expo-sqlite, through core's
 - **Opening** is the web's: the large table's rows stay compressed, their head gives the first 200 rows and a judged count, and the rest is inflated a piece at a time into the index and into the rows file. While it's read, every row read so far can be scrolled through.
 - **Reading and editing** go through `rowsServer`, `remoteViewRows` and `remoteEdits` in the app's own thread: there is no message to cross, only the turn each request takes.
 - **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
+- **A save runs beside the screen.** The rows are read on a second connection, in one read transaction, and written while the bundle's own connection goes on answering reads and taking edits; as one turn on that connection, a save held every read asked meanwhile. The rules are the web's (#415): an edit landing during a save stops it and nothing is recorded as saved; the rows are written whenever the index isn't marked saved, whatever the screen remembers; the save before an index is made again holds edits from its start and runs to its end. With nothing drawn (`apps/mobile/saveProbe.ts`, from the probe's link `sqlite?save=<a .table.zip's address>`; iPhone 17 Pro Simulator, a development build), reads of 200 rows through the table, one after another:
+
+  | Rows | The save takes | Slowest read during a save, before | After | A read with nothing else going on |
+  |---|---|---|---|---|
+  | 50,000 | 0.5 s | 421 ms | 39 ms | 3 to 6 ms |
+  | 1,000,000 | 9.6 to 10.0 s | 9,600 ms | 84 ms | 12 to 14 ms |
+
 - **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
 - **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
 - **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.

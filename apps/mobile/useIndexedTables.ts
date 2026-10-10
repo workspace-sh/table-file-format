@@ -198,19 +198,28 @@ export function useIndexedTables(input: {
         const was = madeFor.current.get(key)!;
         const gone = was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
         const rows = unsaved.current.has(key) || gone.length > 0;
+        // Its fields changed in a way the index holds: it's made again from the rows
+        // saved here, so edits wait from now (they'd be lost between the two).
+        const again = indexedFor(was) !== indexedFor(table.schema);
+        if (again) setMade((m) => ({ ...m, [key]: "building" }));
         unsaved.current.delete(key);
+        let saved: boolean;
         try {
-          await host.save(tableNameOf(key), was, rows, gone);
+          saved = await host.save(tableNameOf(key), was, rows, gone, again);
         } catch (error) {
           if (rows) unsaved.current.add(key);
+          if (again) setMade((m) => ({ ...m, [key]: "ready" }));
           throw error;
         }
-        if (indexedFor(was) === indexedFor(table.schema)) {
+        if (!saved) {
+          // An edit landed while it was written: it's saved again after that edit.
+          if (rows) unsaved.current.add(key);
+          continue;
+        }
+        if (!again) {
           madeFor.current.set(key, table.schema);
           continue;
         }
-        // Its fields changed in a way the index holds: made again from the rows just saved.
-        setMade((m) => ({ ...m, [key]: "building" }));
         setProgress(({ [key]: _old, ...rest }) => rest);
         const schema = table.schema;
         void host
