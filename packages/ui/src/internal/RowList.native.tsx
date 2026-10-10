@@ -27,6 +27,14 @@ export type { RowListHandle, RowListProps } from "./RowList";
 
 /** How far past the screen rows are kept drawn, in points. */
 const DRAW_DISTANCE = 600;
+/**
+ * Where the list starts in the page is asked again when the page can't say
+ * (it isn't laid out yet), or doesn't answer at all: after each of these
+ * waits, in milliseconds. The rows don't wait for it.
+ */
+const MEASURE_AGAIN_MS = [50, 300, 1000, 3000];
+/** How long the page is given to answer before it's asked again. */
+const MEASURE_WAIT_MS = 250;
 
 export function RowList<T>(props: RowListProps<T>) {
   const page = useContext(PageScrollContext);
@@ -121,8 +129,10 @@ function WindowedRows<T>({
   const extra = layout.height - laidOut;
   // What is drawn: a stretch of the list, in its own points, and the shift it is drawn at.
   const [drawn, setDrawn] = useState({ from: 0, to: 3 * DRAW_DISTANCE, shift: 0 });
-  // The body's top within what the page scrolls; null until it's measured.
-  const [bodyTop, setBodyTop] = useState<number | null>(null);
+  // The body's top within what the page scrolls; null until it's measured,
+  // and taken as the page's own top meanwhile: the rows are drawn from the
+  // first, which is right for a list that starts on the first screen, and
+  // put right as soon as the page says where the list is.
   const top = useRef<number | null>(null);
   // Where the page was when last looked at; `jump` and `settled` are moves this list made itself.
   const last = useRef<{ at: number | null; jump: boolean; settled: number | null }>({ at: null, jump: false, settled: null });
@@ -138,7 +148,6 @@ function WindowedRows<T>({
   }, [page]);
 
   const follow = useCallback(() => {
-    if (top.current === null) return;
     const { at, page: screen } = where();
     if (screen <= 0) return;
     const { laidOut: height, extra: more } = now.current;
@@ -188,14 +197,43 @@ function WindowedRows<T>({
   // Where the list starts in the page: measured as it's laid out, and again
   // when the page or what's in it changes size (something above the list
   // may have changed height).
+  // Each asking replaces the one before; an answer to an old one is dropped.
+  const asking = useRef<{ n: number; again: ReturnType<typeof setTimeout> | null }>({ n: 0, again: null });
   const measure = useCallback(() => {
-    void page.topOf(body.current).then((measured) => {
-      if (measured === null) return;
-      top.current = measured;
-      setBodyTop(measured);
-      follow();
-    });
+    const ask = asking.current;
+    const n = ++ask.n;
+    if (ask.again) clearTimeout(ask.again);
+    const tryAt = (attempt: number) => {
+      let answered = false;
+      const later = () => {
+        if (ask.n !== n || attempt >= MEASURE_AGAIN_MS.length) return;
+        if (ask.again) clearTimeout(ask.again);
+        ask.again = setTimeout(() => tryAt(attempt + 1), MEASURE_AGAIN_MS[attempt]);
+      };
+      // A page that never answers is asked again as one that couldn't say.
+      const waited = setTimeout(() => {
+        if (!answered) later();
+      }, MEASURE_WAIT_MS);
+      void page.topOf(body.current).then((measured) => {
+        answered = true;
+        clearTimeout(waited);
+        if (ask.n !== n) return;
+        if (measured === null || !Number.isFinite(measured)) return later();
+        if (ask.again) clearTimeout(ask.again);
+        ask.again = null;
+        top.current = measured;
+        follow();
+      });
+    };
+    tryAt(0);
   }, [page, follow]);
+  useEffect(
+    () => () => {
+      asking.current.n++;
+      if (asking.current.again) clearTimeout(asking.current.again);
+    },
+    [],
+  );
 
   useEffect(() => {
     let rest: ReturnType<typeof setTimeout> | null = null;
@@ -214,9 +252,8 @@ function WindowedRows<T>({
   useEffect(() => follow(), [follow, layout.count, layout.height]);
 
   const count = items.length;
-  const ready = bodyTop !== null;
   const first = count ? Math.min(layout.at(drawn.from), count - 1) : 0;
-  const lastDrawn = count && ready ? Math.min(layout.at(drawn.to), count - 1) : -1;
+  const lastDrawn = count ? Math.min(layout.at(drawn.to), count - 1) : -1;
 
   const latestOnShown = useRef(onShown);
   latestOnShown.current = onShown;
