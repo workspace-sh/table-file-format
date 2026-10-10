@@ -416,8 +416,6 @@ RCT_EXPORT_METHOD(postScroll:(nonnull NSNumber *)x y:(nonnull NSNumber *)y lines
   CGEventSetLocation(scroll, CGPointMake(onScreen.x, NSMaxY(NSScreen.screens.firstObject.frame) - onScreen.y));
   NSEvent *event = [NSEvent eventWithCGEvent:scroll];
   CFRelease(scroll);
-  // As a real one goes: the shell first, which gives the page a scroll over what only scrolls sideways.
-  if ([TableShell routeScroll:event at:inWindow]) return;
   NSView *under = [window.contentView.superview hitTest:inWindow] ?: window.contentView;
   [under scrollWheel:event];
 }

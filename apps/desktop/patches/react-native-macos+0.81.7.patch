@@ -50,11 +50,72 @@ index 779480a..cdcc4cd 100644
    }
  #endif // macOS]
  }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+index 1ab801d..3802f1f 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+@@ -15,6 +15,9 @@ @interface RCTEnhancedScrollView () <RCTUIScrollViewDelegate> // [macOS]
+ @implementation RCTEnhancedScrollView {
+   __weak id<RCTUIScrollViewDelegate> _publicDelegate; // [macOS]
+   BOOL _isSetContentOffsetDisabled;
++#if TARGET_OS_OSX // [macOS
++  BOOL _passingGestureOn;
++#endif // macOS]
+ }
+ 
+ + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key
+@@ -375,4 +378,29 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
+       scrollView.contentSize.width > self.frame.size.width;
+ }
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] A scroll gesture this view can't scroll (a vertical swipe over a horizontal
++// ScrollView, say) goes to the scroll view around it, all of it, momentum included: decided once, as the
++// gesture begins, by which way it mostly runs. Upstream lets AppKit's default take it, and a table's
++// sideways pane held vertical swipes over it instead of the page scrolling. Drop once upstream does this.
++- (void)scrollWheel:(NSEvent *)event
++{
++  BOOL starts = event.phase == NSEventPhaseBegan || (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone);
++  if (starts) {
++    CGFloat dx = fabs(event.scrollingDeltaX);
++    CGFloat dy = fabs(event.scrollingDeltaY);
++    NSSize content = self.documentView.frame.size;
++    NSSize visible = self.contentView.bounds.size;
++    BOOL canX = content.width > visible.width + 0.5;
++    BOOL canY = content.height > visible.height + 0.5;
++    _passingGestureOn = (dy > dx && !canY) || (dx > dy && !canX);
++  }
++  if (_passingGestureOn) {
++    [self.nextResponder scrollWheel:event];
++    return;
++  }
++  [super scrollWheel:event];
++}
++#endif // macOS]
++
+ @end
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
-index a14a864..a06a072 100644
+index a14a864..988a451 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
-@@ -348,9 +348,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
+@@ -146,7 +146,15 @@ - (instancetype)initWithFrame:(CGRect)frame
+     _scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+ #if !TARGET_OS_OSX // [macOS]
+     _scrollView.delaysContentTouches = NO;
+-#endif // [macOS]
++#else // [macOS
++    // [table-file-format patch] Start from what the default props say: no bounce on either axis.
++    // Props are only applied when they differ from the defaults, and both bounce props default to
++    // false, so a false never reaches the view and AppKit's automatic elasticity stays: a horizontal
++    // ScrollView bounced vertically, pulling a table's scrolling columns away from its frozen one.
++    // ScrollView's JS still turns bounce on for the axis that scrolls. Drop once upstream does this.
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceVertical = NO;
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceHorizontal = NO;
++#endif // macOS]
+     ((RCTEnhancedScrollView *)_scrollView).overridingDelegate = self;
+     _isUserTriggeredScrolling = NO;
+     _shouldUpdateContentInsetAdjustmentBehavior = YES;
+@@ -348,9 +356,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
          ? CGAffineTransformIdentity
          : CGAffineTransformMakeScale(-1, 1);
  

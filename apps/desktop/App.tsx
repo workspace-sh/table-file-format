@@ -22,6 +22,8 @@ import {
   type DisplaySettings,
   PageGutter,
   notifyLayoutChanged,
+  PageReveal,
+  type PageRevealRect,
   PlatformControlsProvider,
   PortalHost,
   TableView,
@@ -33,7 +35,7 @@ import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
 import { watchRowMenus } from "./MacControls";
-import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
+import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
 import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
 import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
@@ -713,6 +715,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }, 150);
   };
   useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  // A rect the view wants on screen (the cell the keyboard moved to): the
+  // least scroll that brings it clear of the toolbar, which covers the top
+  // of this scroll by as much as the scroll rests above zero.
+  const pageReveal = useCallback((rect: PageRevealRect) => {
+    const view = scroller.current as unknown as { measure?: (cb: (...a: number[]) => void) => void } | null;
+    view?.measure?.((_x, _y, _w, height, _px, pageY) => {
+      const margin = 12;
+      const top = pageY - restY.current + margin;
+      const bottom = pageY + height - margin;
+      const dy = rect.top < top ? rect.top - top : rect.top + rect.height > bottom ? rect.top + rect.height - bottom : 0;
+      if (dy !== 0) scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + dy), animated: false });
+    });
+  }, []);
   // A right-click on a row shows its menu (MacControls.tsx).
   useEffect(() => watchRowMenus(), []);
   const restoringN = state.restoring?.n;
@@ -834,6 +849,17 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     if (page !== null || editingFormula || settingsShown) setInspectorShown(true);
   }, [page, editingFormula, settingsShown]);
+  // Escape backs out one level, the innermost first, and never leaves the
+  // view: a field's settings (as Cancel), a formula being edited, a row's
+  // page, the view's settings, then the selected cell.
+  const escape = useRef(() => {});
+  escape.current = () => {
+    if (settingsFormShown()) return cancelSettingsForm();
+    if (editingFormula) return void glass.props.onCancel?.();
+    if (openPage) return dispatch({ type: "openPage", rowId: null });
+    if (settingsShown) return dispatch({ type: "settings", open: false });
+    glass.props.onDeselect?.();
+  };
   const closeInspected = useRef(() => {});
   closeInspected.current = () => {
     if (openPage) dispatch({ type: "openPage", rowId: null });
@@ -1148,6 +1174,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
         else if (e.type === "inspectorCell") inspectorCell.current(e.action);
+        else if (e.type === "escape") escape.current();
         else if (e.type === "settingsForm") onSettingsFormEvent(e);
         else if (e.type === "formulaEditor") onFormulaEditorEvent(e);
       }),
@@ -1187,6 +1214,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
+            <PageReveal.Provider value={pageReveal}>
             <ScrollView
               ref={scroller}
               onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
@@ -1243,6 +1271,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               })}
               </CellEditorContext.Provider>
             </ScrollView>
+            </PageReveal.Provider>
             </PageGutter.Provider>
             </>
             )}
