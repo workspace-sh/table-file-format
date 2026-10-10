@@ -271,7 +271,7 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 - **At a million rows the wait to be ready is the build**, slower in the browser than in Node (15 s with `node:sqlite`) and slower in Chrome than in Firefox. First rows are on screen for all of it. A search in that time, and until its own index is whole some tens of seconds after, reads every row's text: about a second.
 - Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
 
-Not there yet on the web for an indexed table: layouts other than Table (it says so), removing a choice or a field, and `Download .table.zip`. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
+`Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice or a field. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 

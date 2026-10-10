@@ -32,6 +32,8 @@ import {
   initialAppState,
   viewCallbacks,
   buildLabel,
+  ARCHIVE_ROWS,
+  tooLargeToArchiveText,
   type Derived,
   type ViewCallbacks,
   archiveFileName,
@@ -385,9 +387,6 @@ function TablePane({
   );
 }
 
-/** The most rows of a table held in the index that an archive is made of: it is put together in memory. */
-const ARCHIVE_ROWS = 250_000;
-
 /** The most rows a layout that draws every row it's given is handed, of a table held in the index. */
 const LAYOUT_ROWS = 5000;
 
@@ -697,7 +696,8 @@ export function App({
       for (const [k, t] of Object.entries(tables)) {
         if (bundleOf(k) !== key || !t.indexed) continue;
         if (t.indexed.count > ARCHIVE_ROWS) {
-          return tell("Not exported", `${tableNameOf(k)} has ${t.indexed.count.toLocaleString()} rows. A .table.zip can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now; the .table folder itself can be copied as it is.`);
+          const { heading, body } = tooLargeToArchiveText(tableNameOf(k), t.indexed.count);
+          return tell(heading, `${body} The .table folder itself can be copied as it is.`);
         }
         const { indexed: _held, ...rest } = t;
         whole[k] = { ...rest, rows: await indexed.everyRow(k) };
