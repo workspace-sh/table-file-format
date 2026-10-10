@@ -11,7 +11,8 @@ import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
-import { bundleOf, bundleTables, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
+import type { Row } from "@workspace.sh/table-core";
+import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
@@ -32,6 +33,8 @@ const ERRORS_LISTED = 8;
 
 /** The line under the navigation bar that "how far down" is measured at, in window points. */
 const PLACE_LINE = 140;
+
+const NO_ROWS: Row[] = [];
 
 export default function TableScreen() {
   const app = useTableAppContext();
@@ -116,7 +119,7 @@ export default function TableScreen() {
       dispatch: app.dispatch,
       state: () => app.state,
       // Measuring large tables (#126): see measure.ts.
-      openZipFrom: (url: string) => openZipFrom(url, app.state, app.dispatch),
+      openZipFrom: (url: string) => openZipFrom(url, app.openBytes),
       timeEdit: () => timeEdit(app.state, app.dispatch),
     };
   });
@@ -128,12 +131,14 @@ export default function TableScreen() {
   useEffect(() => {
     if (!MEASURING || measured.current || !app) return;
     measured.current = true;
-    void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"));
+    void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"), app.openBytes);
   });
   if (!app || !callbacks) return null;
-  const { state, dispatch, derived, labelOf } = app;
+  const { state, dispatch, derived, labelOf, indexed } = app;
   const { table, view, summary } = derived;
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
+  // The rows of a large table still being read, shown until its own view's rows are here.
+  const reading = view.layout === "table" && !indexed.source ? indexed.reading : undefined;
   const bundle = bundleOf(state.active);
   const showTables = () => router.push("/tables");
   const toggleSettings = () => dispatch({ type: "settings", open: !state.settingsOpen });
@@ -212,9 +217,15 @@ export default function TableScreen() {
           <Pressable onPress={GLASS ? glass.dismiss : undefined} disabled={!GLASS} style={{ flexGrow: 1 }} accessible={false}>
           <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
           <html.div style={styles.subtitle}>
-            <html.span>{summary.count}</html.span>
-            <html.span>·</html.span>
-            {summary.valid ? (
+            {/* While a large table is read, how far that has got is in the count's place, and nothing is said of its rows yet. */}
+            {indexed.building ? (
+              <html.span>{readingText(indexed.building)}</html.span>
+            ) : (
+              // A search of a large table takes a moment: the count waits for its rows.
+              <html.span>{indexed.stale && state.search.trim().length > 0 ? "Searching…" : summary.count}</html.span>
+            )}
+            {indexed.building ? null : <html.span>·</html.span>}
+            {indexed.building ? null : summary.valid ? (
               <html.span style={styles.validityOk}>{summary.validity}</html.span>
             ) : (
               // Which rows, and why: the web shows them on hover, which a
@@ -271,17 +282,53 @@ export default function TableScreen() {
               onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
             />
           )}
-          {renderView(shownView, visibleRows, table.schema, table.bodies, {
-            ...callbacks,
-            relatedTables: bundleTables(state.tables, bundle),
-            allRows: table.rows,
-            tableKey: tableNameOf(state.active),
-            sheet,
-            onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
-            onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
-            restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
-            onPlaceMeasure,
-          })}
+          {indexed.lost ? (
+            <html.span style={styles.indexedNote}>This table's rows are no longer on this phone. Open its .table.zip again to bring them back.</html.span>
+          ) : table.indexed && view.layout !== "table" ? (
+            <html.span style={styles.indexedNote}>This layout isn't shown for a table this large yet. Change the view's layout to Table in its settings.</html.span>
+          ) : table.indexed && !indexed.source && !reading ? null : (
+            // A large table shows its rows at once, as its file has them, and as many as
+            // have been read so far, while it is read into its index (LARGE-TABLES-PLAN,
+            // decision 1): to scroll through and look at. The view's own order, filters and
+            // groups, search and editing come with the index. One table view for both, so
+            // where you had scrolled to is where you still are when the reading is done.
+            <>
+              {reading && <html.span style={styles.indexedNote}>{ingestingText(shownView)}</html.span>}
+              {renderView(
+                reading ? asStored(shownView) : shownView,
+                reading ? NO_ROWS : visibleRows,
+                table.schema,
+                reading ? undefined : table.bodies,
+                reading
+                  ? {
+                      source: reading,
+                      relatedTables: bundleTables(state.tables, bundle),
+                      onOpenRelation: () => {},
+                      allRows: NO_ROWS,
+                      tableKey: tableNameOf(state.active),
+                    }
+                  : {
+                      ...callbacks,
+                      relatedTables: bundleTables(state.tables, bundle),
+                      allRows: table.rows,
+                      tableKey: tableNameOf(state.active),
+                      sheet,
+                      onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+                      onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                      restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                      onPlaceMeasure,
+                      ...(table.indexed
+                        ? {
+                            source: indexed.source,
+                            // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
+                            onRemoveEnumValue: undefined,
+                            onDeleteField: undefined,
+                          }
+                        : {}),
+                    },
+              )}
+            </>
+          )}
           </Pressable>
           </PageScrollContext.Provider>
         </ScrollView>
@@ -361,6 +408,13 @@ export default function TableScreen() {
 }
 
 const styles = css.create({
+  // What's said in place of a large table's rows, or above them while they're read.
+  indexedNote: {
+    fontSize: 12,
+    opacity: 0.7,
+    paddingBlock: 8,
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
   // Where the view is, under the large title: its file and table.
   place: {
     fontSize: 13,

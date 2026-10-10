@@ -292,6 +292,40 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 
 `Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice or a field. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
+### What iOS does (I2, 10 Oct 2026)
+
+The phone has a real file system and its own SQLite (expo-sqlite, through core's `expoDriver`), so it does what the web does with a folder in place of the browser's storage and no worker: expo-sqlite runs each statement on its own queue. `apps/mobile/indexHost.ts` is the counterpart of the web's worker and its client; `apps/mobile/useIndexedTables.ts` is the web's hook over it.
+
+- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own documents when its `.table.zip` is opened: `index.sqlite` at its root, the large table's `rows.ndjson` under `tables/<name>/`, and the rest of the bundle's files written by core's writer. A bundle with no large table is held as before, in memory and the phone's key-value store.
+- **Opening** is the web's: the large table's rows stay compressed, their head gives the first 200 rows and a judged count, and the rest is inflated a piece at a time into the index and into the rows file. While it's read, every row read so far can be scrolled through.
+- **Reading and editing** go through `rowsServer`, `remoteViewRows` and `remoteEdits` in the app's own thread: there is no message to cross, only the turn each request takes.
+- **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
+- **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
+- **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
+- **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
+
+iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that it works; a Release build on a phone is still to be measured.
+
+| | 50,000 rows | 1,000,000 rows |
+|---|---|---|
+| Read (the archive's directory, small files and the rows' head) | 0.5 s (12.1 s when every row was parsed) | 0.5 s |
+| First rows | 1.2 s after | 0.9 s after |
+| Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile | 7.6 minutes, scrolling through the rows read so far meanwhile |
+| Search index whole | | about 2.5 minutes after that |
+| An edit | shown at once; in `rows.ndjson` after the save, with no staged file left | the same; the save rewrites all 165 MB |
+| Reopened after the app was ended | within 2 s, with the edit, not read again | 0.6 s, not read again |
+| Export `.table.zip` | all 50,000 rows, with the edit: 976 KB | none made; it says a table of up to 250,000 rows can be |
+| On the phone | | 822 MB: `rows.ndjson` 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
+
+- **The build commits every 20,000 rows** (`commitEvery`). As one transaction, all of a build sits in SQLite's write-ahead log until its end: at a million rows the log reached 445 MB beside a 444 MB index, and a log keeps its size once written. In steps the log is folded into the index as the build goes and stayed under 38 MB; it is emptied when the build ends, and capped at 16 MB after (`journal_size_limit`). The build took 457 s in steps against 480 s as one transaction.
+- **The step's size is not what the screen waits on.** On a phone a build holds React's renders up for seconds whatever `batchSize` or `commitEvery` is, and committing every 20,000 rows costs no time there (11.3 s against 11.4 s at 100,000 rows); the measurements are in the next section. `batchSize` is core's default here for that reason.
+- **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, until a phone says otherwise. A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`. In sync mode the host builds in batches of 1,000 rows, since there the batch is the longest the screen waits.
+- **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
+
+Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+
+**Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
+
 ### iOS: the index over expo-sqlite, on a phone (10 Oct 2026)
 
 expo-sqlite (SDK 55) bundles SQLite 3.50.3 built with FTS5, and everything the indexer asks of it works: the trigram search index with external content, `row_number()`, `json_each`, indexes on expressions, `x is ?` with a bound null, and `page_size` set before the first table. core's `expoDriver` (`packages/core/src/sqlite-expo.ts`) is the `SqlDriver` over it. All 17 indexer cases (`indexer.cases.ts`) pass over it on an iPhone, in both its modes.
@@ -314,6 +348,21 @@ The JS thread is not blocked (the second-connection ping never waited more than 
 **The likely mechanism.** In React Native 0.83 without the bridge, JS timers are fired by an `RCTDisplayLink` added to the JS thread's own run loop (`ReactCommon/react/runtime/platform/ios/ReactCommon/RCTInstance.mm`, line 436: `[strongSelf->_displayLink addToRunLoop:[NSRunLoop currentRunLoop]]`, called on the JS thread). While expo-sqlite's results keep arriving, the JS thread runs them back to back and the display link isn't serviced. A `setTimeout(0)` yield is itself held up by this, at about 90 ms each, which is why yielding is so expensive in async mode. This is a reading of the source plus the clocks above, not a proven cause.
 
 **Not measured yet:** sync mode with a yield (`yieldAfterMs` 30 and 50). Nothing is in flight while a sync driver yields, so a yield should cost about a frame rather than 90 ms; if 100,000 rows come in at 9 to 10 s with gaps under about 100 ms, that settles the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
+
+**What the Simulator adds (iPhone 17 Pro, iOS 26.0, a Debug build, 100,000 rows).** It can't show the stall, but it can say what sync mode with a yield costs in itself:
+
+| Mode | Yield | `batchSize` | Rows in | Longest wait on the JS thread | Rows read mid-build |
+|---|---|---|---|---|---|
+| async | none | 5,000 | 11.5 s | 0.36 s | 7 reads, slowest 230 ms |
+| sync | none | 5,000 | 11.0 s | the whole build | none |
+| sync | 30 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 108 ms |
+| sync | 50 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 100 ms |
+| sync | 30 ms | 1,000 | 11.5 s | 0.22 s | 6 reads, slowest 134 ms |
+| async | 100 ms | 5,000 | 11.7 s | 0.34 s | 7 reads, slowest 228 ms |
+
+- Sync with a yield builds at async's pace and leaves the JS thread as free as async does.
+- In sync mode a yield can only come between statements, so the longest wait is the longest statement: a batch of 5,000 rows (0.35 s here). A smaller batch shortens it, at no cost to the build. A step of the search index is one statement too (0.44 s for 20,000 rows).
+- A yield costs nothing here in either mode (async with a 100 ms yield: 2% slower; on the phone, 3.4 times). So the Simulator can't say what a yield costs a phone in sync mode, which is the measurement still wanted.
 
 **If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
