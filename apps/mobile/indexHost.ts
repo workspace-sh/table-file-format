@@ -364,8 +364,13 @@ async function writeRows(
   // The index's key as these rows have it: the file is this index and no later one.
   let key: string | null = null;
   try {
-    await reader.exec("begin");
-    key = await indexKey(reader, name);
+    // The reader's first look is what fixes what it sees, so it takes a turn of
+    // the bundle's own queue: every edit asked before this save has had its
+    // turn by then and is in the file, and none comes between.
+    await inTurn(async () => {
+      await reader.exec("begin");
+      key = await indexKey(reader, name);
+    });
     for await (const text of storedRows(reader, { name, schema, ...(omit ? { omit } : {}) })) {
       // An edit has landed: this file would be out of date as it was finished, and the next save writes it.
       if (stop()) {
@@ -436,10 +441,11 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
         // Said in one turn with the last look, so no edit comes between them.
         return asked(async ({ driver }) => {
           if (editedSince()) return false;
-          // The file is the index as the reader saw it. An edit asked before the save began
-          // may have had its turn after the reader looked: every edit gives the index a new
-          // key, so a key that has moved on says the index holds something the file doesn't.
-          if (written !== null && (await indexKey(driver, name)) !== written.key) return false;
+          // The file is the index as the reader saw it, and every edit gives the index a
+          // new key: one that has moved on says the index holds something the file doesn't.
+          // Not asked of the save a build is about to read: the screen holds edits for that
+          // one, and it always ends saved.
+          if (!whole && written !== null && (await indexKey(driver, name)) !== written.key) return false;
           if (written !== null) await kept(driver, name, written.bytes);
           await setIndexKey(driver, name, "saved");
           return true;
