@@ -1473,6 +1473,7 @@ const styles = css.create({
   },
   bodyBadge: {
     // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
+    display: "flex",
     alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
@@ -2715,6 +2716,15 @@ export function TableView({
   const gridRef = useRef<any>(null);
   // Where the keys come from on macOS, which needs a view of its own for them (GridKeys).
   const keysRef = useRef<GridKeysHandle | null>(null);
+  // On the Mac, a table that comes into view takes the keyboard, so the first
+  // arrow selects its first cell (gridKey) without a click first. Not on the
+  // web, where focusing would scroll the page, nor on a phone.
+  useEffect(() => {
+    if (Platform.OS !== "macos") return;
+    const t = setTimeout(() => keysRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.id]);
   useEffect(() => {
     // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
     if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
