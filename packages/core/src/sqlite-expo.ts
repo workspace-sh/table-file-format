@@ -26,6 +26,19 @@ const VALUES_PER_STATEMENT = 4_000;
 /** `insert into t(a, b) values(?, ?)`: one row's insert, which a batch can repeat as `values(?, ?), (?, ?), …`. */
 const ONE_ROW_INSERT = /^\s*insert\s+into\s+[^;]+?\bvalues\s*(\(\s*\?(?:\s*,\s*\?)*\s*\))\s*$/i;
 
+export interface ExpoDriverOptions {
+  /**
+   * Wait for a macrotask before a statement once this many milliseconds have passed since the last
+   * wait. Over expo-sqlite's async calls a build runs from one native callback to the next without
+   * the event loop taking a turn, and on a phone React Native's timers (and so its frames) wait
+   * seconds for it. A budget rather than a count: `setTimeout(0)` waits for the next frame in
+   * React Native, so a wait per statement makes a build several times slower. Off by default.
+   */
+  yieldAfterMs?: number;
+  /** How to wait; `setTimeout(0)` by default. */
+  yieldTo?: () => Promise<void>;
+}
+
 /**
  * A SqlDriver over an expo-sqlite database (iOS, Android).
  *
@@ -41,19 +54,6 @@ const ONE_ROW_INSERT = /^\s*insert\s+into\s+[^;]+?\bvalues\s*(\(\s*\?(?:\s*,\s*\
  * statement on the connection as it closes, FTS5's own included, and FTS5
  * finalizes them again: closing a database with a search index crashes.
  */
-export interface ExpoDriverOptions {
-  /**
-   * Wait for a macrotask before a statement once this many milliseconds have passed since the last
-   * wait. Over expo-sqlite's async calls a build runs from one native callback to the next without
-   * the event loop taking a turn, and on a phone React Native's timers (and so its frames) wait
-   * seconds for it. A budget rather than a count: `setTimeout(0)` waits for the next frame in
-   * React Native, so a wait per statement makes a build several times slower. Off by default.
-   */
-  yieldAfterMs?: number;
-  /** How to wait; `setTimeout(0)` by default. */
-  yieldTo?: () => Promise<void>;
-}
-
 export function expoDriver(db: ExpoDatabase, mode: "async" | "sync" = "async", options: ExpoDriverOptions = {}): ExpoDriver {
   const budget = options.yieldAfterMs ?? 0;
   const yieldTo = options.yieldTo ?? (() => new Promise<void>((go) => setTimeout(go, 0)));
