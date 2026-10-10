@@ -821,26 +821,107 @@ test("undo: a reset, a file opened over a table, and a table read again let its 
   assert.equal(run(edited, { type: "indexed", key, count: 18 }).undo[key], undefined);
 });
 
-test("undo on an indexed table: its views go back; its rows are the index's, and stay", () => {
+const workOf = (s: AppState) => s.indexWork.map(({ n: _, key: __, ...edit }) => edit);
+
+test("undo on an indexed table: its views go back here, and nothing is asked of the index", () => {
+  const before = indexedStart();
+  const key = before.active;
+  const view = viewOf(before);
+  const titleNow = (s: AppState) => s.tables[key]!.views.find((v) => v.id === view)!.title;
+  const s = run(before, { type: "updateView", patch: { title: "Renamed view" } });
+  const undone = run(s, { type: "undo" });
+  assert.equal(titleNow(undone), titleNow(before));
+  assert.deepEqual(undone.tables[key]!.indexed, s.tables[key]!.indexed);
+  assert.deepEqual(undone.indexWork, []);
+  assert.equal(titleNow(run(undone, { type: "redo" })), "Renamed view");
+});
+
+test("undo on an indexed table: a cell goes back to what the index said it held, once it has said", () => {
+  const key = indexedStart().active;
+  const edited = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "name", value: "A" });
+  assert.equal(derive(edited).canUndo, true);
+  // The app hasn't made the edit yet, so what undoes it isn't known: nothing happens.
+  assert.equal(tableApp(edited, { type: "undo" }), edited);
+
+  const made = run(edited, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } });
+  const undone = run(made, { type: "undo" });
+  assert.deepEqual(workOf(undone), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
+  assert.equal(derive(undone).canUndo, false);
+  assert.equal(derive(undone).canRedo, true);
+  // The undo is an edit like any other to the app, and is not itself a step.
+  const heard = run(undone, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "A" } } });
+  assert.equal(derive(heard).canUndo, false);
+  const redone = run(heard, { type: "redo" });
+  assert.deepEqual(workOf(redone), [{ kind: "cell", rowId: "p1", field: "name", value: "A" }]);
+  assert.equal(derive(redone).canUndo, true);
+  assert.equal(derive(redone).canRedo, false);
+});
+
+test("undo on an indexed table: a row added is removed, and a row removed comes back where it was with its page", () => {
+  const key = indexedStart().active;
+  const added = run(indexedStart(), { type: "addRow", id: "p-new" });
+  assert.deepEqual(workOf(run(added, { type: "undo" })).at(-1), { kind: "remove", rowId: "p-new" });
+
+  const paged = run(indexedStart(), { type: "updateBody", rowId: "p3", content: "# Its page" }, { type: "indexed", key, count: 17, done: 1 });
+  const removed = run(paged, { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
+  assert.equal(removed.tables[key]!.bodies?.["p3"], undefined);
+  const row = { id: "p3", name: "Third" };
+  // The queue was empty, so the count starts again: the removal is the first edit in it.
+  const made = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row, at: 3 } } });
+  const undone = run(made, { type: "undo" });
+  assert.deepEqual(workOf(undone), [{ kind: "restore", rowId: "p3", row, at: 3, content: "# Its page" }]);
+  assert.equal(undone.tables[key]!.bodies?.["p3"], "# Its page");
+  const redone = run(undone, { type: "indexed", key, count: 17, done: 1 }, { type: "redo" });
+  assert.deepEqual(workOf(redone), [{ kind: "remove", rowId: "p3" }]);
+  assert.equal(redone.tables[key]!.bodies?.["p3"], undefined);
+});
+
+test("undo on an indexed table: a page typed in goes back whole, here and in the index", () => {
+  const key = indexedStart().active;
+  const typed = run(
+    indexedStart(),
+    { type: "updateBody", rowId: "p1", content: "a" },
+    { type: "updateBody", rowId: "p1", content: "ab" },
+    { type: "indexed", key, count: 17, done: 2 },
+  );
+  assert.equal(typed.undo[key]!.past.length, 1);
+  const undone = run(typed, { type: "undo" });
+  assert.equal(undone.tables[key]!.bodies?.["p1"], undefined);
+  assert.deepEqual(workOf(undone), [{ kind: "body", rowId: "p1", content: "" }]);
+  assert.ok(undone.dirty.includes("projects"));
+  const redone = run(undone, { type: "redo" });
+  assert.equal(redone.tables[key]!.bodies?.["p1"], "ab");
+  assert.deepEqual(workOf(redone).at(-1), { kind: "body", rowId: "p1", content: "ab" });
+});
+
+test("undo on an indexed table: an edit that changed nothing, or failed, leaves no step", () => {
+  const key = indexedStart().active;
+  const s = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "nobody", field: "name", value: "A" },
+    { type: "updateRow", rowId: "p1", field: "name", value: "B" },
+    { type: "updateRow", rowId: "p2", field: "name", value: "C" },
+    // The second was made; the first found no row; the third is still to make.
+    { type: "indexed", key, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+  );
+  assert.deepEqual(s.undo[key]!.past.map((step) => ("rows" in step ? [step.rows.n, step.rows.back?.kind ?? null] : null)), [[2, "cell"], [3, null]]);
+});
+
+test("undo on an indexed table: edits to its views and its rows go back in the order they were made", () => {
   const before = indexedStart();
   const key = before.active;
   const view = viewOf(before);
   const titleNow = (s: AppState) => s.tables[key]!.views.find((v) => v.id === view)!.title;
   const s = run(
     before,
-    { type: "updateView", patch: { title: "Renamed view" } },
     { type: "updateRow", rowId: "p1", field: "name", value: "A" },
-    { type: "updateBody", rowId: "p1", content: "# Kept" },
-    { type: "indexed", key, count: 17, done: 1 },
+    { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+    { type: "updateView", patch: { title: "Renamed view" } },
   );
-  // Only the view's edit is a step: the row and its page are in the index.
-  assert.equal(s.undo[key]!.past.length, 1);
-  const undone = run(s, { type: "undo" });
-  assert.equal(titleNow(undone), titleNow(before));
-  assert.equal(undone.tables[key]!.bodies?.["p1"], "# Kept");
-  assert.deepEqual(undone.tables[key]!.indexed, s.tables[key]!.indexed);
-  assert.equal(undone.indexWork.length, s.indexWork.length);
-  assert.equal(titleNow(run(undone, { type: "redo" })), "Renamed view");
+  const once = run(s, { type: "undo" });
+  assert.equal(titleNow(once), titleNow(before));
+  assert.deepEqual(once.indexWork, []);
+  assert.deepEqual(workOf(run(once, { type: "undo" })), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
 });
 
 test("undo on an indexed table: a change to its fields changes what the index holds, so earlier steps are let go", () => {

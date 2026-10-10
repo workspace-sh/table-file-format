@@ -163,20 +163,20 @@ export function useIndexedTables(input: {
     const done = work.at(-1)!.n;
     void hostOf(bundleOf(next.key))
       .then(async (host) => {
-        const count = await remoteEdits(host.rows, tableNameOf(next.key), table, work);
+        const { count, back } = await remoteEdits(host.rows, tableNameOf(next.key), table, work);
         // The table on screen: its next snapshot is opened here, with the rows it is
         // showing read ahead, so the edit shows in one draw and not after three.
         const shown = shownNow.current;
-        if (next.key !== state.active || !shown.source || shown.source.key !== next.key) return { count, then: undefined };
+        if (next.key !== state.active || !shown.source || shown.source.key !== next.key) return { count, back, then: undefined };
         const version = (table.indexed?.version ?? 0) + 1;
         const rows = await remoteViewRows(host.rows, tableNameOf(next.key), { ...table, indexed: { count, version } }, shown.view, shown.search);
         await rows.readAhead(shown.source.rows.recent());
-        return { count, then: { key: next.key, asked: shown.askingOf(version), rows } };
+        return { count, back, then: { key: next.key, asked: shown.askingOf(version), rows } };
       })
       .then(
-        ({ count, then }) => {
+        ({ count, back, then }) => {
           if (work.some((w) => w.kind !== "body")) unsaved.current.add(next.key);
-          latest.current.dispatch({ type: "indexed", key: next.key, count, done });
+          latest.current.dispatch({ type: "indexed", key: next.key, count, done, back });
           if (then) setSource(then);
         },
         (error: unknown) => {

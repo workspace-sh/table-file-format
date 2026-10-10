@@ -81,16 +81,23 @@ let edits = 0;
 /** A key no saved file has: an edited index is stale until its rows are saved and it's stamped again. */
 const editedKey = () => `edited:${Date.now()}:${++edits}`;
 
-/** A cell of an indexed table's row set. False when there's no such row. */
-export async function setIndexedCell(db: SqlDriver, name: string, table: ParsedTable, rowId: string, field: string, value: unknown): Promise<boolean> {
+/** A cell of an indexed table's row set. Gives back what the cell held ({ value }), or null when there's no such row. */
+export async function setIndexedCell(
+  db: SqlDriver,
+  name: string,
+  table: ParsedTable,
+  rowId: string,
+  field: string,
+  value: unknown,
+): Promise<{ value: unknown } | null> {
   const all = await queryIndex(db, { name, schema: table.schema });
   const row = await all?.row(rowId);
-  if (!row) return false;
+  if (!row) return null;
   const next = { ...row };
   if (value === undefined) delete next[field];
   else next[field] = value as never;
   await putRows(db, { name, schema: table.schema, rows: [next], key: editedKey() });
-  return true;
+  return { value: row[field] };
 }
 
 /** A new, empty row at the end of an indexed table. */
@@ -98,9 +105,9 @@ export async function addIndexedRow(db: SqlDriver, name: string, table: ParsedTa
   await putRows(db, { name, schema: table.schema, rows: [{ id }], key: editedKey() });
 }
 
-/** A row of an indexed table removed. */
-export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<void> {
-  await removeRows(db, { name, schema: table.schema, ids: [rowId], key: editedKey() });
+/** A row of an indexed table removed. Gives back the row and its place in the file order, or null when there's no such row. */
+export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<{ row: Row; at: number } | null> {
+  return (await removeRows(db, { name, schema: table.schema, ids: [rowId], key: editedKey() }))[0] ?? null;
 }
 
 /** A row's page, as the index searches it; an empty string removes it. */
@@ -111,24 +118,64 @@ export async function setIndexedBody(db: SqlDriver, name: string, table: ParsedT
   await putRows(db, { name, schema: table.schema, rows: [row], bodies: { [rowId]: content }, key: editedKey() });
 }
 
-/** One edit to a row of an indexed table, as the app's state queues them (AppState.indexWork). */
+/** A row removed from an indexed table put back where it was, with its page. */
+export async function restoreIndexedRow(db: SqlDriver, name: string, table: ParsedTable, row: Row, at: number, content?: string): Promise<void> {
+  await putRows(db, {
+    name,
+    schema: table.schema,
+    rows: [row],
+    at: { [row.id]: at },
+    ...(content !== undefined ? { bodies: { [row.id]: content } } : {}),
+    key: editedKey(),
+  });
+}
+
+/**
+ * One edit to a row of an indexed table, as the app's state queues them
+ * (AppState.indexWork). `restore` is what undoes a `remove`: the row as it
+ * was, its place in the file order, and its page.
+ */
 export type IndexEdit =
   | { kind: "cell"; rowId: string; field: string; value: unknown }
   | { kind: "add"; rowId: string }
   | { kind: "remove"; rowId: string }
-  | { kind: "body"; rowId: string; content: string };
+  | { kind: "body"; rowId: string; content: string }
+  | { kind: "restore"; rowId: string; row: Row; at: number; content?: string };
 
-/** Make queued edits in the index, in order, and say how many rows the table has after them. */
-export async function makeIndexEdits(db: SqlDriver, name: string, table: ParsedTable, edits: readonly IndexEdit[]): Promise<number> {
+/**
+ * Make queued edits in the index, in order. Says how many rows the table
+ * has after them, and for each edit the one that undoes it (`back`, in the
+ * edits' order): null where the edit changed nothing, and for a page,
+ * whose text before is the state's to know (the index holds it folded).
+ */
+export async function makeIndexEdits(
+  db: SqlDriver,
+  name: string,
+  table: ParsedTable,
+  edits: readonly IndexEdit[],
+): Promise<{ count: number; back: (IndexEdit | null)[] }> {
+  const back: (IndexEdit | null)[] = [];
   for (const edit of edits) {
-    if (edit.kind === "cell") await setIndexedCell(db, name, table, edit.rowId, edit.field, edit.value);
-    else if (edit.kind === "add") await addIndexedRow(db, name, table, edit.rowId);
-    else if (edit.kind === "remove") await removeIndexedRow(db, name, table, edit.rowId);
-    else await setIndexedBody(db, name, table, edit.rowId, edit.content);
+    if (edit.kind === "cell") {
+      const was = await setIndexedCell(db, name, table, edit.rowId, edit.field, edit.value);
+      back.push(was ? { kind: "cell", rowId: edit.rowId, field: edit.field, value: was.value } : null);
+    } else if (edit.kind === "add") {
+      await addIndexedRow(db, name, table, edit.rowId);
+      back.push({ kind: "remove", rowId: edit.rowId });
+    } else if (edit.kind === "remove") {
+      const was = await removeIndexedRow(db, name, table, edit.rowId);
+      back.push(was ? { kind: "restore", rowId: edit.rowId, row: was.row, at: was.at } : null);
+    } else if (edit.kind === "restore") {
+      await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content);
+      back.push({ kind: "remove", rowId: edit.rowId });
+    } else {
+      await setIndexedBody(db, name, table, edit.rowId, edit.content);
+      back.push(null);
+    }
   }
   const all = await queryIndex(db, { name, schema: table.schema });
   if (!all) throw new Error(`no index for ${name}`);
-  return all.count;
+  return { count: all.count, back };
 }
 
 // -- A table's rows as the bytes of its rows.ndjson: what an archive holds, and a browser's file storage ----
