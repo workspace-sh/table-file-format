@@ -49,10 +49,10 @@ public final class TableDatePicker: NSObject, NSPopoverDelegate {
     }
     let day = kind == "time" ? nil : make(.clockAndCalendar, [.yearMonthDay])
     let time = kind == "date" ? nil : make(.textFieldAndStepper, [.hourMinute])
-    // AppKit's calendar comes at one fixed, small size. It's drawn half as large again here by giving
-    // its holder a frame 1.5 times its bounds: AppKit redraws it at that size, crisply, and maps clicks
+    // AppKit's calendar comes at one fixed, small size. It's drawn a quarter as large again here by giving
+    // its holder a frame 1.25 times its bounds: AppKit redraws it at that size, crisply, and maps clicks
     // back. The time field keeps the system's size.
-    let scale: CGFloat = 1.5
+    let scale: CGFloat = 1.25
     var parts: [NSView] = []
     if let day {
       let size = day.frame.size
