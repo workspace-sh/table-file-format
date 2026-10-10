@@ -6,11 +6,14 @@
 // formulas and leaves the rest to edit in their cells (`formulasOnly`).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Dimensions, Keyboard } from "react-native";
+import { Alert, Dimensions, Keyboard, Platform } from "react-native";
 import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSession, CellEditStatus, FormulaDetails } from "@workspace.sh/table-ui";
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 import { expectsReference } from "@workspace.sh/table-ui/shared";
 import { formulaSpans } from "@workspace.sh/table-core";
+
+/** Said in place of the field's name while a formula waits for a column: a pointer clicks, a finger taps. */
+const ADD_A_COLUMN = Platform.OS === "macos" ? "Click a column to add it" : "Tap a column to add it";
 
 /** Operators for a formula, as one toolbar group of SF Symbols. */
 const OPERATORS = [
@@ -210,7 +213,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     state = {
       kind: "editing",
       editKey: session.key,
-      label: formula && expectsReference(typed.current) ? "Tap a column to add it" : session.label,
+      label: formula && expectsReference(typed.current) ? ADD_A_COLUMN : session.label,
       detail: status.result !== undefined ? `${session.rowLabel}  ${status.result}` : session.rowLabel,
       initialValue: session.initial,
       mode: session.mode,

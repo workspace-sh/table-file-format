@@ -58,6 +58,42 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// The formula being written, for the inspector's editor (TableFormulaEditor.swift); "" for none.
+  @objc func setFormulaEditor(_ json: String) {
+    var data: FormulaEditorData?
+    if let bytes = json.data(using: .utf8), !json.isEmpty {
+      do {
+        data = try JSONDecoder().decode(FormulaEditorData.self, from: bytes)
+      } catch {
+        NSLog("TableSidebar: a formula editor that couldn't be read: %@", String(describing: error))
+      }
+    }
+    DispatchQueue.main.async {
+      TableShell.setFormulaEditor(data)
+    }
+  }
+
+  /// Put text into the formula at its cursor (a clicked column's name), the cursor then `cursorBack` back.
+  @objc func insertInFormula(_ text: String, cursorBack: NSNumber) {
+    DispatchQueue.main.async {
+      TableShell.formulaEditor.insert(text, cursorBack: cursorBack.intValue)
+    }
+  }
+
+  /// Development only: type a whole formula into the editor, or press what `what` names ("save", "cancel", "submit", "fix", "settings").
+  @objc func driveFormulaEditor(_ what: String, text: String) {
+    DispatchQueue.main.async {
+      let model = TableShell.formulaEditor
+      if what == "type" {
+        model.type(text)
+      } else if what == "save" || what == "submit" {
+        model.send(["what": what, "text": model.textView.string])
+      } else {
+        model.send(["what": what])
+      }
+    }
+  }
+
   /// The settings form for the inspector to show (TableSettingsForm.swift); "" for none.
   @objc func setSettingsForm(_ json: String) {
     var data: SettingsFormData?

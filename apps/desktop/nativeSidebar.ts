@@ -11,6 +11,9 @@ interface TableSidebarModule {
   setInspectorShown(shown: boolean): void;
   setInspectorCell(json: string): void;
   setSettingsForm(json: string): void;
+  setFormulaEditor(json: string): void;
+  insertInFormula(text: string, cursorBack: number): void;
+  driveFormulaEditor(what: string, text: string): void;
   sendSettingsForm(json: string): void;
   pressInspectorCell(action: string): void;
   pick(tag: string): void;
@@ -36,7 +39,9 @@ export type SidebarEvent =
   /** A button pressed in the inspector's account of the selected cell. */
   | { type: "inspectorCell"; action: "edit" | "settings" }
   /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
-  | SettingsFormEvent;
+  | SettingsFormEvent
+  /** Something typed or pressed in the inspector's formula editor (MacFormulaEditor.ts reads these). */
+  | FormulaEditorEvent;
 
 export interface SidebarShown {
   tree: SidebarBundle[];
@@ -152,6 +157,47 @@ export function setSettingsForm(json: string | null): void {
 /** Development only: what a control in the settings form would send. */
 export function sendSettingsForm(event: object): void {
   TableSidebar?.sendSettingsForm(JSON.stringify(event));
+}
+
+/** What the inspector's formula editor reports: the text changed; Return (`submit`); a chip, the fix, Field Settings, Cancel or Save pressed. */
+export interface FormulaEditorEvent {
+  type: "formulaEditor";
+  what: "change" | "submit" | "save" | "cancel" | "fix" | "chip" | "settings";
+  text?: string;
+  id?: string;
+}
+
+/** The formula being written, as the inspector's editor shows it (TableFormulaEditor.swift). */
+export interface FormulaEditorShown {
+  /** One per edit: a new key starts the field again from `initialValue`. */
+  key: string;
+  label: string;
+  detail?: string;
+  initialValue: string;
+  /** The text `spans` were worked out for. */
+  text: string;
+  spans: { start: number; end: number; kind: string }[];
+  working: { title?: string; rows: { label: string; value: string; strong?: boolean }[] }[];
+  chips: { id: string; label: string; insert?: string; cursorBack?: number }[];
+  error?: { message: string; fixLabel?: string };
+  cancelLabel: string;
+  saveLabel: string;
+  settingsLabel?: string;
+}
+
+/** Show a formula being written in the inspector's own editor; null for none. */
+export function setFormulaEditor(shown: FormulaEditorShown | null): void {
+  TableSidebar?.setFormulaEditor(shown ? JSON.stringify(shown) : "");
+}
+
+/** Put text into the formula at its cursor, the cursor then `cursorBack` characters back. */
+export function insertInFormula(text: string, cursorBack = 0): void {
+  TableSidebar?.insertInFormula(text, cursorBack);
+}
+
+/** Development only: type a whole formula into the editor, or press one of its buttons. */
+export function driveFormulaEditor(what: "type" | "save" | "submit" | "cancel" | "fix" | "settings", text = ""): void {
+  TableSidebar?.driveFormulaEditor(what, text);
 }
 
 /** The selected cell as the inspector says it (TableCellInspector.swift). */

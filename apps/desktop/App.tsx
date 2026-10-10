@@ -34,7 +34,8 @@ import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
 import { watchRowMenus } from "./MacControls";
 import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
-import { onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
+import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -818,6 +819,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     setInspectorCell(cellJson ? (JSON.parse(cellJson) as InspectorCell) : null);
   }, [cellJson]);
+  // A formula being written is the inspector's own editor too (TableFormulaEditor.swift).
+  useMacFormulaEditor(glass.props, glass.bar, page === null && !settingsShown);
   const cellJsonRef = useRef<string | null>(null);
   cellJsonRef.current = cellJson;
   const inspectorCell = useRef((_action: "edit" | "settings") => {});
@@ -1056,6 +1059,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       },
       // The inspector's account of the selected cell: what it was sent, and pressing its buttons.
       inspectorCell: () => cellJsonRef.current,
+      formulaEditor: formulaEditorJson,
+      driveFormulaEditor: (what: Parameters<typeof driveFormulaEditor>[0], text = "") => {
+        driveFormulaEditor(what, text);
+        return `formula editor: ${what}`;
+      },
       pressInspectorCell: (action: "edit" | "settings") => {
         pressInspectorCell(action);
         return `pressed ${action}`;
@@ -1141,6 +1149,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
         else if (e.type === "inspectorCell") inspectorCell.current(e.action);
         else if (e.type === "settingsForm") onSettingsFormEvent(e);
+        else if (e.type === "formulaEditor") onFormulaEditorEvent(e);
       }),
     [chooseFilesMode],
   );

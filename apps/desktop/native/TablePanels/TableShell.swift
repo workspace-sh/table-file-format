@@ -102,6 +102,20 @@ public class TableShell: NSObject {
       settingsHost.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
     ])
     self.settingsHost = settingsHost
+    // A formula being written is the system's form too (TableFormulaEditor.swift).
+    let formulaHost = NSHostingView(rootView: TableFormulaEditorView(model: formulaEditor))
+    formulaHost.translatesAutoresizingMaskIntoConstraints = false
+    formulaHost.sizingOptions = []
+    formulaHost.isHidden = true
+    pane.addSubview(formulaHost)
+    NSLayoutConstraint.activate([
+      formulaHost.topAnchor.constraint(equalTo: pane.safeAreaLayoutGuide.topAnchor),
+      formulaHost.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+      formulaHost.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+      formulaHost.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
+    ])
+    self.formulaHost = formulaHost
+    formulaEditor.send = { event in sidebar.send("formulaEditor", event) }
     settingsForm.send = { event in sidebar.send("settingsForm", event) }
     cellInspector.send = { action in sidebar.send("inspectorCell", ["action": action]) }
     inspector.view = pane
@@ -248,6 +262,8 @@ public class TableShell: NSObject {
 
   static let settingsForm = TableSettingsFormModel()
   static let cellInspector = TableCellInspectorModel()
+  static let formulaEditor = TableFormulaEditorModel()
+  private static weak var formulaHost: NSView?
   private static weak var settingsHost: NSView?
   private static weak var cellHost: NSView?
   private static weak var inspectorReactView: NSView?
@@ -264,14 +280,22 @@ public class TableShell: NSObject {
     layInspector()
   }
 
-  /// One thing at a time in the inspector: a settings form, else the
-  /// selected cell, else what React draws (a row's page, a formula).
+  /// The formula being written in the inspector; nil for none.
+  static func setFormulaEditor(_ data: FormulaEditorData?) {
+    formulaEditor.data = data
+    layInspector()
+  }
+
+  /// One thing at a time in the inspector: a settings form, else a formula
+  /// being written, else the selected cell, else what React draws (a row's page).
   private static func layInspector() {
     let settings = settingsForm.data != nil
+    let formula = formulaEditor.data != nil
     let cell = cellInspector.data != nil
     settingsHost?.isHidden = !settings
-    cellHost?.isHidden = settings || !cell
-    inspectorReactView?.isHidden = settings || cell
+    formulaHost?.isHidden = settings || !formula
+    cellHost?.isHidden = settings || formula || !cell
+    inspectorReactView?.isHidden = settings || formula || cell
   }
 
   /// Open or close the inspector, as its toolbar button does.

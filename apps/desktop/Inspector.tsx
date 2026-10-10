@@ -4,8 +4,7 @@
 // so it has the pane's own material and place under the toolbar; this is
 // only what goes in it.
 import { useSyncExternalStore, type ReactElement } from "react";
-import { ScrollView, StyleSheet, Text, View, useColorScheme } from "react-native";
-import { GlassBar } from "@workspace.sh/glass-bar";
+import { StyleSheet, Text, View, useColorScheme } from "react-native";
 import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost, ViewSettings } from "@workspace.sh/table-ui";
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
@@ -64,7 +63,7 @@ function SettingsOf({ settings }: { settings: NonNullable<ReturnType<typeof insp
 }
 
 export function Inspector() {
-  const { page, settings, cell, cellRef, display } = useSyncExternalStore(inspectorStore.subscribe, inspectorStore.get);
+  const { page, settings, cell, display } = useSyncExternalStore(inspectorStore.subscribe, inspectorStore.get);
   const dark = useColorScheme() === "dark";
   const body = page ? (
     <PanelSurface.Provider value={OnPane}>
@@ -74,13 +73,10 @@ export function Inspector() {
     // The view's settings change as they're made, beside the view they change.
     // Drawn by the inspector's own form (MacSettings.tsx); this only describes them.
     <SettingsOf settings={settings} />
-  ) : cell && cell.state.kind === "selected" ? (
-    // Said in the system's form, over this view (TableCellInspector.swift).
+  ) : cell && (cell.state.kind === "selected" || cell.state.kind === "editing") ? (
+    // Said, and a formula written, in the system's form over this view
+    // (TableCellInspector.swift, TableFormulaEditor.swift).
     <View />
-  ) : cell && cell.state.kind === "editing" ? (
-    <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
-      <GlassBar {...cell} ref={cellRef as never} />
-    </ScrollView>
   ) : (
     <View style={native.empty}>
       <Text style={[native.emptyText, { color: dark ? "#8a8a93" : "#6e6e73" }]}>Select a cell or open a row's page</Text>
