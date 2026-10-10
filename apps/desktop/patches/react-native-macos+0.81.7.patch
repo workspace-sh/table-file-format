@@ -51,10 +51,27 @@ index 779480a..cdcc4cd 100644
  #endif // macOS]
  }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
-index a14a864..a06a072 100644
+index a14a864..988a451 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
-@@ -348,9 +348,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
+@@ -146,7 +146,15 @@ - (instancetype)initWithFrame:(CGRect)frame
+     _scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+ #if !TARGET_OS_OSX // [macOS]
+     _scrollView.delaysContentTouches = NO;
+-#endif // [macOS]
++#else // [macOS
++    // [table-file-format patch] Start from what the default props say: no bounce on either axis.
++    // Props are only applied when they differ from the defaults, and both bounce props default to
++    // false, so a false never reaches the view and AppKit's automatic elasticity stays: a horizontal
++    // ScrollView bounced vertically, pulling a table's scrolling columns away from its frozen one.
++    // ScrollView's JS still turns bounce on for the axis that scrolls. Drop once upstream does this.
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceVertical = NO;
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceHorizontal = NO;
++#endif // macOS]
+     ((RCTEnhancedScrollView *)_scrollView).overridingDelegate = self;
+     _isUserTriggeredScrolling = NO;
+     _shouldUpdateContentInsetAdjustmentBehavior = YES;
+@@ -348,9 +356,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
          ? CGAffineTransformIdentity
          : CGAffineTransformMakeScale(-1, 1);
  

@@ -102,6 +102,7 @@ import { HOVERS } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { Platform } from "react-native";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { afterEdit, cellPicks, gridKey } from "./gridNav";
@@ -1160,6 +1161,10 @@ const styles = css.create({
     fontWeight: "600",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
+  // On native the letter stacks above the name instead of sitting before it: without the gap, so the two share an edge.
+  columnLetterStacked: {
+    marginInlineEnd: 0,
+  },
   // The 14 symbolic enum colours (SPEC section 2, DECISIONS D43), mapped onto light and dark.
   pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
   pillBrown: { backgroundColor: { default: "#eee3d8", "@media (prefers-color-scheme: dark)": "#3b2a1d" }, color: { default: "#7a4a21", "@media (prefers-color-scheme: dark)": "#d9b08c" } },
@@ -1466,6 +1471,11 @@ const styles = css.create({
     cursor: "pointer",
   },
   bodyBadge: {
+    // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
     paddingInline: 6,
     paddingBlock: 1,
     marginInlineStart: 6,
@@ -3071,7 +3081,7 @@ export function TableView({
             !isLast && styles.tableCellSeparator,
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
           {columnResizer(name)}
@@ -3109,7 +3119,7 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
         </html.button>
