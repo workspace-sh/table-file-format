@@ -223,6 +223,11 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
+      // A large table's rows aren't here to pack: an archive made now would hold it empty.
+      if (Object.entries(state.tables).some(([key, table]) => bundleOf(key) === bundle && table.indexed)) {
+        tell("Can't share this file yet", `${archiveFileName(bundle)} would hold a table too large to pack on this phone for now. Nothing was shared.`);
+        return;
+      }
       try {
         await shareZip(bundle, state.tables, state.bundles);
       } catch (error) {

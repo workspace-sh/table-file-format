@@ -46,5 +46,9 @@ export const expoFs: TableFs = {
   },
 };
 
-/** Where the phone keeps the .table folders it holds as files: its own documents, apart from anything else there. */
+/**
+ * Where the phone keeps the .table folders it holds as files: a folder of
+ * the app's own in its documents, apart from anything else there. (Its
+ * name is the app's choice; it isn't the format's `tables/`.)
+ */
 export const tablesHome = (): string => new Directory(Paths.document, "tables").uri.replace(/\/+$/, "");
