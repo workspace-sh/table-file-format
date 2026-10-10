@@ -58,6 +58,30 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// The settings form for the inspector to show (TableSettingsForm.swift); "" for none.
+  @objc func setSettingsForm(_ json: String) {
+    var data: SettingsFormData?
+    if let bytes = json.data(using: .utf8), !json.isEmpty {
+      do {
+        data = try JSONDecoder().decode(SettingsFormData.self, from: bytes)
+      } catch {
+        NSLog("TableSidebar: a settings form that couldn't be read: %@", String(describing: error))
+      }
+    }
+    DispatchQueue.main.async {
+      TableShell.setSettingsForm(data)
+    }
+  }
+
+  /// Development only: send what a control in the settings form would, as JSON.
+  @objc func sendSettingsForm(_ json: String) {
+    guard let bytes = json.data(using: .utf8),
+          let event = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return }
+    DispatchQueue.main.async {
+      TableShell.settingsForm.send(event)
+    }
+  }
+
   /// Development only: press one of the cell inspector's buttons ("edit" or "settings").
   @objc func pressInspectorCell(_ action: String) {
     DispatchQueue.main.async {

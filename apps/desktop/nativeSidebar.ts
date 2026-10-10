@@ -10,6 +10,8 @@ interface TableSidebarModule {
   toggle(): void;
   setInspectorShown(shown: boolean): void;
   setInspectorCell(json: string): void;
+  setSettingsForm(json: string): void;
+  sendSettingsForm(json: string): void;
   pressInspectorCell(action: string): void;
   pick(tag: string): void;
   addListener(event: string): void;
@@ -32,7 +34,9 @@ export type SidebarEvent =
   /** The inspector opened or closed, by its toolbar button or by the app. */
   | { type: "inspector"; shown: boolean }
   /** A button pressed in the inspector's account of the selected cell. */
-  | { type: "inspectorCell"; action: "edit" | "settings" };
+  | { type: "inspectorCell"; action: "edit" | "settings" }
+  /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
+  | SettingsFormEvent;
 
 export interface SidebarShown {
   tree: SidebarBundle[];
@@ -124,6 +128,30 @@ export function pickInSidebar(tag: string): void {
 /** Open or close the inspector pane. */
 export function setInspectorShown(shown: boolean): void {
   TableSidebar?.setInspectorShown(shown);
+}
+
+/** What the inspector's settings form reports: a row changed, submitted, toggled or pressed; a compound row removed or moved; Cancel or the confirming button. */
+export interface SettingsFormEvent {
+  type: "settingsForm";
+  what: "change" | "submit" | "toggle" | "press" | "remove" | "move" | "cancel" | "confirm";
+  /** The row it was on. */
+  id?: string;
+  value?: string | boolean;
+  /** The section a compound row was removed from or moved in, and where. */
+  section?: string;
+  index?: number;
+  from?: number;
+  to?: number;
+}
+
+/** The settings form for the inspector to show, as its JSON (TableSettingsForm.swift); null for none. */
+export function setSettingsForm(json: string | null): void {
+  TableSidebar?.setSettingsForm(json ?? "");
+}
+
+/** Development only: what a control in the settings form would send. */
+export function sendSettingsForm(event: object): void {
+  TableSidebar?.sendSettingsForm(JSON.stringify(event));
 }
 
 /** The selected cell as the inspector says it (TableCellInspector.swift). */

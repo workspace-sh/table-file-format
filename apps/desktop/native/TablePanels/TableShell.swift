@@ -66,6 +66,7 @@ public class TableShell: NSObject {
     let pane = NSView()
     inspectorView.translatesAutoresizingMaskIntoConstraints = false
     pane.addSubview(inspectorView)
+    inspectorReactView = inspectorView
     NSLayoutConstraint.activate([
       inspectorView.topAnchor.constraint(equalTo: pane.safeAreaLayoutGuide.topAnchor),
       inspectorView.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
@@ -88,6 +89,20 @@ public class TableShell: NSObject {
       cellHost.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
     ])
     self.cellHost = cellHost
+    // A settings form (a field's, a new field's, the view's) goes over both.
+    let settingsHost = NSHostingView(rootView: TableSettingsFormView(model: settingsForm))
+    settingsHost.translatesAutoresizingMaskIntoConstraints = false
+    settingsHost.sizingOptions = []
+    settingsHost.isHidden = true
+    pane.addSubview(settingsHost)
+    NSLayoutConstraint.activate([
+      settingsHost.topAnchor.constraint(equalTo: pane.safeAreaLayoutGuide.topAnchor),
+      settingsHost.leadingAnchor.constraint(equalTo: pane.leadingAnchor),
+      settingsHost.trailingAnchor.constraint(equalTo: pane.trailingAnchor),
+      settingsHost.bottomAnchor.constraint(equalTo: pane.bottomAnchor),
+    ])
+    self.settingsHost = settingsHost
+    settingsForm.send = { event in sidebar.send("settingsForm", event) }
     cellInspector.send = { action in sidebar.send("inspectorCell", ["action": action]) }
     inspector.view = pane
     let inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
@@ -178,13 +193,32 @@ public class TableShell: NSObject {
     ProcessInfo.processInfo.systemUptime - lastClickTime < 1 ? NSValue(point: lastClick) : nil
   }
 
+  static let settingsForm = TableSettingsFormModel()
   static let cellInspector = TableCellInspectorModel()
+  private static weak var settingsHost: NSView?
   private static weak var cellHost: NSView?
+  private static weak var inspectorReactView: NSView?
 
-  /// What the inspector says of the selected cell; nil hands the pane back to React's view.
+  /// The settings form the inspector shows; nil for none.
+  static func setSettingsForm(_ data: SettingsFormData?) {
+    settingsForm.data = data
+    layInspector()
+  }
+
+  /// What the inspector says of the selected cell; nil for none.
   static func setInspectorCell(_ data: CellInspectorData?) {
     cellInspector.data = data
-    cellHost?.isHidden = data == nil
+    layInspector()
+  }
+
+  /// One thing at a time in the inspector: a settings form, else the
+  /// selected cell, else what React draws (a row's page, a formula).
+  private static func layInspector() {
+    let settings = settingsForm.data != nil
+    let cell = cellInspector.data != nil
+    settingsHost?.isHidden = !settings
+    cellHost?.isHidden = settings || !cell
+    inspectorReactView?.isHidden = settings || cell
   }
 
   /// Open or close the inspector, as its toolbar button does.

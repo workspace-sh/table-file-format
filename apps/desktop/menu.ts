@@ -31,6 +31,7 @@ interface TableMenuModule {
   popUpTitles(): Promise<string[]>;
   popUpChoose(title: string, seconds: number): void;
   postRightClick(x: number, y: number): void;
+  postScroll(x: number, y: number, lines: number): void;
   postClick(x: number, y: number): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
@@ -212,6 +213,10 @@ export function popUpTitles(): Promise<string[]> {
 }
 export function popUpChoose(title: string, seconds = 1): void {
   TableMenu?.popUpChoose(title, seconds);
+}
+/** Development only: turn the scroll wheel by `lines` over a point in the window, measured from its top left. */
+export function postScroll(x: number, y: number, lines: number): void {
+  TableMenu?.postScroll(x, y, lines);
 }
 export function postRightClick(x: number, y: number): void {
   TableMenu?.postRightClick(x, y);
