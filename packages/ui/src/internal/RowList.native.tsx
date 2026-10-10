@@ -121,8 +121,6 @@ function WindowedRows<T>({
   const extra = layout.height - laidOut;
   // What is drawn: a stretch of the list, in its own points, and the shift it is drawn at.
   const [drawn, setDrawn] = useState({ from: 0, to: 3 * DRAW_DISTANCE, shift: 0 });
-  // The body's top within what the page scrolls; null until it's measured.
-  const [bodyTop, setBodyTop] = useState<number | null>(null);
   const top = useRef<number | null>(null);
   // Where the page was when last looked at; `jump` and `settled` are moves this list made itself.
   const last = useRef<{ at: number | null; jump: boolean; settled: number | null }>({ at: null, jump: false, settled: null });
@@ -138,7 +136,6 @@ function WindowedRows<T>({
   }, [page]);
 
   const follow = useCallback(() => {
-    if (top.current === null) return;
     const { at, page: screen } = where();
     if (screen <= 0) return;
     const { laidOut: height, extra: more } = now.current;
@@ -188,13 +185,20 @@ function WindowedRows<T>({
   // Where the list starts in the page: measured as it's laid out, and again
   // when the page or what's in it changes size (something above the list
   // may have changed height).
+  // A measure can fail before the page's scroll view is there to measure
+  // against, so it is tried again over the next frames.
+  const tries = useRef(0);
   const measure = useCallback(() => {
     void page.topOf(body.current).then((measured) => {
-      if (measured === null) return;
+      if (measured === null) {
+        if (tries.current++ < 20) requestAnimationFrame(() => measure());
+        return;
+      }
+      tries.current = 0;
       top.current = measured;
-      setBodyTop(measured);
       follow();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, follow]);
 
   useEffect(() => {
@@ -214,9 +218,11 @@ function WindowedRows<T>({
   useEffect(() => follow(), [follow, layout.count, layout.height]);
 
   const count = items.length;
-  const ready = bodyTop !== null;
+  // Until the list's place in the page is measured, it's taken to be at the
+  // page's top, where a table's list starts, so the first screen of rows is
+  // drawn at once.
   const first = count ? Math.min(layout.at(drawn.from), count - 1) : 0;
-  const lastDrawn = count && ready ? Math.min(layout.at(drawn.to), count - 1) : -1;
+  const lastDrawn = count ? Math.min(layout.at(drawn.to), count - 1) : -1;
 
   const latestOnShown = useRef(onShown);
   latestOnShown.current = onShown;
