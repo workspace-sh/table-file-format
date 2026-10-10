@@ -1,7 +1,7 @@
 // The views, by layout: the shared table-ui views with the callbacks the
 // table screen gives them.
 
-import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
+import type { Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import type { SheetGridShown } from "@workspace.sh/table-app";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { BoardView, CalendarView, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
@@ -31,15 +31,22 @@ export interface ViewCallbacks {
   onPlace?: (place: { rowId?: string; field?: string }) => void;
   restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
   onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
+  /** The view's rows read through the index (a large table), or as its file has them while it's read. */
+  source?: ViewRows;
 }
+
+/** What a table shown while it is still read is given: its rows, to look at, and nothing that changes it. */
+export type ReadingCallbacks = Pick<ViewCallbacks, "relatedTables" | "onOpenRelation" | "allRows" | "tableKey"> & { source: ViewRows };
 
 export function renderView(
   view: View,
   rows: Row[],
   schema: TableSchema,
   bodies: Record<string, string> | undefined,
-  cb: ViewCallbacks,
+  given: ViewCallbacks | ReadingCallbacks,
 ) {
+  // A table being read is looked at, not worked in: it comes with no way to change it.
+  const cb = given as Partial<ViewCallbacks> & ReadingCallbacks;
   const common = {
     view,
     rows,
@@ -84,6 +91,7 @@ export function renderView(
           onPlace={cb.onPlace}
           restorePlace={cb.restorePlace}
           onPlaceMeasure={cb.onPlaceMeasure}
+          source={cb.source}
         />
       );
   }
