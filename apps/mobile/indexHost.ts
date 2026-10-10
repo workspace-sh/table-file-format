@@ -334,26 +334,38 @@ function build(
 }
 
 /** Write a table's rows out of the index to the file beside it: staged, then moved over it in one step. */
-async function writeRows(bundle: string, db: SqlDriver, name: string, schema: TableSchema, omit?: string[]): Promise<void> {
+async function writeRows(bundle: string, name: string, schema: TableSchema, omit?: string[]): Promise<number> {
   await expoFs.mkdir(tableDir(bundle, name));
   const staged = new File(`${rowsPath(bundle, name)}.tmp`);
   if (staged.exists) staged.delete();
   staged.create();
   const handle = staged.open();
   const encoder = new TextEncoder();
+  // Read on a connection of its own, in one read transaction: the rows as
+  // they stood when the save began, however long the writing takes, while
+  // the bundle's own connection goes on answering the screen and taking
+  // edits. (On that one connection a save held every read behind it: a
+  // second at 50,000 rows, and longer in step with the table.)
+  const reader = expoDriver(openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(bundleDir(bundle))), "async");
   let at = 0;
   try {
-    for await (const text of storedRows(db, { name, schema, ...(omit ? { omit } : {}) })) {
+    await reader.exec("begin");
+    for await (const text of storedRows(reader, { name, schema, ...(omit ? { omit } : {}) })) {
       const bytes = encoder.encode(text);
       handle.writeBytes(bytes);
       at += bytes.length;
     }
+    await reader.exec("commit");
   } finally {
     handle.close();
+    await reader.close().catch(() => {});
   }
   renameOver(pathOfUri(staged.uri), pathOfUri(rowsPath(bundle, name)));
-  await kept(db, name, at);
+  return at;
 }
+
+// A bundle's saves, one after another.
+const saving = new Map<string, Promise<unknown>>();
 
 /** A search index is made a step at a time, each behind whatever the screen asked meanwhile. */
 function searchSteps(bundle: string, name: string): Promise<void> {
@@ -379,13 +391,23 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
   return {
     ensure: (name, schema, onProgress) => build(bundle, name, schema, false, onProgress),
     build: (name, schema, onProgress) => build(bundle, name, schema, true, onProgress),
-    save: (name, schema, rows, omit) =>
-      afterBuild(bundle, () =>
-        asked(async ({ driver }) => {
-          if (rows) await writeRows(bundle, driver, name, schema, omit);
+    save: (name, schema, rows, omit) => {
+      const run = async (): Promise<void> => {
+        // After a build of its bundle; then the rows are written beside what the screen asks, not ahead of it.
+        await afterBuild(bundle, () => Promise.resolve());
+        const bytes = rows ? await writeRows(bundle, name, schema, omit) : null;
+        await asked(async ({ driver }) => {
+          if (bytes !== null) await kept(driver, name, bytes);
           await setIndexKey(driver, name, "saved");
-        }),
-      ),
+        });
+      };
+      const done = (saving.get(bundle) ?? Promise.resolve()).then(run, run);
+      saving.set(
+        bundle,
+        done.catch(() => {}),
+      );
+      return done;
+    },
     peek: (name, start, end) => asked(({ driver }) => rowsBeingBuilt(driver, name, start, end)),
     // An edit waits for a build of its bundle; a read is answered between the build's statements.
     rows: (request) => (request.ask === "edits" ? afterBuild(bundle, () => asked(({ serve }) => serve(request))) : asked(({ serve }) => serve(request))),
@@ -398,13 +420,14 @@ export function openIndexDatabase(bundle: string): IndexDatabase {
       return rows;
     },
     close: () =>
-      afterBuild(bundle, () =>
-        inTurn(async () => {
+      afterBuild(bundle, async () => {
+        await saving.get(bundle);
+        return inTurn(async () => {
           const on = held.get(bundle);
           held.delete(bundle);
           if (on) await (await on).driver.close();
-        }),
-      ),
+        });
+      }),
   };
 }
 
