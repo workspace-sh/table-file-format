@@ -19,6 +19,7 @@ export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
 export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { PageGutter } from "./pageGutter";
+export { PageScrollContext, pageScrollOver, type PageScroll } from "./pageScroll";
 export { PanelSurface, type PanelSurfaceComponent } from "./panelSurface";
 export { ViewSettings, type ViewSettingsProps } from "./ViewSettings";
 export { DisplayControls, type DisplayControlsProps } from "./DisplayControls";
