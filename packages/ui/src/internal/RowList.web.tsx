@@ -1,113 +1,42 @@
-import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_LIST_HEIGHT } from "./listLimits";
 import type { RowListProps } from "./RowList";
-import type { RowLayout } from "../rowLayout";
 
 export type { RowListHandle, RowListProps } from "./RowList";
 
 /** How far past the screen rows are kept drawn, in pixels. */
 const DRAW_DISTANCE = 600;
 
-/**
- * A table's rows, drawn only where they're on screen (LARGE-TABLES-PLAN, W1).
- *
- * The list scrolls with the page rather than in a box of its own: it follows
- * the nearest scrolling ancestor (`scrollElement`), so the header above it and
- * the bands below scroll with it as they always have. A table's two panes (the
- * frozen first column, and the rest) are two lists following that same
- * scroller, with the same items and heights, so they always show the same rows
- * side by side.
- *
- * Every height is given up front (`getFixedItemSize`): LegendList stays fast at
- * a million rows only when it never has to measure one.
- */
-export function RowList<T>(props: RowListProps<T>) {
-  // A list too tall for the browser to lay out is drawn by TallRows, below.
-  return props.layout ? <TallRows {...props} layout={props.layout} /> : <ListedRows {...props} />;
+/** Where each item is: what the list needs of a RowLayout. */
+interface Tops {
+  count: number;
+  height: number;
+  /** An item's top, with any room above it (a group's heading) in the item. */
+  itemTop(index: number): number;
+  /** The item at `y`: the first whose bottom is past it. `count` when `y` is past them all. */
+  at(y: number): number;
 }
 
-function ListedRows<T>({ items, keyOf, sizeOf, render, version, raised, handle, onShown }: RowListProps<T>) {
-  const anchor = useRef<HTMLDivElement | null>(null);
-  const list = useRef<LegendListRef | null>(null);
-  // `undefined` until the anchor is in the page; `null` when nothing scrolls
-  // but the window itself.
-  const [scroller, setScroller] = useState<HTMLElement | null | undefined>(undefined);
-
-  // Before the first paint, so the rows never appear a frame late.
-  useLayoutEffect(() => {
-    setScroller(scrollParent(anchor.current));
-  }, []);
-
-  useImperativeHandle(
-    handle,
-    () => ({
-      scrollIndexIntoView: (index: number) => {
-        void list.current?.scrollIndexIntoView({ index, animated: false });
-      },
-      top: () => anchor.current?.getBoundingClientRect().top ?? null,
-    }),
-    [],
-  );
-
-  // Which places are drawn: the list says, and it's asked as the page
-  // scrolls (once a frame) and after each draw. (Its items can't say for
-  // themselves: the list keeps the ones scrolled away, to use again.)
-  const told = useRef({ first: -1, last: -1, due: false });
-  const latestOnShown = useRef(onShown);
-  latestOnShown.current = onShown;
-  const tell = useCallback(() => {
-    told.current.due = false;
-    const state = list.current?.getState();
-    if (!state || !latestOnShown.current || state.endBuffered < state.startBuffered) return;
-    const first = Math.max(0, state.startBuffered);
-    const last = state.endBuffered;
-    if (first === told.current.first && last === told.current.last) return;
-    told.current.first = first;
-    told.current.last = last;
-    latestOnShown.current(first, last);
-  }, []);
-  const tellSoon = useCallback(() => {
-    if (told.current.due) return;
-    told.current.due = true;
-    requestAnimationFrame(tell);
-  }, [tell]);
-  const watching = onShown !== undefined;
-  useEffect(() => {
-    if (!watching || scroller === undefined) return;
-    const target: HTMLElement | Window = scroller ?? window;
-    target.addEventListener("scroll", tellSoon, { passive: true });
-    return () => target.removeEventListener("scroll", tellSoon);
-  }, [watching, scroller, tellSoon]);
-  useEffect(() => {
-    if (watching) tellSoon();
-  });
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: T; index: number }) => <Lift on={raised?.(item) ?? false}>{render(item, index)}</Lift>,
-    [render, raised],
-  );
-
-  return (
-    <div ref={anchor}>
-      {scroller !== undefined && (
-        <LegendList
-          ref={list}
-          data={items}
-          keyExtractor={keyOf}
-          getFixedItemSize={sizeOf}
-          renderItem={renderItem}
-          // Cells draw from the table's state (selection, an open editor, a
-          // draft), not just from their row, so the rows on screen draw again
-          // whenever the table does, as they did before windowing.
-          extraData={render}
-          {...(version === undefined ? {} : { dataVersion: version })}
-          drawDistance={DRAW_DISTANCE}
-          {...(scroller === null ? { useWindowScroll: true } : { scrollElement: scroller })}
-        />
-      )}
-    </div>
-  );
+/** The items' tops from their heights, added up once: for a list that isn't given its layout. */
+function topsOf<T>(items: readonly T[], sizeOf: (item: T, index: number) => number): Tops {
+  const count = items.length;
+  const tops = new Float64Array(count + 1);
+  for (let i = 0; i < count; i++) tops[i + 1] = tops[i]! + sizeOf(items[i]!, i);
+  return {
+    count,
+    height: tops[count]!,
+    itemTop: (index) => tops[Math.max(0, Math.min(count, index))]!,
+    at: (y) => {
+      let lo = 0;
+      let hi = count;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (tops[mid + 1]! <= y) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    },
+  };
 }
 
 /**
@@ -138,45 +67,23 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
   }
 }
 
-/**
- * Raises the list's own box around an item above the boxes after it, and lets
- * it draw outside its bounds.
- *
- * Each item sits in a positioned box of LegendList's, with paint containment,
- * so anything hanging below the item (the selected row's grip) is clipped at
- * its edge, and a z-index inside the item only orders it within that box. The
- * box is LegendList's and is reused for other items, so it changes only while
- * `on`, and is put back.
- */
-function Lift({ on, children }: { on: boolean; children: ReactNode }) {
-  const self = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
-    const box = self.current?.parentElement;
-    if (!on || !box) return;
-    // LegendList's box also has paint containment, which clips what hangs
-    // outside it; this one box keeps the rest of its containment.
-    const contain = box.style.contain;
-    box.style.zIndex = "1";
-    box.style.contain = "layout style";
-    return () => {
-      box.style.zIndex = "";
-      box.style.contain = contain;
-    };
-  }, [on]);
-  return (
-    <div ref={self} style={{ display: "contents" }}>
-      {children}
-    </div>
-  );
-}
-
-/** The last move a tall list made of a page to settle it, for the lists beside it. */
+/** The last move a list made of a page to settle it, for the lists beside it. */
 const settles = new WeakMap<object, { to: number; shift: number; when: number }>();
 
 /**
- * A list taller than a browser lays out (it stops placing things some
- * millions of pixels down): its rows are placed in a body of
- * MAX_LIST_HEIGHT, and the page's scrolling is mapped onto the whole list.
+ * A table's rows, drawn only where they're on screen (LARGE-TABLES-PLAN, W1).
+ *
+ * The list scrolls with the page rather than in a box of its own: it follows
+ * the nearest scrolling ancestor, so the header above it and the bands below
+ * scroll with it. A table's two panes (the frozen first column, and the
+ * rest) are two lists following that same scroller, with the same items and
+ * heights, so they always show the same rows side by side.
+ *
+ * The list is a body as tall as all its rows, with the rows on screen placed
+ * in it by their known heights: nothing is measured. A list taller than a
+ * browser lays out (it stops placing things some millions of pixels down)
+ * has a body of MAX_LIST_HEIGHT, and the page's scrolling is mapped onto the
+ * whole list.
  *
  * `shift` is how far the rows are from where the page is: the row at the
  * page's place plus `shift` is the one at the top of the screen. Scrolling
@@ -185,9 +92,14 @@ const settles = new WeakMap<object, { to: number; shift: number; when: number }>
  * is, so the bar's whole travel is the whole list. Two lists side by side
  * hear the same scrolling and so keep the same shift.
  */
-function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: layoutOf }: RowListProps<T> & { layout: () => RowLayout }) {
+export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, handle, onShown, layout: layoutOf }: RowListProps<T>) {
   const anchor = useRef<HTMLDivElement | null>(null);
-  const layout = layoutOf();
+  // Given its layout, the list asks it; otherwise the heights are added up
+  // once for these items (`version` changes when a height could have).
+  const given = layoutOf !== undefined;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const added = useMemo(() => (given ? null : topsOf(items, sizeOf)), [given, items, version]);
+  const layout: Tops = layoutOf ? layoutOf() : added!;
   const laidOut = Math.min(layout.height, MAX_LIST_HEIGHT);
   const extra = layout.height - laidOut;
   const [scroller, setScroller] = useState<HTMLElement | null | undefined>(undefined);
@@ -303,6 +215,9 @@ function TallRows<T>({ items, keyOf, render, raised, handle, onShown, layout: la
         const range = Math.max(1, height - page);
         const top = l.itemTop(index);
         const size = (index + 1 < l.count ? l.itemTop(index + 1) : l.height) - top;
+        // Already wholly on screen: left where it is.
+        const shown = top - drawnShift.current;
+        if (more <= 0 && shown >= at && shown + size <= at + page) return;
         // Where the page would be with the item in the middle of the screen, were the list its full height.
         const wanted = Math.max(0, top - (page - size) / 2);
         const to = more <= 0 ? wanted : Math.min(range, wanted / (1 + more / range));
