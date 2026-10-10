@@ -44,36 +44,37 @@ public class TableFilesModule: Module {
 }
 
 // A shake comes to the window when no first responder takes it first (a text
-// field does, for its own Undo Typing). UIWindow doesn't implement
-// motionEnded(_:with:) itself, so the window gets one that tells the app and
-// then does what was there before (UIResponder's, or another hook's).
+// field does, for its own Undo Typing). The window's motionEnded(_:with:)
+// becomes one that tells the app and then calls what was there before, under
+// motionEnded's own name: UIResponder's passes the call up the responder
+// chain by that name, so it must never be reached under another.
 enum TableShake {
   static let shaken = Notification.Name("TableShakeShaken")
   private static var started = false
+  private static var before: IMP?
+
+  private typealias MotionEnded = @convention(c) (AnyObject, Selector, UIEvent.EventSubtype, UIEvent?) -> Void
 
   static func start() {
     guard !started else { return }
     started = true
-    let window: AnyClass = UIWindow.self
-    let original = #selector(UIResponder.motionEnded(_:with:))
-    let replacement = #selector(UIWindow.table_motionEnded(_:with:))
-    guard let originalMethod = class_getInstanceMethod(window, original),
-          let replacementMethod = class_getInstanceMethod(window, replacement) else { return }
-    // Added to UIWindow itself first, so UIResponder's own is never swapped for every responder.
-    if class_addMethod(window, original, method_getImplementation(replacementMethod), method_getTypeEncoding(replacementMethod)) {
-      class_replaceMethod(window, replacement, method_getImplementation(originalMethod), method_getTypeEncoding(originalMethod))
-    } else {
-      method_exchangeImplementations(originalMethod, replacementMethod)
+    let selector = #selector(UIResponder.motionEnded(_:with:))
+    guard let method = class_getInstanceMethod(UIWindow.self, selector) else { return }
+    // What a window does now: its own, or the UIResponder one it inherits.
+    before = method_getImplementation(method)
+    let block: @convention(block) (UIWindow, UIEvent.EventSubtype, UIEvent?) -> Void = { window, motion, event in
+      if motion == .motionShake {
+        NotificationCenter.default.post(name: shaken, object: nil)
+      }
+      if let before {
+        unsafeBitCast(before, to: MotionEnded.self)(window, selector, motion, event)
+      }
     }
-  }
-}
-
-extension UIWindow {
-  @objc func table_motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
-    if motion == .motionShake {
-      NotificationCenter.default.post(name: TableShake.shaken, object: nil)
+    let implementation = imp_implementationWithBlock(block)
+    // Added to UIWindow itself, so UIResponder's own stays as it is for every
+    // other responder; where UIWindow already has one, that one is replaced.
+    if !class_addMethod(UIWindow.self, selector, implementation, method_getTypeEncoding(method)) {
+      before = method_setImplementation(method, implementation)
     }
-    // After the swap this is what motionEnded was before.
-    table_motionEnded(motion, with: event)
   }
 }
