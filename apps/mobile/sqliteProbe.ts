@@ -338,10 +338,72 @@ function counting(driver: ExpoDriver): ExpoDriver & { crossings: number } {
   return out;
 }
 
+/**
+ * What a yielding driver waits on. React Native fires its timers from a
+ * display link on the JS thread's run loop, so a `setTimeout(0)` yield waits
+ * on the very thing a build holds up; the others don't go through timers:
+ * - `scheduler`: a task on React Native's own scheduler, at the priority React renders at;
+ * - `main`: a native call answered from the main queue (RCTLinkingManager);
+ * - `background`: one answered from a background queue (a second SQLite connection);
+ * - `mixed`: the scheduler each time (React renders, at once), and a timer every 300 ms
+ *   (the JS thread goes back to its run loop, so timers fire).
+ */
+export type YieldVia = "timer" | "scheduler" | "main" | "background" | "mixed";
+
+/** In a `mixed` yield, how often the wait is a timer, in milliseconds. */
+const TIMER_EVERY_MS = 300;
+
+interface NativeScheduler {
+  unstable_scheduleCallback(priority: number, callback: () => void): unknown;
+  unstable_NormalPriority: number;
+}
+
+function yieldBy(via: YieldVia | undefined): { yieldTo?: () => Promise<void>; close: () => void } {
+  if (via === "scheduler" || via === "mixed") {
+    const scheduler = (globalThis as { nativeRuntimeScheduler?: NativeScheduler }).nativeRuntimeScheduler;
+    if (!scheduler) throw new Error("React Native's scheduler isn't there to yield to");
+    const toScheduler = () => new Promise<void>((go) => void scheduler.unstable_scheduleCallback(scheduler.unstable_NormalPriority, () => go()));
+    if (via === "scheduler") return { yieldTo: toScheduler, close: () => {} };
+    let timerAt = Date.now();
+    return {
+      yieldTo: () => {
+        if (Date.now() - timerAt < TIMER_EVERY_MS) return toScheduler();
+        return new Promise<void>((go) => setTimeout(go, 0)).then(() => {
+          timerAt = Date.now();
+        });
+      },
+      close: () => {},
+    };
+  }
+  if (via === "main") return { yieldTo: () => Linking.getInitialURL().then(() => {}), close: () => {} };
+  if (via === "background") {
+    const other = openDatabaseSync(":memory:", OPEN);
+    return { yieldTo: () => other.getFirstAsync("select 1 as x").then(() => {}), close: () => other.closeSync() };
+  }
+  return { close: () => {} };
+}
+
+/** One phone sitting: every arrangement worth comparing, each with the clocks beside it. */
+export const SITTING: { label: string; mode: Mode; build: Build }[] = [
+  { label: "async", mode: "async", build: {} },
+  { label: "async-timer-100", mode: "async", build: { yieldAfterMs: 100 } },
+  { label: "async-scheduler-30", mode: "async", build: { yieldAfterMs: 30, yieldVia: "scheduler" } },
+  { label: "async-main-30", mode: "async", build: { yieldAfterMs: 30, yieldVia: "main" } },
+  { label: "async-background-30", mode: "async", build: { yieldAfterMs: 30, yieldVia: "background" } },
+  // In sync mode nothing is in flight during a yield, and the batch is the longest statement.
+  { label: "sync-timer-30", mode: "sync", build: { yieldAfterMs: 30, batchSize: 1000 } },
+  { label: "sync-scheduler-30", mode: "sync", build: { yieldAfterMs: 30, yieldVia: "scheduler", batchSize: 1000 } },
+  { label: "sync-mixed-30", mode: "sync", build: { yieldAfterMs: 30, yieldVia: "mixed", batchSize: 1000 } },
+  { label: "sync-main-30", mode: "sync", build: { yieldAfterMs: 30, yieldVia: "main", batchSize: 1000 } },
+  { label: "sync-background-30", mode: "sync", build: { yieldAfterMs: 30, yieldVia: "background", batchSize: 1000 } },
+];
+
 /** big-table-index.mts's timings, at `n` rows, into a file in the app's documents, plus a search before and after its index is whole. */
 /** How a timing run builds: the driver's yield budget (ms between macrotasks, 0 for none) and buildIndex's batch size. */
 export interface Build {
   yieldAfterMs?: number;
+  /** How the driver waits when it yields; a timer when unset. */
+  yieldVia?: YieldVia;
   /** buildIndex's commitEvery: a transaction per so many rows. */
   commitEvery?: number;
   /** `pragma wal_autocheckpoint` during the build; SQLite's default (1000 pages) when unset. 0 turns it off, and the WAL is checkpointed after. */
@@ -360,7 +422,8 @@ export async function timings(n: number, mode: Mode, build: Build = {}): Promise
   const raw = openDatabaseSync(name, OPEN);
   raw.execSync("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
   if (build.autocheckpoint !== undefined) raw.execSync(`pragma wal_autocheckpoint = ${build.autocheckpoint};`);
-  const driver = counting(expoDriver(raw, mode, { yieldAfterMs: build.yieldAfterMs }));
+  const yielding = yieldBy(build.yieldVia);
+  const driver = counting(expoDriver(raw, mode, { yieldAfterMs: build.yieldAfterMs, ...(yielding.yieldTo ? { yieldTo: yielding.yieldTo } : {}) }));
   const schema = BIG_SCHEMA;
   const out: Results = { rows: n, mode, ...build };
   try {
@@ -460,6 +523,7 @@ export async function timings(n: number, mode: Mode, build: Build = {}): Promise
     out.error = String(error instanceof Error ? (error.stack ?? error.message) : error);
   } finally {
     await driver.close();
+    yielding.close();
     if (file.exists) file.delete();
   }
   return out;
