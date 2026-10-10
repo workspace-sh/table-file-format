@@ -81,22 +81,21 @@ export function expoDriver(db: ExpoDatabase, mode: "async" | "sync" = "async"): 
     run: (sql, params = []) => inTurn(async () => step(await prepared(sql), params)),
     all: (sql, params = []) => inTurn(async () => all(await prepared(sql), params)),
     // A one-row insert is run for many rows at once, so a batch is a crossing per few hundred rows, not per row.
-    batch: (sql, lists) =>
-      inTurn(async () => {
-        const tuple = ONE_ROW_INSERT.exec(sql)?.[1];
-        const width = lists[0]?.length ?? 0;
-        if (!tuple || width === 0 || lists.some((l) => l.length !== width)) {
-          const s = await prepared(sql);
-          for (const params of lists) await step(s, params);
-          return;
-        }
-        const per = Math.max(1, Math.floor(VALUES_PER_STATEMENT / width));
-        for (let at = 0; at < lists.length; at += per) {
-          const part = lists.slice(at, at + per);
-          const many = sql.slice(0, sql.lastIndexOf(tuple)) + Array.from(part, () => tuple).join(", ");
-          await step(await prepared(many), part.flat());
-        }
-      }),
+    // Each statement takes its own turn: a read asked mid-batch (rowsBeingBuilt) waits for one statement, not the batch.
+    batch: async (sql, lists) => {
+      const tuple = ONE_ROW_INSERT.exec(sql)?.[1];
+      const width = lists[0]?.length ?? 0;
+      if (!tuple || width === 0 || lists.some((l) => l.length !== width)) {
+        for (const params of lists) await inTurn(async () => step(await prepared(sql), params));
+        return;
+      }
+      const per = Math.max(1, Math.floor(VALUES_PER_STATEMENT / width));
+      for (let at = 0; at < lists.length; at += per) {
+        const part = lists.slice(at, at + per);
+        const many = sql.slice(0, sql.lastIndexOf(tuple)) + Array.from(part, () => tuple).join(", ");
+        await inTurn(async () => step(await prepared(many), part.flat()));
+      }
+    },
     close: () =>
       inTurn(async () => {
         for (const s of cache.values()) {

@@ -7,7 +7,7 @@
 
 import { openDatabaseSync } from "expo-sqlite";
 import { File, Paths } from "expo-file-system";
-import { buildIndex, buildSearchIndex, putRows, queryIndex, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
+import { buildIndex, buildSearchIndex, putRows, queryIndex, rowsBeingBuilt, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
 import { expoDriver, type ExpoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { indexerCases, type CaseAssert } from "@workspace.sh/table-core/indexer-cases";
 
@@ -248,7 +248,22 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
   const schema = BIG_SCHEMA;
   const out: Results = { rows: n, mode };
   try {
-    const [stall, [buildMs]] = await longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })));
+    // While it builds: rows 20,000 to 20,200 as soon as they're in, read on the build's own connection.
+    const started = performance.now();
+    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })));
+    let done = false;
+    void building.then(() => (done = true));
+    const midBuild: Results[] = [];
+    if (n > 20_200) {
+      while (!done) {
+        await new Promise((go) => setTimeout(go, 250));
+        const [readMs, rows] = await ms(() => rowsBeingBuilt(driver, "deals", 20_000, 20_200));
+        midBuild.push({ atMs: Math.round(performance.now() - started), readMs, rows: rows.length, first: rows[0]?.id });
+        if (rows.length === 200) break;
+      }
+      out.midBuild = { tries: midBuild.length, last: midBuild.at(-1), slowestReadMs: Math.max(...midBuild.map((m) => m.readMs as number)) };
+    }
+    const [stall, [buildMs]] = await building;
     out.rowsInMs = buildMs;
     out.longestJsStallWhileBuildingMs = stall;
     const open = (query: IndexQuery) => queryIndex(driver, { name: "deals", schema, query });
