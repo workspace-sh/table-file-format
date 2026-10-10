@@ -21,6 +21,7 @@ import {
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
+  notifyLayoutChanged,
   PlatformControlsProvider,
   PortalHost,
   TableView,
@@ -984,6 +985,10 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         toggleSidebar();
         return "sidebar toggled";
       },
+      inspector: (shown: boolean) => {
+        setInspectorShown(shown);
+        return `inspector ${shown ? "shown" : "hidden"}`;
+      },
       postKey: (characters: string, keyCode: number, modifiers: ("command" | "shift" | "option" | "control")[]) => {
         postKey(characters, keyCode, modifiers);
         return `posted ${modifiers.join("+")}+${characters}`;
@@ -1149,7 +1154,14 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
+    <GestureHandlerRootView
+      style={{ flex: 1 }}
+      onLayout={(e) => {
+        setWindowWidth(e.nativeEvent.layout.width);
+        // The pane is as wide as the window, its sidebar and its inspector leave it: what measured itself measures again.
+        notifyLayoutChanged();
+      }}
+    >
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
       <PortalHost>
         <PlatformControlsProvider value={windowControls}>
