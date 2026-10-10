@@ -318,20 +318,58 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that i
 | On the phone | | 822 MB: `rows.ndjson` 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
 
 - **The build commits every 20,000 rows** (`commitEvery`). As one transaction, all of a build sits in SQLite's write-ahead log until its end: at a million rows the log reached 445 MB beside a 444 MB index, and a log keeps its size once written. In steps the log is folded into the index as the build goes and stayed under 38 MB; it is emptied when the build ends, and capped at 16 MB after (`journal_size_limit`). The build took 457 s in steps against 480 s as one transaction.
-- **The step's size is not what the screen waits on.** On an iPhone 16 Pro, a Release build, 100,000 rows built from memory through the async driver:
-
-  | `batchSize` | `commitEvery` | Yield every | Rows in | Longest timer gap | Longest wait for a React render |
-  |---|---|---|---|---|---|
-  | 5,000 | none | never | 11.4 s | 7.4 s | 3.7 s |
-  | 2,000 | 20,000 | never | 11.3 s | 8.9 s | 4.4 s |
-  | 2,000 | 20,000 | 100 ms | 38.4 s | 0.9 s | 0.27 s |
-
-  On the phone a build holds React's renders up for seconds whatever the batch or the commit; the Simulator never showed more than 0.13 s. Only yielding between statements shortens the wait, at more than three times the build. `batchSize` is core's default here for that reason. This is open: see "Not there yet".
+- **The step's size is not what the screen waits on.** On a phone a build holds React's renders up for seconds whatever `batchSize` or `commitEvery` is, and committing every 20,000 rows costs no time there (11.3 s against 11.4 s at 100,000 rows); the measurements are in the next section. `batchSize` is core's default here for that reason.
+- **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, until a phone says otherwise. A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`.
 - **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
 
-Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (above), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
+
+### iOS: the index over expo-sqlite, on a phone (10 Oct 2026)
+
+expo-sqlite (SDK 55) bundles SQLite 3.50.3 built with FTS5, and everything the indexer asks of it works: the trigram search index with external content, `row_number()`, `json_each`, indexes on expressions, `x is ?` with a bound null, and `page_size` set before the first table. core's `expoDriver` (`packages/core/src/sqlite-expo.ts`) is the `SqlDriver` over it. All 17 indexer cases (`indexer.cases.ts`) pass over it on an iPhone, in both its modes.
+
+**Reading is fast.** iPhone 16 Pro, Release build, 100,000 rows, async mode: one call to SQLite 0.12 ms; opening a view 1.2 ms (12 calls); an edit 2.1 ms (15 calls); a search 16 ms before its search index, 3 ms after; rows read mid-build (`rowsBeingBuilt`) in 40 to 150 ms.
+
+**Building is the problem.** While a table is built, React Native's timers and frames stop for seconds, and so do React's own renders. The probe (below) runs clocks beside the build: a timer, `requestAnimationFrame`, a React render asked for at most every 100 ms, a ping on a second SQLite connection (answered to JS from a background queue), and `Linking.getInitialURL` (answered on the main queue).
+
+| Build (100,000 rows, async, on the phone) | Rows in | Longest timer gap | Longest React render wait |
+|---|---|---|---|
+| core's defaults (batch 5,000, one transaction) | 10.4 to 11.4 s | 3.2 to 7.4 s | 3.7 s |
+| `commitEvery` 20,000, `batchSize` 2,000 | 11.3 s | 8.9 s | 4.4 s |
+| the same, and `yieldAfterMs` 100 | 38.4 s | 0.9 s | 0.27 s |
+| `yieldAfterMs` 100 (batch 5,000, no `commitEvery`) | 19.6 s | 0.44 s | not measured |
+| `yieldAfterMs` 50 | 27.5 s | 0.62 s | not measured |
+| sync mode, no yield (the build holds the JS thread) | 7.2 s | the whole build | the whole build |
+
+The JS thread is not blocked (the second-connection ping never waited more than about 250 ms), and nor is the main thread (`Linking`, at most about 125 ms). The commit and the WAL checkpoint are ruled out: with `wal_autocheckpoint = 0` the checkpoint afterwards took 184 ms and the gap was no shorter (7.3 s), spanning dozens of statements. The positions index made before the rows (#395) and committing in steps (#396) don't change the gap either. The iOS 26.5 Simulator on an Apple-silicon Mac shows almost none of it (gaps of 0.3 to 1 s, React at most 0.13 s), so only a phone shows it.
+
+**The likely mechanism.** In React Native 0.83 without the bridge, JS timers are fired by an `RCTDisplayLink` added to the JS thread's own run loop (`ReactCommon/react/runtime/platform/ios/ReactCommon/RCTInstance.mm`, line 436: `[strongSelf->_displayLink addToRunLoop:[NSRunLoop currentRunLoop]]`, called on the JS thread). While expo-sqlite's results keep arriving, the JS thread runs them back to back and the display link isn't serviced. A `setTimeout(0)` yield is itself held up by this, at about 90 ms each, which is why yielding is so expensive in async mode. This is a reading of the source plus the clocks above, not a proven cause.
+
+**Not measured yet:** sync mode with a yield (`yieldAfterMs` 30 and 50). Nothing is in flight while a sync driver yields, so a yield should cost about a frame rather than 90 ms; if 100,000 rows come in at 9 to 10 s with gaps under about 100 ms, that settles the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
+
+**If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
+
+**Running the probe on a phone.** The screen is `apps/mobile/app/sqlite.tsx` (logic in `apps/mobile/sqliteProbe.ts`), in a development build or one made with `EXPO_PUBLIC_TABLE_MEASURE=1`:
+
+```sh
+cd apps/mobile
+EXPO_PUBLIC_TABLE_MEASURE=1 NODE_PATH=$PWD/node_modules \
+  npx expo run:ios --device <UDID> --configuration Release --no-bundler
+```
+
+The phone was connected over the local network as a paired device (`xcrun devicectl list devices`). Expo's CLI here is patched never to pass provisioning flags; the log should hold no `-allowProvisioning`. Open the probe with a link; the phone must be unlocked, with the app in front, for the whole run:
+
+```sh
+xcrun devicectl device process launch --device <UDID> --terminate-existing \
+  --payload-url "sh.workspace.table.mobile://sqlite?rows=100000&modes=async&cases=0&yield=100&batch=2000&commit=20000" \
+  sh.workspace.table.mobile
+xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer \
+  --domain-identifier sh.workspace.table.mobile --source Documents/sqlite-probe.json --destination probe.json
+```
+
+Link parameters: `rows` (comma-separated sizes), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 

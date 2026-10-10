@@ -112,6 +112,18 @@ const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, str
  * at 20,000 against 11.4 s for one transaction; see docs/LARGE-TABLES.md).
  */
 const COMMIT_EVERY = 20_000;
+/**
+ * How the index's statements are run, and how often a build lets the event
+ * loop take a turn. On a phone a build over the async driver holds React
+ * Native's timers and React's renders up for seconds, which the Simulator
+ * doesn't show; a yield shortens the wait and lengthens the build
+ * (docs/LARGE-TABLES.md, "on a phone"). Which mode and yield a phone should
+ * have isn't measured yet, so these are the driver's defaults, and a build
+ * made to measure can set them: EXPO_PUBLIC_TABLE_INDEX_MODE=sync,
+ * EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30.
+ */
+const DRIVER_MODE: "async" | "sync" = process.env.EXPO_PUBLIC_TABLE_INDEX_MODE === "sync" ? "sync" : "async";
+const YIELD_AFTER_MS = Number(process.env.EXPO_PUBLIC_TABLE_INDEX_YIELD_MS ?? 0) || 0;
 /** The most of its write-ahead log an index keeps on disk once the log has been folded in, in bytes. */
 const WAL_KEPT = 16 * 1024 * 1024;
 
@@ -124,7 +136,7 @@ function open(bundle: string): Promise<Held> {
       const db = openDatabaseSync(BundleEntry.index, OPEN, pathOfUri(dir));
       // The page size is set before the first table; the rows file is the truth, so the index needn't outlive a crash whole.
       db.execSync(`pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal; pragma journal_size_limit = ${WAL_KEPT};`);
-      const driver = expoDriver(db, "async");
+      const driver = expoDriver(db, DRIVER_MODE, YIELD_AFTER_MS > 0 ? { yieldAfterMs: YIELD_AFTER_MS } : {});
       return { driver, serve: rowsServer(driver) };
     })();
     held.set(bundle, on);
