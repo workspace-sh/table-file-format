@@ -939,8 +939,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   commandsRef.current = commands;
   useEffect(() => onMenu((id) => commandsRef.current[id as keyof typeof commands]?.()), []);
   // Edit › Undo and Redo: the table's when no text has the keyboard, on as it can be undone and redone.
+  // They say what the commands say: what will be undone, once the app knows it.
   const { canUndo, canRedo } = derived;
-  useEffect(() => setUndo(canUndo, canRedo), [canUndo, canRedo]);
+  const undoTitle = derived.commands.find((c) => c.id === "undo")?.label ?? "Undo";
+  const redoTitle = derived.commands.find((c) => c.id === "redo")?.label ?? "Redo";
+  useEffect(() => setUndo(canUndo, canRedo, undoTitle, redoTitle), [canUndo, canRedo, undoTitle, redoTitle]);
 
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without

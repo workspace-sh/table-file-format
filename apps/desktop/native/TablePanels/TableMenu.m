@@ -43,6 +43,9 @@
   NSMenuItem *_redoItem;
   BOOL _canUndo;
   BOOL _canRedo;
+  /// What the two items say when they'd act on the table: "Undo Edit Title".
+  NSString *_undoTitle;
+  NSString *_redoTitle;
   /// What was chosen from the pop-up menu on screen (popUp).
   NSString *_popUpChoice;
   /// Development only: the last pop-up menu's titles, and a choice to make from the next one.
@@ -231,8 +234,13 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
 {
   if (item == _undoItem || item == _redoItem) {
     // Text being typed has its own undo; anywhere else it is the table's.
+    // The item says which, and what: "Undo Typing", or the table's own words.
     NSUndoManager *typing = [self typingUndoManager];
-    if (typing != nil) return item == _undoItem ? typing.canUndo : typing.canRedo;
+    if (typing != nil) {
+      item.title = item == _undoItem ? typing.undoMenuItemTitle : typing.redoMenuItemTitle;
+      return item == _undoItem ? typing.canUndo : typing.canRedo;
+    }
+    item.title = item == _undoItem ? _undoTitle : _redoTitle;
     return item == _undoItem ? _canUndo : _canRedo;
   }
   return ![_disabled containsObject:item.representedObject];
@@ -249,10 +257,12 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
 /// whenever no text is being typed; in a text field they stay the text's
 /// own. The items are AppKit's, in their usual place: they are given this
 /// as their target, and are enabled by whichever of the two they'd act on.
-RCT_EXPORT_METHOD(setUndo:(BOOL)canUndo canRedo:(BOOL)canRedo)
+RCT_EXPORT_METHOD(setUndo:(BOOL)canUndo canRedo:(BOOL)canRedo undoTitle:(NSString *)undoTitle redoTitle:(NSString *)redoTitle)
 {
   _canUndo = canUndo;
   _canRedo = canRedo;
+  _undoTitle = undoTitle;
+  _redoTitle = redoTitle;
   if (_undoItem != nil) return;
   for (NSMenuItem *item in topLevelMenu(@"Edit").itemArray) {
     if (item.action == @selector(undo:)) _undoItem = item;
@@ -543,7 +553,8 @@ RCT_EXPORT_METHOD(postSearch:(NSString *)text)
 
 /// A toolbar button pressed, by its command's id: development only, as postKey is.
 /// Development only: choose an item of a menu in the menu bar by its title, as a click on it does.
-/// Answers "chosen", "disabled" (it is there but greyed) or "none".
+/// A title ending in "…" matches by what comes before it ("Undo…" is Undo whatever it says it undoes).
+/// Answers "chosen: <title>", "disabled: <title>" (it is there but greyed) or "none".
 RCT_EXPORT_METHOD(chooseMenuItem:(NSString *)menuTitle
                   title:(NSString *)title
                   resolve:(RCTPromiseResolveBlock)resolve
@@ -552,10 +563,21 @@ RCT_EXPORT_METHOD(chooseMenuItem:(NSString *)menuTitle
   NSMenu *menu = topLevelMenu(menuTitle);
   [menu update];
   NSInteger at = [menu indexOfItemWithTitle:title];
+  if (at < 0 && [title hasSuffix:@"…"]) {
+    NSString *start = [title substringToIndex:title.length - 1];
+    for (NSInteger i = 0; i < menu.numberOfItems; i++) {
+      if ([[menu itemAtIndex:i].title hasPrefix:start]) {
+        at = i;
+        break;
+      }
+    }
+  }
   if (at < 0) return resolve(@"none");
-  if (![menu itemAtIndex:at].enabled) return resolve(@"disabled");
+  NSMenuItem *item = [menu itemAtIndex:at];
+  if (!item.enabled) return resolve([@"disabled: " stringByAppendingString:item.title]);
+  NSString *said = [@"chosen: " stringByAppendingString:item.title];
   [menu performActionForItemAtIndex:at];
-  resolve(@"chosen");
+  resolve(said);
 }
 
 RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
