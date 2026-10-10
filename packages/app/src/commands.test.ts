@@ -58,6 +58,13 @@ test("undo and redo are in Edit on Z, there only when the table has a step to ta
   assert.deepEqual(at(true, false), { undo: ["Edit", true, "<Control>z", "⌘Z"], redo: ["Edit", false, "<Control><Shift>z", "⇧⌘Z"] });
   assert.deepEqual(at(false, true).redo, ["Edit", true, "<Control><Shift>z", "⇧⌘Z"]);
   assert.equal(appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "undo")!.enabled, false);
+  // Named for what they'd act on, when the state says.
+  const labels = (undoName: string | null, redoName: string | null) =>
+    appCommands({ sidebarCollapsed: false, filesMode: false, undoName, redoName })
+      .filter((c) => c.id === "undo" || c.id === "redo")
+      .map((c) => c.label);
+  assert.deepEqual(labels(null, null), ["Undo", "Redo"]);
+  assert.deepEqual(labels("Delete Row", "Edit Title"), ["Undo Delete Row", "Redo Edit Title"]);
 });
 
 test("GTK accelerators: Control with the key, GNOME's own where it differs", () => {

@@ -930,3 +930,51 @@ test("undo on an indexed table: a change to its fields changes what the index ho
   assert.equal(s.undo[key], undefined);
   assert.equal(derive(s).canUndo, false);
 });
+
+test("undo says what it would take back: the step's name, and the commands' labels", () => {
+  const label = (s: AppState, id: string) => derive(s).commands.find((c) => c.id === id)!.label;
+  const before = run(start(), { type: "showTable", key: "crm/deals" });
+  assert.equal(derive(before).undoName, null);
+  assert.equal(label(before, "undo"), "Undo");
+  assert.equal(label(before, "redo"), "Redo");
+
+  const title = before.tables["crm/deals"]!.schema.fields.find((f) => f.name === "title")!.title ?? "title";
+  const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
+  assert.equal(derive(edited).undoName, "Add Row");
+  assert.equal(label(edited, "undo"), "Undo Add Row");
+  const once = run(edited, { type: "undo" });
+  assert.equal(label(once, "undo"), `Undo Edit ${title}`);
+  assert.equal(derive(once).redoName, "Add Row");
+  assert.equal(label(once, "redo"), "Redo Add Row");
+  // On the Files side there's no table to act on, and the labels are plain.
+  assert.equal(label(run(once, { type: "setFilesSide", files: true }), "undo"), "Undo");
+});
+
+test("undo names: each kind of edit has its own", () => {
+  const named = (...actions: AppAction[]) => derive(run(start(), ...actions)).undoName;
+  const first = rowIds(start())[0]!;
+  assert.equal(named({ type: "deleteRow", rowId: first }, { type: "answer", response: "delete" }), "Delete Row");
+  assert.equal(named({ type: "updateBody", rowId: first, content: "# Page" }), "Edit Page");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }), "Add Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "updateField", name: "extra", patch: { title: "Extra" } }), "Rename Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "updateField", name: "extra", patch: { type: "number" } }), "Change Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "moveField", name: "extra", delta: -1 }), "Move Field");
+  assert.equal(named({ type: "updateView", patch: { title: "Renamed view" } }), "Rename View");
+  assert.equal(named({ type: "updateView", patch: { sort: [] } }), "Change View");
+  assert.equal(named({ type: "addView", id: "v-new" }), "Add View");
+});
+
+test("undo names on an indexed table: its rows' edits are named as any are", () => {
+  const key = indexedStart().active;
+  const field = indexedStart().tables[key]!.schema.fields[0]!;
+  const cell = run(indexedStart(), { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  assert.equal(derive(cell).undoName, `Edit ${field.title ?? field.name}`);
+  // A field the table doesn't have is named as it was given.
+  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "p1", field: "nope", value: "A" })).undoName, "Edit nope");
+  assert.equal(derive(run(indexedStart(), { type: "addRow", id: "p-new" })).undoName, "Add Row");
+  assert.equal(derive(run(indexedStart(), { type: "updateBody", rowId: "p1", content: "a" })).undoName, "Edit Page");
+  const removed = run(indexedStart(), { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
+  assert.equal(derive(removed).undoName, "Delete Row");
+  const heard = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row: { id: "p3" }, at: 3 } } });
+  assert.equal(derive(run(heard, { type: "undo" })).redoName, "Delete Row");
+});
