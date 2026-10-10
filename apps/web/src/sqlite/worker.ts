@@ -15,6 +15,7 @@ import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
 import {
   buildSearchIndex,
+  indexKey,
   oo1Driver,
   queryIndex,
   rowsBeingBuilt,
@@ -38,7 +39,7 @@ export type Request = { id: number } & (
       | { op: "batch"; sql: string; params: SqlValue[][] }
       | { op: "ensure"; name: string; schema: TableSchema }
       | { op: "build"; name: string; schema: TableSchema }
-      | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[] }
+      | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[]; whole?: boolean }
       | { op: "search"; name: string }
       | { op: "rows"; request: RowsRequest }
       | { op: "peek"; name: string; start: number; end: number }
@@ -86,6 +87,11 @@ let serve: ((request: RowsRequest) => Promise<unknown>) | null = null;
 // When the page last asked for something: the search index's steps wait for a quiet moment.
 let lastAsked = 0;
 const timings: { what: string; ms: number; waited: number }[] = [];
+/** Keep what a thing took: the last 500, so a long job's end isn't lost behind its beginning. */
+const timed = (entry: { what: string; ms: number; waited: number }): void => {
+  if (timings.length >= 500) timings.shift();
+  timings.push(entry);
+};
 // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows.ndjson, still compressed.
 const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
 
@@ -176,18 +182,28 @@ async function kept(on: On, table: string, bytes: number): Promise<void> {
   await on.db.run("insert or replace into _kept(name, bytes) values(?, ?)", [table, bytes]);
 }
 
-async function writeRows(on: On, table: string, pieces: AsyncIterable<Uint8Array> | Iterable<Uint8Array>): Promise<void> {
+/**
+ * Write a table's rows file from its pieces. `stop` is asked before each
+ * piece: true leaves the file cut short, which isn't taken for the table
+ * (it's marked as not whole from the start), and gives false.
+ */
+async function writeRows(on: On, table: string, pieces: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, stop?: () => boolean): Promise<boolean> {
   const file = await rowsFile(on, table, true);
-  if (!file) return;
+  if (!file) return true;
   let at = 0;
   try {
+    await kept(on, table, -1);
     file.truncate(0);
-    for await (const piece of pieces) at += file.write(piece, { at });
+    for await (const piece of pieces) {
+      if (stop?.()) return false;
+      at += file.write(piece, { at });
+    }
     file.flush();
   } finally {
     file.close();
   }
   await kept(on, table, at);
+  return true;
 }
 
 async function readRows(on: On, table: string): Promise<Uint8Array | null> {
@@ -295,23 +311,10 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
     case "batch":
       return driver.batch!(req.sql, req.params);
     case "rows":
+      if (req.request.ask === "edits") edited.set(`${bundle}/${req.request.name}`, (edited.get(`${bundle}/${req.request.name}`) ?? 0) + 1);
       return serve!(req.request);
     case "peek":
       return rowsBeingBuilt(driver, req.name, req.start, req.end);
-    case "save": {
-      if (req.rows) {
-        const encoder = new TextEncoder();
-        const source = storedRows(driver, { name: req.name, schema: req.schema, ...(req.omit ? { omit: req.omit } : {}) });
-        await writeRows(
-          here(),
-          req.name,
-          (async function* () {
-            for await (const text of source) yield encoder.encode(text);
-          })(),
-        );
-      }
-      return setIndexKey(driver, req.name, "saved");
-    }
     case "close":
       held.get(bundle)?.db.close();
       held.delete(bundle);
@@ -348,25 +351,29 @@ const heard = (): Promise<void> =>
     turnstile.port2.postMessage(0);
   });
 
+/**
+ * A database asked a statement at a time, each in its turn. Before each,
+ * the worker hears what the page has sent: SQLite here answers without ever
+ * waiting, so a long job would otherwise run from start to end with every
+ * message from the page left unread.
+ */
+const steppedOver = (d: SqlDriver): SqlDriver => ({
+  exec: (sql) => heard().then(() => inTurn(() => d.exec(sql))),
+  run: (sql, params) => heard().then(() => inTurn(() => d.run(sql, params))),
+  all: (sql, params) => heard().then(() => inTurn(() => d.all(sql, params))),
+  batch: (sql, params) => heard().then(() => inTurn(() => d.batch!(sql, params))),
+});
+
 function build(req: Request & { op: "ensure" | "build" }): void {
-  const after = building.get(req.bundle) ?? Promise.resolve();
+  // A save under way has the rows file: the build reads it after.
+  const after = Promise.all([building.get(req.bundle), saving.get(req.bundle)]);
   const done = after
     .then(() => open(req.bundle))
     .then((h) => {
-      const d = h.driver;
-      // The database, asked a statement at a time, each in its turn.
-      // Before each, the worker hears what the page has sent: SQLite here answers
-      // without ever waiting, so a build would otherwise run from start to end
-      // with every message from the page left unread.
-      const stepped: SqlDriver = {
-        exec: (sql) => heard().then(() => inTurn(() => d.exec(sql))),
-        run: (sql, params) => heard().then(() => inTurn(() => d.run(sql, params))),
-        all: (sql, params) => heard().then(() => inTurn(() => d.all(sql, params))),
-        batch: (sql, params) => heard().then(() => inTurn(() => d.batch!(sql, params))),
-      };
+      const stepped = steppedOver(h.driver);
       const from = performance.now();
       return ensure({ bundle: req.bundle, db: stepped, persistent: h.persistent }, req.id, req.name, req.schema, req.op === "build").then((count) => {
-        if (timings.length < 500) timings.push({ what: req.op, ms: Math.round(performance.now() - from), waited: 0 });
+        timed({ what: req.op, ms: Math.round(performance.now() - from), waited: 0 });
         return count;
       });
     });
@@ -383,15 +390,86 @@ function build(req: Request & { op: "ensure" | "build" }): void {
   );
 }
 
+// How many edits each table (`bundle/table`) has had, for a save to know one was made while it wrote.
+const edited = new Map<string, number>();
+// Bundles with a save under way, and when each is done: one at a time has a table's rows file.
+const saving = new Map<string, Promise<unknown>>();
+let savesUnderWay = 0;
+
+/**
+ * A table's rows written out of the index to its rows file, and the index
+ * stamped as saved. Like a build it doesn't hold the queue: each piece it
+ * reads takes a turn, so the page's reads and edits are answered between
+ * them (a million rows take some twelve seconds to write).
+ *
+ * An edit made meanwhile stops it: the file would be out of date as it was
+ * finished, and the page saves again after the edit. It answers false then,
+ * and the file is left marked as not whole. A save asked for `whole` is the
+ * one a build is about to read: it runs to its end whatever happens.
+ */
+function save(req: Request & { op: "save" }): void {
+  savesUnderWay++;
+  const after = saving.get(req.bundle) ?? Promise.resolve();
+  const done = after
+    .then(() => open(req.bundle))
+    .then(async (h) => {
+      const from = performance.now();
+      const on: On = { bundle: req.bundle, db: steppedOver(h.driver), persistent: h.persistent };
+      const table = `${req.bundle}/${req.name}`;
+      const had = edited.get(table) ?? 0;
+      const editedSince = () => !req.whole && (edited.get(table) ?? 0) !== had;
+      let saved = true;
+      // Rows the file doesn't have yet are written whether or not the page knows of them:
+      // the index says (edits made before a reload, whose save was stopped or never began).
+      if (req.rows || (await indexKey(on.db, req.name)) !== "saved") {
+        const encoder = new TextEncoder();
+        const source = storedRows(on.db, { name: req.name, schema: req.schema, ...(req.omit ? { omit: req.omit } : {}) });
+        saved = await writeRows(
+          on,
+          req.name,
+          (async function* () {
+            for await (const text of source) yield encoder.encode(text);
+          })(),
+          editedSince,
+        );
+      }
+      // Stamped in one turn with the last look, so no edit comes between them.
+      if (saved) {
+        saved = await inTurn(async () => {
+          if (editedSince()) return false;
+          await setIndexKey(h.driver, req.name, "saved");
+          return true;
+        });
+      }
+      timed({ what: saved ? "save" : "save stopped", ms: Math.round(performance.now() - from), waited: 0 });
+      return saved;
+    })
+    .finally(() => {
+      savesUnderWay--;
+    });
+  saving.set(
+    req.bundle,
+    done.then(
+      () => {},
+      () => {},
+    ),
+  );
+  done.then(
+    (value) => post({ id: req.id, ok: true, value }),
+    (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
+  );
+}
+
 /** A search index is made a step at a time, each behind whatever the page asked meanwhile. */
 function searchStep(req: Request & { op: "search" }): void {
   // The page comes first: a step waits until it has asked for nothing for a moment.
-  if (Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => searchStep(req), QUIET_MS / 2);
+  // So does a save: its rows are the person's edits on their way to the file.
+  if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => searchStep(req), QUIET_MS / 2);
   inTurn(async () => {
     await use(req.bundle);
     const from = performance.now();
     const more = driver ? await buildSearchIndex(driver, req.name, SEARCH_STEP) : false;
-    if (timings.length < 500) timings.push({ what: "search step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
+    timed({ what: "search step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
     return more;
   }).then(
     (more) => {
@@ -405,6 +483,7 @@ function searchStep(req: Request & { op: "search" }): void {
 function take(req: Request): void {
   if (req.op === "ensure" || req.op === "build") return build(req);
   if (req.op === "search") return searchStep(req);
+  if (req.op === "save") return save(req);
   lastAsked = Date.now();
   void inTurn(async () => {
     try {
@@ -413,7 +492,7 @@ function take(req: Request): void {
       const from = performance.now();
       const value = req.op === "openZip" ? await openZip(req) : await handle(req);
       // What each thing asked took here, and how long it waited its turn: for measuring (BENCHMARKING.md).
-      if (timings.length < 500) timings.push({ what: req.op === "rows" ? req.request.ask : req.op, ms: Math.round((performance.now() - from) * 10) / 10, waited });
+      timed({ what: req.op === "rows" ? req.request.ask : req.op, ms: Math.round((performance.now() - from) * 10) / 10, waited });
       post({ id: req.id, ok: true, value });
     } catch (err) {
       post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) });

@@ -13,8 +13,14 @@ export interface WebDatabase extends SqlDriver {
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /** Make it again from the rows kept here: after a change to its fields. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
-  /** After edits: write the rows out of the index to the file kept beside it (when `rows`), without the keys in `omit`. */
-  save(name: string, schema: TableSchema, rows: boolean, omit?: string[]): Promise<void>;
+  /**
+   * After edits: write the rows out of the index to the file kept beside it
+   * (when `rows`), without the keys in `omit`. The worker answers reads and
+   * edits meanwhile. False when an edit made meanwhile stopped it: it's
+   * asked again after that edit. `whole` is the save a build is about to
+   * read, which nothing stops.
+   */
+  save(name: string, schema: TableSchema, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
   /** Rows of a table still being read, in file order, from those in so far. */
   peek(name: string, start: number, end: number): Promise<Row[]>;
   /** A view's rows, or edits to rows, asked of the worker in one message each (table-app's remoteViewRows, remoteEdits). */
@@ -79,7 +85,7 @@ function database(bundle: string): WebDatabase {
     batch: (sql, params) => ask({ op: "batch", sql, params }),
     ensure: (name, schema, onProgress) => ask<number>({ op: "ensure", name, schema }, onProgress),
     build: (name, schema, onProgress) => ask<number>({ op: "build", name, schema }, onProgress),
-    save: (name, schema, rows, omit) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}) }),
+    save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
     rows: (request) => ask({ op: "rows", request }),
     peek: (name, start, end) => ask<Row[]>({ op: "peek", name, start, end }),
