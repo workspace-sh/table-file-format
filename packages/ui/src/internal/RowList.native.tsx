@@ -12,10 +12,8 @@
  * and the rest) are two such lists hearing the same page, with the same
  * items and heights, so they show the same rows side by side.
  *
- * This is the web's TallRows (RowList.web.tsx), which draws a list too
- * tall for a browser the same way, and its reasoning is kept here. The
- * web's ordinary list is LegendList following the page's scroller, which
- * its native build can't do: it windows only what it scrolls itself.
+ * This is the web's list (RowList.web.tsx), which follows the page's
+ * scroller the same way, and its reasoning is kept here.
  */
 import { Fragment, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
