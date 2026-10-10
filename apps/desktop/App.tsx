@@ -87,7 +87,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, popUpChoose, popUpTitles, postRightClick, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -746,7 +746,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     query: state.search,
     onQuery: (text) => dispatch({ type: "search", text }),
     onFilter: () => dispatch({ type: "settings", open: true }),
-    accepts: (session) => session.mode === "formula",
+    formulasOnly: true,
   });
   // A row's page is written there too.
   const openPage = state.openPage;
@@ -990,6 +990,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       popUpChoose: (title: string, seconds = 1) => {
         popUpChoose(title, seconds);
         return `will choose ${title || "nothing"}`;
+      },
+      // The date picker a date cell opens: whether it's showing (left in globalThis.__datePicker), setting its date as a click in it would, closing it.
+      datePickerShown: () => {
+        void datePickerShown().then((shown) => ((globalThis as { __datePicker?: boolean }).__datePicker = shown));
+        return "asking";
+      },
+      datePickerSet: (iso: string) => {
+        datePickerSet(new Date(iso).getTime());
+        return `set ${iso}`;
+      },
+      datePickerClose: () => {
+        datePickerClose();
+        return "closed";
       },
       menuTitles,
       // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.

@@ -3325,7 +3325,7 @@ export function TableView({
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
           />
         ) : (

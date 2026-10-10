@@ -348,6 +348,44 @@ RCT_EXPORT_METHOD(popUp:(NSArray<NSDictionary *> *)items
   _popUpChoice = item.representedObject;
 }
 
+/// The system's date picker in a popover pointing at `rect` (a cell, as
+/// React measures: x, y, width, height in the content). `kind` is "date",
+/// "time" or "datetime"; `date` is milliseconds since 1970, or null for
+/// none yet. Resolves with the date chosen, or null when nothing changed.
+RCT_EXPORT_METHOD(pickDate:(NSString *)kind
+                  date:(nullable NSNumber *)date
+                  rect:(NSDictionary *)rect
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  NSView *root = TableShell.rootView;
+  if (root == nil) {
+    resolve([NSNull null]);
+    return;
+  }
+  double height = [rect[@"height"] doubleValue];
+  double y = [rect[@"y"] doubleValue];
+  NSRect at = NSMakeRect([rect[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y - height, [rect[@"width"] doubleValue], height);
+  [TableDatePicker.shared showWithKind:kind date:date rect:at in:root done:^(NSNumber *chosen) {
+    resolve(chosen ?: [NSNull null]);
+  }];
+}
+
+/// Development only: whether the date picker is showing; setting its date
+/// as a click in it would; and closing it as a click outside would.
+RCT_EXPORT_METHOD(datePickerShown:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  resolve(@(TableDatePicker.shared.isShown));
+}
+RCT_EXPORT_METHOD(datePickerSet:(nonnull NSNumber *)date)
+{
+  [TableDatePicker.shared setWithDate:date];
+}
+RCT_EXPORT_METHOD(datePickerClose)
+{
+  [TableDatePicker.shared close];
+}
+
 /// Development only: the titles of the last pop-up menu shown (a ticked one and one with a symbol are marked).
 RCT_EXPORT_METHOD(popUpTitles:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {

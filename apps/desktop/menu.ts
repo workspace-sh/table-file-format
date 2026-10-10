@@ -24,6 +24,10 @@ interface TableMenuModule {
   copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
   popUp(items: PopUpItem[], at: { x: number; y: number } | null): Promise<string | null>;
+  pickDate(kind: string, date: number | null, rect: { x: number; y: number; width: number; height: number }): Promise<number | null>;
+  datePickerShown(): Promise<boolean>;
+  datePickerSet(date: number): void;
+  datePickerClose(): void;
   popUpTitles(): Promise<string[]>;
   popUpChoose(title: string, seconds: number): void;
   postRightClick(x: number, y: number): void;
@@ -160,6 +164,31 @@ export function onSearch(then: (text: string) => void): () => void {
  */
 export function popUpMenu(items: PopUpItem[], at: { x: number; y: number } | null = null): Promise<string | null> {
   return TableMenu?.popUp(items, at) ?? Promise.resolve(null);
+}
+
+/**
+ * The system's date picker in a popover pointing at `rect` (a cell, as
+ * React measures it in the content): a calendar for a date, a field with
+ * a stepper for a time, both for a date and time. Resolves with the date
+ * chosen in milliseconds since 1970, or null when nothing changed.
+ */
+export function pickDate(
+  kind: "date" | "time" | "datetime",
+  date: number | null,
+  rect: { x: number; y: number; width: number; height: number },
+): Promise<number | null> {
+  return TableMenu?.pickDate(kind, date, rect) ?? Promise.resolve(null);
+}
+
+/** Development only: whether the date picker is showing; setting its date as a click in it would; closing it. */
+export function datePickerShown(): Promise<boolean> {
+  return TableMenu?.datePickerShown() ?? Promise.resolve(false);
+}
+export function datePickerSet(date: number): void {
+  TableMenu?.datePickerSet(date);
+}
+export function datePickerClose(): void {
+  TableMenu?.datePickerClose();
 }
 
 /**
