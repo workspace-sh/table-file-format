@@ -42,6 +42,16 @@
       "types": "./dist/sqlite-node.d.ts",
       "default": "./dist/sqlite-node.js"
     },
+    "./indexer-cases": {
+      "source": "./src/indexer.cases.ts",
+      "types": "./dist/indexer.cases.d.ts",
+      "default": "./dist/indexer.cases.js"
+    },
+    "./sqlite-expo": {
+      "source": "./src/sqlite-expo.ts",
+      "types": "./dist/sqlite-expo.d.ts",
+      "default": "./dist/sqlite-expo.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
