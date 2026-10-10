@@ -2778,7 +2778,13 @@ export function TableView({
     (startsAt(place) ? GROUP_ROW_HEIGHT + ROW_BORDER : 0);
   const rowsVersion = `${view.rowHeight ?? ""}|${JSON.stringify(view.rowHeights ?? {})}|${liveRow?.rowId ?? ""}:${liveRow?.h ?? ""}|${
     // Not the source's own version: an edit changes that, and no row's height.
-    indexed ? `${given.count}:${facts.groups.map((g) => g.start).join(",")}:${[...facts.places.values()].join(",")}` : ""
+    indexed
+      ? `${given.count}:${facts.groups.map((g) => g.start).join(",")}:${[...facts.places.values()].join(",")}`
+      : // In memory: where each group starts (an edit can move a row to another group, and its heading with it), and which rows are tall.
+        `${total}:${view.group ? inMemory.flatMap((d, place) => (d.starts ? [place] : [])).join(",") : ""}:${[...tallAt.keys()].join(",")}`
+  }|${
+    // The last row has no rule under it when nothing follows it.
+    onAddRow ? 1 : 0
   }`;
   // The selected row's grip hangs below it, over the next row.
   const rowRaised = (place: number) => !!sel && idAt(place) === sel.rowId;
