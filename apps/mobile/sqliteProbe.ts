@@ -7,6 +7,7 @@
 
 import { openDatabaseSync } from "expo-sqlite";
 import { File, Paths } from "expo-file-system";
+import { Linking } from "react-native";
 import { buildIndex, buildSearchIndex, putRows, queryIndex, rowsBeingBuilt, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
 import { expoDriver, type ExpoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { indexerCases, type CaseAssert } from "@workspace.sh/table-core/indexer-cases";
@@ -202,39 +203,153 @@ async function* bigRows(n: number): AsyncIterable<Row> {
 }
 
 /** The longest the JS thread went without running a timer while `run` ran: how long a frame's JS would have waited. */
-async function longestStall<T>(run: () => Promise<T>): Promise<[number, T]> {
-  let last = performance.now();
+/**
+ * React's own clock: during a build, at most every 100 ms, a render is asked for (app/sqlite.tsx's
+ * heartbeat) and the time until it is committed is noted. That is how long a screen update would wait.
+ */
+export const heartbeat = {
+  render: null as null | (() => void),
+  askedAt: 0,
+  lastAsk: 0,
+  longest: 0,
+  renders: 0,
+  reset() {
+    this.askedAt = 0;
+    this.lastAsk = 0;
+    this.longest = 0;
+    this.renders = 0;
+  },
+  ask() {
+    const now = performance.now();
+    if (!this.render || this.askedAt || now - this.lastAsk < 100) return;
+    this.askedAt = now;
+    this.lastAsk = now;
+    this.render();
+  },
+  committed() {
+    if (!this.askedAt) return;
+    this.longest = Math.max(this.longest, performance.now() - this.askedAt);
+    this.askedAt = 0;
+    this.renders++;
+  },
+};
+
+// What the driver is doing, for reading a stall: the statement in flight, the last one done, and time spent waiting on SQLite.
+const trace = { inFlight: "", lastDone: "", waitingMs: 0, calls: 0 };
+const label = (sql: string) => sql.replace(/\s+/g, " ").slice(0, 70);
+
+async function longestStall<T>(run: () => Promise<T>, stalls?: Results[]): Promise<[number, T]> {
+  const start = performance.now();
+  let last = start;
+  heartbeat.reset();
   let longest = 0;
+  const note = (now: number) => {
+    const gap = now - last;
+    longest = Math.max(longest, gap);
+    if (stalls && gap > 250 && stalls.length < 40)
+      stalls.push({ atMs: Math.round(last - start), gapMs: Math.round(gap), inFlight: trace.inFlight, lastDone: trace.lastDone, calls: trace.calls });
+  };
   const timer = setInterval(() => {
     const now = performance.now();
-    longest = Math.max(longest, now - last);
+    note(now);
     last = now;
   }, 8);
+  // Two more clocks, to tell which thread a stall is on. iOS fires React Native's timers from the
+  // main thread, and frames come from its display link; a ping on another SQLite connection comes
+  // back to JS from a background queue and needs no main thread at all.
+  const clocks = { frameGapMs: 0, pingGapMs: 0, mainGapMs: 0 };
+  let running = true;
+  let lastFrame = start;
+  const frame = (t: number) => {
+    clocks.frameGapMs = Math.max(clocks.frameGapMs, t - lastFrame);
+    lastFrame = t;
+    if (running) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  const pingDb = stalls ? openDatabaseSync(":memory:", OPEN) : null;
+  const pinging = (async () => {
+    let lastPing = performance.now();
+    while (running && pingDb) {
+      await pingDb.getFirstAsync("select 1 as x");
+      const now = performance.now();
+      clocks.pingGapMs = Math.max(clocks.pingGapMs, now - lastPing);
+      lastPing = now;
+      await new Promise<void>((go) => queueMicrotask(go));
+    }
+  })();
+  // And the main thread itself: RCTLinkingManager answers on the main queue.
+  const onMain = (async () => {
+    let lastMain = performance.now();
+    while (running && stalls) {
+      await Linking.getInitialURL();
+      const now = performance.now();
+      clocks.mainGapMs = Math.max(clocks.mainGapMs, now - lastMain);
+      lastMain = now;
+      await new Promise<void>((go) => queueMicrotask(go));
+    }
+  })();
   try {
     const out = await run();
     // A thread held to the end never ran the timer at all: that wait counts too.
-    longest = Math.max(longest, performance.now() - last);
+    note(performance.now());
+    if (stalls)
+      stalls.push({
+        clocks: {
+          timerGapMs: Math.round(longest),
+          frameGapMs: Math.round(clocks.frameGapMs),
+          pingGapMs: Math.round(clocks.pingGapMs),
+          mainGapMs: Math.round(clocks.mainGapMs),
+          reactRenderWaitMs: Math.round(heartbeat.askedAt ? Math.max(heartbeat.longest, performance.now() - heartbeat.askedAt) : heartbeat.longest),
+          reactRenders: heartbeat.renders,
+        },
+      });
     return [Math.round(longest), out];
   } finally {
+    running = false;
     clearInterval(timer);
+    await pinging;
+    await onMain;
+    pingDb?.closeSync();
   }
 }
 
 /** A driver that counts the statements asked of it: each is a crossing to SQLite and back. */
 function counting(driver: ExpoDriver): ExpoDriver & { crossings: number } {
+  const track = <T,>(sql: string, call: () => Promise<T>): Promise<T> => {
+    out.crossings++;
+    trace.calls++;
+    heartbeat.ask();
+    const t = performance.now();
+    trace.inFlight = label(sql);
+    return call().finally(() => {
+      trace.waitingMs += performance.now() - t;
+      trace.lastDone = label(sql);
+      trace.inFlight = "";
+    });
+  };
   const out = {
     crossings: 0,
-    exec: (sql: string) => (out.crossings++, driver.exec(sql)),
-    run: (sql: string, params?: Parameters<ExpoDriver["run"]>[1]) => (out.crossings++, driver.run(sql, params)),
-    all: (sql: string, params?: Parameters<ExpoDriver["all"]>[1]) => (out.crossings++, driver.all(sql, params)),
-    batch: (sql: string, lists: Parameters<NonNullable<ExpoDriver["batch"]>>[1]) => (out.crossings++, driver.batch!(sql, lists)),
+    exec: (sql: string) => track(sql, () => driver.exec(sql)),
+    run: (sql: string, params?: Parameters<ExpoDriver["run"]>[1]) => track(sql, () => driver.run(sql, params)),
+    all: (sql: string, params?: Parameters<ExpoDriver["all"]>[1]) => track(sql, () => driver.all(sql, params)),
+    batch: (sql: string, lists: Parameters<NonNullable<ExpoDriver["batch"]>>[1]) => track(`batch of ${lists.length}: ${sql}`, () => driver.batch!(sql, lists)),
     close: () => driver.close(),
   };
   return out;
 }
 
 /** big-table-index.mts's timings, at `n` rows, into a file in the app's documents, plus a search before and after its index is whole. */
-export async function timings(n: number, mode: Mode): Promise<Results> {
+/** How a timing run builds: the driver's yield budget (ms between macrotasks, 0 for none) and buildIndex's batch size. */
+export interface Build {
+  yieldAfterMs?: number;
+  /** buildIndex's commitEvery: a transaction per so many rows. */
+  commitEvery?: number;
+  /** `pragma wal_autocheckpoint` during the build; SQLite's default (1000 pages) when unset. 0 turns it off, and the WAL is checkpointed after. */
+  autocheckpoint?: number;
+  batchSize?: number;
+}
+
+export async function timings(n: number, mode: Mode, build: Build = {}): Promise<Results> {
   const name = `probe-${n}-${mode}.sqlite`;
   const file = new File(Paths.document, "SQLite", name);
   if (file.exists) file.delete();
@@ -244,13 +359,17 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
   }
   const raw = openDatabaseSync(name, OPEN);
   raw.execSync("pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal;");
-  const driver = counting(expoDriver(raw, mode));
+  if (build.autocheckpoint !== undefined) raw.execSync(`pragma wal_autocheckpoint = ${build.autocheckpoint};`);
+  const driver = counting(expoDriver(raw, mode, { yieldAfterMs: build.yieldAfterMs }));
   const schema = BIG_SCHEMA;
-  const out: Results = { rows: n, mode };
+  const out: Results = { rows: n, mode, ...build };
   try {
     // While it builds: rows 20,000 to 20,200 as soon as they're in, read on the build's own connection.
     const started = performance.now();
-    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later" })));
+    const stalls: Results[] = [];
+    trace.waitingMs = 0;
+    trace.calls = 0;
+    const building = longestStall(() => ms(() => buildIndex(driver, { name: "deals", schema, rows: bigRows(n), key: "k", search: "later", batchSize: build.batchSize, commitEvery: build.commitEvery })), stalls);
     let done = false;
     void building.then(() => (done = true));
     const midBuild: Results[] = [];
@@ -265,6 +384,21 @@ export async function timings(n: number, mode: Mode): Promise<Results> {
     }
     const [stall, [buildMs]] = await building;
     out.rowsInMs = buildMs;
+    out.buildWaitingOnSqliteMs = Math.round(trace.waitingMs);
+    out.buildCalls = trace.calls;
+    out.stallsOver250Ms = stalls;
+    out.pragmas = {
+      journal_mode: raw.getFirstSync<{ journal_mode: string }>("pragma journal_mode")?.journal_mode,
+      synchronous: raw.getFirstSync<{ synchronous: number }>("pragma synchronous")?.synchronous,
+      wal_autocheckpoint: raw.getFirstSync<{ wal_autocheckpoint: number }>("pragma wal_autocheckpoint")?.wal_autocheckpoint,
+      page_size: raw.getFirstSync<{ page_size: number }>("pragma page_size")?.page_size,
+    };
+    if (build.autocheckpoint === 0) {
+      // The WAL the build left, written into the database: what a host would do after, in the background.
+      const [checkpointStall, [checkpointMs]] = await longestStall(() => ms(() => driver.exec("pragma wal_checkpoint(truncate);")));
+      out.checkpointAfterMs = checkpointMs;
+      out.longestTimerGapWhileCheckpointingMs = checkpointStall;
+    }
     out.longestJsStallWhileBuildingMs = stall;
     const open = (query: IndexQuery) => queryIndex(driver, { name: "deals", schema, query });
 

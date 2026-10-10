@@ -21,6 +21,7 @@ export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { PageGutter } from "./pageGutter";
 export { notifyLayoutChanged } from "./internal/relayout";
 export { PageReveal, type PageRevealRect } from "./pageReveal";
+export { PageScrollContext, pageScrollOver, type PageScroll } from "./pageScroll";
 export { PanelSurface, type PanelSurfaceComponent } from "./panelSurface";
 export { ViewSettings, type ViewSettingsProps } from "./ViewSettings";
 export { DisplayControls, type DisplayControlsProps } from "./DisplayControls";
