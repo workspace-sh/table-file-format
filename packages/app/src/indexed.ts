@@ -235,6 +235,9 @@ export async function buildIndexFromBytes(
     bodies?: Record<string, string>;
     key: string;
     onProgress?: (done: number, total: number) => void;
+    /** Rows per transaction and per batch, as buildIndex takes them: for a device that stalls on a long commit or a long batch. */
+    commitEvery?: number;
+    batchSize?: number;
   },
 ): Promise<number> {
   const whole = options.rows instanceof Uint8Array ? options.rows : null;
@@ -257,7 +260,16 @@ export async function buildIndexFromBytes(
       yield row;
     }
   }
-  await buildIndex(db, { name: options.name, schema: options.schema, rows: streamed(), bodies: options.bodies, key: options.key, search: "later" });
+  await buildIndex(db, {
+    name: options.name,
+    schema: options.schema,
+    rows: streamed(),
+    bodies: options.bodies,
+    key: options.key,
+    search: "later",
+    ...(options.commitEvery !== undefined ? { commitEvery: options.commitEvery } : {}),
+    ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
+  });
   options.onProgress?.(done, done);
   return done;
 }
