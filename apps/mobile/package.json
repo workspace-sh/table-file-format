@@ -36,6 +36,7 @@
     "expo-linking": "~55.0.15",
     "expo-router": "~55.0.14",
     "expo-sharing": "~55.0.19",
+    "expo-sqlite": "~55.0.20",
     "expo-symbols": "~55.0.8",
     "expo-system-ui": "~55.0.18",
     "react": "19.2.0",
