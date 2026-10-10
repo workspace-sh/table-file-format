@@ -294,7 +294,32 @@ The JS thread is not blocked (the second-connection ping never waited more than 
 
 **The likely mechanism.** In React Native 0.83 without the bridge, JS timers are fired by an `RCTDisplayLink` added to the JS thread's own run loop (`ReactCommon/react/runtime/platform/ios/ReactCommon/RCTInstance.mm`, line 436: `[strongSelf->_displayLink addToRunLoop:[NSRunLoop currentRunLoop]]`, called on the JS thread). While expo-sqlite's results keep arriving, the JS thread runs them back to back and the display link isn't serviced. A `setTimeout(0)` yield is itself held up by this, at about 90 ms each, which is why yielding is so expensive in async mode. This is a reading of the source plus the clocks above, not a proven cause.
 
-**Not measured yet:** sync mode with a yield (`yieldAfterMs` 30 and 50). Nothing is in flight while a sync driver yields, so a yield should cost about a frame rather than 90 ms; if 100,000 rows come in at 9 to 10 s with gaps under about 100 ms, that settles the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
+**The mechanism, reproduced in the Simulator.** Three things in React Native 0.83's source fit the phone's numbers:
+
+- its scheduler runs every task that is queued before it goes back to the JS thread's run loop (`RuntimeScheduler_Modern::runEventLoop`);
+- timers fire only from a display link on that run loop (`RCTInstance.mm`, `RCTTiming`), so they wait for as long as the queue is never empty;
+- a native call's result is queued to run at once, and a React render at normal priority, which may wait behind such results for up to 5 s (`SchedulerPriorityUtils.h`).
+
+A sync build that yields to something other than a timer shows all of it on a Mac (iPhone 17 Pro Simulator, iOS 26.0, Debug, 100,000 rows; the probe's `sitting=1`, which runs every arrangement in turn):
+
+| Mode | Yield every 30 ms to | Rows in | Longest timer gap | Longest React render wait | Rows read mid-build |
+|---|---|---|---|---|---|
+| async | nothing | 12.5 s | 0.41 s | 0.02 s | yes |
+| async | a timer (every 100 ms) | 13.3 s | 0.23 s | 0.01 s | yes |
+| async | the scheduler | 12.4 s | 0.22 s | 0.02 s | yes |
+| async | a call answered on the main queue | 12.2 s | 0.22 s | 0.02 s | yes |
+| async | a call answered on a background queue | 12.2 s | 0.23 s | 0.02 s | yes |
+| sync | a timer | 12.3 s | 0.10 s | 0.04 s | yes |
+| sync | the scheduler | 12.3 s | the whole build | 0.05 s | no |
+| sync | a call answered on the main queue | 12.3 s | the whole build | 5.05 s | no |
+| sync | a call answered on a background queue | 12.7 s | 8.1 s | 0.77 s | no |
+| sync | the scheduler, and a timer every 300 ms | 12.3 s | 0.42 s | 0.11 s | yes |
+
+- A yield to the scheduler lets React render and nothing else: the queue is never empty, so the run loop is never reached and no timer fires for the whole build.
+- A yield to a native call starves React as well: the call's result runs ahead of the render until the render has waited its 5 s. That is the phone's own figure (renders waiting 3.7 to 4.4 s, timers 3 to 9 s), which is what an async build on a phone would be if its results arrive before the queue empties. A Mac leaves a gap between them, which would be why the Simulator's async build shows nothing.
+- Only a timer takes the JS thread back to its run loop. On the phone a timer yield cost about 90 ms in async mode; what it costs in sync mode, with nothing else queued, is the number still wanted. The last row needs a tenth as many of them.
+
+**Not measured yet, on a phone:** the sitting above. Sync with a timer yield, and sync with the scheduler and a timer every 300 ms, are the two that could settle the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
 
 **If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
@@ -316,7 +341,7 @@ xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer 
   --domain-identifier sh.workspace.table.mobile --source Documents/sqlite-probe.json --destination probe.json
 ```
 
-Link parameters: `rows` (comma-separated sizes), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
+Link parameters: `rows` (comma-separated sizes), `sitting` (`1` runs every arrangement in the table above in turn, each under its own name: `sqlite?rows=100000&cases=0&sitting=1`), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `via` (what a yield waits on: `timer`, `scheduler`, `main`, `background`, `mixed`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
