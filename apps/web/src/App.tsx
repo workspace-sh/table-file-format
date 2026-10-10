@@ -553,6 +553,8 @@ export function App() {
       },
       // What the index worker's answers took, for a bundle held in it.
       workerTimings: (bundle: string) => indexed.timings(bundle),
+      // Any action, as the app's own controls send them.
+      act: (action: Parameters<typeof dispatch>[0]) => flushSync(() => dispatch(action)),
       // Whether there's a step to undo or redo, and how many edits wait on the index.
       undoing: () => ({ canUndo: measured.current.canUndo, canRedo: measured.current.canRedo, queued: measured.current.queued }),
       // Milliseconds to edit a row's title in the table on screen and render it.
