@@ -38,6 +38,11 @@
   NSMutableSet<NSString *> *_disabled;
   BOOL _observed;
   BOOL _unsaved;
+  /// Edit › Undo and Redo, once they are the table's as well as a text field's (setUndo).
+  NSMenuItem *_undoItem;
+  NSMenuItem *_redoItem;
+  BOOL _canUndo;
+  BOOL _canRedo;
   /// What was chosen from the pop-up menu on screen (popUp).
   NSString *_popUpChoice;
   /// Development only: the last pop-up menu's titles, and a choice to make from the next one.
@@ -224,7 +229,53 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
 // AppKit enables an item whose target answers its action; this says which don't, for now.
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
+  if (item == _undoItem || item == _redoItem) {
+    // Text being typed has its own undo; anywhere else it is the table's.
+    NSUndoManager *typing = [self typingUndoManager];
+    if (typing != nil) return item == _undoItem ? typing.canUndo : typing.canRedo;
+    return item == _undoItem ? _canUndo : _canRedo;
+  }
   return ![_disabled containsObject:item.representedObject];
+}
+
+/// The undo manager of the text being typed in the key window, when that is where the keyboard is.
+- (NSUndoManager *)typingUndoManager
+{
+  NSResponder *first = NSApp.keyWindow.firstResponder;
+  return [first isKindOfClass:[NSText class]] ? first.undoManager : nil;
+}
+
+/// Edit › Undo and Redo (⌘Z, ⇧⌘Z) undo the table's last edit, and redo it,
+/// whenever no text is being typed; in a text field they stay the text's
+/// own. The items are AppKit's, in their usual place: they are given this
+/// as their target, and are enabled by whichever of the two they'd act on.
+RCT_EXPORT_METHOD(setUndo:(BOOL)canUndo canRedo:(BOOL)canRedo)
+{
+  _canUndo = canUndo;
+  _canRedo = canRedo;
+  if (_undoItem != nil) return;
+  for (NSMenuItem *item in topLevelMenu(@"Edit").itemArray) {
+    if (item.action == @selector(undo:)) _undoItem = item;
+    else if (item.action == @selector(redo:)) _redoItem = item;
+  }
+  _undoItem.target = self;
+  _undoItem.action = @selector(undoChosen:);
+  _redoItem.target = self;
+  _redoItem.action = @selector(redoChosen:);
+}
+
+- (void)undoChosen:(NSMenuItem *)item
+{
+  NSUndoManager *typing = [self typingUndoManager];
+  if (typing != nil) [typing undo];
+  else if (_observed) [self sendEventWithName:@"menu" body:@{ @"id" : @"undo" }];
+}
+
+- (void)redoChosen:(NSMenuItem *)item
+{
+  NSUndoManager *typing = [self typingUndoManager];
+  if (typing != nil) [typing redo];
+  else if (_observed) [self sendEventWithName:@"menu" body:@{ @"id" : @"redo" }];
 }
 
 RCT_EXPORT_METHOD(copyText:(NSString *)text)
@@ -491,6 +542,22 @@ RCT_EXPORT_METHOD(postSearch:(NSString *)text)
 }
 
 /// A toolbar button pressed, by its command's id: development only, as postKey is.
+/// Development only: choose an item of a menu in the menu bar by its title, as a click on it does.
+/// Answers "chosen", "disabled" (it is there but greyed) or "none".
+RCT_EXPORT_METHOD(chooseMenuItem:(NSString *)menuTitle
+                  title:(NSString *)title
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  NSMenu *menu = topLevelMenu(menuTitle);
+  [menu update];
+  NSInteger at = [menu indexOfItemWithTitle:title];
+  if (at < 0) return resolve(@"none");
+  if (![menu itemAtIndex:at].enabled) return resolve(@"disabled");
+  [menu performActionForItemAtIndex:at];
+  resolve(@"chosen");
+}
+
 RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
 {
   [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
