@@ -128,18 +128,16 @@ function Editor({
           )}
         </View>
       )}
-      {/* The formula in its colours, as it stands: the field below is plain text. */}
-      {spans && spans.length > 0 && (
-        <Text numberOfLines={2} style={[styles.echo, { color: ink }]}>
-          {coloured(text, spans, dark)}
-        </Text>
-      )}
       <View style={styles.row}>
         {state.prefix !== undefined && <Text style={[styles.value, { color: dim }]}>{state.prefix}</Text>}
         <TextInput
           ref={field}
           autoFocus
-          value={text}
+          // A formula shows its colours in the field itself, as styled runs; anything else is plain text.
+          {...(spans && spans.length > 0 ? {} : { value: text })}
+          // Long formulas wrap rather than run out of the field; Return still saves.
+          multiline={state.mode === "formula"}
+          submitKeyEvents={state.mode === "formula" ? [{ key: "Enter" }] : undefined}
           selection={moveTo}
           onChangeText={change}
           onSelectionChange={(e) => (caret.current = e.nativeEvent.selection)}
@@ -150,7 +148,9 @@ function Editor({
           autoCorrect={false}
           spellCheck={false}
           style={[styles.field, { color: ink, backgroundColor: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }, state.mode === "formula" && styles.mono]}
-        />
+        >
+          {spans && spans.length > 0 ? coloured(text, spans, dark) : undefined}
+        </TextInput>
       </View>
       <View style={styles.foot}>
         {state.chips?.map((chip) => (
@@ -232,9 +232,8 @@ const styles = StyleSheet.create({
   workingValue: { fontSize: 12, fontVariant: ["tabular-nums"] },
   strong: { fontWeight: "600" },
   link: { fontSize: 12, paddingTop: 2 },
-  echo: { fontFamily: MONO, fontSize: 13 },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  field: { flex: 1, height: 30, borderRadius: 8, paddingHorizontal: 10, fontSize: 14 },
+  field: { flex: 1, minHeight: 30, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 14 },
   foot: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
   chip: { minWidth: 30, height: 24, paddingHorizontal: 8, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   chipText: { fontSize: 13, fontFamily: MONO },

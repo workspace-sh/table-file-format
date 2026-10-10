@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m b/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
-index 361bf4b..f1f2309 100644
+index 361bf4b..7e4aaa5 100644
 --- a/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
 +++ b/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
-@@ -9,12 +9,33 @@
+@@ -9,12 +9,34 @@
  #import "RNPanHandler.h"
  #import "RNGHStylusData.h"
  
@@ -14,14 +14,15 @@ index 361bf4b..f1f2309 100644
 +// window, and with an unflipped content view (an NSSplitView, say) y runs the wrong way.
 +static NSView *RNGHAbsoluteSpace(NSView *view)
 +{
-+  NSView *root = nil;
++  // The nearest root component view: the surface views around it can sit inside a scroll view that
++  // takes the toolbar's insets, so they don't start where the root does.
++  NSView *surface = nil;
 +  for (NSView *v = view; v != nil; v = v.superview) {
 +    NSString *name = NSStringFromClass([v class]);
-+    if ([name containsString:@"RootComponentView"] || [name containsString:@"SurfaceView"]) {
-+      root = v;
-+    }
++    if ([name isEqualToString:@"RCTRootComponentView"]) return v;
++    if (surface == nil && [name containsString:@"SurfaceView"]) surface = v;
 +  }
-+  return root ?: view.window.contentView;
++  return surface ?: view.window.contentView;
 +}
 +#endif
 +
@@ -36,7 +37,7 @@ index 361bf4b..f1f2309 100644
  @interface RNBetterPanGestureRecognizer : UIPanGestureRecognizer
  #endif
  
-@@ -283,7 +304,7 @@ - (void)updateHasCustomActivationCriteria
+@@ -283,7 +305,7 @@ - (void)updateHasCustomActivationCriteria
  - (BOOL)shouldFailUnderCustomCriteria
  {
  #if TARGET_OS_OSX
@@ -45,7 +46,7 @@ index 361bf4b..f1f2309 100644
  #else
    CGPoint trans = [self translationInView:self.view.window];
  #endif
-@@ -311,7 +332,7 @@ - (BOOL)shouldFailUnderCustomCriteria
+@@ -311,7 +333,7 @@ - (BOOL)shouldFailUnderCustomCriteria
  - (BOOL)shouldActivateUnderCustomCriteria
  {
  #if TARGET_OS_OSX
@@ -54,7 +55,7 @@ index 361bf4b..f1f2309 100644
  #else
    CGPoint trans = [self translationInView:self.view.window];
  #endif
-@@ -448,9 +469,9 @@ - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+@@ -448,9 +470,9 @@ - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
  - (RNGestureHandlerEventExtraData *)eventExtraData:(NSPanGestureRecognizer *)recognizer
  {
    return [RNGestureHandlerEventExtraData forPan:[recognizer locationInView:recognizer.view]
@@ -68,10 +69,10 @@ index 361bf4b..f1f2309 100644
                                  withPointerType:RNGestureHandlerMouse
                                   withStylusData:nil];
 diff --git a/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm b/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
-index 27a0572..6752d02 100644
+index 27a0572..4b2a5c3 100644
 --- a/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
 +++ b/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
-@@ -15,6 +15,28 @@
+@@ -15,6 +15,29 @@
  #import <React/RCTScrollViewComponentView.h>
  #else
  #import <React/RCTScrollView.h>
@@ -88,19 +89,20 @@ index 27a0572..6752d02 100644
 +// window, and with an unflipped content view (an NSSplitView, say) y runs the wrong way.
 +static NSView *RNGHAbsoluteSpace(NSView *view)
 +{
-+  NSView *root = nil;
++  // The nearest root component view: the surface views around it can sit inside a scroll view that
++  // takes the toolbar's insets, so they don't start where the root does.
++  NSView *surface = nil;
 +  for (NSView *v = view; v != nil; v = v.superview) {
 +    NSString *name = NSStringFromClass([v class]);
-+    if ([name containsString:@"RootComponentView"] || [name containsString:@"SurfaceView"]) {
-+      root = v;
-+    }
++    if ([name isEqualToString:@"RCTRootComponentView"]) return v;
++    if (surface == nil && [name containsString:@"SurfaceView"]) surface = v;
 +  }
-+  return root ?: view.window.contentView;
++  return surface ?: view.window.contentView;
 +}
  #endif
  
  @interface UIGestureRecognizer (GestureHandler)
-@@ -264,7 +286,7 @@ - (RNGestureHandlerEventExtraData *)eventExtraData:(UIGestureRecognizer *)recogn
+@@ -264,7 +287,7 @@ - (RNGestureHandlerEventExtraData *)eventExtraData:(UIGestureRecognizer *)recogn
  {
  #if TARGET_OS_OSX
    return [RNGestureHandlerEventExtraData forPosition:[recognizer locationInView:recognizer.view]
