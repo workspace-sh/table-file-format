@@ -147,11 +147,12 @@ export interface AppState {
  * here: the edit itself (`forth`, which redo makes again) and the one that
  * undoes it (`back`), which for a cell or a row removed only the index
  * knows, so it's null until the app has made the edit (`n`) and said;
- * `page` is the page of a row removed, to go back with it. `run` is given
+ * `page` is the page of a row removed, to go back with it. `name` says
+ * what the edit was, for a menu ("Delete Row": Undo Delete Row). `run` is given
  * to edits that are one stretch of the same thing (typing in a page),
  * which undo as one.
  */
-export type UndoStep = { run?: string } & ({ table: ParsedTable } | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } });
+export type UndoStep = { name: string; run?: string } & ({ table: ParsedTable } | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } });
 
 /** The most steps kept for a table, the fewest, and the rows those steps may list between them. */
 const UNDO_STEPS = 100;
@@ -369,7 +370,7 @@ function placeOf(state: AppState): Place {
  * (`queued`), and an edit to its fields changes what the index holds, so
  * what was kept before it is let go.
  */
-function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
+function edit(state: AppState, name: string, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
   const tables = onTable(state.tables, key, change);
   if (tables === state.tables) return state;
   const next = { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
@@ -385,9 +386,18 @@ function edit(state: AppState, change: (table: ParsedTable) => ParsedTable, key 
   const past =
     run !== undefined && last?.run === run
       ? stack.past
-      : [...stack.past, { table: before, ...(run !== undefined ? { run } : {}) }].slice(-stepsKept(before));
+      : [...stack.past, { name, table: before, ...(run !== undefined ? { run } : {}) }].slice(-stepsKept(before));
   return { ...next, undo: { ...state.undo, [key]: { past, future: [] } } };
 }
+
+/** What an edit to a cell is called: "Edit Title", by the field's title. */
+function cellEditName(state: AppState, field: string, key = state.active): string {
+  const title = state.tables[key]?.schema.fields.find((f) => f.name === field)?.title;
+  return `Edit ${title ?? field}`;
+}
+
+/** A change that is only a new title: a rename. */
+const onlyTitle = (patch: object): boolean => Object.keys(patch).length === 1 && "title" in patch;
 
 /** How many steps a table keeps: fewer for a long one, each of whose row edits keeps a list of every row. */
 function stepsKept(table: ParsedTable): number {
@@ -424,7 +434,7 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
     ...state,
     tables: { ...state.tables, [key]: table },
     dirty: marked(state.dirty, bundleOf(key)),
-    undo: moved({ table: now, ...run }),
+    undo: moved({ name: step.name, table: now, ...run }),
   };
 }
 
@@ -444,18 +454,18 @@ function runEnded(state: AppState, key: string): AppState {
  * once it's made). Without `step` nothing is kept: the edit is an undo or
  * a redo itself.
  */
-function queued(state: AppState, key: string, edit: IndexEdit, step?: { back: IndexEdit | null; run?: string; page?: string }): AppState {
+function queued(state: AppState, key: string, edit: IndexEdit, step?: { name: string; back: IndexEdit | null; run?: string; page?: string }): AppState {
   const n = (state.indexWork.at(-1)?.n ?? 0) + 1;
   const next = { ...state, indexWork: [...state.indexWork, { ...edit, n, key }] };
   if (!step) return next;
-  const { back, run, page } = step;
+  const { name, back, run, page } = step;
   const stack = state.undo[key] ?? { past: [], future: [] };
   const last = stack.past.at(-1);
   // Another edit of the same stretch: undo still goes back to before the first, and redo makes the last.
   const past =
     run !== undefined && last?.run === run && "rows" in last
       ? [...stack.past.slice(0, -1), { ...last, rows: { ...last.rows, forth: edit } }]
-      : [...stack.past, { rows: { n, back, forth: edit, ...(page !== undefined ? { page } : {}) }, ...(run !== undefined ? { run } : {}) }].slice(-UNDO_STEPS);
+      : [...stack.past, { name, rows: { n, back, forth: edit, ...(page !== undefined ? { page } : {}) }, ...(run !== undefined ? { run } : {}) }].slice(-UNDO_STEPS);
   return { ...next, undo: { ...state.undo, [key]: { past, future: [] } } };
 }
 
@@ -567,7 +577,7 @@ function step(state: AppState, action: AppAction): AppState {
       if (action.open === state.settingsOpen) return state;
       const before = state.settingsBefore;
       if (action.open || !action.revert || !before || !state.tables[before.key]) return { ...state, settingsOpen: action.open };
-      const reverted = edit(state, (t) => (t.views === before.views ? t : { ...t, views: before.views }), before.key);
+      const reverted = edit(state, "Change View", (t) => (t.views === before.views ? t : { ...t, views: before.views }), before.key);
       const { [before.key]: _, ...others } = state.arrangements;
       return {
         ...reverted,
@@ -579,19 +589,19 @@ function step(state: AppState, action: AppAction): AppState {
 
     case "updateRow":
       if (state.tables[state.active]?.indexed) {
-        return queued(state, state.active, { kind: "cell", rowId: action.rowId, field: action.field, value: action.value }, { back: null });
+        return queued(state, state.active, { kind: "cell", rowId: action.rowId, field: action.field, value: action.value }, { name: cellEditName(state, action.field), back: null });
       }
-      return edit(state, (t) => withCell(t, action.rowId, action.field, action.value));
+      return edit(state, cellEditName(state, action.field), (t) => withCell(t, action.rowId, action.field, action.value));
     case "addRow":
       if (state.tables[state.active]?.indexed) {
-        return queued(state, state.active, { kind: "add", rowId: action.id }, { back: { kind: "remove", rowId: action.id } });
+        return queued(state, state.active, { kind: "add", rowId: action.id }, { name: "Add Row", back: { kind: "remove", rowId: action.id } });
       }
-      return edit(state, (t) => withRow(t, action.id));
+      return edit(state, "Add Row", (t) => withRow(t, action.id));
     case "insertRow": {
       // Only in a Sheet view whose order isn't decided by a sort (D41).
       const view = currentView(state);
       if (!view || !isSheet(view) || !canInsertAt(view)) return state;
-      return edit(state, (t) => withRowAt(t, view.id, action.anchor, action.where, action.id));
+      return edit(state, "Add Row", (t) => withRowAt(t, view.id, action.anchor, action.where, action.id));
     }
     case "deleteRow": {
       const table = state.tables[state.active];
@@ -604,29 +614,29 @@ function step(state: AppState, action: AppAction): AppState {
       if (state.tables[key]?.indexed) {
         // The page is held here; the index hears of it for its search.
         const was = state.tables[key]!.bodies?.[action.rowId] ?? "";
-        const held = edit(state, (t) => withIndexedBody(t, action.rowId, action.content), key);
+        const held = edit(state, "Edit Page", (t) => withIndexedBody(t, action.rowId, action.content), key);
         if (held === state) return state;
         // Each save of a page while it's typed in is one stretch: undo takes it back whole.
-        return queued(held, key, { kind: "body", rowId: action.rowId, content: action.content }, { back: { kind: "body", rowId: action.rowId, content: was }, run: `page:${action.rowId}` });
+        return queued(held, key, { kind: "body", rowId: action.rowId, content: action.content }, { name: "Edit Page", back: { kind: "body", rowId: action.rowId, content: was }, run: `page:${action.rowId}` });
       }
-      return edit(state, (t) => withBody(t, action.rowId, action.content), action.table, `page:${action.rowId}`);
+      return edit(state, "Edit Page", (t) => withBody(t, action.rowId, action.content), action.table, `page:${action.rowId}`);
     }
     case "updateField":
-      return edit(state, (t) => withFieldPatch(t, action.name, action.patch));
+      return edit(state, onlyTitle(action.patch) ? "Rename Field" : "Change Field", (t) => withFieldPatch(t, action.name, action.patch));
     case "addField":
-      return edit(state, (t) => withField(t, action.field, viewIdOf(state, state.active)));
+      return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active)));
     case "moveField":
-      return edit(state, (t) => withFieldMoved(t, action.name, action.delta));
+      return edit(state, "Move Field", (t) => withFieldMoved(t, action.name, action.delta));
     case "restoreSchema":
-      return edit(state, (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
+      return edit(state, "Change Fields", (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
     case "addChoice":
-      return edit(state, (t) => withChoice(t, action.name, action.value));
+      return edit(state, "Add Choice", (t) => withChoice(t, action.name, action.value));
     case "removeChoice": {
       // Rows that hold it lose it, so ask first; none hold it, it just goes.
       const table = state.tables[state.active];
       if (!table) return state;
       const prompt = removingChoice(table, action.name, action.value);
-      if (!prompt) return edit(state, (t) => withoutChoice(t, action.name, action.value));
+      if (!prompt) return edit(state, "Remove Choice", (t) => withoutChoice(t, action.name, action.value));
       return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "removeChoice", key: state.active, name: action.name, value: action.value } } };
     }
     case "deleteField": {
@@ -641,11 +651,11 @@ function step(state: AppState, action: AppAction): AppState {
       if (prompt) {
         return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "updateView", key: state.active, viewId: view.id, patch: action.patch } } };
       }
-      return edit(state, (t) => withViewPatch(t, view.id, action.patch));
+      return edit(state, onlyTitle(action.patch) ? "Rename View" : "Change View", (t) => withViewPatch(t, view.id, action.patch));
     }
     case "addView": {
       // A plain table of everything; its settings open, where it's made into what's wanted.
-      const edited = edit(state, (t) => withView(t, newView(action.id)));
+      const edited = edit(state, "Add View", (t) => withView(t, newView(action.id)));
       if (edited === state) return state;
       return { ...edited, viewIds: { ...edited.viewIds, [state.active]: action.id }, settingsOpen: true };
     }
@@ -667,7 +677,7 @@ function step(state: AppState, action: AppAction): AppState {
       const view = currentView(state);
       if (!view || !isArranged(state.arrangements[state.active]?.[view.id])) return state;
       const saving = savingForEveryone(state.arrangements, state.active, view.id);
-      return { ...edit(state, (t) => withViewPatch(t, view.id, saving.patch)), arrangements: saving.arrangements };
+      return { ...edit(state, "Save View for Everyone", (t) => withViewPatch(t, view.id, saving.patch)), arrangements: saving.arrangements };
     }
     case "resetArrangement": {
       const view = currentView(state);
@@ -784,15 +794,15 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
       if (state.tables[on.key]?.indexed) {
         // What undoes it is the index's to say (the row, and where it was); its page is here, and kept to go back with it.
         const page = state.tables[on.key]!.bodies?.[on.rowId];
-        return queued(edit(state, (t) => withoutRow(t, on.rowId), on.key), on.key, { kind: "remove", rowId: on.rowId }, { back: null, ...(page !== undefined ? { page } : {}) });
+        return queued(edit(state, "Delete Row", (t) => withoutRow(t, on.rowId), on.key), on.key, { kind: "remove", rowId: on.rowId }, { name: "Delete Row", back: null, ...(page !== undefined ? { page } : {}) });
       }
-      return edit(state, (t) => withoutRow(t, on.rowId), on.key);
+      return edit(state, "Delete Row", (t) => withoutRow(t, on.rowId), on.key);
     case "deleteField":
-      return edit(state, (t) => withoutField(t, on.name), on.key);
+      return edit(state, "Delete Field", (t) => withoutField(t, on.name), on.key);
     case "removeChoice":
-      return edit(state, (t) => withoutChoice(t, on.name, on.value), on.key);
+      return edit(state, "Remove Choice", (t) => withoutChoice(t, on.name, on.value), on.key);
     case "deleteView": {
-      const edited = edit(state, (t) => withoutView(t, on.viewId), on.key);
+      const edited = edit(state, "Delete View", (t) => withoutView(t, on.viewId), on.key);
       if (edited === state) return state;
       // The next view shows, where this one was showing.
       return viewIdOf(state, on.key) === on.viewId
@@ -800,7 +810,7 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
         : edited;
     }
     case "updateView":
-      return edit(state, (t) => withViewPatch(t, on.viewId, on.patch), on.key);
+      return edit(state, onlyTitle(on.patch) ? "Rename View" : "Change View", (t) => withViewPatch(t, on.viewId, on.patch), on.key);
     case "reset": {
       const keep = Object.keys(state.opened);
       const after = afterReset(state.tables, state.bundles, on.fresh, keep);
@@ -871,6 +881,9 @@ export interface Derived {
   /** Whether the table on screen has an edit to undo, or one undone to redo. */
   canUndo: boolean;
   canRedo: boolean;
+  /** What undo would take back, and redo make again, as a menu says it ("Delete Row"); null when there's nothing. */
+  undoName: string | null;
+  redoName: string | null;
   commands: AppCommand[];
   /** The address of what's on screen, with the open page's row: Copy Link's. */
   address: string;
@@ -928,8 +941,10 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const canGoBack = goBack(state.history, live) !== null;
   const canGoForward = goForward(state.history, live) !== null;
   const mode = state.sidebar.files ? "files" : "tables";
-  const canUndo = mode === "tables" && (state.undo[state.active]?.past.length ?? 0) > 0;
-  const canRedo = mode === "tables" && (state.undo[state.active]?.future.length ?? 0) > 0;
+  const undoName = mode === "tables" ? (state.undo[state.active]?.past.at(-1)?.name ?? null) : null;
+  const redoName = mode === "tables" ? (state.undo[state.active]?.future.at(-1)?.name ?? null) : null;
+  const canUndo = undoName !== null;
+  const canRedo = redoName !== null;
   const tree = sidebarTree(state.tables, state.bundles, {
     folded: state.sidebar.foldedFiles,
     expanded: [state.active],
@@ -968,7 +983,9 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     canGoForward,
     canUndo,
     canRedo,
-    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward, canUndo, canRedo }),
+    undoName,
+    redoName,
+    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward, canUndo, canRedo, undoName, redoName }),
     address: viewAddress(state.active, view.id, state.openPage ?? undefined),
   };
 }
