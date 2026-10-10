@@ -8,6 +8,7 @@ import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema
 import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
+import { BODY_EXTENSION, BundleEntry, TableEntry, tablePath } from "./layout.js";
 
 /**
  * The file operations a `.table` folder needs. Paths are `/`-separated, as
@@ -113,17 +114,17 @@ export interface ReadOptions {
 
 export async function readBundle(fs: TableFs, dir: string, options: ReadOptions = {}): Promise<ParsedBundle> {
   const diagnostics: ValidationError[] = [];
-  const meta = parseOptionalJsonText<BundleMeta>("meta.json", (await fs.readText(joinPath(dir, "meta.json"))) ?? undefined, diagnostics) ?? {};
+  const meta = parseOptionalJsonText<BundleMeta>(BundleEntry.meta, (await fs.readText(joinPath(dir, BundleEntry.meta))) ?? undefined, diagnostics) ?? {};
   const tables: Record<string, ParsedTable> = {};
-  const tablesDir = joinPath(dir, "tables");
+  const tablesDir = joinPath(dir, BundleEntry.tables);
   const entries = ((await fs.list(tablesDir)) ?? [])
     .filter((e) => e.directory && isTableName(e.name))
     .sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const tableDir = joinPath(tablesDir, entry.name);
     const files = new Set(((await fs.list(tableDir)) ?? []).filter((e) => !e.directory).map((e) => e.name));
-    if (!files.has("schema.json") || !files.has("rows.ndjson")) {
-      diagnostics.push({ rowIndex: -1, message: `tables/${entry.name} isn't a table: it needs schema.json and rows.ndjson` });
+    if (!files.has(TableEntry.schema) || !files.has(TableEntry.rows)) {
+      diagnostics.push({ rowIndex: -1, message: `${tablePath(entry.name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rows}` });
       continue;
     }
     tables[entry.name] = await readTable(fs, tableDir, options);
@@ -151,16 +152,16 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const diagnostics: ValidationError[] = [];
 
   // Fatal by design — do not wrap.
-  const schemaPath = joinPath(dir, "schema.json");
+  const schemaPath = joinPath(dir, TableEntry.schema);
   const schemaRaw = await fs.readText(schemaPath);
-  if (schemaRaw === null) throw new Error(`${schemaPath}: no schema.json, so this isn't a table`);
+  if (schemaRaw === null) throw new Error(`${schemaPath}: no ${TableEntry.schema}, so this isn't a table`);
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
   const elsewhere = (await options.rowsElsewhere?.(dir)) === true;
-  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, "rows.ndjson"))) ?? "", diagnostics);
-  const views = parseOptionalJsonText<View[]>("views.json", (await fs.readText(joinPath(dir, "views.json"))) ?? undefined, diagnostics) ?? [];
-  const meta = parseOptionalJsonText<TableMeta>("meta.json", (await fs.readText(joinPath(dir, "meta.json"))) ?? undefined, diagnostics) ?? {};
-  const bodies = await readBodies(fs, joinPath(dir, "bodies"));
+  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, TableEntry.rows))) ?? "", diagnostics);
+  const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
+  const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
+  const bodies = await readBodies(fs, joinPath(dir, TableEntry.bodies));
 
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };
@@ -176,9 +177,9 @@ async function readBodies(fs: TableFs, dir: string): Promise<Record<string, stri
   // By name, whatever order the file system lists them in, so a table
   // reads the same from every platform.
   for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    if (entry.directory || !entry.name.endsWith(".md")) continue;
+    if (entry.directory || !entry.name.endsWith(BODY_EXTENSION)) continue;
     const text = await fs.readText(joinPath(dir, entry.name));
-    if (text !== null) bodies[entry.name.slice(0, -".md".length)] = text;
+    if (text !== null) bodies[entry.name.slice(0, -BODY_EXTENSION.length)] = text;
   }
   return Object.keys(bodies).length > 0 ? bodies : undefined;
 }
@@ -241,7 +242,7 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   // `format`, `formatVersion` and `tables` describe the bundle.
   const meta: TableMeta = tableMetaOnly(input.meta);
 
-  const bodiesDir = joinPath(dir, "bodies");
+  const bodiesDir = joinPath(dir, TableEntry.bodies);
   const bodies = input.bodies ?? {};
   const haveBodies = Object.keys(bodies).length > 0;
 
@@ -257,11 +258,11 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   };
 
   try {
-    await stage(joinPath(dir, "schema.json"), pretty(input.schema));
+    await stage(joinPath(dir, TableEntry.schema), pretty(input.schema));
     // Rows held in the index aren't here to write: whoever holds them saves them.
-    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, "rows.ndjson"), serializeRows(input.rows, input.schema));
-    await stage(joinPath(dir, "views.json"), pretty(input.views ?? []));
-    await stage(joinPath(dir, "meta.json"), pretty(meta));
+    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, TableEntry.rows), serializeRows(input.rows, input.schema));
+    await stage(joinPath(dir, TableEntry.views), pretty(input.views ?? []));
+    await stage(joinPath(dir, TableEntry.meta), pretty(meta));
     if (haveBodies) {
       await fs.mkdir(bodiesDir);
       for (const [id, content] of Object.entries(bodies)) {
@@ -285,8 +286,8 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   // ---- Trim: deletions strictly after every rename has landed.
   if (haveBodies) {
     for (const entry of (await fs.list(bodiesDir)) ?? []) {
-      if (entry.directory || !entry.name.endsWith(".md")) continue;
-      const id = entry.name.slice(0, -".md".length);
+      if (entry.directory || !entry.name.endsWith(BODY_EXTENSION)) continue;
+      const id = entry.name.slice(0, -BODY_EXTENSION.length);
       if (!(id in bodies)) await fs.remove(joinPath(bodiesDir, entry.name));
     }
   } else if ((await fs.list(bodiesDir)) !== null) {
@@ -307,13 +308,13 @@ export async function writeBundleTo(fs: TableFs, dir: string, input: WriteBundle
   for (const name of names) {
     if (!isTableName(name)) throw new Error(`invalid table name: ${JSON.stringify(name)}`);
   }
-  const tablesDir = joinPath(dir, "tables");
+  const tablesDir = joinPath(dir, BundleEntry.tables);
   await fs.mkdir(tablesDir);
   for (const name of names) {
     await writeTableTo(fs, joinPath(tablesDir, name), input.tables[name]!);
   }
 
-  const manifest = joinPath(dir, "meta.json");
+  const manifest = joinPath(dir, BundleEntry.meta);
   const manifestText = pretty(stampMeta({ ...(input.meta ?? {}), tables: names }));
   if ((await fs.readText(manifest)) !== manifestText) {
     await fs.writeText(manifest + ".tmp", manifestText);
@@ -323,7 +324,7 @@ export async function writeBundleTo(fs: TableFs, dir: string, input: WriteBundle
   for (const entry of (await fs.list(tablesDir)) ?? []) {
     if (!entry.directory || names.includes(entry.name)) continue;
     // Only what the reader would call a table: never an unknown directory.
-    if ((await fs.readText(joinPath(tablesDir, entry.name, "schema.json"))) !== null) {
+    if ((await fs.readText(joinPath(tablesDir, entry.name, TableEntry.schema))) !== null) {
       await fs.remove(joinPath(tablesDir, entry.name));
     }
   }
