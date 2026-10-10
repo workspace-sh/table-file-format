@@ -84,6 +84,25 @@ describe("a large table on Linux", () => {
     expect(screen.queryAllByText(/^Big \d+$/).length).toBeLessThan(200);
   });
 
+  it("a cell edited from the keyboard stays closed when its row is scrolled away and back", async () => {
+    await openTasks();
+    const first = await cellOf("Land .table extension");
+    const adjustment = scrollerOf(first).getVadjustment();
+    first.grabFocus();
+    await userEvent.keyboard(first, "Z");
+    const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
+    await userEvent.type(entry, "ed");
+    await userEvent.keyboard(entry, "{Enter}");
+    await screen.findAllByText("Zed");
+    adjustment.setValue(adjustment.getUpper() - adjustment.getPageSize());
+    await screen.findAllByText(`Big ${ROWS - 1}`);
+    await waitFor(() => expect(screen.queryAllByText("Zed")).toHaveLength(0));
+    adjustment.setValue(0);
+    // Its text, not its editor.
+    await screen.findAllByText("Zed");
+    expect(screen.queryAllByDisplayValue("Zed")).toHaveLength(0);
+  });
+
   it("Ctrl+Down goes to the last row, though it wasn't built", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
