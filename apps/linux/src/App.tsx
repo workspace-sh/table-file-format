@@ -12,6 +12,7 @@ import * as Gio from "@gtkx/gi/gio";
 import {
   AdwAlertDialog,
   AdwApplication,
+  AdwAboutDialog,
   AdwApplicationWindow,
   AdwBreakpoint,
   AdwDialog,
@@ -30,6 +31,7 @@ import {
   derive,
   initialAppState,
   viewCallbacks,
+  buildLabel,
   type Derived,
   type ViewCallbacks,
   archiveFileName,
@@ -633,6 +635,7 @@ export function App({
   const [narrow, setNarrow] = useState(false);
   const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
@@ -740,6 +743,8 @@ export function App({
     .map((menu) => ({ section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })) }))
     .filter((s) => s.section.length > 0);
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
+  // The app's own: this viewer's display settings, and what build this is.
+  menuSections.push({ section: [{ label: "Display…", action: "win.display" }, { label: "About Tables", action: "win.about" }] });
   const primaryMenu = (
     <GtkMenuButton iconName="open-menu-symbolic" tooltipText="Main Menu" primary popover={<GtkPopoverMenu menuModel={<GMenu items={menuSections} />} />} />
   );
@@ -797,6 +802,8 @@ export function App({
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
+          <GSimpleAction key="display" name="display" onActivate={() => setDisplayOpen(true)} />,
+          <GSimpleAction key="about" name="about" onActivate={() => setAboutOpen(true)} />,
         ]}
       >
         <DisplaySettingsProvider value={shownDisplay}>
@@ -823,7 +830,6 @@ export function App({
                       </GtkBox>
                     }
                     start={newFilesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
-                    end={<GtkButton iconName="preferences-desktop-locale-symbolic" tooltipText="Display" onClicked={() => setDisplayOpen(true)} />}
                   />
                 }
               >
@@ -882,6 +888,17 @@ export function App({
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          {aboutOpen ? (
+            // Which build this is (docs/VERSIONING.md): what a person testing it quotes.
+            <AdwAboutDialog
+              applicationName="Tables"
+              applicationIcon="x-office-spreadsheet"
+              version={buildLabel()}
+              comments="A demo of the .table file format."
+              website="https://github.com/workspace-sh/table-file-format"
+              onClosed={() => setAboutOpen(false)}
+            />
+          ) : null}
           {displayOpen ? (
             <AdwDialog title="Display" contentWidth={460} onClosed={() => setDisplayOpen(false)}>
               <AdwToolbarView topBar={<AdwHeaderBar />}>
