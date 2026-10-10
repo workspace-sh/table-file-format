@@ -966,6 +966,27 @@ export async function queryIndex(
   };
 }
 
+/**
+ * Rows of a table whose index is being built, in file order, from those in
+ * so far: for showing a large table as it is read. Asked on the connection
+ * that is building, it sees the rows the build has put in and not yet
+ * committed. `start` and `end` are places among the rows in, which for a
+ * build are their positions. Empty when there is no such table yet.
+ */
+export async function rowsBeingBuilt(db: SqlDriver, name: string, start: number, end: number): Promise<Row[]> {
+  const from = Math.max(0, start);
+  if (end <= from) return [];
+  const n = await tableNumber(db, name, false);
+  if (n === null) return [];
+  try {
+    const found = await db.all(`select j from r${n} where pos > ? order by pos limit ?`, [from, end - from]);
+    return found.map((r) => JSON.parse(r.j as string) as Row);
+  } catch {
+    // Its table isn't made yet.
+    return [];
+  }
+}
+
 /** Say what the source is now, after a save: the index is fresh for that content. */
 export async function setIndexKey(db: SqlDriver, name: string, key: string): Promise<void> {
   const n = await tableNumber(db, name, false);
