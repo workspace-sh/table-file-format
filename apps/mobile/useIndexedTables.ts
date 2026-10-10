@@ -214,6 +214,8 @@ export function useIndexedTables(input: {
         if (!saved) {
           // An edit landed while it was written: it's saved again after that edit.
           if (rows) unsaved.current.add(key);
+          // Never left waiting for a build that isn't coming.
+          if (again) setMade((m) => ({ ...m, [key]: "ready" }));
           continue;
         }
         if (!again) {
