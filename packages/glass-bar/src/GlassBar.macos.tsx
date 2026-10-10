@@ -1,18 +1,16 @@
 /**
- * macOS: what iOS's bar shows, drawn for an inspector, the Mac's place for
- * what's selected. A bar docked at the foot of the screen is a phone's
- * pattern; here the same state fills a panel the host puts in its trailing
- * inspector pane, on the pane's own material. Two states are drawn:
+ * macOS: a formula being written, as iOS's bar shows it, drawn for an
+ * inspector, the Mac's place for what's selected. A bar docked at the foot
+ * of the screen is a phone's pattern; here the same state fills a panel
+ * the host puts in its trailing inspector pane, on the pane's own
+ * material: the formula's field, the operators, this row's result or
+ * what's wrong with it (with the fix), and how it's worked out, as it's
+ * typed. Return saves, Escape cancels.
  *
- *   selected  the cell's field and row, its value or formula, and what the
- *             field is; Edit opens it.
- *   editing   a formula: its field, the operators, this row's result or
- *             what's wrong with it (with the fix), and how it's worked
- *             out, as it's typed. Return saves, Escape cancels.
- *
- * Search is in the window's toolbar on a Mac, and a value, a choice or a
- * date is edited in its cell, so the other states draw nothing: the host
- * leaves those edits to table-ui (useGlassEditor's `accepts`).
+ * Nothing else is drawn here. Search is in the window's toolbar on a Mac;
+ * a value, a choice or a date is edited in its cell (useGlassEditor's
+ * `formulasOnly`); and a cell that's only selected is said by the host in
+ * the system's own form, from the hook's `selection`.
  *
  * Driven by the same state and callbacks as GlassBar.ios.tsx; only the
  * drawing is the Mac's.
@@ -35,36 +33,17 @@ const SPAN_COLOURS: Record<GlassBarSpan["kind"], [string, string]> = {
 export function GlassBar(props: GlassBarProps): ReactNode {
   const { state } = props;
   const dark = useColorScheme() === "dark";
-  if (state.kind !== "selected" && state.kind !== "editing") return null;
-
-  const ink = dark ? "#f5f5f7" : "#1c1c1e";
-  const dim = dark ? "#a1a1a8" : "#6e6e73";
-  if (state.kind === "editing") {
-    return (
-      <View onLayout={(e) => props.onHeight?.(e.nativeEvent.layout.height)}>
-        <Editor key={state.editKey} state={state} barProps={props} ink={ink} dim={dim} dark={dark} />
-      </View>
-    );
-  }
+  if (state.kind !== "editing") return null;
   return (
-    <View style={styles.selected} onLayout={(e) => props.onHeight?.(e.nativeEvent.layout.height)}>
-      <Text numberOfLines={2} style={[styles.label, { color: dim }]}>
-        {state.label}
-      </Text>
-      <Text selectable style={[styles.value, { color: ink }, state.monospaced && styles.mono]}>
-        {state.value === "" ? "—" : state.value}
-      </Text>
-      {state.about !== undefined && <Text style={[styles.about, { color: dim }]}>{state.about}</Text>}
-      <View style={styles.actions}>
-        <Pressable onPress={props.onEdit} style={[styles.button, { borderColor: dark ? "#48484d" : "#c7c7cc" }]}>
-          <Text style={[styles.buttonText, { color: ink }]}>Edit</Text>
-        </Pressable>
-        {state.info && (
-          <Pressable onPress={props.onInfo} style={[styles.button, { borderColor: dark ? "#48484d" : "#c7c7cc" }]}>
-            <Text style={[styles.buttonText, { color: ink }]}>About This Field…</Text>
-          </Pressable>
-        )}
-      </View>
+    <View onLayout={(e) => props.onHeight?.(e.nativeEvent.layout.height)}>
+      <Editor
+        key={state.editKey}
+        state={state}
+        barProps={props}
+        ink={dark ? "#f5f5f7" : "#1c1c1e"}
+        dim={dark ? "#a1a1a8" : "#6e6e73"}
+        dark={dark}
+      />
     </View>
   );
 }
@@ -235,11 +214,9 @@ function coloured(text: string, spans: GlassBarSpan[], dark: boolean): ReactNode
 }
 
 const styles = StyleSheet.create({
-  selected: { padding: 16, gap: 6 },
   label: { fontSize: 11, fontWeight: "600" },
   value: { fontSize: 14 },
   mono: { fontFamily: MONO, fontSize: 13 },
-  about: { fontSize: 12, marginTop: 2 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 10, paddingHorizontal: 0 },
   button: { height: 26, paddingHorizontal: 12, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   buttonText: { fontSize: 13 },
