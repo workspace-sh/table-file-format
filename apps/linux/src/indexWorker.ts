@@ -19,7 +19,7 @@ export type IndexRequest = { id: number } & (
   | { op: "search"; name: string }
   | { op: "rows"; request: RowsRequest }
   | { op: "peek"; name: string; start: number; end: number }
-  | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[] }
+  | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[]; whole?: boolean }
   | { op: "close" }
 );
 
@@ -67,7 +67,8 @@ async function answer(request: IndexRequest): Promise<unknown> {
     case "build":
       return host.build(request.name, request.tableDir, (done, total) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse));
     case "save":
-      return host.save(request.name, request.tableDir, request.rows, request.omit);
+      // Not reached: a save takes its own turns, below.
+      return undefined;
     case "close":
       return host.close();
   }
@@ -87,9 +88,33 @@ const writes = (request: IndexRequest): boolean =>
   request.op === "close" ||
   (request.op === "rows" && request.request.ask === "edits");
 
+// Saves, one at a time: each has a table's `rows.ndjson` to itself.
+let saving: Promise<unknown> = Promise.resolve();
+let savesUnderWay = 0;
+
+/**
+ * A save doesn't hold the worker either: the host reads the rows a piece a
+ * turn, so the window's reads and edits are answered while a large table
+ * is written (some seconds at a million rows).
+ */
+function save(request: IndexRequest & { op: "save" }): void {
+  savesUnderWay++;
+  const done = saving.then(() => host.save(request.name, request.tableDir, request.rows, request.omit, request.whole));
+  saving = done.then(
+    () => {},
+    () => {},
+  );
+  void saving.then(() => savesUnderWay--);
+  done.then(
+    (value) => port.postMessage({ id: request.id, ok: true, value } satisfies IndexResponse),
+    (error: unknown) => port.postMessage({ id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) } satisfies IndexResponse),
+  );
+}
+
 function build(request: IndexRequest & { op: "ensure" | "build" }): void {
   const progress = (done: number, total: number) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse);
-  const done = request.op === "ensure" ? host.ensure(request.name, request.tableDir, progress) : host.build(request.name, request.tableDir, progress);
+  // A save under way is writing the file a build would read: the build comes after it.
+  const done = saving.then(() => (request.op === "ensure" ? host.ensure(request.name, request.tableDir, progress) : host.build(request.name, request.tableDir, progress)));
   const settled = done.then(
     () => {},
     () => {},
@@ -110,8 +135,8 @@ function build(request: IndexRequest & { op: "ensure" | "build" }): void {
  * between steps, not after the whole of it.
  */
 function searchStep(request: IndexRequest & { op: "search" }): void {
-  // The window comes first: a step waits until it has asked for nothing for a moment.
-  if (Date.now() - lastAsked < 250) return void setTimeout(() => searchStep(request), 125);
+  // The window comes first: a step waits until it has asked for nothing for a moment. So does a save.
+  if (savesUnderWay > 0 || Date.now() - lastAsked < 250) return void setTimeout(() => searchStep(request), 125);
   // Small steps: what the window asks between them isn't kept waiting.
   inTurn(() => buildSearchIndex(host, request.name, 5000)).then(
       async (more) => {
@@ -129,7 +154,14 @@ function searchStep(request: IndexRequest & { op: "search" }): void {
 function take(request: IndexRequest): void {
   if (request.op === "ensure" || request.op === "build") return build(request);
   if (request.op === "search") return searchStep(request);
+  if (request.op === "save") return save(request);
+  // Closing waits for a save to finish its file.
+  if (request.op === "close") return void saving.then(() => answered(request));
   lastAsked = Date.now();
+  answered(request);
+}
+
+function answered(request: IndexRequest): void {
   inTurn(() => answer(request) as Promise<unknown>).then(
     (value) => port.postMessage({ id: request.id, ok: true, value } satisfies IndexResponse),
     (error: unknown) => port.postMessage({ id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) } satisfies IndexResponse),
