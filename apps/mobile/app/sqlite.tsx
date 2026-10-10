@@ -2,7 +2,7 @@
 // index, run on the device. Only in a measuring build
 // (EXPO_PUBLIC_TABLE_MEASURE=1) or development, opened by a link:
 //
-//   sh.workspace.table.mobile://sqlite?rows=100000&modes=async,sync&cases=1
+//   sh.workspace.table.mobile://sqlite?rows=100000&modes=async,sync&cases=1&yield=50&batch=1000 (yield: ms between macrotasks)
 //
 // Each step is shown, posted to the measuring server (Simulator) and kept
 // in the app's documents as sqlite-probe.json (a device:
@@ -15,7 +15,7 @@ import { MEASURING, report } from "../measure";
 import { cases, features, saveResults, timings, type Mode, type Results } from "../sqliteProbe";
 
 export default function SqliteProbe() {
-  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string }>();
+  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string }>();
   const [lines, setLines] = useState<string[]>([]);
   const ran = useRef(false);
 
@@ -39,13 +39,14 @@ export default function SqliteProbe() {
       try {
         await keep("features", await features());
         if (params.cases !== "0") for (const mode of modes) await keep(`cases-${mode}`, await cases(mode, say));
-        for (const n of sizes) for (const mode of modes) await keep(`timings-${n}-${mode}`, await timings(n, mode));
+        const build = { yieldAfterMs: Number(params.yield ?? 0) || undefined, batchSize: Number(params.batch ?? 0) || undefined };
+        for (const n of sizes) for (const mode of modes) await keep(`timings-${n}-${mode}`, await timings(n, mode, build));
         await keep("done", true);
       } catch (error) {
         await keep("error", String(error));
       }
     })();
-  }, [params.rows, params.modes, params.cases]);
+  }, [params.rows, params.modes, params.cases, params.yield, params.batch]);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16 }}>
