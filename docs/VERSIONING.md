@@ -35,7 +35,8 @@ A build needs the branch's history to count the day's commits, so a CI checkout 
 |---|---|---|
 | Web demo | The foot of the sidebar: "Build 2026.10.10.3 · a7ebcce" | `apps/web/vite.config.ts` defines `__TABLE_BUILD__` |
 | Linux | Main menu › About Tables | `apps/linux/vite.config.ts` defines `__TABLE_BUILD__` |
-| iOS, Android, macOS | Not shown yet | To do: the app's config passes the script's answer in, and Settings shows `buildLabel()` |
+| iOS, Android | More › Settings: "Build 2026.10.10.3 · a7ebcce" | `apps/mobile/app.config.js` puts it in the app's config (`extra.build`), with the Apple and Android numbers below |
+| macOS | Not shown yet | To do: the app's config passes the script's answer in, and Settings shows `buildLabel()` |
 
 Every app shows it through `buildLabel()` from `@workspace.sh/table-app`, so it reads the same everywhere. A bundle whose bundler didn't say reads "unnumbered build".
 
