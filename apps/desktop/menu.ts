@@ -11,6 +11,7 @@ export type PopUpItem =
   | { separator: true };
 
 interface TableMenuModule {
+  setUndo(canUndo: boolean, canRedo: boolean): void;
   setItem(
     id: string,
     menu: string,
@@ -43,6 +44,7 @@ interface TableMenuModule {
   setSearchText(text: string): void;
   focusSearch(): void;
   postCommand(commandId: string): void;
+  chooseMenuItem(menu: string, title: string): Promise<string>;
   postSearch(text: string): void;
   firstResponder(): Promise<Record<string, unknown>>;
   replyToQuit(quit: boolean): void;
@@ -69,6 +71,15 @@ export interface MenuItem {
   checked?: boolean;
   /** False greys it out. */
   enabled?: boolean;
+}
+
+/**
+ * Edit › Undo and Redo are the table's when no text is being typed, and
+ * are on or off as it can be undone and redone; in a text field they stay
+ * the text's own. Choosing one comes back as the `undo` or `redo` command.
+ */
+export function setUndo(canUndo: boolean, canRedo: boolean): void {
+  TableMenu?.setUndo(canUndo, canRedo);
 }
 
 /** Add the item, or update its title and key. */
@@ -233,6 +244,11 @@ export function postSearch(text: string): void {
 }
 
 /** Development only: a toolbar button pressed, by its command's id. */
+/** Development only: choose a menu bar item by its title; resolves "chosen", "disabled" or "none". */
+export function chooseMenuItem(menu: string, title: string): Promise<string> {
+  return TableMenu?.chooseMenuItem(menu, title) ?? Promise.resolve("none");
+}
+
 export function postCommand(commandId: string): void {
   TableMenu?.postCommand(commandId);
 }

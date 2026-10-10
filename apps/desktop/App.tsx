@@ -93,7 +93,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { chooseMenuItem, copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setUndo, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -875,7 +875,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { canGoBack, canGoForward } = derived;
   useEffect(() => {
     for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode, canGoBack, canGoForward })) {
-      // The Edit menu has AppKit's own Undo and Redo on these keys, which a text field answers.
+      // The Edit menu has AppKit's own Undo and Redo on these keys, which a text field answers:
+      // they are made the table's too, below (setUndo), not added a second time.
       if (c.id === "undo" || c.id === "redo") continue;
       setMenuItem({
         id: c.id,
@@ -937,6 +938,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
   useEffect(() => onMenu((id) => commandsRef.current[id as keyof typeof commands]?.()), []);
+  // Edit › Undo and Redo: the table's when no text has the keyboard, on as it can be undone and redone.
+  const { canUndo, canRedo } = derived;
+  useEffect(() => setUndo(canUndo, canRedo), [canUndo, canRedo]);
 
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without
@@ -1036,6 +1040,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         return `searched ${text}`;
       },
       // What has the keyboard, left in globalThis.__responder (the debugger connection can't await).
+      // A menu bar item, by its menu and title, as choosing it does: answered in __menuChoice.
+      chooseMenuItem: (menu: string, title: string) => {
+        void chooseMenuItem(menu, title).then((said) => ((globalThis as { __menuChoice?: string }).__menuChoice = said));
+        return "asking";
+      },
       responder: () => {
         void firstResponder().then((said) => ((globalThis as { __responder?: unknown }).__responder = said));
         return "asking";
