@@ -99,6 +99,7 @@ import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
 import { HOVERS } from "./internal/hovers";
+import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { Select, Toggle } from "./PlatformControls";
@@ -115,7 +116,7 @@ import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
 import { inputHints, type InputHintKind } from "./inputHints";
-import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
+import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
@@ -1829,7 +1830,8 @@ function EditableCell({
       applyKeyboard(el, hints);
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
         focusInput(el);
-        const end = el.value.length;
+        // A native input's ref doesn't carry its value: what was typed is the draft.
+        const end = (typeof el.value === "string" ? el.value : draft).length;
         try {
           el.setSelectionRange(end, end);
         } catch {
@@ -2183,7 +2185,7 @@ function EditableCell({
       }}
       onKeyDown={onEditKey}
       aria-invalid={problem && !problem.confirmable ? true : undefined}
-      style={styles.cellInput}
+      style={[styles.cellInput, cellInputFit]}
     />
   );
   const field_ = currencySymbol ? (
@@ -2683,6 +2685,8 @@ export function TableView({
   useEffect(() => () => editor?.attach(null), [editor]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gridRef = useRef<any>(null);
+  // Where the keys come from on macOS, which needs a view of its own for them (GridKeys).
+  const keysRef = useRef<GridKeysHandle | null>(null);
   useEffect(() => {
     // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
     if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
@@ -3263,6 +3267,7 @@ export function TableView({
         setBarFormula(null);
       }
       setSel({ rowId: row.id, name });
+      keysRef.current?.focus();
       // While editing, the next cell tapped opens for editing too, as a
       // spreadsheet keeps typing from cell to cell. Only selected, a tap
       // only selects, so the table can be browsed without a keyboard.
@@ -3288,6 +3293,7 @@ export function TableView({
             : isFormula
             ? async () => {
                 setSel({ rowId: row.id, name });
+                keysRef.current?.focus();
                 if (isOpenCell) {
                   setFormulaCell(null);
                   return;
@@ -3325,7 +3331,7 @@ export function TableView({
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
           />
         ) : (
@@ -3671,6 +3677,7 @@ export function TableView({
     const next = afterEdit({ row: placeOfId(rowId), col: fields.indexOf(name) }, how, total, fields.length);
     selectAt(next.row, next.col);
     gridRef.current?.focus?.({ preventScroll: true });
+    keysRef.current?.focus();
   };
   const onGridKey = (e: KeyEventLike) => {
     const tag = (e.target as { tagName?: string } | undefined)?.tagName;
@@ -3757,6 +3764,7 @@ export function TableView({
       </html.div>
     )}
     <EdgeToEdge on={edgeToEdge}>
+    <GridKeys ref={keysRef} onKeyDown={onGridKey}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
@@ -3898,6 +3906,7 @@ export function TableView({
         <html.div style={styles.addFieldSlot}>{addFieldButton(true)}</html.div>
       )}
     </html.div>
+    </GridKeys>
     </EdgeToEdge>
     {/* Edge to edge, the grid keeps all the width and "+ Field" sits under
         it, on the page's margin, rather than taking a strip beside it. */}

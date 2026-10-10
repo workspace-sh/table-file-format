@@ -10,24 +10,32 @@ import { newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
-  BodyEditor,
   BoardView,
   CalendarView,
   GalleryView,
   ListView,
   AttachmentsProvider,
+  CellEditorContext,
   DisplayControls,
   Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
-  PanelSurface,
+  notifyLayoutChanged,
+  PlatformControlsProvider,
   PortalHost,
   TableView,
   ViewSettings,
   canInsertAt,
 } from "@workspace.sh/table-ui";
-import { GlassSurface } from "./GlassSurface";
+import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
+import { useGlassEditor } from "@workspace.sh/glass-bar";
+import { inspectorStore } from "./inspectorStore";
+import { windowControls } from "./Inspector";
+import { watchRowMenus } from "./MacControls";
+import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
+import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
+import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -83,8 +91,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { Sidebar } from "./Sidebar";
-import { copyText, menuTitles, onMenu, onQuit, postKey, pressAlertButton, setUnsaved, setMenuItem, setWindowWidth as resizeWindow } from "./menu";
+import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -99,10 +106,10 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
-/** At or below this window width (points) the sidebar hides on its own: the web's breakpoint (useNarrow). */
-const NARROW_AT_MOST = 760;
 /** The content's side margin, which what scrolls sideways runs over (PageGutter). */
 const CONTENT_GUTTER = 24;
+/** The line under the toolbar that "how far down" is measured at, in window points. */
+const PLACE_LINE = 100;
 /** Where each menu's commands go: before these items, or last (Go is made new). */
 const MENU_BEFORE: Record<AppCommand["menu"], string> = {
   File: "Close",
@@ -120,18 +127,19 @@ const styles = css.create({
     flexDirection: "row",
     width: "100%",
     height: "100%",
-    backgroundColor: {
-      default: "#ffffff",
-      "@media (prefers-color-scheme: dark)": "#0e0e10",
-    },
+    // No fill of its own: the window's background shows through, so the
+    // content and the toolbar over it are one surface.
+    backgroundColor: "transparent",
   },
   content: {
     display: "flex",
     flexDirection: "column",
     flex: 1,
     paddingInline: CONTENT_GUTTER,
-    paddingBlock: 20,
   },
+  // A file shown in place of the view fills the pane, clear of the toolbar.
+  fileShown: { display: "flex", flexDirection: "column", flex: 1, paddingBottom: 20 },
+  under: (top: number) => ({ paddingTop: top + 12 }),
   breadcrumb: {
     fontSize: 12,
     marginBottom: 2,
@@ -292,6 +300,13 @@ interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue: (fieldName: string, value: string) => void;
+  /** Remove a choice, or a field: table-app asks first when rows hold it. */
+  onRemoveEnumValue: (fieldName: string, value: string) => void;
+  onDeleteField: (fieldName: string) => void;
+  /** Where you are in the table, for history (the cell selected), and putting it back. */
+  onPlace?: (place: { rowId?: string; field?: string }) => void;
+  restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
+  onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
   onAddField: (field: Field) => void;
@@ -344,6 +359,11 @@ function renderView(
           onUpdateRow={cb.onUpdateRow}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
+          onRemoveEnumValue={cb.onRemoveEnumValue}
+          onDeleteField={cb.onDeleteField}
+          onPlace={cb.onPlace}
+          restorePlace={cb.restorePlace}
+          onPlaceMeasure={cb.onPlaceMeasure}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
@@ -571,22 +591,17 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const toggleDisplay = useCallback(() => dispatch({ type: "setDisplayFolded", folded: showDisplay }), [showDisplay]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
-  // A narrow window (the web's breakpoint) hides the sidebar on its own, as
-  // a Mac sidebar collapses, without touching that choice: widening again
-  // brings back what was chosen. ⌘B while narrow shows it anyway, until
-  // the window next narrows. The window's width, not the screen's
-  // (useWindowDimensions is the screen on macOS), from the root's layout.
+  // The sidebar is the window's own (nativeSidebar): the split view shows,
+  // hides and narrows it, and says so, which is what this choice follows.
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
-  const narrow = windowWidth !== null && windowWidth <= NARROW_AT_MOST;
-  const [shownWhileNarrow, setShownWhileNarrow] = useState(false);
+  // The toolbar floats over the content, which runs under it: what's in the
+  // content starts this far down, and scrolls up behind the toolbar.
+  const [topInset, setTopInset] = useState(52);
   useEffect(() => {
-    if (narrow) setShownWhileNarrow(false);
-  }, [narrow]);
-  const sidebarShown = narrow ? shownWhileNarrow : !sidebarCollapsed;
-  const toggleSidebar = useCallback(() => {
-    if (narrow) return setShownWhileNarrow((shown) => !shown);
-    dispatch({ type: "setSidebarCollapsed", collapsed: !sidebarCollapsed });
-  }, [narrow, sidebarCollapsed]);
+    void toolbarInset().then((inset) => inset > 0 && setTopInset(inset));
+  }, []);
+  const sidebarShown = !sidebarCollapsed;
+  const toggleSidebar = toggleNativeSidebar;
   const filesMode = sidebarPrefs.files === true;
   const chooseFilesMode = useCallback((files: boolean) => dispatch({ type: "setFilesSide", files }), []);
   // Attachments of tables opened from disk, as their folders list them; fixtures' come with the app.
@@ -673,6 +688,161 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The view on screen's callbacks, each an action (table-app's viewCallbacks).
   const callbacks = useMemo(() => viewCallbacks(state, dispatch, newId), [tables, bundles, activeTablePath]);
 
+  // How far down the view is, kept for history as the row at a line under
+  // the toolbar and how far into it (rows measured, not pixels, so it
+  // survives rows drawn a window at a time), and put back on Back or Forward.
+  const scroller = useRef<ScrollView>(null);
+  const scrollY = useRef(0);
+  // Where the scroll rests at its top: the system insets it under the
+  // toolbar, so that is above zero by the toolbar's height.
+  const restY = useRef(0);
+  const measure = useRef<PlaceMeasure | null>(null);
+  const onPlaceMeasure = useCallback((m: PlaceMeasure | null) => {
+    measure.current = m;
+  }, []);
+  const placeRest = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A Mac's scroll has no "came to rest" of its own: a pause in it is one.
+  const onScrolled = (y: number) => {
+    scrollY.current = y;
+    if (y < restY.current) restY.current = y;
+    if (placeRest.current) clearTimeout(placeRest.current);
+    placeRest.current = setTimeout(() => {
+      void measure.current?.rowAt(PLACE_LINE).then((top) => {
+        if (top) dispatch({ type: "place", place: { top } });
+      });
+    }, 150);
+  };
+  useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  // A right-click on a row shows its menu (MacControls.tsx).
+  useEffect(() => watchRowMenus(), []);
+  const restoringN = state.restoring?.n;
+  useEffect(() => {
+    const top = state.restoring?.place.top;
+    if (restoringN === undefined) return;
+    // After the view has drawn the rows it was left at.
+    const t = setTimeout(() => {
+      if (!top) {
+        scroller.current?.scrollTo({ y: restY.current, animated: false });
+        return;
+      }
+      // Twice: rows drawn on the first move can shift the rest; the second puts them right.
+      const settle = (left: number) =>
+        void measure.current?.topOf(top.rowId).then((at) => {
+          if (at === null) return;
+          const off = at + top.offset - PLACE_LINE;
+          if (Math.abs(off) < 2) return;
+          scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + off), animated: false });
+          if (left > 0) setTimeout(() => settle(left - 1), 120);
+        });
+      settle(1);
+    }, 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoringN]);
+
+  // What's selected goes to the inspector, the window's trailing pane
+  // (Inspector.tsx): a cell says what it is there, and a formula is written
+  // there, with its colours, its working and the click-a-cell-to-add-it of
+  // iOS, from the same logic (glass-bar's useGlassEditor). Everything else
+  // is edited in its cell, as a Mac expects, so only formulas are taken
+  // over. Search is the toolbar's.
+  const glass = useGlassEditor({
+    query: state.search,
+    onQuery: (text) => dispatch({ type: "search", text }),
+    onFilter: () => dispatch({ type: "settings", open: true }),
+    formulasOnly: true,
+  });
+  // A row's page is written there too.
+  const openPage = state.openPage;
+  const pageTable = state.active;
+  const page = useMemo(
+    () =>
+      openPage
+        ? {
+            key: `${pageTable}/${openPage}`,
+            rowId: openPage,
+            rowTitle: rowTitleFor(table, openPage),
+            content: table.bodies?.[openPage] ?? "",
+            onSave: (content: string) => dispatch({ type: "updateBody", rowId: openPage, content, table: pageTable }),
+            onClose: () => dispatch({ type: "openPage", rowId: null }),
+          }
+        : null,
+    [openPage, pageTable, table],
+  );
+  // And the view's settings, while they're open.
+  const settingsShown = state.settingsOpen && !shown;
+  const viewCount = table.views.length;
+  const settingsView = derived.shown.view;
+  const settings = useMemo(
+    () =>
+      settingsShown
+        ? {
+            key: view.id,
+            view: settingsView,
+            schema: table.schema,
+            // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+            onChange: (patch: Partial<View>) => dispatch({ type: "updateView", patch }),
+            onArrange: (patch: Partial<View>) => dispatch({ type: "arrange", patch }),
+            personal: derived.arranged,
+            onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
+            onReset: () => dispatch({ type: "resetArrangement" }),
+            onDelete: viewCount > 1 ? () => dispatch({ type: "deleteView" }) : undefined,
+            onClose: () => dispatch({ type: "settings", open: false }),
+            onCancel: () => dispatch({ type: "settings", open: false, revert: true }),
+          }
+        : null,
+    [settingsShown, view.id, settingsView, table.schema, derived.arranged, viewCount],
+  );
+  const cellKind = glass.props.state.kind;
+  useEffect(() => {
+    inspectorStore.set({ page, settings, cell: glass.props, cellRef: glass.bar, display: shownDisplay });
+  });
+  // A cell that's only selected is said in the inspector's own form
+  // (TableCellInspector.swift): its field and row, its value, what the
+  // field is, and the ways on from there. The same selection the iOS bar
+  // shows.
+  const selected = cellKind === "selected" && page === null && !settingsShown ? glass.selection : null;
+  const cellJson = selected
+    ? JSON.stringify({
+        field: selected.label,
+        row: selected.rowLabel,
+        rowLabel: "Row",
+        value: selected.text,
+        valueLabel: selected.formula ? "Formula" : "Value",
+        formula: selected.formula,
+        aboutLabel: "About This Field",
+        about: (selected.facts ?? "").split("\n\n").filter(Boolean),
+        editLabel: selected.formula ? "Edit Formula…" : "Edit",
+        ...(glass.fieldSettings(true) ? { settingsLabel: "Field Settings…" } : {}),
+      } satisfies InspectorCell)
+    : null;
+  useEffect(() => {
+    setInspectorCell(cellJson ? (JSON.parse(cellJson) as InspectorCell) : null);
+  }, [cellJson]);
+  // A formula being written is the inspector's own editor too (TableFormulaEditor.swift).
+  useMacFormulaEditor(glass.props, glass.bar, page === null && !settingsShown);
+  const cellJsonRef = useRef<string | null>(null);
+  cellJsonRef.current = cellJson;
+  const inspectorCell = useRef((_action: "edit" | "settings") => {});
+  inspectorCell.current = (action) => {
+    if (action === "edit") glass.props.onEdit?.();
+    else glass.fieldSettings();
+  };
+  // It opens for a page or a formula being written, and for a cell once it
+  // has been opened; closing it (its toolbar button) lets go of both.
+  const editingFormula = cellKind === "editing";
+  useEffect(() => {
+    if (page !== null || editingFormula || settingsShown) setInspectorShown(true);
+  }, [page, editingFormula, settingsShown]);
+  const closeInspected = useRef(() => {});
+  closeInspected.current = () => {
+    if (openPage) dispatch({ type: "openPage", rowId: null });
+    if (editingFormula) glass.props.onCancel?.();
+    if (settingsShown) dispatch({ type: "settings", open: false });
+    // A field's settings, or a new field: dismissed, as a tap outside a sheet does.
+    dismissSettingsForm();
+  };
+
   // The menu bar: table-app's commands, each with ⌘ (and ⇧) on its key, in
   // File before Close and in View before Enter Full Screen. Choosing one,
   // or pressing its key wherever focus is, does what its button does.
@@ -693,7 +863,33 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       });
     }
   }, [sidebarShown, filesMode, canGoBack, canGoForward]);
-  const commands: Record<AppCommandId, () => void> = {
+  // The Mac's own commands, beside table-app's: each is a toolbar button and a menu item.
+  const settingsOpen = state.settingsOpen;
+  useEffect(() => {
+    const own: { id: string; menu: AppCommand["menu"]; title: string; key: string; modifiers: ("command" | "shift" | "option")[] }[] = [
+      { id: "new-row", menu: "File", title: "New Row", key: "N", modifiers: ["command"] },
+      { id: "view-settings", menu: "View", title: settingsOpen ? "Hide View Settings" : "Show View Settings", key: "v", modifiers: ["command", "option"] },
+      { id: "find", menu: "Edit", title: "Find in View…", key: "f", modifiers: ["command"] },
+      { id: "display", menu: "View", title: showDisplay ? "Hide Display Options" : "Show Display Options", key: "", modifiers: [] },
+      { id: "reset-demo", menu: "File", title: "Reset Demo Data…", key: "", modifiers: [] },
+    ];
+    for (const c of own) setMenuItem({ ...c, before: MENU_BEFORE[c.menu] });
+    setToolbarLabel("new-row", "New Row");
+    setToolbarLabel("view-settings", "View Settings");
+    setToolbarLabel("export-zip", commandOf("export-zip").label);
+  }, [settingsOpen, showDisplay]);
+  useEffect(() => setToolbarFilesMode(filesMode), [filesMode]);
+  // The toolbar's search field: what's typed in it searches the view, and
+  // leaving a view (which clears the search) clears it.
+  useEffect(() => onSearch((text) => dispatch({ type: "search", text })), []);
+  const searchText = state.search;
+  useEffect(() => setSearchText(searchText), [searchText]);
+  const commands: Record<AppCommandId | "new-row" | "view-settings" | "find" | "display" | "reset-demo", () => void> = {
+    "new-row": () => void callbacks.onAddRow(),
+    "view-settings": () => dispatch({ type: "settings", open: !stateRef.current.settingsOpen }),
+    find: focusSearch,
+    display: toggleDisplay,
+    "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
     "open-zip": () => void importZip(),
@@ -710,7 +906,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
-  useEffect(() => onMenu((id) => commandsRef.current[id as AppCommandId]?.()), []);
+  useEffect(() => onMenu((id) => commandsRef.current[id as keyof typeof commands]?.()), []);
 
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without
@@ -792,9 +988,85 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         toggleSidebar();
         return "sidebar toggled";
       },
+      inspector: (shown: boolean) => {
+        setInspectorShown(shown);
+        return `inspector ${shown ? "shown" : "hidden"}`;
+      },
       postKey: (characters: string, keyCode: number, modifiers: ("command" | "shift" | "option" | "control")[]) => {
         postKey(characters, keyCode, modifiers);
         return `posted ${modifiers.join("+")}+${characters}`;
+      },
+      // A sidebar row picked, or text typed in the search field, as a click or typing would send it.
+      pick: (tag: string) => {
+        pickInSidebar(tag);
+        return `picked ${tag}`;
+      },
+      typeSearch: (text: string) => {
+        postSearch(text);
+        return `searched ${text}`;
+      },
+      // What has the keyboard, left in globalThis.__responder (the debugger connection can't await).
+      responder: () => {
+        void firstResponder().then((said) => ((globalThis as { __responder?: unknown }).__responder = said));
+        return "asking";
+      },
+      // A toolbar button, by its command's id, as pressing it would send it.
+      command: (id: string) => {
+        postCommand(id);
+        return `sent ${id}`;
+      },
+      // A click at a point, as the mouse would make it: it lands on whatever is under it.
+      click: (x: number, y: number) => {
+        postClick(x, y);
+        return `clicked ${x}, ${y}`;
+      },
+      // A right-click there. The system menu it (or a choice cell) opens:
+      // the last one's titles, and choosing from the next one by title,
+      // `seconds` after it opens ("" dismisses), set before it opens.
+      rightClick: (x: number, y: number) => {
+        postRightClick(x, y);
+        return `right-clicked ${x}, ${y}`;
+      },
+      // The scroll wheel turned over a point in the window (from its top left), for panes outside React's view.
+      scroll: (x: number, y: number, lines: number) => {
+        postScroll(x, y, lines);
+        return `scrolled ${lines}`;
+      },
+      popUpTitles,
+      popUpChoose: (title: string, seconds = 1) => {
+        popUpChoose(title, seconds);
+        return `will choose ${title || "nothing"}`;
+      },
+      // The date picker a date cell opens: whether it's showing (left in globalThis.__datePicker), setting its date as a click in it would, closing it.
+      datePickerShown: () => {
+        void datePickerShown().then((shown) => ((globalThis as { __datePicker?: boolean }).__datePicker = shown));
+        return "asking";
+      },
+      datePickerSet: (iso: string) => {
+        datePickerSet(new Date(iso).getTime());
+        return `set ${iso}`;
+      },
+      datePickerClose: () => {
+        datePickerClose();
+        return "closed";
+      },
+      // The inspector's settings form: what it was sent, and what a control in it would send back
+      // ({ what: "change", id, value }, { what: "press", id }, { what: "confirm" }, ...).
+      settingsForm: settingsFormJson,
+      sendSettingsForm: (event: object) => {
+        sendSettingsForm(event);
+        return "sent";
+      },
+      // The inspector's account of the selected cell: what it was sent, and pressing its buttons.
+      inspectorCell: () => cellJsonRef.current,
+      formulaEditor: formulaEditorJson,
+      driveFormulaEditor: (what: Parameters<typeof driveFormulaEditor>[0], text = "") => {
+        driveFormulaEditor(what, text);
+        return `formula editor: ${what}`;
+      },
+      pressInspectorCell: (action: "edit" | "settings") => {
+        pressInspectorCell(action);
+        return `pressed ${action}`;
       },
       menuTitles,
       // Answer the alert on screen, as clicking its button would (#274). A promise: read the result later.
@@ -814,7 +1086,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         resizeWindow(width);
         return `resizing to ${width}`;
       },
-      sidebarState: () => ({ windowWidth, narrow, shownWhileNarrow, chosenCollapsed: sidebarCollapsed, shown: sidebarShown }),
+      sidebarState: () => ({ windowWidth, shown: sidebarShown }),
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
       reset: () => {
         clearSaved(store);
@@ -846,118 +1118,107 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, openFolder, exportZip, importZip, attachFile, chooseFilesMode, toggleSidebar, windowWidth, narrow, shownWhileNarrow, sidebarCollapsed, sidebarShown]);
+  }, [store, openFolder, exportZip, importZip, attachFile, chooseFilesMode, toggleSidebar, windowWidth, sidebarShown]);
 
   // Hint wording, shared with the web and Linux (table-app's commands).
   const commandOf = (id: AppCommandId) => derived.commands.find((c) => c.id === id)!;
+  // The sidebar's lines, as table-app works them out; an opened folder under its own name.
+  const sidebarTree = useMemo(
+    () => derived.sidebarTree.map((file) => ({ ...file, file: folderName(file.bundle) ?? file.file })),
+    [derived.sidebarTree, folderPaths],
+  );
+  const filesLines = useMemo(() => flattenFilesTree(files), [files]);
+  useEffect(() => {
+    setSidebar({ tree: sidebarTree, active: activeTablePath, filesMode, files: filesLines, shownFile });
+  }, [sidebarTree, activeTablePath, filesMode, filesLines, shownFile]);
+  // What's clicked in it, each as the action its row stands for.
+  const activeRef = useRef(activeTablePath);
+  activeRef.current = activeTablePath;
+  useEffect(
+    () =>
+      onSidebar((e) => {
+        if (e.type === "selectTable") dispatch({ type: "showTable", key: e.key });
+        else if (e.type === "selectView") dispatch({ type: "showView", key: e.key, viewId: e.viewId });
+        else if (e.type === "toggleFile") dispatch({ type: "toggleFile", bundle: e.bundle });
+        else if (e.type === "newView") dispatch({ type: "addView", id: newId() });
+        else if (e.type === "newTable") dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeRef.current) } });
+        else if (e.type === "filesMode") chooseFilesMode(e.files);
+        else if (e.type === "toggleDir") dispatch({ type: "toggleDir", id: `${e.bundle}/${e.path}`, open: e.open });
+        else if (e.type === "showFile") dispatch({ type: "showFile", file: { bundle: e.bundle, path: e.path } });
+        else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
+        else if (e.type === "inspector" && !e.shown) closeInspected.current();
+        else if (e.type === "inspectorCell") inspectorCell.current(e.action);
+        else if (e.type === "settingsForm") onSettingsFormEvent(e);
+        else if (e.type === "formulaEditor") onFormulaEditorEvent(e);
+      }),
+    [chooseFilesMode],
+  );
+  // The window is titled for the view on screen, with where it lives under it (D37).
+  const windowTitle = shown ? shown.file.name : view.name;
+  useEffect(() => {
+    setWindowTitle(windowTitle, derived.breadcrumb.text);
+  }, [windowTitle, derived.breadcrumb.text]);
+
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }} onLayout={(e) => setWindowWidth(e.nativeEvent.layout.width)}>
+    <GestureHandlerRootView
+      style={{ flex: 1 }}
+      onLayout={(e) => {
+        setWindowWidth(e.nativeEvent.layout.width);
+        // The pane is as wide as the window, its sidebar and its inspector leave it: what measured itself measures again.
+        notifyLayoutChanged();
+      }}
+    >
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
-      {/* Panels (a row's page) are Liquid Glass, as macOS 26's own are.
-          Outside the PortalHost: a panel is drawn there. */}
-      <PanelSurface.Provider value={GlassSurface}>
       <PortalHost>
+        <PlatformControlsProvider value={windowControls}>
         <DisplaySettingsProvider value={shownDisplay}>
         <html.div dir={direction} style={styles.root}>
-          {sidebarShown && (
-            <Sidebar
-              tree={derived.sidebarTree.map((file) => ({ ...file, file: folderName(file.bundle) ?? file.file }))}
-              onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
-              filesMode={filesMode}
-              onFilesMode={chooseFilesMode}
-              files={flattenFilesTree(files)}
-              onToggleDir={(bundle, path, open) => dispatch({ type: "toggleDir", id: `${bundle}/${path}`, open })}
-              shownFile={shownFile}
-              onShowFile={(bundle, path) => dispatch({ type: "showFile", file: { bundle, path } })}
-              onSelectTable={(key) => dispatch({ type: "showTable", key })}
-              onSelectView={(key, viewId) => dispatch({ type: "showView", key, viewId })}
-              onNewTable={() => dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeTablePath) } })}
-              onNewView={() => dispatch({ type: "addView", id: newId() })}
-              footer={[
-                // Worded as the menu bar words them (table-app's appCommands).
-                { label: commandOf("new-file").label, onPress: commands["new-file"] },
-                { label: commandOf("open-folder").label, onPress: () => void chooseFolder("Choose a .table folder to open").then(openFolder) },
-                { label: commandOf("open-zip").label, onPress: () => void importZip() },
-                { label: "Display", onPress: toggleDisplay, active: showDisplay },
-                { label: "Reset demo data…", onPress: () => dispatch({ type: "reset", fresh }) },
-              ]}
-              footerNote="Edits are kept on this Mac."
-            />
-          )}
           <html.div style={styles.content}>
             {shown ? (
-              <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
+              <html.div style={[styles.fileShown, styles.under(topInset)]}>
+                <FileView {...shown} onClose={() => dispatch({ type: "showFile", file: null })} />
+              </html.div>
             ) : (
             <>
-            {/* Where this view is: its file and its table (D37); an opened folder by its own name. */}
-            <html.span style={styles.breadcrumb}>
-              {derived.breadcrumb.text}
-            </html.span>
-            <html.div style={styles.titleRow}>
-              <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "mac")}>
-                <html.button
-                  aria-label={sidebarShown ? "Hide the sidebar" : "Show the sidebar"}
-                  aria-expanded={sidebarShown}
-                  onClick={toggleSidebar}
-                  style={styles.sidebarTrigger}
-                >
-                  ◧
-                </html.button>
-              </Hinted>
-              <html.span dir="auto" style={styles.title}>{view.name}</html.span>
-            </html.div>
-            <html.div style={styles.subtitle}>
-              <html.span>{summary.count}</html.span>
-              <html.span>·</html.span>
-              {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
-              <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
-                {summary.validity}
-              </Hinted>
-              {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
-              {summary.schemaChanged && (
-                <>
-                  <html.span>·</html.span>
-                  <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
-                    {summary.schemaChangedLabel}
-                  </Hinted>
-                </>
-              )}
-            </html.div>
-            {/* The view's own actions; the tables, views and files are in the sidebar. */}
-            <html.div style={styles.toolbar}>
-              <Tip text={TOOLBAR_HINTS.viewSettings}>
-                <html.button
-                  onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
-                  style={[styles.tab, state.settingsOpen && styles.tabActive]}
-                >
-                  View settings
-                </html.button>
-              </Tip>
-              <Tip text={hintWithShortcut(commandOf("export-zip"), "mac")}>
-                <html.button onClick={() => void exportZip()} style={styles.tab}>
-                  Export .table.zip…
-                </html.button>
-              </Tip>
-            </html.div>
-            <html.input
-              type="text"
-              placeholder="Search…"
-              value={state.search}
-              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
-              style={styles.searchInput}
-            />
             {/* Out to the content's edges, its margin inside, so what scrolls
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
             <ScrollView
+              ref={scroller}
+              onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
+              scrollEventThrottle={16}
               style={{ flex: 1, marginHorizontal: -CONTENT_GUTTER }}
-              contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
+              contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
               showsVerticalScrollIndicator
+              // The system keeps this scroll's top clear of the toolbar once
+              // it's told this is the pane's own scroll (React Native turns
+              // that off). It is also what the system's scroll-edge effect
+              // behind the toolbar needs. TODO(#383): the soft style; see
+              // native/TablePanels/TableShell.swift.
+              onLayout={() => void adoptToolbarInsets()}
             >
+              <html.div style={styles.subtitle}>
+                <html.span>{summary.count}</html.span>
+                <html.span>·</html.span>
+                {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
+                <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                  {summary.validity}
+                </Hinted>
+                {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
+                {summary.schemaChanged && (
+                  <>
+                    <html.span>·</html.span>
+                    <Hinted hint={summary.schemaChangedHint} style={styles.schemaBumpBadge}>
+                      {summary.schemaChangedLabel}
+                    </Hinted>
+                  </>
+                )}
+              </html.div>
+
               {/* The viewer's own language, dates and formula syntax: the web's Display group. */}
               {showDisplay && (
                 <html.div style={styles.displayPanel}>
@@ -967,25 +1228,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                   />
                 </html.div>
               )}
-              {/* Scrolls with the view: above it, a tall panel squeezed every control into the window. */}
-              {state.settingsOpen && (
-                <ViewSettings
-                  key={view.id}
-                  view={shownView}
-                  schema={table.schema}
-                  // Turning a Sheet view into anything else asks first (D41): the reducer's question.
-                  onChange={(patch) => dispatch({ type: "updateView", patch })}
-                  onArrange={(patch) => dispatch({ type: "arrange", patch })}
-                  personal={derived.arranged}
-                  onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
-                  onReset={() => dispatch({ type: "resetArrangement" })}
-                  onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
-                  onClose={() => dispatch({ type: "settings", open: false })}
-                  onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
-                />
-              )}
+              <CellEditorContext.Provider value={glass.editor}>
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
                 ...callbacks,
+                onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                onPlaceMeasure,
                 relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
                 allRows: table.rows,
                 tableKey: tableNameOf(activeTablePath),
@@ -993,25 +1241,16 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                 onAttachFile: attachFile,
               })}
+              </CellEditorContext.Provider>
             </ScrollView>
             </PageGutter.Provider>
             </>
             )}
           </html.div>
-          {state.openPage && (
-            <BodyEditor
-              key={`${state.active}/${state.openPage}`}
-              rowId={state.openPage}
-              rowTitle={rowTitleFor(table, state.openPage)}
-              content={table.bodies?.[state.openPage] ?? ""}
-              onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
-              onClose={() => dispatch({ type: "openPage", rowId: null })}
-            />
-          )}
         </html.div>
         </DisplaySettingsProvider>
+        </PlatformControlsProvider>
       </PortalHost>
-      </PanelSurface.Provider>
       </AttachmentsProvider>
     </GestureHandlerRootView>
   );

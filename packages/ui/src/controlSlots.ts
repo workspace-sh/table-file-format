@@ -217,8 +217,12 @@ export interface SettingsFormProps {
   sections: SettingsSection[];
 }
 
-/** A platform's own settings form, or null where the shared layout is drawn instead. */
-export type SettingsFormSlot = ((props: SettingsFormProps) => ReactElement) | null;
+/**
+ * A platform's own settings form, or null where the shared layout is drawn
+ * instead. `reorderHint` says how its rows are reordered, where that isn't
+ * a phone's touch and hold ("Use a row's menu to reorder.").
+ */
+export type SettingsFormSlot = (((props: SettingsFormProps) => ReactElement) & { reorderHint?: string }) | null;
 
 /**
  * A Sheet control; `presentsSettings` when it shows `settings` as a sheet
