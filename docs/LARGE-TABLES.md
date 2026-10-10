@@ -371,23 +371,9 @@ A sync build that yields to something other than a timer shows all of it on a Ma
 - A yield to the scheduler lets React render and nothing else: the queue is never empty, so the run loop is never reached and no timer fires for the whole build.
 - A yield to a native call starves React as well: the call's result runs ahead of the render until the render has waited its 5 s. That is the phone's own figure (renders waiting 3.7 to 4.4 s, timers 3 to 9 s), which is what an async build on a phone would be if its results arrive before the queue empties. A Mac leaves a gap between them, which would be why the Simulator's async build shows nothing.
 - Only a timer takes the JS thread back to its run loop. On the phone a timer yield cost about 90 ms in async mode; what it costs in sync mode, with nothing else queued, is the number still wanted. The last row needs a tenth as many of them.
+- In sync mode a yield can only come between statements, so the longest wait is the longest statement: a batch of 5,000 rows was 0.35 s here, and one of 1,000 rows 0.22 s, at no cost to the build. A step of the search index is one statement too (0.44 s for 20,000 rows). The sync rows above use batches of 1,000.
 
 **Not measured yet, on a phone:** the sitting above. Sync with a timer yield, and sync with the scheduler and a timer every 300 ms, are the two that could settle the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
-
-**What the Simulator adds (iPhone 17 Pro, iOS 26.0, a Debug build, 100,000 rows).** It can't show the stall, but it can say what sync mode with a yield costs in itself:
-
-| Mode | Yield | `batchSize` | Rows in | Longest wait on the JS thread | Rows read mid-build |
-|---|---|---|---|---|---|
-| async | none | 5,000 | 11.5 s | 0.36 s | 7 reads, slowest 230 ms |
-| sync | none | 5,000 | 11.0 s | the whole build | none |
-| sync | 30 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 108 ms |
-| sync | 50 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 100 ms |
-| sync | 30 ms | 1,000 | 11.5 s | 0.22 s | 6 reads, slowest 134 ms |
-| async | 100 ms | 5,000 | 11.7 s | 0.34 s | 7 reads, slowest 228 ms |
-
-- Sync with a yield builds at async's pace and leaves the JS thread as free as async does.
-- In sync mode a yield can only come between statements, so the longest wait is the longest statement: a batch of 5,000 rows (0.35 s here). A smaller batch shortens it, at no cost to the build. A step of the search index is one statement too (0.44 s for 20,000 rows).
-- A yield costs nothing here in either mode (async with a 100 ms yield: 2% slower; on the phone, 3.4 times). So the Simulator can't say what a yield costs a phone in sync mode, which is the measurement still wanted.
 
 **If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
