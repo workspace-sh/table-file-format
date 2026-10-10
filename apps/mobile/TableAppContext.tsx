@@ -8,6 +8,7 @@ import { Alert, AppState, Platform } from "react-native";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
+  ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
   SIDEBAR_KEY,
@@ -26,7 +27,9 @@ import {
   openFailedText,
   save,
   schemaVersions,
+  tableNameOf,
   toBundle,
+  tooLargeToArchiveText,
   withNewFixtures,
   type AppAction,
   type AppCommandId,
@@ -223,13 +226,20 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
-      // A large table's rows aren't here to pack: an archive made now would hold it empty.
-      if (Object.entries(state.tables).some(([key, table]) => bundleOf(key) === bundle && table.indexed)) {
-        tell("Can't share this file yet", `${archiveFileName(bundle)} would hold a table too large to pack on this phone for now. Nothing was shared.`);
-        return;
-      }
       try {
-        await shareZip(bundle, state.tables, state.bundles);
+        // A table held in the index has its rows read out of it for the archive, which is made in
+        // memory; one too large for that is refused, since an archive without its rows is no copy.
+        const whole = { ...state.tables };
+        for (const [key, held] of Object.entries(state.tables)) {
+          if (bundleOf(key) !== bundle || !held.indexed) continue;
+          if (held.indexed.count > ARCHIVE_ROWS) {
+            const { heading, body } = tooLargeToArchiveText(tableNameOf(key), held.indexed.count);
+            return tell(heading, body);
+          }
+          const { indexed: _index, ...rest } = held;
+          whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+        }
+        await shareZip(bundle, whole, state.bundles);
       } catch (error) {
         dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       }
