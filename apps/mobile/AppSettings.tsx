@@ -7,6 +7,7 @@ import { displayChoices } from "@workspace.sh/table-app";
 import { usePlatformControls } from "@workspace.sh/table-ui";
 import type { SettingsSection } from "@workspace.sh/table-ui/shared";
 import { useTableAppContext } from "./TableAppContext";
+import { BUILD_LABEL } from "./buildInfo";
 
 export function AppSettings({ onClose }: { onClose: () => void }) {
   const app = useTableAppContext();
@@ -15,6 +16,12 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
   const { state, dispatch, systemLocale, resetDemo } = app;
 
   const sections: SettingsSection[] = [
+    {
+      // Which build this is, first, where it's seen as Settings opens: what
+      // to quote when reporting something (docs/VERSIONING.md).
+      id: "build",
+      rows: [{ kind: "info", id: "build", label: "Build", value: BUILD_LABEL }],
+    },
     ...displayChoices(state.display, systemLocale, "System").map(
       (row): SettingsSection => ({
         id: row.kind,
