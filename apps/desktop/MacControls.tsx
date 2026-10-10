@@ -7,8 +7,9 @@
 import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef, type ReactElement } from "react";
 import { Pressable, type View } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { PlatformControls, RowAction, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
-import { onContextMenu, popUpMenu, type PopUpItem } from "./menu";
+import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
+import type { DateInputProps, DateInputSlot, PlatformControls, RowAction, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
+import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./menu";
 
 /** No choice: an id of its own, as a menu item needs one. */
 const NONE = "\u0000none";
@@ -72,6 +73,30 @@ const SelectView = forwardRef<SelectHandle, SelectProps>(function MacSelect(
 // Cast: the app and table-ui each resolve their own copy of React's types.
 export const MacSelect = Object.assign(SelectView, { opensFromTrigger: true }) as unknown as SelectSlot;
 
+/**
+ * A date, a time, or both, in the system's date picker: a click on the
+ * selected cell opens it in a popover pointing at the cell. Typing on the
+ * cell still opens its text editor, so a typed or pasted date still parses.
+ */
+function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps): ReactElement {
+  const anchor = useRef<View | null>(null);
+  const open = () =>
+    anchor.current?.measure((_x, _y, width, height, x, y) => {
+      void pickDate(kind, dateOfStored(kind, value)?.getTime() ?? null, { x, y, width, height }).then((chosen) => {
+        if (chosen === null) return;
+        const next = storedOfDate(kind, new Date(chosen));
+        if (next !== value) onChange(next);
+      });
+    });
+  return (
+    <Pressable ref={anchor} onPress={open} accessibilityRole="button" accessibilityLabel={label} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
+      {trigger}
+    </Pressable>
+  );
+}
+
+export const MacDateInput: DateInputSlot = Object.assign(DateInputView, { available: true });
+
 // What has a menu, by the id its element carries: a right-click arrives
 // from the window (onContextMenu) with the id of what was clicked.
 const menus = new Map<string, { actions: RowAction[] }>();
@@ -107,7 +132,7 @@ export function watchRowMenus(): () => void {
 }
 
 /** The Mac's controls, for PlatformControlsProvider. One object, so the views' rows aren't remounted. */
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions };
+export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput };
 
 const styles = css.create({
   button: {

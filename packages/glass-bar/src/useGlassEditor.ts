@@ -3,7 +3,7 @@
 // session; this keeps them, and turns them, with search, into what the bar
 // shows. The bar's callbacks go back to the session or the table. One hook
 // for every platform that draws a bar: iOS takes every edit; the Mac takes
-// formulas and leaves the rest to edit in their cells (`accepts`).
+// formulas and leaves the rest to edit in their cells (`formulasOnly`).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Dimensions, Keyboard } from "react-native";
@@ -61,10 +61,11 @@ export interface GlassEditorOptions {
   /** Scroll the table by this much (positive: content moves up), to keep a cell in view. */
   onScrollBy?: (dy: number) => void;
   /**
-   * Which edits the bar takes over; the rest are edited in their cells, as
-   * table-ui does with no bar. Absent: every one (a phone has no better place).
+   * The bar takes formulas only; every other cell is edited in place, as
+   * table-ui does with no bar (CellEditor's `formulasOnly`). Absent: it
+   * takes every edit (a phone has no better place).
    */
-  accepts?: (session: CellEditSession) => boolean;
+  formulasOnly?: boolean;
 }
 
 /** Roughly how tall the editor stands above the keyboard, by what it shows. */
@@ -82,7 +83,7 @@ const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, accepts }: GlassEditorOptions) {
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
   const [status, setStatus] = useState<CellEditStatus>({});
@@ -105,8 +106,6 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   }, []);
   const scrollBy = useRef(onScrollBy);
   scrollBy.current = onScrollBy;
-  const takes = useRef(accepts);
-  takes.current = accepts;
   const bar = useRef<GlassBarHandle>(null);
   const commands = useRef<CellEditorCommands | null>(null);
   // What's typed, and the open session, for the table's taps, which come
@@ -116,10 +115,11 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
 
   const editor = useMemo<CellEditor>(
     () => ({
+      formulasOnly,
       // Reported on every render of the table: only a change is news.
       select: (next) => setSelection((prev) => (sameSelection(prev, next) ? prev : next)),
       begin: (next) => {
-        if (takes.current && !takes.current(next)) return false;
+        if (formulasOnly && next.mode !== "formula") return false;
         open.current = next;
         typed.current = next.initial;
         setSession(next);
@@ -181,7 +181,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         return true;
       },
     }),
-    [],
+    [formulasOnly],
   );
 
   const close = () => {

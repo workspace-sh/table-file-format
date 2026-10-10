@@ -117,6 +117,12 @@ export interface CellEditorCommands {
 }
 
 export interface CellEditor {
+  /**
+   * This editor takes formulas only: every other cell is edited in place,
+   * with the platform's own controls (its menu of choices, its date
+   * picker), as with no editor. A Mac, where a cell has room to be typed in.
+   */
+  formulasOnly?: boolean;
   select(selection: CellEditorSelection | null): void;
   /** Take over an edit; false leaves the cell to edit in place. */
   begin(session: CellEditSession): boolean;
