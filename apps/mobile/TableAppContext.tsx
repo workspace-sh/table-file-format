@@ -3,11 +3,12 @@
 // store, questions, messages and file actions. The screens (app/) read it
 // with useTableAppContext.
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform } from "react-native";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
+  ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
   SIDEBAR_KEY,
@@ -26,6 +27,9 @@ import {
   openFailedText,
   save,
   schemaVersions,
+  tableNameOf,
+  toBundle,
+  tooLargeToArchiveText,
   withNewFixtures,
   type AppAction,
   type AppCommandId,
@@ -38,7 +42,11 @@ import { useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
-import { ZipError, chooseZip, shareZip } from "./files";
+import { ZipError, chooseZip, readZip, shareZip, type OpenedZip } from "./files";
+import { useIndexedTables, type IndexedTables } from "./useIndexedTables";
+import { bundleDir, removeAllFolders } from "./indexHost";
+import { expoFs } from "./expoFs";
+import { writeBundleTo } from "@workspace.sh/table-core/io";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web,
 // macOS and Linux apps hold them, and each bundle's manifest.
@@ -62,6 +70,10 @@ export interface TableAppContextValue {
   /** A command's label, as the other apps' menus word it. */
   labelOf: (id: AppCommandId) => string;
   openZip: () => Promise<void>;
+  /** Take in a .table.zip's bytes, as choosing one does; resolves with the key it is held under. */
+  openBytes: (bytes: Uint8Array, name: string) => Promise<string>;
+  /** The tables held in their index (large ones): the rows on screen, and how far a reading has got. */
+  indexed: Pick<IndexedTables, "building" | "reading" | "source" | "stale" | "lost">;
   exportZip: () => Promise<void>;
   /** The phone's own language, which "System" in the display settings means. */
   systemLocale: string;
@@ -108,6 +120,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
 function Loaded({ store, children }: { store: KeyValueStore | null; children: ReactNode }) {
   // The platform's language, when the viewer hasn't chosen one.
   const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
   const { state, dispatch, display, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: bundleMetas };
@@ -122,10 +135,35 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     },
     // Saved on the phone a moment after the last edit. The fixtures themselves are
     // never saved, so an untouched app keeps following them as they change.
-    { store, write: async (_edited, tables, bundles) => save(store, { tables, bundles }), delayMs: SAVE_AFTER_MS },
+    {
+      store,
+      write: async (_edited, tables, bundles) => {
+        // A table held in the index has no rows here: only what's left of it is kept in this store.
+        save(store, { tables, bundles });
+        await saveIndexed.current(tables);
+        // A bundle kept as a folder (it has a large table) has the rest of its files written there too,
+        // so the folder is the whole .table; the writer leaves an indexed table's rows file to the index.
+        const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed ? [bundleOf(key)] : [])));
+        for (const bundle of folders) await writeBundleTo(expoFs, bundleDir(bundle), toBundle(tables, bundles, bundle));
+      },
+      delayMs: SAVE_AFTER_MS,
+    },
     systemLocale,
   );
-  const derived = derive(state, { locale: systemLocale });
+  const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
+  // Tables held in the index (large ones): read, edited and saved there.
+  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell });
+  saveIndexed.current = indexed.save;
+  const derived = derive(state, {
+    locale: systemLocale,
+    ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
+  });
+  /** What reading an archive gave, taken in: its large tables' first rows are held for showing meanwhile. */
+  const take = (opened: OpenedZip): string => {
+    indexed.hold(opened.first);
+    dispatch({ type: "opened", library: opened.library, skipped: opened.skipped });
+    return Object.keys(opened.library.bundles)[0]!;
+  };
 
   // Going to the background may be the last the app sees before it's
   // ended: what's left is written first.
@@ -145,7 +183,11 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
       return ask(asking.confirm, (response) => {
         // Starting again from the examples: what the phone saved goes too,
         // or the old edits would come back at the next launch.
-        if (asking.on.type === "reset" && response === "reset") clearSaved(store);
+        if (asking.on.type === "reset" && response === "reset") {
+          clearSaved(store);
+          // The folders the phone kept for large tables go with it.
+          void removeAllFolders().catch(() => {});
+        }
         dispatch({ type: "answer", response });
       });
     if (Platform.OS !== "ios") return;
@@ -173,17 +215,31 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     openZip: async () => {
       try {
         const opened = await chooseZip(Object.keys(state.bundles));
-        if (opened) dispatch({ type: "opened", library: opened.library, skipped: opened.skipped });
+        if (opened) take(opened);
       } catch (error) {
         const heading = error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(".table.zip", error);
         dispatch({ type: "tell", message: { heading } });
       }
     },
+    openBytes: async (bytes, name) => take(await readZip(bytes, Object.keys(state.bundles), name)),
+    indexed,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
       try {
-        await shareZip(bundle, state.tables, state.bundles);
+        // A table held in the index has its rows read out of it for the archive, which is made in
+        // memory; one too large for that is refused, since an archive without its rows is no copy.
+        const whole = { ...state.tables };
+        for (const [key, held] of Object.entries(state.tables)) {
+          if (bundleOf(key) !== bundle || !held.indexed) continue;
+          if (held.indexed.count > ARCHIVE_ROWS) {
+            const { heading, body } = tooLargeToArchiveText(tableNameOf(key), held.indexed.count);
+            return tell(heading, body);
+          }
+          const { indexed: _index, ...rest } = held;
+          whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+        }
+        await shareZip(bundle, whole, state.bundles);
       } catch (error) {
         dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       }
