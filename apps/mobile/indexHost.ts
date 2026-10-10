@@ -124,6 +124,13 @@ const COMMIT_EVERY = 20_000;
  */
 const DRIVER_MODE: "async" | "sync" = process.env.EXPO_PUBLIC_TABLE_INDEX_MODE === "sync" ? "sync" : "async";
 const YIELD_AFTER_MS = Number(process.env.EXPO_PUBLIC_TABLE_INDEX_YIELD_MS ?? 0) || 0;
+/**
+ * Rows per statement in a build. In sync mode a yield can only come between
+ * statements, so the longest the screen waits is the longest statement: a
+ * smaller batch shortens it at no cost to the build (0.22 s at 1,000 against
+ * 0.35 s at core's 5,000, in the Simulator). In async mode it changes nothing.
+ */
+const BATCH = DRIVER_MODE === "sync" ? { batchSize: 1000 } : {};
 /** The most of its write-ahead log an index keeps on disk once the log has been folded in, in bytes. */
 const WAL_KEPT = 16 * 1024 * 1024;
 
@@ -267,6 +274,7 @@ async function ensure(
         bodies: fresh.bodies,
         key: "saved",
         commitEvery: COMMIT_EVERY,
+        ...BATCH,
         ...(onProgress ? { onProgress } : {}),
       });
       handle.close();
@@ -291,7 +299,7 @@ async function ensure(
   }
   const rows = await keptRows(db, bundle, name);
   if (!rows) throw new Error("its rows are no longer on this phone");
-  return buildIndexFromBytes(db, { name, schema, rows, key: "saved", commitEvery: COMMIT_EVERY, ...(onProgress ? { onProgress } : {}) });
+  return buildIndexFromBytes(db, { name, schema, rows, key: "saved", commitEvery: COMMIT_EVERY, ...BATCH, ...(onProgress ? { onProgress } : {}) });
 }
 
 function build(
