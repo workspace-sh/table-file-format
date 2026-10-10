@@ -82,6 +82,8 @@ export function expoDriver(db: ExpoDatabase, mode: "async" | "sync" = "async"): 
     all: (sql, params = []) => inTurn(async () => all(await prepared(sql), params)),
     // A one-row insert is run for many rows at once, so a batch is a crossing per few hundred rows, not per row.
     // Each statement takes its own turn: a read asked mid-batch (rowsBeingBuilt) waits for one statement, not the batch.
+    // So anything else asked of the driver during a build runs inside the build's transaction: a host must hold its
+    // writes to this database until the build is done.
     batch: async (sql, lists) => {
       const tuple = ONE_ROW_INSERT.exec(sql)?.[1];
       const width = lists[0]?.length ?? 0;
