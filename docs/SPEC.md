@@ -1004,7 +1004,11 @@ clock skew, and costs ~50ms on a multi-MB NDJSON.
 ### Rebuild and in-place edits
 
 A build replaces the table's index in one transaction, so a concurrent
-reader sees the old index or the new one, never half. Rows can be
+reader sees the old index or the new one, never half. A build MAY
+instead commit in steps (`commitEvery`), for a device where one long
+commit stalls it: the table then has no key from the first step to the
+last, so a reader sees no index and falls back, and a build that fails
+part-way leaves none. Rows can be
 streamed in, so memory stays flat at a million rows (about 30 s in
 Node, once per content version; reopening a saved index is
 instant). Deleting `index.sqlite` at any moment MUST be safe (it is,
