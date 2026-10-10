@@ -11,7 +11,7 @@ export type PopUpItem =
   | { separator: true };
 
 interface TableMenuModule {
-  setUndo(canUndo: boolean, canRedo: boolean): void;
+  setUndo(canUndo: boolean, canRedo: boolean, undoTitle: string, redoTitle: string): void;
   setItem(
     id: string,
     menu: string,
@@ -77,9 +77,11 @@ export interface MenuItem {
  * Edit › Undo and Redo are the table's when no text is being typed, and
  * are on or off as it can be undone and redone; in a text field they stay
  * the text's own. Choosing one comes back as the `undo` or `redo` command.
+ * The titles are what the items say when the table is what they'd act on
+ * ("Undo Edit Title"); for text they say the text's own ("Undo Typing").
  */
-export function setUndo(canUndo: boolean, canRedo: boolean): void {
-  TableMenu?.setUndo(canUndo, canRedo);
+export function setUndo(canUndo: boolean, canRedo: boolean, undoTitle: string, redoTitle: string): void {
+  TableMenu?.setUndo(canUndo, canRedo, undoTitle, redoTitle);
 }
 
 /** Add the item, or update its title and key. */
