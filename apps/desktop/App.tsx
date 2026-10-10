@@ -679,6 +679,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { canGoBack, canGoForward } = derived;
   useEffect(() => {
     for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode, canGoBack, canGoForward })) {
+      // The Edit menu has AppKit's own Undo and Redo on these keys, which a text field answers.
+      if (c.id === "undo" || c.id === "redo") continue;
       setMenuItem({
         id: c.id,
         menu: c.menu,
@@ -706,6 +708,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     // The view's address as text, with the open page's row as the web's address has it;
     // opening one from outside the app waits on a link scheme.
     "copy-link": () => copyText(derived.address),
+    undo: () => dispatch({ type: "undo" }),
+    redo: () => dispatch({ type: "redo" }),
   };
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
