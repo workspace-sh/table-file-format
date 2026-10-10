@@ -12,6 +12,7 @@ import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
+import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
 import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
 
 /**
@@ -82,7 +83,7 @@ export async function readTableArchive(
 ): Promise<ParsedBundle> {
   const lazyFrom = options.lazyFrom ?? 1 << 20;
   const entries = readZip(source, {
-    lazy: (name, size) => !!options.rowsLazily && size >= lazyFrom && /^[^/]+\/tables\/[^/]+\/rows\.ndjson$/.test(name),
+    lazy: (name, size) => !!options.rowsLazily && size >= lazyFrom && isArchivedRowsFile(name),
   }).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
@@ -92,13 +93,13 @@ export async function readTableArchive(
   const roots = new Set(entries.map((e) => e.name.split("/")[0]!));
   if (roots.size !== 1) {
     throw new Error(
-      `archive must contain exactly one root <name>.table directory, found: ${[...roots].join(", ")}`,
+      `archive must contain exactly one root <name>${BUNDLE_EXTENSION} directory, found: ${[...roots].join(", ")}`,
     );
   }
   const root = [...roots][0]!;
-  if (!root.endsWith(".table") || entries.some((e) => !e.name.includes("/"))) {
+  if (!root.endsWith(BUNDLE_EXTENSION) || entries.some((e) => !e.name.includes("/"))) {
     throw new Error(
-      `archive root must be a <name>.table directory, found: ${root}`,
+      `archive root must be a <name>${BUNDLE_EXTENSION} directory, found: ${root}`,
     );
   }
 
@@ -116,23 +117,23 @@ export async function readTableArchive(
 
   const diagnostics: ValidationError[] = [];
   const meta =
-    parseOptionalJsonText<BundleMeta>("meta.json", text("meta.json"), diagnostics) ?? {};
+    parseOptionalJsonText<BundleMeta>(BundleEntry.meta, text(BundleEntry.meta), diagnostics) ?? {};
 
   const names = new Set<string>();
   for (const name of [...files.keys(), ...compressed.keys()]) {
-    const m = /^tables\/([^/]+)\//.exec(name);
-    if (m && isTableName(m[1]!)) names.add(m[1]!);
+    const table = tableNameIn(name);
+    if (table !== null && isTableName(table)) names.add(table);
   }
 
   const tables: Record<string, ParsedTable> = {};
   for (const name of [...names].sort()) {
-    const prefix = `tables/${name}/`;
-    const schemaRaw = text(`${prefix}schema.json`);
-    const lazyRows = compressed.get(`${prefix}rows.ndjson`);
-    if (schemaRaw === undefined || (text(`${prefix}rows.ndjson`) === undefined && !lazyRows)) {
+    const prefix = `${tablePath(name)}/`;
+    const schemaRaw = text(`${prefix}${TableEntry.schema}`);
+    const lazyRows = compressed.get(`${prefix}${TableEntry.rows}`);
+    if (schemaRaw === undefined || (text(`${prefix}${TableEntry.rows}`) === undefined && !lazyRows)) {
       diagnostics.push({
         rowIndex: -1,
-        message: `tables/${name} isn't a table: it needs schema.json and rows.ndjson`,
+        message: `${tablePath(name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rows}`,
       });
       continue;
     }
@@ -140,28 +141,28 @@ export async function readTableArchive(
     // Fatal by design — do not wrap (same posture as parseTable).
     const schema = JSON.parse(schemaRaw) as TableSchema;
     const views =
-      parseOptionalJsonText<View[]>("views.json", text(`${prefix}views.json`), tableDiagnostics) ?? [];
+      parseOptionalJsonText<View[]>(TableEntry.views, text(`${prefix}${TableEntry.views}`), tableDiagnostics) ?? [];
     const tableMeta =
-      parseOptionalJsonText<TableMeta>("meta.json", text(`${prefix}meta.json`), tableDiagnostics) ?? {};
+      parseOptionalJsonText<TableMeta>(TableEntry.meta, text(`${prefix}${TableEntry.meta}`), tableDiagnostics) ?? {};
 
     const bodies: Record<string, string> = {};
     for (const file of files.keys()) {
       // Direct children of the table's bodies/ only, mirroring the directory parser.
-      if (!file.startsWith(`${prefix}bodies/`) || !file.endsWith(".md")) continue;
-      const inner = file.slice(`${prefix}bodies/`.length);
+      if (!file.startsWith(`${prefix}${TableEntry.bodies}/`) || !file.endsWith(BODY_EXTENSION)) continue;
+      const inner = file.slice(`${prefix}${TableEntry.bodies}/`.length);
       if (inner.includes("/")) continue;
-      bodies[inner.slice(0, -".md".length)] = strFromU8(files.get(file)!);
+      bodies[inner.slice(0, -BODY_EXTENSION.length)] = strFromU8(files.get(file)!);
     }
 
     let elsewhere = false;
     if (lazyRows) {
       elsewhere = (await options.rowsLazily!(name, { schema, views, bodies }, lazyRows)) === true;
       // Not taken: read as any other.
-      if (!elsewhere) files.set(`${prefix}rows.ndjson`, whole(lazyRows));
+      if (!elsewhere) files.set(`${prefix}${TableEntry.rows}`, whole(lazyRows));
     }
-    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}rows.ndjson`)!)) === true;
-    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}rows.ndjson`) ?? "", tableDiagnostics);
-    const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/tables/${name}` };
+    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}${TableEntry.rows}`)!)) === true;
+    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}${TableEntry.rows}`) ?? "", tableDiagnostics);
+    const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
     if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
     if (tableDiagnostics.length > 0) table.diagnostics = tableDiagnostics;
@@ -190,11 +191,11 @@ export async function writeTableArchive(
   name: string,
   input: WriteBundleInput | ParsedBundle,
 ): Promise<Uint8Array> {
-  const bare = name.endsWith(".table") ? name.slice(0, -".table".length) : name;
+  const bare = name.endsWith(BUNDLE_EXTENSION) ? name.slice(0, -BUNDLE_EXTENSION.length) : name;
   if (bare.length === 0 || bare.includes("/") || bare.includes("\\")) {
     throw new Error(`invalid table name: ${JSON.stringify(name)}`);
   }
-  const root = `${bare}.table`;
+  const root = `${bare}${BUNDLE_EXTENSION}`;
   return writeZip(
     // strToU8, not a global TextEncoder — portable across Hermes.
     bundleFiles(input).map((f) => ({ name: `${root}/${f.path}`, data: strToU8(f.content) })),
@@ -216,20 +217,20 @@ export interface BundleFile {
  */
 export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[] {
   const names = tableOrder(input);
-  const files: BundleFile[] = [{ path: "meta.json", content: pretty(stampMeta({ ...(input.meta ?? {}), tables: names })) }];
+  const files: BundleFile[] = [{ path: BundleEntry.meta, content: pretty(stampMeta({ ...(input.meta ?? {}), tables: names })) }];
   for (const tableName of names) {
     if (!isTableName(tableName)) throw new Error(`invalid table name: ${JSON.stringify(tableName)}`);
     const t = input.tables[tableName]!;
-    const at = `tables/${tableName}/`;
+    const at = `${tablePath(tableName)}/`;
     files.push(
-      { path: `${at}schema.json`, content: pretty(t.schema) },
-      { path: `${at}rows.ndjson`, content: serializeRows(t.rows, t.schema) },
-      { path: `${at}views.json`, content: pretty(t.views ?? []) },
-      { path: `${at}meta.json`, content: pretty(tableMetaOnly(t.meta)) },
+      { path: `${at}${TableEntry.schema}`, content: pretty(t.schema) },
+      { path: `${at}${TableEntry.rows}`, content: serializeRows(t.rows, t.schema) },
+      { path: `${at}${TableEntry.views}`, content: pretty(t.views ?? []) },
+      { path: `${at}${TableEntry.meta}`, content: pretty(tableMetaOnly(t.meta)) },
     );
     const bodies = t.bodies ?? {};
     for (const id of Object.keys(bodies).sort()) {
-      files.push({ path: `${at}bodies/${id}.md`, content: normaliseBody(bodies[id]!) });
+      files.push({ path: `${at}${TableEntry.bodies}/${id}${BODY_EXTENSION}`, content: normaliseBody(bodies[id]!) });
     }
   }
   return files;
