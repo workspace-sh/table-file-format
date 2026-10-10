@@ -44,6 +44,7 @@ export type Request = { id: number } & (
       | { op: "rows"; request: RowsRequest }
       | { op: "peek"; name: string; start: number; end: number }
       | { op: "persistent" }
+      | { op: "storage" }
       | { op: "close" }
     ))
 );
@@ -100,13 +101,17 @@ const post = (response: Response) => (self as unknown as Worker).postMessage(res
 type Sqlite = Awaited<ReturnType<typeof sqlite3InitModule>>;
 type Pool = Awaited<ReturnType<Sqlite["installOpfsSAHPoolVfs"]>>;
 let engine: Promise<{ sqlite3: Sqlite; pool: Pool | null }> | null = null;
+/** Why the browser's storage couldn't be had, when it couldn't: another tab of the app holds it, or the browser gives none. */
+let noStorage: "elsewhere" | "none" | null = null;
 /** SQLite, and the browser's file storage for it when it gives any: asked for once. */
 function started(): Promise<{ sqlite3: Sqlite; pool: Pool | null }> {
   return (engine ??= (async () => {
     const sqlite3 = await sqlite3InitModule();
     try {
       return { sqlite3, pool: await sqlite3.installOpfsSAHPoolVfs({ name: "table-index", initialCapacity: 6 }) };
-    } catch {
+    } catch (error) {
+      // Another tab's worker has the storage's files open: a browser gives them to one at a time.
+      noStorage = error instanceof Error && error.name === "NoModificationAllowedError" ? "elsewhere" : "none";
       return { sqlite3, pool: null };
     }
   })());
@@ -300,6 +305,7 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
   await use(req.bundle);
   if (req.op === "open") return undefined;
   if (req.op === "persistent") return persistent;
+  if (req.op === "storage") return persistent ? "kept" : (noStorage ?? "none");
   if (!driver) throw new Error("the database is not open");
   switch (req.op) {
     case "exec":

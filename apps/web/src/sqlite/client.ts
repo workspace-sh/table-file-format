@@ -9,6 +9,8 @@ import type { OpenedLarge, Request, Response } from "./worker";
 export interface WebDatabase extends SqlDriver {
   /** True when the file lives in OPFS and survives a reload; false when the browser gave memory only. */
   persistent(): Promise<boolean>;
+  /** Where the file lives: kept in OPFS; in memory because another tab of the app holds the storage ("elsewhere"); or in memory because the browser gives none. */
+  storage(): Promise<"kept" | "elsewhere" | "none">;
   /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /** Make it again from the rows kept here: after a change to its fields. */
@@ -62,6 +64,22 @@ function start(): Running {
     for (const p of pending.values()) p.reject(new Error(e.message || "the SQLite worker failed"));
     pending.clear();
   };
+  // A page that's left can be kept by the browser for Back, its worker with
+  // it, still holding the storage: the app loaded afresh in that tab would
+  // then get none, and say its tables' rows were gone. So the worker goes
+  // as the page is left, and a page brought back by Back is loaded again.
+  if (typeof addEventListener === "function") {
+    let left = false;
+    addEventListener("pagehide", () => {
+      left = true;
+      worker.terminate();
+      for (const p of pending.values()) p.reject(new Error("the page was left"));
+      pending.clear();
+    });
+    addEventListener("pageshow", (e) => {
+      if (left && (e as PageTransitionEvent).persisted) location.reload();
+    });
+  }
   running = {
     call: <T,>(req: Call, progress?: (done: number, total: number) => void, transfer: Transferable[] = []): Promise<T> =>
       new Promise<T>((resolve, reject) => {
@@ -79,6 +97,7 @@ function database(bundle: string): WebDatabase {
   const ask = <T,>(req: BundleCall, progress?: (done: number, total: number) => void) => call<T>({ ...req, bundle } as Call, progress);
   return {
     persistent: () => ask<boolean>({ op: "persistent" }),
+    storage: () => ask<"kept" | "elsewhere" | "none">({ op: "storage" }),
     exec: (sql) => ask({ op: "exec", sql }),
     run: (sql, params = []) => ask({ op: "run", sql, params }),
     all: (sql, params = []) => ask<Record<string, SqlValue>[]>({ op: "all", sql, params }),
