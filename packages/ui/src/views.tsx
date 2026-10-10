@@ -2660,6 +2660,9 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [editor, view.id, tableKey],
   );
+  // When this table goes (another view, another table), nothing in it is
+  // selected any more: the editor is told, or it goes on showing the cell.
+  useEffect(() => () => editor?.select(null), [editor, view.id, tableKey]);
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
