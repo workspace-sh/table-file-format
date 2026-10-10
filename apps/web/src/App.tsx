@@ -42,6 +42,8 @@ import {
   loadSaved,
   loadSidebarPrefs,
   openArchive,
+  ARCHIVE_ROWS,
+  tooLargeToArchiveText,
   openFailedText,
   rowTitleFor,
   save,
@@ -459,7 +461,19 @@ export function App() {
     const bundle = bundleOf(activeTablePath);
     let bytes: Uint8Array;
     try {
-      bytes = await bundleToArchive(bundle, toBundle(tables, bundles, bundle));
+      // A table held in the index has its rows read out of it for the archive, which is made in
+      // memory; one too large for that is refused, since an archive without its rows is no copy.
+      const whole = { ...tables };
+      for (const [key, held] of Object.entries(tables)) {
+        if (bundleOf(key) !== bundle || !held.indexed) continue;
+        if (held.indexed.count > ARCHIVE_ROWS) {
+          const { heading, body } = tooLargeToArchiveText(tableNameOf(key), held.indexed.count);
+          return tell(heading, body);
+        }
+        const { indexed: _index, ...rest } = held;
+        whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+      }
+      bytes = await bundleToArchive(bundle, toBundle(whole, bundles, bundle));
     } catch (error) {
       dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       return;
@@ -470,7 +484,7 @@ export function App() {
     a.download = archiveFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [tables, bundles, activeTablePath]);
+  }, [tables, bundles, activeTablePath, indexed.everyRow, tell]);
 
   // An archive's bytes, read. A small one is read here. One that could hold
   // a large table is read in a worker, where such a table's rows stay, on
