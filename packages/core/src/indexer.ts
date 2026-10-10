@@ -69,6 +69,16 @@ export interface BuildOptions {
    * each row's text, and `buildSearchIndex` makes it a step at a time.
    */
   search?: "now" | "later";
+  /**
+   * Rows per transaction. Left out, the build is one transaction: a
+   * reader sees the old index or the new one. Given, it commits every so
+   * many rows, so no commit is larger than that (a phone stops its timers
+   * for the whole of a long one). The table then has no key from the
+   * build's first step to its last: a reader sees no index, and reads from
+   * memory, until it is whole; never half of one. A build that fails
+   * part-way leaves none.
+   */
+  commitEvery?: number;
 }
 
 export const INDEX_FORMAT = 1;
@@ -278,6 +288,10 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
     // after, it is one statement that takes seconds at a million rows, and
     // on a phone nothing scheduled runs until it's done.
     await sortIndex(db, n, ["pos"], "p");
+    const steps = options.commitEvery !== undefined && options.commitEvery > 0 ? options.commitEvery : 0;
+    // In steps, what's there is nobody's index until the last one says so.
+    if (steps) await db.run("update _tables set key = null where n = ?", [n]);
+    let uncommitted = 0;
     const computed = schema.fields.filter((f) => f.computed);
     // Formulas that read other rows are computed over every row at once; others, a batch at a time.
     const across = computed.length > 0 && !rowLocal(schema, computed);
@@ -304,7 +318,13 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
       chunk.push(row);
       if (chunk.length >= size) {
         await flush(chunk);
+        uncommitted += chunk.length;
         chunk = [];
+        if (steps && uncommitted >= steps) {
+          await db.exec("commit");
+          await db.exec("begin");
+          uncommitted = 0;
+        }
       }
     }
     await flush(chunk);
@@ -322,6 +342,8 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
+    // Steps already committed are taken out again: a build leaves a whole index or none.
+    if (options.commitEvery) await dropTables(db, n).catch(() => {});
     throw error;
   }
 }
