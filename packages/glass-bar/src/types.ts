@@ -87,7 +87,15 @@ export type GlassBarWorking = {
 export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
 /** One action in the More menu. */
-export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
+export type GlassBarAction = {
+  label: string;
+  symbol?: string;
+  /** Shown, but not to be pressed now: Undo with nothing to undo. */
+  disabled?: boolean;
+  /** A line above it in the menu: where a new group of actions starts. */
+  startsGroup?: boolean;
+  onPress: () => void;
+};
 
 export type GlassBarProps = {
   state: GlassBarState;

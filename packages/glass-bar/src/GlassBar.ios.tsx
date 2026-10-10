@@ -27,6 +27,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Button,
   DatePicker,
+  Divider,
   GlassEffectContainer,
   HStack,
   Host,
@@ -48,6 +49,7 @@ import {
   background,
   datePickerStyle,
   contentShape,
+  disabled,
   fixedSize,
   font,
   foregroundStyle,
@@ -293,9 +295,16 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
       >
-        {moreActions.map((a) => (
-          <Button key={a.label} label={a.label} systemImage={a.symbol as Symbol | undefined} onPress={a.onPress} />
-        ))}
+        {moreActions.flatMap((a) => [
+          ...(a.startsGroup ? [<Divider key={`${a.label}-line`} />] : []),
+          <Button
+            key={a.label}
+            label={a.label}
+            systemImage={a.symbol as Symbol | undefined}
+            onPress={a.onPress}
+            modifiers={a.disabled ? [disabled(true)] : undefined}
+          />,
+        ])}
       </Menu>
     );
   }
