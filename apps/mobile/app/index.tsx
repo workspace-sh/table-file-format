@@ -133,8 +133,25 @@ export default function TableScreen() {
     measured.current = true;
     void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"), app.openBytes);
   });
+  // Shaking the phone undoes, as iOS's own apps do: asked first, by what it
+  // would undo. Only iOS has the shake (modules/table-files), so it's loaded there.
+  const shake = useRef<{ ask?: () => void }>({});
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { onShakeToUndo } = require("../modules/table-files") as typeof import("../modules/table-files");
+    return onShakeToUndo(() => shake.current.ask?.());
+  }, []);
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
+  shake.current.ask = () => {
+    const step = derived.canUndo ? ("undo" as const) : derived.canRedo ? ("redo" as const) : null;
+    if (!step) return;
+    Alert.alert(labelOf(step), undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: step === "undo" ? "Undo" : "Redo", onPress: () => dispatch({ type: step }) },
+    ]);
+  };
   const { table, view, summary } = derived;
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
   // The rows of a large table still being read, shown until its own view's rows are here.
