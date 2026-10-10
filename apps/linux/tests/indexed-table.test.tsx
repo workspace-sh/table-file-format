@@ -91,7 +91,7 @@ describe("a table held in the index on Linux", () => {
     // The head of the file, in file order: t1 first, though the view sorts by priority.
     await screen.findAllByText("Land .table extension");
     await screen.findAllByText("1,000 of 3,008 rows read");
-    await screen.findAllByText(/first rows as stored\. This view's sorting/);
+    await screen.findAllByText(/rows as stored, as they're read\. This view's sorting/);
     await screen.findAllByText("Big 5");
     // Two hundred of them, not the table: the scroller is that long.
     const upper = scrollerOf(await cellOf("Big 5")).getVadjustment().getUpper();
@@ -107,6 +107,42 @@ describe("a table held in the index on Linux", () => {
     await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     expect(((await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry).getSensitive()).toBe(true);
+  });
+
+  it("while it's being read, every row read so far can be scrolled to, and the place is kept when it's done", async () => {
+    const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
+    let finish = () => {};
+    const held = new Promise<void>((resolve) => (finish = resolve));
+    // An index with all its rows in, and still saying it's reading: as a build is, near its end.
+    const reading = (dir: string): IndexHost => {
+      const host = openIndexHost(dir);
+      return {
+        ...host,
+        ensure: async (name, tableDir, onProgress) => {
+          const count = await host.ensure(name, tableDir);
+          onProgress?.(count + 5000, count + 5000);
+          await held;
+          return count;
+        },
+      };
+    };
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} openIndex={reading} />);
+    const first = await cellOf("Land .table extension");
+    const scroller = scrollerOf(first);
+    const adjustment = scroller.getVadjustment();
+    await waitFor(() => expect(adjustment.getUpper()).toBeGreaterThanOrEqual((ROWS + 8) * 45));
+    await screen.findAllByText(/rows read$/);
+    // Far past the first two hundred: read from the index as it stands.
+    adjustment.setValue(adjustment.getUpper() - adjustment.getPageSize());
+    await screen.findAllByText(`Big ${ROWS - 1}`);
+    const at = adjustment.getValue();
+
+    finish();
+    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
+    // The same table, where it was: v1 sorts by priority, and these rows are last either way.
+    expect(scroller.getVadjustment().getValue()).toBe(at);
+    await screen.findAllByText(`Big ${ROWS - 1}`);
   });
 
   it("scrolls to rows read from the index as they're wanted", async () => {
