@@ -349,6 +349,21 @@ The JS thread is not blocked (the second-connection ping never waited more than 
 
 **Not measured yet:** sync mode with a yield (`yieldAfterMs` 30 and 50). Nothing is in flight while a sync driver yields, so a yield should cost about a frame rather than 90 ms; if 100,000 rows come in at 9 to 10 s with gaps under about 100 ms, that settles the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
 
+**What the Simulator adds (iPhone 17 Pro, iOS 26.0, a Debug build, 100,000 rows).** It can't show the stall, but it can say what sync mode with a yield costs in itself:
+
+| Mode | Yield | `batchSize` | Rows in | Longest wait on the JS thread | Rows read mid-build |
+|---|---|---|---|---|---|
+| async | none | 5,000 | 11.5 s | 0.36 s | 7 reads, slowest 230 ms |
+| sync | none | 5,000 | 11.0 s | the whole build | none |
+| sync | 30 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 108 ms |
+| sync | 50 ms | 5,000 | 11.2 s | 0.35 s | 5 reads, slowest 100 ms |
+| sync | 30 ms | 1,000 | 11.5 s | 0.22 s | 6 reads, slowest 134 ms |
+| async | 100 ms | 5,000 | 11.7 s | 0.34 s | 7 reads, slowest 228 ms |
+
+- Sync with a yield builds at async's pace and leaves the JS thread as free as async does.
+- In sync mode a yield can only come between statements, so the longest wait is the longest statement: a batch of 5,000 rows (0.35 s here). A smaller batch shortens it, at no cost to the build. A step of the search index is one statement too (0.44 s for 20,000 rows).
+- A yield costs nothing here in either mode (async with a 100 ms yield: 2% slower; on the phone, 3.4 times). So the Simulator can't say what a yield costs a phone in sync mode, which is the measurement still wanted.
+
 **If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
 **Running the probe on a phone.** The screen is `apps/mobile/app/sqlite.tsx` (logic in `apps/mobile/sqliteProbe.ts`), in a development build or one made with `EXPO_PUBLIC_TABLE_MEASURE=1`:
