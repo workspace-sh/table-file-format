@@ -49,8 +49,10 @@ export function withNewFile(
   bundles: Record<string, BundleMeta>,
   title: string,
   now?: Date,
+  /** Names already used where it will be kept (folders on disk the app doesn't hold): its key is unlike these too. */
+  taken: readonly string[] = [],
 ): Made {
-  const key = tableKeyFor(title, Object.keys(bundles));
+  const key = tableKeyFor(title, [...Object.keys(bundles), ...taken]);
   const name = tableKeyFor(title, []);
   const made = newBundle(title, `${key}.table`, name, now);
   return {
@@ -62,7 +64,10 @@ export function withNewFile(
 }
 
 /** What's being made: a table in a bundle, or a `.table` file. */
-export type Making = { kind: "table"; bundle: string } | { kind: "file" };
+export type Making =
+  | { kind: "table"; bundle: string }
+  /** `taken`: names already used where the file will be kept, which the app doesn't hold (other `.table` folders on disk). */
+  | { kind: "file"; taken?: string[] };
 
 /** Asking for the new thing's name: each app shows it its own way. */
 export interface NamePrompt {
@@ -97,6 +102,6 @@ export function creating(
   const title = name?.trim();
   if (!title) return null;
   const made =
-    making.kind === "table" ? withNewTable(tables, bundles, making.bundle, title, now) : withNewFile(tables, bundles, title, now);
+    making.kind === "table" ? withNewTable(tables, bundles, making.bundle, title, now) : withNewFile(tables, bundles, title, now, making.taken);
   return { ...made, search: "", openBody: null };
 }

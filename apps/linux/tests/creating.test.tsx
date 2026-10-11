@@ -2,7 +2,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { parseBundle } from "@workspace.sh/table-core/parser";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -57,6 +57,22 @@ describe("making tables and files on Linux", () => {
       expect(b.meta.title).toBe("Garden");
       expect(Object.keys(b.tables)).toEqual(["garden"]);
     });
+  });
+
+  it("with a folder of your own open, a new .table file is made beside it, and never in a folder already there", async () => {
+    // No examples library: the app was started on this one folder.
+    mkdirSync(join(dir, "garden.table"));
+    writeFileSync(join(dir, "garden.table", "keep.txt"), "someone else's");
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
+    await name("Garden");
+    await waitFor(async () => {
+      expect(existsSync(join(dir, "garden-2.table", "meta.json"))).toBe(true);
+      expect((await parseBundle(join(dir, "garden-2.table"))).meta.title).toBe("Garden");
+    });
+    // The folder that was there is as it was.
+    expect(readdirSync(join(dir, "garden.table"))).toEqual(["keep.txt"]);
   });
 
   it("a blank name makes nothing", async () => {
