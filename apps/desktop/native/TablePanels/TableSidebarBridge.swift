@@ -109,6 +109,32 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
+  /// The app's settings, for its Settings window (TableSettingsWindow.swift): a settings form's JSON.
+  @objc func setAppSettings(_ json: String) {
+    guard let bytes = json.data(using: .utf8),
+          let data = try? JSONDecoder().decode(SettingsFormData.self, from: bytes) else {
+      NSLog("TableSidebar: app settings that couldn't be read")
+      return
+    }
+    DispatchQueue.main.async {
+      TableSettingsWindow.model.data = data
+    }
+  }
+
+  /// Development only: open or close the Settings window, as ⌘, and its close button do; and what a control in it would send, as JSON.
+  @objc func showAppSettings(_ shown: Bool) {
+    DispatchQueue.main.async {
+      if shown { TableSettingsWindow.shared.show() } else { TableSettingsWindow.shared.close() }
+    }
+  }
+  @objc func sendAppSettings(_ json: String) {
+    guard let bytes = json.data(using: .utf8),
+          let event = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return }
+    DispatchQueue.main.async {
+      TableSettingsWindow.model.send(event)
+    }
+  }
+
   /// Development only: send what a control in the settings form would, as JSON.
   @objc func sendSettingsForm(_ json: String) {
     guard let bytes = json.data(using: .utf8),
