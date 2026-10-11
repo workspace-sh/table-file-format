@@ -1,0 +1,24 @@
+# A pull request names the issue it belongs to, so the board shows all work.
+
+name: Tracked
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  names-an-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The description names an issue
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "$BODY" | grep -Eiq '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?|refs?|part of|tracked by):?[[:space:]]+(#[0-9]+|https://github\.com/[^[:space:]]+/issues/[0-9]+)'; then
+            echo "Names an issue."
+          else
+            echo "::error::This pull request doesn't name an issue. Add 'Closes #123' (or 'Refs #123') to its description. See AGENTS.md."
+            exit 1
+          fi
