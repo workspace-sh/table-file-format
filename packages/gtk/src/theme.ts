@@ -19,6 +19,17 @@ export const styles = {
   headerCell: css({ padding: "0 10px", fontWeight: "600", opacity: 0.75 }),
   headerRow: css({ borderBottom: `1px solid ${RULE}`, minHeight: "36px" }),
   bodyRow: css({ borderBottom: `1px solid ${RULE}` }),
+  /**
+   * A row with its menu button after it. The button isn't part of the table:
+   * it is faint until the row is pointed at, or the keyboard or its open menu is on it.
+   * (The button a menu button draws is its child, and that is what says it's pressed.)
+   */
+  rowWithMenu: css({ "&:hover menubutton > button": { opacity: 1 } }),
+  rowMenu: css({ "& > button": { opacity: 0.3 }, "& > button:checked, & > button:focus-visible": { opacity: 1 } }),
+  /** A place where something could be added (a field, a row): faint at rest, full strength when pointed at or focused. */
+  addPlace: css({ opacity: 0.5, "&:hover, &:focus-visible": { opacity: 1 } }),
+  /** The new-row band: square, so its fill when pointed at is the band itself. */
+  addRowBand: css({ borderRadius: "0", minHeight: "36px", padding: "0 10px" }),
   /** A column's end edge, as the web grid rules its cells. */
   columnRule: css({ borderRight: `1px solid ${RULE}` }),
   groupRow: css({ backgroundColor: "alpha(currentColor, 0.04)", borderBottom: `1px solid ${RULE}`, padding: "6px 10px", fontWeight: "600" }),
