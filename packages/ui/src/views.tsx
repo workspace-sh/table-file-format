@@ -3802,6 +3802,11 @@ export function TableView({
     selectAt(next.row, next.col);
     gridRef.current?.focus?.({ preventScroll: true });
     keysRef.current?.focus();
+    // And again once the cell's editor has gone. On the Mac the editor is
+    // still the first responder when this runs; when it's removed a moment
+    // later, AppKit hands the keyboard to the window, and the arrows stop
+    // reaching the table until a cell is clicked.
+    setTimeout(() => keysRef.current?.focus(), 0);
   };
   const onGridKey = (e: KeyEventLike) => {
     const tag = (e.target as { tagName?: string } | undefined)?.tagName;
