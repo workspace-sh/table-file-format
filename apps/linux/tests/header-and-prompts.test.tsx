@@ -79,7 +79,8 @@ describe("a sheet that formulas read, turned off", () => {
 
   it("asks first, and Cancel keeps it a sheet", async () => {
     await turnOff();
-    await userEvent.click(await screen.findByText("Cancel"));
+    // The question's Cancel, not the settings' own (which would put the whole view back).
+    await userEvent.click((await screen.findAllByText("Cancel")).at(-1)!);
     // The switch shows the view as it still is, not where it was flicked.
     await waitFor(async () => {
       const sheet = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Gtk.Switch) as Gtk.Switch;
