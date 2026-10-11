@@ -183,7 +183,9 @@ const styles = css.create({
     },
   },
   mainNarrow: {
-    paddingBlock: 12,
+    paddingTop: 12,
+    // Room at the end of the page for the bottom bar, so the last rows clear it.
+    paddingBottom: 84,
   },
   topBar: {
     display: "flex",
@@ -241,8 +243,45 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#0a0a0c",
     },
   },
-  searchNarrow: {
-    width: "100%",
+  // At phone width, the view's controls along the foot of the screen.
+  bottomBar: {
+    position: "fixed",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 60,
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingInline: 12,
+    paddingTop: 8,
+    paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    backgroundColor: { default: "rgba(250, 250, 250, 0.94)", "@media (prefers-color-scheme: dark)": "rgba(10, 10, 12, 0.94)" },
+    backdropFilter: "blur(12px)",
+  },
+  // Raised by what the on-screen keyboard covers, so searching stays in view.
+  barLift: (y: number) => ({
+    transform: `translateY(${-y}px)`,
+  }),
+  barButton: {
+    minWidth: 44,
+    height: 44,
+    fontSize: 18,
+    lineHeight: "18px",
+    paddingInline: 10,
+    borderRadius: 10,
+  },
+  barSearch: {
+    flex: 1,
+    minWidth: 0,
+    width: "auto",
+    height: 44,
+    fontSize: 16,
+    borderRadius: 10,
   },
   header: {
     display: "flex",
@@ -610,6 +649,7 @@ export function App() {
   }, [direction, pageLocale]);
   // At phone width the sidebar is a drawer, opened from the top bar.
   const narrow = useNarrow();
+  const keyboardInset = useKeyboardInset(narrow);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
   // The sidebar collapses out of the way, as shadcn/ui's does: a trigger
@@ -800,10 +840,85 @@ export function App() {
     />
   );
 
+  // The view's controls: Undo and Redo, its settings, the download and
+  // search. Wide, they sit in the header beside the title; at phone width,
+  // in a bar along the foot of the screen, where a thumb is (as the iPhone
+  // app's glass bar), each a 44 point target, shown as a symbol.
+  const actions = (bar: boolean) => (
+    <>
+      {/* Undo and Redo, for a hand with no keyboard: each says what it would act on. */}
+      <html.div style={styles.undoPair}>
+        {(["undo", "redo"] as const).map((id) => {
+          const command = commandOf(id);
+          const can = command.enabled !== false;
+          return (
+            <Hinted key={id} hint={`${command.label} (${shortcutText(command, "web")})`}>
+              <html.button
+                aria-label={command.label}
+                disabled={!can}
+                onClick={() => dispatch({ type: id })}
+                style={[styles.downloadButton, styles.undoButton, bar && styles.barButton, id === "undo" ? styles.undoFirst : styles.undoLast, !can && styles.buttonOff]}
+              >
+                {id === "undo" ? "↶" : "↷"}
+              </html.button>
+            </Hinted>
+          );
+        })}
+      </html.div>
+      {bar && (
+        <html.input
+          type="search"
+          placeholder="Search…"
+          aria-label="Search this view"
+          value={state.search}
+          onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+          style={[styles.searchInput, styles.barSearch]}
+        />
+      )}
+      <Hinted hint={TOOLBAR_HINTS.viewSettings}>
+        <html.button
+          aria-label="View settings"
+          style={[styles.downloadButton, bar && styles.barButton, state.settingsOpen && styles.buttonOn]}
+          onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
+        >
+          {bar ? "⚙︎" : "View settings"}
+        </html.button>
+      </Hinted>
+      <Hinted hint={commandOf("export-zip").hint}>
+        <html.button aria-label="Download .table.zip" style={[styles.downloadButton, bar && styles.barButton]} onClick={() => void downloadTable()}>
+          {bar ? "⇩" : "Download .table.zip"}
+        </html.button>
+      </Hinted>
+      {!bar && (
+        <html.input
+          type="search"
+          placeholder="Search…"
+          value={state.search}
+          onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+          style={styles.searchInput}
+        />
+      )}
+    </>
+  );
+
   return (
     <DisplaySettingsProvider value={shownDisplay}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
+      {narrow && (
+        <html.div role="toolbar" aria-label="View" style={[styles.bottomBar, styles.barLift(keyboardInset)]}>
+          <html.button
+            ref={menuButtonRef}
+            style={[styles.menuButton, styles.barButton]}
+            aria-label="Tables and views"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            ☰
+          </html.button>
+          {!(shownFile && shownContent) && actions(true)}
+        </html.div>
+      )}
       {narrow ? (
         drawerOpen && (
           <>
@@ -826,15 +941,6 @@ export function App() {
       <html.div style={[styles.main, narrow && styles.mainNarrow]}>
         {narrow && (
           <html.div style={styles.topBar}>
-            <html.button
-              ref={menuButtonRef}
-              style={styles.menuButton}
-              aria-label="Tables and views"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
-            >
-              ☰
-            </html.button>
             {/* Where the view is, file and table: narrow, the breadcrumb lives up here. */}
             <html.span dir="auto" style={styles.topBarTitle}>{derived.breadcrumb.text}</html.span>
           </html.div>
@@ -870,47 +976,7 @@ export function App() {
               )}
               <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
-            <html.div style={styles.headerActions}>
-            {/* Undo and Redo, for a hand with no keyboard: each says what it would act on. */}
-            <html.div style={styles.undoPair}>
-              {(["undo", "redo"] as const).map((id) => {
-                const command = commandOf(id);
-                const can = command.enabled !== false;
-                return (
-                  <Hinted key={id} hint={`${command.label} (${shortcutText(command, "web")})`}>
-                    <html.button
-                      aria-label={command.label}
-                      disabled={!can}
-                      onClick={() => dispatch({ type: id })}
-                      style={[styles.downloadButton, styles.undoButton, id === "undo" ? styles.undoFirst : styles.undoLast, !can && styles.buttonOff]}
-                    >
-                      {id === "undo" ? "↶" : "↷"}
-                    </html.button>
-                  </Hinted>
-                );
-              })}
-            </html.div>
-            <Hinted hint={TOOLBAR_HINTS.viewSettings}>
-              <html.button
-                style={[styles.downloadButton, state.settingsOpen && styles.buttonOn]}
-                onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
-              >
-                View settings
-              </html.button>
-            </Hinted>
-            <Hinted hint={commandOf("export-zip").hint}>
-              <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
-                Download .table.zip
-              </html.button>
-            </Hinted>
-            <html.input
-              type="search"
-              placeholder="Search…"
-              value={state.search}
-              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
-              style={[styles.searchInput, narrow && styles.searchNarrow]}
-            />
-            </html.div>
+            {!narrow && <html.div style={styles.headerActions}>{actions(false)}</html.div>}
           </html.div>
           <html.div style={styles.subtitle}>
             {/* While a large table is read, how far that has got is in the count's place. */}
@@ -1158,4 +1224,28 @@ function renderView(
         />
       );
   }
+}
+
+/**
+ * How much of the window the on-screen keyboard covers, from the visual
+ * viewport: a bar fixed to the foot of the page would otherwise sit under
+ * the keyboard while its search field is typed in. 0 without a keyboard,
+ * or where the browser has no visual viewport.
+ */
+function useKeyboardInset(on: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const vv = typeof window === "undefined" ? undefined : window.visualViewport;
+    if (!on || !vv) return;
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setInset(0);
+    };
+  }, [on]);
+  return inset;
 }
