@@ -100,7 +100,7 @@ import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll } from "./internal/SnapHScroll";
-import { HOVERS } from "./internal/hovers";
+import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
@@ -263,6 +263,26 @@ const styles = css.create({
   // The line between the frozen column and the scrolling pane. On the
   // frozen pane's rows, not the pane, so it stops at the last row: the
   // "+ New row" band under it is open space, not another row.
+  // The column lines' strips (columnLines): a box of no size over the pane,
+  // each strip a zero-width line at its column's end, its handle on the end
+  // edge as a header's is.
+  columnLines: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    insetInlineStart: 0,
+    width: 0,
+    zIndex: 4,
+  },
+  columnLine: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 0,
+  },
+  columnLineAt: (x: number) => ({
+    insetInlineStart: x,
+  }),
   frozenEdge: {
     borderInlineEndWidth: 1,
     borderInlineEndStyle: "solid",
@@ -3055,6 +3075,29 @@ export function TableView({
     const { [name]: _gone, ...rest } = view.columnWidths;
     onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
   };
+  // With a pointer, a column resizes from its line anywhere down the table
+  // (columnLines), as in Numbers or Sheets; on touch, from the header's edge.
+  const byLines = RESIZE_BY_LINES && !!onUpdateView;
+  // The lines of `names`' columns, as strips over a pane, each at the end of
+  // its column: it shows a line on hover, drags to resize, and a double
+  // click puts the column back to its share. Placed in a box of no size, so
+  // only the strips take the pointer.
+  const columnLines = (names: string[], from: number) => {
+    if (!byLines) return null;
+    let x = from;
+    return (
+      <html.div style={styles.columnLines}>
+        {names.map((name) => {
+          x += colWidth(name);
+          return (
+            <html.div key={name} style={[styles.columnLine, styles.columnLineAt(x)]}>
+              {columnResizer(name)}
+            </html.div>
+          );
+        })}
+      </html.div>
+    );
+  };
   const columnResizer = (name: string) =>
     onUpdateView ? (
       <DragHandle
@@ -3215,7 +3258,7 @@ export function TableView({
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
-          {columnResizer(name)}
+          {!byLines && columnResizer(name)}
         </Hinted>
       );
     }
@@ -3305,7 +3348,7 @@ export function TableView({
             }}
           />
         )}
-        {columnResizer(name)}
+        {!byLines && columnResizer(name)}
       </Hinted>
       </RowActions>
     );
@@ -3958,7 +4001,8 @@ export function TableView({
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
         {primaryName && (
-          <html.div style={styles.tableFrozenColumn}>
+          <html.div style={[styles.tableFrozenColumn, byLines && styles.positioned]}>
+            {columnLines([primaryName], coords ? ROW_NUMBER_WIDTH : 0)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {headerCell(primaryName, 0, 1)}
@@ -4015,7 +4059,8 @@ export function TableView({
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
-            <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
+            <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
+              {columnLines(restNames, coords && !primaryName ? ROW_NUMBER_WIDTH : 0)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
