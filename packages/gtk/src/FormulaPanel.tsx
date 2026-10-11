@@ -5,11 +5,12 @@
 
 import * as Gtk from "@gtkx/gi/gtk";
 import { AdwDialog, AdwHeaderBar, AdwPreferencesGroup, AdwToolbarView } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
 import type { ComputeOptions, Field, Grid, ParsedTable, Row } from "@workspace.sh/table-core";
 import { explainFormula, formulaDraftOf, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
 import { CellValue } from "./CellValue.js";
+import { columnsFor, FormulaEntry } from "./FormulaEntry.js";
 
 export interface FormulaPanelProps {
   field: Field;
@@ -67,13 +68,7 @@ export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClos
         <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={18} marginStart={18} marginEnd={18} marginTop={6} marginBottom={6}>
           <AdwPreferencesGroup title="Formula" description="One formula for the whole column. Every row is worked out the same way.">
             {onSave ? (
-              <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
-                <GtkEntry
-                  text={draft}
-                  cssClasses={["monospace", ...(status?.kind === "error" ? ["error"] : [])]}
-                  onChanged={(e) => setDraft(e.getText())}
-                  onActivate={save}
-                />
+              <FormulaEntry text={draft} onChange={setDraft} onActivate={save} error={status?.kind === "error"} columns={columnsFor(fields, grid, field.name)}>
                 {status?.kind === "error" ? (
                   <GtkLabel label={status.message} xalign={0} wrap cssClasses={["error", "caption"]} />
                 ) : status ? (
@@ -86,7 +81,7 @@ export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClos
                     ) : null}
                   </>
                 ) : null}
-              </GtkBox>
+              </FormulaEntry>
             ) : (
               <GtkLabel label={draft} xalign={0} wrap selectable cssClasses={["monospace"]} />
             )}

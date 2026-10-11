@@ -16,7 +16,7 @@ import {
   AdwSwitchRow,
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel } from "@gtkx/jsx/gtk";
+import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
 import { defaultAlignFor, enumOptions, type CompileResult, type Field, type Grid } from "@workspace.sh/table-core";
 import {
   addableChoices,
@@ -42,6 +42,7 @@ import {
   formulaPlaceholder,
 } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
+import { columnsFor, FormulaEntry } from "./FormulaEntry.js";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
 
@@ -139,13 +140,15 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
           {formula ? (
             <AdwPreferencesGroup title="Formula" description="One formula for the whole column.">
               <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
-                <GtkEntry
+                <FormulaEntry
                   text={formulaDraft}
-                  cssClasses={["monospace", ...(formula.compiled.ok ? [] : ["error"])]}
-                  onChanged={(e) => setFormulaDraft(e.getText())}
+                  onChange={setFormulaDraft}
                   onActivate={() => formula.save && onUpdate(formula.save)}
-                />
-                <FormulaLine compiled={formula.compiled} typed={formulaDraft} />
+                  error={!formula.compiled.ok}
+                  columns={columnsFor(fields, grid, field.name)}
+                >
+                  <FormulaLine compiled={formula.compiled} typed={formulaDraft} />
+                </FormulaEntry>
                 <GtkButton
                   label="Save Formula"
                   halign={Gtk.Align.END}
@@ -298,16 +301,16 @@ export function AddField({ existing, fields, onAdd, onClose, grid }: AddFieldPro
           </AdwPreferencesGroup>
           {type === "formula" ? (
             <AdwPreferencesGroup title="Formula">
-              <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
-                <GtkEntry
-                  text={formulaDraft}
-                  placeholderText={formulaPlaceholder(formulaSyntax)}
-                  cssClasses={["monospace", ...(made.compiled && !made.compiled.ok ? ["error"] : [])]}
-                  onChanged={(e) => setFormulaDraft(e.getText())}
-                  onActivate={add}
-                />
+              <FormulaEntry
+                text={formulaDraft}
+                onChange={setFormulaDraft}
+                onActivate={add}
+                error={!!made.compiled && !made.compiled.ok}
+                placeholder={formulaPlaceholder(formulaSyntax)}
+                columns={columnsFor(fields, grid)}
+              >
                 <FormulaLine compiled={made.compiled} typed={formulaDraft} />
-              </GtkBox>
+              </FormulaEntry>
             </AdwPreferencesGroup>
           ) : null}
         </AdwPreferencesPage>
