@@ -101,10 +101,25 @@ export const styles = {
   formulaInput: css({ boxShadow: "inset 0 0 0 2px alpha(@accent_bg_color, 0.7)" }),
   /** The cell the keyboard is on. */
   selectedCell: css({ boxShadow: "inset 0 0 0 2px @accent_bg_color", outline: "none" }),
-  card: css({ padding: "10px 12px", borderRadius: "10px" }),
-  cardTitle: css({ fontWeight: "600" }),
-  cardFieldLabel: css({ fontSize: "x-small", fontWeight: "600", opacity: 0.55, letterSpacing: "0.04em" }),
-  bodyBadge: css({ fontSize: "x-small", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
+  /** Cards (board, gallery): the sizes the table's cells have, as on every platform. */
+  card: css({ padding: "10px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: "400" }),
+  cardTitle: css({ fontSize: "13px", fontWeight: "600" }),
+  cardFieldLabel: css({ fontSize: "10px", fontWeight: "600", opacity: 0.55, letterSpacing: "0.5px" }),
+  /** A row's page, marked on its card or list row: the table's PAGE badge. */
+  bodyBadge: css({
+    fontSize: "9px",
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    padding: "1px 6px",
+    borderRadius: "4px",
+    backgroundColor: "alpha(@accent_bg_color, 0.2)",
+    color: "@accent_color",
+  }),
+  /** A list's row: a line with a rule under it; its title, and what else it shows at the end, quieter. */
+  listRow: css({ borderRadius: "0", borderBottom: `1px solid ${RULE}`, padding: "9px 8px", minHeight: "0", fontSize: "13px", fontWeight: "400" }),
+  listTitle: css({ fontSize: "13px", fontWeight: "500" }),
+  listSecondary: css({ fontSize: "12px", opacity: 0.6 }),
   boardColumn: css({ backgroundColor: "alpha(currentColor, 0.04)", borderRadius: "12px", padding: "10px" }),
   galleryHero: css({ fontWeight: "500", opacity: 0.85 }),
   galleryImage: css({ backgroundColor: "alpha(currentColor, 0.04)", borderRadius: "8px", padding: "8px" }),
@@ -113,6 +128,8 @@ export const styles = {
   calendarWeekdays: css({ borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }),
   calendarDay: css({ borderRadius: "0", padding: "6px", borderRight: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}` }),
   calendarOther: css({ opacity: 0.45 }),
+  /** A day's number: small and plain, in the corner of its square. */
+  calendarNumber: css({ fontSize: "11px", fontWeight: "400", fontFeatureSettings: '"tnum"' }),
   calendarToday: css({ color: "@accent_color", fontWeight: "700" }),
   calendarChip: css({ fontSize: "smaller", padding: "1px 6px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
 } as const;
