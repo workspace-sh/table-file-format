@@ -172,16 +172,18 @@ export default function TableScreen() {
     })),
     { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newId() }) },
   ];
+  const canAddFieldHere = view.layout === "table" && !table.indexed;
   const fileActions: { label: string; sf: SFSymbol; material?: MaterialSymbol; disabled?: boolean; startsGroup?: boolean; onPress: () => void }[] = [
     // The table on screen, back a step and forward again (APP-STATE, "Undo").
     { label: labelOf("undo"), sf: "arrow.uturn.backward", disabled: !derived.canUndo, onPress: () => dispatch({ type: "undo" }) },
     { label: labelOf("redo"), sf: "arrow.uturn.forward", disabled: !derived.canRedo, onPress: () => dispatch({ type: "redo" }) },
-    // On a phone the end of the header, where its "+" is, is usually off screen.
-    ...(view.layout === "table" && !table.indexed
+    // What can be made, from the smallest. New Field is here because on a
+    // phone the end of the header, where its "+" is, is usually off screen.
+    ...(canAddFieldHere
       ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
       : []),
     {
-      startsGroup: true,
+      startsGroup: !canAddFieldHere,
       label: `New Table in ${state.bundles[bundle]?.title ?? bundle}`,
       sf: "tablecells.badge.ellipsis",
       material: "table",
