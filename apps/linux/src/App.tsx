@@ -67,7 +67,7 @@ import {
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { readFileSync, writeFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
 import { newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { useIndexedTables } from "./useIndexedTables.js";
@@ -622,8 +622,12 @@ export function App({
   }, ownLocale);
   const { tables, bundles } = state;
 
+  // Where a new .table file, or one opened from an archive, is made: the examples' folder when the
+  // app has that library, else beside the first .table folder opened (the folder being worked in).
+  const firstOpened = Object.values(state.opened)[0];
+  const filesIn = newFilesIn ?? (firstOpened ? dirname(firstOpened) : undefined);
   // Where a bundle is on disk: the folder it was opened from, else the new-files folder.
-  const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (newFilesIn ? `${newFilesIn}/${bundle}.table` : undefined);
+  const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (filesIn ? `${filesIn}/${bundle}.table` : undefined);
   // A table's own folder, where its attachments/ is.
   const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
 
@@ -699,10 +703,10 @@ export function App({
   // A .table.zip becomes a .table folder beside the new files, written as it opens.
   const openZip = async () => {
     const path = await chooseZip();
-    if (!path || !newFilesIn) return;
+    if (!path || !filesIn) return;
     try {
       // Named apart from the tables held and from any folder already there.
-      const onDisk = bundlesIn(newFilesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
+      const onDisk = bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
       const opened = await openArchive(new Uint8Array(readFileSync(path)), [...Object.keys(bundles), ...onDisk]);
       const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
       dispatch({ type: "opened", library, ...(opened.skipped.length > 0 ? { skipped: opened.skipped } : {}) });
@@ -759,7 +763,14 @@ export function App({
   // window with its accelerator, and in the primary menu. Those Linux
   // doesn't do are left out.
   const run: Partial<Record<AppCommandId, () => void>> = {
-    ...(newFilesIn ? { "new-file": () => dispatch({ type: "create", making: { kind: "file" } }), "open-zip": () => void openZip() } : {}),
+    ...(filesIn
+      ? {
+          // Named apart from every .table folder already there, held or not: a new file never lands in another's folder.
+          "new-file": () =>
+            dispatch({ type: "create", making: { kind: "file", taken: bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, "")) } }),
+          "open-zip": () => void openZip(),
+        }
+      : {}),
     "open-folder": () => void openFolder(),
     "export-zip": () => void exportZip(),
     // With the open page's row, as the web's address and the Mac's link have it.
@@ -888,7 +899,7 @@ export function App({
                         <GtkToggleButton label="Files" active={derived.mode === "files"} onToggled={(b) => b.getActive() && dispatch({ type: "setFilesSide", files: true })} />
                       </GtkBox>
                     }
-                    start={newFilesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
+                    start={filesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
                   />
                 }
               >

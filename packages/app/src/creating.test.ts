@@ -70,3 +70,11 @@ test("making with a name trims it, makes nothing without one, and shows what's m
   const f = creating(tables, bundles, { kind: "file" }, "Notes", now)!;
   assert.equal(f.key, withNewFile(tables, bundles, "Notes", now).key);
 });
+
+test("a new file's key is unlike the names already used where it will be kept", () => {
+  const made = creating({}, {}, { kind: "file", taken: ["garden", "garden-2"] }, "Garden");
+  assert.equal(made?.key, "garden-3/garden");
+  assert.deepEqual(Object.keys(made!.bundles), ["garden-3"]);
+  // With none given, it is unlike the files held, as before.
+  assert.equal(creating({}, {}, { kind: "file" }, "Garden")?.key, "garden/garden");
+});
