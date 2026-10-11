@@ -593,7 +593,7 @@ export function TableView({
         halign={Gtk.Align.START}
         valign={Gtk.Align.END}
         marginStart={cellStart + 4 + (freeze && gripName === fields[0] ? scrolledAcross.current : 0)}
-        marginBottom={2}
+        marginBottom={1}
         spacing={6}
       >
         <GtkBox
@@ -601,7 +601,7 @@ export function TableView({
           halign={Gtk.Align.CENTER}
           valign={Gtk.Align.CENTER}
           widthRequest={28}
-          heightRequest={14}
+          heightRequest={8}
           cssClasses={[styles.rowGrip]}
           tooltipText="Drag to resize the row; double-click to fit it"
           cursor={Gdk.Cursor.newFromName("row-resize", null)}
@@ -633,7 +633,7 @@ export function TableView({
             />,
           ]}
         >
-          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={12} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
+          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
         </GtkBox>
         {liveRow?.rowId === row.id ? (
           <GtkLabel
