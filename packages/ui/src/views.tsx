@@ -362,6 +362,39 @@ const styles = css.create({
     borderRadius: 1,
     backgroundColor: "#ffffff",
   },
+  // A selected cell's column grip (columnGrip): the row's grip on its side,
+  // straddling the cell's end edge at the row's middle.
+  columnGripAt: (x: number, bottom: number) => ({
+    insetInlineStart: x,
+    bottom,
+  }),
+  columnGripSlot: {
+    position: "absolute",
+    zIndex: 3,
+  },
+  // Room for a finger around the pill: 38 by 48, centred on the cell's edge.
+  columnGripHit: {
+    paddingBlock: 10,
+    paddingInline: 12,
+    cursor: "col-resize",
+  },
+  columnGrip: {
+    width: 14,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: "#0a84ff",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  columnGripBar: {
+    width: 1.5,
+    height: 12,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
+  },
   // Beside the pill, out of the flow, so the pill stays put as it appears.
   rowGripLabel: {
     position: "absolute",
@@ -2976,7 +3009,7 @@ export function TableView({
     setFieldAsk({ id: ++asks.current, anchor, place: { name, side } });
   };
   const addFieldButton = (compact: boolean) => (
-    <Hinted hint="Add a field">
+    <Hinted box hint="Add a field">
       <AddFieldButton
         compact={compact}
         hug={!compact}
@@ -3204,6 +3237,45 @@ export function TableView({
       <DragHandle edge="bottom" lit={liveRow?.rowId === row.id && liveRow.by === "line"} {...rowResize(row, "line")}>
         {label !== null && <html.span style={[styles.rowGripLabel, styles.rowLineLabel]}>{label}</html.span>}
       </DragHandle>
+    );
+  };
+
+  // A selected cell's column grip, on touch: the row's grip turned on its
+  // side, on the cell's end edge at the middle of the row. Dragging resizes
+  // the column, as dragging a header's edge does with a pointer (where a
+  // column's lines do it, there's no grip: columnLines); a double tap puts
+  // the column back to its share.
+  const columnGrip = (name: string, cellEnd: number, rowHeight: number) => {
+    if (byLines || !onUpdateView) return null;
+    return (
+      <html.div style={[styles.columnGripSlot, styles.columnGripAt(cellEnd - 19, rowHeight / 2 - 24)]}>
+        <DragHandle
+          grabOnTouch
+          onDragStart={(e) => {
+            resizeStart.current = { at: e.pageX, size: colWidth(name) };
+          }}
+          onDragMove={(e) => {
+            const start = resizeStart.current;
+            if (!start) return;
+            setLiveWidths((prev) => ({ ...prev, [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) }));
+          }}
+          onDragEnd={(e) => {
+            const start = resizeStart.current;
+            resizeStart.current = null;
+            if (!start) return;
+            onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) } });
+            setLiveWidths({});
+          }}
+          onDoubleTap={() => resetWidth(name)}
+        >
+          <html.div role="button" aria-label="Resize column" style={styles.columnGripHit}>
+            <html.div style={styles.columnGrip}>
+              <html.div style={styles.columnGripBar} />
+              <html.div style={styles.columnGripBar} />
+            </html.div>
+          </html.div>
+        </DragHandle>
+      </html.div>
     );
   };
 
@@ -4064,7 +4136,10 @@ export function TableView({
                     </html.div>
                   </RowActions>
                   {sel?.rowId === row.id && sel.name === primaryName && (
-                    <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
+                    <html.div style={styles.rowGripAnchor}>
+                      {rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}
+                      {columnGrip(primaryName, cellStartIn([primaryName], primaryName, !!coords) + colWidth(primaryName), heightOf(row.id))}
+                    </html.div>
                   )}
                 </>
               ))}
@@ -4135,6 +4210,7 @@ export function TableView({
                     {sel?.rowId === row.id && sel.name !== primaryName && (
                       <html.div style={styles.rowGripAnchor}>
                         {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
+                        {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !primaryName) + colWidth(sel.name), heightOf(row.id))}
                       </html.div>
                     )}
                   </>
