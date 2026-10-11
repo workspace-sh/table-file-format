@@ -390,9 +390,12 @@ const styles = css.create({
       default: "transparent",
       ":hover": { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#1f1f23" },
     },
+    // A place a column could go, as "+ New row" is a place a row could:
+    // faint at rest, full strength under the pointer.
     color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
+      default: "#aeaeb2",
+      ":hover": "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": { default: "#5a5a60", ":hover": "#f5f5f7" },
     },
   },
   fieldNameInput: {

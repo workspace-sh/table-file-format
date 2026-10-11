@@ -259,9 +259,11 @@ const styles = css.create({
   tableFrozenColumn: {
     display: "flex",
     flexDirection: "column",
-    // Right border distinguishes the frozen column from the
-    // scrollable pane; a subtle shadow would be nicer but needs
-    // careful cross-platform handling — defer.
+  },
+  // The line between the frozen column and the scrolling pane. On the
+  // frozen pane's rows, not the pane, so it stops at the last row: the
+  // "+ New row" band under it is open space, not another row.
+  frozenEdge: {
     borderInlineEndWidth: 1,
     borderInlineEndStyle: "solid",
     borderInlineEndColor: {
@@ -1085,10 +1087,15 @@ const styles = css.create({
   newRowHot: {
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#17171a" },
   },
+  // A place a row could go, not a row: faint until the pointer is on it.
+  // Where nothing hovers (a touch screen) it stays faint and still reads.
   newRowLabel: {
     fontSize: 13,
     whiteSpace: "nowrap",
-    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+    color: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" },
+  },
+  newRowLabelHot: {
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
   },
   totalCell: {
     display: "flex",
@@ -3020,6 +3027,13 @@ export function TableView({
   // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
   const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  // Where the "+" column is, the scrolling pane's rows are as wide as their
+  // columns and stop there: no row line, group band or total runs under the
+  // "+", which is a place a column could go, not a column.
+  const restRowWidth = () =>
+    addFieldW > 0
+      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? ROW_NUMBER_WIDTH : 0))
+      : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
   // layout that's the left, so dragging leftwards widens it.
@@ -3880,7 +3894,7 @@ export function TableView({
             (onDeleteRow && RowActions.gesture ? `\n${RowActions.gesture} to delete it.` : "")
           }
         >
-          <html.span style={styles.newRowLabel}>+ New row</html.span>
+          <html.span style={[styles.newRowLabel, newRowHot && styles.newRowLabelHot]}>+ New row</html.span>
         </Hinted>
       )}
     </html.div>
@@ -3915,7 +3929,7 @@ export function TableView({
             viewports — the right pane then carries all fields. */}
         {primaryName && (
           <html.div style={styles.tableFrozenColumn}>
-            <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+            <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
               {headerCell(primaryName, 0, 1)}
             </html.div>
@@ -3930,7 +3944,7 @@ export function TableView({
               render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
-                    <html.div style={[styles.tableRow, styles.groupRow]}>
+                    <html.div style={[styles.tableRow, styles.groupRow, styles.frozenEdge]}>
                       <html.span style={styles.groupLabel}>
                         {groupTitle} · {starts.label}
                         <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
@@ -3943,6 +3957,7 @@ export function TableView({
                         styles.tableRow,
                         styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
+                        styles.frozenEdge,
                         i === total - 1 && !onAddRow && styles.tableRowLast,
                       ]}
                     >
@@ -3958,7 +3973,7 @@ export function TableView({
             />
             {addRow && newRowBand(true)}
             {showTotals && (
-              <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
+              <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, !quietTotals && styles.frozenEdge, styles.tableRowLast]}>
                 {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {renderTotalCell(primaryName, 0, 1)}
               </html.div>
@@ -3992,7 +4007,7 @@ export function TableView({
                     {starts && (
                       // The frozen pane labels the group; this pane's band
                       // matches its height so the rows stay in line.
-                      <html.div style={[styles.tableRow, styles.groupRow]}>
+                      <html.div style={[styles.tableRow, styles.groupRow, restRowWidth()]}>
                         {!primaryName && (
                           <html.span style={styles.groupLabel}>
                             {groupTitle} · {starts.label}
@@ -4007,7 +4022,8 @@ export function TableView({
                           styles.tableRow,
                           styles.rowHeight(heightOf(row.id)),
                           styles.positioned,
-                            i === total - 1 && !onAddRow && styles.tableRowLast,
+                          restRowWidth(),
+                          i === total - 1 && !onAddRow && styles.tableRowLast,
                         ]}
                       >
                         {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -4026,11 +4042,9 @@ export function TableView({
               />
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
-                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
+                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
                   {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
-                  {/* Under the "+" column: its width, so the totals keep to their own columns. */}
-                  {addFieldW > 0 && <html.div style={styles.cellWidth(addFieldW)} />}
                 </html.div>
               )}
             </html.div>
