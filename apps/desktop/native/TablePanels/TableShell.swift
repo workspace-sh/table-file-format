@@ -117,6 +117,9 @@ public class TableShell: NSObject {
     self.formulaHost = formulaHost
     formulaEditor.send = { event in sidebar.send("formulaEditor", event) }
     settingsForm.send = { event in sidebar.send("settingsForm", event) }
+    // The app's own settings, in their window (TableSettingsWindow.swift).
+    TableSettingsWindow.model.send = { event in sidebar.send("appSettings", event) }
+    TableSettingsWindow.shared.install()
     cellInspector.send = { action in sidebar.send("inspectorCell", ["action": action]) }
     inspector.view = pane
     let inspectorItem = NSSplitViewItem(inspectorWithViewController: inspector)
