@@ -114,6 +114,7 @@ describe("resizing on Linux", () => {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([104]);
     await fireEvent(getController(grip, Gtk.GestureClick), "pressed", 2, 0, 0);
-    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([44]));
+    // Two lines: the table's six columns give a little to fit the window, and the title wraps in what's left.
+    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([64]));
   });
 });
