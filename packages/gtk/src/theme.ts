@@ -30,6 +30,8 @@ export const styles = {
   addPlace: css({ opacity: 0.5, "&:hover, &:focus-visible": { opacity: 1 } }),
   /** The new-row band: square, so its fill when pointed at is the band itself. */
   addRowBand: css({ borderRadius: "0", minHeight: "36px", padding: "0 10px" }),
+  /** A header's end edge, where its column is dragged wider or narrower: a line when pointed at. */
+  columnHandle: css({ "&:hover": { backgroundColor: "alpha(@accent_bg_color, 0.55)" } }),
   /** A column's end edge, as the web grid rules its cells. */
   columnRule: css({ borderRight: `1px solid ${RULE}` }),
   groupRow: css({ backgroundColor: "alpha(currentColor, 0.04)", borderBottom: `1px solid ${RULE}`, padding: "6px 10px", fontWeight: "600" }),

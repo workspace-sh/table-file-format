@@ -60,6 +60,9 @@ import {
   fieldHint,
   fieldHintText,
   rowActions,
+  columnActions,
+  SQUEEZED_CELL_WIDTH,
+  type FieldAction,
   type RowAction,
   resizedColumnWidth,
   rowHeightOf,
@@ -169,6 +172,53 @@ function rowMenu(actions: RowAction[]): MenuItem[] {
 }
 
 /**
+ * A column's header, with its menu: table-ui/shared's columnActions, on a
+ * right-click. The menu hangs from a button laid over the header that is
+ * never seen or pressed itself: a popover needs a widget of its own to
+ * open from, and the header's own click opens the field's editor.
+ */
+function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; overlays: ReactNode; children: ReactNode }) {
+  const button = useRef<Gtk.MenuButton | null>(null);
+  if (actions.length === 0) return <GtkOverlay overlays={overlays}>{children}</GtkOverlay>;
+  const section = (ids: FieldAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: `field.${a.id}` }));
+  const items: MenuItem[] = [section(["insert-left", "insert-right"]), section(["reset-width"]), section(["delete-field"])]
+    .filter((entries) => entries.length > 0)
+    .map((entries) => ({ section: entries }));
+  return (
+    <GtkOverlay
+      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+      actionGroups={
+        <GSimpleActionGroup
+          prefix="field"
+          actions={
+            <>
+              {actions.map((a) => (
+                <GSimpleAction key={a.id} name={a.id} onActivate={a.onSelect} />
+              ))}
+            </>
+          }
+        />
+      }
+      overlays={
+        <>
+          <GtkMenuButton
+            ref={button}
+            opacity={0}
+            canTarget={false}
+            canFocus={false}
+            tooltipText="Field Actions"
+            popover={<GtkPopoverMenu hasArrow={false} menuModel={<GMenu items={items} />} />}
+          />
+          {overlays}
+        </>
+      }
+    >
+      {children}
+    </GtkOverlay>
+  );
+}
+
+/**
  * A body row, with its menu. The menu is a button at the row's end as well
  * as a right-click anywhere on the row: GNOME has no menu bar, and a
  * right-click alone isn't discoverable. Its actions live on the row, so
@@ -248,6 +298,8 @@ export function TableView({
   onAddEnumValue,
   onMoveField,
   onAddField,
+  onDeleteField,
+  newFieldRequest,
   onAddRow,
   onDeleteRow,
   onInsertRow,
@@ -261,7 +313,17 @@ export function TableView({
 }: ViewProps) {
   // A field's editor open, by name, and "add a field" open.
   const [editingField, setEditingField] = useState<string | null>(null);
-  const [addingField, setAddingField] = useState(false);
+  // Where the new field goes: at the end, or beside a column (its menu's Insert Field Left or Right).
+  const [addingField, setAddingField] = useState<false | { place?: { name: string; side: "before" | "after" } }>(false);
+  // The app's New Field (its menu): the same editor, each time it's asked for.
+  // (Counted from one: none yet is nothing to open, whichever view of the table this is.)
+  const askedForField = useRef(newFieldRequest ?? 0);
+  useEffect(() => {
+    if (!newFieldRequest || newFieldRequest === askedForField.current) return;
+    askedForField.current = newFieldRequest;
+    if (onAddField) setAddingField({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFieldRequest]);
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
   // A formula cell opened to see how it was worked out (FormulaPanel).
   const [openFormula, setOpenFormula] = useState<{ rowId: string; name: string } | null>(null);
@@ -385,7 +447,14 @@ export function TableView({
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
   const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
-  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome);
+  // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
+  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
+  // A column that was dragged, back to its share of the width.
+  const resetWidth = (name: string) => {
+    if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
+    const { [name]: _gone, ...rest } = view.columnWidths;
+    onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+  };
 
   // A column's handle is on its end edge (the left, right to left, where
   // dragging leftwards widens it); a row's grip is on its bottom edge.
@@ -395,19 +464,24 @@ export function TableView({
         name={`resize-column-${name}`}
         widthRequest={6}
         halign={Gtk.Align.END}
+        cssClasses={[styles.columnHandle]}
+        tooltipText="Drag to resize the column; double-click to reset it"
         cursor={Gdk.Cursor.newFromName("col-resize", null)}
-        controllers={
+        controllers={[
+          <GtkGestureClick key="click" onPressed={(presses) => presses === 2 && resetWidth(name)} />,
           <GtkGestureDrag
+            key="drag"
             onDragBegin={() => {
               resizeFrom.current = colWidth(name);
             }}
             onDragUpdate={(dx) => setLiveWidths((live) => ({ ...live, [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) }))}
             onDragEnd={(dx) => {
-              onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) } });
+              // A press that didn't move is a click, not a width.
+              if (dx !== 0) onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) } });
               setLiveWidths({});
             }}
-          />
-        }
+          />,
+        ]}
       />
     ) : null;
   const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
@@ -492,8 +566,15 @@ export function TableView({
       {fields.map((name, i) => {
         const field: Field | undefined = fieldMap.get(name);
         const title = field?.title ?? name;
+        // Right-click the header to insert a field beside it, put back a width that was dragged, or delete it.
+        const menu = columnActions(name, {
+          ...(onAddField ? { onInsertField: (beside: string, side: "before" | "after") => setAddingField({ place: { name: beside, side } }) } : {}),
+          ...(onUpdateView && view.columnWidths?.[name] !== undefined ? { onResetWidth: resetWidth } : {}),
+          ...(onDeleteField ? { onDeleteField } : {}),
+          rtl,
+        });
         return (
-          <GtkOverlay key={name} overlays={columnHandle(name)}>
+          <HeaderMenu key={name} actions={menu} overlays={columnHandle(name)}>
           <Cell width={colWidth(name)} height={HEADER_HEIGHT}>
             <GtkLabel
               label={coords ? `${columnLetter(i)}  ${title}` : title}
@@ -508,7 +589,7 @@ export function TableView({
               controllers={schemaEditable ? <GtkGestureClick onReleased={() => setEditingField(name)} /> : undefined}
             />
           </Cell>
-          </GtkOverlay>
+          </HeaderMenu>
         );
       })}
     </GtkBox>
@@ -521,7 +602,7 @@ export function TableView({
           marginStart={4}
           widthRequest={ROW_MENU_WIDTH - 4}
           tooltipText="Add Field"
-          onClicked={() => setAddingField(true)}
+          onClicked={() => setAddingField({})}
         />
       ) : null}
     </GtkBox>
@@ -883,7 +964,7 @@ export function TableView({
           existing={new Set(schema.fields.map((f) => f.name))}
           fields={schema.fields}
           grid={grid}
-          onAdd={onAddField}
+          onAdd={(field) => onAddField(field, addingField.place)}
           onClose={() => setAddingField(false)}
         />
       ) : null}

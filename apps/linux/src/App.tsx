@@ -218,7 +218,7 @@ function TablePane({
   tables: Record<string, ParsedTable>;
   tableKey: string;
   /** What the views can ask the app to change: table-app's viewCallbacks, and attaching a file. */
-  callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void };
+  callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void; newFieldRequest?: number };
   saving: SaveState;
   onRetrySave: () => void;
   viewActions: ViewActions;
@@ -639,8 +639,11 @@ export function App({
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
 
+  // The main menu's New Field: the table's own new-field editor, each time it's chosen.
+  const [newFieldRequest, setNewFieldRequest] = useState(0);
   const callbacks = {
     ...viewCallbacks(state, dispatch, newId),
+    newFieldRequest,
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId: string, field: string) => {
       void chooseFile().then((source) => {
@@ -753,6 +756,9 @@ export function App({
   const menuSections = ["File", "Edit", "View", "Go"]
     .map((menu) => ({ section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })) }))
     .filter((s) => s.section.length > 0);
+  // A field is added to a table as it's laid out as one: with the files it's made in, after them.
+  const canAddField = (derived.view.layout ?? "table") === "table" && state.sidebar.files !== true;
+  if (canAddField) menuSections[0]?.section.push({ label: "New Field…", action: "win.new-field" });
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
   // The app's own: this viewer's display settings, and what build this is.
   menuSections.push({ section: [{ label: "Display…", action: "win.display" }, { label: "About Tables", action: "win.about" }] });
@@ -780,7 +786,12 @@ export function App({
   const pageTable = state.openPage !== null ? tables[state.active] : undefined;
 
   return (
-    <AdwApplication actionAccels={commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] }))}>
+    <AdwApplication
+      actionAccels={[
+        ...commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] })),
+        { detailedActionName: "win.new-field", accels: ["<Control><Alt>n"] },
+      ]}
+    >
       <AdwApplicationWindow
         ref={windowRef}
         title="Tables"
@@ -813,6 +824,7 @@ export function App({
         }
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
+          <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
           <GSimpleAction key="display" name="display" onActivate={() => setDisplayOpen(true)} />,
           <GSimpleAction key="about" name="about" onActivate={() => setAboutOpen(true)} />,
