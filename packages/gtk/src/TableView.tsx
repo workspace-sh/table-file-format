@@ -82,6 +82,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
 import { EditableCell } from "./EditableCell.js";
+import { FieldAbout } from "./FieldAbout.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
@@ -181,27 +182,29 @@ function rowMenu(actions: RowAction[]): MenuItem[] {
 }
 
 /**
- * A column's header, with its menu: table-ui/shared's columnActions, on a
- * right-click. The menu hangs from a button laid over the header that is
+ * A column's header, with its menu: About This Field, then table-ui/shared's
+ * columnActions, on a right-click. The menu hangs from a button laid over the header that is
  * never seen or pressed itself: a popover needs a widget of its own to
  * open from, and the header's own click opens the field's editor.
  */
 function HeaderMenu({
   actions,
+  onAbout,
   overlays,
   menuRef,
   children,
 }: {
   actions: FieldAction[];
+  /** About This Field: what the column is, which is there to read whether or not the table can be changed. */
+  onAbout: () => void;
   overlays: ReactNode;
   /** The way to open it from the keyboard (Alt+Down on one of the column's cells). */
   menuRef?: (button: Gtk.MenuButton | null) => void;
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
-  if (actions.length === 0) return <GtkOverlay overlays={overlays}>{children}</GtkOverlay>;
   const section = (ids: FieldAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: `field.${a.id}` }));
-  const items: MenuItem[] = [section(["insert-left", "insert-right"]), section(["reset-width"]), section(["delete-field"])]
+  const items: MenuItem[] = [[{ label: "About This Field", action: "field.about" }], section(["insert-left", "insert-right"]), section(["reset-width"]), section(["delete-field"])]
     .filter((entries) => entries.length > 0)
     .map((entries) => ({ section: entries }));
   return (
@@ -212,6 +215,7 @@ function HeaderMenu({
           prefix="field"
           actions={
             <>
+              <GSimpleAction name="about" onActivate={onAbout} />
               {actions.map((a) => (
                 <GSimpleAction key={a.id} name={a.id} onActivate={a.onSelect} />
               ))}
@@ -391,6 +395,8 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newFieldRequest]);
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
+  // The column whose About This Field is open (FieldAbout).
+  const [aboutField, setAboutField] = useState<string | null>(null);
   // A formula cell opened to see how it was worked out (FormulaPanel).
   const [openFormula, setOpenFormula] = useState<{ rowId: string; name: string } | null>(null);
   // The row just added from "New Row": its first cell opens for typing.
@@ -770,7 +776,7 @@ export function TableView({
   const headerCell = (name: string, i: number) => {
         const field: Field | undefined = fieldMap.get(name);
         const title = field?.title ?? name;
-        // Right-click the header to insert a field beside it, put back a width that was dragged, or delete it.
+        // Right-click the header to read what the field is, insert a field beside it, put back a width that was dragged, or delete it.
         const menu = columnActions(name, {
           ...(onAddField ? { onInsertField: (beside: string, side: "before" | "after") => setAddingField({ place: { name: beside, side } }) } : {}),
           ...(onUpdateView && view.columnWidths?.[name] !== undefined ? { onResetWidth: resetWidth } : {}),
@@ -781,6 +787,7 @@ export function TableView({
           <HeaderMenu
             key={name}
             actions={menu}
+            onAbout={() => setAboutField(name)}
             overlays={columnHandle(name)}
             menuRef={(button) => {
               if (button) headerMenus.current.set(name, button);
@@ -1320,6 +1327,23 @@ export function TableView({
           />
         );
       })() : null}
+      {aboutField ? (
+        <FieldAbout
+          key={aboutField}
+          field={fieldMap.get(aboutField)}
+          name={aboutField}
+          schema={schema}
+          onSettings={
+            schemaEditable
+              ? () => {
+                  setEditingField(aboutField);
+                  setAboutField(null);
+                }
+              : undefined
+          }
+          onClose={() => setAboutField(null)}
+        />
+      ) : null}
       {editingField && schemaEditable ? (() => {
         const field = schema.fields.find((f) => f.name === editingField);
         if (!field) return null;
