@@ -25,6 +25,12 @@ export const styles = {
   headerCell: css({ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.65 }),
   headerRow: css({ borderBottom: `1px solid ${RULE}`, minHeight: "36px", backgroundColor: "alpha(currentColor, 0.04)" }),
   bodyRow: css({ borderBottom: `1px solid ${RULE}` }),
+  /**
+   * The first column where it stays put while the others scroll under it: the
+   * table's own ground behind it, so nothing shows through.
+   */
+  frozen: css({ backgroundColor: "@view_bg_color" }),
+  frozenHeader: css({ backgroundColor: "mix(@view_bg_color, currentColor, 0.04)" }),
   /** A place where something could be added (a field): faint at rest, full strength when pointed at or focused. */
   addPlace: css({ opacity: 0.5, "&:hover, &:focus-visible": { opacity: 1 } }),
   /**
