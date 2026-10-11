@@ -184,15 +184,16 @@ const styles = css.create({
     },
   },
   mainNarrow: {
-    paddingBlock: 8,
+    paddingTop: 8,
+    // Room at the end of the page for the bar, so the last rows clear it.
+    paddingBottom: 72,
   },
   topBar: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 8,
-    marginInline: -8,
+    marginBottom: 10,
   },
   menuButton: {
     fontSize: 18,
@@ -243,13 +244,39 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#0a0a0c",
     },
   },
-  // At phone width: search across the page, as a phone's browser has it.
-  searchFull: {
-    width: "100%",
+  // At phone width, the bar along the foot of the screen: the page's own
+  // background and a hairline, nothing more.
+  bottomBar: {
+    position: "fixed",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 60,
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingInline: 6,
+    paddingTop: 6,
+    paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#000000" },
+  },
+  // Raised by what the on-screen keyboard covers, so searching stays in view.
+  barLift: (y: number) => ({
+    transform: `translateY(${-y}px)`,
+  }),
+  // Search in the bar: the room the buttons leave, 16px type so a phone doesn't zoom in.
+  barSearch: {
+    flex: 1,
+    minWidth: 0,
+    width: "auto",
+    height: 38,
     fontSize: 16,
-    paddingBlock: 9,
     borderRadius: 10,
-    marginTop: 4,
+    marginInline: 4,
   },
   // At phone width, the bar's buttons: no border, a 44 point target, a drawn icon.
   iconButton: {
@@ -662,6 +689,7 @@ export function App() {
   }, [direction, pageLocale]);
   // At phone width the sidebar is a drawer, opened from the top bar.
   const narrow = useNarrow();
+  const keyboardInset = useKeyboardInset(narrow);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
   // The sidebar collapses out of the way, as shadcn/ui's does: a trigger
@@ -901,6 +929,62 @@ export function App() {
     <DisplaySettingsProvider value={shownDisplay}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
+      {/* At phone width the view's controls are along the foot of the screen,
+          where a thumb reaches: the tables and views, search, Undo, and More
+          (the browser's own menu, which a phone shows as its system picker). */}
+      {narrow && (
+        <html.div role="toolbar" aria-label="View" style={[styles.bottomBar, styles.barLift(keyboardInset)]}>
+          <html.button
+            ref={menuButtonRef}
+            style={styles.iconButton}
+            aria-label="Tables and views"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <Icon name="menu" />
+          </html.button>
+          {!(shownFile && shownContent) && (
+            <>
+              <html.input
+                type="search"
+                placeholder="Search"
+                aria-label="Search this view"
+                enterKeyHint="search"
+                value={state.search}
+                onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+                style={[styles.searchInput, styles.barSearch]}
+              />
+              <html.button
+                aria-label={commandOf("undo").label}
+                disabled={commandOf("undo").enabled === false}
+                onClick={() => dispatch({ type: "undo" })}
+                style={[styles.iconButton, commandOf("undo").enabled === false && styles.iconOff]}
+              >
+                <Icon name="undo" />
+              </html.button>
+              <html.div style={styles.iconButton}>
+                <Icon name="more" />
+                <html.select
+                  aria-label="More"
+                  value=""
+                  onChange={(e: { target: { value: string } }) => {
+                    const what = e.target.value;
+                    if (what === "redo") dispatch({ type: "redo" });
+                    else if (what === "settings") dispatch({ type: "settings", open: !state.settingsOpen });
+                    else if (what === "download") void downloadTable();
+                  }}
+                  style={styles.nativeMenu}
+                >
+                  <html.option value="" disabled>More</html.option>
+                  <html.option value="redo" disabled={commandOf("redo").enabled === false}>{commandOf("redo").label}</html.option>
+                  <html.option value="settings">{state.settingsOpen ? "Hide View Settings" : "View Settings"}</html.option>
+                  <html.option value="download">Download .table.zip</html.option>
+                </html.select>
+              </html.div>
+            </>
+          )}
+        </html.div>
+      )}
       {narrow ? (
         drawerOpen && (
           <>
@@ -923,52 +1007,11 @@ export function App() {
       <html.div style={[styles.main, narrow && styles.mainNarrow]}>
         {narrow && (
           <html.div style={styles.topBar}>
-            <html.button
-              ref={menuButtonRef}
-              style={styles.iconButton}
-              aria-label="Tables and views"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
-            >
-              <Icon name="menu" />
-            </html.button>
             {/* Where you are: the view, and its file and table under it. */}
             <html.div style={styles.topBarTitles}>
               <html.span dir="auto" style={styles.topBarName}>{shownFile ? shownFile.path : view.name}</html.span>
               <html.span dir="auto" style={styles.topBarTitle}>{derived.breadcrumb.text}</html.span>
             </html.div>
-            {!(shownFile && shownContent) && (
-              <>
-                <html.button
-                  aria-label={commandOf("undo").label}
-                  disabled={commandOf("undo").enabled === false}
-                  onClick={() => dispatch({ type: "undo" })}
-                  style={[styles.iconButton, commandOf("undo").enabled === false && styles.iconOff]}
-                >
-                  <Icon name="undo" />
-                </html.button>
-                {/* More: the browser's own menu, which a phone shows as its system picker. */}
-                <html.div style={styles.iconButton}>
-                  <Icon name="more" />
-                  <html.select
-                    aria-label="More"
-                    value=""
-                    onChange={(e: { target: { value: string } }) => {
-                      const what = e.target.value;
-                      if (what === "redo") dispatch({ type: "redo" });
-                      else if (what === "settings") dispatch({ type: "settings", open: !state.settingsOpen });
-                      else if (what === "download") void downloadTable();
-                    }}
-                    style={styles.nativeMenu}
-                  >
-                    <html.option value="" disabled>More</html.option>
-                    <html.option value="redo" disabled={commandOf("redo").enabled === false}>{commandOf("redo").label}</html.option>
-                    <html.option value="settings">{state.settingsOpen ? "Hide View Settings" : "View Settings"}</html.option>
-                    <html.option value="download">Download .table.zip</html.option>
-                  </html.select>
-                </html.div>
-              </>
-            )}
           </html.div>
         )}
         {shownFile && shownContent ? (
@@ -985,17 +1028,6 @@ export function App() {
             <html.span style={styles.breadcrumb}>
               {derived.breadcrumb.text}
             </html.span>
-          )}
-          {narrow && (
-            <html.input
-              type="search"
-              placeholder="Search…"
-              aria-label="Search this view"
-              enterKeyHint="search"
-              value={state.search}
-              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
-              style={[styles.searchInput, styles.searchFull]}
-            />
           )}
           {!narrow && (
           <html.div style={styles.headerTopRow}>
@@ -1263,3 +1295,26 @@ function renderView(
   }
 }
 
+/**
+ * How much of the window the on-screen keyboard covers, from the visual
+ * viewport. iOS Safari leaves a bar fixed to the foot of the page under
+ * the keyboard while its search field is typed in; this lifts it clear.
+ * 0 without a keyboard, or where there's no visual viewport.
+ */
+function useKeyboardInset(on: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const vv = typeof window === "undefined" ? undefined : window.visualViewport;
+    if (!on || !vv) return;
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setInset(0);
+    };
+  }, [on]);
+  return inset;
+}
