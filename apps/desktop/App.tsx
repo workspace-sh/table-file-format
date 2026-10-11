@@ -16,7 +16,6 @@ import {
   ListView,
   AttachmentsProvider,
   CellEditorContext,
-  DisplayControls,
   Hinted,
   DisplaySettingsProvider,
   type DisplaySettings,
@@ -30,14 +29,14 @@ import {
   ViewSettings,
   canInsertAt,
 } from "@workspace.sh/table-ui";
-import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
+import type { DisplaySettingKind, PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
 import { watchRowMenus } from "./MacControls";
 import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
 import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
-import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendAppSettings, sendSettingsForm, setAppSettings, setInspectorCell, setInspectorShown, setSidebar, showAppSettings, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
@@ -221,25 +220,6 @@ const styles = css.create({
     flexWrap: "wrap",
     gap: 6,
     marginBottom: 12,
-  },
-  displayPanel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-    maxWidth: 340,
-    marginBottom: 16,
-    paddingBlock: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: {
-      default: "#d1d1d6",
-      "@media (prefers-color-scheme: dark)": "#3a3a3f",
-    },
-    backgroundColor: {
-      default: "#ffffff",
-      "@media (prefers-color-scheme: dark)": "#17171a",
-    },
   },
   tab: {
     paddingInline: 12,
@@ -592,8 +572,20 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // The Display panel, open or not, kept with the sidebar prefs as the web keeps
   // its Display group's fold. Open only when unfolded by choice: on the Mac it
   // opens in the main area, so it starts closed.
-  const showDisplay = sidebarPrefs.foldedDisplay === false;
-  const toggleDisplay = useCallback(() => dispatch({ type: "setDisplayFolded", folded: showDisplay }), [showDisplay]);
+  // The viewer's language, dates and formula syntax: the app's Settings
+  // window (⌘,), as a Mac app keeps its preferences, rather than a panel
+  // over the table as the web has. Sent whenever they change.
+  useEffect(() => {
+    setAppSettings(
+      displayChoices(display, systemLocale, "System").map((c) => ({
+        id: c.kind,
+        name: c.name,
+        note: c.note ?? c.label,
+        value: c.value,
+        options: c.options,
+      })),
+    );
+  }, [display, systemLocale]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
   // The sidebar is the window's own (nativeSidebar): the split view shows,
@@ -907,7 +899,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       { id: "new-field", menu: "File", title: "New Field…", key: "N", modifiers: ["command", "option"] },
       { id: "view-settings", menu: "View", title: settingsOpen ? "Hide View Settings" : "Show View Settings", key: "v", modifiers: ["command", "option"] },
       { id: "find", menu: "Edit", title: "Find in View…", key: "f", modifiers: ["command"] },
-      { id: "display", menu: "View", title: showDisplay ? "Hide Display Options" : "Show Display Options", key: "", modifiers: [] },
       { id: "reset-demo", menu: "File", title: "Reset Demo Data…", key: "", modifiers: [] },
     ];
     for (const c of own) setMenuItem({ ...c, before: MENU_BEFORE[c.menu] });
@@ -915,14 +906,14 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     setToolbarLabel("new", "New");
     setToolbarLabel("view-settings", "View Settings");
     setToolbarLabel("export-zip", commandOf("export-zip").label);
-  }, [settingsOpen, showDisplay]);
+  }, [settingsOpen]);
   useEffect(() => setToolbarFilesMode(filesMode), [filesMode]);
   // The toolbar's search field: what's typed in it searches the view, and
   // leaving a view (which clears the search) clears it.
   useEffect(() => onSearch((text) => dispatch({ type: "search", text })), []);
   const searchText = state.search;
   useEffect(() => setSearchText(searchText), [searchText]);
-  const commands: Record<AppCommandId | "new-row" | "new-field" | "view-settings" | "find" | "display" | "reset-demo", () => void> = {
+  const commands: Record<AppCommandId | "new-row" | "new-field" | "view-settings" | "find" | "reset-demo", () => void> = {
     "new-row": () => void callbacks.onAddRow(),
     // A table's own: in another layout there's no header to add it from.
     "new-field": () => {
@@ -930,7 +921,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     },
     "view-settings": () => dispatch({ type: "settings", open: !stateRef.current.settingsOpen }),
     find: focusSearch,
-    display: toggleDisplay,
     "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
     "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
@@ -1108,6 +1098,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // The inspector's settings form: what it was sent, and what a control in it would send back
       // ({ what: "change", id, value }, { what: "press", id }, { what: "confirm" }, ...).
       settingsForm: settingsFormJson,
+      // The Settings window (⌘,): open or close it, and do what a control in it would.
+      appSettings: (shown: boolean) => showAppSettings(shown),
+      chooseAppSetting: (id: string, value: string) => sendAppSettings({ what: "change", id, value }),
       sendSettingsForm: (event: object) => {
         sendSettingsForm(event);
         return "sent";
@@ -1206,6 +1199,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "escape") escape.current();
         else if (e.type === "settingsForm") onSettingsFormEvent(e);
         else if (e.type === "formulaEditor") onFormulaEditorEvent(e);
+        else if (e.type === "appSettings" && e.what === "change") dispatch({ type: "display", choice: { kind: e.id as DisplaySettingKind, value: e.value } });
       }),
     [chooseFilesMode],
   );
@@ -1276,15 +1270,6 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 )}
               </html.div>
 
-              {/* The viewer's own language, dates and formula syntax: the web's Display group. */}
-              {showDisplay && (
-                <html.div style={styles.displayPanel}>
-                  <DisplayControls
-                    rows={displayChoices(display, systemLocale, "System")}
-                    onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
-                  />
-                </html.div>
-              )}
               <CellEditorContext.Provider value={glass.editor}>
               {renderView(shownView, visibleRows, table.schema, table.bodies, {
                 ...callbacks,
