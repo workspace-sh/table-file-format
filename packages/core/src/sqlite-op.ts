@@ -1,15 +1,14 @@
 import type { SqlDriver, SqlValue } from "./indexer.js";
+import { manyRowInserts } from "./sqlite-batch.js";
 
 /**
  * The parts of op-sqlite's database (`@op-engineering/op-sqlite`, `open()`)
  * the driver uses, so core takes no dependency on the package. `execute`
- * runs every statement in its text; `executeBatch` runs a statement once
- * for each list of values, inside whatever transaction is open (it opens
- * none of its own).
+ * runs every statement in its text. (Its `executeBatch` isn't used: it
+ * opens a transaction of its own, which the indexer's own can't hold.)
  */
 export interface OpDatabase {
   execute(query: string, params?: SqlValue[]): Promise<{ rows: Record<string, unknown>[] }>;
-  executeBatch(commands: ([string] | [string, SqlValue[]] | [string, SqlValue[][]])[]): Promise<unknown>;
   close(): void;
 }
 
@@ -17,13 +16,6 @@ export interface OpDatabase {
 export interface OpDriver extends SqlDriver {
   close(): Promise<void>;
 }
-
-/**
- * Lists of values per batch call: a call is one crossing to native code,
- * and this keeps each short enough that a read asked meanwhile isn't kept
- * waiting long.
- */
-const LISTS_PER_BATCH = 2_000;
 
 /**
  * A SqlDriver over an op-sqlite database (the Mac, apps/desktop; op-sqlite
@@ -38,17 +30,21 @@ export function opDriver(db: OpDatabase): OpDriver {
     last = next.catch(() => undefined);
     return next;
   };
+  const run = (sql: string, params: SqlValue[]) => inTurn(async () => void (await db.execute(sql, params)));
   return {
     exec: (sql) => inTurn(async () => void (await db.execute(sql))),
-    run: (sql, params = []) => inTurn(async () => void (await db.execute(sql, params))),
+    run: (sql, params = []) => run(sql, params),
     all: (sql, params = []) => inTurn(async () => (await db.execute(sql, params)).rows as Record<string, SqlValue>[]),
-    // A statement for many lists of values, a part at a time, each part its own turn:
-    // a read asked during a build waits for one part, not the whole batch.
+    // A one-row insert is run for many rows at once, as the expo driver does: a crossing per few
+    // hundred rows, not per row. Each statement takes its own turn, so a read asked during a
+    // build waits for one statement, not the batch.
     batch: async (sql, lists) => {
-      for (let at = 0; at < lists.length; at += LISTS_PER_BATCH) {
-        const part = lists.slice(at, at + LISTS_PER_BATCH);
-        await inTurn(() => db.executeBatch([[sql, part]]));
+      const many = manyRowInserts(sql, lists);
+      if (!many) {
+        for (const params of lists) await run(sql, params);
+        return;
       }
+      for (const statement of many) await run(statement.sql, statement.params);
     },
     close: () => inTurn(async () => db.close()),
   };

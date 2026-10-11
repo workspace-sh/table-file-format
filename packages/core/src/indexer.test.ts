@@ -22,7 +22,7 @@ if (process.env.INDEXER_DRIVER === "wasm") {
 }
 const skip = sqlite || wasm ? false : "node:sqlite is not available";
 
-/** op-sqlite's database as the driver sees it, over node:sqlite: `execute` runs every statement in its text, `executeBatch` a statement per list of values. */
+/** op-sqlite's database as the driver sees it, over node:sqlite: `execute` runs every statement in its text. */
 function opStandIn(): OpDatabase {
   const db = new sqlite!.DatabaseSync(":memory:");
   const several = (sql: string) => /;\s*\S/.test(sql.trim().replace(/;\s*$/, ""));
@@ -34,13 +34,6 @@ function opStandIn(): OpDatabase {
       }
       const s = db.prepare(sql);
       return { rows: s.columns().length > 0 ? s.all(...params) : (s.run(...params), []) };
-    },
-    async executeBatch(commands) {
-      for (const [sql, params] of commands) {
-        const s = db.prepare(sql);
-        const lists = params === undefined ? [[]] : Array.isArray(params[0]) ? (params as unknown[][]) : [params];
-        for (const list of lists) s.run(...list);
-      }
     },
     close: () => db.close(),
   };
