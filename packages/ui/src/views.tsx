@@ -29,6 +29,7 @@ import {
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
   TOTAL_NAMES,
+  totalKindsFor,
   totalFor,
   visibleFields,
   pillColors,
@@ -2674,11 +2675,6 @@ export function TableView({
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   const { Select: TotalsSelect } = usePlatformControls();
-  /** The totals a column can show: sums and the like for numbers, counts for anything. */
-  const totalKindsFor = (field: Field | undefined): ViewTotal[] => {
-    const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
-    return [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
-  };
   const chooseTotal = (name: string, kind: ViewTotal | null) => {
     const next = { ...(view.totals ?? {}) };
     if (kind) next[name] = kind;

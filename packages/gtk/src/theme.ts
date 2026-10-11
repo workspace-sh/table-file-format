@@ -14,6 +14,9 @@ export function useDark(): boolean {
 
 const RULE = "alpha(currentColor, 0.1)";
 
+/** "Calculate" in a footer cell with no total: where one could go, seen when its cell is pointed at or has the keyboard. */
+const TOTAL_PLACEHOLDER = css({ fontSize: "11px", opacity: 0 });
+
 export const styles = {
   /** The table: a framed card, its rules and sizes the web's and the Mac's (table-ui's views.tsx). */
   tableFrame: css({ border: `1px solid ${RULE}`, borderRadius: "8px" }),
@@ -59,7 +62,14 @@ export const styles = {
   groupLabel: css({ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.65 }),
   groupCount: css({ fontSize: "11px", opacity: 0.5 }),
   totalsRow: css({ borderTop: `1px solid ${RULE}`, minHeight: "36px" }),
-  /** What a total is ("SUM"), in the small capitals every platform's footer has. */
+  /** With no total chosen the footer is quiet: no rule above it or between its cells. */
+  totalsRowQuiet: css({ minHeight: "32px" }),
+  /** A footer cell, which is the menu of its column's totals: the cell's own shape, not a button's. */
+  totalCell: css({
+    "& > button": { borderRadius: "0", padding: "0 16px", fontSize: "13px", fontWeight: "400", minHeight: "0" },
+    [`&:hover .${TOTAL_PLACEHOLDER}, &:focus-within .${TOTAL_PLACEHOLDER}`]: { opacity: 0.6 },
+  }),
+  totalPlaceholder: TOTAL_PLACEHOLDER,
   totalLabel: css({ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
   rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "7px", padding: "0" }),
