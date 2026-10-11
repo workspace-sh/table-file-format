@@ -102,7 +102,7 @@ import { HOVERS } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
-import { Platform } from "react-native";
+import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
@@ -2733,7 +2733,7 @@ export function TableView({
   // arrow selects its first cell (gridKey) without a click first. Not on the
   // web, where focusing would scroll the page, nor on a phone.
   useEffect(() => {
-    if (Platform.OS !== "macos") return;
+    if (PLATFORM_OS !== "macos") return;
     const t = setTimeout(() => keysRef.current?.focus(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3131,7 +3131,7 @@ export function TableView({
             !isLast && styles.tableCellSeparator,
           ]}
         >
-          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
           {columnResizer(name)}
@@ -3169,7 +3169,7 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
-          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
         </html.button>
