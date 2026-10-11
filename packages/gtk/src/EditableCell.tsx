@@ -6,6 +6,7 @@
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import {
+  GtkAdjustment,
   GtkBox,
   GtkButton,
   GtkCalendar,
@@ -18,10 +19,11 @@ import {
   GtkLabel,
   GtkMenuButton,
   GtkPopover,
+  GtkSpinButton,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { styles } from "./theme.js";
-import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -95,11 +97,12 @@ function ChoiceEditor({
   );
 }
 
-/** The day a draft names, as a calendar takes it (its month from 0); nothing for a draft that names none. */
-function calendarDay(draft: string): { year?: number; month?: number; day?: number } {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(draft);
-  return m ? { year: Number(m[1]), month: Number(m[2]) - 1, day: Number(m[3]) } : {};
-}
+/** A picker's words and picture, by what it picks. */
+const PICKERS: Record<DateKind, { tooltip: string; icon: string }> = {
+  date: { tooltip: "Choose a Date", icon: "x-office-calendar-symbolic" },
+  datetime: { tooltip: "Choose a Date and Time", icon: "x-office-calendar-symbolic" },
+  time: { tooltip: "Choose a Time", icon: "preferences-system-time-symbolic" },
+};
 
 export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd }: EditableCellProps) {
   const kind = editorKind(field);
@@ -116,16 +119,20 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const entry = useRef<Gtk.Entry | null>(null);
   // Typed over what was there: the cursor goes after it, not selecting it.
   const typedOver = useRef(false);
-  // A date is also picked from a calendar. While that is open the entry losing
-  // the keyboard isn't the edit ending; the day picked goes into the entry,
-  // and closing the calendar saves it.
-  const dated = field?.type === "date" || field?.type === "datetime";
+  // A date or a time is also picked: a day from a calendar, an hour and minute from two spinners, as the
+  // field has them. While the picker is open the entry losing the keyboard isn't the edit ending; what is
+  // picked goes into the entry as the cell stores it (table-ui's storedOfDate, as the phone's picker
+  // writes it: a date and time in UTC, shown here in the viewer's own time), and closing the picker saves it.
+  const dateKind: DateKind | null = field?.type === "date" || field?.type === "datetime" || field?.type === "time" ? field.type : null;
+  const dated = dateKind !== null;
   const picking = useRef(false);
   const draftNow = useRef(draft);
   draftNow.current = draft;
   const calendarButton = useRef<Gtk.MenuButton | null>(null);
+  // What the draft names, in the viewer's time: nothing while it names none.
+  const drafted = dateKind ? dateOfStored(dateKind, draft) : null;
   // The keyboard leaving a date's entry isn't the edit ending when it has only gone to the
-  // calendar's button, or the calendar is open: looked at once the move is over.
+  // picker's button, or the picker is open: looked at once the move is over.
   const leftSoon = () =>
     setTimeout(() => {
       if (picking.current || closed.current) return;
@@ -137,15 +144,25 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
       if (within(focus, entry.current) || within(focus, calendarButton.current)) return;
       commit(entry.current?.getText() ?? draftNow.current, "blur");
     }, 0);
-  const pickDay = (calendar: Gtk.Calendar) => {
-    const day = calendar.getDate();
-    const two = (n: number) => String(n).padStart(2, "0");
-    const date = `${String(day.getYear()).padStart(4, "0")}-${two(day.getMonth())}-${two(day.getDayOfMonth())}`;
-    // A date and time keeps its time; one with none yet starts the day.
-    const time = /T(.+)$/.exec(draftNow.current)?.[1];
-    setDraft(field?.type === "datetime" ? `${date}T${time ?? "00:00"}` : date);
+  /** One part picked: the draft becomes what it named with that part changed. A draft that names nothing yet starts from now, to the minute. */
+  const pick = (change: (from: Date) => Date) => {
+    if (!dateKind) return;
+    const now = new Date();
+    now.setSeconds(0, 0);
+    setDraft(storedOfDate(dateKind, change(dateOfStored(dateKind, draftNow.current) ?? now)));
     setProblem(null);
   };
+  const pickDay = (calendar: Gtk.Calendar) => {
+    const day = calendar.getDate();
+    pick((from) => localDate(day.getYear(), day.getMonth() - 1, day.getDayOfMonth(), from.getHours(), from.getMinutes(), from.getSeconds()));
+  };
+  const pickTime = (part: "hours" | "minutes", value: number) =>
+    pick((from) => {
+      const to = new Date(from.getTime());
+      if (part === "hours") to.setHours(value);
+      else to.setMinutes(value);
+      return to;
+    });
 
   const start = (text?: string) => {
     if (kind === "readonly") return;
@@ -327,14 +344,14 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
           </>
         }
       />
-      {dated ? (
+      {dateKind ? (
         <GtkMenuButton
           ref={calendarButton}
           controllers={<GtkEventControllerFocus onLeave={leftSoon} />}
-          iconName="x-office-calendar-symbolic"
+          iconName={PICKERS[dateKind].icon}
           cssClasses={["flat", "circular"]}
           valign={Gtk.Align.CENTER}
-          tooltipText="Choose a Date"
+          tooltipText={PICKERS[dateKind].tooltip}
           onNotifyActive={(active) => {
             if (active) picking.current = true;
           }}
@@ -343,12 +360,37 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
               onClosed={() => {
                 if (!picking.current) return;
                 picking.current = false;
-                // The calendar closed: what was picked is saved, or the entry has the keyboard again to put it right.
+                // The picker closed: what was picked is saved, or the entry has the keyboard again to put it right.
                 if (!commit(draftNow.current, "key")) entry.current?.grabFocus();
                 else onEditEnd?.("escape");
               }}
             >
-              <GtkCalendar {...calendarDay(draft)} onDaySelected={pickDay} />
+              <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={8}>
+                {dateKind !== "time" ? (
+                  <GtkCalendar {...(drafted ? { year: drafted.getFullYear(), month: drafted.getMonth(), day: drafted.getDate() } : {})} onDaySelected={pickDay} />
+                ) : null}
+                {dateKind !== "date" ? (
+                  <GtkBox spacing={6} halign={Gtk.Align.CENTER}>
+                    <GtkSpinButton
+                      tooltipText="Hour"
+                      numeric
+                      wrap
+                      widthChars={2}
+                      adjustment={<GtkAdjustment lower={0} upper={23} stepIncrement={1} pageIncrement={6} value={drafted?.getHours() ?? 0} />}
+                      onValueChanged={(self) => pickTime("hours", self.getValueAsInt())}
+                    />
+                    <GtkLabel label=":" />
+                    <GtkSpinButton
+                      tooltipText="Minute"
+                      numeric
+                      wrap
+                      widthChars={2}
+                      adjustment={<GtkAdjustment lower={0} upper={59} stepIncrement={1} pageIncrement={10} value={drafted?.getMinutes() ?? 0} />}
+                      onValueChanged={(self) => pickTime("minutes", self.getValueAsInt())}
+                    />
+                  </GtkBox>
+                ) : null}
+              </GtkBox>
             </GtkPopover>
           }
         />
