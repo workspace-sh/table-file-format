@@ -20,7 +20,7 @@ export * from "./fieldEdit";
 export { AttachmentsProvider, isImageFile, useAttachmentUrl, type AttachmentUrl } from "./Attachments";
 export { pageSave, type PageSave } from "./pageEdit";
 export { fieldHint, fieldHintText, type FieldHintFacts } from "./fieldHintFacts";
-export { afterEdit, cellPicks, clampPlace, gridKey, type EditEnd as GridEditEnd, type GridAction, type GridCell, type GridKey, type GridPlace } from "./gridNav";
+export { afterEdit, cellPicks, clampPlace, gridKey, mirroredKey, type EditEnd as GridEditEnd, type GridAction, type GridCell, type GridKey, type GridPlace } from "./gridNav";
 export { inputHints, inputModeOf, type InputHintKind, type InputHints } from "./inputHints";
 export { columnActions, rowActions, type DateInputProps, type DateInputSlot, type FieldAction, type MenuAction, type PlatformControls, type RowAction, type RowActionsProps, type RowActionsSlot, type SelectHandle, type SelectOption, type SelectProps, type SelectSlot, type SettingsFormProps, type SettingsFormSlot, type SettingsRow, type SettingsSection, type SheetProps, type SheetSlot, type ToggleProps, type ToggleSlot } from "./controlSlots";
 export { dateOfStored, localDate, storedOfDate, type DateKind } from "./dateEntry";

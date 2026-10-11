@@ -76,6 +76,7 @@ import {
   cellPicks,
   editorKind,
   gridKey,
+  mirroredKey,
   type GridPlace,
   useDisplaySettings,
 } from "@workspace.sh/table-ui/shared";
@@ -110,6 +111,13 @@ const DRAW_MARGIN = 300;
 const FRAME_MARGIN = 12;
 /** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
 const FREEZE_FROM_WIDTH = 720;
+/**
+ * How far a scroller is scrolled across from where its content starts, and the adjustment's value for
+ * being that far. Left to right they are the same; right to left the content starts at the right, where
+ * GTK's value is at its greatest.
+ */
+const acrossFromStart = (across: Gtk.Adjustment, rtl: boolean) => (rtl ? across.getUpper() - across.getPageSize() - across.getValue() : across.getValue());
+const acrossValue = (across: Gtk.Adjustment, rtl: boolean, fromStart: number) => (rtl ? across.getUpper() - across.getPageSize() - fromStart : fromStart);
 /** How long a sideways scroll is still before its columns are brought into line. */
 const SNAP_AFTER_MS = 180;
 const SNAP_GLIDE_MS = 160;
@@ -533,9 +541,17 @@ export function TableView({
     if (frozenNow.current.width > 0 && cell === frozenNow.current.cellOf?.(place)) return;
     const covered = frozenNow.current.width;
     const across = window.getHadjustment();
+    const page = across.getPageSize();
+    // Across what is scrolled: the frame's margin and line come before the cells.
+    const left = bounds.getX() + FRAME_MARGIN + 1;
+    const right = left + bounds.getWidth();
     let x = across.getValue();
-    if (bounds.getX() - covered < x) x = Math.max(0, bounds.getX() - covered);
-    else if (bounds.getX() + bounds.getWidth() > x + across.getPageSize()) x = bounds.getX() + bounds.getWidth() - across.getPageSize();
+    if (rtl) {
+      // Right to left the first column is at the window's right, and it's the cell's right it covers.
+      if (right > x + page - covered) x = Math.min(across.getUpper() - page, right - page + covered);
+      else if (left < x) x = left;
+    } else if (left - covered < x) x = Math.max(0, left - covered);
+    else if (right > x + page) x = right - page;
     if (x !== across.getValue()) placeAcross(across, x);
   };
   const firstBuilt = Math.min(layout.at(built.from), Math.max(0, count - 1));
@@ -577,7 +593,7 @@ export function TableView({
   // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
   // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
   // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
-  const freeze = !rtl && fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH;
+  const freeze = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH;
   const frozenWidth = freeze ? (coords ? ROW_NUMBER_WIDTH : 0) + colWidth(fields[0]!) : 0;
   const scrolledAcross = useRef(0);
   const pinned = useRef(new Map<string, { widget: Gtk.Widget; from: number }>());
@@ -593,8 +609,9 @@ export function TableView({
   const snapNow = useRef<(() => void) | null>(null);
   snapNow.current = () => {
     const across = scroller.current?.getHadjustment();
-    if (!across || rtl) return;
-    const value = across.getValue();
+    if (!across) return;
+    // Counted from the table's start, whichever side that is.
+    const value = acrossFromStart(across, rtl);
     const end = across.getUpper() - across.getPageSize();
     // At either end there's nothing to bring into line.
     if (value <= 0 || value >= end - 1) return;
@@ -615,7 +632,7 @@ export function TableView({
     const started = Date.now();
     const step = () => {
       const t = Math.min(1, (Date.now() - started) / SNAP_GLIDE_MS);
-      placeAcross(across, t < 1 ? value + (nearest - value) * (1 - (1 - t) ** 3) : nearest);
+      placeAcross(across, acrossValue(across, rtl, t < 1 ? value + (nearest - value) * (1 - (1 - t) ** 3) : nearest));
       snapTimer.current = t < 1 ? setTimeout(step, 16) : null;
     };
     step();
@@ -626,7 +643,20 @@ export function TableView({
     },
     [],
   );
+  /** Scrolled past the frame's margin and edge, the first column rests against the window's own edge. */
+  const pinAcross = () => {
+    const across = scroller.current?.getHadjustment();
+    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - FRAME_MARGIN - 1) : 0;
+    if (x === scrolledAcross.current) return;
+    scrolledAcross.current = x;
+    for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
+  };
+  const lastAcross = useRef(0);
   const scrollAcross = (value: number) => {
+    // Right to left GTK says the value again after laying out, a hair off: that isn't a scroll.
+    const moved = Math.abs(value - lastAcross.current) >= 0.01;
+    lastAcross.current = value;
+    if (!moved) return pinAcross();
     const placed = placedAcross.current;
     placedAcross.current = null;
     // Anyone else's scroll ends a glide, and is brought into line once it has been still a moment.
@@ -634,11 +664,7 @@ export function TableView({
       if (snapTimer.current) clearTimeout(snapTimer.current);
       snapTimer.current = setTimeout(() => snapNow.current?.(), SNAP_AFTER_MS);
     }
-    // Scrolled past the frame's margin and edge, the first column rests against the window's own edge.
-    const x = freeze ? Math.max(0, Math.round(value) - FRAME_MARGIN - 1) : 0;
-    if (x === scrolledAcross.current) return;
-    scrolledAcross.current = x;
-    for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
+    pinAcross();
   };
   // What a row starts with: its frozen part laid over it and room left under that, or the gutter in line.
   // (It is its cells' height, at the top of its row or the foot of the totals: the row's own rule shows past it.)
@@ -1004,7 +1030,8 @@ export function TableView({
     const name = fields[at.col]!;
     const field = fieldMap.get(name);
     const row = builtRow.get(rowId);
-    const action = gridKey(at, count, fields.length, k, {
+    // Right to left, Left and Right are where they are on screen.
+    const action = gridKey(at, count, fields.length, rtl ? mirroredKey(k) : k, {
       editable: editable && editorKind(field) !== "readonly",
       boolean: field?.type === "boolean",
       picks: cellPicks(field),
@@ -1281,7 +1308,12 @@ export function TableView({
       vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
       hadjustment={
         <GtkAdjustment
-          onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))}
+          onNotifyPageSize={(size) => {
+            setContainerWidth(Math.floor(size ?? 0));
+            pinAcross();
+          }}
+          // Right to left, how far it is scrolled from its start changes with its width too.
+          onNotifyUpper={pinAcross}
           onNotifyValue={(value) => scrollAcross(value ?? 0)}
         />
       }

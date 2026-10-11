@@ -65,6 +65,17 @@ function tabbed(at: GridPlace, back: boolean, rows: number, cols: number): GridP
 }
 
 /**
+ * A key as a right-to-left grid hears it: Left is towards the row's end
+ * and Right towards its start, since that is where they are on screen.
+ * Home, End and Tab follow the reading order either way.
+ */
+export function mirroredKey(k: GridKey): GridKey {
+  if (k.key === "ArrowLeft") return { ...k, key: "ArrowRight" };
+  if (k.key === "ArrowRight") return { ...k, key: "ArrowLeft" };
+  return k;
+}
+
+/**
  * What `key` does in a grid of `rows` × `cols` with `at` selected (null:
  * nothing is). Null when the grid leaves the key alone. With nothing
  * selected, a key that moves selects the first cell.
