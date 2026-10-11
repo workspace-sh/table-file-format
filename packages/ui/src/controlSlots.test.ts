@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { rowActions } from "./controlSlots.ts";
+import { columnActions, rowActions } from "./controlSlots.ts";
 
 test("a row's actions: page, inserts, then delete last and destructive", () => {
   const done: string[] = [];
@@ -38,4 +38,24 @@ test("labels are title case", () => {
 test("each action names its symbol on both phones", () => {
   const actions = rowActions("r1", { onOpenBody: () => {}, hasBody: true, onInsertRow: () => {}, onDeleteRow: () => {} });
   for (const a of actions) assert.ok(a.symbol?.sf && a.symbol?.material, a.id);
+});
+
+test("a column's actions: insert either side, reset a resized width, delete last", () => {
+  const done: string[] = [];
+  const can = {
+    onInsertField: (name: string, side: "before" | "after") => done.push(`insert ${side} ${name}`),
+    onResetWidth: (name: string) => done.push(`reset ${name}`),
+    onDeleteField: (name: string) => done.push(`delete ${name}`),
+  };
+  const actions = columnActions("status", can);
+  assert.deepEqual(actions.map((a) => a.id), ["insert-left", "insert-right", "reset-width", "delete-field"]);
+  assert.deepEqual(actions.map((a) => !!a.destructive), [false, false, false, true]);
+  for (const a of actions) a.onSelect();
+  assert.deepEqual(done, ["insert before status", "insert after status", "reset status", "delete status"]);
+  // Right to left, the column on the left comes after it.
+  done.length = 0;
+  for (const a of columnActions("status", { ...can, rtl: true }).slice(0, 2)) a.onSelect();
+  assert.deepEqual(done, ["insert after status", "insert before status"]);
+  // Nothing it can't do: a width never set has nothing to reset.
+  assert.deepEqual(columnActions("status", { onInsertField: can.onInsertField }).map((a) => a.id), ["insert-left", "insert-right"]);
 });

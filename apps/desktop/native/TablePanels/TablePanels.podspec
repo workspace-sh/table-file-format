@@ -1,5 +1,6 @@
 # The macOS app's own native modules: the system Open and Save panels
-# (TablePanels), and its own items in the menu bar (TableMenu).
+# (TablePanels), its own items in the menu bar (TableMenu), and the window's
+# layout with its sidebar (TableShell, TableSidebar).
 # No published React Native module covers react-native-macos
 # (@react-native-documents/picker is iOS only), so it lives here.
 Pod::Spec.new do |s|
@@ -11,7 +12,9 @@ Pod::Spec.new do |s|
   s.homepage     = "https://github.com/workspace-sh/table-file-format"
   s.source       = { :path => "." }
   s.platforms    = { :osx => "14.0" }
-  s.source_files = "*.{h,m,mm}"
-  s.frameworks   = "UniformTypeIdentifiers"
+  s.source_files = "*.{h,m,mm,swift}"
+  s.public_header_files = "TableShellEntry.h"
+  s.swift_version = "5.9"
+  s.frameworks   = "UniformTypeIdentifiers", "SwiftUI"
   s.dependency "React-Core"
 end

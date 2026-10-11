@@ -203,12 +203,34 @@ export function withFieldMoved(table: ParsedTable, name: string, delta: -1 | 1):
  * so the field joins the view it was added from (`fromView`), or it would
  * never appear where it was added; other views are left as they are.
  */
-export function withField(table: ParsedTable, field: Field, fromView?: string): ParsedTable {
+/** Where a new field goes: beside another, on its start (`before`) or end (`after`) side. */
+export interface FieldPlace {
+  name: string;
+  side: "before" | "after";
+}
+
+/** `items` with `item` beside `place.name`, or at the end when that isn't there. */
+function insertBeside<T>(items: T[], item: T, nameOf: (t: T) => string, place?: FieldPlace): T[] {
+  const at = place ? items.findIndex((t) => nameOf(t) === place.name) : -1;
+  if (at < 0) return [...items, item];
+  const i = place!.side === "before" ? at : at + 1;
+  return [...items.slice(0, i), item, ...items.slice(i)];
+}
+
+/**
+ * With a new field: at the end, or beside another (a column's "Insert
+ * Field Left/Right"), in the schema and in the view it was added from when
+ * that view lists its fields.
+ */
+export function withField(table: ParsedTable, field: Field, fromView?: string, place?: FieldPlace): ParsedTable {
   if (table.schema.fields.some((f) => f.name === field.name)) return table;
   const views = table.views.map((v) =>
-    v.id === fromView && Array.isArray(v.fields) && !v.fields.includes(field.name) ? { ...v, fields: [...v.fields, field.name] } : v,
+    v.id === fromView && Array.isArray(v.fields) && !v.fields.includes(field.name)
+      ? { ...v, fields: insertBeside(v.fields, field.name, (n) => n, place) }
+      : v,
   );
-  return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields: [...table.schema.fields, field] }), views };
+  const fields = insertBeside(table.schema.fields, field, (f) => f.name, place);
+  return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }), views };
 }
 
 export function withViewPatch(table: ParsedTable, viewId: string, patch: Partial<View>): ParsedTable {

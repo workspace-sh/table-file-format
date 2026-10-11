@@ -1,0 +1,113 @@
+diff --git a/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m b/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
+index 361bf4b..7e4aaa5 100644
+--- a/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
++++ b/node_modules/react-native-gesture-handler/apple/Handlers/RNPanHandler.m
+@@ -9,12 +9,34 @@
+ #import "RNPanHandler.h"
+ #import "RNGHStylusData.h"
+ 
++#if TARGET_OS_OSX
++// [table-file-format patch] The view a gesture's absolute position is counted from: the React root view
++// the gesture's view is mounted in, which is what layout and measure() count from, and is flipped like
++// every React view. Upstream uses the window's content view, which is only the same when React fills the
++// window; beside a native sidebar or under a toolbar every position is off by the root's place in the
++// window, and with an unflipped content view (an NSSplitView, say) y runs the wrong way.
++static NSView *RNGHAbsoluteSpace(NSView *view)
++{
++  // The nearest root component view: the surface views around it can sit inside a scroll view that
++  // takes the toolbar's insets, so they don't start where the root does.
++  NSView *surface = nil;
++  for (NSView *v = view; v != nil; v = v.superview) {
++    NSString *name = NSStringFromClass([v class]);
++    if ([name isEqualToString:@"RCTRootComponentView"]) return v;
++    if (surface == nil && [name containsString:@"SurfaceView"]) surface = v;
++  }
++  return surface ?: view.window.contentView;
++}
++#endif
++
+ #if TARGET_OS_OSX
+ 
+ @interface RNBetterPanGestureRecognizer : NSPanGestureRecognizer
+ #else
+ #import <UIKit/UIGestureRecognizerSubclass.h>
+ 
++
++
+ @interface RNBetterPanGestureRecognizer : UIPanGestureRecognizer
+ #endif
+ 
+@@ -283,7 +305,7 @@ - (void)updateHasCustomActivationCriteria
+ - (BOOL)shouldFailUnderCustomCriteria
+ {
+ #if TARGET_OS_OSX
+-  CGPoint trans = [self translationInView:self.view.window.contentView];
++  CGPoint trans = [self translationInView:RNGHAbsoluteSpace(self.view)];
+ #else
+   CGPoint trans = [self translationInView:self.view.window];
+ #endif
+@@ -311,7 +333,7 @@ - (BOOL)shouldFailUnderCustomCriteria
+ - (BOOL)shouldActivateUnderCustomCriteria
+ {
+ #if TARGET_OS_OSX
+-  CGPoint trans = [self translationInView:self.view.window.contentView];
++  CGPoint trans = [self translationInView:RNGHAbsoluteSpace(self.view)];
+ #else
+   CGPoint trans = [self translationInView:self.view.window];
+ #endif
+@@ -448,9 +470,9 @@ - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+ - (RNGestureHandlerEventExtraData *)eventExtraData:(NSPanGestureRecognizer *)recognizer
+ {
+   return [RNGestureHandlerEventExtraData forPan:[recognizer locationInView:recognizer.view]
+-                           withAbsolutePosition:[recognizer locationInView:recognizer.view.window.contentView]
+-                                withTranslation:[recognizer translationInView:recognizer.view.window.contentView]
+-                                   withVelocity:[recognizer velocityInView:recognizer.view.window.contentView]
++                           withAbsolutePosition:[recognizer locationInView:RNGHAbsoluteSpace(recognizer.view)]
++                                withTranslation:[recognizer translationInView:RNGHAbsoluteSpace(recognizer.view)]
++                                   withVelocity:[recognizer velocityInView:RNGHAbsoluteSpace(recognizer.view)]
+                             withNumberOfTouches:1
+                                 withPointerType:RNGestureHandlerMouse
+                                  withStylusData:nil];
+diff --git a/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm b/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
+index 27a0572..4b2a5c3 100644
+--- a/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
++++ b/node_modules/react-native-gesture-handler/apple/RNGestureHandler.mm
+@@ -15,6 +15,29 @@
+ #import <React/RCTScrollViewComponentView.h>
+ #else
+ #import <React/RCTScrollView.h>
++
++
++#endif
++
++
++#if TARGET_OS_OSX
++// [table-file-format patch] The view a gesture's absolute position is counted from: the React root view
++// the gesture's view is mounted in, which is what layout and measure() count from, and is flipped like
++// every React view. Upstream uses the window's content view, which is only the same when React fills the
++// window; beside a native sidebar or under a toolbar every position is off by the root's place in the
++// window, and with an unflipped content view (an NSSplitView, say) y runs the wrong way.
++static NSView *RNGHAbsoluteSpace(NSView *view)
++{
++  // The nearest root component view: the surface views around it can sit inside a scroll view that
++  // takes the toolbar's insets, so they don't start where the root does.
++  NSView *surface = nil;
++  for (NSView *v = view; v != nil; v = v.superview) {
++    NSString *name = NSStringFromClass([v class]);
++    if ([name isEqualToString:@"RCTRootComponentView"]) return v;
++    if (surface == nil && [name containsString:@"SurfaceView"]) surface = v;
++  }
++  return surface ?: view.window.contentView;
++}
+ #endif
+ 
+ @interface UIGestureRecognizer (GestureHandler)
+@@ -264,7 +287,7 @@ - (RNGestureHandlerEventExtraData *)eventExtraData:(UIGestureRecognizer *)recogn
+ {
+ #if TARGET_OS_OSX
+   return [RNGestureHandlerEventExtraData forPosition:[recognizer locationInView:recognizer.view]
+-                                withAbsolutePosition:[recognizer locationInView:recognizer.view.window.contentView]
++                                withAbsolutePosition:[recognizer locationInView:RNGHAbsoluteSpace(recognizer.view)]
+                                  withNumberOfTouches:1
+                                      withPointerType:RNGestureHandlerMouse];
+ #else

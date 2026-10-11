@@ -13,6 +13,7 @@
     "@formatjs/intl-pluralrules": "^6.3.15",
     "@formatjs/intl-relativetimeformat": "^12.3.15",
     "@react-native-async-storage/async-storage": "^3.1.1",
+    "@workspace.sh/glass-bar": "file:../../packages/glass-bar",
     "@workspace.sh/table-app": "file:../../packages/app",
     "@workspace.sh/table-core": "file:../../packages/core",
     "@workspace.sh/table-fixtures": "file:../../packages/table-fixtures",

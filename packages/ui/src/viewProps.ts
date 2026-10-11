@@ -37,7 +37,13 @@ export interface ViewProps {
    * onMoveField, which leaves `schema-version` raised.
    */
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField?: (field: Field) => void;
+  /** Add a field: at the end, or beside another (`place`, a column's "Insert Field Left/Right"). */
+  onAddField?: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
+  /**
+   * Opens the new-field editor each time it changes (a toolbar's or menu's
+   * New Field), at the "+" on the end of the header. Table layout only.
+   */
+  newFieldRequest?: number;
   /**
    * Add an empty row. The app mints its id (D23) and may return it: the
    * table then opens that row's first cell for typing.

@@ -199,3 +199,15 @@ test("deleting a field takes it from the schema, every row and every view that n
   }
   assert.equal(withoutField(companies, "no-such-field"), companies);
 });
+
+test("withField: beside a field, in the schema and the view that lists its fields", () => {
+  const view = tasks.views[0]!;
+  const listed = { ...tasks, views: [{ ...view, fields: tasks.schema.fields.map((f) => f.name) }, ...tasks.views.slice(1)] };
+  const second = listed.schema.fields[1]!.name;
+  const out = withField(listed, { name: "extra", type: "string" }, view.id, { name: second, side: "before" });
+  assert.equal(out.schema.fields[1]!.name, "extra");
+  assert.equal(out.views[0]!.fields![1], "extra");
+  const after = withField(listed, { name: "extra", type: "string" }, view.id, { name: second, side: "after" });
+  assert.equal(after.schema.fields[2]!.name, "extra");
+  assert.equal(after.views[0]!.fields![2], "extra");
+});

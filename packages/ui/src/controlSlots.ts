@@ -6,9 +6,9 @@
 
 import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
 
-/** Something that can be done to a row as a whole, from its row menu. */
-export interface RowAction {
-  id: "open-page" | "add-page" | "insert-above" | "insert-below" | "delete";
+/** An entry of a menu the platform draws: a row's, or a column's. */
+interface Action<Id extends string> {
+  id: Id;
   /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
@@ -18,6 +18,15 @@ export interface RowAction {
   onSelect: () => void;
 }
 
+/** Something that can be done to a row as a whole, from its row menu. */
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "delete">;
+
+/** Something that can be done to a column, from its header's menu (columnActions). */
+export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
+
+/** Either: what a menu drawn by the RowActions slot is made of. */
+export type MenuAction = RowAction | FieldAction;
+
 /**
  * The RowActions slot: wraps a row (`children`, one element) and offers
  * its `actions` the platform's way. iOS: touch and hold for a context
@@ -26,7 +35,7 @@ export interface RowAction {
  * as it is.
  */
 export interface RowActionsProps {
-  actions: RowAction[];
+  actions: MenuAction[];
   children: ReactElement;
   /** The row's title as shown, for a menu that names the row (the defaults lift or point at the row itself). */
   title?: string;
@@ -217,8 +226,12 @@ export interface SettingsFormProps {
   sections: SettingsSection[];
 }
 
-/** A platform's own settings form, or null where the shared layout is drawn instead. */
-export type SettingsFormSlot = ((props: SettingsFormProps) => ReactElement) | null;
+/**
+ * A platform's own settings form, or null where the shared layout is drawn
+ * instead. `reorderHint` says how its rows are reordered, where that isn't
+ * a phone's touch and hold ("Use a row's menu to reorder.").
+ */
+export type SettingsFormSlot = (((props: SettingsFormProps) => ReactElement) & { reorderHint?: string }) | null;
 
 /**
  * A Sheet control; `presentsSettings` when it shows `settings` as a sheet
@@ -270,6 +283,46 @@ export function rowActions(
   }
   if (onDeleteRow) {
     actions.push({ id: "delete", label: "Delete Row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
+  }
+  return actions;
+}
+
+/**
+ * What a column's header menu offers (right-click, or touch and hold), in
+ * order. Inserting is by what's seen, left or right, so in a right-to-left
+ * layout "Left" is after the column in field order.
+ */
+export function columnActions(
+  name: string,
+  can: {
+    onInsertField?: (name: string, side: "before" | "after") => void;
+    /** Only for a column the user has resized: back to its share of the width. */
+    onResetWidth?: (name: string) => void;
+    onDeleteField?: (name: string) => void;
+    rtl?: boolean;
+  },
+): FieldAction[] {
+  const actions: FieldAction[] = [];
+  const { onInsertField, onResetWidth, onDeleteField, rtl } = can;
+  if (onInsertField) {
+    actions.push({
+      id: "insert-left",
+      label: "Insert Field Left",
+      symbol: { sf: "arrow.left.to.line", material: "first_page" },
+      onSelect: () => onInsertField(name, rtl ? "after" : "before"),
+    });
+    actions.push({
+      id: "insert-right",
+      label: "Insert Field Right",
+      symbol: { sf: "arrow.right.to.line", material: "last_page" },
+      onSelect: () => onInsertField(name, rtl ? "before" : "after"),
+    });
+  }
+  if (onResetWidth) {
+    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "width" }, onSelect: () => onResetWidth(name) });
+  }
+  if (onDeleteField) {
+    actions.push({ id: "delete-field", label: "Delete Field", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteField(name) });
   }
   return actions;
 }

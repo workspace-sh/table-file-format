@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { columnWidths, describeCell, relationLabel, totalFor } from "./display.ts";
+import { SQUEEZED_CELL_WIDTH, columnWidths, describeCell, relationLabel, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -69,4 +69,12 @@ test("columns fill the table exactly, resized ones keep their width, and narrow 
   const narrow = columnWidths(["a", "b"], { b: 10 }, 200, 2);
   assert.deepEqual([narrow("a"), narrow("b")], [180, 60]);
   assert.equal(columnWidths(["a"], {}, 0, 2)("a"), 180);
+  // A little under the comfortable width, the table is kept whole: four columns in 642 are 160 each.
+  const squeezed = columnWidths(["a", "b", "c", "d"], {}, 642, 2, SQUEEZED_CELL_WIDTH);
+  assert.deepEqual(["a", "b", "c", "d"].map(squeezed), [160, 160, 160, 160]);
+  // Too narrow even squeezed (139 each): the comfortable width, and the table scrolls.
+  const scrolls = columnWidths(["a", "b", "c", "d"], {}, 558, 2, SQUEEZED_CELL_WIDTH);
+  // Not asked to squeeze, columns keep the comfortable width: the same four in 642 scroll.
+  assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2)("a"), 180);
+  assert.equal(scrolls("a"), 180);
 });

@@ -37,6 +37,7 @@ import {
   withRowAt,
   withView,
   withViewPatch,
+  type FieldPlace,
 } from "./edits.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
 import type { IndexEdit } from "./indexed.ts";
@@ -192,7 +193,7 @@ export type AppAction =
   // screen (a page saved as it's typed, its last save landing after a move).
   | { type: "updateBody"; rowId: string; content: string; table?: string }
   | { type: "updateField"; name: string; patch: Partial<Field> }
-  | { type: "addField"; field: Field }
+  | { type: "addField"; field: Field; place?: FieldPlace }
   | { type: "moveField"; name: string; delta: -1 | 1 }
   // A field's settings, cancelled: the schema as they opened, version and all.
   | { type: "restoreSchema"; schema: TableSchema }
@@ -628,7 +629,7 @@ function step(state: AppState, action: AppAction): AppState {
     case "updateField":
       return edit(state, onlyTitle(action.patch) ? "Rename Field" : "Change Field", (t) => withFieldPatch(t, action.name, action.patch));
     case "addField":
-      return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active)));
+      return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active), action.place));
     case "moveField":
       return edit(state, "Move Field", (t) => withFieldMoved(t, action.name, action.delta));
     case "restoreSchema":
@@ -1029,7 +1030,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onDeleteField: (name) => dispatch({ type: "deleteField", name }),
     onMoveField: (name, delta) => dispatch({ type: "moveField", name, delta }),
     onRestoreSchema: (schema) => dispatch({ type: "restoreSchema", schema }),
-    onAddField: (field) => dispatch({ type: "addField", field }),
+    onAddField: (field, place) => dispatch({ type: "addField", field, place }),
     onAddRow: () => {
       const id = newId();
       dispatch({ type: "addRow", id });

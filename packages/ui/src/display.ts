@@ -268,6 +268,17 @@ export function pillColors(color: string | undefined): (typeof PILL_PALETTE)[str
 export const MIN_CELL_WIDTH = 180;
 /** Narrowest a column can be dragged. */
 export const MIN_RESIZED_COLUMN_WIDTH = 60;
+
+/**
+ * How narrow columns may be made to keep a table whole in its space. A
+ * table that would fit with its columns a little under the comfortable
+ * width (`MIN_CELL_WIDTH`) is shown whole at that width; one that wouldn't
+ * fit even so keeps the comfortable width and scrolls sideways.
+ */
+export const SQUEEZED_CELL_WIDTH = 140;
+
+/** The "+" for a new field: the width of its header cell after the last column, taken from the columns'. */
+export const ADD_FIELD_WIDTH = 40;
 /** A sheet's row-number gutter (`coordinates`). */
 export const ROW_NUMBER_WIDTH = 32;
 
@@ -286,6 +297,8 @@ export function columnWidths(
   setWidths: Record<string, number | undefined>,
   containerWidth: number,
   chrome: number,
+  /** How narrow flexible columns may be made to keep the table whole; the comfortable width when not given (no squeezing). */
+  squeezeTo: number = MIN_CELL_WIDTH,
 ): (name: string) => number {
   const fixedWidth = (name: string) => {
     const w = setWidths[name];
@@ -295,7 +308,8 @@ export function columnWidths(
   const fixedTotal = fields.reduce((sum, name) => sum + (fixedWidth(name) ?? 0), 0);
   const available = Math.max(0, containerWidth - chrome - fixedTotal);
   const rawWidth = flexible.length > 0 && containerWidth > 0 ? Math.floor(available / flexible.length) : MIN_CELL_WIDTH;
-  const fills = rawWidth >= MIN_CELL_WIDTH;
+  // Whole in its space when it can be, down to the squeezed width; past that, comfortable and scrolling.
+  const fills = rawWidth >= Math.min(squeezeTo, MIN_CELL_WIDTH);
   const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
   const remainder = fills ? available - cellW * flexible.length : 0;
   return (name: string) => {
