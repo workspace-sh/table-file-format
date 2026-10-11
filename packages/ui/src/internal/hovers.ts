@@ -4,3 +4,6 @@
  * web asks the device (`@media (hover: none)`, `hovers.web.ts`).
  */
 export const HOVERS = false;
+
+/** Whether columns resize from their lines anywhere in the table (a fine pointer), not only the header's edge. Not on touch. */
+export const RESIZE_BY_LINES = false;
