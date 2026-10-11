@@ -1,19 +1,23 @@
-// Tables held in their bundle's index (SPEC section 8): the phone's side
-// of it. A bundle with a large table is a folder in the app's documents,
-// with its index and the table's rows beside it (indexHost.ts). The screen
+// Tables held in their bundle's index (SPEC section 8): the screen's side
+// of it, on a device that keeps a large table as a folder of its own (iOS
+// and the Mac). A bundle with a large table is a folder in the app's own
+// space, with its index and the table's rows beside it (indexHost.ts, given
+// each platform's files and SQLite). The screen
 // never holds such a table's rows: the view on screen reads a window of
 // them from the index, queued edits are made in it, and a save writes them
 // back to the rows file beside it.
 //
 // (This is the web's hook, apps/web/src/useIndexedTables.ts, with the
-// phone's index host in place of the web's worker; Linux has the same over
+// device's index host in place of the web's worker; Linux has the same over
 // node:sqlite in apps/linux/src/useIndexedTables.ts. What differs is where
 // a host comes from and what it's made from.)
 
-import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
+import type { AppAction, AppState, IndexWork } from "./appState.ts";
+import { bundleOf, tableNameOf } from "./bundles.ts";
+import { remoteEdits, remoteViewRows, type RemoteViewRows } from "./remoteRows.ts";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openIndexDatabase, type IndexDatabase } from "./indexHost";
+import type { IndexDatabase } from "./indexHost.ts";
 
 export interface IndexedTables {
   /** The table on screen is held in the index, and it's being read into it: how far along. */
@@ -27,7 +31,7 @@ export interface IndexedTables {
   source: ViewRows | undefined;
   /** The rows on screen are from before the last change to the view or the search: the new ones are on their way. */
   stale: boolean;
-  /** The table on screen was held in the index, and this phone no longer has it. */
+  /** The table on screen was held in the index, and this device no longer has it. */
   lost: boolean;
   /** A bundle just read from an archive: its large tables' first rows by `bundle/table` key. */
   hold(first: Record<string, Row[]>): void;
@@ -52,8 +56,10 @@ export function useIndexedTables(input: {
   /** The view on screen as shown (arranged). */
   view: View;
   tell: (heading: string, body?: string) => void;
+  /** A bundle's index on this device: the platform's index host's openIndexDatabase. */
+  openIndexDatabase: (bundle: string) => IndexDatabase;
 }): IndexedTables {
-  const { state, dispatch, view, tell } = input;
+  const { state, dispatch, view, tell, openIndexDatabase } = input;
   const hosts = useRef(new Map<string, IndexDatabase>());
   const [made, setMade] = useState<Record<string, "building" | "ready" | "lost">>({});
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
@@ -65,7 +71,7 @@ export function useIndexedTables(input: {
   const latest = useRef({ tell, dispatch });
   latest.current = { tell, dispatch };
 
-  /** A bundle's database: the one its archive was read into, or the one this phone kept from before. */
+  /** A bundle's database: the one its archive was read into, or the one this device kept from before. */
   const hostOf = useCallback((bundle: string): Promise<IndexDatabase> => {
     let host = hosts.current.get(bundle);
     if (!host) hosts.current.set(bundle, (host = openIndexDatabase(bundle)));
@@ -97,7 +103,7 @@ export function useIndexedTables(input: {
           // No index to be had (no space, say): while the archive it came in is still
           // held, the table is read from it into memory instead, and says so. With
           // nothing to read it from (the app was started again), or an archive that
-          // turns out damaged, its rows are lost to this phone.
+          // turns out damaged, its rows are lost to this device.
           let rows: Row[] | null = null;
           try {
             rows = (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));

@@ -43,8 +43,8 @@ import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, chooseZip, readZip, shareZip, type OpenedZip } from "./files";
-import { useIndexedTables, type IndexedTables } from "./useIndexedTables";
-import { bundleDir, removeAllFolders } from "./indexHost";
+import { useIndexedTables, type IndexedTables } from "@workspace.sh/table-app/react";
+import { bundleDir, openIndexDatabase, removeAllFolders } from "./indexHost";
 import { expoFs } from "./expoFs";
 import { writeBundleTo } from "@workspace.sh/table-core/io";
 
@@ -152,7 +152,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
   );
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell });
+  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
   const derived = derive(state, {
     locale: systemLocale,
