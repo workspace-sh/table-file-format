@@ -132,6 +132,32 @@ describe("a wide table's first column on Linux", () => {
   });
 });
 
+describe("Back on Linux", () => {
+  it("puts a table back where it was scrolled across to", async () => {
+    const library = await loadLibrary([join(dir, "projects.table")]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v4" />);
+    const across = scrollerOf((await screen.findAllByText("Workspace v1"))[0]!).getHadjustment();
+    await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
+    across.setValue(300);
+    // It comes to rest on a column, and where it rests is said for history.
+    await waitFor(() => expect(across.getValue()).not.toBe(300), { timeout: 3000 });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const rested = across.getValue();
+    expect(rested).toBeGreaterThan(100);
+    // To another table, and back.
+    await userEvent.click((await screen.findAllByText("Tasks")).at(-1)!);
+    await screen.findAllByText("Land .table extension");
+    const back = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })) as Gtk.Button;
+    await waitFor(() => expect(back.getSensitive()).toBe(true));
+    await userEvent.click(back);
+    const again = scrollerOf((await screen.findAllByText("Workspace v1"))[0]!).getHadjustment();
+    await waitFor(() => expect(again.getValue()).toBe(rested), { timeout: 3000 });
+    // And it stays: nothing brings it back to the start.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(again.getValue()).toBe(rested);
+  });
+});
+
 describe("a cell the keyboard moves to on Linux", () => {
   it("is brought whole into the window: out from under the first column, and in from past the window's end", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);

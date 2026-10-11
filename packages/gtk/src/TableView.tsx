@@ -336,10 +336,11 @@ function BodyRow({
   );
 }
 
-/** How far down a table is: the row at the top of what's seen, and how far into it. */
+/** How far down a table is (the row at the top of what's seen, and how far into it), and how far across from its start. */
 export interface ScrollPlace {
   rowId: string;
   offset: number;
+  across?: number;
 }
 
 /**
@@ -643,6 +644,16 @@ export function TableView({
     },
     [],
   );
+  // How far across to put the table back (`restorePlace`). A view just shown has no width to scroll
+  // yet, so this waits until it has: tried now, and again as the scroller grows.
+  const acrossToRestore = useRef<number | null>(null);
+  const restoreAcross = () => {
+    const across = scroller.current?.getHadjustment();
+    const wanted = acrossToRestore.current;
+    if (wanted === null || !across || across.getUpper() - across.getPageSize() < wanted - 1) return;
+    acrossToRestore.current = null;
+    placeAcross(across, acrossValue(across, rtl, wanted));
+  };
   /** Scrolled past the frame's margin and edge, the first column rests against the window's own edge. */
   const pinAcross = () => {
     const across = scroller.current?.getHadjustment();
@@ -657,10 +668,13 @@ export function TableView({
     const moved = Math.abs(value - lastAcross.current) >= 0.01;
     lastAcross.current = value;
     if (!moved) return pinAcross();
+    // Where it rests is said for history, with how far down it is.
+    placeSoon();
     const placed = placedAcross.current;
     placedAcross.current = null;
     // Anyone else's scroll ends a glide, and is brought into line once it has been still a moment.
     if (placed === null || Math.abs(placed - value) >= 1) {
+      acrossToRestore.current = null;
       if (snapTimer.current) clearTimeout(snapTimer.current);
       snapTimer.current = setTimeout(() => snapNow.current?.(), SNAP_AFTER_MS);
     }
@@ -935,7 +949,8 @@ export function TableView({
     const y = Math.max(0, adjustment.getValue() + built.shift - HEADER_HEIGHT - ROW_RULE);
     const place = Math.min(layout.at(y), count - 1);
     const rowId = builtRows[place - firstBuilt]?.id;
-    if (rowId !== undefined) onScrollPlace({ rowId, offset: Math.round(y - layout.itemTop(place)) });
+    const across = scroller.current ? Math.round(acrossFromStart(scroller.current.getHadjustment(), rtl)) : 0;
+    if (rowId !== undefined) onScrollPlace({ rowId, offset: Math.round(y - layout.itemTop(place)), ...(across > 0 ? { across } : {}) });
   };
   // A cell to take the keyboard if the rows a restored scroll built include it: going to it mustn't move the table again.
   const focusIfBuilt = useRef<GridPlace | null>(null);
@@ -960,6 +975,10 @@ export function TableView({
       const row = place.rowId && col >= 0 ? await source.placeOf(place.rowId) : -1;
       const top = place.top ? await source.placeOf(place.top.rowId) : -1;
       if (!current) return;
+      if (place.top?.across) {
+        acrossToRestore.current = place.top.across;
+        restoreAcross();
+      }
       if (place.top && top >= 0) {
         topToRestore.current = layout.itemTop(top) + place.top.offset + HEADER_HEIGHT + ROW_RULE;
         focusIfBuilt.current = row >= 0 ? { row, col } : null;
@@ -1311,9 +1330,13 @@ export function TableView({
           onNotifyPageSize={(size) => {
             setContainerWidth(Math.floor(size ?? 0));
             pinAcross();
+            restoreAcross();
           }}
           // Right to left, how far it is scrolled from its start changes with its width too.
-          onNotifyUpper={pinAcross}
+          onNotifyUpper={() => {
+            pinAcross();
+            restoreAcross();
+          }}
           onNotifyValue={(value) => scrollAcross(value ?? 0)}
         />
       }
