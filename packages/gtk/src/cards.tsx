@@ -48,7 +48,7 @@ import { gridKeyOf } from "./gridKeys.js";
 import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
-import { pillClass, styles, useDark } from "./theme.js";
+import { styles } from "./theme.js";
 
 /** A board column's width: the web board's. */
 const BOARD_COLUMN_WIDTH = 268;
@@ -98,8 +98,9 @@ function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, titled = t
     <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
       {titled && titleField ? (
         <GtkBox spacing={6}>
-          <Title text={rowTitle(row, titleField)} classes={[styles.cardTitle]} />
-          {hasBody ? <GtkLabel label="DOC" cssClasses={[styles.bodyBadge]} valign={Gtk.Align.CENTER} /> : null}
+          {/* The badge follows the title, as on the web's card: the title takes only the room its words need, up to the card's. */}
+          <GtkLabel label={rowTitle(row, titleField)} xalign={0} ellipsize={Pango.EllipsizeMode.END} cssClasses={[styles.cardTitle]} tooltipText={rowTitle(row, titleField)} />
+          {hasBody ? <GtkLabel label="Page" cssClasses={[styles.bodyBadge]} valign={Gtk.Align.CENTER} /> : null}
         </GtkBox>
       ) : null}
       <CardFields row={row} fields={titled ? rest : fields} fieldMap={fieldMap} relatedTables={relatedTables} onOpenRelation={onOpenRelation} />
@@ -119,6 +120,7 @@ function CardButton({
   controllers,
   cardRef,
   onKey,
+  plain,
 }: {
   onActivate?: () => void;
   width?: number;
@@ -129,11 +131,13 @@ function CardButton({
   cardRef?: (widget: Gtk.Button | null) => void;
   /** A key pressed on it: true when the view used it (see useCardKeys). */
   onKey?: (key: string, alt: boolean) => boolean;
+  /** A list's row: a line of the list with a rule under it, not a card with a frame of its own. */
+  plain?: boolean;
 }) {
   return (
     <GtkButton
       ref={cardRef}
-      cssClasses={["card", styles.card]}
+      cssClasses={plain ? ["flat", styles.listRow] : ["card", styles.card]}
       widthRequest={width}
       hexpand={width === undefined}
       onClicked={() => onActivate?.()}
@@ -204,7 +208,6 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
   const fields = cardFields(view, schema, board.field);
   const fieldMap = fieldsByName(schema);
   const groupField = fieldMap.get(board.field);
-  const dark = useDark();
   const columns = board.keys.map((key) => (board.groups[key] ?? []).map((r) => r.id));
   const keys = useCardKeys({
     move: (id, key) => moveInColumns(columns, id, key),
@@ -236,8 +239,9 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
               controllers={draggable ? dropRow((id) => drop(key, id, null)) : undefined}
             >
               <GtkBox spacing={8} marginStart={4}>
-                <GtkLabel label={pill.label} cssClasses={[styles.pill, pillClass(pill.color, dark)]} />
-                <GtkLabel label={String(members.length)} cssClasses={["dim-label", "numeric"]} />
+                {/* The column's name in small capitals and how many cards it has, as every platform's board says it. */}
+                <GtkLabel label={pill.label} cssClasses={[styles.groupLabel]} />
+                <GtkLabel label={String(members.length)} cssClasses={[styles.groupCount]} />
               </GtkBox>
               {members.map((row) => (
                 <CardButton
@@ -373,13 +377,14 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
 
   return (
     <GtkScrolledWindow hexpand vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={6} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12}>
         {listed.map(({ row, starts }) => (
-          <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL} spacing={6}>
+          <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
             {starts ? (
-              <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} marginTop={12} cssClasses={["heading"]} />
+              <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} marginTop={14} marginBottom={6} marginStart={4} cssClasses={[styles.groupLabel]} />
             ) : null}
             <CardButton
+              plain
               onActivate={() => onOpenBody?.(row.id)}
               cardRef={keys.cardRef(row.id)}
               onKey={keys.onKey(row.id)}
@@ -392,14 +397,15 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
                 ) : undefined
               }
             >
+              {/* The title at the start, with its page's badge; what else the list shows at the end, quieter. */}
               <GtkBox spacing={16}>
-                <GtkBox spacing={6} widthRequest={260}>
-                  <Title text={rowTitle(row, titleField)} classes={[styles.cardTitle]} />
-                  {bodies?.[row.id] !== undefined ? <GtkLabel label="DOC" cssClasses={[styles.bodyBadge]} valign={Gtk.Align.CENTER} /> : null}
+                <GtkBox spacing={6} hexpand>
+                  <GtkLabel label={rowTitle(row, titleField)} xalign={0} ellipsize={Pango.EllipsizeMode.END} cssClasses={[styles.listTitle]} tooltipText={rowTitle(row, titleField)} />
+                  {bodies?.[row.id] !== undefined ? <GtkLabel label="Page" cssClasses={[styles.bodyBadge]} valign={Gtk.Align.CENTER} /> : null}
                 </GtkBox>
                 {secondary.map((name) => (
-                  <GtkBox key={name} widthRequest={140} hexpand>
-                    <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={1} />
+                  <GtkBox key={name} halign={Gtk.Align.END} widthRequest={140} cssClasses={[styles.listSecondary]}>
+                    <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={1} xalign={1} />
                   </GtkBox>
                 ))}
               </GtkBox>
@@ -473,7 +479,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewPro
                   tooltipText={entries.length > 0 ? `${entries.length} on this day` : undefined}
                 >
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} valign={Gtk.Align.START} hexpand>
-                    <GtkLabel label={String(cell.date.getDate())} xalign={0} cssClasses={key === today ? [styles.calendarToday] : ["numeric"]} />
+                    <GtkLabel label={String(cell.date.getDate())} xalign={0} cssClasses={[styles.calendarNumber, ...(key === today ? [styles.calendarToday] : [])]} />
                     {chips.map((row) => (
                       <Title key={row.id} text={rowTitle(row, titleField)} classes={[styles.calendarChip]} />
                     ))}
@@ -499,7 +505,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewPro
                     <GtkListBoxRow key={row.id} activatable={!!onOpenBody} onActivate={() => onOpenBody?.(row.id)}>
                       <GtkBox spacing={6} marginStart={12} marginEnd={12} marginTop={10} marginBottom={10}>
                         <Title text={rowTitle(row, titleField)} />
-                        {bodies?.[row.id] !== undefined ? <GtkLabel label="DOC" cssClasses={[styles.bodyBadge]} /> : null}
+                        {bodies?.[row.id] !== undefined ? <GtkLabel label="Page" cssClasses={[styles.bodyBadge]} /> : null}
                       </GtkBox>
                     </GtkListBoxRow>
                   ))}
