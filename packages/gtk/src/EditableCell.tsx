@@ -20,6 +20,7 @@ import {
   GtkPopover,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { styles } from "./theme.js";
 import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
@@ -285,7 +286,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
         inputHints={inputHintsOf(inputHints(field))}
         text={draft}
         xalign={xalign}
-        cssClasses={problem ? ["error"] : []}
+        // The cell's own ring is the editor's frame, as on the web: the entry draws none of its own.
+        cssClasses={[styles.cellEntry, ...(problem ? ["error"] : [])]}
         // A year typed short: the icon is the fix, as the web's "Use 2026"
         // button is, inside the entry so the cell keeps its width.
         secondaryIconName={problem?.suggestion ? "object-select-symbolic" : problem ? "dialog-warning-symbolic" : undefined}

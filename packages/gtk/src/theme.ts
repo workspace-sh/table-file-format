@@ -78,7 +78,7 @@ export const styles = {
   totalPlaceholder: TOTAL_PLACEHOLDER,
   totalLabel: css({ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
-  rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "7px", padding: "0" }),
+  rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "4px", padding: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
   /** A sheet's row numbers: a ruled gutter of their own. */
   rowNumber: css({
@@ -99,6 +99,17 @@ export const styles = {
   /** The open formula's column, tinted; the cells it read, outlined (as on the web). */
   formulaColumn: css({ backgroundColor: "alpha(@accent_bg_color, 0.08)" }),
   formulaInput: css({ boxShadow: "inset 0 0 0 2px alpha(@accent_bg_color, 0.7)" }),
+  /** A cell's text being edited: the words in place, in the cell's own ring, with no box of the entry's. */
+  cellEntry: css({
+    background: "none",
+    border: "none",
+    boxShadow: "none",
+    outline: "none",
+    padding: "0",
+    minHeight: "0",
+    fontSize: "13px",
+    "&:focus-within": { boxShadow: "none", outline: "none" },
+  }),
   /** The cell the keyboard is on. */
   selectedCell: css({ boxShadow: "inset 0 0 0 2px @accent_bg_color", outline: "none" }),
   /** Cards (board, gallery): the sizes the table's cells have, as on every platform. */
