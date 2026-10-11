@@ -52,6 +52,11 @@
       "types": "./dist/sqlite-expo.d.ts",
       "default": "./dist/sqlite-expo.js"
     },
+    "./sqlite-op": {
+      "source": "./src/sqlite-op.ts",
+      "types": "./dist/sqlite-op.d.ts",
+      "default": "./dist/sqlite-op.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

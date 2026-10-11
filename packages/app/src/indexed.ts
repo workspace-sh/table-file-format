@@ -191,8 +191,11 @@ export function rowsInBytes(bytes: Uint8Array): Iterable<Row> {
   return rowsInChunks([bytes]);
 }
 
-/** The same, for a `rows.ndjson` that comes in pieces: a line may be split across two. */
-export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: number) => void): Iterable<Row> {
+/**
+ * Splits a `rows.ndjson` that comes in pieces into its rows: a line may run
+ * across two pieces. `push` each piece in turn, then `end`.
+ */
+function rowSplitter(onBytes?: (bytes: number) => void): { push(chunk: Uint8Array): Iterable<Row>; end(): Iterable<Row> } {
   const decoder = new TextDecoder();
   const rowOf = (line: Uint8Array): Row | undefined => {
     if (line.length === 0) return undefined;
@@ -207,38 +210,57 @@ export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: nu
   };
   // The start of a line whose end is in the next piece.
   let carry: Uint8Array | null = null;
-  for (const chunk of chunks) {
-    let start = 0;
-    for (;;) {
-      const end = chunk.indexOf(NEWLINE, start);
-      if (end < 0) break;
-      let line = chunk.subarray(start, end);
-      if (carry) {
-        const joined: Uint8Array = new Uint8Array(carry.length + line.length);
-        joined.set(carry);
-        joined.set(line, carry.length);
-        line = joined;
-        carry = null;
+  return {
+    *push(chunk) {
+      let start = 0;
+      for (;;) {
+        const end = chunk.indexOf(NEWLINE, start);
+        if (end < 0) break;
+        let line = chunk.subarray(start, end);
+        if (carry) {
+          const joined: Uint8Array = new Uint8Array(carry.length + line.length);
+          joined.set(carry);
+          joined.set(line, carry.length);
+          line = joined;
+          carry = null;
+        }
+        // Said a line at a time, not a piece at a time: a piece can be most of the file.
+        onBytes?.(line.length + 1);
+        const row = rowOf(line);
+        if (row) yield row;
+        start = end + 1;
       }
-      // Said a line at a time, not a piece at a time: a piece can be most of the file.
-      onBytes?.(line.length + 1);
-      const row = rowOf(line);
-      if (row) yield row;
-      start = end + 1;
-    }
-    if (start < chunk.length) {
-      const rest = chunk.subarray(start);
-      if (carry) {
-        const joined: Uint8Array = new Uint8Array(carry.length + rest.length);
-        joined.set(carry);
-        joined.set(rest, carry.length);
-        carry = joined;
-      } else carry = rest.slice();
-    }
-  }
-  if (carry) onBytes?.(carry.length);
-  const last = carry ? rowOf(carry) : undefined;
-  if (last) yield last;
+      if (start < chunk.length) {
+        const rest = chunk.subarray(start);
+        if (carry) {
+          const joined: Uint8Array = new Uint8Array(carry.length + rest.length);
+          joined.set(carry);
+          joined.set(rest, carry.length);
+          carry = joined;
+        } else carry = rest.slice();
+      }
+    },
+    *end() {
+      if (carry) onBytes?.(carry.length);
+      const last = carry ? rowOf(carry) : undefined;
+      carry = null;
+      if (last) yield last;
+    },
+  };
+}
+
+/** The same, for a `rows.ndjson` that comes in pieces: a line may be split across two. */
+export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: number) => void): Iterable<Row> {
+  const split = rowSplitter(onBytes);
+  for (const chunk of chunks) yield* split.push(chunk);
+  yield* split.end();
+}
+
+/** The same, for pieces read as they come (a file read a piece at a time over an asynchronous API, as the Mac's is). */
+export async function* rowsInAsyncChunks(chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, onBytes?: (bytes: number) => void): AsyncIterable<Row> {
+  const split = rowSplitter(onBytes);
+  for await (const chunk of chunks) yield* split.push(chunk);
+  yield* split.end();
 }
 
 /** How many lines of `bytes` hold something: its rows, near enough to say how far a build has got. */
@@ -278,7 +300,8 @@ export async function buildIndexFromBytes(
   options: {
     name: string;
     schema: TableSchema;
-    rows: Uint8Array | { chunks: Iterable<Uint8Array>; size: number; keep?: (chunk: Uint8Array) => void };
+    // `chunks` may come as they're read (an async iterable); `keep` may write them away asynchronously, and each is waited for.
+    rows: Uint8Array | { chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>; size: number; keep?: (chunk: Uint8Array) => unknown };
     bodies?: Record<string, string>;
     key: string;
     onProgress?: (done: number, total: number) => void;
@@ -294,14 +317,14 @@ export async function buildIndexFromBytes(
   let read = 0;
   const total = () => (pieces ? (read > 0 ? Math.max(done, Math.round((done / read) * pieces.size)) : 0) : counted);
   options.onProgress?.(0, total());
-  function* taken(): Iterable<Uint8Array> {
-    for (const chunk of pieces!.chunks) {
-      pieces!.keep?.(chunk);
+  async function* taken(): AsyncIterable<Uint8Array> {
+    for await (const chunk of pieces!.chunks) {
+      await pieces!.keep?.(chunk);
       yield chunk;
     }
   }
   async function* streamed(): AsyncIterable<Row> {
-    for (const row of whole ? rowsInBytes(whole) : rowsInChunks(taken(), (bytes) => (read += bytes))) {
+    for await (const row of whole ? rowsInBytes(whole) : rowsInAsyncChunks(taken(), (bytes) => (read += bytes))) {
       done++;
       if (done % 5000 === 0) options.onProgress?.(done, total());
       yield row;

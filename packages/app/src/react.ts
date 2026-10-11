@@ -124,3 +124,5 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
   const flush = useCallback(() => writeNow(latestState.current, latest.current, dispatch, setSaving), []);
   return { state, dispatch, display, saving, flush };
 }
+
+export { useIndexedTables, type IndexedTables } from "./useIndexedTables.ts";

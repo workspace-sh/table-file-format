@@ -17,6 +17,7 @@ import {
   makeIndexEdits,
   removeIndexedRow,
   rowsInChunks,
+  rowsInAsyncChunks,
   setIndexedBody,
   setIndexedCell,
   type IndexEdit,
@@ -390,5 +391,18 @@ test("a large table in an archive is handed over compressed: its start at once, 
     assert.match(caught, /corrupt|invalid|unexpected/i);
   } finally {
     s.done();
+  }
+});
+
+test("rows read a piece at a time as they come are the rows read whole", async () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ünïcode` }));
+  const bytes = new TextEncoder().encode(many.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  for (const size of [1, 7, 64, 1000, bytes.length]) {
+    async function* pieces(): AsyncIterable<Uint8Array> {
+      for (let at = 0; at < bytes.length; at += size) yield bytes.subarray(at, at + size);
+    }
+    const out = [];
+    for await (const row of rowsInAsyncChunks(pieces())) out.push(row);
+    assert.deepEqual(out, many, `pieces of ${size}`);
   }
 });
