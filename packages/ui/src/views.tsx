@@ -21,6 +21,7 @@ import {
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
+  ADD_FIELD_WIDTH,
   MIN_RESIZED_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
   MAX_ROW_HEIGHT,
@@ -221,27 +222,18 @@ const styles = css.create({
     marginTop: 8,
   },
   /**
-   * The "+" on the last column's header, after its title: in the row's
-   * flow, so it's laid out the same on every platform, and clear of the
-   * resize handle's strip on the end edge.
+   * The "+" for a new field: a narrow header cell of its own after the
+   * last column, part of the table's width as any column is, with nothing
+   * under it. It takes its width from the columns (`ADD_FIELD_WIDTH`), so
+   * it sits on no column's title or resize edge, and the table still ends
+   * where its frame does.
    */
-  headerAddAnchor: {
-    position: "relative",
-    width: 0,
-    zIndex: 3,
-  },
-  headerAdd: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    // Clear of the resize handle's strip on the column's end edge.
-    insetInlineEnd: 10,
+  headerAddCell: {
     display: "flex",
+    flexDirection: "row",
     alignItems: "center",
-  },
-  /** The last header's title stops short of the "+" (30 wide, 10 in). */
-  headerRoomForAdd: {
-    paddingInlineEnd: 44,
+    justifyContent: "center",
+    flexShrink: 0,
   },
   table: {
     display: "flex",
@@ -3021,9 +3013,11 @@ export function TableView({
   // Columns the user has resized keep their width; the rest share what's
   // left the same way.
   const chrome = (freezePrimary ? 3 : 2) + (coords ? ROW_NUMBER_WIDTH : 0);
-  // "+ Field" sits under the table, not in a column of its own, so
-  // it takes no width from the grid.
-  const addFieldW = 0;
+  // The "+" for a new field is a narrow column of its own at the end of the
+  // header: it takes its width from the columns', as the borders do.
+  const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
+  // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
+  const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW);
 
   // A column's resize handle is on its end edge; in a right-to-left
@@ -3162,10 +3156,6 @@ export function TableView({
     const hint = <FieldHint field={field} name={name} schema={schema} editable={schemaEditable} />;
     // The same facts as text, for the system tooltip where there's no rich one (macOS).
     const hintText = fieldHintText(fieldHint({ field, name, schema, editable: schemaEditable, formulaSyntax }));
-    // The "+" for a new field is on the last column's header, at its end:
-    // in the table, after its last column wherever that has scrolled to,
-    // and taking no column of its own.
-    const addHere = canAddField && name === fields[fields.length - 1];
     if (!schemaEditable) {
       return (
         <Hinted
@@ -3178,8 +3168,7 @@ export function TableView({
             styles.tableHeaderCell,
             styles.positioned,
             cellAlignStyle(align),
-            !isLast && styles.tableCellSeparator,
-            addHere && styles.headerRoomForAdd,
+            (!isLast || closes(name)) && styles.tableCellSeparator,
           ]}
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
@@ -3205,7 +3194,7 @@ export function TableView({
         style={[
           styles.headerCellWrapper,
           styles.cellWidth(colWidth(name)),
-          !isLast && styles.tableCellSeparator,
+          (!isLast || closes(name)) && styles.tableCellSeparator,
         ]}
       >
         <html.button
@@ -3226,7 +3215,6 @@ export function TableView({
             styles.headerCellButton,
             !!field?.deprecated && styles.headerCellDeprecated,
             headerAlignStyle(align),
-            addHere && styles.headerRoomForAdd,
           ]}
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
@@ -3280,21 +3268,9 @@ export function TableView({
       </RowActions>
     );
   };
-  // A header cell, and on the last one the "+" for a new field. It hangs
-  // from a line of no width after the cell, back over the cell's end: placed
-  // absolutely in a plain box, which lays out the same on every platform
-  // (the header cell itself is a run of text on native).
-  const headerCell = (name: string, idxInPane: number, paneLen: number) =>
-    canAddField && name === fields[fields.length - 1] ? (
-      <Fragment key={name}>
-        {renderHeaderCell(name, idxInPane, paneLen)}
-        <html.div style={styles.headerAddAnchor}>
-          <html.div style={styles.headerAdd}>{addFieldButton(true)}</html.div>
-        </html.div>
-      </Fragment>
-    ) : (
-      renderHeaderCell(name, idxInPane, paneLen)
-    );
+  const headerCell = renderHeaderCell;
+  // The "+" for a new field, in the header after the last column.
+  const headerAddCell = addFieldW > 0 && <html.div style={[styles.headerAddCell, styles.cellWidth(addFieldW)]}>{addFieldButton(true)}</html.div>;
 
   const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
@@ -3320,7 +3296,7 @@ export function TableView({
       styles.tableCell,
       styles.cellWidth(colWidth(name)),
       cellAlignStyle(effectiveAlign(field)),
-      idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
+      (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
       styles.totalCell,
     ];
     // On a phone the footer cell is itself the system's menu of totals, as a
@@ -3344,7 +3320,7 @@ export function TableView({
           styles.tableCell,
           styles.cellWidth(colWidth(name)),
           cellAlignStyle(effectiveAlign(field)),
-          idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
+          (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
           styles.totalCell,
         ]}
         onClick={
@@ -3437,7 +3413,7 @@ export function TableView({
           styles.tableCell,
           styles.cellWidth(colWidth(name)),
           cellAlignStyle(align),
-          !isLast && styles.tableCellSeparator,
+          (!isLast || closes(name)) && styles.tableCellSeparator,
           isFormula && styles.formulaCellClickable,
           inOpenColumn && styles.formulaColumnTint,
           isInputCell && styles.formulaInputCell,
@@ -3997,6 +3973,7 @@ export function TableView({
                 {restNames.map((name, idx) =>
                   headerCell(name, idx, restNames.length),
                 )}
+                {headerAddCell}
               </html.div>
               <RowList
                 items={places}
@@ -4049,6 +4026,8 @@ export function TableView({
                 <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
                   {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
+                  {/* Under the "+" column: its width, so the totals keep to their own columns. */}
+                  {addFieldW > 0 && <html.div style={styles.cellWidth(addFieldW)} />}
                 </html.div>
               )}
             </html.div>

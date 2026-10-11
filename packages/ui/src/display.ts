@@ -268,6 +268,9 @@ export function pillColors(color: string | undefined): (typeof PILL_PALETTE)[str
 export const MIN_CELL_WIDTH = 180;
 /** Narrowest a column can be dragged. */
 export const MIN_RESIZED_COLUMN_WIDTH = 60;
+
+/** The "+" for a new field: the width of its header cell after the last column, taken from the columns'. */
+export const ADD_FIELD_WIDTH = 40;
 /** A sheet's row-number gutter (`coordinates`). */
 export const ROW_NUMBER_WIDTH = 32;
 
