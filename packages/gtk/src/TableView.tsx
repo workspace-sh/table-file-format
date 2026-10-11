@@ -61,6 +61,7 @@ import {
   fieldHintText,
   rowActions,
   columnActions,
+  ADD_FIELD_WIDTH,
   SQUEEZED_CELL_WIDTH,
   type FieldAction,
   type RowAction,
@@ -101,8 +102,8 @@ const DRAW_DISTANCE = 900;
 const MAX_BODY_HEIGHT = 8_000_000;
 /** How close the screen's edge comes to the last built row before more are built. */
 const DRAW_MARGIN = 300;
-/** A row menu's circular button and its margin. */
-const ROW_MENU_WIDTH = 42;
+/** The frame's margin from the window's edges, each side. */
+const FRAME_MARGIN = 12;
 
 function xalignOf(align: FieldAlignment): number {
   return align === "center" ? 0.5 : align === "end" ? 1 : 0;
@@ -219,10 +220,11 @@ function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; o
 }
 
 /**
- * A body row, with its menu. The menu is a button at the row's end as well
- * as a right-click anywhere on the row: GNOME has no menu bar, and a
- * right-click alone isn't discoverable. Its actions live on the row, so
- * both reach the same items.
+ * A body row, with its menu: a right-click anywhere on it, or the Menu key
+ * with the keyboard on one of its cells, as on the web and the Mac. The
+ * menu hangs from a button laid over the row that is never seen or pressed
+ * itself (a popover needs a widget of its own to open from); `menuRef`
+ * gives the table the way to open it from the keyboard.
  */
 function BodyRow({
   rowId,
@@ -232,6 +234,7 @@ function BodyRow({
   onOpenBody,
   onDeleteRow,
   onInsertRow,
+  menuRef,
   children,
 }: {
   rowId: string;
@@ -241,14 +244,15 @@ function BodyRow({
   onOpenBody?: (rowId: string) => void;
   onDeleteRow?: (rowId: string) => void;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  menuRef?: (button: Gtk.MenuButton | null) => void;
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
-  if (!menu) return <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+  // As wide as its cells and no wider: its rule stops at the last real column, short of the "+" after it.
+  if (!menu) return <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
   return (
-    <GtkBox
-      // The row's rule is under its cells and stops with them: the menu button is after the table, not in it.
-      cssClasses={[styles.rowWithMenu]}
+    <GtkOverlay
+      halign={Gtk.Align.START}
       controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
       actionGroups={
         <GSimpleActionGroup
@@ -263,26 +267,29 @@ function BodyRow({
           }
         />
       }
+      overlays={
+        <GtkMenuButton
+          ref={(widget: Gtk.MenuButton | null) => {
+            button.current = widget;
+            menuRef?.(widget);
+          }}
+          opacity={0}
+          canTarget={false}
+          canFocus={false}
+          halign={Gtk.Align.START}
+          tooltipText="Row Actions"
+          popover={
+            <GtkPopoverMenu
+              flags={Gtk.PopoverMenuFlags.NESTED}
+              hasArrow={false}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onDeleteRow }))} />}
+            />
+          }
+        />
+      }
     >
-      <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>
-      <GtkMenuButton
-        ref={button}
-        iconName="view-more-symbolic"
-        cssClasses={["flat", "circular", styles.rowMenu]}
-        valign={Gtk.Align.CENTER}
-        marginStart={4}
-        // With its margin, exactly ROW_MENU_WIDTH: what the bands that stop short of it leave.
-        widthRequest={ROW_MENU_WIDTH - 4}
-        tooltipText="Row Actions"
-        popover={
-          <GtkPopoverMenu
-            flags={Gtk.PopoverMenuFlags.NESTED}
-            hasArrow={false}
-            menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onDeleteRow }))} />}
-          />
-        }
-      />
-    </GtkBox>
+      <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>
+    </GtkOverlay>
   );
 }
 
@@ -446,7 +453,8 @@ export function TableView({
   const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert;
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
-  const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
+  // What the columns don't get: the frame and its margins, a sheet's row numbers, and the "+" after the last column.
+  const chrome = TABLE_CHROME + 2 * FRAME_MARGIN + (coords ? ROW_NUMBER_WIDTH : 0) + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
   // A column that was dragged, back to its share of the width.
@@ -577,7 +585,7 @@ export function TableView({
           <HeaderMenu key={name} actions={menu} overlays={columnHandle(name)}>
           <Cell width={colWidth(name)} height={HEADER_HEIGHT}>
             <GtkLabel
-              label={coords ? `${columnLetter(i)}  ${title}` : title}
+              label={coords ? `${columnLetter(i)} ${title}` : title}
               xalign={xalignOf(effectiveAlign(field))}
               hexpand
               ellipsize={Pango.EllipsizeMode.END}
@@ -599,16 +607,23 @@ export function TableView({
           iconName="list-add-symbolic"
           cssClasses={["flat", "circular", styles.addPlace]}
           valign={Gtk.Align.CENTER}
-          marginStart={4}
-          widthRequest={ROW_MENU_WIDTH - 4}
+          halign={Gtk.Align.CENTER}
+          // A cell of its own, ADD_FIELD_WIDTH wide, as on the web and the Mac.
+          marginStart={3}
+          marginEnd={3}
+          widthRequest={ADD_FIELD_WIDTH - 6}
           tooltipText="Add Field"
           onClicked={() => setAddingField({})}
         />
       ) : null}
     </GtkBox>
   );
-  // What follows the last real column (a row's menu, the "+"): a group's band and the new-row band stop short of it.
-  const trailing = hasMenu || onAddField ? <GtkBox widthRequest={ROW_MENU_WIDTH} /> : null;
+  // What follows the last real column (the "+"): a group's band and the new-row band stop short of it.
+  const trailing = onAddField ? <GtkBox widthRequest={ADD_FIELD_WIDTH} /> : null;
+  // The group's field, as its bands say it: "CITY · MANCHESTER".
+  const groupTitle = groupField !== undefined ? (fieldMap.get(groupField)?.title ?? groupField) : "";
+  // Each row's menu, to open from the keyboard.
+  const rowMenus = useRef(new Map<string, Gtk.MenuButton>());
 
   const editable = !!onUpdateRow;
 
@@ -686,6 +701,13 @@ export function TableView({
     // Only a cell itself: typing in an editor, or on a button in a cell, is theirs.
     const focus = (cells.current.values().next().value?.getRoot() as Gtk.Window | undefined)?.getFocus();
     const key = [...cells.current].find(([, widget]) => widget === focus)?.[0];
+    // The Menu key, or Shift+F10: the row's menu, as a right-click opens it.
+    if (key && (keyval === Gdk.KEY_Menu || (keyval === Gdk.KEY_F10 && (state & Gdk.ModifierType.SHIFT_MASK) !== 0))) {
+      const menu = rowMenus.current.get(key.split("\u0000")[0]!);
+      if (!menu) return false;
+      menu.popup();
+      return true;
+    }
     const k = gridKeyOf(keyval, state);
     if (!key || !k) return false;
     const at = placeOf(key);
@@ -735,7 +757,10 @@ export function TableView({
     const starts = group ? { label: groupLabel(group.key, groupField!, schema), count: group.count } : undefined;
     const heading = starts ? (
       <GtkBox>
-        <GtkLabel label={`${starts.label}  ·  ${starts.count}`} xalign={0} hexpand heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]} />
+        <GtkBox hexpand spacing={8} heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]}>
+          <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} cssClasses={[styles.groupLabel]} />
+          <GtkLabel label={String(starts.count)} cssClasses={[styles.groupCount]} />
+        </GtkBox>
         {trailing}
       </GtkBox>
     ) : null;
@@ -765,6 +790,10 @@ export function TableView({
         onOpenBody={onOpenBody}
         onDeleteRow={onDeleteRow}
         onInsertRow={onInsertRow}
+        menuRef={(button) => {
+          if (button) rowMenus.current.set(row.id, button);
+          else rowMenus.current.delete(row.id);
+        }}
       >
         {gutter(String(numberOf(row, index)), rowHeight)}
         {fields.map((name, i) => {
@@ -830,10 +859,10 @@ export function TableView({
                 )}
                 {i === 0 && bodies?.[row.id] !== undefined && onOpenBody ? (
                   <GtkButton
-                    iconName="document-open-symbolic"
-                    cssClasses={["flat", "circular"]}
+                    label="Page"
+                    cssClasses={["flat", styles.pageBadge]}
                     valign={Gtk.Align.CENTER}
-                    tooltipText="Open the row's page"
+                    tooltipText="This row has a page. Click to open it."
                     onClicked={() => onOpenBody(row.id)}
                   />
                 ) : null}
@@ -853,7 +882,7 @@ export function TableView({
     <GtkBox>
       <GtkButton
         hexpand
-        cssClasses={["flat", styles.addPlace, styles.addRowBand]}
+        cssClasses={["flat", styles.addRowBand]}
         onClicked={() => {
           const id = onAddRow();
           if (typeof id === "string") {
@@ -862,10 +891,7 @@ export function TableView({
           }
         }}
       >
-        <GtkBox spacing={6} halign={Gtk.Align.START} marginStart={coords ? ROW_NUMBER_WIDTH : 0}>
-          <GtkImage iconName="list-add-symbolic" />
-          <GtkLabel label="New Row" />
-        </GtkBox>
+        <GtkLabel label="+ New row" xalign={0} />
       </GtkButton>
       {trailing}
     </GtkBox>
@@ -913,6 +939,13 @@ export function TableView({
         orientation={Gtk.Orientation.VERTICAL}
         halign={Gtk.Align.START}
         valign={Gtk.Align.START}
+        // The table is a framed card in the window, as it is on the web and the Mac.
+        cssClasses={[styles.tableFrame]}
+        overflow={Gtk.Overflow.HIDDEN}
+        marginStart={FRAME_MARGIN}
+        marginEnd={FRAME_MARGIN}
+        marginTop={FRAME_MARGIN}
+        marginBottom={FRAME_MARGIN}
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}

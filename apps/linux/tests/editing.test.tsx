@@ -64,7 +64,7 @@ describe("editing on Linux saves to the file", () => {
 
   it("a new row opens for typing, and is saved with what's typed", async () => {
     await openTasks();
-    await userEvent.click(await screen.findByText("New Row"));
+    await userEvent.click(await screen.findByText("+ New row"));
     // The new row's first cell, not the (also empty) search box.
     const entry = (await screen.findAllByDisplayValue("")).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
     expect(entry).toBeDefined();
