@@ -5,7 +5,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, fireEvent, getController, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
-import { columnActions } from "@workspace.sh/table-ui/shared";
+import { columnActions, fieldHint } from "@workspace.sh/table-ui/shared";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,8 +86,9 @@ describe("a column's header menu on Linux", () => {
     await openTasks();
     const menu = menuOf(await headerMenu("status"));
     const shared = columnActions("status", { onInsertField: () => {}, onDeleteField: () => {} }).map((a) => a.label);
-    expect(menu).toEqual(shared);
-    expect(menu).toEqual(["Insert Field Left", "Insert Field Right", "Delete Field"]);
+    // After About This Field, which the Mac and phones show for the selected cell.
+    expect(menu).toEqual(["About This Field", ...shared]);
+    expect(menu).toEqual(["About This Field", "Insert Field Left", "Insert Field Right", "Delete Field"]);
   });
 
   it("Insert Field Right puts the new field after that column", async () => {
@@ -126,6 +127,39 @@ describe("a column's header menu on Linux", () => {
     expect(await fieldsOnDisk()).toContain("status");
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Delete" }));
     await waitFor(async () => expect(await fieldsOnDisk()).not.toContain("status"));
+  });
+});
+
+describe("About This Field on Linux", () => {
+  it("says what the column is, in the words its header hint uses, and leads on to its settings", async () => {
+    await openTasks();
+    const schema = (await tasksOnDisk()).schema;
+    const hint = fieldHint({ field: schema.fields.find((f) => f.name === "status"), name: "status", schema, editable: false });
+    expect(hint.facts.length).toBeGreaterThan(1);
+    (await headerMenu("status")).activateAction("field.about", null);
+    await screen.findByText("About This Field");
+    await screen.findByText(hint.facts.join(" · "));
+    // Not yet in its settings: those open from here.
+    expect(screen.queryAllByRole(Gtk.AccessibleRole.LIST_ITEM).filter((w) => w instanceof Adw.EntryRow && w.getTitle() === "Title")).toHaveLength(0);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Field Settings…" }));
+    await entryRow("Title");
+    await waitFor(() => expect(screen.queryByText("About This Field")).toBeNull());
+  });
+
+  it("shows a formula field's formula", async () => {
+    const budget = join(dir, "household-budget.table");
+    cpSync(join(fixturesDir()!, "household-budget.table"), budget, { recursive: true });
+    const library = await loadLibrary([budget]);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="spending" />);
+    const schema = (await parseTable(join(budget, "tables", "budget"))).schema;
+    const hint = fieldHint({ field: schema.fields.find((f) => f.name === "quarter"), name: "quarter", schema, editable: false });
+    expect(hint.formula).toMatch(/^=/);
+    (await headerMenu("Q1")).activateAction("field.about", null);
+    await screen.findByText("About This Field");
+    const formula = await screen.findByText(hint.formula!);
+    // Coloured as where it is typed.
+    expect((formula as Gtk.Label).getAttributes()?.toString()).toMatch(/ foreground #/);
+    await screen.findByText(hint.storedAs!);
   });
 });
 
