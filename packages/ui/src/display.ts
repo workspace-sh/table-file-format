@@ -92,6 +92,12 @@ export const TOTAL_NAMES: Record<ViewTotal, string> = {
   count_empty: "Count empty",
 };
 
+/** The totals a column can show: sums and the like for numbers, counts for anything. */
+export function totalKindsFor(field: Field | undefined): ViewTotal[] {
+  const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
+  return [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+}
+
 export function formatValue(value: unknown): string {
   if (value === undefined || value === null || value === "") return EMPTY_TEXT;
   if (value instanceof FormulaError) return value.code;

@@ -34,7 +34,7 @@ import {
   GtkViewport,
 } from "@gtkx/jsx/gtk";
 import type { MenuItem } from "@gtkx/react/internal";
-import { columnLetter, effectiveAlign, isSheet, memoryViewRows, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
+import { columnLetter, effectiveAlign, isSheet, memoryViewRows, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
 import {
   canInsertAt,
   describeCell,
@@ -54,6 +54,8 @@ import {
   linesFor,
   ROW_NUMBER_WIDTH,
   TOTAL_LABELS,
+  TOTAL_NAMES,
+  totalKindsFor,
   visibleFields,
   type ViewProps,
   rowNumber,
@@ -443,7 +445,15 @@ export function TableView({
     builtRow.set(row.id, row);
   });
   const totals = view.totals ?? {};
-  const showTotals = Object.keys(totals).length > 0;
+  // The footer is there whenever a total could be chosen; with none chosen it is quiet (no rules), as on the web.
+  const quietTotals = Object.keys(totals).length === 0;
+  const showTotals = !quietTotals || !!onUpdateView;
+  const chooseTotal = (name: string, kind: ViewTotal | null) => {
+    const next = { ...(view.totals ?? {}) };
+    if (kind) next[name] = kind;
+    else delete next[name];
+    onUpdateView?.({ totals: Object.keys(next).length ? next : undefined });
+  };
 
   // The visible width, from the scroller's own adjustment: its page size is
   // what's on screen, and it changes as the window or sidebar does.
@@ -898,27 +908,76 @@ export function TableView({
   ) : null;
 
   const footer = showTotals ? (
-    <GtkBox cssClasses={[styles.totalsRow]}>
+    <GtkBox cssClasses={[quietTotals ? styles.totalsRowQuiet : styles.totalsRow]}>
       {gutter("", HEADER_HEIGHT)}
       {fields.map((name) => {
         const kind = totals[name];
         const field = fieldMap.get(name);
         const total = kind ? shownTotal(facts.totals[name], kind) : undefined;
+        const xalign = xalignOf(effectiveAlign(field));
+        const content =
+          kind && total ? (
+            // As wide as the cell's inside: the value has the room its column gives it, and ellipsizes past that.
+            <GtkBox hexpand widthRequest={Math.max(0, colWidth(name) - 34)}>
+              <GtkLabel label={TOTAL_LABELS[kind]} cssClasses={[styles.totalLabel]} />
+              {total.numeric ? (
+                <CellValue field={field} value={total.value} relatedTables={relatedTables} lines={1} xalign={1} />
+              ) : (
+                <GtkLabel label={String(total.value ?? "")} cssClasses={[styles.tabular]} />
+              )}
+            </GtkBox>
+          ) : onUpdateView ? (
+            // A place a total could go: seen when the cell is pointed at.
+            <GtkLabel label="Calculate" xalign={xalign} hexpand widthRequest={Math.max(0, colWidth(name) - 34)} cssClasses={[styles.totalPlaceholder]} />
+          ) : (
+            <GtkLabel label="" />
+          );
+        if (!onUpdateView) {
+          return (
+            <Cell key={name} width={colWidth(name)} height={HEADER_HEIGHT}>
+              {content}
+            </Cell>
+          );
+        }
+        // The cell is the menu of what can be worked out under its column.
+        const kinds = totalKindsFor(field);
         return (
-          <Cell key={name} width={colWidth(name)} height={HEADER_HEIGHT}>
-            {kind && total ? (
-              <GtkBox hexpand>
-                <GtkLabel label={TOTAL_LABELS[kind]} cssClasses={[styles.totalLabel]} />
-                {total.numeric ? (
-                  <CellValue field={field} value={total.value} relatedTables={relatedTables} lines={1} xalign={1} />
-                ) : (
-                  <GtkLabel label={String(total.value ?? "")} cssClasses={[styles.tabular]} />
-                )}
-              </GtkBox>
-            ) : (
-              <GtkLabel label="" />
-            )}
-          </Cell>
+          <GtkMenuButton
+            key={name}
+            widthRequest={colWidth(name)}
+            heightRequest={HEADER_HEIGHT}
+            hexpand={false}
+            cssClasses={["flat", styles.totalCell, ...(quietTotals ? [] : [styles.columnRule])]}
+            tooltipText={`Calculate ${field?.title ?? name}`}
+            actionGroups={
+              <GSimpleActionGroup
+                prefix="total"
+                actions={
+                  <>
+                    <GSimpleAction name="none" onActivate={() => chooseTotal(name, null)} />
+                    {kinds.map((k) => (
+                      <GSimpleAction key={k} name={k} onActivate={() => chooseTotal(name, k)} />
+                    ))}
+                  </>
+                }
+              />
+            }
+            popover={
+              <GtkPopoverMenu
+                hasArrow={false}
+                menuModel={
+                  <GMenu
+                    items={[
+                      { section: [{ label: "None", action: "total.none" }] },
+                      { section: kinds.map((k) => ({ label: TOTAL_NAMES[k], action: `total.${k}` })) },
+                    ]}
+                  />
+                }
+              />
+            }
+          >
+            {content}
+          </GtkMenuButton>
         );
       })}
     </GtkBox>
