@@ -306,6 +306,22 @@ function BodyRow({
   );
 }
 
+/** How far down a table is: the row at the top of what's seen, and how far into it. */
+export interface ScrollPlace {
+  rowId: string;
+  offset: number;
+}
+
+/**
+ * The table's props on GTK. It owns its scroller, so how far down it is
+ * scrolled is its own to say (`onScrollPlace`) and to put back
+ * (`restorePlace.place.top`), where the web's page does that for its table.
+ */
+export type GtkTableViewProps = ViewProps & {
+  onScrollPlace?: (top: ScrollPlace) => void;
+  restorePlace?: { place: { rowId?: string; field?: string; top?: ScrollPlace }; n: number } | null;
+};
+
 export function TableView({
   view,
   rows,
@@ -332,7 +348,10 @@ export function TableView({
   allRows,
   source: given,
   tableKey,
-}: ViewProps) {
+  onPlace,
+  onScrollPlace,
+  restorePlace,
+}: GtkTableViewProps) {
   // A field's editor open, by name, and "add a field" open.
   const [editingField, setEditingField] = useState<string | null>(null);
   // The schema as it was when a field's editor opened, for its Cancel.
@@ -407,9 +426,39 @@ export function TableView({
     const range = Math.max(1, adjustment.getUpper() - adjustment.getPageSize());
     return (bodyHeight - laidOut) * Math.min(1, Math.max(0, value / range));
   };
+  // How far down the table is, said for history once the scrolling rests (placeNow is set where the rows are known).
+  const placeNow = useRef<(() => void) | null>(null);
+  const topToRestore = useRef<number | null>(null);
+  const restoreTopNow = useRef<(() => void) | null>(null);
+  const placeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeSoon = () => {
+    if (placeTimer.current) clearTimeout(placeTimer.current);
+    placeTimer.current = setTimeout(() => placeNow.current?.(), 150);
+  };
+  useEffect(
+    () => () => {
+      if (placeTimer.current) clearTimeout(placeTimer.current);
+    },
+    [],
+  );
+  /** Scroll so that `wanted` (a distance down the whole table, header and all) is at the top of what's seen, building the rows there. */
+  const scrollBodyTo = (wanted: number) => {
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment) return;
+    const page = adjustment.getPageSize();
+    const range = Math.max(1, adjustment.getUpper() - page);
+    // value + shiftAt(value) = wanted, for a shift that grows evenly down the scroller.
+    const value = bodyHeight <= MAX_BODY_HEIGHT ? Math.min(range, wanted) : Math.min(range, wanted / (1 + (bodyHeight - laidOut) / range));
+    const shift = bodyHeight <= MAX_BODY_HEIGHT ? 0 : shiftAt(adjustment, value);
+    const top = value + shift - HEADER_HEIGHT - ROW_RULE;
+    setBuilt({ from: top - DRAW_DISTANCE, to: top + page + DRAW_DISTANCE, shift });
+    lastValue.current = value;
+    adjustment.setValue(value);
+  };
   const follow = () => {
     const adjustment = scroller.current?.getVadjustment();
     if (!adjustment) return;
+    placeSoon();
     const value = adjustment.getValue();
     const page = adjustment.getPageSize();
     const jumped = Math.abs(value - lastValue.current) > 3 * page;
@@ -745,15 +794,7 @@ export function TableView({
     focusWhenBuilt.current = at;
     const page = adjustment.getPageSize();
     // Where the scroller would be with the row in the middle of the screen, were the body its full height.
-    const wanted = Math.max(0, layout.topOf(at.row) + HEADER_HEIGHT + ROW_RULE - (page - layout.heightOf(at.row)) / 2);
-    const range = Math.max(1, adjustment.getUpper() - page);
-    // value + shiftAt(value) = wanted, for a shift that grows evenly down the scroller.
-    const value = bodyHeight <= MAX_BODY_HEIGHT ? wanted : Math.min(range, wanted / (1 + (bodyHeight - laidOut) / range));
-    const shift = bodyHeight <= MAX_BODY_HEIGHT ? 0 : shiftAt(adjustment, value);
-    const top = value + shift - HEADER_HEIGHT - ROW_RULE;
-    setBuilt({ from: top - DRAW_DISTANCE, to: top + page + DRAW_DISTANCE, shift });
-    lastValue.current = value;
-    adjustment.setValue(value);
+    scrollBodyTo(Math.max(0, layout.topOf(at.row) + HEADER_HEIGHT + ROW_RULE - (page - layout.heightOf(at.row)) / 2));
   };
   useLayoutEffect(() => {
     const at = focusWhenBuilt.current;
@@ -762,6 +803,68 @@ export function TableView({
     const cell = rowId === undefined ? undefined : cells.current.get(cellKey(rowId, fields[at.col]!));
     if (!cell) return;
     focusWhenBuilt.current = null;
+    cell.grabFocus();
+  });
+  // Where you are, for history: the cell the keyboard is on, said as it changes, and how far
+  // down the table is. Going back to the view puts both back (`restorePlace`).
+  const placeReport = useRef(onPlace);
+  placeReport.current = onPlace;
+  useEffect(() => {
+    const [rowId, name] = focusedCell?.split("\u0000") ?? [];
+    placeReport.current?.(rowId && name ? { rowId, field: name } : {});
+    // Again for a new view: the app starts each view's place afresh.
+  }, [focusedCell, view.id]);
+  placeNow.current = () => {
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment || !onScrollPlace || count === 0) return;
+    const y = Math.max(0, adjustment.getValue() + built.shift - HEADER_HEIGHT - ROW_RULE);
+    const place = Math.min(layout.at(y), count - 1);
+    const rowId = builtRows[place - firstBuilt]?.id;
+    if (rowId !== undefined) onScrollPlace({ rowId, offset: Math.round(y - layout.itemTop(place)) });
+  };
+  // A cell to take the keyboard if the rows a restored scroll built include it: going to it mustn't move the table again.
+  const focusIfBuilt = useRef<GridPlace | null>(null);
+  // How far down to put the table back. A view just shown isn't laid out yet (its scroller has no
+  // length to scroll), so this waits until it is: tried now, and again as the scroller grows.
+  restoreTopNow.current = () => {
+    const wanted = topToRestore.current;
+    const adjustment = scroller.current?.getVadjustment();
+    if (wanted === null || !adjustment) return;
+    const page = adjustment.getPageSize();
+    if (adjustment.getUpper() - page < Math.min(wanted, laidOut + HEADER_HEIGHT - page) - 1) return;
+    topToRestore.current = null;
+    scrollBodyTo(wanted);
+  };
+  const restoreTop = () => restoreTopNow.current?.();
+  useEffect(() => {
+    const place = restorePlace?.place;
+    if (!place) return;
+    let current = true;
+    void (async () => {
+      const col = place.field ? fields.indexOf(place.field) : -1;
+      const row = place.rowId && col >= 0 ? await source.placeOf(place.rowId) : -1;
+      const top = place.top ? await source.placeOf(place.top.rowId) : -1;
+      if (!current) return;
+      if (place.top && top >= 0) {
+        topToRestore.current = layout.itemTop(top) + place.top.offset + HEADER_HEIGHT + ROW_RULE;
+        focusIfBuilt.current = row >= 0 ? { row, col } : null;
+        restoreTop();
+      } else if (row >= 0) focusCell({ row, col });
+    })();
+    return () => {
+      current = false;
+    };
+    // Each place once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restorePlace?.n]);
+  useLayoutEffect(() => {
+    const at = focusIfBuilt.current;
+    if (!at) return;
+    if (at.row < firstBuilt || at.row > lastBuilt) return void (focusIfBuilt.current = null);
+    const rowId = builtRows[at.row - firstBuilt]?.id;
+    const cell = rowId === undefined ? undefined : cells.current.get(cellKey(rowId, fields[at.col]!));
+    if (!cell) return;
+    focusIfBuilt.current = null;
     cell.grabFocus();
   });
   const placeOf = (key: string): GridPlace | null => {
@@ -1078,7 +1181,7 @@ export function TableView({
       hexpand
       vexpand
       cssClasses={[styles.table]}
-      vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} />}
+      vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
       hadjustment={
         <GtkAdjustment
           onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))}

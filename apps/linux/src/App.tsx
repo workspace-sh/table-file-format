@@ -219,7 +219,13 @@ function TablePane({
   tables: Record<string, ParsedTable>;
   tableKey: string;
   /** What the views can ask the app to change: table-app's viewCallbacks, and attaching a file. */
-  callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void; newFieldRequest?: number };
+  callbacks: ViewCallbacks & {
+    onAttachFile: (rowId: string, field: string) => void;
+    newFieldRequest?: number;
+    onPlace?: (place: { rowId?: string; field?: string }) => void;
+    onScrollPlace?: (top: { rowId: string; offset: number }) => void;
+    restorePlace?: { place: { rowId?: string; field?: string; top?: { rowId: string; offset: number } }; n: number } | null;
+  };
   saving: SaveState;
   onRetrySave: () => void;
   viewActions: ViewActions;
@@ -656,6 +662,10 @@ export function App({
   const callbacks = {
     ...viewCallbacks(state, dispatch, newId),
     newFieldRequest,
+    // Where you are in the view, kept with history: Back and Forward put the cell and the scroll place back.
+    onPlace: (place: { rowId?: string; field?: string }) => dispatch({ type: "place", place: { rowId: place.rowId, field: place.field } }),
+    onScrollPlace: (top: { rowId: string; offset: number }) => dispatch({ type: "place", place: { top } }),
+    restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId: string, field: string) => {
       void chooseFile().then((source) => {

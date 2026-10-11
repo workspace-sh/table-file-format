@@ -71,6 +71,28 @@ describe("back and forward on Linux", () => {
     await waitFor(async () => expect(await title()).toBe("Board by status"));
   });
 
+  it("Back puts the keyboard on the cell it was on", async () => {
+    await openTasks();
+    // A relation followed from its cell: the keyboard was on that cell when the view was left.
+    // (The link is a button around its row's name; its tooltip is the address it leads to.)
+    const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b instanceof Gtk.Button && (b.getTooltipText() ?? "").includes("#")) as Gtk.Button;
+    expect(link).toBeDefined();
+    const address = link.getTooltipText();
+    link.grabFocus();
+    link.activate();
+    await waitFor(async () => expect(await title()).not.toBe("All tasks by priority"));
+    await userEvent.click(await button("Back"));
+    await waitFor(async () => expect(await title()).toBe("All tasks by priority"));
+    await waitFor(async () => {
+      // The same cell: the one holding that link, in the view shown afresh.
+      const again = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b instanceof Gtk.Button && b.getTooltipText() === address) as Gtk.Button;
+      let cell: Gtk.Widget | null = again;
+      while (cell && !(cell instanceof Gtk.Box && cell.getFocusable())) cell = cell.getParent();
+      expect(cell).not.toBeNull();
+      expect((await window()).getFocus()).toBe(cell);
+    });
+  });
+
   it("skips a view that's since been deleted", async () => {
     await openTasks();
     await userEvent.click(await screen.findByText("Board by status"));
