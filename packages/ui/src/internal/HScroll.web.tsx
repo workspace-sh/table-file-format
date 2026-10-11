@@ -22,14 +22,55 @@ const styles = css.create({
     // Keep visible when actually scrollable so users get feedback.
     flex: 1,
   },
+  // The browser's own snapping: it brings a scroll to rest on a mark as its
+  // momentum ends, and leaves a drag or a wheel alone until then.
+  snaps: {
+    position: "relative",
+    scrollSnapType: "x mandatory",
+  },
+  // The marks hang from the scroller's start and scroll with what's in it.
+  marks: {
+    position: "absolute",
+    top: 0,
+    insetInlineStart: 0,
+    width: 0,
+    height: 0,
+    pointerEvents: "none",
+  },
+  mark: (at: number) => ({
+    position: "absolute",
+    top: 0,
+    insetInlineStart: at,
+    width: 1,
+    height: 1,
+    scrollSnapAlign: "start",
+  }),
 });
 
 export interface HScrollProps {
   children?: ReactNode;
   /** Accepted for shape parity with native; unused on web. */
   scrollProps?: unknown;
+  /**
+   * Where the scroll comes to rest, as offsets from its start (a table's
+   * column starts): a scroll the user ends settles on the nearest, so
+   * nothing is left cut in half at the edge. The end is always one.
+   */
+  snapTo?: readonly number[];
 }
 
-export function HScroll({ children }: HScrollProps) {
-  return <html.div style={styles.scroll}>{children}</html.div>;
+export function HScroll({ children, snapTo }: HScrollProps) {
+  const snaps = snapTo !== undefined && snapTo.length > 0;
+  return (
+    <html.div style={[styles.scroll, snaps && styles.snaps]}>
+      {snaps && (
+        <html.div aria-hidden={true} style={styles.marks}>
+          {snapTo.map((at) => (
+            <html.div key={at} style={styles.mark(at)} />
+          ))}
+        </html.div>
+      )}
+      {children}
+    </html.div>
+  );
 }
