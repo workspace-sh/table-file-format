@@ -2205,11 +2205,12 @@ function EditableCell({
       style={[styles.cellInput, cellInputFit]}
     />
   );
+  // A div, not a span: on native a span is a run of text, and an input inside one doesn't sit on its line.
   const field_ = currencySymbol ? (
-    <html.span style={styles.cellInputAffixed}>
+    <html.div style={styles.cellInputAffixed}>
       <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
       {input}
-    </html.span>
+    </html.div>
   ) : (
     input
   );
