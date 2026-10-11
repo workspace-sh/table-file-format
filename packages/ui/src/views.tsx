@@ -2489,11 +2489,11 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
-function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
+function EdgeToEdge({ on, children, snapTo }: { on: boolean; children: ReactNode; snapTo?: readonly number[] }) {
   if (!on) return <>{children}</>;
   return (
     <Bleed>
-      <HScroll>
+      <HScroll snapTo={snapTo}>
         <html.div style={styles.bleedRow}>
           <GutterSpacer />
           {children}
@@ -2505,9 +2505,20 @@ function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
-function PaneScroll({ on, children, scroll }: { on: boolean; children: ReactNode; scroll?: { ref: { current: unknown }; x: { current: number } } }) {
+function PaneScroll({
+  on,
+  children,
+  scroll,
+  snapTo,
+}: {
+  on: boolean;
+  children: ReactNode;
+  scroll?: { ref: { current: unknown }; x: { current: number } };
+  snapTo?: readonly number[];
+}) {
   return on ? (
     <HScroll
+      snapTo={snapTo}
       // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scrollProps={
@@ -3156,6 +3167,20 @@ export function TableView({
   // put and its other columns scroll inside it.
   const edgeToEdge = !primaryName;
   const restNames = freezePrimary ? fields.slice(1) : fields;
+  // Where each column of the sideways-scrolling part starts, from that
+  // part's own start: a scroll comes to rest on one, so no column is left
+  // cut in half at the edge with its title out of sight. (Row numbers,
+  // when they scroll with the columns, stay before the first.)
+  const widthsKey = restNames.map((name) => colWidth(name)).join(",");
+  const columnStarts = useMemo(() => {
+    const starts: number[] = [];
+    let at = 0;
+    for (const width of widthsKey === "" ? [] : widthsKey.split(",").map(Number)) {
+      starts.push(at);
+      at += width;
+    }
+    return starts;
+  }, [widthsKey]);
 
   // Cell renderers — extracted because both panes share them.
   const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
@@ -3910,7 +3935,7 @@ export function TableView({
         <html.div {...measureProps} style={styles.tableGrow} />
       </html.div>
     )}
-    <EdgeToEdge on={edgeToEdge}>
+    <EdgeToEdge on={edgeToEdge} snapTo={columnStarts}>
     <GridKeys ref={keysRef} onKeyDown={onGridKey}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3984,7 +4009,7 @@ export function TableView({
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
-          <PaneScroll on={!edgeToEdge} scroll={paneScroll}>
+          <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
