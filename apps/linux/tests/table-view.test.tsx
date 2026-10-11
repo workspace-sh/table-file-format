@@ -86,7 +86,7 @@ describe("the card views on GTK", () => {
   it("a list shows each row by its title, marking those with a page", async () => {
     await renderView("projects/projects", "v7", ListView);
     expect(await screen.findByText("Plugin SDK")).toBeDefined();
-    expect((await screen.findAllByText("DOC")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Page")).length).toBeGreaterThan(0);
   });
 
   it("a calendar opens on its first dated row's month, and keeps inside its range", async () => {
