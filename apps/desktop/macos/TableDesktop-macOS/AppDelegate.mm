@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 
 #import <React/RCTBundleURLProvider.h>
+#import <React/RCTDevLoadingViewSetEnabled.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
 #import <TablePanels/TableShellEntry.h>
 
@@ -13,6 +14,12 @@
   // They will be passed down to the ViewController used by React Native.
   self.initialProps = @{};
   self.dependencyProvider = [RCTAppDependencyProvider new];
+#if DEBUG
+  // React Native's "Downloading…" banner is a window of its own that, in a
+  // Debug build here, stays up after the bundle has loaded and takes every
+  // click and key, ⌘R included. Metro's terminal shows the same progress.
+  RCTDevLoadingViewSetEnabled(NO);
+#endif
   
   return [super applicationDidFinishLaunching:notification];
 }
