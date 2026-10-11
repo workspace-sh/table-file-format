@@ -55,4 +55,69 @@ describe("a formula cell on Linux", () => {
       expect(t.schema.fields.find((f) => f.name === "quarter")?.computed?.expr).toBe("(* jan 2)");
     });
   });
+
+  it("colours the formula as it is typed: what it reads, its functions, numbers and text", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const colours = () => (entry.getAttributes()?.toString() ?? "").split("\n").filter(Boolean);
+    // =C1 + D1 + E1: three references in one colour, and the operators fainter.
+    await waitFor(() => expect(colours().filter((line) => / foreground #/.test(line))).toHaveLength(3));
+    const reference = colours().find((line) => line.startsWith("1 3 "))!.split(" ").at(-1);
+    expect(colours().filter((line) => line.includes("foreground-alpha"))).toHaveLength(3);
+    await userEvent.clear(entry);
+    await userEvent.type(entry, '=round(C1, 2) & "é" & D1');
+    await waitFor(() => expect(colours().length).toBeGreaterThan(6));
+    const colourAt = (start: number) => colours().find((line) => line.startsWith(`${start} `) && / foreground #/.test(line))?.split(" ").at(-1);
+    const [fn, ref, num, str] = [colourAt(1), colourAt(7), colourAt(11), colourAt(16)];
+    expect(ref).toBe(reference);
+    // Four kinds, four colours.
+    expect(new Set([fn, ref, num, str]).size).toBe(4);
+    // After the é, which is two bytes to Pango, D1 still starts where it is drawn.
+    expect(colourAt(23)).toBe(reference);
+  });
+
+  it("a column is clicked into the formula where it waits for one, by its coordinate in a sheet", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const column = async (label: string) => (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: label })).find((w) => w.getTooltipText()?.startsWith("Add "))!;
+    // The formula is whole: nothing is waited for, and a column can't be added on its end.
+    entry.setPosition(-1);
+    await waitFor(async () => expect((await column("Jan")).getSensitive()).toBe(false));
+    // Its own column isn't offered.
+    expect(screen.queryAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Q1" }).filter((w) => w.getTooltipText()?.startsWith("Add "))).toHaveLength(0);
+    await userEvent.type(entry, " + ");
+    await screen.findByText("Click a column to add it");
+    await waitFor(async () => expect((await column("Jan")).getSensitive()).toBe(true));
+    // Jan is column C, and this is row 1.
+    expect((await column("Jan")).getTooltipText()).toBe("Add C1");
+    await userEvent.click(await column("Jan"));
+    await waitFor(() => expect(entry.getText()).toBe("=C1 + D1 + E1 + C1"));
+    // The cursor is after what was added, and typing goes on from there.
+    await waitFor(() => expect(entry.getPosition()).toBe(entry.getText().length));
+    expect(await screen.findByText("With This Formula")).toBeDefined();
+    // In the middle of the formula too: after the first plus.
+    entry.setPosition(5);
+    await waitFor(async () => expect((await column("Feb")).getSensitive()).toBe(true));
+    await userEvent.click(await column("Feb"));
+    await waitFor(() => expect(entry.getText()).toBe("=C1 +D1 D1 + E1 + C1"));
+  });
+
+  it("in a field's settings on a table that isn't a sheet, a column is added by its name", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="spending" />);
+    await userEvent.click(await screen.findByText("Q1"));
+    await screen.findByText("One formula for the whole column.");
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const column = async (label: string) => (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: label })).find((w) => w.getTooltipText()?.startsWith("Add "))!;
+    expect((await column("Feb")).getTooltipText()).toBe("Add feb");
+    const before = entry.getText();
+    await userEvent.type(entry, " * ");
+    await waitFor(async () => expect((await column("Feb")).getSensitive()).toBe(true));
+    await userEvent.click(await column("Feb"));
+    await waitFor(() => expect(entry.getText()).toBe(`${before} * feb`));
+    // Coloured here as in the cell's panel.
+    expect(entry.getAttributes()?.toString()).toMatch(/ foreground #/);
+  });
 });
