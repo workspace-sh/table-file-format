@@ -3161,6 +3161,7 @@ export function TableView({
       return (
         <Hinted
           key={name}
+          box
           hint={hint}
           text={hintText}
           style={[
@@ -3190,6 +3191,7 @@ export function TableView({
     return (
       <RowActions key={name} actions={menu}>
       <Hinted
+        box
         hint={isEditing ? null : hint}
         text={isEditing ? undefined : hintText}
         style={[
