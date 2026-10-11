@@ -23,7 +23,7 @@
  * parity with the web variant. RNGH calls these `absoluteX` /
  * `absoluteY`.
  */
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, State } from "react-native-gesture-handler";
@@ -64,9 +64,14 @@ export interface DragHandleProps {
   grabOnTouch?: boolean;
 }
 
+// The pointer's resize cursors, where there's a pointer (macOS, and an
+// iPad's): react-native-macos takes CSS's names. Not in React Native's
+// style types, which have only "auto" and "pointer".
 const edgeStyles = StyleSheet.create({
-  end: { position: "absolute", top: 0, bottom: 0, end: 0, width: 12, zIndex: 2 },
-  bottom: { position: "absolute", left: 0, right: 0, bottom: -6, height: 12, zIndex: 2 },
+  end: { position: "absolute", top: 0, bottom: 0, end: 0, width: 12, zIndex: 4, cursor: "col-resize" as "auto" },
+  bottom: { position: "absolute", left: 0, right: 0, bottom: -6, height: 12, zIndex: 2, cursor: "row-resize" as "auto" },
+  // The line on a column's edge while the pointer is over it or it's dragged.
+  endLine: { position: "absolute", top: 0, bottom: 0, end: 0, width: 2, backgroundColor: "#0a84ff" },
 });
 
 export function DragHandle({
@@ -203,10 +208,21 @@ export function DragHandle({
   // coords, dropped events, "stuck" board / "inconsistent" list.
   // Buffering with a plain View accepts the prop and stabilises the
   // hierarchy.
+  // Over a column's edge with a pointer (macOS: react-native-macos's
+  // mouse events, which iOS's views don't send), or dragging it.
+  const [lit, setLit] = useState(false);
+  const pointer =
+    edge === "end"
+      ? {
+          onMouseEnter: () => setLit(true),
+          onMouseLeave: () => setLit(false),
+        }
+      : {};
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={edge ? edgeStyles[edge] : undefined}>
+      <View collapsable={false} style={edge ? edgeStyles[edge] : undefined} {...pointer}>
         {children}
+        {lit && <View pointerEvents="none" style={edgeStyles.endLine} />}
       </View>
     </GestureDetector>
   );

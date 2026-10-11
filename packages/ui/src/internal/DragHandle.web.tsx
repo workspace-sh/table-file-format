@@ -46,14 +46,26 @@ export interface DragHandleProps {
 }
 
 const edgeStyles = css.create({
+  // A column's edge: 8 wide to find with a pointer, and a line on its
+  // end edge as the pointer comes over it and while it's dragged, so
+  // there's something to see before it's grabbed.
   end: {
     position: "absolute",
     top: 0,
     bottom: 0,
     insetInlineEnd: 0,
-    width: 6,
+    width: 8,
     cursor: "col-resize",
-    zIndex: 2,
+    zIndex: 4,
+    borderInlineEndWidth: 2,
+    borderInlineEndStyle: "solid",
+    borderInlineEndColor: {
+      default: "transparent",
+      ":hover": "#0a84ff",
+    },
+  },
+  endDragging: {
+    borderInlineEndColor: "#0a84ff",
   },
   bottom: {
     position: "absolute",
@@ -202,7 +214,7 @@ export function DragHandle({
 
   return (
     <html.div
-      style={edge ? edgeStyles[edge] : undefined}
+      style={edge ? [edgeStyles[edge], edge === "end" && dragging && edgeStyles.endDragging] : undefined}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onPointerDown={handlePointerDown as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
