@@ -106,6 +106,8 @@ const MAX_BODY_HEIGHT = 8_000_000;
 const DRAW_MARGIN = 300;
 /** The frame's margin from the window's edges, each side. */
 const FRAME_MARGIN = 12;
+/** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
+const FREEZE_FROM_WIDTH = 720;
 
 function xalignOf(align: FieldAlignment): number {
   return align === "center" ? 0.5 : align === "end" ? 1 : 0;
@@ -237,6 +239,7 @@ function BodyRow({
   onDeleteRow,
   onInsertRow,
   menuRef,
+  frozen,
   children,
 }: {
   rowId: string;
@@ -247,11 +250,16 @@ function BodyRow({
   onDeleteRow?: (rowId: string) => void;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
   menuRef?: (button: Gtk.MenuButton | null) => void;
+  /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
+  frozen?: ReactNode;
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
   // As wide as its cells and no wider: its rule stops at the last real column, short of the "+" after it.
-  if (!menu) return <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+  if (!menu) {
+    const cells = <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+    return frozen ? <GtkOverlay halign={Gtk.Align.START} overlays={frozen}>{cells}</GtkOverlay> : cells;
+  }
   return (
     <GtkOverlay
       halign={Gtk.Align.START}
@@ -270,6 +278,8 @@ function BodyRow({
         />
       }
       overlays={
+        <>
+        {frozen}
         <GtkMenuButton
           ref={(widget: Gtk.MenuButton | null) => {
             button.current = widget;
@@ -288,6 +298,7 @@ function BodyRow({
             />
           }
         />
+        </>
       }
     >
       <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>
@@ -418,6 +429,8 @@ export function TableView({
   // move is a jump. revealCell does it, from where the row is known to be.
   // (The viewport is this table's own for that: `scrollToFocus` off.)
   const content = useRef<Gtk.Box | null>(null);
+  // The frozen first column as it is now, for revealCell: how wide, and which cell of a row it is.
+  const frozenNow = useRef<{ width: number; cellOf?: (place: number) => Gtk.Widget | undefined }>({ width: 0 });
   const revealCell = (place: number, cell: Gtk.Widget | undefined) => {
     const window = scroller.current;
     if (!window) return;
@@ -434,9 +447,12 @@ export function TableView({
     }
     const [found, bounds] = cell && content.current ? cell.computeBounds(content.current) : [false, null];
     if (!found || !bounds) return;
+    // The first column, when it stays put, is always in view, and covers that much of the others' start.
+    if (frozenNow.current.width > 0 && cell === frozenNow.current.cellOf?.(place)) return;
+    const covered = frozenNow.current.width;
     const across = window.getHadjustment();
     let x = across.getValue();
-    if (bounds.getX() < x) x = bounds.getX();
+    if (bounds.getX() - covered < x) x = Math.max(0, bounds.getX() - covered);
     else if (bounds.getX() + bounds.getWidth() > x + across.getPageSize()) x = bounds.getX() + bounds.getWidth() - across.getPageSize();
     if (x !== across.getValue()) across.setValue(x);
   };
@@ -476,6 +492,40 @@ export function TableView({
   const chrome = TABLE_CHROME + 2 * FRAME_MARGIN + (coords ? ROW_NUMBER_WIDTH : 0) + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
+  // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
+  // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
+  // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
+  const freeze = !rtl && fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH;
+  const frozenWidth = freeze ? (coords ? ROW_NUMBER_WIDTH : 0) + colWidth(fields[0]!) : 0;
+  const scrolledAcross = useRef(0);
+  const pinned = useRef(new Map<string, { widget: Gtk.Widget; from: number }>());
+  /** A ref for something that stays where it is across the table (`from` its start) however far it is scrolled. */
+  const pin = (key: string, from = 0) => (widget: Gtk.Widget | null) => {
+    if (!widget) return void pinned.current.delete(key);
+    pinned.current.set(key, { widget, from });
+    widget.setMarginStart(from + scrolledAcross.current);
+  };
+  const scrollAcross = (value: number) => {
+    // Scrolled past the frame's margin and edge, the first column rests against the window's own edge.
+    const x = freeze ? Math.max(0, Math.round(value) - FRAME_MARGIN - 1) : 0;
+    if (x === scrolledAcross.current) return;
+    scrolledAcross.current = x;
+    for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
+  };
+  // What a row starts with: its frozen part laid over it and room left under that, or the gutter in line.
+  // (It is its cells' height, at the top of its row or the foot of the totals: the row's own rule shows past it.)
+  const rowStart = (key: string, height: number, classes: string[], number: string, firstCell: ReactNode, valign = Gtk.Align.START) =>
+    freeze
+      ? {
+          frozen: (
+            <GtkBox ref={pin(key)} halign={Gtk.Align.START} valign={valign} cssClasses={classes}>
+              {gutter(number, height)}
+              {firstCell}
+            </GtkBox>
+          ),
+          inLine: <GtkBox widthRequest={frozenWidth} heightRequest={height} />,
+        }
+      : { frozen: undefined, inLine: gutter(number, height) };
   // A column that was dragged, back to its share of the width.
   const resetWidth = (name: string) => {
     if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
@@ -536,7 +586,16 @@ export function TableView({
     }
     const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
     return (
-      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={cellStart + 4} marginBottom={2} spacing={6}>
+      <GtkBox
+        name="resize-row"
+        // Under the first column where that stays put, the grip stays with it.
+        ref={freeze && gripName === fields[0] ? pin("grip", cellStart + 4) : undefined}
+        halign={Gtk.Align.START}
+        valign={Gtk.Align.END}
+        marginStart={cellStart + 4 + (freeze && gripName === fields[0] ? scrolledAcross.current : 0)}
+        marginBottom={2}
+        spacing={6}
+      >
         <GtkBox
           name="resize-row-grip"
           halign={Gtk.Align.CENTER}
@@ -586,11 +645,7 @@ export function TableView({
     );
   };
 
-  const header = (
-    <GtkBox>
-    <GtkBox cssClasses={[styles.headerRow]}>
-      {gutter("", HEADER_HEIGHT)}
-      {fields.map((name, i) => {
+  const headerCell = (name: string, i: number) => {
         const field: Field | undefined = fieldMap.get(name);
         const title = field?.title ?? name;
         // Right-click the header to insert a field beside it, put back a width that was dragged, or delete it.
@@ -618,8 +673,16 @@ export function TableView({
           </Cell>
           </HeaderMenu>
         );
-      })}
+  };
+  const headerStart = rowStart("header", HEADER_HEIGHT, [styles.frozenHeader], "", freeze ? headerCell(fields[0]!, 0) : null);
+  const header = (
+    <GtkBox>
+    <GtkOverlay overlays={headerStart.frozen}>
+    <GtkBox cssClasses={[styles.headerRow]}>
+      {headerStart.inLine}
+      {(freeze ? fields.slice(1) : fields).map((name, i) => headerCell(name, freeze ? i + 1 : i))}
     </GtkBox>
+    </GtkOverlay>
       {/* The "+" for a new field: after the last column, outside the table's lines, faint until pointed at. */}
       {onAddField ? (
         <GtkButton
@@ -650,6 +713,13 @@ export function TableView({
   // what each key does is table-ui/shared's gridKey, as the web's is.
   const cells = useRef(new Map<string, Gtk.Box>());
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  frozenNow.current = {
+    width: frozenWidth,
+    cellOf: (place) => {
+      const id = builtRows[place - firstBuilt]?.id;
+      return id === undefined ? undefined : cells.current.get(`${id}\u0000${fields[0]}`);
+    },
+  };
   // A cell asked to open for editing. It clears once the cell has heard it
   // (the cell's effect runs first), so the cell doesn't open again when its
   // row is scrolled away and built anew.
@@ -776,9 +846,12 @@ export function TableView({
     const starts = group ? { label: groupLabel(group.key, groupField!, schema), count: group.count } : undefined;
     const heading = starts ? (
       <GtkBox>
-        <GtkBox hexpand spacing={8} heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]}>
-          <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} cssClasses={[styles.groupLabel]} />
-          <GtkLabel label={String(starts.count)} cssClasses={[styles.groupCount]} />
+        <GtkBox hexpand heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]}>
+          {/* What the band says stays at the table's start as the columns scroll under it. */}
+          <GtkBox ref={pin(`group:${index}`)} spacing={8}>
+            <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} cssClasses={[styles.groupLabel]} />
+            <GtkLabel label={String(starts.count)} cssClasses={[styles.groupCount]} />
+          </GtkBox>
         </GtkBox>
         {trailing}
       </GtkBox>
@@ -797,25 +870,7 @@ export function TableView({
     }
     const rowHeight = heightOf(row.id);
     const lines = linesFor(rowHeight);
-    return (
-    <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
-      {heading}
-      <GtkOverlay overlays={rowGrip(row)}>
-      <BodyRow
-        rowId={row.id}
-        menu={hasMenu}
-        hasBody={bodies?.[row.id] !== undefined}
-        canInsert={canInsert}
-        onOpenBody={onOpenBody}
-        onDeleteRow={onDeleteRow}
-        onInsertRow={onInsertRow}
-        menuRef={(button) => {
-          if (button) rowMenus.current.set(row.id, button);
-          else rowMenus.current.delete(row.id);
-        }}
-      >
-        {gutter(String(numberOf(row, index)), rowHeight)}
-        {fields.map((name, i) => {
+    const bodyCell = (name: string, i: number) => {
           const field = fieldMap.get(name);
           const xalign = xalignOf(effectiveAlign(field));
           return (
@@ -888,7 +943,28 @@ export function TableView({
               </GtkBox>
             </Cell>
           );
-        })}
+    };
+    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen], String(numberOf(row, index)), freeze ? bodyCell(fields[0]!, 0) : null);
+    return (
+    <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
+      {heading}
+      <GtkOverlay overlays={rowGrip(row)}>
+      <BodyRow
+        rowId={row.id}
+        menu={hasMenu}
+        hasBody={bodies?.[row.id] !== undefined}
+        canInsert={canInsert}
+        onOpenBody={onOpenBody}
+        onDeleteRow={onDeleteRow}
+        onInsertRow={onInsertRow}
+        menuRef={(button) => {
+          if (button) rowMenus.current.set(row.id, button);
+          else rowMenus.current.delete(row.id);
+        }}
+        frozen={start.frozen}
+      >
+        {start.inLine}
+        {(freeze ? fields.slice(1) : fields).map((name, i) => bodyCell(name, freeze ? i + 1 : i))}
       </BodyRow>
       </GtkOverlay>
     </GtkBox>
@@ -910,16 +986,13 @@ export function TableView({
           }
         }}
       >
-        <GtkLabel label="+ New row" xalign={0} />
+        <GtkLabel ref={pin("new-row")} label="+ New row" xalign={0} halign={Gtk.Align.START} />
       </GtkButton>
       {trailing}
     </GtkBox>
   ) : null;
 
-  const footer = showTotals ? (
-    <GtkBox cssClasses={[quietTotals ? styles.totalsRowQuiet : styles.totalsRow]}>
-      {gutter("", HEADER_HEIGHT)}
-      {fields.map((name) => {
+  const totalCell = (name: string) => {
         const kind = totals[name];
         const field = fieldMap.get(name);
         const total = kind ? shownTotal(facts.totals[name], kind) : undefined;
@@ -988,8 +1061,15 @@ export function TableView({
             {content}
           </GtkMenuButton>
         );
-      })}
+  };
+  const footerStart = rowStart("footer", HEADER_HEIGHT, [styles.frozen], "", freeze && showTotals ? totalCell(fields[0]!) : null, Gtk.Align.END);
+  const footer = showTotals ? (
+    <GtkOverlay overlays={footerStart.frozen}>
+    <GtkBox cssClasses={[quietTotals ? styles.totalsRowQuiet : styles.totalsRow]}>
+      {footerStart.inLine}
+      {(freeze ? fields.slice(1) : fields).map((name) => totalCell(name))}
     </GtkBox>
+    </GtkOverlay>
   ) : null;
 
   return (
@@ -999,7 +1079,12 @@ export function TableView({
       vexpand
       cssClasses={[styles.table]}
       vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} />}
-      hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))} />}
+      hadjustment={
+        <GtkAdjustment
+          onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))}
+          onNotifyValue={(value) => scrollAcross(value ?? 0)}
+        />
+      }
     >
       <GtkViewport scrollToFocus={false}>
       <GtkBox
