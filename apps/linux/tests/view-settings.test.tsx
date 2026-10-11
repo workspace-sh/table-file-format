@@ -1,3 +1,4 @@
+import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
@@ -59,6 +60,32 @@ describe("view settings on Linux", () => {
       const t = await tasksOnDisk();
       expect(t.views.find((v) => v.id === "v1")?.coordinates).toBe(true);
     });
+  });
+
+  it("Columns: a column switched off leaves the view without it, and the last one stays", async () => {
+    await openSettings();
+    const fieldsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "v1")?.fields;
+    const all = (await tasksOnDisk()).schema.fields.map((f) => f.name);
+    const column = async (name: string) => {
+      const rows = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).filter((w) => w instanceof Adw.SwitchRow) as Adw.SwitchRow[];
+      return rows.find((r) => r.getTitle() === name)!;
+    };
+    expect(await fieldsOnDisk()).toBeUndefined();
+    (await column("status")).setActive(false);
+    await waitFor(async () => expect(await fieldsOnDisk()).toEqual(all.filter((n) => n !== "status")));
+    // All shown again is written as no list at all, so a field added later shows too.
+    (await column("status")).setActive(true);
+    await waitFor(async () => expect(await fieldsOnDisk()).toBeUndefined());
+    for (const name of all.slice(1)) {
+      (await column(name)).setActive(false);
+      await waitFor(async () => expect(await fieldsOnDisk()).not.toContain(name));
+    }
+    expect(await fieldsOnDisk()).toEqual([all[0]]);
+    // The last one can't go: its switch is on again, and the view says why.
+    (await column(all[0]!)).setActive(false);
+    await screen.findByText("One column always shows.");
+    await waitFor(async () => expect((await column(all[0]!)).getActive()).toBe(true));
+    expect(await fieldsOnDisk()).toEqual([all[0]]);
   });
 
   it("an added filter is this viewer's own until saved for everyone (D4)", async () => {

@@ -39,6 +39,8 @@ import {
   type ViewSettingsProps,
   sheetPatch,
   orderNote,
+  shownColumns,
+  columnShownPatch,
 } from "@workspace.sh/table-ui/shared";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
@@ -189,6 +191,9 @@ export interface GtkViewSettingsProps extends ViewSettingsProps {
 export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
+  const shown = shownColumns(view, schema);
+  // A switch that was refused (the last column shown) is drawn again as it was.
+  const [refused, setRefused] = useState(0);
   const filters = view.filter ?? [];
   const sorts = view.sort ?? [];
   const fieldOptions = (fields: Field[]) => fields.map((f) => ({ value: f.name, label: label(f) }));
@@ -237,6 +242,26 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
               />
             ) : null}
           </AdwPreferencesGroup>
+
+          {/* Which columns show: the view's own (`fields`), in the table's order. One always does. */}
+          {view.layout === "table" || view.layout === "list" ? (
+            <AdwPreferencesGroup title="Columns" description={shown.size === 1 ? "One column always shows." : undefined}>
+              {schema.fields.map((f) => (
+                <AdwSwitchRow
+                  key={`${f.name}:${shown.has(f.name)}:${refused}`}
+                  title={f.title ?? f.name}
+                  active={shown.has(f.name)}
+                  onNotifyActive={(active) => {
+                    if (!!active === shown.has(f.name)) return;
+                    const patch = columnShownPatch(view, schema, f.name, !!active);
+                    // The last column can't be hidden: the switch goes back.
+                    if (patch) onChange(patch);
+                    else setRefused((n) => n + 1);
+                  }}
+                />
+              ))}
+            </AdwPreferencesGroup>
+          ) : null}
 
           <AdwPreferencesGroup
             title="Filters"
