@@ -75,6 +75,19 @@ describe("the File menu on Linux", () => {
     expect(readFileSync(join(examples, "household-budget.table", "meta.json"), "utf8")).toBe(before);
   });
 
+  it("with a folder of your own open, Open .table.zip… makes the archive's .table beside it", async () => {
+    const own = join(dir, "mine", "crm.table");
+    cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
+    const budget = await loadLibrary([join(examples, "household-budget.table")]);
+    const zip = join(dir, "budget.table.zip");
+    writeFileSync(zip, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
+    // No examples library: the app was started on that one folder.
+    const library = await loadLibrary([own]);
+    await render(<App library={library} initialTable="crm/companies" chooseZip={async () => zip} />);
+    await run("open-zip");
+    await waitFor(() => expect(existsSync(join(dir, "mine", "household-budget.table", "meta.json"))).toBe(true));
+  });
+
   it("a file that isn't a .table.zip is refused, and says why", async () => {
     const junk = join(dir, "junk.zip");
     writeFileSync(junk, "not a zip");
