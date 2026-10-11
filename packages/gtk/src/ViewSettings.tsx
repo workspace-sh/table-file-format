@@ -19,7 +19,7 @@ import {
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkDropDown, GtkEntry } from "@gtkx/jsx/gtk";
-import { enumOptions, type Field, type FilterOperator, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
+import { enumOptions, type Field, type FilterOperator, type ViewFilter, type ViewLayout, type ViewSort, type ViewTotal } from "@workspace.sh/table-core";
 import {
   OPERATOR_LABELS,
   filterOnField,
@@ -41,6 +41,8 @@ import {
   orderNote,
   shownColumns,
   columnShownPatch,
+  TOTAL_NAMES,
+  totalKindsFor,
 } from "@workspace.sh/table-ui/shared";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
@@ -261,6 +263,30 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
                   }}
                 />
               ))}
+            </AdwPreferencesGroup>
+          ) : null}
+
+          {/* A total under each column the table shows (SPEC section 4, `totals`), as its footer's cells choose. */}
+          {view.layout === "table" ? (
+            <AdwPreferencesGroup title="Totals" description="Shown in a row under the table.">
+              {(view.fields ?? schema.fields.map((f) => f.name))
+                .map((name) => schema.fields.find((f) => f.name === name))
+                .filter((f): f is Field => !!f)
+                .map((f) => (
+                  <Choice
+                    key={f.name}
+                    title={label(f)}
+                    options={totalKindsFor(f).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))}
+                    value={view.totals?.[f.name]}
+                    none="None"
+                    onChange={(kind) => {
+                      const next = { ...(view.totals ?? {}) };
+                      if (kind) next[f.name] = kind as ViewTotal;
+                      else delete next[f.name];
+                      onChange({ totals: Object.keys(next).length ? next : undefined });
+                    }}
+                  />
+                ))}
             </AdwPreferencesGroup>
           ) : null}
 

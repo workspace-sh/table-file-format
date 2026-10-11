@@ -10,7 +10,7 @@ import type React from "react";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort, ViewTotal } from "@workspace.sh/table-core";
-import { TOTAL_NAMES } from "./display";
+import { TOTAL_NAMES, totalKindsFor } from "./display";
 import type { SelectOption, SettingsRow, SettingsSection } from "./controlSlots";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -402,8 +402,7 @@ function viewSettingsSections({
       title: "Totals",
       footer: "Shown in a row under the table.",
       rows: shownFields.map((f) => {
-        const numeric = f.type === "number" || f.type === "integer" || f.type === "year" || f.computed !== undefined;
-        const kinds: ViewTotal[] = [...(numeric ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+        const kinds = totalKindsFor(f);
         return choice(
           `total-${f.name}`,
           f.title ?? f.name,
