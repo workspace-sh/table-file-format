@@ -81,7 +81,10 @@ describe("resizing on Linux", () => {
     const startOf = async () => (await screen.findAllByName("resize-row"))[0]!.getMarginStart();
     await waitFor(() => expect(screen.queryAllByName("resize-row")).toHaveLength(1));
     const first = await startOf();
-    let next: Gtk.Widget | null = cell!.getNextSibling();
+    // The first column is laid over the row's start (it stays put when the rest scroll): the next cell is the row's own first.
+    let row: Gtk.Widget | null = cell!.getParent();
+    while (row && !(row instanceof Gtk.Overlay)) row = row.getParent();
+    let next: Gtk.Widget | null = (row as Gtk.Overlay).getChild()!.getFirstChild();
     while (next && !next.getFocusable()) next = next.getNextSibling();
     next!.grabFocus();
     await waitFor(async () => expect(await startOf()).toBe(first + cell!.getSizeRequest()[0]));
