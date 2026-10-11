@@ -197,7 +197,8 @@ function BodyRow({
   if (!menu) return <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
   return (
     <GtkBox
-      cssClasses={[styles.bodyRow]}
+      // The row's rule is under its cells and stops with them: the menu button is after the table, not in it.
+      cssClasses={[styles.rowWithMenu]}
       controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
       actionGroups={
         <GSimpleActionGroup
@@ -213,13 +214,15 @@ function BodyRow({
         />
       }
     >
-      {children}
+      <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>
       <GtkMenuButton
         ref={button}
         iconName="view-more-symbolic"
-        cssClasses={["flat", "circular"]}
+        cssClasses={["flat", "circular", styles.rowMenu]}
         valign={Gtk.Align.CENTER}
         marginStart={4}
+        // With its margin, exactly ROW_MENU_WIDTH: what the bands that stop short of it leave.
+        widthRequest={ROW_MENU_WIDTH - 4}
         tooltipText="Row Actions"
         popover={
           <GtkPopoverMenu
@@ -483,6 +486,7 @@ export function TableView({
   };
 
   const header = (
+    <GtkBox>
     <GtkBox cssClasses={[styles.headerRow]}>
       {gutter("", HEADER_HEIGHT)}
       {fields.map((name, i) => {
@@ -507,18 +511,23 @@ export function TableView({
           </GtkOverlay>
         );
       })}
+    </GtkBox>
+      {/* The "+" for a new field: after the last column, outside the table's lines, faint until pointed at. */}
       {onAddField ? (
         <GtkButton
           iconName="list-add-symbolic"
-          cssClasses={["flat", "circular"]}
+          cssClasses={["flat", "circular", styles.addPlace]}
           valign={Gtk.Align.CENTER}
           marginStart={4}
+          widthRequest={ROW_MENU_WIDTH - 4}
           tooltipText="Add Field"
           onClicked={() => setAddingField(true)}
         />
       ) : null}
     </GtkBox>
   );
+  // What follows the last real column (a row's menu, the "+"): a group's band and the new-row band stop short of it.
+  const trailing = hasMenu || onAddField ? <GtkBox widthRequest={ROW_MENU_WIDTH} /> : null;
 
   const editable = !!onUpdateRow;
 
@@ -644,14 +653,20 @@ export function TableView({
     const group = groupStarts.get(index);
     const starts = group ? { label: groupLabel(group.key, groupField!, schema), count: group.count } : undefined;
     const heading = starts ? (
-      <GtkLabel label={`${starts.label}  ·  ${starts.count}`} xalign={0} heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]} />
+      <GtkBox>
+        <GtkLabel label={`${starts.label}  ·  ${starts.count}`} xalign={0} hexpand heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]} />
+        {trailing}
+      </GtkBox>
     ) : null;
     // On its way from the index: an empty row of its height, so nothing moves when it arrives.
     if (!row) {
       return (
         <GtkBox key={`empty-${index}`} orientation={Gtk.Orientation.VERTICAL}>
           {heading}
-          <GtkBox heightRequest={layout.heightOf(index)} cssClasses={[styles.bodyRow]} />
+          <GtkBox>
+            <GtkBox hexpand heightRequest={layout.heightOf(index)} cssClasses={[styles.bodyRow]} />
+            {trailing}
+          </GtkBox>
         </GtkBox>
       );
     }
@@ -751,24 +766,28 @@ export function TableView({
     );
   });
 
+  // "New Row" is open space under the last row: a band as wide as the real
+  // columns with no lines through it, faint until pointed at.
   const addRow = onAddRow ? (
-    <GtkButton
-      halign={Gtk.Align.START}
-      cssClasses={["flat"]}
-      marginStart={coords ? ROW_NUMBER_WIDTH : 0}
-      onClicked={() => {
-        const id = onAddRow();
-        if (typeof id === "string") {
-          setJustAdded(id);
-          reveal.current = id;
-        }
-      }}
-    >
-      <GtkBox spacing={6}>
-        <GtkImage iconName="list-add-symbolic" />
-        <GtkLabel label="New Row" />
-      </GtkBox>
-    </GtkButton>
+    <GtkBox>
+      <GtkButton
+        hexpand
+        cssClasses={["flat", styles.addPlace, styles.addRowBand]}
+        onClicked={() => {
+          const id = onAddRow();
+          if (typeof id === "string") {
+            setJustAdded(id);
+            reveal.current = id;
+          }
+        }}
+      >
+        <GtkBox spacing={6} halign={Gtk.Align.START} marginStart={coords ? ROW_NUMBER_WIDTH : 0}>
+          <GtkImage iconName="list-add-symbolic" />
+          <GtkLabel label="New Row" />
+        </GtkBox>
+      </GtkButton>
+      {trailing}
+    </GtkBox>
   ) : null;
 
   const footer = showTotals ? (
