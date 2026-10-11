@@ -101,13 +101,19 @@ export interface FieldEditorProps {
   fields: Field[];
   onUpdate: (patch: Partial<Field>) => void;
   onAddChoice: (value: string) => void;
+  /** Remove a choice; rows holding it lose it (the app asks first). Absent: choices can't be removed here. */
+  onRemoveChoice?: (value: string) => void;
+  /** Delete the field (the app asks first). */
+  onDelete?: () => void;
+  /** Close, putting the field back as it was when the editor opened. Absent: there's no Cancel. */
+  onCancel?: () => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
   grid?: Grid;
 }
 
-export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onMove, onClose, grid }: FieldEditorProps) {
+export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onRemoveChoice, onDelete, onCancel, onMove, onClose, grid }: FieldEditorProps) {
   const display = useDisplaySettings();
   const rtl = useDirection() === "rtl";
   const [choiceDraft, setChoiceDraft] = useState("");
@@ -118,7 +124,12 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
 
   return (
     <AdwDialog title={field.title ?? field.name} contentWidth={520} contentHeight={640} onClosed={onClose}>
-      <AdwToolbarView topBar={<AdwHeaderBar />}>
+      <AdwToolbarView
+        topBar={
+          // Changes are made as they're chosen; Cancel puts the field back as it was when this opened.
+          <AdwHeaderBar start={onCancel ? <GtkButton label="Cancel" onClicked={onCancel} /> : undefined} />
+        }
+      >
         <AdwPreferencesPage>
           <AdwPreferencesGroup description={`${field.computed ? "Formula" : friendlyType(field.type)} · stored as “${field.name}”`}>
             <AdwEntryRow title="Title" text={field.title ?? ""} showApplyButton onApply={(row) => onUpdate({ title: row.getText() || undefined })} />
@@ -201,7 +212,17 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
           {takesChoices(field) ? (
             <AdwPreferencesGroup title="Choices">
               {enumOptions(field).map((o) => (
-                <AdwActionRow key={o.value} title={o.label ?? o.value} subtitle={o.label && o.label !== o.value ? o.value : undefined} />
+                <AdwActionRow key={o.value} title={o.label ?? o.value} subtitle={o.label && o.label !== o.value ? o.value : undefined}>
+                  {onRemoveChoice ? (
+                    <GtkButton
+                      iconName="edit-delete-symbolic"
+                      cssClasses={["flat"]}
+                      valign={Gtk.Align.CENTER}
+                      tooltipText={`Remove ${o.label ?? o.value}`}
+                      onClicked={() => onRemoveChoice(o.value)}
+                    />
+                  ) : null}
+                </AdwActionRow>
               ))}
               <AdwEntryRow
                 title="Add Choice"
@@ -225,6 +246,12 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
               <GtkButton label="Move Later" sensitive={fieldIndex < totalFields - 1} onClicked={() => onMove(1)} />
             </GtkBox>
           </AdwPreferencesGroup>
+
+          {onDelete ? (
+            <AdwPreferencesGroup>
+              <GtkButton label="Delete Field" cssClasses={["destructive-action"]} halign={Gtk.Align.START} onClicked={onDelete} />
+            </AdwPreferencesGroup>
+          ) : null}
         </AdwPreferencesPage>
       </AdwToolbarView>
     </AdwDialog>

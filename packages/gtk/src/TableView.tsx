@@ -308,6 +308,8 @@ export function TableView({
   onMoveField,
   onAddField,
   onDeleteField,
+  onRemoveEnumValue,
+  onRestoreSchema,
   newFieldRequest,
   onAddRow,
   onDeleteRow,
@@ -322,6 +324,13 @@ export function TableView({
 }: ViewProps) {
   // A field's editor open, by name, and "add a field" open.
   const [editingField, setEditingField] = useState<string | null>(null);
+  // The schema as it was when a field's editor opened, for its Cancel.
+  const schemaBefore = useRef<typeof schema | null>(null);
+  useEffect(() => {
+    schemaBefore.current = editingField ? schema : null;
+    // Only as an editor opens or closes: the schema changes under it as it edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingField]);
   // Where the new field goes: at the end, or beside a column (its menu's Insert Field Left or Right).
   const [addingField, setAddingField] = useState<false | { place?: { name: string; side: "before" | "after" } }>(false);
   // The app's New Field (its menu): the same editor, each time it's asked for.
@@ -1046,6 +1055,23 @@ export function TableView({
             grid={grid}
             onUpdate={(patch) => onUpdateField!(editingField, patch)}
             onAddChoice={(value) => onAddEnumValue!(editingField, value)}
+            onRemoveChoice={onRemoveEnumValue ? (value) => onRemoveEnumValue(editingField, value) : undefined}
+            onDelete={
+              onDeleteField
+                ? () => {
+                    setEditingField(null);
+                    onDeleteField(editingField);
+                  }
+                : undefined
+            }
+            onCancel={
+              onRestoreSchema
+                ? () => {
+                    if (schemaBefore.current) onRestoreSchema(schemaBefore.current);
+                    setEditingField(null);
+                  }
+                : undefined
+            }
             onMove={(delta) => onMoveField!(editingField, delta)}
             onClose={() => setEditingField(null)}
           />
