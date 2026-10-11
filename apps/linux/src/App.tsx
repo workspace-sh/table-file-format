@@ -63,6 +63,7 @@ import {
   loadArrangements,
   type Confirm,
   type NamePrompt,
+  type Place,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
@@ -223,8 +224,8 @@ function TablePane({
     onAttachFile: (rowId: string, field: string) => void;
     newFieldRequest?: number;
     onPlace?: (place: { rowId?: string; field?: string }) => void;
-    onScrollPlace?: (top: { rowId: string; offset: number }) => void;
-    restorePlace?: { place: { rowId?: string; field?: string; top?: { rowId: string; offset: number } }; n: number } | null;
+    onScrollPlace?: (top: NonNullable<Place["top"]>) => void;
+    restorePlace?: { place: Pick<Place, "rowId" | "field" | "top">; n: number } | null;
   };
   saving: SaveState;
   onRetrySave: () => void;
@@ -668,7 +669,7 @@ export function App({
     newFieldRequest,
     // Where you are in the view, kept with history: Back and Forward put the cell and the scroll place back.
     onPlace: (place: { rowId?: string; field?: string }) => dispatch({ type: "place", place: { rowId: place.rowId, field: place.field } }),
-    onScrollPlace: (top: { rowId: string; offset: number }) => dispatch({ type: "place", place: { top } }),
+    onScrollPlace: (top: NonNullable<Place["top"]>) => dispatch({ type: "place", place: { top } }),
     restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId: string, field: string) => {
