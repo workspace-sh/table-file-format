@@ -8,7 +8,17 @@ import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes 
 
 /** Something that can be done to a row as a whole, from its row menu. */
 export interface RowAction {
-  id: "open-page" | "add-page" | "insert-above" | "insert-below" | "delete";
+  id:
+    | "open-page"
+    | "add-page"
+    | "insert-above"
+    | "insert-below"
+    | "delete"
+    // A column's (columnActions).
+    | "insert-left"
+    | "insert-right"
+    | "reset-width"
+    | "delete-field";
   /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
@@ -274,6 +284,46 @@ export function rowActions(
   }
   if (onDeleteRow) {
     actions.push({ id: "delete", label: "Delete Row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
+  }
+  return actions;
+}
+
+/**
+ * What a column's header menu offers (right-click, or touch and hold), in
+ * order. Inserting is by what's seen, left or right, so in a right-to-left
+ * layout "Left" is after the column in field order.
+ */
+export function columnActions(
+  name: string,
+  can: {
+    onInsertField?: (name: string, side: "before" | "after") => void;
+    /** Only for a column the user has resized: back to its share of the width. */
+    onResetWidth?: (name: string) => void;
+    onDeleteField?: (name: string) => void;
+    rtl?: boolean;
+  },
+): RowAction[] {
+  const actions: RowAction[] = [];
+  const { onInsertField, onResetWidth, onDeleteField, rtl } = can;
+  if (onInsertField) {
+    actions.push({
+      id: "insert-left",
+      label: "Insert Field Left",
+      symbol: { sf: "arrow.left.to.line", material: "first_page" },
+      onSelect: () => onInsertField(name, rtl ? "after" : "before"),
+    });
+    actions.push({
+      id: "insert-right",
+      label: "Insert Field Right",
+      symbol: { sf: "arrow.right.to.line", material: "last_page" },
+      onSelect: () => onInsertField(name, rtl ? "before" : "after"),
+    });
+  }
+  if (onResetWidth) {
+    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "width" }, onSelect: () => onResetWidth(name) });
+  }
+  if (onDeleteField) {
+    actions.push({ id: "delete-field", label: "Delete Field", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteField(name) });
   }
   return actions;
 }

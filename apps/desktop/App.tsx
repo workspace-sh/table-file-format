@@ -311,7 +311,9 @@ interface ViewCallbacks {
   onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField: (field: Field) => void;
+  onAddField: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
+  /** Opens a table's new-field editor each time it changes: File › New Field and the toolbar's "+". */
+  newFieldRequest?: number;
   onAddRow: () => string | void;
   onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
@@ -369,6 +371,7 @@ function renderView(
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
+          newFieldRequest={cb.newFieldRequest}
           onAddRow={cb.onAddRow}
           onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}
@@ -633,6 +636,10 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const folderName = (bundle: string) => folderPaths[bundle]?.split("/").pop();
   const derived = derive(state, { locale: systemLocale, attachmentsOf, fileNameOf: folderName });
   const { table, view, summary, direction } = derived;
+  // File › New Field, and the toolbar's "+": each one opens the table's new-field editor.
+  const [newFieldAsk, setNewFieldAsk] = useState(0);
+  const shownLayoutRef = useRef(view?.layout);
+  shownLayoutRef.current = view?.layout;
   const files = useMemo(
     () => derived.filesTree.map((b) => ({ ...b, name: folderPaths[b.bundle] ? `${folderName(b.bundle)}/` : b.name })),
     // derived.filesTree is made anew each render; it follows these.
@@ -897,13 +904,15 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     const own: { id: string; menu: AppCommand["menu"]; title: string; key: string; modifiers: ("command" | "shift" | "option")[] }[] = [
       { id: "new-row", menu: "File", title: "New Row", key: "N", modifiers: ["command"] },
+      { id: "new-field", menu: "File", title: "New Field…", key: "N", modifiers: ["command", "option"] },
       { id: "view-settings", menu: "View", title: settingsOpen ? "Hide View Settings" : "Show View Settings", key: "v", modifiers: ["command", "option"] },
       { id: "find", menu: "Edit", title: "Find in View…", key: "f", modifiers: ["command"] },
       { id: "display", menu: "View", title: showDisplay ? "Hide Display Options" : "Show Display Options", key: "", modifiers: [] },
       { id: "reset-demo", menu: "File", title: "Reset Demo Data…", key: "", modifiers: [] },
     ];
     for (const c of own) setMenuItem({ ...c, before: MENU_BEFORE[c.menu] });
-    setToolbarLabel("new-row", "New Row");
+    // The toolbar's "+" is a menu of both.
+    setToolbarLabel("new", "New");
     setToolbarLabel("view-settings", "View Settings");
     setToolbarLabel("export-zip", commandOf("export-zip").label);
   }, [settingsOpen, showDisplay]);
@@ -913,8 +922,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => onSearch((text) => dispatch({ type: "search", text })), []);
   const searchText = state.search;
   useEffect(() => setSearchText(searchText), [searchText]);
-  const commands: Record<AppCommandId | "new-row" | "view-settings" | "find" | "display" | "reset-demo", () => void> = {
+  const commands: Record<AppCommandId | "new-row" | "new-field" | "view-settings" | "find" | "display" | "reset-demo", () => void> = {
     "new-row": () => void callbacks.onAddRow(),
+    // A table's own: in another layout there's no header to add it from.
+    "new-field": () => {
+      if ((shownLayoutRef.current ?? "table") === "table") setNewFieldAsk((n) => n + 1);
+    },
     "view-settings": () => dispatch({ type: "settings", open: !stateRef.current.settingsOpen }),
     find: focusSearch,
     display: toggleDisplay,
@@ -1284,6 +1297,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 sheet,
                 onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                 onAttachFile: attachFile,
+                newFieldRequest: newFieldAsk,
               })}
               </CellEditorContext.Provider>
             </ScrollView>

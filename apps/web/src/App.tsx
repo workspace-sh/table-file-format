@@ -1006,7 +1006,7 @@ interface ViewCallbacks {
   onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField?: (field: Field) => void;
+  onAddField?: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
   onAddRow?: () => string | void;
   onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;

@@ -375,6 +375,12 @@ const styles = css.create({
   addFieldCompact: {
     width: 30,
     height: 30,
+    // The "+" in the middle of its square: on native a button's text sits
+    // at its top unless it's centred.
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
     fontSize: 18,
     lineHeight: "18px",
     borderRadius: 6,
@@ -1160,6 +1166,14 @@ interface AddFieldButtonProps {
   compact?: boolean;
   /** Labelled, as wide as its label: it sits where it is put, rather than centred in a column's width. */
   hug?: boolean;
+  /**
+   * Opens the editor from elsewhere — a column's "Insert Field Left", or a
+   * toolbar's New Field — each time `id` changes: by `anchor` (the column's
+   * header), or by the "+" itself when there's none.
+   */
+  request?: { id: number; anchor?: AnchorRect } | null;
+  /** The editor has closed, a field added or not. */
+  onClosed?: () => void;
 }
 
 
@@ -1170,7 +1184,7 @@ function pairsOf<T>(items: T[]): T[][] {
   return pairs;
 }
 
-export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hug }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hug, request, onClosed }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
@@ -1209,7 +1223,20 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
     setType("string");
     setFormulaDraft("");
     setOpen(false);
+    onClosed?.();
   };
+
+  const openAt = async (anchor?: AnchorRect) => {
+    const rect = anchor ?? (await measureAnchor(triggerRef.current));
+    if (rect) setAnchorRect(rect);
+    setOpen(true);
+  };
+  const requestId = request?.id;
+  useEffect(() => {
+    if (requestId === undefined) return;
+    void openAt(request?.anchor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
 
   // Open: typing goes straight into the name, and Escape closes.
   useEffect(() => {
@@ -1374,11 +1401,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
           triggerRef.current = el;
         }}
         aria-label="Add a field"
-        onClick={async () => {
-          const rect = await measureAnchor(triggerRef.current);
-          if (rect) setAnchorRect(rect);
-          setOpen(true);
-        }}
+        onClick={() => void openAt()}
         style={compact ? styles.addFieldCompact : styles.addFieldButton}
       >
         {compact ? "+" : "+ Field"}

@@ -41,6 +41,8 @@ export default function TableScreen() {
   const router = useRouter();
   // The app's own settings (display, reset), from the More menu.
   const [appSettings, setAppSettings] = useState(false);
+  // The More menu's New Field: each one opens the table's new-field editor.
+  const [newFieldAsk, setNewFieldAsk] = useState(0);
   const tables = app?.state.tables;
   const bundles = app?.state.bundles;
   const active = app?.state.active;
@@ -174,6 +176,10 @@ export default function TableScreen() {
     // The table on screen, back a step and forward again (APP-STATE, "Undo").
     { label: labelOf("undo"), sf: "arrow.uturn.backward", disabled: !derived.canUndo, onPress: () => dispatch({ type: "undo" }) },
     { label: labelOf("redo"), sf: "arrow.uturn.forward", disabled: !derived.canRedo, onPress: () => dispatch({ type: "redo" }) },
+    // On a phone the end of the header, where its "+" is, is usually off screen.
+    ...(view.layout === "table" && !table.indexed
+      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
+      : []),
     {
       startsGroup: true,
       label: `New Table in ${state.bundles[bundle]?.title ?? bundle}`,
@@ -338,6 +344,7 @@ export default function TableScreen() {
                       onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
                       restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
                       onPlaceMeasure,
+                      newFieldRequest: newFieldAsk,
                       ...(table.indexed
                         ? {
                             source: indexed.source,

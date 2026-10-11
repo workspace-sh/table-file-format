@@ -80,7 +80,7 @@ public class TableToolbar: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
 
   private func commandId(of item: NSToolbarItem) -> String? {
     switch item.itemIdentifier {
-    case .tableNewRow: return "new-row"
+    case .tableNewRow: return "new"
     case .tableViewSettings: return "view-settings"
     case .tableExport: return "export-zip"
     default: return nil
@@ -98,6 +98,31 @@ public class TableToolbar: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
     item.target = self
     item.action = #selector(choose(_:))
     return item
+  }
+
+  /// The "+": a menu of what can be added, each item one of the app's commands.
+  private func newMenu(_ identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+    let item = NSMenuToolbarItem(itemIdentifier: identifier)
+    let label = labels["new"] ?? "New"
+    item.label = label
+    item.paletteLabel = label
+    item.toolTip = label
+    item.image = NSImage(systemSymbolName: "plus", accessibilityDescription: label)
+    item.isBordered = true
+    let menu = NSMenu()
+    for (id, title) in [("new-row", "New Row"), ("new-field", "New Field…")] {
+      let entry = NSMenuItem(title: title, action: #selector(chooseFromMenu(_:)), keyEquivalent: "")
+      entry.target = self
+      entry.representedObject = id
+      menu.addItem(entry)
+    }
+    item.menu = menu
+    return item
+  }
+
+  @objc private func chooseFromMenu(_ sender: NSMenuItem) {
+    guard let id = sender.representedObject as? String else { return }
+    NotificationCenter.default.post(name: .tableCommand, object: nil, userInfo: ["id": id])
   }
 
   @objc private func choose(_ sender: NSToolbarItem) {
@@ -160,7 +185,7 @@ public class TableToolbar: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
       group.isNavigational = true
       return group
     case .tableNewRow:
-      return button(identifier, id: "new-row", symbol: "plus", fallback: "New Row")
+      return newMenu(identifier)
     case .tableViewSettings:
       return button(identifier, id: "view-settings", symbol: "slider.horizontal.3", fallback: "View Settings")
     case .tableExport:

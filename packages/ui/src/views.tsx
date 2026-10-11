@@ -120,7 +120,7 @@ import { CellLink } from "./internal/CellLink";
 import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
-import { rowActions } from "./controlSlots";
+import { columnActions, rowActions } from "./controlSlots";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
 import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
@@ -220,11 +220,28 @@ const styles = css.create({
     alignItems: "flex-start",
     marginTop: 8,
   },
-  /** Centres the "+" on the header row (33px). */
-  addFieldSlot: {
+  /**
+   * The "+" on the last column's header, after its title: in the row's
+   * flow, so it's laid out the same on every platform, and clear of the
+   * resize handle's strip on the end edge.
+   */
+  headerAddAnchor: {
+    position: "relative",
+    width: 0,
+    zIndex: 3,
+  },
+  headerAdd: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    // Clear of the resize handle's strip on the column's end edge.
+    insetInlineEnd: 10,
     display: "flex",
     alignItems: "center",
-    height: 35,
+  },
+  /** The last header's title stops short of the "+" (30 wide, 10 in). */
+  headerRoomForAdd: {
+    paddingInlineEnd: 44,
   },
   table: {
     display: "flex",
@@ -2564,6 +2581,7 @@ export function TableView({
   onMoveField,
   onRestoreSchema,
   onAddField,
+  newFieldRequest,
   onAddRow,
   onDeleteRow,
   onOpenBody,
@@ -2908,12 +2926,21 @@ export function TableView({
     return new Map(out.map((r) => [r.id, r[field.name]] as const));
   })();
   const canAddField = !!onAddField;
-  // A new field lands at the end of the row, often past the right edge:
-  // bring its header into view once it has rendered.
+  // A new field can land past the right edge: bring its header into view
+  // once it has rendered.
   const [addedField, setAddedField] = useState<string | null>(null);
+  // The new-field editor, opened from somewhere other than its "+": a
+  // column's Insert Field Left or Right (with where the field goes, and the
+  // column's header to open by), or the host's New Field.
+  const [fieldAsk, setFieldAsk] = useState<{ id: number; anchor?: AnchorRect; place?: { name: string; side: "before" | "after" } } | null>(null);
+  const asks = useRef(0);
   const addField = (field: Field) => {
-    onAddField?.(field);
+    onAddField?.(field, fieldAsk?.place);
     setAddedField(field.name);
+  };
+  const insertField = async (name: string, side: "before" | "after") => {
+    const anchor = (await measureAnchor(headerButtonRefs.current[name])) ?? undefined;
+    setFieldAsk({ id: ++asks.current, anchor, place: { name, side } });
   };
   const addFieldButton = (compact: boolean) => (
     <Hinted hint="Add a field">
@@ -2924,9 +2951,20 @@ export function TableView({
         fields={schema.fields}
         grid={grid}
         onAdd={addField}
+        request={fieldAsk}
+        onClosed={() => setFieldAsk(null)}
       />
     </Hinted>
   );
+  // The host's New Field: the end of the header comes into view, and the
+  // editor opens from its "+".
+  useEffect(() => {
+    if (!newFieldRequest || !canAddField) return;
+    const last = fields[fields.length - 1];
+    if (last) headerButtonRefs.current[last]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    setFieldAsk({ id: ++asks.current });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFieldRequest]);
   useEffect(() => {
     if (!addedField) return;
     const el = headerButtonRefs.current[addedField];
@@ -2991,10 +3029,18 @@ export function TableView({
   // A column's resize handle is on its end edge; in a right-to-left
   // layout that's the left, so dragging leftwards widens it.
   const widen = (start: { at: number }, pageX: number) => (rtl ? start.at - pageX : pageX - start.at);
+  // Back to an even share of the width: what a dragged column had before.
+  const resetWidth = (name: string) => {
+    if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
+    const { [name]: _gone, ...rest } = view.columnWidths;
+    onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+  };
   const columnResizer = (name: string) =>
     onUpdateView ? (
       <DragHandle
         edge="end"
+        // A double click on the edge puts the column back to its share.
+        onDoubleTap={() => resetWidth(name)}
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
         }}
@@ -3116,6 +3162,10 @@ export function TableView({
     const hint = <FieldHint field={field} name={name} schema={schema} editable={schemaEditable} />;
     // The same facts as text, for the system tooltip where there's no rich one (macOS).
     const hintText = fieldHintText(fieldHint({ field, name, schema, editable: schemaEditable, formulaSyntax }));
+    // The "+" for a new field is on the last column's header, at its end:
+    // in the table, after its last column wherever that has scrolled to,
+    // and taking no column of its own.
+    const addHere = canAddField && name === fields[fields.length - 1];
     if (!schemaEditable) {
       return (
         <Hinted
@@ -3129,6 +3179,7 @@ export function TableView({
             styles.positioned,
             cellAlignStyle(align),
             !isLast && styles.tableCellSeparator,
+            addHere && styles.headerRoomForAdd,
           ]}
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
@@ -3138,9 +3189,17 @@ export function TableView({
         </Hinted>
       );
     }
+    // Right-click the header (touch and hold on a phone) to insert a field
+    // beside it, put back a width that was dragged, or delete it.
+    const menu = columnActions(name, {
+      onInsertField: canAddField ? (n, side) => void insertField(n, side) : undefined,
+      onResetWidth: onUpdateView && view.columnWidths?.[name] !== undefined ? resetWidth : undefined,
+      onDeleteField,
+      rtl,
+    });
     return (
+      <RowActions key={name} actions={menu}>
       <Hinted
-        key={name}
         hint={isEditing ? null : hint}
         text={isEditing ? undefined : hintText}
         style={[
@@ -3167,6 +3226,7 @@ export function TableView({
             styles.headerCellButton,
             !!field?.deprecated && styles.headerCellDeprecated,
             headerAlignStyle(align),
+            addHere && styles.headerRoomForAdd,
           ]}
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
@@ -3217,8 +3277,24 @@ export function TableView({
         )}
         {columnResizer(name)}
       </Hinted>
+      </RowActions>
     );
   };
+  // A header cell, and on the last one the "+" for a new field. It hangs
+  // from a line of no width after the cell, back over the cell's end: placed
+  // absolutely in a plain box, which lays out the same on every platform
+  // (the header cell itself is a run of text on native).
+  const headerCell = (name: string, idxInPane: number, paneLen: number) =>
+    canAddField && name === fields[fields.length - 1] ? (
+      <Fragment key={name}>
+        {renderHeaderCell(name, idxInPane, paneLen)}
+        <html.div style={styles.headerAddAnchor}>
+          <html.div style={styles.headerAdd}>{addFieldButton(true)}</html.div>
+        </html.div>
+      </Fragment>
+    ) : (
+      renderHeaderCell(name, idxInPane, paneLen)
+    );
 
   const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
@@ -3862,7 +3938,7 @@ export function TableView({
           <html.div style={styles.tableFrozenColumn}>
             <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
-              {renderHeaderCell(primaryName, 0, 1)}
+              {headerCell(primaryName, 0, 1)}
             </html.div>
             <RowList
               items={places}
@@ -3919,7 +3995,7 @@ export function TableView({
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
-                  renderHeaderCell(name, idx, restNames.length),
+                  headerCell(name, idx, restNames.length),
                 )}
               </html.div>
               <RowList
@@ -3980,15 +4056,11 @@ export function TableView({
         </html.div>
       </html.div>
     </html.div>
-      {canAddField && !edgeToEdge && (
-        <html.div style={styles.addFieldSlot}>{addFieldButton(true)}</html.div>
-      )}
     </html.div>
     </GridKeys>
     </EdgeToEdge>
-    {/* Edge to edge, the grid keeps all the width and "+ Field" sits under
-        it, on the page's margin, rather than taking a strip beside it. */}
-    {canAddField && edgeToEdge && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
+    {/* A table with no columns has no header to put the "+" on. */}
+    {canAddField && fields.length === 0 && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
       {formulaCell && openFormulaField && (() => {
         const openRow = rowOf(formulaCell.rowId);
         if (!openRow) return null;
