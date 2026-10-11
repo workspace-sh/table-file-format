@@ -36,6 +36,7 @@ import {
   fileText,
   fromBundle,
   hintWithShortcut,
+  shortcutText,
   initialAppState,
   loadArrangements,
   loadDisplay,
@@ -320,6 +321,32 @@ const styles = css.create({
     flexWrap: "wrap",
     alignItems: "center",
     gap: 8,
+  },
+  // Undo and Redo, joined: one control of two halves.
+  undoPair: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  undoButton: {
+    paddingInline: 9,
+    fontSize: 14,
+    lineHeight: "14px",
+  },
+  undoFirst: {
+    borderStartEndRadius: 0,
+    borderEndEndRadius: 0,
+  },
+  undoLast: {
+    borderStartStartRadius: 0,
+    borderEndStartRadius: 0,
+    marginInlineStart: -1,
+  },
+  buttonOff: {
+    cursor: "default",
+    color: {
+      default: "#b0b0b6",
+      "@media (prefers-color-scheme: dark)": "#55555c",
+    },
   },
   downloadButton: {
     paddingInline: 10,
@@ -844,6 +871,25 @@ export function App() {
               <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
             <html.div style={styles.headerActions}>
+            {/* Undo and Redo, for a hand with no keyboard: each says what it would act on. */}
+            <html.div style={styles.undoPair}>
+              {(["undo", "redo"] as const).map((id) => {
+                const command = commandOf(id);
+                const can = command.enabled !== false;
+                return (
+                  <Hinted key={id} hint={`${command.label} (${shortcutText(command, "web")})`}>
+                    <html.button
+                      aria-label={command.label}
+                      disabled={!can}
+                      onClick={() => dispatch({ type: id })}
+                      style={[styles.downloadButton, styles.undoButton, id === "undo" ? styles.undoFirst : styles.undoLast, !can && styles.buttonOff]}
+                    >
+                      {id === "undo" ? "↶" : "↷"}
+                    </html.button>
+                  </Hinted>
+                );
+              })}
+            </html.div>
             <Hinted hint={TOOLBAR_HINTS.viewSettings}>
               <html.button
                 style={[styles.downloadButton, state.settingsOpen && styles.buttonOn]}
