@@ -109,7 +109,7 @@ import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
-import { afterEdit, cellPicks, gridKey } from "./gridNav";
+import { afterEdit, cellPicks, gridKey, mirroredKey } from "./gridNav";
 import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
@@ -3879,11 +3879,13 @@ export function TableView({
     const cur = sel && placeOfId(sel.rowId) >= 0 && fields.includes(sel.name) ? sel : null;
     const field = cur ? fieldMap.get(cur.name) : undefined;
     // What the key does is table-ui/shared's gridKey, as table-gtk's grid has it.
+    const pressed = { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey };
     const action = gridKey(
       cur ? { row: placeOfId(cur.rowId), col: fields.indexOf(cur.name) } : null,
       total,
       fields.length,
-      { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey },
+      // Right to left, Left and Right are where they are on screen.
+      rtl ? mirroredKey(pressed) : pressed,
       { editable: !!cur && editable(cur.name), boolean: field?.type === "boolean", picks: cellPicks(field), computed: !!field?.computed },
     );
     if (!action || action.kind === "leave") return;
