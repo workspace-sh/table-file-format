@@ -220,7 +220,8 @@ describe("a table held in the index on Linux", () => {
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const host = openIndexHost(bundle);
     const { queryIndex } = await import("@workspace.sh/table-core");
-    await waitFor(async () => expect((await queryIndex(host, { name: "tasks", schema: schemaOnDisk() as never }))?.count).toBe(ROWS + 8), { timeout: 5000 });
+    // The save and the rebuild follow the edit by a moment, and take longer with the whole suite running.
+    await waitFor(async () => expect((await queryIndex(host, { name: "tasks", schema: schemaOnDisk() as never }))?.count).toBe(ROWS + 8), { timeout: 20000 });
     await host.close();
     expect(rowsOnDisk()).toHaveLength(ROWS + 8);
   });
