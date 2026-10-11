@@ -118,7 +118,6 @@ import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
-import { MAX_LIST_HEIGHT } from "./internal/listLimits";
 import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
 
@@ -2803,10 +2802,10 @@ export function TableView({
     if (groupStarts) for (const place of groupStarts.keys()) marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER });
     else inMemory.forEach((d, place) => d.starts && marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER }));
     for (const [place, height] of tallAt) marks.push({ place, taller: height - defaultHeight });
+    // The last row has no rule under it when nothing follows it (rowItemHeight).
+    if (total > 0 && !onAddRow) marks.push({ place: total - 1, taller: -ROW_BORDER });
     return rowLayout(total, defaultHeight + ROW_BORDER, marks);
   };
-  // A table too tall for a list to lay out as it is gives the list where every row is.
-  const tallLayout = total * (defaultHeight + ROW_BORDER) > MAX_LIST_HEIGHT ? layoutOf : undefined;
   /** A place's item: its row as `draw` draws it, or an empty row of its height while it's on its way from the index. */
   const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode): ReactNode => {
     const entry = entryAt(place);
@@ -3795,7 +3794,7 @@ export function TableView({
               version={rowsVersion}
               raised={rowRaised}
               handle={frozenRows}
-              layout={tallLayout}
+              layout={layoutOf}
               render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
@@ -3853,7 +3852,7 @@ export function TableView({
                 version={rowsVersion}
                 raised={rowRaised}
                 handle={paneRows}
-                layout={tallLayout}
+                layout={layoutOf}
                 onShown={onShown}
                 render={(place) => drawn(place, ({ row, starts }, i) => (
                   <>

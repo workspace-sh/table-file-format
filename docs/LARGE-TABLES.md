@@ -175,7 +175,7 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 
 ### Drawing only the rows on screen, on the web (W1, 9 Oct 2026)
 
-The web's table draws its rows through LegendList (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS has since followed (below); macOS and Android still draw every row.
+The web's table draws its rows through a list of its own (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller: a body as tall as all the rows, with the rows on screen placed in it. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS has since followed (below); macOS and Android still draw every row.
 
 A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280 × 800 on the Linux rig (a 2017 MacBook, 8 GB), opening the same `.table.zip` files. "First rows" is from the pick to two frames after the rows are on screen. A jump sets the page's scroll position and waits two frames.
 
@@ -201,7 +201,7 @@ Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cel
 The phone's table draws the rows near the screen (`packages/ui/src/internal/RowList.native.tsx`): a body as tall as the list, with those rows placed in it by their known heights. It is the web's renderer for a list too tall for a browser (`TallRows`), with the same mapping past `MAX_LIST_HEIGHT`, since a million rows is more points than a 32-bit layout places exactly.
 
 - **The screen's own scroll view stays the scroller**, so the large title, the insets and Back's return to place are as they were. It says where it is scrolled through `PageScrollContext` (`packages/ui/src/pageScroll.ts`), and the table's two panes each draw from that same offset, so they show the same rows.
-- **Not LegendList, which the web uses.** Its React Native build draws only what it scrolls itself, and a list inside the screen's scroll view has no height of its own to window by.
+- **The same list as the web's**, not LegendList: its React Native build draws only what it scrolls itself, and a list inside the screen's scroll view has no height of its own to window by.
 - **An app that gives no `PageScrollContext` draws every row**, as before: macOS and Android today.
 
 iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, opening the same `.table.zip` files in memory. These times are a Debug build's on a Mac's processor and say only that the tables open; a Release build on a phone is still to be measured.
@@ -271,7 +271,7 @@ A `.table.zip` of 256 KB or more is read in the page's worker (`apps/web/src/sql
 - **After a reload** the table is as it was left: the index and the rows file are still in the browser's storage, and nothing is built again. A rows file cut short (the page closed while it was written) isn't taken for the table. If the browser gave no storage, the index is in memory and a notice says the table goes with the page.
 - **One worker for every bundle.** The storage's pool of files belongs to the worker that opens it first; a second one would get memory only. A second tab of the app does: a large table opened in the first says there that it's open in another tab, which holds its storage, and one opened in the second is held in memory with a notice saying why.
 - **Leaving the page lets the storage go.** A browser may keep a page it has left, for Back, and its worker with it; the worker is ended as the page is left, so the app loaded afresh in that tab has the storage, and a page brought back by Back loads again. Checked in Firefox and Chrome: an edit, then a reload, another page and the app loaded afresh, and another page and Back all show the table with the edit; a second tab says the table is open in another.
-- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the rows are placed in a body of at most 8 million pixels and the page's scrolling is mapped onto the whole list (`TallRows` in `RowList.web.tsx`), as the GTK table does.
+- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the list's body is at most 8 million pixels and the page's scrolling is mapped onto the whole list (`RowList.web.tsx`), as the GTK table does.
 - **A window deep in file order** is found by position in an index of positions alone, not by skipping to it: skipping passed over every whole row before it, and a jump to the middle of a million rows took from 100 to 700 ms depending on what was cached.
 - **The search index** is made after the table is ready, in steps of 5,000 rows, each waiting until the page has asked for nothing for a quarter of a second.
 
@@ -436,6 +436,8 @@ No blank frames in any run. The peak includes the app itself, about 300 MB in th
 - Heights that can be worked out keep it fast: a view's row height (the Airtable short to extra-tall kind), group headers, totals, a height stored with a row, and close estimates from a row's text.
 - Heights only content can tell (wrapped text, images, page previews) are the risk. Mitigations: cells clip to the view's lines unless a view asks to wrap; estimate then correct for wrapped views; and the table draws through one internal component, so a view that needs measured rows at scale could use FlashList on native later without touching the rest.
 - `apps/mobile/app/bench.tsx` stays, so the choice can be re-checked as either library changes.
+
+**Since (10 Oct 2026): the table's rows are drawn by a list of its own on every platform**, and LegendList is left in the phone's bench (`apps/mobile/app/bench.tsx`) alone. The table knows every row's height, which is all its list needs: a body as tall as the rows, and the ones on screen placed in it. On native that came first, since LegendList there draws only what it scrolls itself. On the web the same list was already drawing tables too tall for a browser, and at every other size it now goes to a row in 46 to 59 ms where LegendList took 276 to 332 ms (Ctrl+Down and Ctrl+Up at 100,000 rows, the rows already read: LegendList's own move took 130 ms to begin and 150 ms to draw). Scrolling steadily is the same or better (30, 120, 400 and 2,000 pixels a frame at 10,000 and 100,000 rows: slowest frames 34 to 89 ms against 26 to 319 ms), and 22 views of the examples are the same pixel for pixel.
 
 ## SQLite in the browser (Phase 3 spike, 2 Oct 2026)
 
