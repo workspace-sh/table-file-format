@@ -27,6 +27,7 @@ export * from "./starting.ts";
 export * from "./leaving.ts";
 export * from "./appState.ts";
 
+export { createIndexHost, type ClosableDriver, type FileWriter, type IndexDatabase, type IndexHost, type IndexHostPlatform, type OpenedLarge } from "./indexHost.ts";
 export { INDEXED_FROM, buildIndexFromBytes, firstRowsInBytes, linesInBytes, rowsInBytes, rowsInChunks, rowsInAsyncChunks, addIndexedRow, canBeIndexed, indexedViewRows, makeIndexEdits, removeIndexedRow, setIndexedBody, setIndexedCell, viewQuery, type IndexEdit } from "./indexed.ts";
 export { remoteEdits, remoteViewRows, rowsServer, type RemoteViewRows, type RowsRequest, type TableFacts } from "./remoteRows.ts";
 export { buildLabel, currentBuild, type BuildInfo } from "./buildInfo.ts";
