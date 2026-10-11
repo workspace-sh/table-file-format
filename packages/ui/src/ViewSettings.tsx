@@ -272,7 +272,7 @@ export function ViewSettings({
         fill
       >
         <SettingsForm
-          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset })}
+          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset, reorderHint: SettingsForm.reorderHint })}
         />
       </SheetControl>
     );
@@ -330,8 +330,11 @@ function viewSettingsSections({
   personal,
   onSaveForEveryone,
   onReset,
+  reorderHint = "Touch and hold to reorder.",
 }: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset"> & {
   arrange: ViewSettingsProps["onChange"];
+  /** How the form's rows are reordered, said under the sorts: a phone's gesture unless the form says otherwise. */
+  reorderHint?: string;
 }): SettingsSection[] {
   const choices = viewFieldChoices(schema);
   const live = choices.live;
@@ -490,7 +493,7 @@ function viewSettingsSections({
   sections.push({
     id: "sorts",
     title: "Sort",
-    footer: orderNote(view, sorts) || (sorts.length > 1 ? "The first sort comes first. Touch and hold to reorder." : undefined),
+    footer: orderNote(view, sorts) || (sorts.length > 1 ? `The first sort comes first. ${reorderHint}` : undefined),
     onRemove: (i) => setSorts(sorts.filter((_, j) => j !== i)),
     onMove: (from, to) => setSorts(moveSort(sorts, from, to)),
     rows: [

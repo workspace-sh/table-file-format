@@ -12,12 +12,14 @@
  * usual RN layout-event channel. Instead: attach a ref to the html.div,
  * call `measureInWindow` on attach to seed the initial size, then
  * subscribe to `Dimensions` change events to catch window resizes /
- * orientation changes. That covers macOS-desktop window-drag and iOS
- * rotation. Finer-grained resize tracking (sidebar drag, internal
- * layout shifts) is deferred until we need it.
+ * orientation changes. That covers iOS rotation. A change the system
+ * doesn't announce (a Mac window dragged wider, its sidebar or inspector
+ * opening) comes from the host, which says when its content's own view
+ * was laid out again (`notifyLayoutChanged`, internal/relayout).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions } from "react-native";
+import { onLayoutChanged } from "./relayout";
 
 export interface ContainerMeasurement {
   measureProps: {
@@ -63,7 +65,12 @@ export function useContainerWidth(): ContainerMeasurement {
     const sub = Dimensions.addEventListener("change", () => {
       setTimeout(measure, 0);
     });
-    return () => sub.remove();
+    // And when the host says its content was laid out again.
+    const stop = onLayoutChanged(measure);
+    return () => {
+      sub.remove();
+      stop();
+    };
   }, [measure]);
 
   return { measureProps: { ref }, width };

@@ -14,7 +14,9 @@ export interface ViewCallbacks {
   onDeleteField: (fieldName: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField: (field: Field) => void;
+  onAddField: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
+  /** Opens the table's new-field editor each time it changes: the More menu's New Field. */
+  newFieldRequest?: number;
   onAddRow: () => string | void;
   onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
@@ -81,6 +83,7 @@ export function renderView(
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
+          newFieldRequest={cb.newFieldRequest}
           onAddRow={cb.onAddRow}
           onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}

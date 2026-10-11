@@ -24,9 +24,16 @@
   },
   "peerDependencies": {
     "@expo/ui": ">=55.0.0",
+    "@workspace.sh/table-core": "*",
+    "@workspace.sh/table-ui": "*",
     "expo": ">=55.0.0",
     "react": ">=19.0.0",
     "react-native": ">=0.81.0",
     "react-native-safe-area-context": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@expo/ui": { "optional": true },
+    "expo": { "optional": true },
+    "react-native-safe-area-context": { "optional": true }
   }
 }
