@@ -108,6 +108,9 @@ const DRAW_MARGIN = 300;
 const FRAME_MARGIN = 12;
 /** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
 const FREEZE_FROM_WIDTH = 720;
+/** How long a sideways scroll is still before its columns are brought into line. */
+const SNAP_AFTER_MS = 180;
+const SNAP_GLIDE_MS = 160;
 
 function xalignOf(align: FieldAlignment): number {
   return align === "center" ? 0.5 : align === "end" ? 1 : 0;
@@ -182,7 +185,18 @@ function rowMenu(actions: RowAction[]): MenuItem[] {
  * never seen or pressed itself: a popover needs a widget of its own to
  * open from, and the header's own click opens the field's editor.
  */
-function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; overlays: ReactNode; children: ReactNode }) {
+function HeaderMenu({
+  actions,
+  overlays,
+  menuRef,
+  children,
+}: {
+  actions: FieldAction[];
+  overlays: ReactNode;
+  /** The way to open it from the keyboard (Alt+Down on one of the column's cells). */
+  menuRef?: (button: Gtk.MenuButton | null) => void;
+  children: ReactNode;
+}) {
   const button = useRef<Gtk.MenuButton | null>(null);
   if (actions.length === 0) return <GtkOverlay overlays={overlays}>{children}</GtkOverlay>;
   const section = (ids: FieldAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: `field.${a.id}` }));
@@ -207,7 +221,10 @@ function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; o
       overlays={
         <>
           <GtkMenuButton
-            ref={button}
+            ref={(widget: Gtk.MenuButton | null) => {
+              button.current = widget;
+              menuRef?.(widget);
+            }}
             opacity={0}
             canTarget={false}
             canFocus={false}
@@ -479,6 +496,15 @@ export function TableView({
   // (The viewport is this table's own for that: `scrollToFocus` off.)
   const content = useRef<Gtk.Box | null>(null);
   // The frozen first column as it is now, for revealCell: how wide, and which cell of a row it is.
+  // A sideways scroll the table makes itself: where it put the columns, and the timer of one under way.
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placedAcross = useRef<number | null>(null);
+  const placeAcross = (across: Gtk.Adjustment, value: number) => {
+    if (snapTimer.current) clearTimeout(snapTimer.current);
+    snapTimer.current = null;
+    placedAcross.current = value;
+    across.setValue(value);
+  };
   const frozenNow = useRef<{ width: number; cellOf?: (place: number) => Gtk.Widget | undefined }>({ width: 0 });
   const revealCell = (place: number, cell: Gtk.Widget | undefined) => {
     const window = scroller.current;
@@ -503,7 +529,7 @@ export function TableView({
     let x = across.getValue();
     if (bounds.getX() - covered < x) x = Math.max(0, bounds.getX() - covered);
     else if (bounds.getX() + bounds.getWidth() > x + across.getPageSize()) x = bounds.getX() + bounds.getWidth() - across.getPageSize();
-    if (x !== across.getValue()) across.setValue(x);
+    if (x !== across.getValue()) placeAcross(across, x);
   };
   const firstBuilt = Math.min(layout.at(built.from), Math.max(0, count - 1));
   const lastBuilt = Math.min(layout.at(built.to), count - 1);
@@ -554,7 +580,53 @@ export function TableView({
     pinned.current.set(key, { widget, from });
     widget.setMarginStart(from + scrolledAcross.current);
   };
+  // Scrolled sideways, the columns come to rest with one starting at the edge (the first column's end
+  // when that stays put), so none is left cut in half there with its title out of sight. A scroll the
+  // table makes itself, to bring a cell into view, stays where it was put.
+  const snapNow = useRef<(() => void) | null>(null);
+  snapNow.current = () => {
+    const across = scroller.current?.getHadjustment();
+    if (!across || rtl) return;
+    const value = across.getValue();
+    const end = across.getUpper() - across.getPageSize();
+    // At either end there's nothing to bring into line.
+    if (value <= 0 || value >= end - 1) return;
+    let nearest = 0;
+    const nearer = (to: number) => {
+      if (Math.abs(to - value) < Math.abs(nearest - value)) nearest = to;
+    };
+    // Where the table is scrolled to with each column in turn starting at the edge. The first is there
+    // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
+    let at = FRAME_MARGIN + 1 + (freeze || !coords ? 0 : ROW_NUMBER_WIDTH);
+    for (const name of (freeze ? fields.slice(1) : fields).slice(0, -1)) {
+      at += colWidth(name);
+      if (at < end) nearer(at);
+    }
+    nearer(end);
+    if (Math.abs(nearest - value) < 1) return;
+    // A glide, not a jump: the eye follows the columns to where they rest.
+    const started = Date.now();
+    const step = () => {
+      const t = Math.min(1, (Date.now() - started) / SNAP_GLIDE_MS);
+      placeAcross(across, t < 1 ? value + (nearest - value) * (1 - (1 - t) ** 3) : nearest);
+      snapTimer.current = t < 1 ? setTimeout(step, 16) : null;
+    };
+    step();
+  };
+  useEffect(
+    () => () => {
+      if (snapTimer.current) clearTimeout(snapTimer.current);
+    },
+    [],
+  );
   const scrollAcross = (value: number) => {
+    const placed = placedAcross.current;
+    placedAcross.current = null;
+    // Anyone else's scroll ends a glide, and is brought into line once it has been still a moment.
+    if (placed === null || Math.abs(placed - value) >= 1) {
+      if (snapTimer.current) clearTimeout(snapTimer.current);
+      snapTimer.current = setTimeout(() => snapNow.current?.(), SNAP_AFTER_MS);
+    }
     // Scrolled past the frame's margin and edge, the first column rests against the window's own edge.
     const x = freeze ? Math.max(0, Math.round(value) - FRAME_MARGIN - 1) : 0;
     if (x === scrolledAcross.current) return;
@@ -705,7 +777,15 @@ export function TableView({
           rtl,
         });
         return (
-          <HeaderMenu key={name} actions={menu} overlays={columnHandle(name)}>
+          <HeaderMenu
+            key={name}
+            actions={menu}
+            overlays={columnHandle(name)}
+            menuRef={(button) => {
+              if (button) headerMenus.current.set(name, button);
+              else headerMenus.current.delete(name);
+            }}
+          >
           <Cell width={colWidth(name)} height={HEADER_HEIGHT}>
             <GtkLabel
               label={coords ? `${columnLetter(i)} ${title}` : title}
@@ -753,8 +833,9 @@ export function TableView({
   const trailing = onAddField ? <GtkBox widthRequest={ADD_FIELD_WIDTH} /> : null;
   // The group's field, as its bands say it: "CITY · MANCHESTER".
   const groupTitle = groupField !== undefined ? (fieldMap.get(groupField)?.title ?? groupField) : "";
-  // Each row's menu, to open from the keyboard.
+  // Each row's menu and each column's, to open from the keyboard.
   const rowMenus = useRef(new Map<string, Gtk.MenuButton>());
+  const headerMenus = useRef(new Map<string, Gtk.MenuButton>());
 
   const editable = !!onUpdateRow;
 
@@ -896,6 +977,13 @@ export function TableView({
     // The Menu key, or Shift+F10: the row's menu, as a right-click opens it.
     if (key && (keyval === Gdk.KEY_Menu || (keyval === Gdk.KEY_F10 && (state & Gdk.ModifierType.SHIFT_MASK) !== 0))) {
       const menu = rowMenus.current.get(key.split("\u0000")[0]!);
+      if (!menu) return false;
+      menu.popup();
+      return true;
+    }
+    // Alt+Down: the menu of the column the cell is in, as a right-click on its header opens it.
+    if (key && keyval === Gdk.KEY_Down && (state & Gdk.ModifierType.ALT_MASK) !== 0) {
+      const menu = headerMenus.current.get(key.split("\u0000")[1]!);
       if (!menu) return false;
       menu.popup();
       return true;

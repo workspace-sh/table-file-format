@@ -129,6 +129,32 @@ describe("a column's header menu on Linux", () => {
   });
 });
 
+describe("a column's header menu from the keyboard on Linux", () => {
+  it("Alt+Down on a cell opens the menu of the column it is in, and no other", async () => {
+    await openTasks();
+    let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (cell && !cell.getFocusable()) cell = cell.getParent();
+    cell!.grabFocus();
+    const title = await headerMenu("title");
+    const status = await headerMenu("status");
+    expect(title.getActive()).toBe(false);
+    await userEvent.keyboard(cell!, "{Alt>}{ArrowDown}{/Alt}");
+    await waitFor(() => expect(title.getActive()).toBe(true));
+    expect(status.getActive()).toBe(false);
+  });
+
+  it("Down alone still moves to the cell below", async () => {
+    await openTasks();
+    let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (cell && !cell.getFocusable()) cell = cell.getParent();
+    cell!.grabFocus();
+    const title = await headerMenu("title");
+    await userEvent.keyboard(cell!, "{ArrowDown}");
+    await waitFor(() => expect(cell!.hasFocus()).toBe(false));
+    expect(title.getActive()).toBe(false);
+  });
+});
+
 describe("a header's edge on Linux", () => {
   it("double-clicked, puts a dragged column back to its share; a single press changes nothing", async () => {
     await openTasks();
