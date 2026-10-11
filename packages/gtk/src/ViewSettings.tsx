@@ -188,7 +188,7 @@ export interface GtkViewSettingsProps extends ViewSettingsProps {
   revision?: number;
 }
 
-export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
+export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCancel, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
   const shown = shownColumns(view, schema);
@@ -202,7 +202,8 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
 
   return (
     <AdwDialog title="View Settings" contentWidth={560} contentHeight={640} onClosed={onClose}>
-      <AdwToolbarView topBar={<AdwHeaderBar />}>
+      {/* Changes are made as they're chosen; Cancel puts the view back as it was when this opened. */}
+      <AdwToolbarView topBar={<AdwHeaderBar start={onCancel ? <GtkButton label="Cancel" onClicked={onCancel} /> : undefined} />}>
         <AdwPreferencesPage>
           <AdwPreferencesGroup key={revision}>
             <AdwEntryRow title="Name" text={view.name} showApplyButton onApply={(row) => onChange({ name: row.getText() })} />

@@ -202,6 +202,7 @@ function TablePane({
   settingsOpen,
   onSettings,
   revision,
+  findRequest,
   navigation,
   menu,
   source,
@@ -225,15 +226,23 @@ function TablePane({
   onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
   settingsOpen: boolean;
-  onSettings: (open: boolean) => void;
+  /** Open or close the view's settings; `revert` closes them putting the view back as it was when they opened. */
+  onSettings: (open: boolean, revert?: boolean) => void;
   /** Bumped when a settings change is refused, so its controls show the view as it still is. */
   revision: number;
+  /** Bumped by Find in View: the keyboard goes to the search box. */
+  findRequest: number;
   /** Back and forward, at the header's start. */
   navigation: ReactNode;
   /** The primary menu, at the header's end. */
   menu: ReactNode;
 }) {
   const { table, view, shown, summary, breadcrumb } = derived;
+  // Find in View puts the keyboard in the search box.
+  const searchRef = useRef<Gtk.SearchEntry | null>(null);
+  useEffect(() => {
+    if (findRequest > 0) searchRef.current?.grabFocus();
+  }, [findRequest]);
   // The rows of a large table still being read, shown until its own view's rows are here.
   const showReading = view.layout === "table" && !source && !!reading;
   const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
@@ -282,7 +291,7 @@ function TablePane({
               </>
             ) : null}
           </GtkBox>
-          <GtkSearchEntry placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
+          <GtkSearchEntry ref={searchRef} placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
         {building && !showReading ? (
           <AdwStatusPage
@@ -380,6 +389,7 @@ function TablePane({
           onSaveForEveryone={viewActions.onSaveForEveryone}
           onReset={viewActions.onReset}
           onClose={() => onSettings(false)}
+          onCancel={() => onSettings(false, true)}
           revision={revision}
         />
       ) : null}
@@ -641,6 +651,8 @@ export function App({
 
   // The main menu's New Field: the table's own new-field editor, each time it's chosen.
   const [newFieldRequest, setNewFieldRequest] = useState(0);
+  // Find in View: the keyboard goes to the search box, each time it's chosen.
+  const [findRequest, setFindRequest] = useState(0);
   const callbacks = {
     ...viewCallbacks(state, dispatch, newId),
     newFieldRequest,
@@ -758,7 +770,14 @@ export function App({
     .filter((s) => s.section.length > 0);
   // A field is added to a table as it's laid out as one: with the files it's made in, after them.
   const canAddField = (derived.view.layout ?? "table") === "table" && state.sidebar.files !== true;
-  if (canAddField) menuSections[0]?.section.push({ label: "New Field…", action: "win.new-field" });
+  // The table's own commands, where the Mac has them in its menu bar: a row and a field in File, finding in Edit, the view's settings in View.
+  const section = (menu: string) => menuSections[["File", "Edit", "View", "Go"].filter((m) => commands.some((c) => c.menu === m)).indexOf(menu)]?.section;
+  const onTables = state.sidebar.files !== true && tables[state.active] !== undefined;
+  if (canAddField) section("File")?.push({ label: "New Row", action: "win.new-row" }, { label: "New Field…", action: "win.new-field" });
+  if (onTables) {
+    section("Edit")?.push({ label: "Find in View…", action: "win.find" });
+    section("View")?.push({ label: state.settingsOpen ? "Hide View Settings" : "Show View Settings", action: "win.view-settings" });
+  }
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
   // The app's own: this viewer's display settings, and what build this is.
   menuSections.push({ section: [{ label: "Display…", action: "win.display" }, { label: "About Tables", action: "win.about" }] });
@@ -789,7 +808,10 @@ export function App({
     <AdwApplication
       actionAccels={[
         ...commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] })),
-        { detailedActionName: "win.new-field", accels: ["<Control><Alt>n"] },
+        { detailedActionName: "win.new-field", accels: ["<Control><Shift><Alt>n"] },
+        { detailedActionName: "win.new-row", accels: ["<Control><Shift>n"] },
+        { detailedActionName: "win.find", accels: ["<Control>f"] },
+        { detailedActionName: "win.view-settings", accels: ["<Control><Alt>v"] },
       ]}
     >
       <AdwApplicationWindow
@@ -825,6 +847,9 @@ export function App({
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
+          <GSimpleAction key="new-row" name="new-row" enabled={canAddField} onActivate={() => void callbacks.onAddRow()} />,
+          <GSimpleAction key="find" name="find" enabled={onTables} onActivate={() => setFindRequest((n) => n + 1)} />,
+          <GSimpleAction key="view-settings" name="view-settings" enabled={onTables} onActivate={() => dispatch({ type: "settings", open: !state.settingsOpen })} />,
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
           <GSimpleAction key="display" name="display" onActivate={() => setDisplayOpen(true)} />,
           <GSimpleAction key="about" name="about" onActivate={() => setAboutOpen(true)} />,
@@ -900,7 +925,8 @@ export function App({
                 viewActions={viewActions}
                 onSearch={(text) => dispatch({ type: "search", text })}
                 settingsOpen={state.settingsOpen}
-                onSettings={(open) => dispatch({ type: "settings", open })}
+                onSettings={(open, revert) => dispatch({ type: "settings", open, ...(revert ? { revert } : {}) })}
+                findRequest={findRequest}
                 revision={refused}
                 navigation={navigation}
                 menu={primaryMenu}
