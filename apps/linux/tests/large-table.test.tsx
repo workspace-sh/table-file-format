@@ -103,6 +103,27 @@ describe("a large table on Linux", () => {
     expect(screen.queryAllByDisplayValue("Zed")).toHaveLength(0);
   });
 
+  it("Back puts the table where it was scrolled to", async () => {
+    await openTasks();
+    const first = await cellOf("Land .table extension");
+    const adjustment = scrollerOf(first).getVadjustment();
+    await waitFor(() => expect(adjustment.getUpper()).toBeGreaterThanOrEqual((ROWS + 8) * 45));
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    // Said once the scrolling rests.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    // To another table (the sidebar has the file's name and its table's: the table is the later one).
+    await userEvent.click((await screen.findAllByText("Projects")).at(-1)!);
+    await waitFor(() => expect(screen.queryAllByText("Big 1000")).toHaveLength(0));
+    const back = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })) as Gtk.Button;
+    await waitFor(() => expect(back.getSensitive()).toBe(true));
+    await userEvent.click(back);
+    // The view is shown afresh, and scrolled to where it was.
+    const again = scrollerOf((await screen.findAllByText("Big 1000"))[0]!).getVadjustment();
+    await waitFor(() => expect(Math.abs(again.getValue() - 45_000)).toBeLessThanOrEqual(2));
+    expect(screen.queryAllByText("Land .table extension")).toHaveLength(0);
+  });
+
   it("Ctrl+Down goes to the last row, though it wasn't built", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
