@@ -1,6 +1,6 @@
 import * as Gtk from "@gtkx/gi/gtk";
-import { cleanup, fireEvent, getController, render, screen, waitFor } from "@gtkx/testing";
-import { loadLibrary } from "@workspace.sh/table-app/node";
+import { cleanup, fireEvent, getController, render, screen, userEvent, waitFor } from "@gtkx/testing";
+import { jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +20,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await cleanup();
+  Gtk.Widget.setDefaultDirection(Gtk.TextDirection.LTR);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -128,5 +129,111 @@ describe("a wide table's first column on Linux", () => {
     expect(across.getValue()).toBe(second);
     // The first column went with the rest.
     expect(await header("title")).toBeLessThan(0);
+  });
+});
+
+describe("a cell the keyboard moves to on Linux", () => {
+  it("is brought whole into the window: out from under the first column, and in from past the window's end", async () => {
+    const library = await loadLibrary([join(dir, "projects.table")]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v4" />);
+    const title = (await screen.findAllByText("Workspace v1"))[0]!;
+    const scroller = scrollerOf(title);
+    const across = scroller.getHadjustment();
+    await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
+    const header = async (name: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(name);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      const start = startIn(at!, scroller);
+      return { start, end: start + at!.getWidth() };
+    };
+    let first: Gtk.Widget | null = title;
+    while (first && !first.getFocusable()) first = first.getParent();
+    first!.grabFocus();
+    // End: the row's last cell, which was past the window's end. All of it is in the window now.
+    await userEvent.keyboard(first!, "{End}");
+    await waitFor(async () => expect((await header("Budget / month")).end).toBeLessThanOrEqual(across.getPageSize()));
+    expect((await header("Budget / month")).end).toBe(across.getPageSize());
+    // Back to the first column, then one along: the second column, which is under the first by now.
+    const focused = () => (scroller.getRoot() as unknown as Gtk.Window).getFocus()!;
+    await userEvent.keyboard(focused(), "{Home}");
+    await waitFor(() => expect(focused()).toBe(first));
+    expect((await header("status")).start).toBeLessThan((await header("title")).end);
+    await userEvent.keyboard(first!, "{ArrowRight}");
+    await waitFor(async () => expect((await header("status")).start).toBe((await header("title")).end));
+  });
+});
+
+// Right to left the table starts at the window's right: the first column stays there,
+// and GTK counts the scroll from the far end.
+describe("a wide table's first column on Linux, right to left", () => {
+  async function openArabic() {
+    const settings = jsonFileStore(join(dir, "settings.json"));
+    settings.setItem("table-demo:display", JSON.stringify({ locale: "ar-EG" }));
+    const library = await loadLibrary([join(dir, "projects.table")]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v4" settings={settings} />);
+    const title = (await screen.findAllByText("Workspace v1"))[0]!;
+    const scroller = scrollerOf(title);
+    const across = scroller.getHadjustment();
+    await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
+    // It opens at its start: the right.
+    await waitFor(() => expect(across.getValue()).toBe(across.getUpper() - across.getPageSize()));
+    /** A column's header: where it starts (its right edge) and ends (its left), across the window. */
+    const header = async (name: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(name);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      const end = startIn(at!, scroller);
+      return { start: end + at!.getWidth(), end };
+    };
+    return { title, scroller, across, header, start: across.getUpper() - across.getPageSize() };
+  }
+
+  it("stays at the right while the other columns scroll under it", async () => {
+    const { across, header, start } = await openArabic();
+    const page = across.getPageSize();
+    const before = { title: await header("title"), owner: await header("owner") };
+    // The frame's margin and line are between it and the window's edge.
+    expect(page - before.title.start).toBe(13);
+    across.setValue(start - 200);
+    await waitFor(async () => expect((await header("owner")).start).toBeGreaterThan(before.owner.start + 150));
+    // The first column has moved only up to the window's edge.
+    expect((await header("title")).start).toBe(page);
+    across.setValue(0);
+    await waitFor(async () => expect((await header("title")).start).toBe(page));
+    // The last column has come into the window, past the first.
+    expect((await header("Budget / month")).end).toBeGreaterThanOrEqual(0);
+  });
+
+  it("a sideways scroll comes to rest with a column starting where the first column ends", async () => {
+    const { across, header, start } = await openArabic();
+    across.setValue(start - 150);
+    await waitFor(async () => expect([(await header("status")).start, (await header("owner")).start, (await header("budget")).start]).toContain((await header("title")).end), {
+      timeout: 3000,
+    });
+    const rested = across.getValue();
+    expect(rested).not.toBe(start - 150);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(across.getValue()).toBe(rested);
+    // A little way from the start goes back to it.
+    across.setValue(start - 20);
+    await waitFor(() => expect(across.getValue()).toBe(start), { timeout: 3000 });
+  });
+
+  it("the keyboard moving to a cell under the first column brings it out from under", async () => {
+    const { title, across, header } = await openArabic();
+    // Scrolled to the far end: the second and third columns are under the first, or past it.
+    across.setValue(0);
+    await waitFor(async () => expect((await header("owner")).end).toBeGreaterThanOrEqual((await header("title")).end));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const focusable = (label: Gtk.Widget) => {
+      let cell: Gtk.Widget | null = label;
+      while (cell && !cell.getFocusable()) cell = cell.getParent();
+      return cell!;
+    };
+    // From the first column, one step towards the end is the second column's cell.
+    const first = focusable(title);
+    first.grabFocus();
+    await userEvent.keyboard(first, "{ArrowLeft}");
+    await waitFor(async () => expect((await header("status")).start).toBeLessThanOrEqual((await header("title")).end), { timeout: 3000 });
+    expect((await header("status")).start).toBe((await header("title")).end);
   });
 });
