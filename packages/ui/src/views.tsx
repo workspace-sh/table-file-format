@@ -24,6 +24,7 @@ import {
   ADD_FIELD_WIDTH,
   MIN_RESIZED_COLUMN_WIDTH,
   ROW_NUMBER_WIDTH,
+  SQUEEZED_CELL_WIDTH,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
@@ -3018,7 +3019,7 @@ export function TableView({
   const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
   // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
   const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
-  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW);
+  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
 
   // A column's resize handle is on its end edge; in a right-to-left
   // layout that's the left, so dragging leftwards widens it.
