@@ -75,6 +75,43 @@ describe("fields on Linux", () => {
     });
   });
 
+  it("a choice that rows hold is removed only after asking, and comes out of those rows", async () => {
+    await openTasks();
+    const held = (await parseTable(join(bundle, "tables", "tasks"))).rows.filter((r) => r.status === "done").length;
+    expect(held).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove done" }));
+    // Asked first: the file still has it.
+    expect((await schemaOnDisk()).fields.find((f) => f.name === "status")?.constraints?.enum).toContain("done");
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove" }));
+    await waitFor(async () => {
+      const table = await parseTable(join(bundle, "tables", "tasks"));
+      expect(table.schema.fields.find((f) => f.name === "status")?.constraints?.enum).not.toContain("done");
+      expect(table.rows.some((r) => r.status === "done")).toBe(false);
+    });
+  });
+
+  it("Cancel puts the field back as it was when its editor opened", async () => {
+    await openTasks();
+    const before = await schemaOnDisk();
+    await userEvent.click(await screen.findByText("status"));
+    const title = await entryRow("Title");
+    await userEvent.type(title, "State");
+    title.emit("apply");
+    await waitFor(async () => expect((await schemaOnDisk()).fields.find((f) => f.name === "status")?.title).toBe("State"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Cancel" }));
+    await waitFor(async () => expect(await schemaOnDisk()).toEqual(before));
+  });
+
+  it("Delete Field in the editor asks first, then removes the field", async () => {
+    await openTasks();
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Delete Field" }));
+    expect((await schemaOnDisk()).fields.some((f) => f.name === "status")).toBe(true);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Delete" }));
+    await waitFor(async () => expect((await schemaOnDisk()).fields.some((f) => f.name === "status")).toBe(false));
+  });
+
   it("a field added with a name gets a key from it and is saved", async () => {
     await openTasks();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
