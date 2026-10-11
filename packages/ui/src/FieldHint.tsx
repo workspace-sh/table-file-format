@@ -22,6 +22,7 @@ export function Hinted({
   style,
   children,
   onContextMenu,
+  box,
 }: {
   hint: ReactNode;
   /**
@@ -32,6 +33,13 @@ export function Hinted({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   style?: any;
   children: ReactNode;
+  /**
+   * A box rather than a span. On native React Strict DOM's span is always a
+   * run of text, whatever its display, so what's inside it is laid out
+   * inline and can't fill it: a column's header, whose button must span the
+   * whole cell for its title to sit at the cell's end, needs the box.
+   */
+  box?: boolean;
   /** A right-click on what it wraps: RowActions' menu, for a column's header. */
   onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
 }) {
@@ -40,10 +48,17 @@ export function Hinted({
   // alignment it had without the wrapper.
   return (
     <Tooltip text={typeof hint === "string" ? hint : text}>
-      <html.span {...props} onContextMenu={onContextMenu} style={[styles.hinted, style]}>
-        {children}
-        {element}
-      </html.span>
+      {box ? (
+        <html.div {...props} onContextMenu={onContextMenu} style={[styles.hinted, style]}>
+          {children}
+          {element}
+        </html.div>
+      ) : (
+        <html.span {...props} onContextMenu={onContextMenu} style={[styles.hinted, style]}>
+          {children}
+          {element}
+        </html.span>
+      )}
     </Tooltip>
   );
 }
