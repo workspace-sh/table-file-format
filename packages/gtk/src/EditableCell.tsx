@@ -8,6 +8,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import {
   GtkBox,
   GtkButton,
+  GtkCalendar,
   GtkCheckButton,
   GtkDropDown,
   GtkEntry,
@@ -15,6 +16,8 @@ import {
   GtkEventControllerKey,
   GtkGestureClick,
   GtkLabel,
+  GtkMenuButton,
+  GtkPopover,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
@@ -91,6 +94,12 @@ function ChoiceEditor({
   );
 }
 
+/** The day a draft names, as a calendar takes it (its month from 0); nothing for a draft that names none. */
+function calendarDay(draft: string): { year?: number; month?: number; day?: number } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(draft);
+  return m ? { year: Number(m[1]), month: Number(m[2]) - 1, day: Number(m[3]) } : {};
+}
+
 export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
@@ -106,6 +115,36 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const entry = useRef<Gtk.Entry | null>(null);
   // Typed over what was there: the cursor goes after it, not selecting it.
   const typedOver = useRef(false);
+  // A date is also picked from a calendar. While that is open the entry losing
+  // the keyboard isn't the edit ending; the day picked goes into the entry,
+  // and closing the calendar saves it.
+  const dated = field?.type === "date" || field?.type === "datetime";
+  const picking = useRef(false);
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+  const calendarButton = useRef<Gtk.MenuButton | null>(null);
+  // The keyboard leaving a date's entry isn't the edit ending when it has only gone to the
+  // calendar's button, or the calendar is open: looked at once the move is over.
+  const leftSoon = () =>
+    setTimeout(() => {
+      if (picking.current || closed.current) return;
+      const within = (widget: Gtk.Widget | null, of: Gtk.Widget | null) => {
+        for (let w = widget; w && of; w = w.getParent()) if (w === of) return true;
+        return false;
+      };
+      const focus = (entry.current?.getRoot() as Gtk.Window | null | undefined)?.getFocus() ?? null;
+      if (within(focus, entry.current) || within(focus, calendarButton.current)) return;
+      commit(entry.current?.getText() ?? draftNow.current, "blur");
+    }, 0);
+  const pickDay = (calendar: Gtk.Calendar) => {
+    const day = calendar.getDate();
+    const two = (n: number) => String(n).padStart(2, "0");
+    const date = `${String(day.getYear()).padStart(4, "0")}-${two(day.getMonth())}-${two(day.getDayOfMonth())}`;
+    // A date and time keeps its time; one with none yet starts the day.
+    const time = /T(.+)$/.exec(draftNow.current)?.[1];
+    setDraft(field?.type === "datetime" ? `${date}T${time ?? "00:00"}` : date);
+    setProblem(null);
+  };
 
   const start = (text?: string) => {
     if (kind === "readonly") return;
@@ -282,10 +321,36 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
                 return false;
               }}
             />
-            <GtkEventControllerFocus onLeave={() => commit(entry.current?.getText() ?? draft, "blur")} />
+            <GtkEventControllerFocus onLeave={() => (dated ? leftSoon() : commit(entry.current?.getText() ?? draft, "blur"))} />
           </>
         }
       />
+      {dated ? (
+        <GtkMenuButton
+          ref={calendarButton}
+          controllers={<GtkEventControllerFocus onLeave={leftSoon} />}
+          iconName="x-office-calendar-symbolic"
+          cssClasses={["flat", "circular"]}
+          valign={Gtk.Align.CENTER}
+          tooltipText="Choose a Date"
+          onNotifyActive={(active) => {
+            if (active) picking.current = true;
+          }}
+          popover={
+            <GtkPopover
+              onClosed={() => {
+                if (!picking.current) return;
+                picking.current = false;
+                // The calendar closed: what was picked is saved, or the entry has the keyboard again to put it right.
+                if (!commit(draftNow.current, "key")) entry.current?.grabFocus();
+                else onEditEnd?.("escape");
+              }}
+            >
+              <GtkCalendar {...calendarDay(draft)} onDaySelected={pickDay} />
+            </GtkPopover>
+          }
+        />
+      ) : null}
     </GtkBox>
   );
 }
