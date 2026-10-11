@@ -21,6 +21,7 @@ export function Hinted({
   text,
   style,
   children,
+  onContextMenu,
 }: {
   hint: ReactNode;
   /**
@@ -31,13 +32,15 @@ export function Hinted({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   style?: any;
   children: ReactNode;
+  /** A right-click on what it wraps: RowActions' menu, for a column's header. */
+  onContextMenu?: (e: { preventDefault: () => void; clientX: number; clientY: number }) => void;
 }) {
   const { props, element } = useHoverHint(hint);
   // Centres what it wraps, so a badge or button inside a row keeps the
   // alignment it had without the wrapper.
   return (
     <Tooltip text={typeof hint === "string" ? hint : text}>
-      <html.span {...props} style={[styles.hinted, style]}>
+      <html.span {...props} onContextMenu={onContextMenu} style={[styles.hinted, style]}>
         {children}
         {element}
       </html.span>

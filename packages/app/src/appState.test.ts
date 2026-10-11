@@ -239,6 +239,18 @@ test("an edit that changes nothing marks nothing", () => {
   assert.equal(tableApp(s, { type: "addChoice", name: "nope", value: "x" }), s);
 });
 
+test("fields: inserted beside a column, on either side", () => {
+  const names = (s: ReturnType<typeof start>) => s.tables["projects/projects"]!.schema.fields.map((f) => f.name);
+  const first = names(start())[0]!;
+  let s = run(start(), { type: "addField", field: { name: "left", type: "string" }, place: { name: first, side: "before" } });
+  assert.deepEqual(names(s).slice(0, 2), ["left", first]);
+  s = run(s, { type: "addField", field: { name: "right", type: "string" }, place: { name: first, side: "after" } });
+  assert.deepEqual(names(s).slice(0, 3), ["left", first, "right"]);
+  // A place that's gone puts it at the end.
+  s = run(s, { type: "addField", field: { name: "end", type: "string" }, place: { name: "gone", side: "before" } });
+  assert.equal(names(s).at(-1), "end");
+});
+
 test("fields: added to the view on screen, patched and moved", () => {
   let s = run(start(), { type: "addField", field: { name: "extra", type: "string" } });
   assert.equal(s.tables["projects/projects"]!.schema.fields.at(-1)!.name, "extra");
