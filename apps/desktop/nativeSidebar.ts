@@ -14,6 +14,9 @@ interface TableSidebarModule {
   setFormulaEditor(json: string): void;
   insertInFormula(text: string, cursorBack: number): void;
   driveFormulaEditor(what: string, text: string): void;
+  setAppSettings(json: string): void;
+  showAppSettings(shown: boolean): void;
+  sendAppSettings(json: string): void;
   sendSettingsForm(json: string): void;
   pressInspectorCell(action: string): void;
   pick(tag: string): void;
@@ -43,7 +46,9 @@ export type SidebarEvent =
   /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
   | SettingsFormEvent
   /** Something typed or pressed in the inspector's formula editor (MacFormulaEditor.ts reads these). */
-  | FormulaEditorEvent;
+  | FormulaEditorEvent
+  /** A choice made in the app's Settings window: the row's id and its new value. */
+  | { type: "appSettings"; what: "change"; id: string; value: string };
 
 export interface SidebarShown {
   tree: SidebarBundle[];
@@ -224,4 +229,41 @@ export function setInspectorCell(cell: InspectorCell | null): void {
 /** Development only: press one of the cell inspector's buttons. */
 export function pressInspectorCell(action: "edit" | "settings"): void {
   TableSidebar?.pressInspectorCell(action);
+}
+
+/** One of the app's own settings: a choice from a list, with what it means under it. */
+export interface AppSetting {
+  id: string;
+  name: string;
+  note: string;
+  value: string;
+  options: { value: string; label: string }[];
+}
+
+/** The app's settings, for its Settings window (⌘,): each a section of the same form the inspector draws. */
+export function setAppSettings(settings: AppSetting[]): void {
+  TableSidebar?.setAppSettings(
+    JSON.stringify({
+      key: "app-settings",
+      title: "",
+      removeLabel: "",
+      moveUpLabel: "",
+      moveDownLabel: "",
+      sections: settings.map((s) => ({
+        id: s.id,
+        footer: s.note,
+        removable: false,
+        movable: false,
+        rows: [{ kind: "choice", id: s.id, label: s.name, value: s.value, options: s.options }],
+      })),
+    }),
+  );
+}
+
+/** Development only: open or close the Settings window; and what a control in it would send. */
+export function showAppSettings(shown: boolean): void {
+  TableSidebar?.showAppSettings(shown);
+}
+export function sendAppSettings(event: object): void {
+  TableSidebar?.sendAppSettings(JSON.stringify(event));
 }
