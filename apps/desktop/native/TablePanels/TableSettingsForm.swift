@@ -171,8 +171,10 @@ struct TableSettingsFormView: View {
       VStack(spacing: 0) {
         Form {
           // What the settings are of, at the head of the form and scrolling with it.
-          Section {} header: {
-            Text(data.title).font(.headline).foregroundStyle(.primary).textCase(nil)
+          if !data.title.isEmpty {
+            Section {} header: {
+              Text(data.title).font(.headline).foregroundStyle(.primary).textCase(nil)
+            }
           }
           ForEach(data.sections) { section in
             Section {
@@ -231,19 +233,21 @@ struct TableSettingsFormView: View {
         .clipped()
 
         // Settings change as they're made; Cancel puts back what changed since they opened.
-        HStack {
-          Spacer()
-          if let cancel = data.cancel {
-            Button(cancel) { model.send(["what": "cancel"]) }.keyboardShortcut(.cancelAction)
+        if data.cancel != nil || data.confirm != nil {
+          HStack {
+            Spacer()
+            if let cancel = data.cancel {
+              Button(cancel) { model.send(["what": "cancel"]) }.keyboardShortcut(.cancelAction)
+            }
+            if let confirm = data.confirm {
+              Button(confirm) { model.send(["what": "confirm"]) }
+                .keyboardShortcut(.defaultAction)
+                .disabled(data.confirmDisabled == true)
+            }
           }
-          if let confirm = data.confirm {
-            Button(confirm) { model.send(["what": "confirm"]) }
-              .keyboardShortcut(.defaultAction)
-              .disabled(data.confirmDisabled == true)
-          }
+          .padding(.horizontal, 20)
+          .padding(.vertical, 12)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
       }
       // A different form starts afresh.
       .id(data.key)
