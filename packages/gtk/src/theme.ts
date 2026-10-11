@@ -15,32 +15,63 @@ export function useDark(): boolean {
 const RULE = "alpha(currentColor, 0.1)";
 
 export const styles = {
-  cell: css({ padding: "0 10px" }),
-  headerCell: css({ padding: "0 10px", fontWeight: "600", opacity: 0.75 }),
-  headerRow: css({ borderBottom: `1px solid ${RULE}`, minHeight: "36px" }),
+  /** The table: a framed card, its rules and sizes the web's and the Mac's (table-ui's views.tsx). */
+  tableFrame: css({ border: `1px solid ${RULE}`, borderRadius: "8px" }),
+  cell: css({ padding: "0 16px", fontSize: "13px" }),
+  /** A column's title: small capitals, as every platform's table has them. */
+  headerCell: css({ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.65 }),
+  headerRow: css({ borderBottom: `1px solid ${RULE}`, minHeight: "36px", backgroundColor: "alpha(currentColor, 0.04)" }),
   bodyRow: css({ borderBottom: `1px solid ${RULE}` }),
-  /**
-   * A row with its menu button after it. The button isn't part of the table:
-   * it is faint until the row is pointed at, or the keyboard or its open menu is on it.
-   * (The button a menu button draws is its child, and that is what says it's pressed.)
-   */
-  rowWithMenu: css({ "&:hover menubutton > button": { opacity: 1 } }),
-  rowMenu: css({ "& > button": { opacity: 0.3 }, "& > button:checked, & > button:focus-visible": { opacity: 1 } }),
-  /** A place where something could be added (a field, a row): faint at rest, full strength when pointed at or focused. */
+  /** A place where something could be added (a field): faint at rest, full strength when pointed at or focused. */
   addPlace: css({ opacity: 0.5, "&:hover, &:focus-visible": { opacity: 1 } }),
-  /** The new-row band: square, so its fill when pointed at is the band itself. */
-  addRowBand: css({ borderRadius: "0", minHeight: "36px", padding: "0 10px" }),
+  /**
+   * "+ New row": open space under the last row, not a row. Its words are
+   * faint until it's pointed at, when the band fills.
+   */
+  addRowBand: css({
+    borderRadius: "0",
+    minHeight: "36px",
+    padding: "0 16px",
+    fontSize: "13px",
+    fontWeight: "400",
+    "& > label": { opacity: 0.45 },
+    "&:hover > label, &:focus-visible > label": { opacity: 0.8 },
+  }),
+  /** A row's page, marked beside its title: the same small badge everywhere. */
+  pageBadge: css({
+    minHeight: "0",
+    minWidth: "0",
+    padding: "1px 6px",
+    borderRadius: "4px",
+    fontSize: "9px",
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    backgroundColor: "alpha(@accent_bg_color, 0.2)",
+    color: "@accent_color",
+  }),
   /** A header's end edge, where its column is dragged wider or narrower: a line when pointed at. */
   columnHandle: css({ "&:hover": { backgroundColor: "alpha(@accent_bg_color, 0.55)" } }),
   /** A column's end edge, as the web grid rules its cells. */
   columnRule: css({ borderRight: `1px solid ${RULE}` }),
-  groupRow: css({ backgroundColor: "alpha(currentColor, 0.04)", borderBottom: `1px solid ${RULE}`, padding: "6px 10px", fontWeight: "600" }),
+  /** A group's band: "CITY · MANCHESTER" in small capitals, and how many rows it has. */
+  groupRow: css({ backgroundColor: "alpha(currentColor, 0.04)", borderBottom: `1px solid ${RULE}`, padding: "0 16px" }),
+  groupLabel: css({ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.65 }),
+  groupCount: css({ fontSize: "11px", opacity: 0.5 }),
   totalsRow: css({ borderTop: `1px solid ${RULE}`, minHeight: "36px" }),
-  totalLabel: css({ fontSize: "smaller", opacity: 0.6, marginRight: "6px" }),
+  /** What a total is ("SUM"), in the small capitals every platform's footer has. */
+  totalLabel: css({ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
   rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "7px", padding: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
-  rowNumber: css({ opacity: 0.55, fontFeatureSettings: '"tnum"', fontSize: "smaller" }),
+  /** A sheet's row numbers: a ruled gutter of their own. */
+  rowNumber: css({
+    color: "alpha(currentColor, 0.55)",
+    fontFeatureSettings: '"tnum"',
+    fontSize: "11px",
+    borderRight: `1px solid ${RULE}`,
+    backgroundColor: "alpha(currentColor, 0.02)",
+  }),
   /** Numbers and dates line up by digit. */
   tabular: css({ fontFeatureSettings: '"tnum"' }),
   empty: css({ opacity: 0.4 }),
