@@ -4,7 +4,7 @@
  */
 import { useEffect, type ReactElement } from "react";
 import { html, css } from "react-strict-dom";
-import type { RowAction } from "../controlSlots";
+import type { MenuAction } from "../controlSlots";
 import { Portal } from "./Portal";
 
 /**
@@ -16,7 +16,7 @@ function hasWindowSize(): boolean {
   return typeof window !== "undefined" && typeof window.innerWidth === "number";
 }
 
-export function ActionsMenu({ actions, at, onClose }: { actions: RowAction[]; at: { x: number; y: number }; onClose: () => void }): ReactElement {
+export function ActionsMenu({ actions, at, onClose }: { actions: MenuAction[]; at: { x: number; y: number }; onClose: () => void }): ReactElement {
   useEffect(() => {
     // React Native has a `window` (its global), but no addEventListener.
     if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;

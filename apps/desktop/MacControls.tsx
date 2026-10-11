@@ -8,7 +8,7 @@ import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef
 import { Pressable, type View } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { DateInputProps, DateInputSlot, PlatformControls, RowAction, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
+import type { DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
 import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./menu";
 
 /** No choice: an id of its own, as a menu item needs one. */
@@ -99,12 +99,12 @@ export const MacDateInput: DateInputSlot = Object.assign(DateInputView, { availa
 
 // What has a menu, by the id its element carries: a right-click arrives
 // from the window (onContextMenu) with the id of what was clicked.
-const menus = new Map<string, { actions: RowAction[] }>();
+const menus = new Map<string, { actions: MenuAction[] }>();
 
 /** A row's actions, in the system's menu at the pointer on a right-click (or Control-click). */
 function RowActionsView({ actions, children }: RowActionsProps): ReactElement {
   const id = `menu-${useId()}`;
-  const row = useRef<{ actions: RowAction[] }>({ actions });
+  const row = useRef<{ actions: MenuAction[] }>({ actions });
   row.current.actions = actions;
   useEffect(() => {
     menus.set(id, row.current);

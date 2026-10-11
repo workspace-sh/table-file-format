@@ -6,19 +6,9 @@
 
 import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
 
-/** Something that can be done to a row as a whole, from its row menu. */
-export interface RowAction {
-  id:
-    | "open-page"
-    | "add-page"
-    | "insert-above"
-    | "insert-below"
-    | "delete"
-    // A column's (columnActions).
-    | "insert-left"
-    | "insert-right"
-    | "reset-width"
-    | "delete-field";
+/** An entry of a menu the platform draws: a row's, or a column's. */
+interface Action<Id extends string> {
+  id: Id;
   /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
@@ -28,6 +18,15 @@ export interface RowAction {
   onSelect: () => void;
 }
 
+/** Something that can be done to a row as a whole, from its row menu. */
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "delete">;
+
+/** Something that can be done to a column, from its header's menu (columnActions). */
+export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
+
+/** Either: what a menu drawn by the RowActions slot is made of. */
+export type MenuAction = RowAction | FieldAction;
+
 /**
  * The RowActions slot: wraps a row (`children`, one element) and offers
  * its `actions` the platform's way. iOS: touch and hold for a context
@@ -36,7 +35,7 @@ export interface RowAction {
  * as it is.
  */
 export interface RowActionsProps {
-  actions: RowAction[];
+  actions: MenuAction[];
   children: ReactElement;
   /** The row's title as shown, for a menu that names the row (the defaults lift or point at the row itself). */
   title?: string;
@@ -302,8 +301,8 @@ export function columnActions(
     onDeleteField?: (name: string) => void;
     rtl?: boolean;
   },
-): RowAction[] {
-  const actions: RowAction[] = [];
+): FieldAction[] {
+  const actions: FieldAction[] = [];
   const { onInsertField, onResetWidth, onDeleteField, rtl } = can;
   if (onInsertField) {
     actions.push({

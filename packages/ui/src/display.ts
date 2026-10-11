@@ -297,6 +297,8 @@ export function columnWidths(
   setWidths: Record<string, number | undefined>,
   containerWidth: number,
   chrome: number,
+  /** How narrow flexible columns may be made to keep the table whole; the comfortable width when not given (no squeezing). */
+  squeezeTo: number = MIN_CELL_WIDTH,
 ): (name: string) => number {
   const fixedWidth = (name: string) => {
     const w = setWidths[name];
@@ -307,7 +309,7 @@ export function columnWidths(
   const available = Math.max(0, containerWidth - chrome - fixedTotal);
   const rawWidth = flexible.length > 0 && containerWidth > 0 ? Math.floor(available / flexible.length) : MIN_CELL_WIDTH;
   // Whole in its space when it can be, down to the squeezed width; past that, comfortable and scrolling.
-  const fills = rawWidth >= SQUEEZED_CELL_WIDTH;
+  const fills = rawWidth >= Math.min(squeezeTo, MIN_CELL_WIDTH);
   const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
   const remainder = fills ? available - cellW * flexible.length : 0;
   return (name: string) => {
