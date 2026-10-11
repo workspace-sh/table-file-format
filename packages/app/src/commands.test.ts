@@ -10,6 +10,8 @@ test("every command once, in menu order, with no two sharing a key", () => {
     "open-folder",
     "open-zip",
     "export-zip",
+    "undo",
+    "redo",
     "copy-link",
     "tables-mode",
     "files-mode",
@@ -44,6 +46,25 @@ test("back and forward are there only when history has somewhere to go, with GNO
   assert.deepEqual(at(false, true)["go-forward"], [true, "]", "<Alt>Right"]);
   const copy = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "copy-link")!;
   assert.deepEqual([copy.menu, copy.label, copy.key, copy.option], ["Edit", "Copy Link to View", "c", true]);
+});
+
+test("undo and redo are in Edit on Z, there only when the table has a step to take", () => {
+  const at = (canUndo: boolean, canRedo: boolean) =>
+    Object.fromEntries(
+      appCommands({ sidebarCollapsed: false, filesMode: false, canUndo, canRedo })
+        .filter((c) => c.id === "undo" || c.id === "redo")
+        .map((c) => [c.id, [c.menu, c.enabled, gtkAccelOf(c), shortcutText(c, "mac")]]),
+    );
+  assert.deepEqual(at(true, false), { undo: ["Edit", true, "<Control>z", "⌘Z"], redo: ["Edit", false, "<Control><Shift>z", "⇧⌘Z"] });
+  assert.deepEqual(at(false, true).redo, ["Edit", true, "<Control><Shift>z", "⇧⌘Z"]);
+  assert.equal(appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "undo")!.enabled, false);
+  // Named for what they'd act on, when the state says.
+  const labels = (undoName: string | null, redoName: string | null) =>
+    appCommands({ sidebarCollapsed: false, filesMode: false, undoName, redoName })
+      .filter((c) => c.id === "undo" || c.id === "redo")
+      .map((c) => c.label);
+  assert.deepEqual(labels(null, null), ["Undo", "Redo"]);
+  assert.deepEqual(labels("Delete Row", "Edit Title"), ["Undo Delete Row", "Redo Edit Title"]);
 });
 
 test("GTK accelerators: Control with the key, GNOME's own where it differs", () => {

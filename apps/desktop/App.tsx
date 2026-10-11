@@ -22,6 +22,8 @@ import {
   type DisplaySettings,
   PageGutter,
   notifyLayoutChanged,
+  PageReveal,
+  type PageRevealRect,
   PlatformControlsProvider,
   PortalHost,
   TableView,
@@ -33,7 +35,7 @@ import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
 import { watchRowMenus } from "./MacControls";
-import { dismissSettingsForm, onSettingsFormEvent, settingsFormJson } from "./MacSettings";
+import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
 import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
 import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendSettingsForm, setInspectorCell, setInspectorShown, setSidebar, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
@@ -91,7 +93,7 @@ import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { chooseMenuItem, copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setUndo, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -713,6 +715,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }, 150);
   };
   useEffect(() => () => void (placeRest.current && clearTimeout(placeRest.current)), []);
+  // A rect the view wants on screen (the cell the keyboard moved to): the
+  // least scroll that brings it clear of the toolbar, which covers the top
+  // of this scroll by as much as the scroll rests above zero.
+  const pageReveal = useCallback((rect: PageRevealRect) => {
+    const view = scroller.current as unknown as { measure?: (cb: (...a: number[]) => void) => void } | null;
+    view?.measure?.((_x, _y, _w, height, _px, pageY) => {
+      const margin = 12;
+      const top = pageY - restY.current + margin;
+      const bottom = pageY + height - margin;
+      const dy = rect.top < top ? rect.top - top : rect.top + rect.height > bottom ? rect.top + rect.height - bottom : 0;
+      if (dy !== 0) scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + dy), animated: false });
+    });
+  }, []);
   // A right-click on a row shows its menu (MacControls.tsx).
   useEffect(() => watchRowMenus(), []);
   const restoringN = state.restoring?.n;
@@ -834,6 +849,17 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   useEffect(() => {
     if (page !== null || editingFormula || settingsShown) setInspectorShown(true);
   }, [page, editingFormula, settingsShown]);
+  // Escape backs out one level, the innermost first, and never leaves the
+  // view: a field's settings (as Cancel), a formula being edited, a row's
+  // page, the view's settings, then the selected cell.
+  const escape = useRef(() => {});
+  escape.current = () => {
+    if (settingsFormShown()) return cancelSettingsForm();
+    if (editingFormula) return void glass.props.onCancel?.();
+    if (openPage) return dispatch({ type: "openPage", rowId: null });
+    if (settingsShown) return dispatch({ type: "settings", open: false });
+    glass.props.onDeselect?.();
+  };
   const closeInspected = useRef(() => {});
   closeInspected.current = () => {
     if (openPage) dispatch({ type: "openPage", rowId: null });
@@ -849,6 +875,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { canGoBack, canGoForward } = derived;
   useEffect(() => {
     for (const c of appCommands({ sidebarCollapsed: !sidebarShown, filesMode, canGoBack, canGoForward })) {
+      // The Edit menu has AppKit's own Undo and Redo on these keys, which a text field answers:
+      // they are made the table's too, below (setUndo), not added a second time.
+      if (c.id === "undo" || c.id === "redo") continue;
       setMenuItem({
         id: c.id,
         menu: c.menu,
@@ -902,11 +931,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     // The view's address as text, with the open page's row as the web's address has it;
     // opening one from outside the app waits on a link scheme.
     "copy-link": () => copyText(derived.address),
+    undo: () => dispatch({ type: "undo" }),
+    redo: () => dispatch({ type: "redo" }),
   };
   // The latest handlers, so the subscription is made once.
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
   useEffect(() => onMenu((id) => commandsRef.current[id as keyof typeof commands]?.()), []);
+  // Edit › Undo and Redo: the table's when no text has the keyboard, on as it can be undone and redone.
+  // They say what the commands say: what will be undone, once the app knows it.
+  const { canUndo, canRedo } = derived;
+  const undoTitle = derived.commands.find((c) => c.id === "undo")?.label ?? "Undo";
+  const redoTitle = derived.commands.find((c) => c.id === "redo")?.label ?? "Redo";
+  useEffect(() => setUndo(canUndo, canRedo, undoTitle, redoTitle), [canUndo, canRedo, undoTitle, redoTitle]);
 
   // Development only: lets a script open a table and view through
   // React Native's debugger connection, to check each layout without
@@ -1006,6 +1043,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         return `searched ${text}`;
       },
       // What has the keyboard, left in globalThis.__responder (the debugger connection can't await).
+      // A menu bar item, by its menu and title, as choosing it does: answered in __menuChoice.
+      chooseMenuItem: (menu: string, title: string) => {
+        void chooseMenuItem(menu, title).then((said) => ((globalThis as { __menuChoice?: string }).__menuChoice = said));
+        return "asking";
+      },
       responder: () => {
         void firstResponder().then((said) => ((globalThis as { __responder?: unknown }).__responder = said));
         return "asking";
@@ -1148,6 +1190,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "shown") dispatch({ type: "setSidebarCollapsed", collapsed: !e.shown });
         else if (e.type === "inspector" && !e.shown) closeInspected.current();
         else if (e.type === "inspectorCell") inspectorCell.current(e.action);
+        else if (e.type === "escape") escape.current();
         else if (e.type === "settingsForm") onSettingsFormEvent(e);
         else if (e.type === "formulaEditor") onFormulaEditorEvent(e);
       }),
@@ -1187,6 +1230,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                 sideways (a table, a board) can run over the margin to the
                 edges (PageGutter) rather than be cut off by this view. */}
             <PageGutter.Provider value={CONTENT_GUTTER}>
+            <PageReveal.Provider value={pageReveal}>
             <ScrollView
               ref={scroller}
               onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
@@ -1243,6 +1287,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               })}
               </CellEditorContext.Provider>
             </ScrollView>
+            </PageReveal.Provider>
             </PageGutter.Provider>
             </>
             )}

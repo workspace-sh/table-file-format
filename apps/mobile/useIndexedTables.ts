@@ -1,18 +1,19 @@
-// Tables held in their bundle's index (SPEC section 8): the web's side of
-// it. A bundle with a large table gets a worker of its own (sqlite/client),
-// with its database and the table's rows kept in the browser's file
-// storage. The page never holds such a table's rows: the view on screen
-// reads a window of them from the index, queued edits are made in it, and
-// a save writes them back to the rows file beside it.
+// Tables held in their bundle's index (SPEC section 8): the phone's side
+// of it. A bundle with a large table is a folder in the app's documents,
+// with its index and the table's rows beside it (indexHost.ts). The screen
+// never holds such a table's rows: the view on screen reads a window of
+// them from the index, queued edits are made in it, and a save writes them
+// back to the rows file beside it.
 //
-// (Linux has the same over node:sqlite and real files, in
-// apps/linux/src/useIndexedTables.ts. What differs is where a host comes
-// from and what it's made from.)
+// (This is the web's hook, apps/web/src/useIndexedTables.ts, with the
+// phone's index host in place of the web's worker; Linux has the same over
+// node:sqlite in apps/linux/src/useIndexedTables.ts. What differs is where
+// a host comes from and what it's made from.)
 
 import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openWebDatabase, type WebDatabase } from "./sqlite/client";
+import { openIndexDatabase, type IndexDatabase } from "./indexHost";
 
 export interface IndexedTables {
   /** The table on screen is held in the index, and it's being read into it: how far along. */
@@ -26,12 +27,10 @@ export interface IndexedTables {
   source: ViewRows | undefined;
   /** The rows on screen are from before the last change to the view or the search: the new ones are on their way. */
   stale: boolean;
-  /** The table on screen was held in the index, and this page can't read it: this browser no longer has it ("gone"), or another tab of the app holds the storage ("elsewhere"). */
-  lost: "gone" | "elsewhere" | null;
-  /** A bundle just read in a worker: its database, and its large tables' first rows by `bundle/table` key. */
-  hold(bundle: string, index: WebDatabase, first: Record<string, Row[]>): void;
-  /** What the worker's answers for a bundle took, for measuring. */
-  timings(bundle: string): Promise<{ what: string; ms: number; waited: number }[]>;
+  /** The table on screen was held in the index, and this phone no longer has it. */
+  lost: boolean;
+  /** A bundle just read from an archive: its large tables' first rows by `bundle/table` key. */
+  hold(first: Record<string, Row[]>): void;
   /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
   everyRow(key: string, table: ParsedTable): Promise<Row[]>;
   /** After the rest is saved: the indexed tables' rows, to the files kept beside their indexes. */
@@ -55,8 +54,8 @@ export function useIndexedTables(input: {
   tell: (heading: string, body?: string) => void;
 }): IndexedTables {
   const { state, dispatch, view, tell } = input;
-  const hosts = useRef(new Map<string, WebDatabase | Promise<WebDatabase>>());
-  const [made, setMade] = useState<Record<string, "building" | "ready" | "lost" | "elsewhere">>({});
+  const hosts = useRef(new Map<string, IndexDatabase>());
+  const [made, setMade] = useState<Record<string, "building" | "ready" | "lost">>({});
   const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({});
   const [first, setFirst] = useState<Record<string, Row[]>>({});
   const asked = useRef(new Set<string>());
@@ -66,23 +65,22 @@ export function useIndexedTables(input: {
   const latest = useRef({ tell, dispatch });
   latest.current = { tell, dispatch };
 
-  /** A bundle's database: the one its archive was read into, or the one this browser kept from before. */
-  const hostOf = useCallback((bundle: string): Promise<WebDatabase> => {
+  /** A bundle's database: the one its archive was read into, or the one this phone kept from before. */
+  const hostOf = useCallback((bundle: string): Promise<IndexDatabase> => {
     let host = hosts.current.get(bundle);
-    if (!host) hosts.current.set(bundle, (host = openWebDatabase(bundle)));
+    if (!host) hosts.current.set(bundle, (host = openIndexDatabase(bundle)));
     return Promise.resolve(host);
   }, []);
 
-  const hold = useCallback((bundle: string, index: WebDatabase, rows: Record<string, Row[]>) => {
-    hosts.current.set(bundle, index);
+  const hold = useCallback((rows: Record<string, Row[]>) => {
     setFirst((was) => ({ ...was, ...rows }));
   }, []);
 
-  const ready = (key: string, schema: TableSchema, count: number, host: WebDatabase) => {
+  const ready = (key: string, schema: TableSchema, count: number, host: IndexDatabase) => {
     madeFor.current.set(key, schema);
     latest.current.dispatch({ type: "indexed", key, count });
     setMade((was) => ({ ...was, [key]: "ready" }));
-    // The search's own index is made after the view has its first rows, behind whatever the page asks for.
+    // The search's own index is made after the view has its first rows, behind whatever the screen asks for.
     setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), SEARCH_AFTER_MS);
   };
 
@@ -95,15 +93,26 @@ export function useIndexedTables(input: {
       const schema = table.schema;
       void hostOf(bundleOf(key))
         .then(async (host) => ready(key, schema, await host.ensure(tableNameOf(key), schema, (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } }))), host))
-        .catch(() => {
-          setMade((was) => ({ ...was, [key]: "lost" }));
-          // Not gone if another tab holds the storage: it's there, and this tab can't reach it.
-          void hostOf(bundleOf(key))
-            .then((host) => host.storage())
-            .then(
-              (storage) => storage === "elsewhere" && setMade((was) => ({ ...was, [key]: "elsewhere" })),
-              () => {},
-            );
+        .catch(async (error: unknown) => {
+          // No index to be had (no space, say): while the archive it came in is still
+          // held, the table is read from it into memory instead, and says so. With
+          // nothing to read it from (the app was started again), or an archive that
+          // turns out damaged, its rows are lost to this phone.
+          let rows: Row[] | null = null;
+          try {
+            rows = (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));
+          } catch {
+            rows = null;
+          }
+          if (!rows) return setMade((was) => ({ ...was, [key]: "lost" }));
+          const { indexed: _indexed, ...rest } = table;
+          asked.current.delete(key);
+          setMade(({ [key]: _was, ...others }) => others);
+          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, rows } });
+          latest.current.tell(
+            "Opened without its index",
+            `${tableNameOf(key)} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`,
+          );
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -205,6 +214,8 @@ export function useIndexedTables(input: {
         if (!saved) {
           // An edit landed while it was written: it's saved again after that edit.
           if (rows) unsaved.current.add(key);
+          // Never left waiting for a build that isn't coming.
+          if (again) setMade((m) => ({ ...m, [key]: "ready" }));
           continue;
         }
         if (!again) {
@@ -227,7 +238,7 @@ export function useIndexedTables(input: {
 
   const state_ = active?.indexed ? made[state.active] : undefined;
   // The rows read so far, as a source the table view can scroll through: the
-  // first ones are here already, the rest are asked of the worker, which sees
+  // first ones are here already, the rest are asked of the index, which sees
   // what its build has put in. One snapshot that only grows, so what the view
   // has read of it stays good.
   const firstHere = first[state.active];
@@ -281,11 +292,10 @@ export function useIndexedTables(input: {
     hold,
     save,
     everyRow,
-    timings: (bundle) => hostOf(bundle).then((host) => host.timings()),
-    building: active?.indexed && state_ !== "ready" && state_ !== "lost" && state_ !== "elsewhere" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
+    building: active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
     reading,
     source: isReady && source?.key === state.active ? source.rows : undefined,
-    lost: state_ === "lost" ? "gone" : state_ === "elsewhere" ? "elsewhere" : null,
+    lost: state_ === "lost",
     stale: isReady && source?.key === state.active && source.asked !== asking,
   };
 }

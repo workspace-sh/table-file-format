@@ -496,9 +496,15 @@ export function App() {
       if (read.index) {
         indexed.hold(read.opened.key, read.index, Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])));
         // Asked after, not before the rows show: the database opens behind them.
-        void read.index.persistent().then(
-          (kept) => kept || tell("Kept only while this page is open", "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded."),
-        );
+        void read.index.storage().then((storage) => {
+          if (storage === "kept") return;
+          tell(
+            "Kept only while this page is open",
+            storage === "elsewhere"
+              ? "Another tab of this app holds this browser's storage for large tables, so this one is held for now and gone when the page is closed or reloaded. Open it in that tab to keep it."
+              : "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded.",
+          );
+        });
       }
       return read.opened;
     },
@@ -535,6 +541,8 @@ export function App() {
   // each step took (ms), for measuring large tables (#126): fetching it,
   // reading it (unzip and parse), and showing it (React's render and commit,
   // synchronously: a hidden tab has no frames to wait for).
+  const measured = useRef({ canUndo: false, canRedo: false, queued: 0 });
+  measured.current = { canUndo: derived.canUndo, canRedo: derived.canRedo, queued: state.indexWork.length };
   useEffect(() => {
     if (!import.meta.env.DEV && import.meta.env.VITE_TABLE_MEASURE !== "1") return;
     (window as { __tableWeb?: unknown }).__tableWeb = {
@@ -551,6 +559,10 @@ export function App() {
       },
       // What the index worker's answers took, for a bundle held in it.
       workerTimings: (bundle: string) => indexed.timings(bundle),
+      // Any action, as the app's own controls send them.
+      act: (action: Parameters<typeof dispatch>[0]) => flushSync(() => dispatch(action)),
+      // Whether there's a step to undo or redo, and how many edits wait on the index.
+      undoing: () => ({ canUndo: measured.current.canUndo, canRedo: measured.current.canRedo, queued: measured.current.queued }),
       // Milliseconds to edit a row's title in the table on screen and render it.
       timeEdit: (rowId: string) => {
         const t0 = performance.now();
@@ -593,6 +605,23 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleSidebar]);
+  // Undo and redo: ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z too).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const redo = (key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.shiftKey);
+      if (!redo && (key !== "z" || e.shiftKey)) return;
+      const t = e.target as HTMLElement | null;
+      // In a text box, undo belongs to the text.
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      dispatch({ type: redo ? "redo" : "undo" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dispatch]);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   // How far down the page the view is, kept for history as the row at a
@@ -890,7 +919,9 @@ export function App() {
         )}
         {indexed.lost ? (
           <html.div style={styles.indexedNote}>
-            This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back.
+            {indexed.lost === "elsewhere"
+              ? "This table is open in another tab, which holds this browser's storage for it. Use it there, or close that tab and reload this page."
+              : "This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back."}
           </html.div>
         ) : table.indexed && view.layout !== "table" ? (
           <html.div style={styles.indexedNote}>

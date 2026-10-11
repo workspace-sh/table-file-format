@@ -60,6 +60,7 @@ export interface AppState {
   asking: Asking | null;              // a Confirm or NamePrompt, and what answering does
   telling: { heading: string; body?: string } | null;  // a message the app is to show
   dirty: string[];                    // bundle keys to write
+  undo: Record<string, { past: UndoStep[]; future: UndoStep[] }>;  // per table: what it was before each edit
 }
 
 export type AppAction =
@@ -81,6 +82,7 @@ export type AppAction =
   | { type: "addChoice"; name: string; value: string }
   | { type: "updateView"; patch: Partial<View> }        // asks first when a sheet formulas read goes
   | { type: "addView" } | { type: "deleteView" }        // addView opens its settings; deleteView asks
+  | { type: "undo" } | { type: "redo" }                 // the table on screen, back a step and forward again
   // This viewer's own
   | { type: "arrange"; patch: Partial<View> } | { type: "saveForEveryone" } | { type: "resetArrangement" }
   | { type: "display"; choice: DisplayChoice }
@@ -101,11 +103,12 @@ export function initialAppState(input: { tables; bundles; opened?; stored: Store
 
 Pass `start` only for a link or address being followed (Linux's `--open`, the web's address on load), not to choose the default table. It lands as a followed link does, on the Tables side, so a bare launch that passes it loses a remembered Files side. The first table is `firstTableKey`'s, as it is with no `start`. The web passes its address on every load, since a reload keeps it, so it keeps the remembered side itself.
 
-Four rules live in the reducer, not in the apps:
+Five rules live in the reducer, not in the apps:
 - **Leaving a view.** After every action, if `active` or its view changed (`leaving`), `search` clears and `settingsOpen` closes. That includes `reset` and `opened`, which change `active`, as the apps do today. `addView` is the one exception: it opens the new view's settings.
 - **Recording history.** After every action, the view on screen is passed to `visited`, and `back` and `forward` skip dead entries (`addressLive`). The apps stop recording views themselves.
 - **Unfolding the file on screen.** When `active` changes, its file unfolds (`withFileUnfolded`).
 - **Questions.** An action that needs one first sets `asking`, and the actual change waits for `answer`: deleting a row (`deletingRow`, which then closes its open page), deleting a view (`deletingView`, which then shows the next view), turning off a sheet that formulas read (`viewPatchPrompt`), resetting (`resetPrompt`, keeping `opened` bundles), and naming what's created (`namePrompt`, then `creating` with the answer's text). The rules each edit already has apply here too: `insertRow` only where `canInsertAt`, and every edit marks its bundle `dirty`.
+- **Undo.** Every edit to a table's rows, pages, fields or views keeps the table as it was, per table, newest last: 100 steps, fewer for a long table (20 at 100,000 rows). `undo` puts the last one back on the table on screen and marks its bundle `dirty`; `redo` makes the edit again; a new edit empties what redo had. Where you are (the view, the selection, the search, the page open, this viewer's arrangement) isn't an edit and doesn't go back. Saves of one page while it's typed in are one step, ended when another page opens. `derive` gives `canUndo` and `canRedo`, and the `undo` and `redo` commands (Edit, ⌘Z and ⇧⌘Z) are enabled from them; both are false on the Files side. Each step has a name for what the edit was ("Edit Title" by the field's title, or by its key written as a name where it has none (`close_date` is "Close Date"), "Add Row", "Delete Row", "Edit Page", "Add Field", "Rename Field", "Change Field", "Move Field", "Delete Field", "Add Choice", "Remove Choice", "Rename View", "Change View", "Add View", "Delete View", "Save View for Everyone"): `derive` gives `undoName` and `redoName`, and the commands' labels read "Undo Delete Row" and "Redo Delete Row", or plain "Undo" and "Redo" with nothing to act on. A text field with the keyboard keeps those keys for its own text. A table held in the index (LARGE-TABLES.md) has its rows there, so a step for one of its rows is the edit that undoes it, which the app hears from the index once the edit is made (`indexed`'s `back`) and undo queues as any edit is; until it's heard, undo waits. A row removed goes back where it was, with its page. An edit to its fields makes the index again, and lets its earlier steps go. Steps aren't kept past the session, and go when the table is opened again, reset, or read again from disk.
 
 **Selectors** (pure): `derive(state, { platform, locale })` returns (with the platform's locale for `viewerLocale`, the direction and `viewerOrder`) what the drawing needs: `table`, `view`, the shown view (`showView`, with this viewer's arrangement and search), `viewSummary`, `tableBreadcrumb`, the sidebar entries (`sidebarTree` flattened, or `filesTree`), `appCommands` with their enabled state, the mode (from `sidebar.files`), and a `ViewProps`-shaped set of callbacks for the view on screen, each dispatching its named action.
 

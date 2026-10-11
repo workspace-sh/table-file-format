@@ -7,9 +7,22 @@ import { fileURLToPath } from "node:url";
 import { applyView, parseRowsText } from "@workspace.sh/table-core";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
-import { addIndexedRow, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, indexedViewRows, linesInBytes, removeIndexedRow, rowsInChunks, setIndexedCell } from "./indexed.ts";
+import {
+  addIndexedRow,
+  buildIndexFromBytes,
+  canBeIndexed,
+  firstRowsInBytes,
+  indexedViewRows,
+  linesInBytes,
+  makeIndexEdits,
+  removeIndexedRow,
+  rowsInChunks,
+  setIndexedBody,
+  setIndexedCell,
+  type IndexEdit,
+} from "./indexed.ts";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { queryIndex } from "@workspace.sh/table-core";
+import { isIndexStale, queryIndex } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -78,8 +91,8 @@ test("a view of an indexed table shows what the table in memory shows, and edits
     assert.deepEqual((await shown.totals()).priority, want.reduce((a, r) => a + (r.priority as number), 0));
     assert.deepEqual((await shown.groups()).map((g) => g.count).reduce((a, b) => a + b, 0), want.length);
 
-    assert.equal(await setIndexedCell(host, "tasks", held, "t1", "title", "Edited in the index"), true);
-    assert.equal(await setIndexedCell(host, "tasks", held, "nobody", "title", "x"), false);
+    assert.deepEqual(await setIndexedCell(host, "tasks", held, "t1", "title", "Edited in the index"), { value: memory.rows.find((r) => r.id === "t1")!.title });
+    assert.equal(await setIndexedCell(host, "tasks", held, "nobody", "title", "x"), null);
     await addIndexedRow(host, "tasks", held, "t-new");
     await removeIndexedRow(host, "tasks", held, "t2");
     const after = await indexedViewRows(host, "tasks", held, memory.views[0]!, "");
@@ -89,6 +102,58 @@ test("a view of an indexed table shows what the table in memory shows, and edits
     assert.equal((await after.row("t1"))?.title, "Edited in the index");
     // A search reaches the edit.
     assert.deepEqual(await (await indexedViewRows(host, "tasks", held, memory.views[0]!, "edited in the")).ids(0, 5), ["t1"]);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("each edit made in the index says what undoes it, and those put the table back as it was", async () => {
+  const s = scratch();
+  try {
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    const all = async () => {
+      const rows = await indexedViewRows(host, "tasks", held, { ...held.views[0]!, filter: undefined, sort: undefined, group: undefined }, "");
+      return rows.rows(0, rows.count);
+    };
+    const found = async (text: string) => {
+      const rows = await indexedViewRows(host, "tasks", held, held.views[0]!, text);
+      return rows.ids(0, rows.count);
+    };
+    const before = await all();
+    const second = before[1]!.id;
+    await setIndexedBody(host, "tasks", held, second, "A page with a needle in it");
+    const edits: IndexEdit[] = [
+      { kind: "cell", rowId: "t1", field: "title", value: "Edited in the index" },
+      { kind: "cell", rowId: "t1", field: "priority", value: undefined },
+      { kind: "add", rowId: "t-new" },
+      { kind: "cell", rowId: "t-new", field: "title", value: "New" },
+      { kind: "remove", rowId: second },
+      { kind: "cell", rowId: "nobody", field: "title", value: "x" },
+      { kind: "remove", rowId: "nobody" },
+    ];
+    const made = await makeIndexEdits(host, "tasks", held, edits);
+    assert.equal(made.count, before.length);
+    assert.deepEqual(made.back.map((b) => b?.kind ?? null), ["cell", "cell", "remove", "cell", "restore", null, null]);
+    assert.deepEqual(await found("needle"), []);
+    assert.notDeepEqual(await all(), before);
+
+    // Newest first, as undo takes them; the page of the row removed is the state's to give back.
+    const back = made.back
+      .filter((b) => b !== null)
+      .reverse()
+      .map((b) => (b.kind === "restore" ? { ...b, content: "A page with a needle in it" } : b));
+    const undone = await makeIndexEdits(host, "tasks", held, back);
+    assert.equal(undone.count, before.length);
+    assert.deepEqual(await all(), before);
+    assert.deepEqual(await found("needle"), [second]);
+    // And what undoes those makes the edits again.
+    const again = await makeIndexEdits(host, "tasks", held, undone.back.filter((b) => b !== null).reverse());
+    assert.equal((await all()).find((r) => r.id === "t1")!.title, "Edited in the index");
+    assert.equal((await all()).some((r) => r.id === second), false);
+    assert.equal(again.count, before.length);
     await host.close();
   } finally {
     s.done();
@@ -116,6 +181,76 @@ test("saving writes the rows in file order and leaves the index fresh", async ()
     assert.equal(await host.ensure("tasks", s.tasks, () => (built = true)), after.length);
     assert.equal(built, false);
     assert.equal(await tableContentKey(s.tasks), await tableContentKey(s.tasks));
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a save takes turns, and an edit made while it writes stops it: the file stays as it was until a save no edit comes into", async () => {
+  const s = scratch();
+  try {
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const facts = { schema: held.schema };
+    const before = rowsOnDisk(s.tasks);
+    // Turns as a worker gives them, one after another, and a few rows a piece so a save takes several.
+    let last: Promise<unknown> = Promise.resolve();
+    let turns = 0;
+    const host = openIndexHost(s.bundle, {
+      saveBatch: 2,
+      turn: (run) => {
+        turns++;
+        const turn = last.then(run);
+        last = turn.catch(() => {});
+        return turn;
+      },
+    });
+    await host.ensure("tasks", s.tasks);
+    const stale = async () => (await isIndexStale(host, "tasks", await tableContentKey(s.tasks)));
+    const edit = (rowId: string, value: string) => host.rows({ ask: "edits", name: "tasks", table: facts, edits: [{ kind: "cell", rowId, field: "title", value }] });
+
+    await edit("t1", "First");
+    turns = 0;
+    const stopped = host.save("tasks", s.tasks, true);
+    // While it's on its first rows, another edit.
+    await edit("t2", "Second");
+    assert.equal(await stopped, false);
+    assert.deepEqual(rowsOnDisk(s.tasks), before, "the file is as it was");
+    assert.equal(existsSync(join(s.tasks, "rows.ndjson.tmp")), false);
+    assert.equal(await stale(), true, "and the index isn't said to be fresh for it");
+
+    // Asked again with nothing coming into it: both edits are written, a piece a turn.
+    turns = 0;
+    assert.equal(await host.save("tasks", s.tasks, true), true);
+    assert.ok(turns >= before.length / 2, `${turns} turns`);
+    assert.deepEqual(
+      rowsOnDisk(s.tasks).map((r) => r.title),
+      before.map((r) => (r.id === "t1" ? "First" : r.id === "t2" ? "Second" : r.title)),
+    );
+    assert.equal(await stale(), false);
+
+    // The save a build is about to read isn't stopped: it has what the index had when it began or since, and is stamped.
+    await edit("t1", "Third");
+    const whole = host.save("tasks", s.tasks, true, undefined, true);
+    await edit("t2", "Fourth");
+    assert.equal(await whole, true);
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t1")!.title, "Third");
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a save that only stamps (pages changed, not rows) leaves the index unstamped when an edit came into it", async () => {
+  const s = scratch();
+  try {
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    const saving = host.save("tasks", s.tasks, false);
+    await host.rows({ ask: "edits", name: "tasks", table: { schema: held.schema }, edits: [{ kind: "cell", rowId: "t1", field: "title", value: "Edited" }] });
+    assert.equal(await saving, false);
+    assert.equal(await isIndexStale(host, "tasks", await tableContentKey(s.tasks)), true);
     await host.close();
   } finally {
     s.done();

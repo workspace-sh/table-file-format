@@ -684,3 +684,300 @@ test("an indexed table's summary counts what the index holds, and says its rows 
   assert.equal(derive(searching, { indexedShown: { count: 3, inView: 12 } }).summary.count, "3 of 12 matching");
   assert.deepEqual(derive(s).shown.rows, []);
 });
+
+// Undo and redo
+
+const titleOf = (s: AppState, rowId: string) => s.tables["crm/deals"]!.rows.find((r) => r.id === rowId)?.title;
+
+test("undo puts the table back as it was before its last edit, and redo makes the edit again", () => {
+  const before = run(start(), { type: "showTable", key: "crm/deals" });
+  const was = titleOf(before, "dl-1");
+  assert.equal(derive(before).canUndo, false);
+  const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
+  assert.equal(derive(edited).canUndo, true);
+  assert.equal(derive(edited).canRedo, false);
+
+  const once = run(edited, { type: "undo" });
+  assert.equal(rowIds(once).includes("dl-new"), false);
+  assert.equal(titleOf(once, "dl-1"), "Renamed");
+  const twice = run(once, { type: "undo" });
+  assert.equal(titleOf(twice, "dl-1"), was);
+  assert.equal(twice.tables["crm/deals"], before.tables["crm/deals"]);
+  assert.equal(derive(twice).canUndo, false);
+  assert.equal(tableApp(twice, { type: "undo" }), twice);
+
+  const again = run(twice, { type: "redo" }, { type: "redo" });
+  assert.equal(again.tables["crm/deals"], edited.tables["crm/deals"]);
+  assert.equal(derive(again).canRedo, false);
+  assert.equal(tableApp(again, { type: "redo" }), again);
+});
+
+test("undo: the commands say whether there's anything to undo or redo", () => {
+  const command = (s: AppState, id: string) => derive(s).commands.find((c) => c.id === id)!;
+  const edited = run(start(), { type: "addRow", id: "r-new" });
+  assert.equal(command(start(), "undo").enabled, false);
+  assert.equal(command(edited, "undo").enabled, true);
+  assert.equal(command(edited, "redo").enabled, false);
+  assert.equal(command(run(edited, { type: "undo" }), "redo").enabled, true);
+});
+
+test("undo: a table put back is to be written again", () => {
+  const edited = run(start(), { type: "addRow", id: "r-new" });
+  const written = run(edited, { type: "written", bundles: ["projects"], tables: edited.tables });
+  assert.deepEqual(written.dirty, []);
+  assert.deepEqual(run(written, { type: "undo" }).dirty, ["projects"]);
+});
+
+test("undo: a new edit after an undo leaves nothing to redo", () => {
+  const s = run(start(), { type: "addRow", id: "a" }, { type: "undo" }, { type: "addRow", id: "b" });
+  assert.equal(derive(s).canRedo, false);
+  assert.equal(rowIds(run(s, { type: "undo" })).includes("b"), false);
+});
+
+test("undo: each table has its own steps, and it's the table on screen that goes back", () => {
+  const s = run(
+    start(),
+    { type: "addRow", id: "p-new" },
+    { type: "showTable", key: "crm/deals" },
+    { type: "addRow", id: "dl-new" },
+    { type: "undo" },
+  );
+  assert.equal(rowIds(s, "crm/deals").includes("dl-new"), false);
+  assert.equal(rowIds(s, "projects/projects").includes("p-new"), true);
+  assert.equal(derive(s).canUndo, false);
+  const back = run(s, { type: "showTable", key: "projects/projects" });
+  assert.equal(derive(back).canUndo, true);
+  assert.equal(rowIds(run(back, { type: "undo" })).includes("p-new"), false);
+});
+
+test("undo: fields, views and a deleted row come back", () => {
+  const before = start();
+  const view = viewOf(before);
+  const s = run(
+    before,
+    { type: "addField", field: { name: "extra", type: "string" } },
+    { type: "updateView", patch: { title: "Renamed view" } },
+    { type: "deleteRow", rowId: rowIds(before)[0]! },
+    { type: "answer", response: "delete" },
+  );
+  assert.equal(rowIds(s).length, rowIds(before).length - 1);
+  const row = run(s, { type: "undo" });
+  assert.deepEqual(rowIds(row), rowIds(before));
+  const title = run(row, { type: "undo" });
+  assert.equal(title.tables[before.active]!.views.find((v) => v.id === view)!.title, before.tables[before.active]!.views.find((v) => v.id === view)!.title);
+  assert.equal(title.tables[before.active]!.schema.fields.at(-1)!.name, "extra");
+  assert.equal(run(title, { type: "undo" }).tables[before.active], before.tables[before.active]);
+});
+
+test("undo: where you are isn't an edit, and stays", () => {
+  const s = run(start(), { type: "addRow", id: "r-new" }, { type: "search", text: "x" }, { type: "undo" });
+  assert.equal(s.search, "x");
+  assert.equal(tableApp(run(start(), { type: "search", text: "x" }), { type: "undo" }).search, "x");
+  assert.equal(derive(run(start(), { type: "search", text: "x" })).canUndo, false);
+});
+
+test("undo: a page typed in goes back whole, and one opened again is its own step", () => {
+  const before = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "dl-2" });
+  const was = before.tables["crm/deals"]!.bodies?.["dl-2"];
+  const typed = run(before, { type: "updateBody", rowId: "dl-2", content: "a" }, { type: "updateBody", rowId: "dl-2", content: "ab" });
+  assert.equal(typed.undo["crm/deals"]!.past.length, 1);
+  assert.equal(run(typed, { type: "undo" }).tables["crm/deals"]!.bodies?.["dl-2"], was);
+
+  const later = run(typed, { type: "openPage", rowId: null }, { type: "openPage", rowId: "dl-2" }, { type: "updateBody", rowId: "dl-2", content: "abc" });
+  assert.equal(later.undo["crm/deals"]!.past.length, 2);
+  assert.equal(run(later, { type: "undo" }).tables["crm/deals"]!.bodies?.["dl-2"], "ab");
+  // Another row's page between two saves of this one is its own step too.
+  const other = run(typed, { type: "updateBody", rowId: "dl-1", content: "x" }, { type: "updateBody", rowId: "dl-2", content: "abc" });
+  assert.equal(other.undo["crm/deals"]!.past.length, 3);
+});
+
+test("undo: a page open on a row that undo takes away closes", () => {
+  const s = run(start(), { type: "addRow", id: "r-new" }, { type: "openPage", rowId: "r-new" });
+  assert.equal(s.openPage, "r-new");
+  assert.equal(run(s, { type: "undo" }).openPage, null);
+});
+
+test("undo: a table keeps its last hundred steps", () => {
+  let s = start();
+  for (let i = 0; i < 130; i++) s = tableApp(s, { type: "addRow", id: `n${i}` });
+  assert.equal(s.undo[s.active]!.past.length, 100);
+  for (let i = 0; i < 130; i++) s = tableApp(s, { type: "undo" });
+  assert.deepEqual(rowIds(s).filter((id) => id.startsWith("n")).length, 30);
+});
+
+test("undo: nothing is undone on the Files side, where no table is on screen", () => {
+  const s = run(start(), { type: "addRow", id: "r-new" }, { type: "setFilesSide", files: true });
+  assert.equal(derive(s).canUndo, false);
+  assert.equal(tableApp(s, { type: "undo" }), s);
+});
+
+test("undo: a reset, a file opened over a table, and a table read again let its steps go", () => {
+  const edited = run(start(), { type: "addRow", id: "r-new" });
+  const key = edited.active;
+  assert.deepEqual(run(edited, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" }).undo, {});
+  assert.equal(run(edited, { type: "opened", library: examples() }).undo[key], undefined);
+  assert.equal(run(edited, { type: "reloaded", key, table: edited.tables[key]! }).undo[key], undefined);
+  // A table whose rows have just gone to the index: the steps listed them as they were here.
+  assert.equal(run(edited, { type: "indexed", key, count: 18 }).undo[key], undefined);
+});
+
+const workOf = (s: AppState) => s.indexWork.map(({ n: _, key: __, ...edit }) => edit);
+
+test("undo on an indexed table: its views go back here, and nothing is asked of the index", () => {
+  const before = indexedStart();
+  const key = before.active;
+  const view = viewOf(before);
+  const titleNow = (s: AppState) => s.tables[key]!.views.find((v) => v.id === view)!.title;
+  const s = run(before, { type: "updateView", patch: { title: "Renamed view" } });
+  const undone = run(s, { type: "undo" });
+  assert.equal(titleNow(undone), titleNow(before));
+  assert.deepEqual(undone.tables[key]!.indexed, s.tables[key]!.indexed);
+  assert.deepEqual(undone.indexWork, []);
+  assert.equal(titleNow(run(undone, { type: "redo" })), "Renamed view");
+});
+
+test("undo on an indexed table: a cell goes back to what the index said it held, once it has said", () => {
+  const key = indexedStart().active;
+  const edited = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "name", value: "A" });
+  assert.equal(derive(edited).canUndo, true);
+  // The app hasn't made the edit yet, so what undoes it isn't known: nothing happens.
+  assert.equal(tableApp(edited, { type: "undo" }), edited);
+
+  const made = run(edited, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } });
+  const undone = run(made, { type: "undo" });
+  assert.deepEqual(workOf(undone), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
+  assert.equal(derive(undone).canUndo, false);
+  assert.equal(derive(undone).canRedo, true);
+  // The undo is an edit like any other to the app, and is not itself a step.
+  const heard = run(undone, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "A" } } });
+  assert.equal(derive(heard).canUndo, false);
+  const redone = run(heard, { type: "redo" });
+  assert.deepEqual(workOf(redone), [{ kind: "cell", rowId: "p1", field: "name", value: "A" }]);
+  assert.equal(derive(redone).canUndo, true);
+  assert.equal(derive(redone).canRedo, false);
+});
+
+test("undo on an indexed table: a row added is removed, and a row removed comes back where it was with its page", () => {
+  const key = indexedStart().active;
+  const added = run(indexedStart(), { type: "addRow", id: "p-new" });
+  assert.deepEqual(workOf(run(added, { type: "undo" })).at(-1), { kind: "remove", rowId: "p-new" });
+
+  const paged = run(indexedStart(), { type: "updateBody", rowId: "p3", content: "# Its page" }, { type: "indexed", key, count: 17, done: 1 });
+  const removed = run(paged, { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
+  assert.equal(removed.tables[key]!.bodies?.["p3"], undefined);
+  const row = { id: "p3", name: "Third" };
+  // The queue was empty, so the count starts again: the removal is the first edit in it.
+  const made = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row, at: 3 } } });
+  const undone = run(made, { type: "undo" });
+  assert.deepEqual(workOf(undone), [{ kind: "restore", rowId: "p3", row, at: 3, content: "# Its page" }]);
+  assert.equal(undone.tables[key]!.bodies?.["p3"], "# Its page");
+  const redone = run(undone, { type: "indexed", key, count: 17, done: 1 }, { type: "redo" });
+  assert.deepEqual(workOf(redone), [{ kind: "remove", rowId: "p3" }]);
+  assert.equal(redone.tables[key]!.bodies?.["p3"], undefined);
+});
+
+test("undo on an indexed table: a page typed in goes back whole, here and in the index", () => {
+  const key = indexedStart().active;
+  const typed = run(
+    indexedStart(),
+    { type: "updateBody", rowId: "p1", content: "a" },
+    { type: "updateBody", rowId: "p1", content: "ab" },
+    { type: "indexed", key, count: 17, done: 2 },
+  );
+  assert.equal(typed.undo[key]!.past.length, 1);
+  const undone = run(typed, { type: "undo" });
+  assert.equal(undone.tables[key]!.bodies?.["p1"], undefined);
+  assert.deepEqual(workOf(undone), [{ kind: "body", rowId: "p1", content: "" }]);
+  assert.ok(undone.dirty.includes("projects"));
+  const redone = run(undone, { type: "redo" });
+  assert.equal(redone.tables[key]!.bodies?.["p1"], "ab");
+  assert.deepEqual(workOf(redone).at(-1), { kind: "body", rowId: "p1", content: "ab" });
+});
+
+test("undo on an indexed table: an edit that changed nothing, or failed, leaves no step", () => {
+  const key = indexedStart().active;
+  const s = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "nobody", field: "name", value: "A" },
+    { type: "updateRow", rowId: "p1", field: "name", value: "B" },
+    { type: "updateRow", rowId: "p2", field: "name", value: "C" },
+    // The second was made; the first found no row; the third is still to make.
+    { type: "indexed", key, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+  );
+  assert.deepEqual(s.undo[key]!.past.map((step) => ("rows" in step ? [step.rows.n, step.rows.back?.kind ?? null] : null)), [[2, "cell"], [3, null]]);
+});
+
+test("undo on an indexed table: edits to its views and its rows go back in the order they were made", () => {
+  const before = indexedStart();
+  const key = before.active;
+  const view = viewOf(before);
+  const titleNow = (s: AppState) => s.tables[key]!.views.find((v) => v.id === view)!.title;
+  const s = run(
+    before,
+    { type: "updateRow", rowId: "p1", field: "name", value: "A" },
+    { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+    { type: "updateView", patch: { title: "Renamed view" } },
+  );
+  const once = run(s, { type: "undo" });
+  assert.equal(titleNow(once), titleNow(before));
+  assert.deepEqual(once.indexWork, []);
+  assert.deepEqual(workOf(run(once, { type: "undo" })), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
+});
+
+test("undo on an indexed table: a change to its fields changes what the index holds, so earlier steps are let go", () => {
+  const key = indexedStart().active;
+  const s = run(indexedStart(), { type: "updateView", patch: { title: "Renamed view" } }, { type: "addField", field: { name: "extra", type: "string" } });
+  assert.equal(s.undo[key], undefined);
+  assert.equal(derive(s).canUndo, false);
+});
+
+test("undo says what it would take back: the step's name, and the commands' labels", () => {
+  const label = (s: AppState, id: string) => derive(s).commands.find((c) => c.id === id)!.label;
+  const before = run(start(), { type: "showTable", key: "crm/deals" });
+  assert.equal(derive(before).undoName, null);
+  assert.equal(label(before, "undo"), "Undo");
+  assert.equal(label(before, "redo"), "Redo");
+
+  const title = before.tables["crm/deals"]!.schema.fields.find((f) => f.name === "title")!.title ?? "Title";
+  const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
+  assert.equal(derive(edited).undoName, "Add Row");
+  assert.equal(label(edited, "undo"), "Undo Add Row");
+  const once = run(edited, { type: "undo" });
+  assert.equal(label(once, "undo"), `Undo Edit ${title}`);
+  assert.equal(derive(once).redoName, "Add Row");
+  assert.equal(label(once, "redo"), "Redo Add Row");
+  // On the Files side there's no table to act on, and the labels are plain.
+  assert.equal(label(run(once, { type: "setFilesSide", files: true }), "undo"), "Undo");
+});
+
+test("undo names: each kind of edit has its own", () => {
+  const named = (...actions: AppAction[]) => derive(run(start(), ...actions)).undoName;
+  const first = rowIds(start())[0]!;
+  assert.equal(named({ type: "deleteRow", rowId: first }, { type: "answer", response: "delete" }), "Delete Row");
+  assert.equal(named({ type: "updateBody", rowId: first, content: "# Page" }), "Edit Page");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }), "Add Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "updateField", name: "extra", patch: { title: "Extra" } }), "Rename Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "updateField", name: "extra", patch: { type: "number" } }), "Change Field");
+  assert.equal(named({ type: "addField", field: { name: "extra", type: "string" } }, { type: "moveField", name: "extra", delta: -1 }), "Move Field");
+  assert.equal(named({ type: "updateView", patch: { title: "Renamed view" } }), "Rename View");
+  assert.equal(named({ type: "updateView", patch: { sort: [] } }), "Change View");
+  assert.equal(named({ type: "addView", id: "v-new" }), "Add View");
+});
+
+test("undo names on an indexed table: its rows' edits are named as any are", () => {
+  const key = indexedStart().active;
+  const field = indexedStart().tables[key]!.schema.fields[0]!;
+  const cell = run(indexedStart(), { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  assert.equal(field.title, undefined);
+  assert.equal(derive(cell).undoName, `Edit ${field.name[0]!.toUpperCase()}${field.name.slice(1)}`);
+  // A field with no title is called by its key, as a menu writes a name.
+  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "p1", field: "close_date", value: "A" })).undoName, "Edit Close Date");
+  const titled = run(indexedStart(), { type: "updateField", name: field.name, patch: { title: "the name" } }, { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  assert.equal(derive(titled).undoName, "Edit the name");
+  assert.equal(derive(run(indexedStart(), { type: "addRow", id: "p-new" })).undoName, "Add Row");
+  assert.equal(derive(run(indexedStart(), { type: "updateBody", rowId: "p1", content: "a" })).undoName, "Edit Page");
+  const removed = run(indexedStart(), { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
+  assert.equal(derive(removed).undoName, "Delete Row");
+  const heard = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row: { id: "p3" }, at: 3 } } });
+  assert.equal(derive(run(heard, { type: "undo" })).redoName, "Delete Row");
+});

@@ -121,8 +121,27 @@ export async function remoteViewRows(
   };
 }
 
-/** The page's side of an edit: made in the worker, which says how many rows the table has after. */
-export function remoteEdits(ask: (request: RowsRequest) => Promise<unknown>, name: string, table: TableFacts, edits: readonly IndexEdit[]): Promise<number> {
+/**
+ * The page's side of edits: made in the worker, which says how many rows
+ * the table has after, and what undoes each (`back`, by the edit's `n`;
+ * none for an edit that changed nothing, or a page's).
+ */
+export async function remoteEdits(
+  ask: (request: RowsRequest) => Promise<unknown>,
+  name: string,
+  table: TableFacts,
+  edits: readonly (IndexEdit & { n: number })[],
+): Promise<{ count: number; back: Record<number, IndexEdit> }> {
   const { schema, bodies, indexed } = table;
-  return ask({ ask: "edits", name, table: { schema, ...(bodies ? { bodies } : {}), ...(indexed ? { indexed } : {}) }, edits: [...edits] }) as Promise<number>;
+  const made = (await ask({
+    ask: "edits",
+    name,
+    table: { schema, ...(bodies ? { bodies } : {}), ...(indexed ? { indexed } : {}) },
+    edits: edits.map(({ n: _, ...edit }) => edit as IndexEdit),
+  })) as { count: number; back: (IndexEdit | null)[] };
+  const back: Record<number, IndexEdit> = {};
+  made.back.forEach((edit, i) => {
+    if (edit) back[edits[i]!.n] = edit;
+  });
+  return { count: made.count, back };
 }

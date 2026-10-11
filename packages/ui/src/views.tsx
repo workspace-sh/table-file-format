@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -102,6 +102,8 @@ import { HOVERS } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { useViewportWidth } from "./internal/useViewportWidth";
+import { Platform } from "react-native";
+import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
 import { afterEdit, cellPicks, gridKey } from "./gridNav";
@@ -120,6 +122,7 @@ import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAt
 import { usePlatformControls } from "./PlatformControls";
 import { rowActions } from "./controlSlots";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
+import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
 
 /**
@@ -1160,6 +1163,10 @@ const styles = css.create({
     fontWeight: "600",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
+  // On native the letter stacks above the name instead of sitting before it: without the gap, so the two share an edge.
+  columnLetterStacked: {
+    marginInlineEnd: 0,
+  },
   // The 14 symbolic enum colours (SPEC section 2, DECISIONS D43), mapped onto light and dark.
   pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
   pillBrown: { backgroundColor: { default: "#eee3d8", "@media (prefers-color-scheme: dark)": "#3b2a1d" }, color: { default: "#7a4a21", "@media (prefers-color-scheme: dark)": "#d9b08c" } },
@@ -1466,6 +1473,12 @@ const styles = css.create({
     cursor: "pointer",
   },
   bodyBadge: {
+    // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
+    display: "flex",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
     paddingInline: 6,
     paddingBlock: 1,
     marginInlineStart: 6,
@@ -1751,6 +1764,8 @@ interface EditableCellProps {
   onAttach?: () => void;
   /** Start editing; `text` replaces the value (a key typed on the cell). */
   editRequest?: EditRequest;
+  /** Told once the cell has taken `editRequest`, for the table to let it go. */
+  onEditHeard?: () => void;
   /** How editing ended from the keyboard, so the table can move on. */
   onEditEnd?: (how: EditEnd) => void;
   /**
@@ -1793,6 +1808,7 @@ function EditableCell({
   onSelect,
   onAttach,
   editRequest,
+  onEditHeard,
   onEditEnd,
   editOutside,
   outsideDraft,
@@ -1898,6 +1914,7 @@ function EditableCell({
       if (kind === "attachment" && onAttach) onAttach();
       else startEdit(editRequest.text);
     }
+    if (editRequest) onEditHeard?.();
     // Each request once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRequest?.n]);
@@ -2188,11 +2205,12 @@ function EditableCell({
       style={[styles.cellInput, cellInputFit]}
     />
   );
+  // A div, not a span: on native a span is a run of text, and an input inside one doesn't sit on its line.
   const field_ = currencySymbol ? (
-    <html.span style={styles.cellInputAffixed}>
+    <html.div style={styles.cellInputAffixed}>
       <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
       {input}
-    </html.span>
+    </html.div>
   ) : (
     input
   );
@@ -2470,8 +2488,25 @@ function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
-function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
-  return on ? <HScroll>{children}</HScroll> : <>{children}</>;
+function PaneScroll({ on, children, scroll }: { on: boolean; children: ReactNode; scroll?: { ref: { current: unknown }; x: { current: number } } }) {
+  return on ? (
+    <HScroll
+      // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scrollProps={
+        scroll &&
+        ({
+          ref: scroll.ref,
+          onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
+          scrollEventThrottle: 16,
+        } as any)
+      }
+    >
+      {children}
+    </HScroll>
+  ) : (
+    <>{children}</>
+  );
 }
 
 /** A cell's draft ("2026-03-01", "09:30", "2026-03-01T09:30") as a Date for the system's picker. */
@@ -2608,7 +2643,11 @@ export function TableView({
   // The selected cell, as a spreadsheet has one: arrows move it, Enter or
   // typing edits it (#85). Cleared when focus leaves the table.
   const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
+  // A cell asked to open for editing (Enter, or a key typed on it). It clears
+  // once the cell has heard it (`onEditHeard`), so the cell doesn't open
+  // again when its row is scrolled away and drawn anew.
   const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  const editHeard = useCallback(() => setEditReq(null), []);
   // An editor outside the table (#352), when the host provides one: the
   // draft it is typing into a cell, or into a formula column, shown live.
   const editor = useCellEditor();
@@ -2631,6 +2670,9 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [editor, view.id, tableKey],
   );
+  // When this table goes (another view, another table), nothing in it is
+  // selected any more: the editor is told, or it goes on showing the cell.
+  useEffect(() => () => editor?.select(null), [editor, view.id, tableKey]);
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
@@ -2687,6 +2729,15 @@ export function TableView({
   const gridRef = useRef<any>(null);
   // Where the keys come from on macOS, which needs a view of its own for them (GridKeys).
   const keysRef = useRef<GridKeysHandle | null>(null);
+  // On the Mac, a table that comes into view takes the keyboard, so the first
+  // arrow selects its first cell (gridKey) without a click first. Not on the
+  // web, where focusing would scroll the page, nor on a phone.
+  useEffect(() => {
+    if (Platform.OS !== "macos") return;
+    const t = setTimeout(() => keysRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.id]);
   useEffect(() => {
     // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
     if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
@@ -2825,6 +2876,9 @@ export function TableView({
     : undefined;
   const frozenRows = useRef<RowListHandle | null>(null);
   const paneRows = useRef<RowListHandle | null>(null);
+  // The columns beside the frozen one, when they scroll sideways in their own pane, and how far.
+  const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
+  const pageReveal = useContext(PageReveal);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
@@ -3077,7 +3131,7 @@ export function TableView({
             !isLast && styles.tableCellSeparator,
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
           {columnResizer(name)}
@@ -3115,7 +3169,7 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, Platform.OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span>{field?.title ?? name}</html.span>
         </html.button>
@@ -3330,6 +3384,7 @@ export function TableView({
             onSelect={select}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
+            onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
             editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
@@ -3716,8 +3771,31 @@ export function TableView({
   useEffect(() => {
     if (!sel) return;
     const cell = cellRefs.current[`${sel.rowId}\u0000${sel.name}`];
+    if (cell?.scrollIntoView) {
+      cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
     if (cell) {
-      cell.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      // Native has no scrollIntoView: the columns' own pane scrolls sideways
+      // here, and the page, which the app scrolls, is asked for the rest.
+      void measureAnchor(cell).then(async (rect) => {
+        if (!rect) return;
+        const pane = sel.name === primaryName ? null : await measureAnchor(paneScroll.ref.current);
+        if (pane) {
+          const margin = 8;
+          const dx =
+            rect.left < pane.left
+              ? rect.left - pane.left - margin
+              : rect.left + rect.width > pane.left + pane.width
+                ? rect.left + rect.width - (pane.left + pane.width) + margin
+                : 0;
+          if (dx !== 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (paneScroll.ref.current as any)?.scrollTo?.({ x: Math.max(0, paneScroll.x.current + dx), animated: false });
+          }
+        }
+        pageReveal?.(rect);
+      });
       return;
     }
     // Off screen, the row isn't drawn and has no cell to scroll to: ask the
@@ -3800,7 +3878,7 @@ export function TableView({
                     <html.div style={[styles.tableRow, styles.groupRow]}>
                       <html.span style={styles.groupLabel}>
                         {groupTitle} · {starts.label}
-                        <html.span style={styles.groupCount}>{starts.count}</html.span>
+                        <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
                       </html.span>
                     </html.div>
                   )}
@@ -3836,7 +3914,7 @@ export function TableView({
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
-          <PaneScroll on={!edgeToEdge}>
+          <PaneScroll on={!edgeToEdge} scroll={paneScroll}>
             <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
@@ -3862,7 +3940,7 @@ export function TableView({
                         {!primaryName && (
                           <html.span style={styles.groupLabel}>
                             {groupTitle} · {starts.label}
-                            <html.span style={styles.groupCount}>{starts.count}</html.span>
+                            <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
                           </html.span>
                         )}
                       </html.div>
@@ -4486,7 +4564,7 @@ export function ListView({
             <html.div style={styles.listGroup}>
               <html.span style={styles.groupLabel}>
                 {view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : ""} · {starts.label}
-                <html.span style={styles.groupCount}>{starts.count}</html.span>
+                <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
               </html.span>
             </html.div>
           )}

@@ -158,20 +158,20 @@ export function useIndexedTables(input: {
     if (!table || !host || !fits(first.key, table)) return;
     busy.current = true;
     (async () => {
-      const count = await remoteEdits(host.rows, tableNameOf(first.key), table, work);
+      const { count, back } = await remoteEdits(host.rows, tableNameOf(first.key), table, work);
       // The table on screen: its next snapshot is opened here, with the rows it is
       // showing read ahead, so the edit shows in one draw and not after three.
       const shown = shownNow.current;
-      if (first.key !== state.active || !shown.source || shown.source.key !== first.key) return { count, then: undefined };
+      if (first.key !== state.active || !shown.source || shown.source.key !== first.key) return { count, back, then: undefined };
       const version = (table.indexed?.version ?? 0) + 1;
       const rows = await remoteViewRows(host.rows, tableNameOf(first.key), { ...table, indexed: { count, version } }, shown.view, shown.search);
       await rows.readAhead(shown.source.rows.recent());
-      return { count, then: { key: first.key, asked: shown.askingOf(version), rows } };
+      return { count, back, then: { key: first.key, asked: shown.askingOf(version), rows } };
     })()
       .then(
-        ({ count, then }) => {
+        ({ count, back, then }) => {
           if (work.some((w) => w.kind !== "body")) unsaved.current.add(first.key);
-          latest.current.dispatch({ type: "indexed", key: first.key, count, done: work.at(-1)!.n });
+          latest.current.dispatch({ type: "indexed", key: first.key, count, done: work.at(-1)!.n, back });
           if (then) setSource(then);
         },
         (error: unknown) => {
@@ -203,19 +203,29 @@ export function useIndexedTables(input: {
         const was = madeFor.current.get(key);
         const gone = was ? was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name) : [];
         const rows = unsaved.current.has(key) || gone.length > 0;
+        // Its fields changed in a way the index holds: it's made again from the rows
+        // saved here, so edits wait from now (they'd be lost between the two).
+        const again = was !== undefined && indexedFor(was) !== indexedFor(table.schema);
+        if (again) setMade((m) => ({ ...m, [key]: "building" }));
         unsaved.current.delete(key);
+        let saved: boolean;
         try {
-          await host.save(tableNameOf(key), dirOf(key), rows, gone);
+          saved = await host.save(tableNameOf(key), dirOf(key), rows, gone, again);
         } catch (error) {
           if (rows) unsaved.current.add(key);
+          if (again) setMade((m) => ({ ...m, [key]: "ready" }));
           throw error;
         }
-        if (!was || indexedFor(was) === indexedFor(table.schema)) {
+        if (!saved) {
+          // An edit landed while it was written: it's saved again after that edit.
+          if (rows) unsaved.current.add(key);
+          continue;
+        }
+        if (!again) {
           madeFor.current.set(key, table.schema);
           continue;
         }
         // Not awaited: the save is done, and the table shows its first rows while this runs.
-        setMade((m) => ({ ...m, [key]: "building" }));
         setProgress(({ [key]: _old, ...rest }) => rest);
         const schema = table.schema;
         void firstRows(dirOf(key), FIRST_ROWS).then((first) => setFirst((f) => ({ ...f, [key]: computeRows(schema, first).rows })), () => {});
