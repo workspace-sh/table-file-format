@@ -14,6 +14,7 @@
 // reads a window of them, and its groups and totals, the same way.
 
 import * as Gdk from "@gtkx/gi/gdk";
+import * as GLib from "@gtkx/gi/glib";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
@@ -1227,9 +1228,10 @@ export function TableView({
                 prefix="total"
                 actions={
                   <>
-                    <GSimpleAction name="none" onActivate={() => chooseTotal(name, null)} />
+                    {/* Each carries whether it is the one chosen, which the menu draws as a tick beside it. */}
+                    <GSimpleAction name="none" state={GLib.Variant.newBoolean(!totals[name])} onActivate={() => chooseTotal(name, null)} />
                     {kinds.map((k) => (
-                      <GSimpleAction key={k} name={k} onActivate={() => chooseTotal(name, k)} />
+                      <GSimpleAction key={k} name={k} state={GLib.Variant.newBoolean(totals[name] === k)} onActivate={() => chooseTotal(name, k)} />
                     ))}
                   </>
                 }

@@ -82,4 +82,35 @@ describe("the totals footer on Linux", () => {
     (await footerCell("title")).activateAction("total.none", null);
     await waitFor(async () => expect(await totalsOnDisk()).toBeUndefined());
   });
+
+  it("the cell's menu ticks the total that is chosen", async () => {
+    await openTasks();
+    const cell = await footerCell("priority");
+    /** The menu's entries drawn with a tick: its mark is in the checked state. */
+    const ticked = () => {
+      const out: string[] = [];
+      const walk = (w: Gtk.Widget) => {
+        if ([Gtk.AccessibleRole.MENU_ITEM, Gtk.AccessibleRole.MENU_ITEM_CHECKBOX].includes(w.getAccessibleRole())) {
+          let label = "";
+          let checked = false;
+          const within = (x: Gtk.Widget) => {
+            if (x instanceof Gtk.Label) label = x.getText();
+            if ((x.getStateFlags() & Gtk.StateFlags.CHECKED) !== 0) checked = true;
+            for (let c = x.getFirstChild(); c; c = c.getNextSibling()) within(c);
+          };
+          within(w);
+          if (checked) out.push(label);
+          return;
+        }
+        for (let c = w.getFirstChild(); c; c = c.getNextSibling()) walk(c);
+      };
+      walk(cell.getPopover()!);
+      return out;
+    };
+    cell.popup();
+    await waitFor(() => expect(ticked()).toEqual(["None"]));
+    cell.activateAction("total.average", null);
+    await waitFor(async () => expect(await totalsOnDisk()).toEqual({ priority: "average" }));
+    await waitFor(() => expect(ticked()).toEqual(["Average"]));
+  });
 });

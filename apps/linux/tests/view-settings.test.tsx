@@ -88,6 +88,55 @@ describe("view settings on Linux", () => {
     expect(await fieldsOnDisk()).toEqual([all[0]]);
   });
 
+  it("Totals: a total chosen for a column is saved to the view and shown under it; None takes it away", async () => {
+    await openSettings();
+    const totalsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "v1")?.totals;
+    await screen.findByText("Shown in a row under the table.");
+    const total = async (title: string) => {
+      const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
+      return rows.find((r) => r.getTitle() === title && choicesOf(r)[0] === "None")!;
+    };
+    const choicesOf = (row: Adw.ComboRow) => {
+      const model = row.getModel() as Gtk.StringList;
+      return Array.from({ length: model.getNItems() }, (_, i) => model.getString(i) ?? "");
+    };
+    // What the footer's own menu offers: sums and the like for a number, counts for text.
+    expect(choicesOf(await total("priority"))).toEqual(["None", "Sum", "Average", "Smallest", "Largest", "Count values", "Count empty"]);
+    expect(choicesOf(await total("title"))).toEqual(["None", "Count values", "Count empty"]);
+    expect(await totalsOnDisk()).toBeUndefined();
+    (await total("priority")).setSelected(2);
+    await waitFor(async () => expect(await totalsOnDisk()).toEqual({ priority: "average" }));
+    await screen.findByText("Avg");
+    await waitFor(async () => expect((await total("priority")).getSelected()).toBe(2));
+    (await total("title")).setSelected(1);
+    await waitFor(async () => expect(await totalsOnDisk()).toEqual({ priority: "average", title: "count" }));
+    (await total("priority")).setSelected(0);
+    (await total("title")).setSelected(0);
+    await waitFor(async () => expect(await totalsOnDisk()).toBeUndefined());
+  });
+
+  it("Totals aren't offered on a board, which has no row under it", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v2" />);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
+    await screen.findByText("Filters");
+    expect(screen.queryByText("Totals")).toBeNull();
+    expect(screen.queryByText("Shown in a row under the table.")).toBeNull();
+  });
+
+  it("Totals are offered for the columns the view shows", async () => {
+    await openSettings();
+    const totalRows = async () => {
+      const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
+      return rows.filter((r) => (r.getModel() as Gtk.StringList).getString(0) === "None" && r.getTitle() !== "Group By").map((r) => r.getTitle());
+    };
+    const all = (await tasksOnDisk()).schema.fields.map((f) => f.name);
+    await waitFor(async () => expect(await totalRows()).toEqual(all));
+    const status = ((await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).filter((w) => w instanceof Adw.SwitchRow) as Adw.SwitchRow[]).find((r) => r.getTitle() === "status")!;
+    status.setActive(false);
+    await waitFor(async () => expect(await totalRows()).toEqual(all.filter((n) => n !== "status")));
+  });
+
   it("an added filter is this viewer's own until saved for everyone (D4)", async () => {
     await openSettings();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
