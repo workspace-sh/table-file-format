@@ -12,6 +12,7 @@ import {
   printFormula,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
+import { PLATFORM_OS } from "./internal/platformOS";
 import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
 import {
   addableChoices,
@@ -371,6 +372,28 @@ const styles = css.create({
     position: "relative",
     display: "flex",
     flexShrink: 0,
+  },
+  plusMark: {
+    position: "relative",
+    width: 13,
+    height: 13,
+  },
+  plusBar: {
+    position: "absolute",
+    borderRadius: 1,
+    backgroundColor: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" },
+  },
+  plusAcross: {
+    left: 0,
+    right: 0,
+    top: 5.75,
+    height: 1.5,
+  },
+  plusDown: {
+    top: 0,
+    bottom: 0,
+    left: 5.75,
+    width: 1.5,
   },
   addFieldCompact: {
     width: 30,
@@ -1180,6 +1203,20 @@ interface AddFieldButtonProps {
 }
 
 
+/**
+ * A "+" drawn as two bars, centred in its box. On native a text "+" sits
+ * where the font puts it, above the middle and by a different amount on
+ * each platform; the web's text "+" is centred, and takes its hover colour.
+ */
+function PlusMark() {
+  return (
+    <html.div style={styles.plusMark}>
+      <html.div style={[styles.plusBar, styles.plusAcross]} />
+      <html.div style={[styles.plusBar, styles.plusDown]} />
+    </html.div>
+  );
+}
+
 /** `items` two at a time; the last pair may have one. */
 function pairsOf<T>(items: T[]): T[][] {
   const pairs: T[][] = [];
@@ -1407,7 +1444,7 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
         onClick={() => void openAt()}
         style={compact ? styles.addFieldCompact : styles.addFieldButton}
       >
-        {compact ? "+" : "+ Field"}
+        {compact ? PLATFORM_OS === "web" ? "+" : <PlusMark /> : "+ Field"}
       </html.button>
       {open && inSheet && SettingsForm && (
         // The platform's own form (iOS): the name, the type as a ticked
