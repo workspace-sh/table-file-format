@@ -43,6 +43,8 @@ export interface DragHandleProps {
   onDoubleTap?: () => void;
   /** Accepted for parity with native; a pointer press already belongs to the handle. */
   grabOnTouch?: boolean;
+  /** Show the edge's line though the pointer isn't over it: the same edge is being dragged elsewhere. */
+  lit?: boolean;
 }
 
 const edgeStyles = css.create({
@@ -67,14 +69,25 @@ const edgeStyles = css.create({
   endDragging: {
     borderInlineEndColor: "#0a84ff",
   },
+  // A row's edge, as a column's: inside the row's bottom edge, its line
+  // on that edge.
   bottom: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: -3,
-    height: 7,
+    bottom: 0,
+    height: 6,
     cursor: "row-resize",
     zIndex: 2,
+    borderBottomWidth: 2,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "transparent",
+      ":hover": "#0a84ff",
+    },
+  },
+  bottomDragging: {
+    borderBottomColor: "#0a84ff",
   },
 });
 
@@ -103,6 +116,7 @@ export function DragHandle({
   onDragEnd,
   edge,
   onDoubleTap,
+  lit,
 }: DragHandleProps) {
   const activeRef = useRef(false);
   /** The pressed element, and where the pointer last was: what edge scrolling follows. */
@@ -214,7 +228,11 @@ export function DragHandle({
 
   return (
     <html.div
-      style={edge ? [edgeStyles[edge], edge === "end" && dragging && edgeStyles.endDragging] : undefined}
+      style={
+        edge
+          ? [edgeStyles[edge], (dragging || lit) && (edge === "end" ? edgeStyles.endDragging : edgeStyles.bottomDragging)]
+          : undefined
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onPointerDown={handlePointerDown as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
