@@ -55,3 +55,40 @@ test("a table's attachments are listed from its folder, sorted; none without the
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("history is appended to: a new file is made, an old one is only added to, and one with no line end gets it first", async () => {
+  const { appendHistory } = await import("./node.ts");
+  const { parseEditLog, stampEdits } = await import("@workspace.sh/table-core");
+  const dir = mkdtempSync(join(tmpdir(), "table-app-history-"));
+  try {
+    const table = join(dir, "x.table", "tables", "tasks");
+    const file = join(table, "history.ndjson");
+    const first = stampEdits([{ op: "set", row: "p1", field: "a", to: 1 }]);
+    // The table's folder needn't be there yet.
+    await appendHistory(table, first);
+    assert.deepEqual(parseEditLog(readFileSync(file, "utf8")).events, first);
+    const second = stampEdits([
+      { op: "insert", row: "p2", values: { id: "p2" } },
+      { op: "page", row: "p1", to: "été\n" },
+    ]);
+    const before = readFileSync(file, "utf8");
+    await appendHistory(table, second);
+    const after = readFileSync(file, "utf8");
+    assert.ok(after.startsWith(before), "what was there is untouched");
+    assert.deepEqual(parseEditLog(after).events, [...first, ...second]);
+    assert.ok(after.endsWith("\n"));
+    // Nothing to add: the file isn't touched.
+    await appendHistory(table, []);
+    assert.equal(readFileSync(file, "utf8"), after);
+    // Another writer left it without a line end, and with a line this one can't read.
+    const foreign = '{"id":"x","at":"2026-01-01T00:00:00Z","op":"schema","row":"p1"}';
+    writeFileSync(file, after + foreign);
+    const third = stampEdits([{ op: "delete", row: "p2", values: { id: "p2" } }]);
+    await appendHistory(table, third);
+    const text = readFileSync(file, "utf8");
+    assert.ok(text.startsWith(after + foreign + "\n"));
+    assert.deepEqual(parseEditLog(text), { events: [...first, ...second, ...third], skipped: 1 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

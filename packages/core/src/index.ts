@@ -100,6 +100,7 @@ export {
 } from "./formula.js";
 export { formulaSpans, type FormulaSpan } from "./formulaSpans.js";
 export {
+  HISTORY_FILE,
   pageChange,
   parseEditLog,
   rowChanges,

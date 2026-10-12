@@ -1,8 +1,9 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, fireEvent, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
+import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
-import { chmodSync, cpSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +44,10 @@ async function editTitle(to: string): Promise<Gtk.Window> {
   return window;
 }
 
+const events = (table: string) => {
+  const file = join(bundle, "tables", table, "history.ndjson");
+  return existsSync(file) ? parseEditLog(readFileSync(file, "utf8")).events : [];
+};
 const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.id === "t1")?.title;
 
 describe("closing the window on Linux", () => {
@@ -52,6 +57,32 @@ describe("closing the window on Linux", () => {
     await fireEvent(window, "close-request");
     await waitFor(() => expect(quit).toHaveBeenCalled());
     expect(await titleOnDisk()).toBe("Closed quickly");
+    // And it is in the table's history by then.
+    expect(events("tasks").map((e) => e.op === "set" && e.to)).toEqual(["Closed quickly"]);
+  });
+
+  it("with a page open, closing closes the page first, and its typing is in the history by the time the app quits", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v7" />);
+    await userEvent.click(await screen.findByText("Table file format spike"));
+    let view: Gtk.TextView | undefined;
+    await waitFor(async () => {
+      view = (await screen.findAllByRole(Gtk.AccessibleRole.TEXT_BOX)).find((w) => w instanceof Gtk.TextView) as Gtk.TextView | undefined;
+      expect(view).toBeDefined();
+    });
+    await userEvent.type(view!, " Typed, then closed.");
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8")).toContain("Typed, then closed."), { timeout: 5000 });
+    // Its history waits for the page to be left.
+    expect(events("projects")).toEqual([]);
+    const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.Window;
+    // libadwaita closes the dialog on the window's first close.
+    await fireEvent(window, "close-request");
+    await waitFor(() => expect(screen.queryAllByRole(Gtk.AccessibleRole.TEXT_BOX).filter((w) => w instanceof Gtk.TextView)).toHaveLength(0));
+    expect(quit).not.toHaveBeenCalled();
+    await fireEvent(window, "close-request");
+    await waitFor(() => expect(quit).toHaveBeenCalled());
+    const [event] = events("projects");
+    expect(event?.op === "page" && event.to).toContain("Typed, then closed.");
   });
 
   it("stays open and says so when it can't write; closing again quits anyway", async () => {
