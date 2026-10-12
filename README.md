@@ -8,18 +8,22 @@
   </picture>
 </p>
 
-An open file format for the kind of table people keep in Airtable, Notion
-or a spreadsheet: typed columns, links between tables, formulas, and
-saved views such as a board or a calendar.
+**A database you can keep in a folder.**
 
-A `.table` is a folder that behaves as one file, as a macOS `.app` does.
-Inside is plain text: a schema, and one line of JSON per row. It can be
-read without the app that wrote it, kept in git, and compared line by
-line.
+`.table` is an open file format for the tables people build in Airtable,
+Notion or a spreadsheet: typed columns, linked tables, formulas, and
+views such as boards and calendars.
 
-**Try it in a browser:**
-[workspace-sh.github.io/table-file-format](https://workspace-sh.github.io/table-file-format/).
-Nothing is uploaded; edits stay in the browser.
+What's different is where it lives. A `.table` is a file on your own
+disk, not a workspace on someone else's server. Inside it is plain text:
+a schema, and one line per row. Any tool can read it, git can track it,
+and you never need the app that made it to get your data back.
+
+It is for people who work with information, not only for developers.
+Opened in an app, it looks and edits like the tools you already know.
+
+**[Try the demo in your browser](https://workspace-sh.github.io/table-file-format/)**:
+nothing is uploaded, and edits stay in that browser.
 
 > **Status.** The format is frozen at `formatVersion: 1`, and changes
 > from here only add to it. The library and the apps in this repository
@@ -38,6 +42,8 @@ holds: several linked tables, attachments, a long note on any row, and
 every saved view.
 
 ## What's on disk
+
+A `.table` is a folder that behaves as one file, as a macOS `.app` does.
 
 ```
 crm.table/
