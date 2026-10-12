@@ -75,8 +75,11 @@ const edgeStyles = StyleSheet.create({
   // edge: a strip that hung below would sit under the next row.
   bottom: { position: "absolute", left: 0, right: 0, bottom: 0, height: 6, zIndex: 2, cursor: "row-resize" as "auto" },
   // The line on the edge while the pointer is over it or it's dragged.
-  endLine: { position: "absolute", top: 0, bottom: 0, end: 0, width: 2, backgroundColor: "#0a84ff" },
-  bottomLine: { position: "absolute", left: 0, right: 0, bottom: 0, height: 2, backgroundColor: "#0a84ff" },
+  // Faint while the pointer is over it, so it doesn't flash across the
+  // table as the pointer passes; full while dragged (lineDragged).
+  endLine: { position: "absolute", top: 0, bottom: 0, end: 0, width: 2, backgroundColor: "#0a84ff", opacity: 0.35 },
+  bottomLine: { position: "absolute", left: 0, right: 0, bottom: 0, height: 2, backgroundColor: "#0a84ff", opacity: 0.35 },
+  lineDragged: { opacity: 1 },
 });
 
 export function DragHandle({
@@ -99,6 +102,8 @@ export function DragHandle({
   // `setPointerPos`; React re-rendered; loop ("Maximum update depth
   // exceeded"). Refs let the gesture point at a stable indirection
   // while still calling the latest consumer callback every fire.
+  // An edge being dragged keeps its line full, wherever the pointer is.
+  const [dragged, setDragged] = useState(false);
   const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDoubleTap });
   callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDoubleTap };
   const doubleTaps = onDoubleTap !== undefined;
@@ -129,12 +134,14 @@ export function DragHandle({
         })
         .onStart(() => {
           active.on = true;
+          if (edge) setDragged(true);
           callbacksRef.current.onDragStart?.({ pageX: from.x, pageY: from.y });
         })
         .onUpdate((e) => {
           callbacksRef.current.onDragMove?.({ pageX: e.absoluteX, pageY: e.absoluteY });
         })
         .onFinalize((e) => {
+          setDragged(false);
           if (active.on) callbacksRef.current.onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
           active.on = false;
           // A touch the system took back (a call, another view) isn't a tap.
@@ -164,6 +171,7 @@ export function DragHandle({
     }
     pan = pan
       .onStart((e) => {
+        if (edge) setDragged(true);
         callbacksRef.current.onDragStart?.({
           pageX: e.absoluteX,
           pageY: e.absoluteY,
@@ -184,6 +192,7 @@ export function DragHandle({
       // Fires for system-cancelled gestures (another recognizer
       // wins). Treat as release so we don't leak drag state.
       .onFinalize((e, success) => {
+        setDragged(false);
         if (!success) {
           callbacksRef.current.onDragEnd?.({
             pageX: e.absoluteX,
@@ -203,7 +212,7 @@ export function DragHandle({
     // Only `longPressMs` and whether there's a double tap shape the
     // gesture; callbacks read through `callbacksRef` so they don't need
     // to invalidate the memo.
-  }, [longPressMs, doubleTaps, grabOnTouch]);
+  }, [longPressMs, doubleTaps, grabOnTouch, edge]);
 
   // Real RN View between GestureDetector and the (likely RSD) child.
   // RNGH injects `collapsable={false}` into its immediate child so RN's
@@ -217,6 +226,7 @@ export function DragHandle({
   // Over an edge with a pointer (macOS: react-native-macos's
   // mouse events, which iOS's views don't send), or dragging it.
   const [lit, setLit] = useState(false);
+  const shown = dragged || litElsewhere;
   const pointer =
     edge
       ? {
@@ -228,7 +238,9 @@ export function DragHandle({
     <GestureDetector gesture={gesture}>
       <View collapsable={false} style={edge ? edgeStyles[edge] : undefined} {...pointer}>
         {children}
-        {edge && (lit || litElsewhere) && <View pointerEvents="none" style={edge === "end" ? edgeStyles.endLine : edgeStyles.bottomLine} />}
+        {edge && (lit || shown) && (
+          <View pointerEvents="none" style={[edge === "end" ? edgeStyles.endLine : edgeStyles.bottomLine, shown && edgeStyles.lineDragged]} />
+        )}
       </View>
     </GestureDetector>
   );
