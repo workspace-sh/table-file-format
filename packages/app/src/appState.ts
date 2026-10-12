@@ -39,6 +39,7 @@ import {
   withViewPatch,
   type FieldPlace,
 } from "./edits.ts";
+import { NO_EDIT_LOG, pruned, recorded, settledPages, written, type EditLogState } from "./editLog.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
 import type { IndexEdit } from "./indexed.ts";
 import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History, type Place } from "./history.ts";
@@ -140,6 +141,13 @@ export interface AppState {
    * an edit, and isn't here.
    */
   undo: Record<string, { past: UndoStep[]; future: UndoStep[] }>;
+  /**
+   * What was edited and not yet written to its table's history
+   * (`history.ndjson`, SPEC section 14), for the app to append and then
+   * say so (`editsWritten`). Kept only when the app writes history
+   * (`AppStart.writesHistory`).
+   */
+  editLog: EditLogState;
 }
 
 /**
@@ -233,7 +241,11 @@ export type AppAction =
   | { type: "redo" }
   | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
   /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
-  | { type: "reloaded"; key: string; table: ParsedTable };
+  | { type: "reloaded"; key: string; table: ParsedTable }
+  /** The app has appended the first `count` of a table's kept edits to its history. */
+  | { type: "editsWritten"; key: string; count: number }
+  /** Every page's stretch of changes is over (typing has been still a while, or the app is about to close): each is said, the open one too. */
+  | { type: "pagesSettled" };
 
 /** The viewer's own settings, as the app loaded them from its store. */
 export interface StoredPrefs {
@@ -250,6 +262,8 @@ export interface AppStart {
   stored?: StoredPrefs;
   /** Where to open: an address, as a link or the page's own address gives it. */
   start?: Address | string;
+  /** The app appends edits to each table's history (`state.editLog`), so they are kept for it. */
+  writesHistory?: boolean;
 }
 
 export function initialAppState(input: AppStart): AppState {
@@ -278,6 +292,7 @@ export function initialAppState(input: AppStart): AppState {
     dirty: [],
     indexWork: [],
     undo: {},
+    editLog: input.writesHistory ? { ...NO_EDIT_LOG, on: true } : NO_EDIT_LOG,
   };
   const target = input.start ? addressTarget(input.start, tables, bundles, "") : null;
   const state = target ? follow(base, target) : base;
@@ -348,8 +363,27 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
       openPage: place.page && rows.some((r) => r.id === place.page) ? place.page : null,
     };
   }
+  // What the action edited, kept for the table's history.
+  if (next.editLog.on) {
+    const open = next.openPage !== null ? { key: next.active, rowId: next.openPage } : null;
+    // (Deleting a row asks first: its answer is the edit.)
+    const edits = ROW_EDITS.has(action.type) || (action.type === "answer" && prev.asking?.on.type === "deleteRow");
+    let editLog = next.tables === prev.tables ? next.editLog : pruned(next.editLog, next.tables);
+    if (edits) editLog = recorded(editLog, prev.tables, next.tables, open);
+    // A page left: its stretch of changes is over.
+    else if (next.openPage !== prev.openPage || next.active !== prev.active) editLog = settledPages(editLog, next.tables, open);
+    if (editLog !== next.editLog) next = { ...next, editLog };
+  }
   return next;
 }
+
+/**
+ * The actions that edit rows or pages, whose changes go to the table's
+ * history. Any other action that replaces a table isn't an edit to say:
+ * a file opened or read again, rows moved into the index, the examples
+ * reset, a field's change and what it does to the rows.
+ */
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "addRow", "insertRow", "updateBody", "undo", "redo"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -765,6 +799,14 @@ function step(state: AppState, action: AppAction): AppState {
         indexWork: state.indexWork.filter((w) => w.key !== action.key),
         undo: without(state.undo, [action.key]),
       };
+    case "editsWritten": {
+      const editLog = written(state.editLog, action.key, action.count);
+      return editLog === state.editLog ? state : { ...state, editLog };
+    }
+    case "pagesSettled": {
+      const editLog = settledPages(state.editLog, state.tables, null);
+      return editLog === state.editLog ? state : { ...state, editLog };
+    }
     case "undo":
       return stepBack(state, "past");
     case "redo":
