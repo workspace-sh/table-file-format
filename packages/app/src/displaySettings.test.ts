@@ -40,10 +40,22 @@ test("formula syntax: the stored form is kept; Excel style is the default, so it
   assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"formulaSyntax":"lisp"}' })), {});
 });
 
-test("displayChoices: three rows, in order, with the chosen values", () => {
+test("resize handles: grabbers are kept; pills are the default, so they aren't", () => {
+  const store = memory();
+  saveDisplay(store, { resizeHandles: "grabbers" });
+  assert.deepEqual(loadDisplay(store), { resizeHandles: "grabbers" });
+  saveDisplay(store, {});
+  assert.deepEqual(loadDisplay(store), {});
+  assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"resizeHandles":"knobs"}' })), {});
+  assert.equal(withDisplayChoice({}, "resizeHandles", "grabbers").resizeHandles, "grabbers");
+  assert.equal(withDisplayChoice({ resizeHandles: "grabbers" }, "resizeHandles", "pills").resizeHandles, undefined);
+});
+
+test("displayChoices: four rows, in order, with the chosen values", () => {
   const rows = displayChoices({}, "en-GB");
-  assert.deepEqual(rows.map((r) => r.kind), ["locale", "dateFormat", "formulaSyntax"]);
-  assert.deepEqual(rows.map((r) => r.value), ["", "iso", "excel"]);
+  assert.deepEqual(rows.map((r) => r.kind), ["locale", "dateFormat", "formulaSyntax", "resizeHandles"]);
+  assert.deepEqual(rows.map((r) => r.value), ["", "iso", "excel", "pills"]);
+  assert.deepEqual(rows[3]!.options.map((o) => o.label), ["Pills", "Grabbers"]);
   assert.equal(rows[0]!.options[0]!.label, "Browser (en-GB)");
   assert.equal(rows[0]!.options.length, LOCALES.length + 1);
   assert.equal(rows[1]!.options.find((o) => o.value === "iso")!.label, "ISO (2026-04-20)");
@@ -51,8 +63,8 @@ test("displayChoices: three rows, in order, with the chosen values", () => {
   assert.equal(rows[0]!.note, undefined);
   assert.ok(rows[1]!.note && rows[2]!.note);
   assert.equal(displayChoices({}, "fr-FR", "System")[0]!.options[0]!.label, "System (fr-FR)");
-  const chosen = displayChoices({ locale: "de-DE", dateFormat: "long", formulaSyntax: "stored" }, "en-GB");
-  assert.deepEqual(chosen.map((r) => r.value), ["de-DE", "long", "stored"]);
+  const chosen = displayChoices({ locale: "de-DE", dateFormat: "long", formulaSyntax: "stored", resizeHandles: "grabbers" }, "en-GB");
+  assert.deepEqual(chosen.map((r) => r.value), ["de-DE", "long", "stored", "grabbers"]);
 });
 
 test("withDisplayChoice: a default is stored as absent", () => {

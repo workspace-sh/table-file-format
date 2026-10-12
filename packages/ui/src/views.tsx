@@ -395,6 +395,36 @@ const styles = css.create({
     borderRadius: 1,
     backgroundColor: "#ffffff",
   },
+  // The grabbers look (the "Resize handles" display setting): the pill's
+  // place, left clear but for a short bar like an iOS sheet's grabber,
+  // ringed in the page's colour so it reads over whatever is under it.
+  gripClear: {
+    backgroundColor: "transparent",
+  },
+  rowGrabber: {
+    width: 26,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: "#0a84ff",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#000000",
+    },
+  },
+  columnGrabber: {
+    width: 9,
+    height: 26,
+    borderRadius: 4.5,
+    backgroundColor: "#0a84ff",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#000000",
+    },
+  },
   // Beside the pill, out of the flow, so the pill stays put as it appears.
   rowGripLabel: {
     position: "absolute",
@@ -2710,7 +2740,14 @@ export function TableView({
   // phone. A host can replace the control (PlatformControlsProvider).
   const { RowActions } = usePlatformControls();
   const actionsFor = (rowId: string) =>
-    rowActions(rowId, { onOpenBody, hasBody: bodies?.[rowId] !== undefined, onInsertRow, onDeleteRow });
+    rowActions(rowId, {
+      onOpenBody,
+      hasBody: bodies?.[rowId] !== undefined,
+      onInsertRow,
+      onFitRow: onUpdateView ? (id) => fitRow(id) : undefined,
+      onResetRowHeight: onUpdateView && view.rowHeights?.[rowId] !== undefined ? (id) => resetRowHeight(id) : undefined,
+      onDeleteRow,
+    });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   const { Select: TotalsSelect } = usePlatformControls();
@@ -3159,12 +3196,31 @@ export function TableView({
       />
     ) : null;
 
+  const saveRowHeight = (rowId: string, h: number) => {
+    if (h !== rowHeightOf(view, rowId)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [rowId]: h } });
+  };
+  // A row's height for what it holds: each cell's text in its column's width.
+  const fittedHeightOf = (row: Row) =>
+    fittedRowHeight(
+      fields.map((name) => ({
+        show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
+        width: colWidth(name),
+      })),
+    );
+  // From the row's menu: fit it, or put it back to the view's height.
+  const fitRow = (rowId: string) => {
+    const row = rowOf(rowId);
+    if (row) saveRowHeight(rowId, fittedHeightOf(row));
+  };
+  const resetRowHeight = (rowId: string) => {
+    if (view.rowHeights?.[rowId] === undefined) return;
+    const { [rowId]: _gone, ...rest } = view.rowHeights;
+    onUpdateView?.({ rowHeights: Object.keys(rest).length > 0 ? rest : undefined });
+  };
   // Resizing a row, from its grip or its line: in whole lines, with a tick
   // for each; a double tap fits it to what it holds.
   const rowResize = (row: Row, by: "grip" | "line") => {
-    const saveHeight = (h: number) => {
-      if (h !== rowHeightOf(view, row.id)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
-    };
+    const saveHeight = (h: number) => saveRowHeight(row.id, h);
     return {
       onDragStart: (e: DragEvent) => {
         resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
@@ -3185,15 +3241,7 @@ export function TableView({
         saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
         setLiveRow(null);
       },
-      onDoubleTap: () =>
-        saveHeight(
-          fittedRowHeight(
-            fields.map((name) => ({
-              show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-              width: colWidth(name),
-            })),
-          ),
-        ),
+      onDoubleTap: () => saveHeight(fittedHeightOf(row)),
     };
   };
   // How many lines a row being dragged by `by` has, for its label.
@@ -3208,17 +3256,28 @@ export function TableView({
   // row's bottom edge under the start of the selected cell, so it's in
   // view wherever the row has been scrolled, that takes a touch as it
   // lands.
-  const rowGrip = (row: Row, cellStart: number) => {
+  // As grabbers (the "Resize handles" setting), it's centred on the cell's
+  // bottom edge instead, as the column's is on its end edge.
+  const grabbers = display.resizeHandles === "grabbers";
+  const rowGrip = (row: Row, cellStart: number, cellWidth: number) => {
     if (!onUpdateView) return null;
     const label = draggedLines(row, "grip");
+    // The pill's hit area is 52 wide; centred, its middle is the cell's.
+    const at = grabbers ? cellStart + cellWidth / 2 - 26 : cellStart + 4;
     return (
-      <html.div style={[styles.rowGripSlot, styles.rowGripAt(cellStart + 4)]}>
+      <html.div style={[styles.rowGripSlot, styles.rowGripAt(at)]}>
         <DragHandle grabOnTouch {...rowResize(row, "grip")}>
           <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
-            <html.div style={styles.rowGrip}>
-              <html.div style={styles.rowGripBar} />
-              <html.div style={styles.rowGripBar} />
-            </html.div>
+            {grabbers ? (
+              <html.div style={[styles.rowGrip, styles.gripClear]}>
+                <html.div style={styles.rowGrabber} />
+              </html.div>
+            ) : (
+              <html.div style={styles.rowGrip}>
+                <html.div style={styles.rowGripBar} />
+                <html.div style={styles.rowGripBar} />
+              </html.div>
+            )}
           </html.div>
         </DragHandle>
         {label !== null && <html.span style={styles.rowGripLabel}>{label}</html.span>}
@@ -3269,10 +3328,16 @@ export function TableView({
           onDoubleTap={() => resetWidth(name)}
         >
           <html.div role="button" aria-label="Resize column" style={styles.columnGripHit}>
-            <html.div style={styles.columnGrip}>
-              <html.div style={styles.columnGripBar} />
-              <html.div style={styles.columnGripBar} />
-            </html.div>
+            {grabbers ? (
+              <html.div style={[styles.columnGrip, styles.gripClear]}>
+                <html.div style={styles.columnGrabber} />
+              </html.div>
+            ) : (
+              <html.div style={styles.columnGrip}>
+                <html.div style={styles.columnGripBar} />
+                <html.div style={styles.columnGripBar} />
+              </html.div>
+            )}
           </html.div>
         </DragHandle>
       </html.div>
@@ -4137,7 +4202,7 @@ export function TableView({
                   </RowActions>
                   {sel?.rowId === row.id && sel.name === primaryName && (
                     <html.div style={styles.rowGripAnchor}>
-                      {rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}
+                      {rowGrip(row, cellStartIn([primaryName], primaryName, !!coords), colWidth(primaryName))}
                       {columnGrip(primaryName, cellStartIn([primaryName], primaryName, !!coords) + colWidth(primaryName), heightOf(row.id))}
                     </html.div>
                   )}
@@ -4209,7 +4274,7 @@ export function TableView({
                     </RowActions>
                     {sel?.rowId === row.id && sel.name !== primaryName && (
                       <html.div style={styles.rowGripAnchor}>
-                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
+                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName), colWidth(sel.name))}
                         {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !primaryName) + colWidth(sel.name), heightOf(row.id))}
                       </html.div>
                     )}
