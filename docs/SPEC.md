@@ -1263,7 +1263,9 @@ name even if the archive file is renamed.
 Readers MUST ignore archiver junk (`__MACOSX/`, `.DS_Store`,
 `Thumbs.db`) and unknown entries (same tolerance as section 1).
 Writers SHOULD omit `index.sqlite` (rebuildable) and MAY omit
-`attachments/`.
+`attachments/`. A table's `history.ndjson` (section 14), when it has
+one, travels with it as it is: a writer copies the file's bytes and
+doesn't rewrite its lines.
 
 ### Security — extraction rules
 
