@@ -62,6 +62,8 @@ export interface DragHandleProps {
    * selected, where a scroll that starts on it would only be a miss.
    */
   grabOnTouch?: boolean;
+  /** Show the edge's line though the pointer isn't over it: the same edge is being dragged elsewhere. */
+  lit?: boolean;
 }
 
 // The pointer's resize cursors, where there's a pointer (macOS, and an
@@ -69,9 +71,12 @@ export interface DragHandleProps {
 // style types, which have only "auto" and "pointer".
 const edgeStyles = StyleSheet.create({
   end: { position: "absolute", top: 0, bottom: 0, end: 0, width: 12, zIndex: 4, cursor: "col-resize" as "auto" },
-  bottom: { position: "absolute", left: 0, right: 0, bottom: -6, height: 12, zIndex: 2, cursor: "row-resize" as "auto" },
-  // The line on a column's edge while the pointer is over it or it's dragged.
+  // Inside the row's bottom edge, as a column's strip is inside its end
+  // edge: a strip that hung below would sit under the next row.
+  bottom: { position: "absolute", left: 0, right: 0, bottom: 0, height: 6, zIndex: 2, cursor: "row-resize" as "auto" },
+  // The line on the edge while the pointer is over it or it's dragged.
   endLine: { position: "absolute", top: 0, bottom: 0, end: 0, width: 2, backgroundColor: "#0a84ff" },
+  bottomLine: { position: "absolute", left: 0, right: 0, bottom: 0, height: 2, backgroundColor: "#0a84ff" },
 });
 
 export function DragHandle({
@@ -83,6 +88,7 @@ export function DragHandle({
   edge,
   onDoubleTap,
   grabOnTouch,
+  lit: litElsewhere,
 }: DragHandleProps) {
   // Read callbacks through refs so the gesture object stays stable
   // across renders. Without this, consumers passing inline lambdas
@@ -208,11 +214,11 @@ export function DragHandle({
   // coords, dropped events, "stuck" board / "inconsistent" list.
   // Buffering with a plain View accepts the prop and stabilises the
   // hierarchy.
-  // Over a column's edge with a pointer (macOS: react-native-macos's
+  // Over an edge with a pointer (macOS: react-native-macos's
   // mouse events, which iOS's views don't send), or dragging it.
   const [lit, setLit] = useState(false);
   const pointer =
-    edge === "end"
+    edge
       ? {
           onMouseEnter: () => setLit(true),
           onMouseLeave: () => setLit(false),
@@ -222,7 +228,7 @@ export function DragHandle({
     <GestureDetector gesture={gesture}>
       <View collapsable={false} style={edge ? edgeStyles[edge] : undefined} {...pointer}>
         {children}
-        {lit && <View pointerEvents="none" style={edgeStyles.endLine} />}
+        {edge && (lit || litElsewhere) && <View pointerEvents="none" style={edge === "end" ? edgeStyles.endLine : edgeStyles.bottomLine} />}
       </View>
     </GestureDetector>
   );

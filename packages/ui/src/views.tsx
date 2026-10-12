@@ -376,6 +376,12 @@ const styles = css.create({
     paddingInline: 6,
     paddingBlock: 2,
   },
+  // The same while a row's line is dragged: at the start of the row, just
+  // above the line.
+  rowLineLabel: {
+    bottom: 8,
+    insetInlineStart: 8,
+  },
   /** A value that can't wrap: one line, cut short with an ellipsis. */
   oneLine: {
     minWidth: 0,
@@ -2639,7 +2645,7 @@ export function TableView({
   // Resizing: live values while a handle is dragged, committed to the
   // view (columnWidths / rowHeights, SPEC section 4) when it's let go.
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number } | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; by: "grip" | "line" } | null>(null);
   const resizeStart = useRef<{ at: number; size: number } | null>(null);
   // Each row's own height, else the view's default; the row being
   // resized follows the drag.
@@ -3120,52 +3126,61 @@ export function TableView({
       />
     ) : null;
 
+  // Resizing a row, from its grip or its line: in whole lines, with a tick
+  // for each; a double tap fits it to what it holds.
+  const rowResize = (row: Row, by: "grip" | "line") => {
+    const saveHeight = (h: number) => {
+      if (h !== rowHeightOf(view, row.id)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    };
+    return {
+      onDragStart: (e: DragEvent) => {
+        resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
+        lastStep.current = heightOf(row.id);
+      },
+      onDragMove: (e: DragEvent) => {
+        const start = resizeStart.current;
+        if (!start) return;
+        const h = snappedRowHeight(start.size, e.pageY - start.at);
+        if (h !== lastStep.current) haptics.step?.();
+        lastStep.current = h;
+        setLiveRow({ rowId: row.id, h, by });
+      },
+      onDragEnd: (e: DragEvent) => {
+        const start = resizeStart.current;
+        resizeStart.current = null;
+        if (!start) return;
+        saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
+        setLiveRow(null);
+      },
+      onDoubleTap: () =>
+        saveHeight(
+          fittedRowHeight(
+            fields.map((name) => ({
+              show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
+              width: colWidth(name),
+            })),
+          ),
+        ),
+    };
+  };
+  // How many lines a row being dragged by `by` has, for its label.
+  const draggedLines = (row: Row, by: "grip" | "line") => {
+    if (liveRow?.rowId !== row.id || liveRow.by !== by) return null;
+    const n = linesFor(liveRow.h);
+    return `${n} ${n === 1 ? "line" : "lines"}`;
+  };
+
   // A row's grip: only on the row with the selected cell, so nothing else
   // can be dragged by a scroll that starts on a row's edge. A pill on the
   // row's bottom edge under the start of the selected cell, so it's in
   // view wherever the row has been scrolled, that takes a touch as it
-  // lands. Dragging resizes the row in whole lines,
-  // with a tick for each; a double tap fits it to what it holds.
+  // lands.
   const rowGrip = (row: Row, cellStart: number) => {
     if (!onUpdateView) return null;
-    const saveHeight = (h: number) => {
-      if (h !== rowHeightOf(view, row.id)) onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
-    };
-    const dragging = liveRow?.rowId === row.id ? liveRow.h : null;
+    const label = draggedLines(row, "grip");
     return (
       <html.div style={[styles.rowGripSlot, styles.rowGripAt(cellStart + 4)]}>
-        <DragHandle
-          grabOnTouch
-          onDragStart={(e) => {
-            resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
-            lastStep.current = heightOf(row.id);
-          }}
-          onDragMove={(e) => {
-            const start = resizeStart.current;
-            if (!start) return;
-            const h = snappedRowHeight(start.size, e.pageY - start.at);
-            if (h !== lastStep.current) haptics.step?.();
-            lastStep.current = h;
-            setLiveRow({ rowId: row.id, h });
-          }}
-          onDragEnd={(e) => {
-            const start = resizeStart.current;
-            resizeStart.current = null;
-            if (!start) return;
-            saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
-            setLiveRow(null);
-          }}
-          onDoubleTap={() =>
-            saveHeight(
-              fittedRowHeight(
-                fields.map((name) => ({
-                  show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-                  width: colWidth(name),
-                })),
-              ),
-            )
-          }
-        >
+        <DragHandle grabOnTouch {...rowResize(row, "grip")}>
           <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
             <html.div style={styles.rowGrip}>
               <html.div style={styles.rowGripBar} />
@@ -3173,12 +3188,22 @@ export function TableView({
             </html.div>
           </html.div>
         </DragHandle>
-        {dragging !== null && (
-          <html.span style={styles.rowGripLabel}>
-            {linesFor(dragging)} {linesFor(dragging) === 1 ? "line" : "lines"}
-          </html.span>
-        )}
+        {label !== null && <html.span style={styles.rowGripLabel}>{label}</html.span>}
       </html.div>
+    );
+  };
+
+  // With a pointer, a row also resizes from the line under it, anywhere
+  // along it, as a column does from its line: a strip inside the row's
+  // bottom edge in each pane, lit in both while it's dragged. `labelled`
+  // is the pane that shows the lines while dragging (the first).
+  const rowLine = (row: Row, labelled: boolean) => {
+    if (!byLines) return null;
+    const label = labelled ? draggedLines(row, "line") : null;
+    return (
+      <DragHandle edge="bottom" lit={liveRow?.rowId === row.id && liveRow.by === "line"} {...rowResize(row, "line")}>
+        {label !== null && <html.span style={[styles.rowGripLabel, styles.rowLineLabel]}>{label}</html.span>}
+      </DragHandle>
     );
   };
 
@@ -4035,6 +4060,7 @@ export function TableView({
                     >
                       {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                       {renderBodyCell(row, primaryName, 0, 1)}
+                      {rowLine(row, true)}
                     </html.div>
                   </RowActions>
                   {sel?.rowId === row.id && sel.name === primaryName && (
@@ -4103,6 +4129,7 @@ export function TableView({
                         {restNames.map((name, idx) =>
                           renderBodyCell(row, name, idx, restNames.length),
                         )}
+                        {rowLine(row, !primaryName)}
                       </html.div>
                     </RowActions>
                     {sel?.rowId === row.id && sel.name !== primaryName && (
