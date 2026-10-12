@@ -7,7 +7,12 @@
 // history: what was edited.)
 
 import { newId } from "./id.js";
+import { TableEntry } from "./layout.js";
+import { normaliseBody } from "./serialize.js";
 import type { Row } from "./types.js";
+
+/** The history's file, in its table's folder: `tables/{name}/history.ndjson`. */
+export const HISTORY_FILE = TableEntry.history;
 
 /** One cell changed. `from` and `to` are the stored values; absent means empty (SPEC section 3). */
 export interface SetChange {
@@ -97,10 +102,17 @@ export function rowChanges(before: Row | undefined, after: Row | undefined, comp
   return changes;
 }
 
-/** A row's page changed from one text to another: null when it didn't. No text and an empty one are the same. */
+/**
+ * A row's page changed from one text to another: null when it didn't. The
+ * text is said as its file holds it (`bodies/{id}.md` ends in a newline),
+ * so a page typed without one and its file are the same text. No text and
+ * an empty one are the same: no page.
+ */
 export function pageChange(row: string, before: string | undefined, after: string | undefined): PageChange | null {
-  if ((before ?? "") === (after ?? "")) return null;
-  return { op: "page", row, ...(before ? { from: before } : {}), ...(after ? { to: after } : {}) };
+  const from = before ? normaliseBody(before) : "";
+  const to = after ? normaliseBody(after) : "";
+  if (from === to) return null;
+  return { op: "page", row, ...(from ? { from } : {}), ...(to ? { to } : {}) };
 }
 
 export interface EditStamp {

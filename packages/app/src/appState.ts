@@ -369,6 +369,8 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
     // (Deleting a row asks first: its answer is the edit.)
     const edits = ROW_EDITS.has(action.type) || (action.type === "answer" && prev.asking?.on.type === "deleteRow");
     let editLog = next.tables === prev.tables ? next.editLog : pruned(next.editLog, next.tables);
+    // The examples put back as they shipped: their files are new, and what was edited before is no part of them.
+    if (action.type === "answer" && prev.asking?.on.type === "reset" && next.tables !== prev.tables) editLog = { ...NO_EDIT_LOG, on: true };
     if (edits) editLog = recorded(editLog, prev.tables, next.tables, open);
     // A page left: its stretch of changes is over.
     else if (next.openPage !== prev.openPage || next.active !== prev.active) editLog = settledPages(editLog, next.tables, open);

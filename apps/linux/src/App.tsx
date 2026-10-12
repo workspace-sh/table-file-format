@@ -66,7 +66,7 @@ import {
   type Place,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
-import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
@@ -550,6 +550,7 @@ export function App({
   initialView,
   settings,
   newFilesIn,
+  pageStillMs,
   chooseFile = chooseFileToAttach,
   chooseFolder = chooseFolderToOpen,
   chooseZip = chooseZipToOpen,
@@ -569,6 +570,8 @@ export function App({
   settings?: KeyValueStore;
   /** The folder new .table files are made in (the examples' own); absent, none can be made. */
   newFilesIn?: string;
+  /** How long a page being typed in is still before its changes go to its table's history as one event; a minute when absent. */
+  pageStillMs?: number;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
   /** Ask for a .table folder to open. */
@@ -596,6 +599,8 @@ export function App({
   const closing = useRef(false);
   // Set once the indexed tables' hook below has run: a write can only come after.
   const saveIndexed = useRef<(bundles: string[], tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  // A table's own folder, for its history: set below, where the paths are known.
+  const historyDir = useRef<(key: string) => string | undefined>(() => undefined);
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(() => {
     // The examples, in newFilesIn, are the demo's own, and a reset puts them
     // back; a folder named on the command line or opened is the viewer's.
@@ -609,6 +614,8 @@ export function App({
       opened: Object.fromEntries(Object.entries(library.paths).filter(([, path]) => !inExamples(path))),
       stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
       ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
+      // Each edit goes to its table's history.ndjson (SPEC section 14).
+      writesHistory: true,
     });
   }, {
     store,
@@ -620,7 +627,14 @@ export function App({
       await Promise.all(bundles.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
       await saveIndexed.current(bundles, tables);
     },
+    // What was edited, added to the table's history in its folder. A table with nowhere on disk keeps it to write.
+    appendHistory: async (key, events) => {
+      if (resetting.current || !historyDir.current(key)) return false;
+      await appendHistory(historyDir.current(key)!, events);
+    },
+    ...(pageStillMs !== undefined ? { pageStillMs } : {}),
   }, ownLocale);
+  historyDir.current = (key) => (pathOf(bundleOf(key)) ? tableDir(key) : undefined);
   const { tables, bundles } = state;
 
   // Where a new .table file, or one opened from an archive, is made: the examples' folder when the

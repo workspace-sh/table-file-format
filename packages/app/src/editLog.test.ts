@@ -125,8 +125,8 @@ test("a page typed in is one event when it is closed: the text before the first 
   assert.deepEqual(kept(typing), []);
   assert.deepEqual(typing.editLog.pages, { [KEY]: { p10: page } });
   const closed = run(typing, { type: "openPage", rowId: null });
-  assert.deepEqual(kept(closed), [{ op: "page", row: "p10", from: page, to: closed.tables[KEY]!.bodies!.p10 }]);
-  assert.match(closed.tables[KEY]!.bodies!.p10!, /^One two three/);
+  // As the page's file holds each: ending in a newline.
+  assert.deepEqual(kept(closed), [{ op: "page", row: "p10", from: page.endsWith("\n") ? page : page + "\n", to: "One two three\n" }]);
   assert.deepEqual(closed.editLog.pages, {});
 });
 
@@ -222,6 +222,12 @@ test("files opened and the examples reset aren't edits; what wasn't written for 
   const reset = run(edited, { type: "editsWritten", key: KEY, count: 1 }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
   assert.notEqual(rowOf(reset, "p1").owner, "sam");
   assert.deepEqual(reset.editLog.pending, {});
+  // An edit not yet written when they are reset, and a page being typed, go too: the files are new.
+  const unwritten = run(edited, { type: "openPage", rowId: "p10" }, { type: "updateBody", rowId: "p10", content: "Typing" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
+  assert.deepEqual(unwritten.editLog, { on: true, pending: {}, pages: {} });
+  // Cancelled, they stay.
+  const cancelled = run(edited, { type: "reset", fresh: examples() }, { type: "answer", response: "cancel" });
+  assert.equal(kept(cancelled).length, 1);
 });
 
 test("a table held in the index: its pages are kept here as any table's, its rows aren't here to compare", () => {
