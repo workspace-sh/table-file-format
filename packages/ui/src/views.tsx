@@ -2718,6 +2718,10 @@ export function TableView({
   restorePlace,
   onPlaceMeasure,
 }: ViewProps) {
+  // Every prop as given, to tell a drawing the screen asked for from one
+  // only the index's window caused (drawKey, below).
+  // eslint-disable-next-line prefer-rest-params
+  const tableProps = arguments[0] as Record<string, unknown>;
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
   const rtl = useDirection() === "rtl";
@@ -3032,10 +3036,16 @@ export function TableView({
     );
   };
   // What the list is showing decides the window read from an index, with room either side.
+  // Further ahead the way the list is scrolling, so a fast scroll finds
+  // its rows already read rather than drawing each one twice, empty and then
+  // filled: two of the index's pages (VIEW_PAGE) ahead, a few rows behind.
+  const lastShown = useRef(0);
   const onShown = indexed
     ? (first: number, last: number) => {
-        const start = Math.max(0, Math.floor((first - 60) / 40) * 40);
-        const end = Math.ceil((last + 60) / 40) * 40;
+        const down = first >= lastShown.current;
+        lastShown.current = first;
+        const start = Math.max(0, Math.floor((first - (down ? 60 : 400)) / 40) * 40);
+        const end = Math.ceil((last + (down ? 400 : 60)) / 40) * 40;
         setShownRange((was) => (was.start === start && was.end === end ? was : { start, end }));
       }
     : undefined;
@@ -4178,6 +4188,51 @@ export function TableView({
     </html.div>
   );
 
+  // When the table draws again only because the window read from an index
+  // moved, or its rows arrived, a row on screen whose own row is the same
+  // isn't drawn again (RowList's stampOf and drawKey): over a long scroll
+  // that was nearly all the table's drawing. Anything else changed (a
+  // prop, the table's own state, its settings, the editor) draws every row
+  // again, as before.
+  const drawSeen = useRef<{ key: number; range: unknown; win: unknown; rest: unknown[] } | null>(null);
+  const drawRest: unknown[] = [
+    ...Object.values(tableProps),
+    liveWidths,
+    liveRow,
+    editingFieldName,
+    anchorRect,
+    formulaCell,
+    totalsMenu,
+    focusRowId,
+    sel,
+    editReq,
+    barDraft,
+    barFormula,
+    newRowHot,
+    addedField,
+    fieldAsk,
+    display,
+    rtl,
+    editor,
+    facts,
+    viewportWidth,
+    containerWidth,
+    pageReveal,
+  ];
+  const drawWas = drawSeen.current;
+  const windowOnly =
+    !!drawWas &&
+    (drawWas.range !== shownRange || drawWas.win !== windowRows) &&
+    drawWas.rest.length === drawRest.length &&
+    drawWas.rest.every((v, i) => v === drawRest[i]);
+  const drawKey = windowOnly ? drawWas.key : (drawWas?.key ?? 0) + 1;
+  drawSeen.current = { key: drawKey, range: shownRange, win: windowRows, rest: drawRest };
+  // A row's own part of what it draws: its row, and the group it starts.
+  const rowStamp = (place: number): readonly unknown[] => {
+    const entry = entryAt(place);
+    return [entry?.row, entry?.starts?.label, entry?.starts?.count];
+  };
+
   return (
     <>
     {/* "+" for a new field sits at the end of the header row, just outside
@@ -4220,6 +4275,8 @@ export function TableView({
               raised={rowRaised}
               handle={frozenRows}
               layout={tallLayout}
+              stampOf={rowStamp}
+              drawKey={drawKey}
               render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
@@ -4285,6 +4342,8 @@ export function TableView({
                 raised={rowRaised}
                 handle={paneRows}
                 layout={tallLayout}
+                stampOf={rowStamp}
+                drawKey={drawKey}
                 onShown={onShown}
                 render={(place) => drawn(place, ({ row, starts }, i) => (
                   <>

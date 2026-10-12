@@ -33,6 +33,16 @@ export interface RowListProps<T> {
   layout?: () => RowLayout;
   /** Told the first and last places drawn, as they change: what a list reading its rows from an index asks it for. */
   onShown?: (first: number, last: number) => void;
+  /**
+   * What an item's drawing depends on of its own (its row, say). With
+   * `drawKey`, an item already drawn is drawn again only when its stamp
+   * changes, or `drawKey` does; without, whenever `render` is another
+   * function. For a table that draws again as an index's window moves
+   * while most rows on screen stay the same rows.
+   */
+  stampOf?: (item: T) => readonly unknown[];
+  /** Changes when everything drawn must be drawn again (see `stampOf`). */
+  drawKey?: unknown;
 }
 
 /**
