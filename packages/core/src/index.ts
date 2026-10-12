@@ -99,4 +99,19 @@ export {
   type FormulaRef,
 } from "./formula.js";
 export { formulaSpans, type FormulaSpan } from "./formulaSpans.js";
+export {
+  pageChange,
+  parseEditLog,
+  rowChanges,
+  serializeEditEvents,
+  stampEdits,
+  type DeleteChange,
+  type EditChange,
+  type EditEvent,
+  type EditLog,
+  type EditStamp,
+  type InsertChange,
+  type PageChange,
+  type SetChange,
+} from "./edit-log.js";
 export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";

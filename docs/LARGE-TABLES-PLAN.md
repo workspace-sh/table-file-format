@@ -13,7 +13,7 @@ The bar is #126: 10,000 to 1,000,000 rows within 1 s, and ideally within 135 ms.
 | SQLite in the browser, in a worker, kept in OPFS | In `apps/web/src/sqlite/` (#331). Used by `apps/web/harness` only. |
 | A list that draws only the rows on screen | Chosen (LegendList, 2 Oct), used only in `apps/mobile/app/bench.tsx`. Every view still draws every row. |
 | A `SqlDriver` for Linux or iOS | None. |
-| `history.ndjson` (SPEC section 14, D44) | Specified (#313). No code reads or writes it. |
+| `history.ndjson` (SPEC section 14, D44) | Specified (#313). table-core reads the file and makes its events (`edit-log.ts`). No app writes it yet. |
 
 What a person feels today: about 10,000 rows took 15 s to show on the web, and never showed on the phone.
 
