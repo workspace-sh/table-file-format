@@ -1,5 +1,5 @@
 // The app's own display settings (locale, default date format, formula
-// syntax), handed to
+// syntax, the resize handles' look), handed to
 // every cell without threading a prop through each view. Personal
 // preferences, never written into a `.table/` (SPEC section 4).
 
@@ -17,10 +17,15 @@ export interface DisplaySettings extends DisplayOptions {
    * widens a column.
    */
   direction?: TextDirection;
+  /**
+   * How a selected cell's resize handles look on touch: pills with grip
+   * bars, or short grabber bars on its edges. Absent: pills.
+   */
+  resizeHandles?: "grabbers";
 }
 
 /** Which display setting a row of the Display controls sets. */
-export type DisplaySettingKind = "locale" | "dateFormat" | "formulaSyntax";
+export type DisplaySettingKind = "locale" | "dateFormat" | "formulaSyntax" | "resizeHandles";
 
 /**
  * One row of the Display controls: what it's called, the choices, which is

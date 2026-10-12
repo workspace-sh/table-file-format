@@ -19,7 +19,7 @@ interface Action<Id extends string> {
 }
 
 /** Something that can be done to a row as a whole, from its row menu. */
-export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "delete">;
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "fit-row" | "reset-row-height" | "delete">;
 
 /** Something that can be done to a column, from its header's menu (columnActions). */
 export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
@@ -263,11 +263,15 @@ export function rowActions(
     onOpenBody?: (rowId: string) => void;
     hasBody?: boolean;
     onInsertRow?: (rowId: string, where: "above" | "below") => void;
+    /** Fit the row's height to what it holds. */
+    onFitRow?: (rowId: string) => void;
+    /** Only for a row the user has resized: back to the view's height. */
+    onResetRowHeight?: (rowId: string) => void;
     onDeleteRow?: (rowId: string) => void;
   },
 ): RowAction[] {
   const actions: RowAction[] = [];
-  const { onOpenBody, onInsertRow, onDeleteRow } = can;
+  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow } = can;
   // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
@@ -280,6 +284,12 @@ export function rowActions(
   if (onInsertRow) {
     actions.push({ id: "insert-above", label: "Insert Row Above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
     actions.push({ id: "insert-below", label: "Insert Row Below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
+  }
+  if (onFitRow) {
+    actions.push({ id: "fit-row", label: "Fit Row to Content", symbol: { sf: "arrow.up.and.down", material: "height" }, onSelect: () => onFitRow(rowId) });
+  }
+  if (onResetRowHeight) {
+    actions.push({ id: "reset-row-height", label: "Reset Row Height", symbol: { sf: "arrow.counterclockwise", material: "restart_alt" }, onSelect: () => onResetRowHeight(rowId) });
   }
   if (onDeleteRow) {
     actions.push({ id: "delete", label: "Delete Row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
