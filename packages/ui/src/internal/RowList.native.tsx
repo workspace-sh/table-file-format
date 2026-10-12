@@ -21,7 +21,7 @@ import { Fragment, useCallback, useContext, useEffect, useImperativeHandle, useM
 import { View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
-import { MAX_LIST_HEIGHT } from "./listLimits";
+import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
 import type { RowListProps } from "./RowList";
 
 export type { RowListHandle, RowListProps } from "./RowList";
@@ -95,10 +95,9 @@ const settles = new WeakMap<object, { to: number; shift: number; when: number }>
 
 /**
  * The rows on screen, placed in a body as tall as the list, or as tall as
- * MAX_LIST_HEIGHT when the list is taller than can be laid out exactly
- * (a million rows is some 45 million points, past what a 32-bit layout
- * places to the point); the page's scrolling is then mapped onto the whole
- * list.
+ * NATIVE_MAX_LIST_HEIGHT when the list is taller still; the page's
+ * scrolling is then mapped onto the whole list. (A million rows at the
+ * standard height, 45 million points, is laid out as it is.)
  *
  * `shift` is how far the rows are from where the page is: the row at the
  * page's place plus `shift` is the one at the top of the screen. Scrolling
@@ -126,7 +125,7 @@ function WindowedRows<T>({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const added = useMemo(() => (given ? null : topsOf(items, sizeOf)), [given, items, version]);
   const layout: Tops = layoutOf ? layoutOf() : added!;
-  const laidOut = Math.min(layout.height, MAX_LIST_HEIGHT);
+  const laidOut = Math.min(layout.height, NATIVE_MAX_LIST_HEIGHT);
   const extra = layout.height - laidOut;
   // What is drawn: a stretch of the list, in its own points, and the shift it is drawn at.
   const [drawn, setDrawn] = useState({ from: 0, to: 3 * DRAW_DISTANCE, shift: 0 });
@@ -288,6 +287,13 @@ function WindowedRows<T>({
     [page, where, follow],
   );
 
+  // The rows drawn sit in one box at the body's top, moved down to the
+  // first of them by a transform, with each row in it at its offset from
+  // there. The layout engine keeps positions, and snaps them to pixels, as
+  // 32-bit floats: laid out 45 million points down, rows were rounded to
+  // the nearest 4 and overlapped or left gaps. A transform isn't laid out,
+  // and the offsets in the box are small, so every row is where it should be.
+  const base = count && lastDrawn >= first ? Math.max(0, layout.itemTop(first) - drawn.shift) : 0;
   const rows: ReactNode[] = [];
   for (let i = first; i <= lastDrawn; i++) {
     const item = items[i]!;
@@ -296,7 +302,7 @@ function WindowedRows<T>({
     rows.push(
       <View
         key={keyOf(item)}
-        style={{ position: "absolute", top: itemTop - drawn.shift, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
+        style={{ position: "absolute", top: itemTop - drawn.shift - base, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
       >
         {render(item, i)}
       </View>,
@@ -304,7 +310,7 @@ function WindowedRows<T>({
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
-      {rows}
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, transform: [{ translateY: base }] }}>{rows}</View>
     </View>
   );
 }
