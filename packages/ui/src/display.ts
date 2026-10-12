@@ -292,7 +292,10 @@ export const ROW_NUMBER_WIDTH = 32;
  * Each column's width in a table of `containerWidth`, less `chrome` (the
  * borders, a frozen column's divider, a sheet's row numbers). Columns the
  * viewer resized keep their width (never below MIN_RESIZED_COLUMN_WIDTH);
- * the rest share what's left, never narrower than MIN_CELL_WIDTH. When
+ * the rest share what's left, never narrower than MIN_CELL_WIDTH, and
+ * never narrower than they'd be with nothing resized: widening one column
+ * makes the table wider (it scrolls), as in a spreadsheet, rather than
+ * taking the room from the others; narrowing one gives them its room. When
  * they fill the table the `floor()` remainder goes a pixel at a time to
  * the leftmost, so the columns sum exactly to the width: no hairline gap
  * before the border. Narrower than that, the table overflows and scrolls.
@@ -313,11 +316,17 @@ export function columnWidths(
   const flexible = fields.filter((name) => fixedWidth(name) === undefined);
   const fixedTotal = fields.reduce((sum, name) => sum + (fixedWidth(name) ?? 0), 0);
   const available = Math.max(0, containerWidth - chrome - fixedTotal);
-  const rawWidth = flexible.length > 0 && containerWidth > 0 ? Math.floor(available / flexible.length) : MIN_CELL_WIDTH;
   // Whole in its space when it can be, down to the squeezed width; past that, comfortable and scrolling.
-  const fills = rawWidth >= Math.min(squeezeTo, MIN_CELL_WIDTH);
-  const cellW = fills ? rawWidth : MIN_CELL_WIDTH;
-  const remainder = fills ? available - cellW * flexible.length : 0;
+  const shared = (room: number, count: number) => {
+    const raw = count > 0 && containerWidth > 0 ? Math.floor(room / count) : MIN_CELL_WIDTH;
+    return raw >= Math.min(squeezeTo, MIN_CELL_WIDTH) ? raw : MIN_CELL_WIDTH;
+  };
+  // What each column would be with none resized: the least a flexible one is given.
+  const unresized = shared(Math.max(0, containerWidth - chrome), fields.length);
+  const leftover = shared(available, flexible.length);
+  const cellW = Math.max(unresized, leftover);
+  // Filling the table exactly (not wider), the floor's remainder goes a pixel at a time to the leftmost.
+  const remainder = cellW === leftover && cellW * flexible.length <= available ? available - cellW * flexible.length : 0;
   return (name: string) => {
     const fixed = fixedWidth(name);
     if (fixed !== undefined) return fixed;
