@@ -2974,16 +2974,37 @@ export function TableView({
   };
   // A table too tall for a list to lay out as it is gives the list where every row is.
   const tallLayout = total * (defaultHeight + ROW_BORDER) > MAX_LIST_HEIGHT ? layoutOf : undefined;
-  /** A place's item: its row as `draw` draws it, or an empty row of its height while it's on its way from the index. */
-  const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode): ReactNode => {
+  /**
+   * A place's item: its row as `draw` draws it, or, while it's on its way
+   * from the index, an empty row of its height in `pane`'s columns: the
+   * same cells and lines as a row, so the grid stays whole and only the
+   * values arrive.
+   */
+  const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode, pane: "frozen" | "rest"): ReactNode => {
     const entry = entryAt(place);
     if (entry) return draw(entry, place);
+    const frozen = pane === "frozen";
+    const names = frozen && primaryName ? [primaryName] : restNames;
+    const numbered = coords && (frozen || !primaryName);
     return (
       <>
-        {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow]} />}
+        {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow, frozen ? styles.frozenEdge : restRowWidth()]} />}
         <html.div
-          style={[styles.tableRow, styles.rowHeight(tallAt.get(place) ?? defaultHeight), place === total - 1 && !onAddRow && styles.tableRowLast]}
-        />
+          style={[
+            styles.tableRow,
+            styles.rowHeight(tallAt.get(place) ?? defaultHeight),
+            frozen ? styles.frozenEdge : restRowWidth(),
+            place === total - 1 && !onAddRow && styles.tableRowLast,
+          ]}
+        >
+          {numbered && <html.div style={styles.rowNumber} />}
+          {names.map((name, idx) => (
+            <html.div
+              key={name}
+              style={[styles.tableCell, styles.cellWidth(colWidth(name)), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
+            />
+          ))}
+        </html.div>
       </>
     );
   };
@@ -4207,7 +4228,7 @@ export function TableView({
                     </html.div>
                   )}
                 </>
-              ))}
+              ), "frozen")}
             />
             {addRow && newRowBand(true)}
             {showTotals && (
@@ -4279,7 +4300,7 @@ export function TableView({
                       </html.div>
                     )}
                   </>
-                ))}
+                ), "rest")}
               />
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
