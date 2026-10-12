@@ -2942,7 +2942,10 @@ export function TableView({
   // The places of the rows with a height of their own.
   const tallAt = new Map<number, number>();
   for (const id of ownHeights) {
-    const place = indexed ? (facts.places.get(id) ?? -1) : placeOfId(id);
+    // From an index, a row's place is asked for and arrives a moment later;
+    // a row on screen (one being resized, or just saved) is already known
+    // from the rows drawn, so the rows below it move with it at once.
+    const place = indexed ? (facts.places.get(id) ?? placeOfId(id)) : placeOfId(id);
     if (place >= 0) tallAt.set(place, heightOf(id));
   }
   // A row's border is outside its height, so it adds its 1 px, except under
