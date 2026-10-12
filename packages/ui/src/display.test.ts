@@ -78,3 +78,15 @@ test("columns fill the table exactly, resized ones keep their width, and narrow 
   assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2)("a"), 180);
   assert.equal(scrolls("a"), 180);
 });
+
+test("widening a column makes the table wider, and leaves the others as they were", () => {
+  // Four columns in 1002: 250 each.
+  const none = columnWidths(["a", "b", "c", "d"], {}, 1002, 2);
+  assert.deepEqual(["a", "b", "c", "d"].map(none), [250, 250, 250, 250]);
+  // "a" dragged to 400: the rest stay 250, and the table is 1150 wide (it scrolls).
+  const wider = columnWidths(["a", "b", "c", "d"], { a: 400 }, 1002, 2);
+  assert.deepEqual(["a", "b", "c", "d"].map(wider), [400, 250, 250, 250]);
+  // "a" dragged to 100: the rest share its room and the table still fills its width.
+  const narrower = columnWidths(["a", "b", "c", "d"], { a: 100 }, 1002, 2);
+  assert.deepEqual(["a", "b", "c", "d"].map(narrower), [100, 300, 300, 300]);
+});
