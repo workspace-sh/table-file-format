@@ -3,7 +3,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { openArchive } from "@workspace.sh/table-app";
 import { loadLibrary, openIndexHost, type IndexHost } from "@workspace.sh/table-app/node";
-import { parseRowsText } from "@workspace.sh/table-core";
+import { parseEditLog, parseRowsText } from "@workspace.sh/table-core";
 import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,6 +199,32 @@ describe("a table held in the index on Linux", () => {
     window.activateAction("win.redo", null);
     await screen.findAllByText("Zed");
     await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+  });
+
+  it("its edits go to its history as any table's: a cell edited, then undone, each with what the index held", async () => {
+    await openTasks();
+    const history = () => {
+      const file = join(bundle, "tables", "tasks", "history.ndjson");
+      return existsSync(file) ? parseEditLog(readFileSync(file, "utf8")).events.map(({ id: _id, at: _at, ...rest }) => rest) : [];
+    };
+    const first = await cellOf("Land .table extension");
+    const window = first.getRoot() as unknown as Gtk.ApplicationWindow;
+    first.grabFocus();
+    await userEvent.keyboard(first, "Z");
+    const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
+    await userEvent.type(entry, "ed");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(() => expect(history()).toEqual([{ op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Zed" }]), { timeout: 5000 });
+    await waitFor(() => expect(window.getActionEnabled("undo")).toBe(true));
+    window.activateAction("win.undo", null);
+    await waitFor(
+      () =>
+        expect(history()).toEqual([
+          { op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Zed" },
+          { op: "set", row: "t1", field: "title", from: "Zed", to: "Land .table extension" },
+        ]),
+      { timeout: 5000 },
+    );
   });
 
   it("a field can be added: the index is made again, and the rows are all still there", async () => {

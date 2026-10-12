@@ -39,7 +39,7 @@ import {
   withViewPatch,
   type FieldPlace,
 } from "./edits.ts";
-import { NO_EDIT_LOG, pruned, recorded, settledPages, written, type EditLogState } from "./editLog.ts";
+import { indexChanges, logged, NO_EDIT_LOG, pruned, recorded, settledPages, written, type EditLogState } from "./editLog.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
 import type { IndexEdit } from "./indexed.ts";
 import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History, type Place } from "./history.ts";
@@ -822,11 +822,21 @@ function step(state: AppState, action: AppAction): AppState {
       if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };
       const done = action.done;
       const heard = stepsHeard(state.undo[action.key], done, action.back);
+      // The edits now made, for the table's history: said here, where what each replaced is heard.
+      const editLog = logged(
+        state.editLog,
+        action.key,
+        indexChanges(
+          state.indexWork.filter((w) => w.key === action.key && w.n <= done),
+          action.back,
+        ),
+      );
       return {
         ...state,
         tables,
         indexWork: state.indexWork.filter((w) => w.key !== action.key || w.n > done),
         dirty: marked(state.dirty, bundleOf(action.key)),
+        ...(editLog !== state.editLog ? { editLog } : {}),
         ...(heard && heard !== state.undo[action.key] ? { undo: { ...state.undo, [action.key]: heard } } : {}),
       };
     }

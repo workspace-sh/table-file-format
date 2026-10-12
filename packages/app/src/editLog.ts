@@ -7,6 +7,8 @@
 
 import { pageChange, rowChanges, type EditChange, type ParsedTable } from "@workspace.sh/table-core";
 
+import type { IndexEdit } from "./indexed.ts";
+
 /**
  * Edits made and not yet written to their tables' histories. Only kept
  * when the app says it writes them (`on`): nothing else empties it.
@@ -88,6 +90,37 @@ export function recorded(
     }
   }
   return settledPages(next, after, open);
+}
+
+/**
+ * Edits made to rows held in an index, as history says them. The rows
+ * aren't in the state to compare, so each is said from the edit itself and
+ * the edit that undoes it (`back`, by the edit's `n`: what the index held
+ * before, which only it knows). An edit that changed nothing has no
+ * `back`, and says nothing. A page's edit is the state's to say, as any
+ * table's page is.
+ */
+export function indexChanges(edits: readonly (IndexEdit & { n: number })[], back: Record<number, IndexEdit> | undefined): EditChange[] {
+  const changes: EditChange[] = [];
+  for (const edit of edits) {
+    const undone = back?.[edit.n];
+    if (edit.kind === "cell") {
+      if (undone?.kind === "cell") changes.push(...rowChanges({ id: edit.rowId, [edit.field]: undone.value }, { id: edit.rowId, [edit.field]: edit.value }));
+    } else if (edit.kind === "add") {
+      // A new row is its id and nothing else.
+      if (undone) changes.push({ op: "insert", row: edit.rowId, values: { id: edit.rowId } });
+    } else if (edit.kind === "remove") {
+      if (undone?.kind === "restore") changes.push({ op: "delete", row: edit.rowId, values: undone.row });
+    } else if (edit.kind === "restore") {
+      if (undone) changes.push({ op: "insert", row: edit.rowId, values: edit.row });
+    }
+  }
+  return changes;
+}
+
+/** The log with a table's changes added, when the app writes history. */
+export function logged(log: EditLogState, key: string, changes: EditChange[]): EditLogState {
+  return log.on ? withPending(log, key, changes) : log;
 }
 
 /** A table that has gone (its file closed, the examples reset) takes what wasn't written with it. */
