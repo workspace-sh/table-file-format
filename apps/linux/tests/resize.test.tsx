@@ -50,6 +50,32 @@ describe("resizing on Linux", () => {
     await waitFor(async () => expect((await viewOnDisk()).columnWidths?.title).toBe(first + 20));
   });
 
+  it("widening a column leaves the others as wide as they were, and the table scrolls sideways", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const widthOf = async (name: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(name);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      return at!.getWidth();
+    };
+    let scroller: Gtk.Widget | null = await screen.findByText("status");
+    while (scroller && !(scroller instanceof Gtk.ScrolledWindow)) scroller = scroller.getParent();
+    const across = (scroller as Gtk.ScrolledWindow).getHadjustment();
+    await waitFor(() => expect(across.getPageSize()).toBeGreaterThan(400));
+    const before = { title: await widthOf("title"), status: await widthOf("status"), priority: await widthOf("priority") };
+    // It fits: nothing to scroll.
+    expect(across.getUpper()).toBe(across.getPageSize());
+    await drag("resize-column-title", 120, 0);
+    await waitFor(async () => expect(await widthOf("title")).toBe(before.title + 120));
+    expect(await widthOf("status")).toBe(before.status);
+    expect(await widthOf("priority")).toBe(before.priority);
+    await waitFor(() => expect(across.getUpper()).toBe(across.getPageSize() + 120));
+    // Narrower than it began gives its room to the rest, and the table fits again.
+    await drag("resize-column-title", -200, 0);
+    await waitFor(async () => expect(await widthOf("status")).toBeGreaterThan(before.status));
+    await waitFor(() => expect(across.getUpper()).toBe(across.getPageSize()));
+  });
+
   it("never narrower than a column can be", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
