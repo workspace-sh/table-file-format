@@ -13,6 +13,8 @@ export function useDark(): boolean {
 }
 
 const RULE = "alpha(currentColor, 0.1)";
+/** A resize line while it is only pointed at: the accent, faint. Dragged, it is the accent itself. */
+const HOVER_LINE = "alpha(@accent_bg_color, 0.35)";
 
 /** "Calculate" in a footer cell with no total: where one could go, seen when its cell is pointed at or has the keyboard. */
 const TOTAL_PLACEHOLDER = css({ fontSize: "11px", opacity: 0 });
@@ -60,7 +62,20 @@ export const styles = {
     color: "@accent_color",
   }),
   /** A header's end edge, where its column is dragged wider or narrower: a line when pointed at. */
-  columnHandle: css({ "&:hover": { backgroundColor: "alpha(@accent_bg_color, 0.55)" } }),
+  /**
+   * A column's edge, to drag: a line on its end edge, faint while pointed at (so it doesn't flash across
+   * the header as the pointer passes) and full while it is dragged, as every platform's table has it.
+   */
+  columnHandle: css({
+    "&:hover": { boxShadow: `inset -2px 0 ${HOVER_LINE}` },
+    "&:dir(rtl):hover": { boxShadow: `inset 2px 0 ${HOVER_LINE}` },
+  }),
+  columnHandleLit: css({
+    boxShadow: "inset -2px 0 @accent_bg_color",
+    "&:hover": { boxShadow: "inset -2px 0 @accent_bg_color" },
+    "&:dir(rtl)": { boxShadow: "inset 2px 0 @accent_bg_color" },
+    "&:dir(rtl):hover": { boxShadow: "inset 2px 0 @accent_bg_color" },
+  }),
   /** A column's end edge, as the web grid rules its cells. */
   columnRule: css({ borderRight: `1px solid ${RULE}` }),
   /** A group's band: "CITY · MANCHESTER" in small capitals, and how many rows it has. */
@@ -78,9 +93,9 @@ export const styles = {
   totalPlaceholder: TOTAL_PLACEHOLDER,
   totalLabel: css({ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
-  /** The line under a row, to drag: seen when pointed at, and while it is dragged. */
-  rowLine: css({ borderBottom: "2px solid transparent", "&:hover": { borderBottomColor: "@accent_bg_color" } }),
-  rowLineLit: css({ borderBottomColor: "@accent_bg_color" }),
+  /** The line under a row, to drag: faint when pointed at, full while it is dragged. */
+  rowLine: css({ borderBottom: "2px solid transparent", "&:hover": { borderBottomColor: HOVER_LINE } }),
+  rowLineLit: css({ borderBottomColor: "@accent_bg_color", "&:hover": { borderBottomColor: "@accent_bg_color" } }),
   rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "4px", padding: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
   /** A sheet's row numbers: a ruled gutter of their own. */
