@@ -92,14 +92,27 @@ function topsOf<T>(items: readonly T[], sizeOf: (item: T, index: number) => numb
 
 /**
  * One item as `render` draws it, drawn again only when it's another item,
- * at another place, or `render` is another function (the table drew again:
- * what the rows show may have changed). Scrolling moves the drawn window
- * without the table drawing again, so the rows already drawn are left as
- * they are and only those coming on screen are drawn.
+ * at another place, or `drawKey` or its `stamp` changes. Scrolling moves
+ * the drawn window without the table drawing again, so the rows already
+ * drawn are left as they are and only those coming on screen are drawn.
+ * Without a stamp, `drawKey` is `render` itself: any drawing of the table
+ * draws every row again.
  */
-const DrawnItem = memo(function DrawnItem({ item, index, render }: { item: unknown; index: number; render: (item: never, index: number) => ReactNode }) {
-  return <>{render(item as never, index)}</>;
-});
+interface DrawnItemProps {
+  item: unknown;
+  index: number;
+  renderer: { current: (item: never, index: number) => ReactNode };
+  drawKey: unknown;
+  stamp: readonly unknown[] | undefined;
+}
+const sameStamp = (a: readonly unknown[] | undefined, b: readonly unknown[] | undefined) =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
+const DrawnItem = memo(
+  function DrawnItem({ item, index, renderer }: DrawnItemProps) {
+    return <>{renderer.current(item as never, index)}</>;
+  },
+  (a, b) => a.item === b.item && a.index === b.index && a.drawKey === b.drawKey && sameStamp(a.stamp, b.stamp),
+);
 
 /** The last move a list made of a page to settle it, for the lists beside it. */
 const settles = new WeakMap<object, { to: number; shift: number; when: number }>();
@@ -127,8 +140,12 @@ function WindowedRows<T>({
   handle,
   onShown,
   layout: layoutOf,
+  stampOf,
+  drawKey,
   page,
 }: RowListProps<T> & { page: PageScroll }) {
+  const renderer = useRef(render);
+  renderer.current = render;
   const body = useRef<View | null>(null);
   // Given its layout, the list asks it; otherwise the heights are added up
   // once for these items (`version` changes when a height could have).
@@ -325,7 +342,7 @@ function WindowedRows<T>({
         key={raised?.(item) ? `raised:${keyOf(item)}` : `slot:${i % slots.current}`}
         style={{ position: "absolute", top: itemTop - drawn.shift - base, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
       >
-        <DrawnItem item={item} index={i} render={render} />
+        <DrawnItem item={item} index={i} renderer={renderer} drawKey={stampOf ? drawKey : render} stamp={stampOf?.(item)} />
       </View>,
     );
   }
