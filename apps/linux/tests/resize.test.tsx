@@ -218,28 +218,62 @@ describe("resizing on Linux", () => {
     await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [first.id]: 64 }));
   });
 
-  it("the line lights when it is pointed at, and while it is dragged", async () => {
+  it("the line under a row is faint when pointed at, and full only while it is dragged", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
     await screen.findAllByText("Land .table extension");
     await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
-    const line = lines()[1]!;
-    const drawn = async () => {
+    const drawn = async (pointedAt: boolean) => {
+      const line = lines()[1]!;
+      if (pointedAt) line.setStateFlags(Gtk.StateFlags.PRELIGHT, false);
       await new Promise((resolve) => setTimeout(resolve, 300));
-      return (await screenshot(line)).data;
+      const { data } = await screenshot(line);
+      if (pointedAt) line.unsetStateFlags(Gtk.StateFlags.PRELIGHT);
+      return data;
     };
-    const rest = await drawn();
-    line.setStateFlags(Gtk.StateFlags.PRELIGHT, false);
-    const pointed = await drawn();
-    line.unsetStateFlags(Gtk.StateFlags.PRELIGHT);
+    const rest = await drawn(false);
+    const pointed = await drawn(true);
     expect(pointed).not.toBe(rest);
-    expect(await drawn()).toBe(rest);
+    expect(await drawn(false)).toBe(rest);
     const gesture = getController(lines()[1]!, Gtk.GestureDrag);
     await fireEvent(gesture, "drag-begin", 0, 0);
     await fireEvent(gesture, "drag-update", 0, 0);
     await screen.findByText("1 line");
-    expect(await (async () => (await screenshot(lines()[1]!)).data)()).toBe(pointed);
+    const dragged = await drawn(false);
+    expect(dragged).not.toBe(rest);
+    expect(dragged).not.toBe(pointed);
+    // The pointer is on it while it's dragged: still full.
+    expect(await drawn(true)).toBe(dragged);
     await fireEvent(gesture, "drag-end", 0, 0);
+    await waitFor(async () => expect(await drawn(false)).toBe(rest));
+  });
+
+  it("a column's edge is faint when pointed at, and full only while it is dragged", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const handle = async () => (await screen.findAllByName("resize-column-status"))[0]!;
+    const drawn = async (pointedAt: boolean) => {
+      const edge = await handle();
+      if (pointedAt) edge.setStateFlags(Gtk.StateFlags.PRELIGHT, false);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // At rest the edge itself draws nothing: it is seen as part of its header.
+      const { data } = await screenshot(edge.getParent()!);
+      if (pointedAt) edge.unsetStateFlags(Gtk.StateFlags.PRELIGHT);
+      return data;
+    };
+    const rest = await drawn(false);
+    const pointed = await drawn(true);
+    expect(pointed).not.toBe(rest);
+    const gesture = getController(await handle(), Gtk.GestureDrag);
+    await fireEvent(gesture, "drag-begin", 0, 0);
+    // Held, not yet moved: the header is the size it was, so only the line differs.
+    await fireEvent(gesture, "drag-update", 0, 0);
+    const dragged = await drawn(false);
+    expect(dragged).not.toBe(rest);
+    expect(dragged).not.toBe(pointed);
+    expect(await drawn(true)).toBe(dragged);
+    await fireEvent(gesture, "drag-end", 0, 0);
+    await waitFor(async () => expect(await drawn(false)).toBe(rest));
   });
 });
 
