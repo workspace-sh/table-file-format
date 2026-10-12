@@ -39,29 +39,36 @@ export function PageList({
   const limit = useRef(maxX);
   limit.current = maxX;
 
-  // How far the table is scrolled sideways. Drawn clamped, so momentum
-  // past either end shows the end; the value itself is brought back into
-  // range as soon as it's heard to be out.
+  // How far the table is scrolled sideways. Past either end it gives, as a
+  // scroll view does (a drag goes a third as far), and springs back.
   const scrollX = useRef(new Animated.Value(0)).current;
   const x = useRef(0);
+  const springing = useRef(false);
+  const springBack = useCallback(() => {
+    const to = Math.min(limit.current, Math.max(0, x.current));
+    springing.current = true;
+    Animated.spring(scrollX, { toValue: to, useNativeDriver: true, bounciness: 0, speed: 16 }).start(() => {
+      springing.current = false;
+    });
+  }, [scrollX]);
+  const decaying = useRef(false);
   useEffect(() => {
     const id = scrollX.addListener(({ value }) => {
       x.current = value;
-      if (value < 0 || value > limit.current) {
+      // Momentum that runs past an end stops there and springs back.
+      if (decaying.current && (value < 0 || value > limit.current)) {
+        decaying.current = false;
         scrollX.stopAnimation();
-        scrollX.setValue(Math.min(limit.current, Math.max(0, value)));
+        springBack();
       }
     });
     return () => scrollX.removeListener(id);
-  }, [scrollX]);
+  }, [scrollX, springBack]);
   // A narrower table (a column removed, the phone turned) is brought back in range.
   useEffect(() => {
     if (x.current > maxX) scrollX.setValue(maxX);
   }, [maxX, scrollX]);
-  const shift = useMemo(
-    () => scrollX.interpolate({ inputRange: [0, Math.max(1, maxX)], outputRange: [0, -Math.max(1, maxX)], extrapolate: "clamp" }),
-    [scrollX, maxX],
-  );
+  const shift = useMemo(() => Animated.multiply(scrollX, -1), [scrollX]);
 
   const pan = useMemo(() => {
     const from = { x: 0 };
@@ -72,17 +79,29 @@ export function PageList({
         .activeOffsetX([-10, 10])
         .failOffsetY([-12, 12])
         .onStart(() => {
+          decaying.current = false;
           scrollX.stopAnimation();
-          from.x = Math.min(limit.current, Math.max(0, x.current));
+          from.x = x.current;
         })
         .onUpdate((e) => {
-          scrollX.setValue(Math.min(limit.current, Math.max(0, from.x - e.translationX)));
+          const wanted = from.x - e.translationX;
+          const max = limit.current;
+          // Past an end, a third as far.
+          const given = wanted < 0 ? wanted / 3 : wanted > max ? max + (wanted - max) / 3 : wanted;
+          scrollX.setValue(given);
         })
         .onEnd((e) => {
-          Animated.decay(scrollX, { velocity: -e.velocityX / 1000, deceleration: 0.997, useNativeDriver: true }).start();
+          if (x.current < 0 || x.current > limit.current) {
+            springBack();
+            return;
+          }
+          decaying.current = true;
+          Animated.decay(scrollX, { velocity: -e.velocityX / 1000, deceleration: 0.997, useNativeDriver: true }).start(() => {
+            decaying.current = false;
+          });
         })
     );
-  }, [scrollX]);
+  }, [scrollX, springBack]);
 
   const sideways = { transform: [{ translateX: shift }], width: contentWidth };
 
@@ -135,6 +154,9 @@ export function PageList({
           getFixedItemSize={(place: number) => sizeOf(place)}
           estimatedItemSize={count > 0 ? sizeOf(0) : 46}
           renderItem={({ item }: { item: number }) => <Animated.View style={sideways}>{renderRow(item)}</Animated.View>}
+          // A row's views are kept as it scrolls off and given the next row
+          // to show, not made again (its cells start again: EditableCell's rowKey).
+          recycleItems
           ListHeaderComponent={
             <View onLayout={(e) => void (at.current.header = e.nativeEvent.layout.height)}>
               {header}
