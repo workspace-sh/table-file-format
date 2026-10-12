@@ -123,6 +123,9 @@ export default function TableScreen() {
       // Measuring large tables (#126): see measure.ts.
       openZipFrom: (url: string) => openZipFrom(url, app.openBytes),
       timeEdit: () => timeEdit(app.state, app.dispatch),
+      // The page's scroll, as a finger or the scroll indicator would move it.
+      scrollTo: (y: number, animated = false) => scroller.current?.scrollTo({ y, animated }),
+      scrolled: () => page.pageScroll.now(),
     };
   });
   // A measuring build (EXPO_PUBLIC_TABLE_MEASURE=1) opens what its local

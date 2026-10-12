@@ -22,6 +22,14 @@ test("counts rows out of the table, or out of the view while searching", () => {
   assert.equal(viewSummary(table([{ title: "a" }]), { shown: 1, inView: 1, searching: false }).count, "1 of 1 row");
 });
 
+test("large counts are grouped as the reader writes numbers", () => {
+  const big: ParsedTable = { ...table([]), indexed: { count: 1_000_000 } as ParsedTable["indexed"] };
+  const n = (x: number) => x.toLocaleString();
+  assert.equal(viewSummary(big, { shown: 1_000_000, inView: 1_000_000, searching: false }).count, `${n(1_000_000)} of ${n(1_000_000)} rows`);
+  assert.equal(viewSummary(big, { shown: 12_345, inView: 1_000_000, searching: true }).count, `${n(12_345)} of ${n(1_000_000)} matching`);
+  assert.notEqual(n(1_000_000), "1000000");
+});
+
 test("a valid table says so, with the rule as its hint", () => {
   const s = viewSummary(table([{ title: "a" }]), { shown: 1, inView: 1, searching: false });
   assert.equal(s.valid, true);

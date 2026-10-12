@@ -20,6 +20,7 @@
 import { Fragment, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
+import { settledPlace } from "../listSettle";
 import { MAX_LIST_HEIGHT } from "./listLimits";
 import type { RowListProps } from "./RowList";
 
@@ -177,7 +178,6 @@ function WindowedRows<T>({
     const { at, page: screen } = where();
     const { laidOut: height, extra: more } = now.current;
     if (more <= 0) return;
-    const range = Math.max(1, height - screen);
     // Two lists side by side follow one page: the first to rest moves it, and
     // the other takes the same shift, not a second move.
     const moved = settles.get(page);
@@ -186,12 +186,11 @@ function WindowedRows<T>({
       follow();
       return;
     }
-    const start = at + drawnShift.current;
-    const to = Math.min(range, Math.max(0, start / (1 + more / range)));
-    if (Math.abs(to - at) < 2) return;
-    last.current.settled = start - to;
-    settles.set(page, { to, shift: start - to, when: Date.now() });
-    page.scrollBy(to - at);
+    const settled = settledPlace(at, screen, height, more, drawnShift.current);
+    if (!settled) return;
+    last.current.settled = settled.shift;
+    settles.set(page, { to: settled.to, shift: settled.shift, when: Date.now() });
+    page.scrollBy(settled.to - at);
   }, [page, where, follow]);
 
   // Where the list starts in the page: measured as it's laid out, and again

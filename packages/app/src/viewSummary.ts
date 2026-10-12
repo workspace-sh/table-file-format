@@ -34,6 +34,15 @@ export interface ViewSummaryInput {
   openedAt?: number;
 }
 
+/** A count as the reader writes numbers: `1,000,000` in English, as the reading line says them. */
+const counted = (n: number) => n.toLocaleString();
+
+/** `3 of 6 rows`, or `2 of 5 matching` while searching. */
+const countText = (input: ViewSummaryInput, total: number) =>
+  input.searching
+    ? `${counted(input.shown)} of ${counted(input.inView)} matching`
+    : `${counted(input.shown)} of ${counted(total)} ${total === 1 ? "row" : "rows"}`;
+
 /** How many errors the hint lists before `…and N more`. */
 const HINT_ERRORS = 5;
 
@@ -44,7 +53,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   const valid = errors.length === 0;
   if (table.indexed) {
     return {
-      count: input.searching ? `${input.shown} of ${input.inView} matching` : `${input.shown} of ${total} ${total === 1 ? "row" : "rows"}`,
+      count: countText(input, total),
       valid: true,
       validity: "not checked",
       validityHint: "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
@@ -56,9 +65,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
     };
   }
   return {
-    count: input.searching
-      ? `${input.shown} of ${input.inView} matching`
-      : `${input.shown} of ${total} ${total === 1 ? "row" : "rows"}`,
+    count: countText(input, total),
     valid,
     validity: valid ? "schema valid" : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`,
     validityHint: valid
