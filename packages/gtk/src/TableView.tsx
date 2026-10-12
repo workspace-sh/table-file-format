@@ -711,7 +711,7 @@ export function TableView({
         name={`resize-column-${name}`}
         widthRequest={6}
         halign={Gtk.Align.END}
-        cssClasses={[styles.columnHandle]}
+        cssClasses={[styles.columnHandle, ...(liveWidths[name] !== undefined ? [styles.columnHandleLit] : [])]}
         tooltipText="Drag to resize the column; double-click to reset it"
         cursor={Gdk.Cursor.newFromName("col-resize", null)}
         controllers={[
