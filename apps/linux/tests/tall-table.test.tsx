@@ -93,7 +93,7 @@ describe("a table taller than GTK lays out exactly", () => {
   it.each([["in memory", undefined], ["in the index", 1000]] as const)("Ctrl+Down goes to the last row, and Ctrl+Up back to the first (held %s)", async (_how, indexedFrom) => {
     const library = await loadLibrary([bundle], [], indexedFrom === undefined ? {} : { indexedFrom });
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" {...(indexedFrom === undefined ? {} : { indexedFrom })} />);
-    await screen.findAllByText(`${ROWS} of ${ROWS} rows`);
+    await screen.findAllByText(`${ROWS.toLocaleString()} of ${ROWS.toLocaleString()} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const first = await cellOf("Big 0");
     const scroller = scrollerOf(first);
