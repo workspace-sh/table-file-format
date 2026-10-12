@@ -230,14 +230,124 @@ test("files opened and the examples reset aren't edits; what wasn't written for 
   assert.equal(kept(cancelled).length, 1);
 });
 
-test("a table held in the index: its pages are kept here as any table's, its rows aren't here to compare", () => {
+// Tables held in the index: the rows aren't in the state, so each edit is said when the app has made it.
+
+const indexedStart = (writesHistory = true): AppState => {
   const { tables, bundles } = examples();
-  const s0 = initialAppState({ tables: { ...tables, [KEY]: { ...tables[KEY]!, rows: [], indexed: { count: 17, version: 0 } } }, bundles, writesHistory: true });
-  const s = run(s0, { type: "updateRow", rowId: "p1", field: "owner", value: "sam" }, { type: "addRow", id: "new-1" }, { type: "updateBody", rowId: "p10", content: "Text", table: KEY });
+  return initialAppState({ tables: { ...tables, [KEY]: { ...tables[KEY]!, rows: [], indexed: { count: 17, version: 0 } } }, bundles, writesHistory });
+};
+
+test("an indexed table's cell edit is said once the index has made it, from what the index held", () => {
+  const queued = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "owner", value: "sam" });
+  // Not before: only the index knows what it replaced.
+  assert.deepEqual(kept(queued), []);
+  const made = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } });
+  assert.deepEqual(kept(made), [{ op: "set", row: "p1", field: "owner", from: "leslie", to: "sam" }]);
+  // A cell that was empty has no from; one cleared has no to.
+  const filled = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: null } } });
+  assert.deepEqual(kept(filled), [{ op: "set", row: "p1", field: "owner", to: "sam" }]);
+  const cleared = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "p1", field: "owner", value: null },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+  );
+  assert.deepEqual(kept(cleared), [{ op: "set", row: "p1", field: "owner", from: "leslie" }]);
+});
+
+test("an indexed table's edit that changed nothing says nothing; one not yet made waits", () => {
+  const s = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "p1", field: "owner", value: "leslie" },
+    { type: "updateRow", rowId: "p2", field: "owner", value: "sam" },
+    { type: "updateRow", rowId: "p3", field: "owner", value: "kim" },
+    // The first two are made: the first changed nothing, so the index says nothing undoes it.
+    { type: "indexed", key: KEY, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "p2", field: "owner", value: "leslie" } } },
+  );
+  assert.deepEqual(
+    kept(s).map((c) => [c.op, c.row]),
+    [["set", "p2"]],
+  );
+  const later = run(s, { type: "indexed", key: KEY, count: 17, done: 3, back: { 3: { kind: "cell", rowId: "p3", field: "owner", value: "sam" } } });
+  assert.deepEqual(
+    kept(later).map((c) => [c.op, c.row]),
+    [
+      ["set", "p2"],
+      ["set", "p3"],
+    ],
+  );
+});
+
+test("an indexed table's row added is an insert, and one removed a delete with the row the index held, and its page", () => {
+  const added = run(indexedStart(), { type: "addRow", id: "new-1" }, { type: "indexed", key: KEY, count: 18, done: 1, back: { 1: { kind: "remove", rowId: "new-1" } } });
+  assert.deepEqual(kept(added), [{ op: "insert", row: "new-1", values: { id: "new-1" } }]);
+  const before = indexedStart();
+  const page = before.tables[KEY]!.bodies!.p10!;
+  const row = { id: "p10", title: "Plugin SDK", owner: "claude" };
+  const asked = run(before, { type: "deleteRow", rowId: "p10" }, { type: "answer", response: "delete" });
+  // Its page is the state's, and said at once; the row waits for the index.
+  assert.deepEqual(kept(asked), [{ op: "page", row: "p10", from: page }]);
+  const removed = run(asked, { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p10", row, at: 9 } } });
+  assert.deepEqual(kept(removed), [
+    { op: "page", row: "p10", from: page },
+    { op: "delete", row: "p10", values: row },
+  ]);
+  // Two added, one made so far: only that one is said.
+  const one = run(indexedStart(), { type: "addRow", id: "new-1" }, { type: "addRow", id: "new-2" }, { type: "indexed", key: KEY, count: 18, done: 1, back: { 1: { kind: "remove", rowId: "new-1" } } });
+  assert.deepEqual(
+    kept(one).map((c) => c.row),
+    ["new-1"],
+  );
+  // No such row in the index: nothing was removed, and nothing is said.
+  const nothing = run(indexedStart(), { type: "deleteRow", rowId: "nope" }, { type: "answer", response: "delete" }, { type: "indexed", key: KEY, count: 17, done: 1 });
+  assert.deepEqual(kept(nothing), []);
+});
+
+test("undo and redo of an indexed table's edits are new events, as any table's", () => {
+  const edited = run(
+    indexedStart(),
+    { type: "updateRow", rowId: "p1", field: "owner", value: "sam" },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+  );
+  // (The queue was empty again, so the undo's edit is counted from one.)
+  const undone = run(edited, { type: "undo" }, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "sam" } } });
+  assert.deepEqual(kept(undone), [
+    { op: "set", row: "p1", field: "owner", from: "leslie", to: "sam" },
+    { op: "set", row: "p1", field: "owner", from: "sam", to: "leslie" },
+  ]);
+  // A row removed, then put back by undo: a delete, then an insert with the whole row.
+  const row = { id: "p3", title: "X" };
+  const removed = run(
+    indexedStart(),
+    { type: "deleteRow", rowId: "p3" },
+    { type: "answer", response: "delete" },
+    { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row, at: 2 } } },
+    { type: "undo" },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "remove", rowId: "p3" } } },
+  );
+  assert.deepEqual(
+    kept(removed).filter((c) => c.op !== "page"),
+    [
+      { op: "delete", row: "p3", values: row },
+      { op: "insert", row: "p3", values: row },
+    ],
+  );
+});
+
+test("an indexed table's pages are kept as any table's, and nothing is kept by an app that doesn't write history", () => {
+  const s = run(indexedStart(), { type: "updateBody", rowId: "p10", content: "Text", table: KEY }, { type: "indexed", key: KEY, count: 17, done: 1 });
   assert.deepEqual(
     kept(s).map((c) => [c.op, c.row]),
     [["page", "p10"]],
   );
+  const off = run(
+    indexedStart(false),
+    { type: "updateRow", rowId: "p1", field: "owner", value: "sam" },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+  );
+  assert.deepEqual(off.editLog, { on: false, pending: {}, pages: {} });
+  // Another table's edits, made in the same breath, aren't taken for this one's.
+  const two = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "owner", value: "sam" }, { type: "indexed", key: "crm/deals", count: 5, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "x" } } });
+  assert.deepEqual(two.editLog.pending, {});
 });
 
 test("rowsChanges: rows are told apart by id, so a row moved is no change; formula fields aren't recorded", () => {
