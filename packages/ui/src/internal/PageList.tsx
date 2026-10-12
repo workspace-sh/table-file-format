@@ -27,6 +27,8 @@ export interface PageListProps {
   footer: ReactNode;
   /** The table's width with the page's margins either side: how far it scrolls sideways. */
   contentWidth: number;
+  /** Where a sideways scroll may come to rest: each column's start. */
+  snapTo?: readonly number[];
   /** Changes when anything the rows draw from changes, so the rows on screen are drawn again. */
   extraData: unknown;
   /** The first and last places on screen, as they change. */

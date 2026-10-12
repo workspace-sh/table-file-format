@@ -27,6 +27,7 @@ export function PageList({
   tableHeader,
   footer,
   contentWidth,
+  snapTo,
   extraData,
   onShown,
   handle,
@@ -39,31 +40,20 @@ export function PageList({
   const limit = useRef(maxX);
   limit.current = maxX;
 
-  // How far the table is scrolled sideways. Past either end it gives, as a
-  // scroll view does (a drag goes a third as far), and springs back.
+  // How far the table is scrolled sideways, with UIScrollView's feel: past
+  // either end a drag gives on its rubber-band curve, and a flick carries on
+  // at its speed to a column's start (snapTo, as the edge-to-edge table's
+  // scroll view snaps) or the end, or springs back from past an end.
   const scrollX = useRef(new Animated.Value(0)).current;
   const x = useRef(0);
-  const springing = useRef(false);
-  const springBack = useCallback(() => {
-    const to = Math.min(limit.current, Math.max(0, x.current));
-    springing.current = true;
-    Animated.spring(scrollX, { toValue: to, useNativeDriver: true, bounciness: 0, speed: 16 }).start(() => {
-      springing.current = false;
-    });
-  }, [scrollX]);
-  const decaying = useRef(false);
   useEffect(() => {
-    const id = scrollX.addListener(({ value }) => {
-      x.current = value;
-      // Momentum that runs past an end stops there and springs back.
-      if (decaying.current && (value < 0 || value > limit.current)) {
-        decaying.current = false;
-        scrollX.stopAnimation();
-        springBack();
-      }
-    });
+    const id = scrollX.addListener(({ value }) => void (x.current = value));
     return () => scrollX.removeListener(id);
-  }, [scrollX, springBack]);
+  }, [scrollX]);
+  const snaps = useRef(snapTo);
+  snaps.current = snapTo;
+  const screen = useRef(width);
+  screen.current = width;
   // A narrower table (a column removed, the phone turned) is brought back in range.
   useEffect(() => {
     if (x.current > maxX) scrollX.setValue(maxX);
@@ -72,6 +62,8 @@ export function PageList({
 
   const pan = useMemo(() => {
     const from = { x: 0 };
+    // UIScrollView's rubber band: `over` points past an end shows as this much.
+    const band = (over: number) => (1 - 1 / ((over * 0.55) / screen.current + 1)) * screen.current;
     return (
       Gesture.Pan()
         .runOnJS(true)
@@ -79,29 +71,32 @@ export function PageList({
         .activeOffsetX([-10, 10])
         .failOffsetY([-12, 12])
         .onStart(() => {
-          decaying.current = false;
           scrollX.stopAnimation();
           from.x = x.current;
         })
         .onUpdate((e) => {
           const wanted = from.x - e.translationX;
           const max = limit.current;
-          // Past an end, a third as far.
-          const given = wanted < 0 ? wanted / 3 : wanted > max ? max + (wanted - max) / 3 : wanted;
-          scrollX.setValue(given);
+          scrollX.setValue(wanted < 0 ? -band(-wanted) : wanted > max ? max + band(wanted - max) : wanted);
         })
         .onEnd((e) => {
-          if (x.current < 0 || x.current > limit.current) {
-            springBack();
-            return;
+          const max = limit.current;
+          const v = -e.velocityX; // points a second, as the spring takes it
+          let to: number;
+          if (x.current < 0) to = 0;
+          else if (x.current > max) to = max;
+          else {
+            // Where the flick would come to rest at UIScrollView's normal
+            // deceleration (0.998 a millisecond), and the column start
+            // nearest that, or the end.
+            const rest = Math.min(max, Math.max(0, x.current + (v / 1000) * (0.998 / (1 - 0.998))));
+            const stops = [...(snaps.current ?? []).filter((at) => at < max), max];
+            to = stops.reduce((best, at) => (Math.abs(at - rest) < Math.abs(best - rest) ? at : best), stops[0]!);
           }
-          decaying.current = true;
-          Animated.decay(scrollX, { velocity: -e.velocityX / 1000, deceleration: 0.997, useNativeDriver: true }).start(() => {
-            decaying.current = false;
-          });
+          Animated.spring(scrollX, { toValue: to, velocity: v, useNativeDriver: true, stiffness: 120, damping: 22, mass: 1 }).start();
         })
     );
-  }, [scrollX, springBack]);
+  }, [scrollX]);
 
   const sideways = { transform: [{ translateX: shift }], width: contentWidth };
 
