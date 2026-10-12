@@ -97,6 +97,8 @@ export const styles = {
   rowLine: css({ borderBottom: "2px solid transparent", "&:hover": { borderBottomColor: HOVER_LINE } }),
   rowLineLit: css({ borderBottomColor: "@accent_bg_color", "&:hover": { borderBottomColor: "@accent_bg_color" } }),
   rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "4px", padding: "0" }),
+  /** The grip as a grabber: a short bar in the accent, ringed in the page's colour so it reads over what is under it. */
+  rowGrabber: css({ backgroundColor: "@accent_bg_color", border: "2px solid @view_bg_color", borderRadius: "4.5px", padding: "0", minHeight: "0", minWidth: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
   /** A sheet's row numbers: a ruled gutter of their own. */
   rowNumber: css({
