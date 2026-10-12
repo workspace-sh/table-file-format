@@ -1,6 +1,10 @@
+import * as Adw from "@gtkx/gi/adw";
+import * as Gio from "@gtkx/gi/gio";
+import * as GLib from "@gtkx/gi/glib";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, fireEvent, getController, render, screen, screenshot, waitFor } from "@gtkx/testing";
-import { loadLibrary } from "@workspace.sh/table-app/node";
+import { loadDisplay } from "@workspace.sh/table-app";
+import { jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -144,6 +148,93 @@ describe("resizing on Linux", () => {
     expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([104]);
     await fireEvent(getController(grip, Gtk.GestureClick), "pressed", 2, 0, 0);
     // Two lines: the table's six columns give a little to fit the window, and the title wraps in what's left.
+    await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([64]));
+  });
+
+  // From the row's menu: fit it to what it holds, and put a resized row back.
+  async function rowMenuOf(title: string): Promise<Gtk.MenuButton> {
+    let row: Gtk.Widget | null = (await screen.findAllByText(title))[0]!;
+    let found: Gtk.MenuButton | undefined;
+    while (row && !found) {
+      for (let c = row.getFirstChild(); c; c = c.getNextSibling()) if (c instanceof Gtk.MenuButton && c.getTooltipText() === "Row Actions") found = c;
+      row = row.getParent();
+    }
+    expect(found, `the row menu of "${title}"`).toBeDefined();
+    return found!;
+  }
+  const menuLabels = (button: Gtk.MenuButton): string[] => {
+    const out: string[] = [];
+    const walk = (model: Gio.MenuModel) => {
+      for (let i = 0; i < model.getNItems(); i++) {
+        const label = model.getItemAttributeValue(i, "label", GLib.VariantType.new("s"));
+        if (label) out.push(label.getString()[0]);
+        const section = model.getItemLink(i, "section");
+        if (section) walk(section);
+      }
+    };
+    walk((button.getPopover() as Gtk.PopoverMenu).getMenuModel()!);
+    return out;
+  };
+
+  it("the row menu fits a row to what it holds, and puts a resized row back to the view's height", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const landed = (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.title === "Land .table extension")!;
+    const menu = () => rowMenuOf("Land .table extension");
+    expect(menuLabels(await menu())).toContain("Fit Row to Content");
+    expect(menuLabels(await menu())).not.toContain("Reset Row Height");
+    (await menu()).activateAction("row.fit", null);
+    // Two lines: its title wraps in its column, as the grip's double click finds.
+    await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [landed.id]: 64 }));
+    // Now it can be put back, and only it.
+    await waitFor(async () => expect(menuLabels(await menu())).toContain("Reset Row Height"));
+    expect(menuLabels(await rowMenuOf("Markdown editor polish"))).not.toContain("Reset Row Height");
+    (await menu()).activateAction("row.reset-height", null);
+    await waitFor(async () => expect((await viewOnDisk()).rowHeights).toBeUndefined());
+    await waitFor(async () => expect(menuLabels(await menu())).not.toContain("Reset Row Height"));
+    // A row that already fits is left as it is: nothing is written for it.
+    (await rowMenuOf("App icon")).activateAction("row.fit", null);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect((await viewOnDisk()).rowHeights).toBeUndefined();
+  });
+
+  it("Display's Resize handles: as Grabbers the selected row's grip is a short bar centred under its cell, and that is kept", async () => {
+    const settings = jsonFileStore(join(dir, "settings.json"));
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" settings={settings} />);
+    await selectFirstRow();
+    const grip = async () => (await screen.findAllByName("resize-row-grip"))[0]!;
+    const sizeOf = async () => {
+      const [, bounds] = (await grip()).computeBounds((await grip()).getParent()!);
+      return [Math.round(bounds!.getWidth()), Math.round(bounds!.getHeight())];
+    };
+    // Pills, as it has been: with its bars.
+    expect(await sizeOf()).toEqual([28, 8]);
+    expect((await grip()).getFirstChild()).not.toBeNull();
+    const pillAt = (await screen.findAllByName("resize-row"))[0]!.getMarginStart();
+    ((await grip()).getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.display", null);
+    let handles: Adw.ComboRow | undefined;
+    await waitFor(async () => {
+      handles = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).find((w) => w instanceof Adw.ComboRow && w.getTitle() === "Resize handles") as Adw.ComboRow | undefined;
+      expect(handles).toBeDefined();
+    });
+    handles!.setSelected(1);
+    // Back to the table, and to the cell.
+    let dialog: Gtk.Widget | null = handles!;
+    while (dialog && !(dialog instanceof Adw.Dialog)) dialog = dialog.getParent();
+    (dialog as Adw.Dialog).close();
+    await waitFor(() => expect(screen.queryAllByRole(Gtk.AccessibleRole.COMBO_BOX).filter((w) => w instanceof Adw.ComboRow)).toHaveLength(0));
+    await selectFirstRow();
+    await waitFor(async () => expect(await sizeOf()).toEqual([26, 9]));
+    expect((await grip()).getFirstChild()).toBeNull();
+    // Centred under the cell it is on, not at its start.
+    let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (cell && !cell.getFocusable()) cell = cell.getParent();
+    const at = (await screen.findAllByName("resize-row"))[0]!.getMarginStart();
+    expect(at).toBe(pillAt - 4 + Math.round((cell!.getSizeRequest()[0] - 26) / 2));
+    expect(loadDisplay(jsonFileStore(join(dir, "settings.json")))).toEqual({ resizeHandles: "grabbers" });
+    // It still resizes its row.
+    await drag("resize-row-grip", 0, 20);
     await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([64]));
   });
 

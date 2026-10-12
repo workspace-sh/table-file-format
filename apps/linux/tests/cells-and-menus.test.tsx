@@ -62,8 +62,11 @@ describe("the row menu on Linux", () => {
     const menu = await firstRowMenu();
     expect(menu).toContain("Insert Row Above");
     // The same words as on the web, the Mac and phones: table-ui/shared's rowActions.
-    const shared = rowActions("any", { onOpenBody: () => {}, hasBody: false, onInsertRow: () => {}, onDeleteRow: () => {} }).map((a) => a.label);
+    const shared = rowActions("any", { onOpenBody: () => {}, hasBody: false, onInsertRow: () => {}, onFitRow: () => {}, onDeleteRow: () => {} }).map((a) => a.label);
     expect(menu).toEqual(shared);
+    expect(menu).toContain("Fit Row to Content");
+    // Only a row that was resized can be put back.
+    expect(menu).not.toContain("Reset Row Height");
   });
 
   it("a table view that isn't a sheet doesn't", async () => {

@@ -113,6 +113,9 @@ const FRAME_MARGIN = 12;
 const FREEZE_FROM_WIDTH = 720;
 /** How much of a row's bottom edge takes a drag to resize it, as on the web. */
 const ROW_LINE_HEIGHT = 6;
+/** A grabber: the short bar a selected row's grip is drawn as when Display's "Resize handles" says so. */
+const GRABBER_WIDTH = 26;
+const GRABBER_HEIGHT = 9;
 /**
  * How far a scroller is scrolled across from where its content starts, and the adjustment's value for
  * being that far. Left to right they are the same; right to left the content starts at the right, where
@@ -176,6 +179,8 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "add-page": "row.open",
   "insert-above": "row.above",
   "insert-below": "row.below",
+  "fit-row": "row.fit",
+  "reset-row-height": "row.reset-height",
   delete: "row.delete",
 };
 
@@ -186,7 +191,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-page", "add-page"]), section(["insert-above", "insert-below"]), section(["delete"])]
+  return [section(["open-page", "add-page"]), section(["insert-above", "insert-below"]), section(["fit-row", "reset-row-height"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
@@ -270,6 +275,8 @@ function BodyRow({
   onOpenBody,
   onDeleteRow,
   onInsertRow,
+  onFitRow,
+  onResetRowHeight,
   menuRef,
   frozen,
   children,
@@ -281,6 +288,10 @@ function BodyRow({
   onOpenBody?: (rowId: string) => void;
   onDeleteRow?: (rowId: string) => void;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  /** Fit the row's height to what it holds. */
+  onFitRow?: (rowId: string) => void;
+  /** Only for a row that was resized: back to the view's height. */
+  onResetRowHeight?: (rowId: string) => void;
   menuRef?: (button: Gtk.MenuButton | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
@@ -304,6 +315,8 @@ function BodyRow({
               <GSimpleAction name="open" enabled={!!onOpenBody} onActivate={() => onOpenBody?.(rowId)} />
               <GSimpleAction name="above" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "above")} />
               <GSimpleAction name="below" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "below")} />
+              <GSimpleAction name="fit" enabled={!!onFitRow} onActivate={() => onFitRow?.(rowId)} />
+              <GSimpleAction name="reset-height" enabled={!!onResetRowHeight} onActivate={() => onResetRowHeight?.(rowId)} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
             </>
           }
@@ -326,7 +339,7 @@ function BodyRow({
             <GtkPopoverMenu
               flags={Gtk.PopoverMenuFlags.NESTED}
               hasArrow={false}
-              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onDeleteRow }))} />}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow }))} />}
             />
           }
         />
@@ -586,7 +599,7 @@ export function TableView({
   const [containerWidth, setContainerWidth] = useState(0);
   // Rows go above or below another only in a sheet (D41), and not when a sort places them.
   const canInsert = !!onInsertRow && isSheet(view) && canInsertAt(view);
-  const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert;
+  const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert || !!onUpdateView;
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
   // What the columns don't get: the frame and its margins, a sheet's row numbers, and the "+" after the last column.
@@ -743,10 +756,29 @@ export function TableView({
 
   // Resizing a row, from its grip or from the line under it: dragging goes in whole lines, and a
   // double click fits the row to what it holds. `name` is the column the grip is under.
+  const saveRowHeight = (rowId: string, h: number) => {
+    if (h !== rowHeightOf(view, rowId)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [rowId]: h } });
+  };
+  /** A row's height for what it holds: each cell's text in its column's width. */
+  const fittedHeightOf = (row: Row) =>
+    fittedRowHeight(
+      fields.map((field) => ({
+        show: describeCell(fieldMap.get(field), row[field], display, relatedTables),
+        width: colWidth(field),
+      })),
+    );
+  // From the row's menu: fit it, or put it back to the view's height.
+  const fitRow = (rowId: string) => {
+    const row = builtRow.get(rowId);
+    if (row) saveRowHeight(rowId, fittedHeightOf(row));
+  };
+  const resetRowHeight = (rowId: string) => {
+    if (!onUpdateView || view.rowHeights?.[rowId] === undefined) return;
+    const { [rowId]: _gone, ...rest } = view.rowHeights;
+    onUpdateView({ rowHeights: Object.keys(rest).length > 0 ? rest : undefined });
+  };
   const rowResize = (row: Row, by: "grip" | "line", name: string) => {
-    const saveHeight = (h: number) => {
-      if (h !== rowHeightOf(view, row.id)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
-    };
+    const saveHeight = (h: number) => saveRowHeight(row.id, h);
     return [
       <GtkGestureDrag
         key="drag"
@@ -762,15 +794,7 @@ export function TableView({
       <GtkGestureClick
         key="fit"
         onPressed={(nPress) => {
-          if (nPress !== 2) return;
-          saveHeight(
-            fittedRowHeight(
-              fields.map((field) => ({
-                show: describeCell(fieldMap.get(field), row[field], display, relatedTables),
-                width: colWidth(field),
-              })),
-            ),
-          );
+          if (nPress === 2) saveHeight(fittedHeightOf(row));
         }}
       />,
     ];
@@ -795,29 +819,33 @@ export function TableView({
       cellStart += colWidth(field);
     }
     const label = draggedLines(row, "grip");
+    // The look is the viewer's (Display's "Resize handles"): a pill at the cell's start, or a short
+    // bar centred on its bottom edge, ringed in the page's colour, as on the web and phones.
+    const grabbers = display.resizeHandles === "grabbers";
+    const at = grabbers ? cellStart + Math.round((colWidth(gripName) - GRABBER_WIDTH) / 2) : cellStart + 4;
     return (
       <GtkBox
         name="resize-row"
         // Under the first column where that stays put, the grip stays with it.
-        ref={freeze && gripName === fields[0] ? pin("grip", cellStart + 4) : undefined}
+        ref={freeze && gripName === fields[0] ? pin("grip", at) : undefined}
         halign={Gtk.Align.START}
         valign={Gtk.Align.END}
-        marginStart={cellStart + 4 + (freeze && gripName === fields[0] ? scrolledAcross.current : 0)}
-        marginBottom={1}
+        marginStart={at + (freeze && gripName === fields[0] ? scrolledAcross.current : 0)}
+        marginBottom={grabbers ? 0 : 1}
         spacing={6}
       >
         <GtkBox
           name="resize-row-grip"
           halign={Gtk.Align.CENTER}
           valign={Gtk.Align.CENTER}
-          widthRequest={28}
-          heightRequest={8}
-          cssClasses={[styles.rowGrip]}
+          widthRequest={grabbers ? GRABBER_WIDTH : 28}
+          heightRequest={grabbers ? GRABBER_HEIGHT : 8}
+          cssClasses={[grabbers ? styles.rowGrabber : styles.rowGrip]}
           tooltipText="Drag to resize the row; double-click to fit it"
           cursor={Gdk.Cursor.newFromName("row-resize", null)}
           controllers={rowResize(row, "grip", gripName)}
         >
-          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
+          {grabbers ? null : <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />}
         </GtkBox>
         {label !== null ? <GtkLabel label={label} cssClasses={[styles.rowGripLabel]} /> : null}
       </GtkBox>
@@ -1255,6 +1283,8 @@ export function TableView({
         onOpenBody={onOpenBody}
         onDeleteRow={onDeleteRow}
         onInsertRow={onInsertRow}
+        onFitRow={onUpdateView ? fitRow : undefined}
+        onResetRowHeight={onUpdateView && view.rowHeights?.[row.id] !== undefined ? resetRowHeight : undefined}
         menuRef={(button) => {
           if (button) rowMenus.current.set(row.id, button);
           else rowMenus.current.delete(row.id);
