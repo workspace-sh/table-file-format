@@ -1,6 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import {
@@ -104,6 +104,7 @@ import { SnapHScroll } from "./internal/SnapHScroll";
 import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
+import { PageGutter } from "./pageGutter";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
@@ -127,6 +128,8 @@ import { columnActions, rowActions } from "./controlSlots";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
 import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
+import { PageList, type PageListHandle } from "./internal/PageList";
+import { ListPageContext } from "./listPage";
 
 /**
  * Minimum readable column width. On narrow viewports (mobile portrait)
@@ -247,6 +250,44 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
     borderRadius: 8,
+    overflow: "hidden",
+  },
+  // The table's frame as the screen's list draws it (PageList): the header
+  // row's piece with the top corners, each row's with the sides, and the
+  // foot's with the bottom corners, each as wide as the table.
+  listFrameTop: {
+    borderTopWidth: 1,
+    borderInlineStartWidth: 1,
+    borderInlineEndWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    overflow: "hidden",
+  },
+  listFrameSides: {
+    borderInlineStartWidth: 1,
+    borderInlineEndWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  listFrameBottom: {
+    borderBottomWidth: 1,
+    borderInlineStartWidth: 1,
+    borderInlineEndWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
     overflow: "hidden",
   },
   // Two-pane layout: frozen primary column on the left, horizontally
@@ -4157,16 +4198,128 @@ export function TableView({
     </html.div>
   );
 
+  // Where the screen's scroll view is the table's own list (ListPageContext,
+  // LegendList on iOS, #490): for the edge-to-edge table a phone shows.
+  const listPage = useContext(ListPageContext);
+  const asList = listPage && edgeToEdge && PLATFORM_OS !== "web" ? listPage : null;
+  const pageGutter = useContext(PageGutter);
+  // The frame's width inside its borders: the row numbers, the columns and the "+" column.
+  const listInnerWidth = (coords ? ROW_NUMBER_WIDTH : 0) + restNames.reduce((n, name) => n + colWidth(name), 0) + addFieldW + 2;
+  // A line of no height as wide as the page's content, which the columns share.
+  const measureRow = (
+    <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
+      <html.div {...measureProps} style={styles.tableGrow} />
+    </html.div>
+  );
+
+  // The scrolling pane's header row, its rows and its foot (the new-row
+  // band and totals): drawn in the pane's own list, or, where the screen's
+  // scroll view is the table's list (ListPageContext), as that list's items.
+  const restHeaderRow = (
+    <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+      {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+      {restNames.map((name, idx) => headerCell(name, idx, restNames.length))}
+      {headerAddCell}
+    </html.div>
+  );
+  const restItem = (place: number) =>
+    drawn(place, ({ row, starts }, i) => (
+      <>
+        {starts && (
+          // The frozen pane labels the group; this pane's band
+          // matches its height so the rows stay in line.
+          <html.div style={[styles.tableRow, styles.groupRow, restRowWidth()]}>
+            {!primaryName && (
+              <html.span style={styles.groupLabel}>
+                {groupTitle} · {starts.label}
+                <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
+              </html.span>
+            )}
+          </html.div>
+        )}
+        <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
+          <html.div
+            style={[
+              styles.tableRow,
+              styles.rowHeight(heightOf(row.id)),
+              styles.positioned,
+              restRowWidth(),
+              i === total - 1 && !onAddRow && styles.tableRowLast,
+            ]}
+          >
+            {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+            {restNames.map((name, idx) =>
+              renderBodyCell(row, name, idx, restNames.length),
+            )}
+            {rowLine(row, !primaryName)}
+          </html.div>
+        </RowActions>
+        {sel?.rowId === row.id && sel.name !== primaryName && (
+          <html.div style={styles.rowGripAnchor}>
+            {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName), colWidth(sel.name))}
+            {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !primaryName) + colWidth(sel.name), heightOf(row.id))}
+          </html.div>
+        )}
+      </>
+    ), "rest");
+  const restFoot = (
+    <>
+      {addRow && newRowBand(!primaryName)}
+      {showTotals && (
+        <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
+          {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+          {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
+        </html.div>
+      )}
+    </>
+  );
+
   return (
     <>
     {/* "+" for a new field sits at the end of the header row, just outside
         the table, as Airtable has it: the grid gives up its width once,
         rather than every row carrying an empty column (#71). */}
-    {edgeToEdge && (
-      <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
-        <html.div {...measureProps} style={styles.tableGrow} />
-      </html.div>
-    )}
+    {edgeToEdge && !asList && measureRow}
+    {asList ? (
+      <PageList
+        count={total}
+        keyOf={rowKeyOf}
+        sizeOf={rowItemHeight}
+        renderRow={(place) => (
+          <html.div style={styles.bleedRow}>
+            <GutterSpacer />
+            <html.div style={[styles.listFrameSides, styles.cellWidth(listInnerWidth)]}>{restItem(place)}</html.div>
+            <GutterSpacer />
+          </html.div>
+        )}
+        header={
+          <>
+            {asList.header}
+            {measureRow}
+          </>
+        }
+        tableHeader={
+          <html.div style={styles.bleedRow}>
+            <GutterSpacer />
+            <html.div style={[styles.listFrameTop, styles.cellWidth(listInnerWidth)]}>{restHeaderRow}</html.div>
+            <GutterSpacer />
+          </html.div>
+        }
+        footer={
+          <html.div style={styles.bleedRow}>
+            <GutterSpacer />
+            <html.div style={[styles.listFrameBottom, styles.cellWidth(listInnerWidth)]}>{restFoot}</html.div>
+            <GutterSpacer />
+          </html.div>
+        }
+        contentWidth={listInnerWidth + 2 * pageGutter}
+        extraData={{}}
+        onShown={onShown}
+        handle={paneRows as unknown as Ref<PageListHandle | null>}
+        scrollProps={asList.scrollProps}
+        onScroller={asList.onScroller}
+      />
+    ) : (
     <EdgeToEdge on={edgeToEdge} snapTo={columnStarts}>
     <GridKeys ref={keysRef} onKeyDown={onGridKey}>
     <html.div
@@ -4249,13 +4402,7 @@ export function TableView({
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
               {columnLines(restNames, coords && !primaryName ? ROW_NUMBER_WIDTH : 0)}
-              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
-                {restNames.map((name, idx) =>
-                  headerCell(name, idx, restNames.length),
-                )}
-                {headerAddCell}
-              </html.div>
+              {restHeaderRow}
               <RowList
                 items={places}
                 keyOf={rowKeyOf}
@@ -4265,53 +4412,9 @@ export function TableView({
                 handle={paneRows}
                 layout={tallLayout}
                 onShown={onShown}
-                render={(place) => drawn(place, ({ row, starts }, i) => (
-                  <>
-                    {starts && (
-                      // The frozen pane labels the group; this pane's band
-                      // matches its height so the rows stay in line.
-                      <html.div style={[styles.tableRow, styles.groupRow, restRowWidth()]}>
-                        {!primaryName && (
-                          <html.span style={styles.groupLabel}>
-                            {groupTitle} · {starts.label}
-                            <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
-                          </html.span>
-                        )}
-                      </html.div>
-                    )}
-                    <RowActions actions={actionsFor(row.id)} title={titleField ? formatValue(row[titleField]) : undefined}>
-                      <html.div
-                        style={[
-                          styles.tableRow,
-                          styles.rowHeight(heightOf(row.id)),
-                          styles.positioned,
-                          restRowWidth(),
-                          i === total - 1 && !onAddRow && styles.tableRowLast,
-                        ]}
-                      >
-                        {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                        {restNames.map((name, idx) =>
-                          renderBodyCell(row, name, idx, restNames.length),
-                        )}
-                        {rowLine(row, !primaryName)}
-                      </html.div>
-                    </RowActions>
-                    {sel?.rowId === row.id && sel.name !== primaryName && (
-                      <html.div style={styles.rowGripAnchor}>
-                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName), colWidth(sel.name))}
-                        {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !primaryName) + colWidth(sel.name), heightOf(row.id))}
-                      </html.div>
-                    )}
-                  </>
-                ), "rest")}
+                render={restItem}
               />
-              {addRow && newRowBand(!primaryName)}
-              {showTotals && (
-                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
-                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
-                  {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
-                </html.div>
-              )}
+              {restFoot}
             </html.div>
           </PaneScroll>
         </html.div>
@@ -4320,6 +4423,7 @@ export function TableView({
     </html.div>
     </GridKeys>
     </EdgeToEdge>
+    )}
     {/* A table with no columns has no header to put the "+" on. */}
     {canAddField && fields.length === 0 && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
       {formulaCell && openFormulaField && (() => {
