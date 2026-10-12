@@ -111,6 +111,8 @@ const DRAW_MARGIN = 300;
 const FRAME_MARGIN = 12;
 /** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
 const FREEZE_FROM_WIDTH = 720;
+/** How much of a row's bottom edge takes a drag to resize it, as on the web. */
+const ROW_LINE_HEIGHT = 6;
 /**
  * How far a scroller is scrolled across from where its content starts, and the adjustment's value for
  * being that far. Left to right they are the same; right to left the content starts at the right, where
@@ -416,7 +418,7 @@ export function TableView({
   // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; name: string } | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; name: string; by: "grip" | "line" } | null>(null);
   const resizeFrom = useRef(0);
   // Each row's own height, else the view's default; the row being resized follows the drag.
   const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
@@ -739,20 +741,60 @@ export function TableView({
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
 
+  // Resizing a row, from its grip or from the line under it: dragging goes in whole lines, and a
+  // double click fits the row to what it holds. `name` is the column the grip is under.
+  const rowResize = (row: Row, by: "grip" | "line", name: string) => {
+    const saveHeight = (h: number) => {
+      if (h !== rowHeightOf(view, row.id)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    };
+    return [
+      <GtkGestureDrag
+        key="drag"
+        onDragBegin={() => {
+          resizeFrom.current = heightOf(row.id);
+        }}
+        onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy), name, by })}
+        onDragEnd={(_dx, dy) => {
+          saveHeight(snappedRowHeight(resizeFrom.current, dy));
+          setLiveRow(null);
+        }}
+      />,
+      <GtkGestureClick
+        key="fit"
+        onPressed={(nPress) => {
+          if (nPress !== 2) return;
+          saveHeight(
+            fittedRowHeight(
+              fields.map((field) => ({
+                show: describeCell(fieldMap.get(field), row[field], display, relatedTables),
+                width: colWidth(field),
+              })),
+            ),
+          );
+        }}
+      />,
+    ];
+  };
+  /** How many lines a row being dragged by `by` has, for its label. */
+  const draggedLines = (row: Row, by: "grip" | "line") => {
+    if (liveRow?.rowId !== row.id || liveRow.by !== by) return null;
+    const n = linesFor(liveRow.h);
+    return `${n} ${n === 1 ? "line" : "lines"}`;
+  };
   // A row's grip: only on the row with the selected cell (so nothing else
   // can be dragged by a scroll), at its bottom edge under the start of that
-  // cell, so it is in view wherever the table has been scrolled. Dragging
-  // resizes that row in whole lines; a double click fits it to what it holds.
+  // cell, so it is in view wherever the table has been scrolled.
   const rowGrip = (row: Row) => {
     const [selectedRow, selectedName] = focusedCell?.split("\u0000") ?? [];
-    if (!onUpdateView || (selectedRow !== row.id && liveRow?.rowId !== row.id)) return null;
+    const dragged = liveRow?.rowId === row.id && liveRow.by === "grip";
+    if (!onUpdateView || (selectedRow !== row.id && !dragged)) return null;
     const gripName = (selectedRow === row.id ? selectedName : liveRow?.name) ?? fields[0]!;
     let cellStart = coords ? ROW_NUMBER_WIDTH : 0;
     for (const field of fields) {
       if (field === gripName) break;
       cellStart += colWidth(field);
     }
-    const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    const label = draggedLines(row, "grip");
     return (
       <GtkBox
         name="resize-row"
@@ -773,43 +815,47 @@ export function TableView({
           cssClasses={[styles.rowGrip]}
           tooltipText="Drag to resize the row; double-click to fit it"
           cursor={Gdk.Cursor.newFromName("row-resize", null)}
-          controllers={[
-            <GtkGestureDrag
-              key="drag"
-              onDragBegin={() => {
-                resizeFrom.current = heightOf(row.id);
-              }}
-              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy), name: gripName })}
-              onDragEnd={(_dx, dy) => {
-                saveHeight(snappedRowHeight(resizeFrom.current, dy));
-                setLiveRow(null);
-              }}
-            />,
-            <GtkGestureClick
-              key="fit"
-              onPressed={(nPress) => {
-                if (nPress !== 2) return;
-                saveHeight(
-                  fittedRowHeight(
-                    fields.map((name) => ({
-                      show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-                      width: colWidth(name),
-                    })),
-                  ),
-                );
-              }}
-            />,
-          ]}
+          controllers={rowResize(row, "grip", gripName)}
         >
           <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
         </GtkBox>
-        {liveRow?.rowId === row.id ? (
+        {label !== null ? <GtkLabel label={label} cssClasses={[styles.rowGripLabel]} /> : null}
+      </GtkBox>
+    );
+  };
+  // With a pointer a row also resizes from the line under it, anywhere along it, as a column does
+  // from its line: a strip inside the row's bottom edge that lights when pointed at and while it is
+  // dragged. The lines are counted at the row's start, in view however far across the table is.
+  const rowLine = (row: Row) => {
+    if (!onUpdateView) return null;
+    const label = draggedLines(row, "line");
+    return (
+      <>
+        <GtkBox
+          name="resize-row-line"
+          // As wide as the row's cells: like its rule, it stops at the last column.
+          halign={Gtk.Align.START}
+          widthRequest={(coords ? ROW_NUMBER_WIDTH : 0) + fields.reduce((sum, field) => sum + colWidth(field), 0)}
+          valign={Gtk.Align.END}
+          heightRequest={ROW_LINE_HEIGHT}
+          cssClasses={[styles.rowLine, ...(label !== null ? [styles.rowLineLit] : [])]}
+          tooltipText="Drag to resize the row; double-click to fit it"
+          cursor={Gdk.Cursor.newFromName("row-resize", null)}
+          controllers={rowResize(row, "line", fields[0]!)}
+        />
+        {label !== null ? (
           <GtkLabel
-            label={`${linesFor(liveRow.h)} ${linesFor(liveRow.h) === 1 ? "line" : "lines"}`}
+            ref={pin("line-label", 8)}
+            label={label}
+            halign={Gtk.Align.START}
+            valign={Gtk.Align.END}
+            marginStart={8 + scrolledAcross.current}
+            marginBottom={8}
+            canTarget={false}
             cssClasses={[styles.rowGripLabel]}
           />
         ) : null}
-      </GtkBox>
+      </>
     );
   };
 
@@ -1193,7 +1239,14 @@ export function TableView({
     return (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
       {heading}
-      <GtkOverlay overlays={rowGrip(row)}>
+      <GtkOverlay
+        overlays={
+          <>
+            {rowLine(row)}
+            {rowGrip(row)}
+          </>
+        }
+      >
       <BodyRow
         rowId={row.id}
         menu={hasMenu}
