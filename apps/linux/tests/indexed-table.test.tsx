@@ -18,6 +18,8 @@ import { fixturesDir } from "../src/fixtures.js";
 const ROWS = 3000;
 let dir: string;
 let bundle: string;
+/** How many rows the table has, as the app says a count: grouped, in the viewer's own way. */
+const COUNT = (ROWS + 8).toLocaleString();
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "table-linux-indexed-"));
@@ -43,7 +45,7 @@ async function openTasks() {
   expect(library.tables["projects/projects"]!.rows.length).toBeGreaterThan(0);
   await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
   // Past the first rows shown while its index is made: the view itself.
-  await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+  await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
   await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
 }
 
@@ -64,7 +66,7 @@ describe("a table held in the index on Linux", () => {
     await openTasks();
     await screen.findAllByText("Land .table extension");
     expect(existsSync(join(bundle, "index.sqlite"))).toBe(true);
-    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     // A window of them, not all.
     expect(screen.queryAllByText(/^Big \d+$/).length).toBeLessThan(200);
     // Nothing was written by opening it.
@@ -104,7 +106,7 @@ describe("a table held in the index on Linux", () => {
     expect((first.getRoot() as unknown as Gtk.Window).getFocus()).not.toBe(first);
 
     finish();
-    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     expect(((await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry).getSensitive()).toBe(true);
   });
@@ -138,7 +140,7 @@ describe("a table held in the index on Linux", () => {
     const at = adjustment.getValue();
 
     finish();
-    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     // The same table, where it was: v1 sorts by priority, and these rows are last either way.
     expect(scroller.getVadjustment().getValue()).toBe(at);
@@ -242,7 +244,7 @@ describe("a table held in the index on Linux", () => {
     const schemaOnDisk = () => JSON.parse(readFileSync(join(bundle, "tables", "tasks", "schema.json"), "utf8")) as { fields: { name: string }[] };
     await waitFor(() => expect(schemaOnDisk().fields.at(-1)?.name).toBe("due_soon"), { timeout: 5000 });
     // Made again for the new field, and answering: an edit to it is saved.
-    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const host = openIndexHost(bundle);
     const { queryIndex } = await import("@workspace.sh/table-core");
@@ -273,7 +275,7 @@ describe("a table held in the index on Linux", () => {
     const out = join(dir, "out.table.zip");
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} chooseZipSaveAs={async () => out} />);
-    await screen.findAllByText(`${ROWS + 8} of ${ROWS + 8} rows`);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     const button = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" });
     (button.getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.export-zip", null);
     await waitFor(() => expect(existsSync(out)).toBe(true));
@@ -287,7 +289,7 @@ describe("a table held in the index on Linux", () => {
     await screen.findAllByText("Land .table extension");
     const search = (await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry;
     await userEvent.type(search, "Big 299");
-    await screen.findAllByText("11 of 3008 matching");
+    await screen.findAllByText(`11 of ${COUNT} matching`);
     await screen.findAllByText("Big 2999");
     // The rows that don't match go once the matching ones have arrived.
     await waitFor(() => expect(screen.queryAllByText("Land .table extension")).toHaveLength(0));
