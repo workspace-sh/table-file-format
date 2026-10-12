@@ -47,6 +47,10 @@ export interface DragHandleProps {
   lit?: boolean;
 }
 
+// An edge's line: faint while the pointer is over it, so it doesn't
+// flash across the table as the pointer passes, and full while dragged.
+const HOVER_LINE = "rgba(10, 132, 255, 0.35)";
+
 const edgeStyles = css.create({
   // A column's edge: 8 wide to find with a pointer, and a line on its
   // end edge as the pointer comes over it and while it's dragged, so
@@ -63,7 +67,7 @@ const edgeStyles = css.create({
     borderInlineEndStyle: "solid",
     borderInlineEndColor: {
       default: "transparent",
-      ":hover": "#0a84ff",
+      ":hover": HOVER_LINE,
     },
   },
   endDragging: {
@@ -83,7 +87,7 @@ const edgeStyles = css.create({
     borderBottomStyle: "solid",
     borderBottomColor: {
       default: "transparent",
-      ":hover": "#0a84ff",
+      ":hover": HOVER_LINE,
     },
   },
   bottomDragging: {
