@@ -2,6 +2,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { bundleToArchive, openArchive, toBundle } from "@workspace.sh/table-app";
 import { copiesOf, loadLibrary } from "@workspace.sh/table-app/node";
+import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +111,59 @@ describe("the File menu on Linux", () => {
     expect(suggested).toBe("projects.table.zip");
     const opened = await openArchive(new Uint8Array(readFileSync(out)), []);
     expect(Object.keys(opened.bundle.tables).sort()).toEqual(["projects", "tasks"]);
+  });
+
+  it("a table's edit history goes out in its .table.zip, and comes back in when the archive is opened", async () => {
+    const out = join(dir, "out.table.zip");
+    await openExamples({ chooseZipSaveAs: async () => out, chooseZip: async () => out });
+    // An edit, so the table has a history.
+    await userEvent.click(await screen.findByText("Land .table extension"));
+    const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Renamed task");
+    await userEvent.keyboard(entry, "{Enter}");
+    // Exported at once: what is still to write is written first.
+    await run("export-zip");
+    await waitFor(() => expect(existsSync(out)).toBe(true));
+    const onDisk = readFileSync(join(examples, "projects.table", "tables", "tasks", "history.ndjson"), "utf8");
+    const events = parseEditLog(onDisk).events;
+    expect(events.map((e) => e.op === "set" && e.to)).toEqual(["Renamed task"]);
+    const opened = await openArchive(new Uint8Array(readFileSync(out)), []);
+    expect(opened.bundle.tables.tasks!.history).toBe(onDisk);
+    // The table that was never edited has none.
+    expect("history" in opened.bundle.tables.projects!).toBe(false);
+    expect(opened.bundle.tables.tasks!.rows.find((r) => r.id === "t1")?.title).toBe("Renamed task");
+
+    // Opened again as a new .table: its folder has the history it came with.
+    await run("open-zip");
+    const copy = join(examples, "projects-2.table", "tables", "tasks");
+    await waitFor(() => expect(existsSync(join(copy, "history.ndjson"))).toBe(true));
+    expect(readFileSync(join(copy, "history.ndjson"), "utf8")).toBe(onDisk);
+    expect(existsSync(join(examples, "projects-2.table", "tables", "projects", "history.ndjson"))).toBe(false);
+  });
+
+  it("an edit to a table that came with a history is added after it", async () => {
+    const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"t1","field":"title","to":"Land .table extension"}\n';
+    const projects = await loadLibrary([join(fixturesDir()!, "projects.table")]);
+    const tables = { ...projects.tables, "projects/tasks": { ...projects.tables["projects/tasks"]!, history: theirs } };
+    const zip = join(dir, "with-history.table.zip");
+    writeFileSync(zip, await bundleToArchive("arrived", toBundle(Object.fromEntries(Object.entries(tables).map(([k, t]) => [k.replace("projects/", "arrived/"), t])), { arrived: projects.bundles.projects! }, "arrived")));
+    await openExamples({ chooseZip: async () => zip });
+    await run("open-zip");
+    const file = join(examples, "arrived.table", "tables", "tasks", "history.ndjson");
+    await waitFor(() => expect(existsSync(file)).toBe(true));
+    expect(readFileSync(file, "utf8")).toBe(theirs);
+    // The archive's table is on screen: edit it.
+    await userEvent.click((await screen.findAllByText("Tasks")).at(-1)!);
+    await userEvent.click(await screen.findByText("Markdown editor polish"));
+    const entry = (await screen.findByDisplayValue("Markdown editor polish")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Polished");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(() => expect(parseEditLog(readFileSync(file, "utf8")).events).toHaveLength(2));
+    const text = readFileSync(file, "utf8");
+    expect(text.startsWith(theirs)).toBe(true);
+    expect(parseEditLog(text).events.map((e) => e.id === "theirs" || (e.op === "set" && e.to))).toEqual([true, "Polished"]);
   });
 
   it("Reset Demo Data… puts the examples back, and keeps a folder opened from elsewhere", async () => {

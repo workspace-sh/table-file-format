@@ -86,3 +86,25 @@ test("saving again writes only what changed, and adds no attachments folder", as
   assert.equal(writes, 1);
   assert.equal((await fs.readText("/b/tables/b/rows.ndjson"))!.includes("One"), true);
 });
+
+test("a history that came with a table is written once; one on disk is never changed, and a table without one makes none", async () => {
+  const fs = memoryFs();
+  const table = { schema: { fields: [{ name: "title", type: "string" as const }] }, rows: [{ id: "r1", title: "A" }] };
+  const file = "x.table/tables/t/history.ndjson";
+  await writeBundleTo(fs, "x.table", { tables: { t: table } });
+  assert.equal(await fs.readText(file), null);
+  // Arrived with a history (an archive opened into a folder): it is put there.
+  const arrived = '{"id":"e1","at":"2026-10-01T15:00:00Z","op":"set","row":"r1","field":"title","to":"A"}\n';
+  await writeBundleTo(fs, "x.table", { tables: { t: { ...table, history: arrived } } });
+  assert.equal(await fs.readText(file), arrived);
+  // The app has added to it since. The table held still carries what it arrived with: the file wins.
+  const grown = arrived + '{"id":"e2","at":"2026-10-02T09:00:00Z","op":"set","row":"r1","field":"title","from":"A","to":"B"}\n';
+  await fs.writeText(file, grown);
+  await writeBundleTo(fs, "x.table", { tables: { t: { ...table, rows: [{ id: "r1", title: "B" }], history: arrived } } });
+  assert.equal(await fs.readText(file), grown);
+  // Nor is it removed when the table held has none.
+  await writeBundleTo(fs, "x.table", { tables: { t: table } });
+  assert.equal(await fs.readText(file), grown);
+  // The directory reader leaves it where it is.
+  assert.equal("history" in (await readBundle(fs, "x.table")).tables.t!, false);
+});

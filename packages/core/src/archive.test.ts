@@ -148,3 +148,23 @@ test("bytes-only API: path is the root name; .table name suffix accepted", async
   assert.equal(back.path, "projects.table");
   assert.equal(back.tables.tasks!.rows.length, disk.tables.tasks!.rows.length);
 });
+
+test("a table's edit history travels in the archive, byte for byte; a table without one has no file", async () => {
+  const disk = await projects();
+  // As another writer left it: a line this reader's edit-log wouldn't know, and no line end.
+  const history = '{"id":"e1","at":"2026-10-01T15:00:00Z","by":"leslie","op":"set","row":"t1","field":"title","from":"A","to":"B"}\n{"op":"something-new"}\nnot json';
+  const withHistory = { ...disk, tables: { ...disk.tables, tasks: { ...disk.tables.tasks!, history } } };
+  const paths = bundleFiles(withHistory).map((f) => f.path);
+  assert.ok(paths.includes("tables/tasks/history.ndjson"));
+  assert.equal(paths.includes("tables/projects/history.ndjson"), false);
+  assert.equal(bundleFiles(withHistory).find((f) => f.path === "tables/tasks/history.ndjson")!.content, history);
+  const back = await readTableArchive(await writeTableArchive("projects", withHistory));
+  assert.equal(back.tables.tasks!.history, history);
+  assert.equal("history" in back.tables.projects!, false);
+  assert.equal(back.diagnostics, undefined);
+  // And out again the same.
+  assert.deepEqual(await writeTableArchive("projects", back), await writeTableArchive("projects", withHistory));
+  // An empty history is no history.
+  const empty = { ...disk, tables: { ...disk.tables, tasks: { ...disk.tables.tasks!, history: "" } } };
+  assert.equal(bundleFiles(empty).some((f) => f.path.endsWith("history.ndjson")), false);
+});

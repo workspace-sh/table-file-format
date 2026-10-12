@@ -67,10 +67,10 @@ import {
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
-import { readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
+import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
@@ -745,6 +745,14 @@ export function App({
         }
         const { indexed: _held, ...rest } = t;
         whole[k] = { ...rest, rows: await indexed.everyRow(k) };
+      }
+      // Each table's edit history goes with it, as its file holds it once what is still to write is written.
+      await flush();
+      for (const [k, t] of Object.entries(whole)) {
+        if (bundleOf(k) !== key || !pathOf(key)) continue;
+        const history = join(tableDir(k), HISTORY_FILE);
+        const { history: _arrived, ...rest } = t;
+        whole[k] = existsSync(history) ? { ...rest, history: readFileSync(history, "utf8") } : rest;
       }
       writeFileSync(path, await bundleToArchive(key, toBundle(whole, bundles, key)));
     } catch (error) {

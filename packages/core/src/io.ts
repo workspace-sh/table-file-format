@@ -199,6 +199,12 @@ export interface WriteTableInput {
    * writeBody API for partial updates.
    */
   bodies?: Record<string, string>;
+  /**
+   * The table's edit history as text (SPEC section 14), for a table that
+   * arrived with one (from an archive). Written only when the table has
+   * no `history.ndjson` yet: one that is there is never changed here.
+   */
+  history?: string;
 }
 
 export interface WriteBundleInput {
@@ -263,6 +269,10 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, TableEntry.rows), serializeRows(input.rows, input.schema));
     await stage(joinPath(dir, TableEntry.views), pretty(input.views ?? []));
     await stage(joinPath(dir, TableEntry.meta), pretty(meta));
+    // A history that came with the table (an archive opened into a folder) is put there once. The file is
+    // append-only and its writers' own: one already there is left exactly as it is.
+    const historyPath = joinPath(dir, TableEntry.history);
+    if (input.history && (await fs.readText(historyPath)) === null) await stage(historyPath, input.history);
     if (haveBodies) {
       await fs.mkdir(bodiesDir);
       for (const [id, content] of Object.entries(bodies)) {
