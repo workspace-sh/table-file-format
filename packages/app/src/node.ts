@@ -4,9 +4,10 @@
 // as core keeps its node:fs adapter apart.
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFile, mkdir, open } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
-import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import { HISTORY_FILE, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
@@ -45,6 +46,34 @@ export function loadLibrary(paths: string[], held: Iterable<string> = [], option
  */
 export function saveBundle(library: Library, tables: Record<string, ParsedTable>, bundles: Record<string, BundleMeta>, key: string): Promise<void> {
   return writeLibraryBundle(nodeFs, library, tables, bundles, key);
+}
+
+/**
+ * Append events to a table's edit history, `history.ndjson` in its folder
+ * (`tableDir`; SPEC section 14). Only ever adds to the file: what is there
+ * is left as it is, and given a line end first when it has none.
+ */
+export async function appendHistory(tableDir: string, events: readonly EditEvent[]): Promise<void> {
+  if (events.length === 0) return;
+  await mkdir(tableDir, { recursive: true });
+  const path = join(tableDir, HISTORY_FILE);
+  let unended = false;
+  try {
+    const file = await open(path, "r");
+    try {
+      const { size } = await file.stat();
+      if (size > 0) {
+        const last = Buffer.alloc(1);
+        await file.read(last, 0, 1, size - 1);
+        unended = last[0] !== 0x0a;
+      }
+    } finally {
+      await file.close();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await appendFile(path, (unended ? "\n" : "") + serializeEditEvents(events), "utf8");
 }
 
 /**

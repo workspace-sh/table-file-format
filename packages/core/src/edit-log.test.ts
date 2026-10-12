@@ -113,11 +113,14 @@ test("fields worked out from others aren't recorded: not as a set, nor in an ins
   assert.deepEqual(rowChanges({ id: "p1", n: 1, total: 10 }, undefined, computed), [{ op: "delete", row: "p1", values: { id: "p1", n: 1 } }]);
 });
 
-test("a page's change carries the whole text before and after; a new page has no from, a cleared one no to", () => {
-  assert.deepEqual(pageChange("p1", "Old text", "New text"), { op: "page", row: "p1", from: "Old text", to: "New text" });
-  assert.deepEqual(pageChange("p1", undefined, "New text"), { op: "page", row: "p1", to: "New text" });
-  assert.deepEqual(pageChange("p1", "Old text", undefined), { op: "page", row: "p1", from: "Old text" });
-  assert.deepEqual(pageChange("p1", "Old text", ""), { op: "page", row: "p1", from: "Old text" });
+test("a page's change carries the whole text before and after, as its file holds it; a new page has no from, a cleared one no to", () => {
+  assert.deepEqual(pageChange("p1", "Old text\n", "New text\n"), { op: "page", row: "p1", from: "Old text\n", to: "New text\n" });
+  // Typed without its last newline, it is said with it: what the file holds.
+  assert.deepEqual(pageChange("p1", "Old text\n", "New text"), { op: "page", row: "p1", from: "Old text\n", to: "New text\n" });
+  assert.equal(pageChange("p1", "Same\n", "Same"), null);
+  assert.deepEqual(pageChange("p1", undefined, "New text"), { op: "page", row: "p1", to: "New text\n" });
+  assert.deepEqual(pageChange("p1", "Old text", undefined), { op: "page", row: "p1", from: "Old text\n" });
+  assert.deepEqual(pageChange("p1", "Old text", ""), { op: "page", row: "p1", from: "Old text\n" });
   assert.equal(pageChange("p1", "Same", "Same"), null);
   assert.equal(pageChange("p1", undefined, ""), null);
 });
