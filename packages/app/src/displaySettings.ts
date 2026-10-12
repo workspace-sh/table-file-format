@@ -1,5 +1,5 @@
-// How this viewer wants tables shown: locale, default date format, and
-// which syntax formulas are shown in (#76).
+// How this viewer wants tables shown: locale, default date format, which
+// syntax formulas are shown in (#76), and how resize handles look.
 // Personal, kept in this browser, never in a table (SPEC section 4). Reset
 // demo data leaves it alone: it's the viewer's, not the demo's.
 
@@ -17,6 +17,15 @@ export const DATE_FORMATS = ["iso", "short", "long", "weekday", "relative"];
 
 /** Excel style, or the stored `table-expr-v1` form. Either can be typed. */
 export const FORMULA_SYNTAXES = ["excel", "stored"] as const;
+
+/** How a selected cell's resize handles look on touch. */
+export const RESIZE_HANDLES = ["pills", "grabbers"] as const;
+
+/** How each look is offered. */
+export const RESIZE_HANDLE_LABELS: Record<(typeof RESIZE_HANDLES)[number], string> = {
+  pills: "Pills",
+  grabbers: "Grabbers",
+};
 
 /** How each date format is offered. */
 export const DATE_LABELS: Record<string, string> = {
@@ -65,6 +74,14 @@ export function displayChoices(display: DisplaySettings, ownLocale: string, ownN
       options: FORMULA_SYNTAXES.map((s) => ({ value: s, label: FORMULA_LABELS[s] })),
       note: "Either can be typed. The file keeps one form.",
     },
+    {
+      kind: "resizeHandles",
+      name: "Resize handles",
+      label: "How a selected cell's handles for resizing its row and column look",
+      value: display.resizeHandles ?? "pills",
+      options: RESIZE_HANDLES.map((h) => ({ value: h, label: RESIZE_HANDLE_LABELS[h] })),
+      note: "On touch screens. With a pointer, drag the lines between rows and columns.",
+    },
   ];
 }
 
@@ -72,6 +89,7 @@ export function displayChoices(display: DisplaySettings, ownLocale: string, ownN
 export function withDisplayChoice(display: DisplaySettings, kind: DisplaySettingKind, value: string): DisplaySettings {
   if (kind === "locale") return { ...display, locale: value || undefined };
   if (kind === "dateFormat") return { ...display, dateFormat: value === "iso" ? undefined : value };
+  if (kind === "resizeHandles") return { ...display, resizeHandles: value === "grabbers" ? "grabbers" : undefined };
   return { ...display, formulaSyntax: value === "stored" ? "stored" : undefined };
 }
 
@@ -79,11 +97,12 @@ export function loadDisplay(store: KeyValueStore | null): DisplaySettings {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(DISPLAY_KEY) ?? "{}");
     if (typeof parsed !== "object" || parsed === null) return {};
-    const { locale, dateFormat, formulaSyntax } = parsed as Record<string, unknown>;
+    const { locale, dateFormat, formulaSyntax, resizeHandles } = parsed as Record<string, unknown>;
     return {
       ...(typeof locale === "string" && LOCALES.includes(locale) ? { locale } : {}),
       ...(typeof dateFormat === "string" && DATE_FORMATS.includes(dateFormat) ? { dateFormat } : {}),
       ...(formulaSyntax === "stored" ? { formulaSyntax } : {}),
+      ...(resizeHandles === "grabbers" ? { resizeHandles } : {}),
     };
   } catch {
     return {};
@@ -92,8 +111,8 @@ export function loadDisplay(store: KeyValueStore | null): DisplaySettings {
 
 export function saveDisplay(store: KeyValueStore | null, display: DisplaySettings): void {
   try {
-    const { locale, dateFormat, formulaSyntax } = display;
-    store?.setItem(DISPLAY_KEY, JSON.stringify({ locale, dateFormat, formulaSyntax }));
+    const { locale, dateFormat, formulaSyntax, resizeHandles } = display;
+    store?.setItem(DISPLAY_KEY, JSON.stringify({ locale, dateFormat, formulaSyntax, resizeHandles }));
   } catch {
     // Not kept past a reload; still applied now.
   }
