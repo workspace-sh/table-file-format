@@ -1840,6 +1840,12 @@ function RelationCellValue({
 }
 
 interface EditableCellProps {
+  /**
+   * Whose cell this is (its row's id). A list that recycles its rows hands
+   * a cell another row's value; what was being written in it belonged to
+   * the row before, and is dropped, never saved into the new one.
+   */
+  rowKey?: string;
   field: Field | undefined;
   value: unknown;
   onCommit: (next: unknown) => void;
@@ -1903,6 +1909,7 @@ interface KeyEventLike {
 }
 
 function EditableCell({
+  rowKey,
   field,
   value,
   onCommit,
@@ -1944,6 +1951,19 @@ function EditableCell({
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
+  // Given another row's cell (a recycled row): start again, as a new cell
+  // would. Closed, so the old input's blur as it goes saves nothing.
+  const [heldFor, setHeldFor] = useState(rowKey);
+  if (heldFor !== rowKey) {
+    setHeldFor(rowKey);
+    setEditing(false);
+    setDraft("");
+    setProblem(null);
+    setProblemAt(null);
+    setLongAt(null);
+    queried.current = null;
+    closed.current = true;
+  }
   const hints = inputHints(field);
   const { Select: SelectControl, DateInput: DateInputControl } = usePlatformControls();
 
@@ -3691,6 +3711,7 @@ export function TableView({
         <CellWidth.Provider value={colWidth(name) - 24}>
         {onUpdateRow ? (
           <EditableCell
+            rowKey={row.id}
             field={field}
             value={shownValue}
             onCommit={(next) => onUpdateRow(row.id, name, next)}
