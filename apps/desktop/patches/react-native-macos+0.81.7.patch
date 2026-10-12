@@ -51,7 +51,7 @@ index 779480a..cdcc4cd 100644
  #endif // macOS]
  }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
-index 1ab801d..3802f1f 100644
+index 1ab801d..048e565 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
 @@ -15,6 +15,9 @@ @interface RCTEnhancedScrollView () <RCTUIScrollViewDelegate> // [macOS]
@@ -64,7 +64,7 @@ index 1ab801d..3802f1f 100644
  }
  
  + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key
-@@ -375,4 +378,29 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
+@@ -375,4 +378,38 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
        scrollView.contentSize.width > self.frame.size.width;
  }
  
@@ -73,6 +73,15 @@ index 1ab801d..3802f1f 100644
 +// ScrollView, say) goes to the scroll view around it, all of it, momentum included: decided once, as the
 +// gesture begins, by which way it mostly runs. Upstream lets AppKit's default take it, and a table's
 +// sideways pane held vertical swipes over it instead of the page scrolling. Drop once upstream does this.
++// [table-file-format patch] Overriding -scrollWheel: makes AppKit assume this class can't take
++// responsive scrolling (scrolling off the main thread), and every ScrollView is this class, the page
++// included, so all of them scrolled on the main thread. The override only chooses, as a
++// gesture begins, whether to pass it on; one it keeps goes to super as before, so it opts back in.
+++ (BOOL)isCompatibleWithResponsiveScrolling
++{
++  return YES;
++}
++
 +- (void)scrollWheel:(NSEvent *)event
 +{
 +  BOOL starts = event.phase == NSEventPhaseBegan || (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone);
