@@ -1175,15 +1175,24 @@ export function TableView({
         {trailing}
       </GtkBox>
     ) : null;
-    // On its way from the index: an empty row of its height, so nothing moves when it arrives.
+    // On its way from the index: an empty row of its height in the table's own columns, with the cells
+    // and lines a row has, so the grid stays whole and only the values arrive, and nothing moves.
     if (!row) {
+      // Its place's height is the row's cells and its line.
+      const height = layout.heightOf(index) - ROW_RULE;
+      const empty = (name: string) => (
+        <Cell key={name} width={colWidth(name)} height={height}>
+          {null}
+        </Cell>
+      );
+      const start = rowStart(`awaited:${index}`, height, [styles.frozen], "", freeze ? empty(fields[0]!) : null);
       return (
-        <GtkBox key={`empty-${index}`} orientation={Gtk.Orientation.VERTICAL}>
+        <GtkBox key={`empty-${index}`} name="awaited-row" orientation={Gtk.Orientation.VERTICAL}>
           {heading}
-          <GtkBox>
-            <GtkBox hexpand heightRequest={layout.heightOf(index)} cssClasses={[styles.bodyRow]} />
-            {trailing}
-          </GtkBox>
+          <BodyRow rowId="" menu={false} hasBody={false} canInsert={false} frozen={start.frozen}>
+            {start.inLine}
+            {(freeze ? fields.slice(1) : fields).map(empty)}
+          </BodyRow>
         </GtkBox>
       );
     }

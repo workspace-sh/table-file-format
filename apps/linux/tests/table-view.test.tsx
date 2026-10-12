@@ -1,7 +1,7 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import { render, screen } from "@gtkx/testing";
 import { fromBundle, showView } from "@workspace.sh/table-app";
-import type { ParsedTable } from "@workspace.sh/table-core";
+import type { ParsedTable, Row, ViewRows } from "@workspace.sh/table-core";
 import { bundles } from "@workspace.sh/table-fixtures";
 import { BoardView, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView, type ViewProps } from "@workspace.sh/table-gtk";
 import { describe, expect, it } from "vitest";
@@ -95,5 +95,62 @@ describe("the card views on GTK", () => {
     expect(await screen.findByText("Workspace v1")).toBeDefined();
     const previous = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Previous month" });
     expect(previous.getSensitive()).toBe(false);
+  });
+});
+
+describe("rows on their way from an index, on GTK", () => {
+  it("are drawn as empty rows in the table's own columns: the grid is whole before the values arrive", async () => {
+    const table = held["projects/tasks"]!;
+    const view = table.views.find((v) => v.id === "v1")!;
+    // A source that has said how many rows there are, and none of them yet.
+    const source: ViewRows = {
+      count: 30,
+      inView: 30,
+      version: "awaited",
+      rows: () => new Promise<Row[]>(() => {}),
+      ids: () => new Promise<string[]>(() => {}),
+      placeOf: () => -1,
+      row: () => undefined,
+      totals: () => ({}),
+      groups: () => [],
+    };
+    await render(
+      <DisplaySettingsProvider value={{ locale: "en-GB" }}>
+        <TableView view={view} rows={[]} source={source} schema={table.schema} relatedTables={{}} />
+      </DisplaySettingsProvider>,
+    );
+    const awaited = await screen.findAllByName("awaited-row");
+    expect(awaited.length).toBeGreaterThan(5);
+    // The header's columns, by their widths.
+    const widthOf = async (title: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(title);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      return at!.getWidth();
+    };
+    const columns = await Promise.all(table.schema.fields.map((f) => widthOf(f.title ?? f.name)));
+    // Each awaited row has a cell for each column, as wide as its column and as tall as a row.
+    const cellsOf = (row: Gtk.Widget) => {
+      const cells: Gtk.Widget[] = [];
+      const walk = (w: Gtk.Widget) => {
+        for (let c = w.getFirstChild(); c; c = c.getNextSibling()) {
+          if (c.getSizeRequest()[0] > 0 && c.getSizeRequest()[1] > 0 && c.getFirstChild() === null) cells.push(c);
+          else walk(c);
+        }
+      };
+      walk(row);
+      return cells;
+    };
+    for (const row of awaited.slice(0, 3)) {
+      const cells = cellsOf(row);
+      // (The first column stays put on a wide table: its cell is laid over the row's start, with room left under it.)
+      const widths = cells.map((c) => c.getSizeRequest()[0]);
+      const sorted = (list: number[]) => [...list].sort((a, b) => a - b);
+      expect([sorted(columns), sorted([...columns, columns[0]!])]).toContainEqual(sorted(widths));
+      expect(new Set(cells.map((c) => c.getSizeRequest()[1]))).toEqual(new Set([44]));
+      // With its line it is as tall as a row is: nothing moves when its values arrive.
+      expect(row.getHeight()).toBe(45);
+      // As wide as the header's columns together: its line stops where a row's does.
+      expect((row.getFirstChild() as Gtk.Widget).getWidth()).toBe(columns.reduce((a, b) => a + b, 0));
+    }
   });
 });
