@@ -25,6 +25,10 @@ Opened in an app, it looks and edits like the tools you already know.
 **[Try the demo in your browser](https://workspace-sh.github.io/table-file-format/)**:
 nothing is uploaded, and edits stay in that browser.
 
+<p align="center">
+  <a href="docs/SCREENSHOTS.md"><img alt="A household budget open as a sheet in the web app: items, months, and totals worked out by formula" src="docs/.assets/screenshots/web-sheet.png" width="820"></a>
+</p>
+
 > **Status.** The format is frozen at `formatVersion: 1`, and changes
 > from here only add to it. The library and the apps in this repository
 > are a reference implementation: they work and are tested, they are not
@@ -198,6 +202,7 @@ docs/                       the specification and everything behind it
 | [PERMISSIONS](docs/PERMISSIONS.md) | A design for access control under sync. Not implemented. |
 | [VERSIONING](docs/VERSIONING.md) | Version and build numbers. |
 | [DEVELOPING](docs/DEVELOPING.md) | Every command. |
+| [SCREENSHOTS](docs/SCREENSHOTS.md) | The web app, showing the sample files. |
 
 ## Status
 
