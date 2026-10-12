@@ -1,5 +1,5 @@
 import * as Gtk from "@gtkx/gi/gtk";
-import { cleanup, fireEvent, getController, render, screen, waitFor } from "@gtkx/testing";
+import { cleanup, fireEvent, getController, render, screen, screenshot, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
@@ -146,4 +146,106 @@ describe("resizing on Linux", () => {
     // Two lines: the table's six columns give a little to fit the window, and the title wraps in what's left.
     await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([64]));
   });
+
+  // With a pointer, a row resizes from the line under it too, as a column does from its line.
+  const lines = () => screen.queryAllByName("resize-row-line");
+  const tasks = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows;
+  /** The row a line is under: the one whose title is drawn in it. */
+  const rowOf = async (line: Gtk.Widget) => {
+    const texts: string[] = [];
+    const walk = (w: Gtk.Widget) => {
+      if (w instanceof Gtk.Label) texts.push(w.getText());
+      for (let c = w.getFirstChild(); c; c = c.getNextSibling()) walk(c);
+    };
+    walk(line.getParent()!);
+    return (await tasks()).find((r) => texts.includes(String(r.title)))!;
+  };
+
+  it("every row has a line under it to drag, selected or not, and the selected row keeps its grip", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await screen.findAllByText("Land .table extension");
+    await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
+    expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
+    await selectFirstRow();
+    await waitFor(() => expect(screen.queryAllByName("resize-row-grip")).toHaveLength(1));
+    // The line is as wide as the row's cells (it stops with them, short of the "+" column), at its bottom edge.
+    const line = lines()[0]!;
+    const row = line.getParent() as Gtk.Overlay;
+    expect(line.getWidth()).toBe(row.getChild()!.getWidth());
+    expect(line.getWidth()).toBeLessThan(row.getWidth());
+    const [, bounds] = line.computeBounds(row);
+    expect(Math.round(bounds!.getY() + bounds!.getHeight())).toBe(row.getHeight());
+    expect(Math.round(bounds!.getHeight())).toBe(6);
+  });
+
+  it("a row's line dragged resizes that row in whole lines, counting them at the row's start as it goes", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await screen.findAllByText("Land .table extension");
+    await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
+    // The third row's, with nothing selected.
+    const third = await rowOf(lines()[2]!);
+    const gesture = getController(lines()[2]!, Gtk.GestureDrag);
+    await fireEvent(gesture, "drag-begin", 0, 0);
+    await fireEvent(gesture, "drag-update", 0, 45);
+    // While it is dragged: its lines are counted, it has no grip, and nothing is saved yet.
+    await screen.findByText("3 lines");
+    expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
+    expect((await viewOnDisk()).rowHeights).toBeUndefined();
+    await fireEvent(gesture, "drag-update", 0, 22);
+    await screen.findByText("2 lines");
+    await fireEvent(gesture, "drag-end", 0, 22);
+    await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [third.id]: 64 }));
+    await waitFor(() => expect(screen.queryByText("2 lines")).toBeNull());
+  });
+
+  it("a double click on a row's line fits the row to what it holds; a single press changes nothing", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await screen.findAllByText("Land .table extension");
+    await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
+    const first = (await tasks()).find((r) => r.title === "Land .table extension")!;
+    let at = -1;
+    for (const [i, line] of lines().entries()) if ((await rowOf(line)).id === first.id) at = i;
+    await drag2(lines()[at]!, 60);
+    await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [first.id]: 104 }));
+    const click = (presses: number) => fireEvent(getController(lines()[at]!, Gtk.GestureClick), "pressed", presses, 0, 0);
+    await click(1);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect((await viewOnDisk()).rowHeights).toEqual({ [first.id]: 104 });
+    await click(2);
+    await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [first.id]: 64 }));
+  });
+
+  it("the line lights when it is pointed at, and while it is dragged", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await screen.findAllByText("Land .table extension");
+    await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
+    const line = lines()[1]!;
+    const drawn = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return (await screenshot(line)).data;
+    };
+    const rest = await drawn();
+    line.setStateFlags(Gtk.StateFlags.PRELIGHT, false);
+    const pointed = await drawn();
+    line.unsetStateFlags(Gtk.StateFlags.PRELIGHT);
+    expect(pointed).not.toBe(rest);
+    expect(await drawn()).toBe(rest);
+    const gesture = getController(lines()[1]!, Gtk.GestureDrag);
+    await fireEvent(gesture, "drag-begin", 0, 0);
+    await fireEvent(gesture, "drag-update", 0, 0);
+    await screen.findByText("1 line");
+    expect(await (async () => (await screenshot(lines()[1]!)).data)()).toBe(pointed);
+    await fireEvent(gesture, "drag-end", 0, 0);
+  });
 });
+
+async function drag2(widget: Gtk.Widget, dy: number) {
+  const gesture = getController(widget, Gtk.GestureDrag);
+  await fireEvent(gesture, "drag-begin", 0, 0);
+  await fireEvent(gesture, "drag-update", 0, dy);
+  await fireEvent(gesture, "drag-end", 0, dy);
+}

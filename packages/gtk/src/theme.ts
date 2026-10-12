@@ -78,6 +78,9 @@ export const styles = {
   totalPlaceholder: TOTAL_PLACEHOLDER,
   totalLabel: css({ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.6, marginRight: "6px" }),
   /** A selected row's resize grip, and the line count shown while it is dragged. */
+  /** The line under a row, to drag: seen when pointed at, and while it is dragged. */
+  rowLine: css({ borderBottom: "2px solid transparent", "&:hover": { borderBottomColor: "@accent_bg_color" } }),
+  rowLineLit: css({ borderBottomColor: "@accent_bg_color" }),
   rowGrip: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "4px", padding: "0" }),
   rowGripLabel: css({ backgroundColor: "@accent_bg_color", color: "@accent_fg_color", borderRadius: "6px", padding: "2px 6px", fontSize: "smaller", fontWeight: "600" }),
   /** A sheet's row numbers: a ruled gutter of their own. */
