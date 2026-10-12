@@ -17,6 +17,22 @@ test("a row's actions: page, inserts, then delete last and destructive", () => {
   assert.deepEqual(done, ["open r1", "insert above r1", "insert below r1", "delete r1"]);
 });
 
+test("a row's height: fit always, reset only for a resized row, both before delete", () => {
+  const done: string[] = [];
+  const actions = rowActions("r1", {
+    onInsertRow: () => {},
+    onFitRow: (id) => done.push(`fit ${id}`),
+    onResetRowHeight: (id) => done.push(`reset ${id}`),
+    onDeleteRow: () => {},
+  });
+  assert.deepEqual(actions.map((a) => a.id), ["insert-above", "insert-below", "fit-row", "reset-row-height", "delete"]);
+  assert.deepEqual(actions.slice(2, 4).map((a) => a.label), ["Fit Row to Content", "Reset Row Height"]);
+  actions[2]!.onSelect();
+  actions[3]!.onSelect();
+  assert.deepEqual(done, ["fit r1", "reset r1"]);
+  assert.deepEqual(rowActions("r1", { onFitRow: () => {} }).map((a) => a.id), ["fit-row"]);
+});
+
 test("a row without a page offers to add one, opened the same way", () => {
   const opened: string[] = [];
   const actions = rowActions("r1", { onOpenBody: (id) => opened.push(id), hasBody: false, onDeleteRow: () => {} });
