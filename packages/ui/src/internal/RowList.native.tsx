@@ -17,7 +17,7 @@
  * web's ordinary list is LegendList following the page's scroller, which
  * its native build can't do: it windows only what it scrolls itself.
  */
-import { Fragment, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
@@ -89,6 +89,17 @@ function topsOf<T>(items: readonly T[], sizeOf: (item: T, index: number) => numb
     },
   };
 }
+
+/**
+ * One item as `render` draws it, drawn again only when it's another item,
+ * at another place, or `render` is another function (the table drew again:
+ * what the rows show may have changed). Scrolling moves the drawn window
+ * without the table drawing again, so the rows already drawn are left as
+ * they are and only those coming on screen are drawn.
+ */
+const DrawnItem = memo(function DrawnItem({ item, index, render }: { item: unknown; index: number; render: (item: never, index: number) => ReactNode }) {
+  return <>{render(item as never, index)}</>;
+});
 
 /** The last move a list made of a page to settle it, for the lists beside it. */
 const settles = new WeakMap<object, { to: number; shift: number; when: number }>();
@@ -294,6 +305,16 @@ function WindowedRows<T>({
   // the nearest 4 and overlapped or left gaps. A transform isn't laid out,
   // and the offsets in the box are small, so every row is where it should be.
   const base = count && lastDrawn >= first ? Math.max(0, layout.itemTop(first) - drawn.shift) : 0;
+  // Rows are recycled: each is keyed by a slot, its place modulo how many
+  // slots there are, so a row scrolled off one end and the row coming on at
+  // the other share a key, and React gives the first one's views the second
+  // one's values instead of making them again. Slots only grow (a change of
+  // count changes keys, which remakes rows), so the rows drawn, a run of
+  // places, never share one. The raised row (the selected one) keeps a key
+  // of its own: what's being typed in it stays with its row.
+  const slots = useRef(0);
+  const drawnCount = lastDrawn - first + 1;
+  if (drawnCount > slots.current) slots.current = Math.ceil(drawnCount / 16) * 16;
   const rows: ReactNode[] = [];
   for (let i = first; i <= lastDrawn; i++) {
     const item = items[i]!;
@@ -301,10 +322,10 @@ function WindowedRows<T>({
     const height = (i + 1 < count ? layout.itemTop(i + 1) : layout.height) - itemTop;
     rows.push(
       <View
-        key={keyOf(item)}
+        key={raised?.(item) ? `raised:${keyOf(item)}` : `slot:${i % slots.current}`}
         style={{ position: "absolute", top: itemTop - drawn.shift - base, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
       >
-        {render(item, i)}
+        <DrawnItem item={item} index={i} render={render} />
       </View>,
     );
   }
