@@ -4333,6 +4333,7 @@ export function TableView({
           </html.div>
         }
         contentWidth={listInnerWidth + 2 * pageGutter}
+        snapTo={columnStarts}
         extraData={{}}
         onShown={onShown}
         handle={paneRows as unknown as Ref<PageListHandle | null>}
