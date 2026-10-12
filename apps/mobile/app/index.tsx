@@ -5,7 +5,7 @@
 // table-ui's views, scrolling under the glass bars.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
@@ -13,7 +13,7 @@ import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
 import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
-import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
+import { BodyEditor, CellEditorContext, ListPageContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
 import { useTableAppContext } from "../TableAppContext";
@@ -199,6 +199,29 @@ export default function TableScreen() {
     { label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
   ];
 
+  // On iOS a table scrolls the screen itself, as the screen's scroll view
+  // (LegendList, #490): only where it's drawn as a table, not its notes.
+  const asList =
+    GLASS && view.layout === "table" && !indexed.lost && !(table.indexed && !indexed.source && !reading);
+  // The screen's scroll view's props, as the list takes them: the page's
+  // margin is the list's own to give (its header has it, its rows bleed).
+  const listScrollProps = {
+    onScroll: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      scrollY.current = e.nativeEvent.contentOffset.y;
+    },
+    scrollEventThrottle: 16,
+    onScrollEndDrag: (e: { nativeEvent: { velocity?: { y: number } } }) => {
+      if (e.nativeEvent.velocity?.y === 0) notePlace();
+    },
+    onMomentumScrollEnd: notePlace,
+    contentInsetAdjustmentBehavior: "automatic" as const,
+    contentContainerStyle: { paddingBottom: 96 + glass.reserve },
+    automaticallyAdjustKeyboardInsets: false,
+    keyboardShouldPersistTaps: "handled" as const,
+    keyboardDismissMode: "on-drag" as const,
+    onScrollBeginDrag: glass.onScrollBegin,
+  };
+
   return (
     <>
       {/* The table first, before the bars' elements below: expo-router
@@ -207,6 +230,138 @@ export default function TableScreen() {
       <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
       <PageGutter.Provider value={MOBILE_H_PADDING}>
       <PortalHost>
+        {asList ? (
+          // A table scrolls the screen itself: its list is the screen's scroll
+          // view (LegendList, #490), what's above the table its header.
+          <ListPageContext.Provider
+            value={{
+              header: (
+                <View style={{ paddingHorizontal: MOBILE_H_PADDING }}>
+                <html.span dir="auto" style={styles.place}>{derived.breadcrumb.text}</html.span>
+                <html.div style={styles.subtitle}>
+                  {/* While a large table is read, how far that has got is in the count's place, and nothing is said of its rows yet. */}
+                  {indexed.building ? (
+                    <html.span>{readingText(indexed.building)}</html.span>
+                  ) : (
+                    // A search of a large table takes a moment: the count waits for its rows.
+                    <html.span>{indexed.stale && state.search.trim().length > 0 ? "Searching…" : summary.count}</html.span>
+                  )}
+                  {indexed.building ? null : <html.span>·</html.span>}
+                  {indexed.building ? null : summary.valid ? (
+                    <html.span style={styles.validityOk}>{summary.validity}</html.span>
+                  ) : (
+                    // Which rows, and why: the web shows them on hover, which a
+                    // touch screen has none of, so a tap lists them.
+                    <html.button
+                      aria-label={`${summary.validity}: show them`}
+                      onClick={() =>
+                        Alert.alert(
+                          summary.validity,
+                          summary.errors
+                            .slice(0, ERRORS_LISTED)
+                            .map((e) => {
+                              // A row by its title, or by its place when it has none
+                              // (a new row's title is only its id); a field by its title.
+                              const title = e.rowId ? rowTitleFor(table, e.rowId) : undefined;
+                              const row = title && title !== e.rowId ? title : `Row ${e.rowIndex + 1}`;
+                              const field = table.schema.fields.find((f) => f.name === e.field);
+                              return `${row} · ${field ? `${field.title ?? field.name}: ` : ""}${e.message}`;
+                            })
+                            .join("\n") + (summary.errors.length > ERRORS_LISTED ? `\n…and ${summary.errors.length - ERRORS_LISTED} more` : ""),
+                        )
+                      }
+                      style={styles.validityButton}
+                    >
+                      <html.span style={styles.validityBad}>{summary.validity}</html.span>
+                    </html.button>
+                  )}
+                  {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
+                  {/* What it means, which the web says on hover: a tap says it here. */}
+                  {summary.schemaChanged && (
+                    <html.button
+                      aria-label={`${summary.schemaChangedLabel}: what this means`}
+                      onClick={() => Alert.alert(summary.schemaChangedLabel, summary.schemaChangedHint)}
+                      style={styles.validityButton}
+                    >
+                      <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>
+                    </html.button>
+                  )}
+                </html.div>
+                  {reading && <html.span style={styles.indexedNote}>{ingestingText(shownView)}</html.span>}
+                </View>
+              ),
+              scrollProps: listScrollProps,
+              onScroller: (s) => void ((scroller as { current: unknown }).current = s),
+            }}
+          >
+            <View style={{ flex: 1 }}>
+            {appSettings && <AppSettings onClose={() => setAppSettings(false)} />}
+            {state.settingsOpen && (
+              <ViewSettings
+                key={view.id}
+                view={shownView}
+                schema={table.schema}
+                // Turning a Sheet view into anything else asks first (D41): the reducer's question.
+                onChange={(patch) => dispatch({ type: "updateView", patch })}
+                onArrange={(patch) => dispatch({ type: "arrange", patch })}
+                personal={derived.arranged}
+                onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
+                onReset={() => dispatch({ type: "resetArrangement" })}
+                onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
+                onClose={() => dispatch({ type: "settings", open: false })}
+                onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
+              />
+            )}
+            {indexed.lost ? (
+              <html.span style={styles.indexedNote}>This table's rows are no longer on this phone. Open its .table.zip again to bring them back.</html.span>
+            ) : table.indexed && view.layout !== "table" ? (
+              <html.span style={styles.indexedNote}>This layout isn't shown for a table this large yet. Change the view's layout to Table in its settings.</html.span>
+            ) : table.indexed && !indexed.source && !reading ? null : (
+              // A large table shows its rows at once, as its file has them, and as many as
+              // have been read so far, while it is read into its index (LARGE-TABLES-PLAN,
+              // decision 1): to scroll through and look at. The view's own order, filters and
+              // groups, search and editing come with the index. One table view for both, so
+              // where you had scrolled to is where you still are when the reading is done.
+              <>
+                {renderView(
+                  reading ? asStored(shownView) : shownView,
+                  reading ? NO_ROWS : visibleRows,
+                  table.schema,
+                  reading ? undefined : table.bodies,
+                  reading
+                    ? {
+                        source: reading,
+                        relatedTables: bundleTables(state.tables, bundle),
+                        onOpenRelation: () => {},
+                        allRows: NO_ROWS,
+                        tableKey: tableNameOf(state.active),
+                      }
+                    : {
+                        ...callbacks,
+                        relatedTables: bundleTables(state.tables, bundle),
+                        allRows: table.rows,
+                        tableKey: tableNameOf(state.active),
+                        sheet,
+                        onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+                        onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                        restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                        onPlaceMeasure,
+                        newFieldRequest: newFieldAsk,
+                        ...(table.indexed
+                          ? {
+                              source: indexed.source,
+                              // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
+                              onRemoveEnumValue: undefined,
+                              onDeleteField: undefined,
+                            }
+                          : {}),
+                      },
+                )}
+              </>
+            )}
+            </View>
+          </ListPageContext.Provider>
+        ) : (
         <ScrollView
           ref={scroller}
           onScroll={(e) => {
@@ -365,6 +520,7 @@ export default function TableScreen() {
           </Pressable>
           </PageScrollContext.Provider>
         </ScrollView>
+        )}
         {state.openPage && (
           <BodyEditor
             key={`${state.active}/${state.openPage}`}
