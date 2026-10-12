@@ -45,6 +45,8 @@ export interface DragHandleProps {
   grabOnTouch?: boolean;
   /** Show the edge's line though the pointer isn't over it: the same edge is being dragged elsewhere. */
   lit?: boolean;
+  /** Accepted for parity with native, where a column line's strip straddles it; the web's strip lies inside. */
+  straddle?: boolean;
 }
 
 // An edge's line: faint while the pointer is over it, so it doesn't
