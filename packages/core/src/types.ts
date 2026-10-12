@@ -350,6 +350,14 @@ export interface ParsedTable {
    */
   indexed?: { count: number; version: number };
   /**
+   * Its edit history, as `history.ndjson` holds it (SPEC section 14):
+   * carried whole, so a table that travels as an archive keeps it. Set by
+   * the archive reader; the directory reader leaves the file where it is.
+   * A writer never changes a history that is on disk: the directory
+   * writer puts this text there only when there is no file yet.
+   */
+  history?: string;
+  /**
    * Parse-level diagnostics from the skip-and-collect reader —
    * malformed NDJSON lines, rows missing a system id, malformed
    * optional files. Absent when the parse was clean. A caller that

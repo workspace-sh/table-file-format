@@ -165,6 +165,9 @@ export async function readTableArchive(
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
     if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
+    // Its edit history travels with it, as it is: this reader doesn't judge its lines (section 14).
+    const history = text(`${prefix}${TableEntry.history}`);
+    if (history) table.history = history;
     if (tableDiagnostics.length > 0) table.diagnostics = tableDiagnostics;
     tables[name] = table;
   }
@@ -210,8 +213,8 @@ export interface BundleFile {
 
 /**
  * Every file a bundle's text is written as, in the archive's canonical
- * order (manifest; per table schema, rows, views, meta, bodies sorted by
- * id), serialised exactly as `writeBundle` and the archive write them.
+ * order (manifest; per table schema, rows, views, meta, its history when
+ * it has one, bodies sorted by id), serialised exactly as `writeBundle` and the archive write them.
  * What a `.table` holds on disk, for showing or shipping. The rebuildable
  * `index.sqlite` and `attachments/` (bytes, not text) aren't included.
  */
@@ -228,6 +231,8 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
       { path: `${at}${TableEntry.views}`, content: pretty(t.views ?? []) },
       { path: `${at}${TableEntry.meta}`, content: pretty(tableMetaOnly(t.meta)) },
     );
+    // Its edit history, byte for byte: it is the table's, and no writer's to rewrite.
+    if (t.history) files.push({ path: `${at}${TableEntry.history}`, content: t.history });
     const bodies = t.bodies ?? {};
     for (const id of Object.keys(bodies).sort()) {
       files.push({ path: `${at}${TableEntry.bodies}/${id}${BODY_EXTENSION}`, content: normaliseBody(bodies[id]!) });
