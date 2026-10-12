@@ -90,3 +90,23 @@ test("widening a column makes the table wider, and leaves the others as they wer
   const narrower = columnWidths(["a", "b", "c", "d"], { a: 100 }, 1002, 2);
   assert.deepEqual(["a", "b", "c", "d"].map(narrower), [100, 300, 300, 300]);
 });
+
+test("a squeezed table's columns stay squeezed when one is widened: they don't jump to the comfortable width", () => {
+  // Five columns in 762, allowed down to 140: 152 each, narrower than the comfortable 180.
+  const none = columnWidths(["a", "b", "c", "d", "e"], {}, 762, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e"].map(none), [152, 152, 152, 152, 152]);
+  // "a" dragged to 300: the rest stay 152, and the table is wider than its window.
+  const wider = columnWidths(["a", "b", "c", "d", "e"], { a: 300 }, 762, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e"].map(wider), [300, 152, 152, 152, 152]);
+  // "a" dragged to 100: the rest share its room.
+  const narrower = columnWidths(["a", "b", "c", "d", "e"], { a: 100 }, 762, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e"].map(narrower), [100, 165, 165, 165, 165]);
+  // The odd pixels that made them fill the window stay where they were, to the pixel.
+  const odd = columnWidths(["a", "b", "c", "d", "e"], {}, 764, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e"].map(odd), [153, 153, 152, 152, 152]);
+  const oddWider = columnWidths(["a", "b", "c", "d", "e"], { c: 300 }, 764, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e"].map(oddWider), [153, 153, 300, 152, 152]);
+  // Too many to squeeze in: comfortable and scrolling, resized or not.
+  const many = columnWidths(["a", "b", "c", "d", "e", "f", "g"], { a: 300 }, 762, 2, 140);
+  assert.deepEqual(["a", "b", "c", "d", "e", "f", "g"].map(many), [300, 180, 180, 180, 180, 180, 180]);
+});

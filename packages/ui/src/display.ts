@@ -323,14 +323,20 @@ export function columnWidths(
   };
   // What each column would be with none resized: the least a flexible one is given.
   const unresized = shared(Math.max(0, containerWidth - chrome), fields.length);
-  const leftover = shared(available, flexible.length);
+  // What is left, shared out: theirs when it is more than that, as when a column was narrowed. Less, and they
+  // stay as they were (squeezed too: a squeezed table's columns don't jump to the comfortable width).
+  const leftover = flexible.length > 0 && containerWidth > 0 ? Math.floor(available / flexible.length) : 0;
   const cellW = Math.max(unresized, leftover);
-  // Filling the table exactly (not wider), the floor's remainder goes a pixel at a time to the leftmost.
-  const remainder = cellW === leftover && cellW * flexible.length <= available ? available - cellW * flexible.length : 0;
+  // Filling the table exactly (not wider), the floor's remainder goes a pixel at a time to the leftmost:
+  // of the columns sharing what is left, or, staying as they were, of all of them as when none was resized.
+  const sharing = cellW === leftover;
+  const among = sharing ? flexible : fields;
+  const room = sharing ? available : Math.max(0, containerWidth - chrome);
+  const remainder = Math.max(0, room - cellW * among.length);
   return (name: string) => {
     const fixed = fixedWidth(name);
     if (fixed !== undefined) return fixed;
-    const i = flexible.indexOf(name);
+    const i = among.indexOf(name);
     return cellW + (i >= 0 && i < remainder ? 1 : 0);
   };
 }
