@@ -218,3 +218,4 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
 }
 
 export { useIndexedTables, type IndexedTables } from "./useIndexedTables.ts";
+export { useFolderHistories, type FolderHistories } from "./useFolderHistories.ts";

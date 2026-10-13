@@ -46,7 +46,7 @@ import {
   type Derived,
   type KeyValueStore,
 } from "@workspace.sh/table-app";
-import { useTableApp } from "@workspace.sh/table-app/react";
+import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
@@ -87,6 +87,8 @@ export interface TableAppContextValue {
   systemLocale: string;
   /** Start again from the example tables, after asking; what the phone saved goes too. */
   resetDemo: () => void;
+  /** A table's history as NDJSON, from where the phone keeps it; undefined when it has none. For the Files sheet. */
+  historyText: (key: string) => string | undefined;
 }
 
 const Context = createContext<TableAppContextValue | null>(null);
@@ -131,6 +133,8 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
   const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
   // The tables as they are now, for where a table's history goes: a large table's folder, or the store.
   const tablesNow = useRef<Record<string, ParsedTable>>({});
+  // Read a folder table's history again once it's been added to (useFolderHistories, below).
+  const rereadHistory = useRef<(key: string) => void>(() => {});
   const { state, dispatch, display, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: bundleMetas };
@@ -163,6 +167,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
       appendHistory: async (key, events) => {
         if (tablesNow.current[key]?.indexed) {
           await appendFolderHistory(expoFs, joinPath(bundleDir(bundleOf(key)), BundleEntry.tables, tableNameOf(key)), events);
+          rereadHistory.current(key);
           return;
         }
         if (!store) return false;
@@ -180,12 +185,21 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     }
     return (store && storedHistory(store, key)) || undefined;
   };
+  // The large tables' histories, read from their folders so the Files sheet can show them as it draws.
+  const folderHistories = useFolderHistories(
+    Object.keys(state.tables).filter((key) => state.tables[key]!.indexed),
+    historyOf,
+  );
+  rereadHistory.current = folderHistories.reread;
+  const historyText = (key: string): string | undefined =>
+    state.tables[key]?.indexed ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
   const derived = derive(state, {
     locale: systemLocale,
+    hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   /** What reading an archive gave, taken in: its large tables' first rows are held for showing meanwhile. */
@@ -245,6 +259,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     display,
     labelOf: (id) => derived.commands.find((c) => c.id === id)!.label,
     systemLocale,
+    historyText,
     // The reducer asks first; on yes the saved edits are cleared above.
     resetDemo: () => dispatch({ type: "reset", fresh: { tables: initialTables, bundles: bundleMetas, paths: {}, problems: {} } }),
     // A .table.zip from the Files app or elsewhere becomes one more file here, saying what was skipped (D25).

@@ -533,9 +533,15 @@ export function App() {
   // Tables held in the index (large ones): read, edited and saved there, in a worker.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: browserLocale, attachmentsOf }).shown.view, tell });
   saveIndexed.current = indexed.save;
+  // A table's history, as this browser keeps it beside the table: the Files side lists and shows it.
+  const historyText = (key: string): string | undefined => {
+    const store = browserStore();
+    return (store && storedHistory(store, key)) || undefined;
+  };
   const derived = derive(state, {
     locale: browserLocale,
     attachmentsOf,
+    hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   const { table, view, shown: shownArranged, summary } = derived;
@@ -856,7 +862,7 @@ export function App() {
   const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } | null => {
     const attachment = attachmentAt(file.bundle, file.path);
     if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrls[attachment.tableKey]?.[attachment.name]) };
-    const content = fileText(tables, bundles, file.bundle, file.path);
+    const content = fileText(tables, bundles, file.bundle, file.path, historyText);
     return content === undefined ? null : { content };
   };
   const shownContent = shownFile ? shownFileContent(shownFile) : null;
@@ -892,6 +898,7 @@ export function App() {
       filesMode={sidebarPrefs.files === true}
       onFilesMode={(files) => dispatch({ type: "setFilesSide", files })}
       attachmentsOf={attachmentsOf}
+      withHistory={Object.keys(tables).filter((key) => historyText(key) !== undefined)}
       shownFile={shownFile}
       onShowFile={(file) => {
         dispatch({ type: "showFile", file });
