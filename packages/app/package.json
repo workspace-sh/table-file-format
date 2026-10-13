@@ -30,6 +30,7 @@
     "test": "node --conditions=source --import tsx --test src/*.test.ts"
   },
   "dependencies": {
+    "@exodus/bytes": "1.16.0",
     "@workspace.sh/table-core": "file:../core",
     "@workspace.sh/table-ui": "file:../ui"
   },
