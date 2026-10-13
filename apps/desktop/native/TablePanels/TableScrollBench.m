@@ -333,7 +333,9 @@ typedef struct {
         CFRelease(scroll);
       });
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((steps * 0.05 + 4) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // -scrollBenchLeadRest <seconds>: how long the page is left to settle after it (4).
+    double rest = [NSUserDefaults.standardUserDefaults doubleForKey:@"scrollBenchLeadRest"] ?: 4;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((steps * 0.05 + rest) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
       [self begin];
     });
     return;
