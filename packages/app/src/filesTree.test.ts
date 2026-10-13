@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
-import { attachmentAt, attachmentShown, fileKind, fileOfNode, fileText, filesNodes, filesTree, flattenFilesTree, type FilesNode, type FilesTreeDir } from "./filesTree.ts";
+import { attachmentAt, attachmentShown, fileKind, fileOfNode, fileText, filesNodes, filesTree, flattenFilesTree, historyAt, type FilesNode, type FilesTreeDir } from "./filesTree.ts";
 
 const table = (title: string, rows: number, bodies: Record<string, string> = {}): ParsedTable => ({
   path: "x",
@@ -126,3 +126,49 @@ test("the tree as plain nodes for a file browser, ids reading back to bundle and
   const logo = all.find((n) => n.id.includes("/attachments/") && !n.children);
   if (logo) assert.ok(logo.opens === "image" || logo.opens === "none");
 });
+
+test("a table's edit history is listed where the app keeps one, after its other files, and shown as the app has it", () => {
+  // The app keeps a history for deals (a file in its folder, or its store), and none for companies.
+  const hasHistory = (key: string) => key === "crm/deals";
+  const [crm] = filesTree(tables, bundles, { hasHistory });
+  assert.deepEqual(
+    dir(crm!.root, "tables/deals").files.map((f) => [f.name, f.kind, f.opens, f.note]),
+    [
+      ["schema.json", "schema", "text", "2 fields"],
+      ["rows.ndjson", "rows", "text", "1 row"],
+      ["views.json", "views", "text", "1 view"],
+      ["meta.json", "meta", "text", undefined],
+      ["history.ndjson", "history", "text", undefined],
+    ],
+  );
+  assert.equal(dir(crm!.root, "tables/companies").files.some((f) => f.kind === "history"), false);
+  // Without being told, nothing is listed that the tables don't hold.
+  assert.equal(dir(filesTree(tables, bundles)[0]!.root, "tables/deals").files.some((f) => f.kind === "history"), false);
+
+  assert.equal(fileKind("tables/deals/history.ndjson"), "history");
+  assert.equal(fileKind("tables/deals/attachments/history.ndjson"), "attachment");
+  assert.deepEqual(historyAt("crm", "tables/deals/history.ndjson"), { tableKey: "crm/deals" });
+  assert.equal(historyAt("crm", "tables/deals/rows.ndjson"), null);
+  // Its text is the app's to give, by table.
+  const kept = '{"id":"e1","at":"2026-10-13T10:00:00Z","op":"set","row":"r0","field":"a","to":1}\n';
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson", (key) => (key === "crm/deals" ? kept : undefined)), kept);
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson"), undefined);
+  // Other files don't ask for it.
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/r0.md", () => "nope"), "# Notes\n");
+});
+
+test("a history a table holds itself (it came from an archive) is listed once, and shown until the app has its own", () => {
+  const arrived = '{"id":"a1","at":"2026-10-01T10:00:00Z","op":"set","row":"r0","field":"a","to":0}\n';
+  const held = { ...tables, "crm/deals": { ...tables["crm/deals"]!, history: arrived } };
+  for (const options of [{}, { hasHistory: () => true }]) {
+    const [crm] = filesTree(held, bundles, options);
+    assert.deepEqual(
+      dir(crm!.root, "tables/deals").files.filter((f) => f.kind === "history").map((f) => f.path),
+      ["tables/deals/history.ndjson"],
+    );
+  }
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson"), arrived);
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson", () => undefined), arrived);
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson", () => "newer\n"), "newer\n");
+});
+
