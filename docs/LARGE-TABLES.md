@@ -420,6 +420,47 @@ Scrolling the 1,000,000-row table on the Mac was far behind iOS. A `sample` of t
 
 **What's left.** The main thread still misses about half the refreshes in the whole run, and at the script's speeds most of the table's place on screen is empty most of the time (over 80%, before and after): rows aren't made as fast as they're scrolled past. With the drawing gone, the main thread's time is the view tree changing (44% of its busy time: views taken out and put in are 36%, and cells' borders built again 12%) and the commit that follows (44%); the JavaScript thread is about 60% busy.
 
+### Scrolling on macOS: a text's layer visited at every step (13 Oct 2026)
+
+With the text no longer drawn again, its layer was still *displayed* at every step. Counting `-[NSViewBackingLayer display]` in the same slow scroll past 23 rows: about 18,000 displays, 16,000 of them text views', for about 400 drawings. AppKit visits the layer of every view that draws in `-drawRect:` whenever its visible area may have changed; nothing is drawn, but each visit works out the layer's place and scale. Most of the visited texts were in rows kept drawn above and below the screen.
+
+**The fix** (same patch): a text draws into its layer's contents itself (`-wantsUpdateLayer`), only when asked to: its string, its size, the window's scale or the appearance changed. The drawings are kept, a thousand of them, by what was drawn and not by which view drew it, so a value a table repeats (a stage, an owner, a date) is drawn once.
+
+Tried first, and not kept:
+- Telling AppKit every view clips, whatever React says: the visits didn't change.
+- `NSViewLayerContentsRedrawOnSetNeedsDisplay` on the text view: the visits didn't change.
+- A text view that says it needs no drawing once it has been drawn whole: visits fell by under half, since the rows off screen haven't been drawn yet, and the main thread did no better.
+- Drawing every text into its own contents, without sharing: as good in a slow scroll, but in a fast one every text of every row made was drawn (3,000 draws, 4 s) where AppKit had drawn only those that came on screen.
+
+**Measured**, as above; the slow scroll, 1,440 px in 3 s, about 245 display refreshes:
+
+| | Before either fix | With the clipping fix | With both |
+|---|---|---|---|
+| Layer displays | not counted | about 18,000 | about 4,400 |
+| Text drawings | 2,760 and 3,252 | 280 to 520 | 132 |
+| Refreshes the main thread answered | 4 and 5 | 31 to 78 | 127 and 146 |
+| Its longest gap | 1.1 and 2.0 s | 0.4 to 1.1 s | 0.6 and 0.7 s |
+| Share of the table's place left empty, mean | to 27% | 3 to 29% | 0% |
+
+The fixtures' views are the same pixel for pixel but for one thing: a link's underline sits one device pixel (half a point) higher.
+
+**Fast scrolling is unchanged by this.** In the flicks (7,200 px/s) the table's place is empty over 98% of the time before and after, and the JavaScript thread is 60 to 70% busy: rows aren't made as fast as they're passed.
+
+### Scrolling on macOS: on the main thread, or off it (13 Oct 2026)
+
+Since #494 the app's scroll views take AppKit's responsive scrolling: the page moves on AppKit's own thread and the main thread is told afterwards. Measured against scrolling on the main thread (`-scrollOnMainThread YES`), with the same wheel-style scroll and both fixes above:
+
+| Slow scroll | Off the main thread | On the main thread |
+|---|---|---|
+| Refreshes the main thread answered, of about 245 | 127 and 146 | 199 |
+| Its longest gap | 0.6 and 0.7 s | 0.3 s |
+| Times the view tree changed, and for how long | 64 and 98, about 1.0 s | 119, 0.55 s |
+| Main thread busy | 31 to 35% | 11% |
+
+The same rows cost the main thread about three times as much off the main thread as on it. Which feels better is not settled by this: off the main thread the page keeps moving while the app is busy and shows places not yet drawn; on it nothing empty is shown at this speed, but the page stops whenever the app is busy (in a fast scroll, for up to 2 s).
+
+**What the run can and can't stand in for.** A trackpad's gesture, with its momentum, can be simulated only for scrolling on the main thread (`-scrollBenchGesture YES` with `-scrollOnMainThread YES`): there the events handed to the view move the page. With responsive scrolling AppKit takes a gesture's events from the system's own stream on its own thread, and ignores ones handed to a view or put on the app's queue. Events posted to the app from another process arrive with the window but at the real pointer's place, not the place they name. So a gesture off the main thread needs real events: a hand on the trackpad, or events posted at the system's level with the pointer over the table and the screen unlocked.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.

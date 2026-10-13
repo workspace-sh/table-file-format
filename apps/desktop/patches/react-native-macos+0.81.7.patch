@@ -81,7 +81,7 @@ index 779480a..cdcc4cd 100644
  #endif // macOS]
  }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
-index 1ab801d..048e565 100644
+index 1ab801d..cc9b084 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
 @@ -15,6 +15,9 @@ @interface RCTEnhancedScrollView () <RCTUIScrollViewDelegate> // [macOS]
@@ -94,7 +94,7 @@ index 1ab801d..048e565 100644
  }
  
  + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key
-@@ -375,4 +378,38 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
+@@ -375,4 +378,47 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
        scrollView.contentSize.width > self.frame.size.width;
  }
  
@@ -107,9 +107,18 @@ index 1ab801d..048e565 100644
 +// responsive scrolling (scrolling off the main thread), and every ScrollView is this class, the page
 +// included, so all of them scrolled on the main thread. The override only chooses, as a
 +// gesture begins, whether to pass it on; one it keeps goes to super as before, so it opts back in.
++//
++// `-scrollOnMainThread YES` on the command line (or as a default) opts back out, to compare the two:
++// off the main thread a scroll never waits for the app but can show places not yet drawn; on it,
++// what's shown is always drawn but the scroll waits whenever the app is busy.
 ++ (BOOL)isCompatibleWithResponsiveScrolling
 +{
-+  return YES;
++  static BOOL responsive;
++  static dispatch_once_t once;
++  dispatch_once(&once, ^{
++    responsive = ![NSUserDefaults.standardUserDefaults boolForKey:@"scrollOnMainThread"];
++  });
++  return responsive;
 +}
 +
 +- (void)scrollWheel:(NSEvent *)event
@@ -173,10 +182,59 @@ index a14a864..988a451 100644
    }
  }
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
-index 804eec8..6cd31d9 100644
+index 804eec8..1b13af7 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
-@@ -113,6 +113,11 @@ - (instancetype)initWithFrame:(CGRect)frame
+@@ -25,6 +25,8 @@
+ #import <react/renderer/textlayoutmanager/RCTTextLayoutManager.h>
+ #import <react/renderer/textlayoutmanager/TextLayoutManager.h>
+ #import <react/utils/ManagedObjectWrapper.h>
++#import <react/utils/SimpleThreadSafeCache.h>
++#import <react/utils/hash_combine.h>
+ 
+ #import "RCTConversions.h"
+ #import "RCTFabricComponentsPlugins.h"
+@@ -54,6 +56,39 @@ static void RCTCancelTouchesForView(RCTPlatformView *view)
+ }
+ #endif // macOS]
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] What a text's drawing depends on: what it says and how, its size, the
++// window's scale and the appearance. Not whose text it is: two views that say the same share a drawing.
++struct RCTTextDrawingKey {
++  AttributedString string;
++  ParagraphAttributes paragraph;
++  CGSize size;
++  CGFloat scale;
++  void *appearance;
++
++  bool operator==(const RCTTextDrawingKey &other) const
++  {
++    return size.width == other.size.width && size.height == other.size.height && scale == other.scale && appearance == other.appearance &&
++        paragraph == other.paragraph && string.isContentEqual(other.string);
++  }
++};
++
++namespace std {
++template <>
++struct hash<RCTTextDrawingKey> {
++  size_t operator()(const RCTTextDrawingKey &key) const
++  {
++    auto seed = size_t{0};
++    facebook::react::hash_combine(seed, key.paragraph, key.size.width, key.size.height, key.scale, (size_t)key.appearance);
++    for (const auto &fragment : key.string.getFragments()) {
++      facebook::react::hash_combine(seed, fragment.string, fragment.textAttributes);
++    }
++    return seed;
++  }
++};
++} // namespace std
++#endif // macOS]
++
+ #pragma mark - RCTParagraphTextView (default, non-selectable) // [macOS]
+ 
+ // ParagraphTextView is an auxiliary view we set as contentView so the drawing
+@@ -113,6 +148,11 @@ - (instancetype)initWithFrame:(CGRect)frame
  #endif // [macOS]
      _textView = [RCTParagraphTextView new];
      _textView.backgroundColor = RCTUIColor.clearColor; // [macOS]
@@ -188,6 +246,98 @@ index 804eec8..6cd31d9 100644
      self.contentView = _textView;
    }
  
+@@ -666,6 +706,91 @@ @implementation RCTParagraphTextView {
+   CAShapeLayer *_highlightLayer;
+ }
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] The text is drawn into its layer's contents by the view itself
++// (-wantsUpdateLayer), when it is asked to be: its string, its size, the window's scale or the
++// appearance changed. AppKit visits the layer of every view that draws in -drawRect: whenever its
++// visible area may have changed, which a scroll does at every step: nothing is drawn, but each of a
++// table's few hundred texts was visited at each step. A view that sets its own contents isn't.
++//
++// The drawings are kept, a thousand of them, by what was drawn: a table says the same things over
++// and over (a stage, an owner, a date), and each is drawn once and shown wherever it appears.
++- (BOOL)wantsUpdateLayer
++{
++  return YES;
++}
++
++- (void)updateLayer
++{
++  CALayer *layer = self.layer;
++  CGSize size = self.bounds.size;
++  CGFloat scale = self.window.backingScaleFactor ?: NSScreen.mainScreen.backingScaleFactor ?: 2;
++  if (!_state || size.width < 0.5 || size.height < 0.5) {
++    layer.contents = nil;
++    return;
++  }
++  layer.contentsScale = scale;
++  layer.contentsGravity = kCAGravityTopLeft;
++
++  const auto &string = _state->getData().attributedString;
++  BOOL plain = YES;
++  for (const auto &fragment : string.getFragments()) {
++    // An attachment is placed by its own view, and a pressed stretch has a layer over it: drawn afresh.
++    if (fragment.isAttachment() || fragment.textAttributes.isHighlighted.value_or(false)) {
++      plain = NO;
++      break;
++    }
++  }
++  if (!plain) {
++    layer.contents = [self rct_drawn:scale];
++    return;
++  }
++  [_highlightLayer removeFromSuperlayer];
++  _highlightLayer = nil;
++  static SimpleThreadSafeCache<RCTTextDrawingKey, id, 1024> drawings;
++  RCTTextDrawingKey key{string, _paragraphAttributes, size, scale, (__bridge void *)self.effectiveAppearance.name};
++  layer.contents = drawings.get(key, [&]() { return [self rct_drawn:scale]; });
++}
++
++/// The text as an image, at `scale` pixels a point.
++- (id)rct_drawn:(CGFloat)scale
++{
++  CGSize size = self.bounds.size;
++  size_t width = (size_t)ceil(size.width * scale);
++  size_t height = (size_t)ceil(size.height * scale);
++  CGColorSpaceRef space = CGColorSpaceRetain(self.window.colorSpace.CGColorSpace) ?: CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++  CGContextRef bitmap = CGBitmapContextCreate(NULL, width, height, 8, 0, space, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
++  CGColorSpaceRelease(space);
++  if (bitmap == NULL) {
++    return nil;
++  }
++  // The view's own coordinates: points, measured down from the top.
++  CGContextTranslateCTM(bitmap, 0, height);
++  CGContextScaleCTM(bitmap, scale, -scale);
++  [NSGraphicsContext saveGraphicsState];
++  NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:bitmap flipped:YES];
++  [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
++    [self drawRect:self.bounds];
++  }];
++  [NSGraphicsContext restoreGraphicsState];
++  CGImageRef image = CGBitmapContextCreateImage(bitmap);
++  CGContextRelease(bitmap);
++  return (__bridge_transfer id)image;
++}
++
++- (void)viewDidChangeBackingProperties
++{
++  [super viewDidChangeBackingProperties];
++  [self setNeedsDisplay:YES];
++}
++
++- (void)viewDidChangeEffectiveAppearance
++{
++  [super viewDidChangeEffectiveAppearance];
++  [self setNeedsDisplay:YES];
++}
++#endif // macOS]
++
+ - (RCTUIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+ {
+   return nil;
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm
 index c4bfeb1..d6f1cd9 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm

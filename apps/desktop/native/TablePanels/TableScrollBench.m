@@ -37,6 +37,12 @@ static NSUInteger mounts;
 static double mountSeconds;
 static NSUInteger textStates;
 static NSUInteger textLayouts;
+static NSMutableDictionary<NSString *, NSNumber *> *displays;
+static BOOL displaysOn;
+static NSUInteger viewsPutIn;
+static NSUInteger viewsTakenOut;
+static NSUInteger viewProps;
+static NSUInteger viewLayouts;
 
 static void TimeMethod(Class cls, SEL selector, NSUInteger *count, double *seconds)
 {
@@ -81,10 +87,10 @@ static NSArray<NSString *> *ChainFrom(NSView *view)
 {
   NSMutableArray<NSString *> *chain = [NSMutableArray array];
   for (NSView *at = view; at != nil && chain.count < 14; at = at.superview) {
-    [chain addObject:[NSString stringWithFormat:@"%@ frame %@ bounds %@ visible %@ clips=%d flipped=%d layerBounds %@ transform=%d contents=%d",
+    [chain addObject:[NSString stringWithFormat:@"%@ frame %@ bounds %@ visible %@ clips=%d flipped=%d layerBounds %@ transform=%d contents=%d masks=%d",
                                                  at.className, NSStringFromRect(at.frame), NSStringFromRect(at.bounds), NSStringFromRect(at.visibleRect),
                                                  at.clipsToBounds, at.isFlipped, NSStringFromRect(at.layer.bounds),
-                                                 !CATransform3DIsIdentity(at.layer.transform), at.layer.contents != nil]];
+                                                 !CATransform3DIsIdentity(at.layer.transform), at.layer.contents != nil, at.layer.masksToBounds]];
   }
   return chain;
 }
@@ -182,6 +188,15 @@ typedef struct {
   NSString *_script;
   BOOL _quit;
   BOOL _gesture;
+  BOOL _queued;
+  BOOL _listen;
+  double _listenSeconds;
+  int _windowField;
+  id _monitor;
+  NSUInteger _arrived;
+  NSUInteger _arrivedNoWindow;
+  NSUInteger _arrivedPhased;
+  NSString *_firstArrived;
   NSWindow *_window;
   NSView *_target;
   NSScrollView *_scroll;
@@ -210,6 +225,20 @@ typedef struct {
   bench->_script = [NSUserDefaults.standardUserDefaults stringForKey:@"scrollBenchScript"] ?: @"standard";
   bench->_quit = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchQuit"];
   bench->_gesture = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchGesture"];
+  bench->_queued = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchQueue"];
+  bench->_listen = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchListen"];
+  bench->_listenSeconds = [NSUserDefaults.standardUserDefaults doubleForKey:@"scrollBenchSeconds"] ?: 26;
+  // -scrollBenchResponsive NO: every scroll view scrolls on the main thread, as before AppKit's
+  // responsive scrolling. A gesture handed to a view then moves the page, momentum and all.
+  if ([NSUserDefaults.standardUserDefaults objectForKey:@"scrollBenchResponsive"] != nil && ![NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchResponsive"]) {
+    Class scroll = NSClassFromString(@"RCTEnhancedScrollView");
+    Method method = class_getClassMethod(scroll, @selector(isCompatibleWithResponsiveScrolling));
+    if (method != NULL) {
+      class_replaceMethod(object_getClass(scroll), @selector(isCompatibleWithResponsiveScrolling), imp_implementationWithBlock(^BOOL(__unused id cls) {
+        return NO;
+      }), method_getTypeEncoding(method));
+    }
+  }
   double after = [NSUserDefaults.standardUserDefaults doubleForKey:@"scrollBenchAfter"] ?: 25;
   [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidFinishLaunchingNotification
                                                   object:nil
@@ -234,9 +263,10 @@ typedef struct {
 - (double)drag:(int)dy seconds:(double)seconds from:(double)t
 {
   const double step = 1.0 / 120;
-  [self add:t dy:0 phase:1 momentum:0];
+  // A gesture begins with its first movement: which way it runs decides which scroll view takes it.
+  [self add:t dy:dy phase:1 momentum:0];
   int n = (int)(seconds * 120);
-  for (int i = 0; i < n; i++) [self add:(t += step) dy:dy phase:2 momentum:0];
+  for (int i = 1; i < n; i++) [self add:(t += step) dy:dy phase:2 momentum:0];
   [self add:(t += step) dy:0 phase:4 momentum:0];
   return t;
 }
@@ -299,7 +329,12 @@ typedef struct {
   NSPoint onScreen = [_window convertPointToScreen:inWindow];
   // Quartz measures down from the top of the main screen.
   _at = CGPointMake(onScreen.x, NSMaxY(NSScreen.screens.firstObject.frame) - onScreen.y);
-  [self write];
+  if (_listen) {
+    _events = [NSMutableData data];
+    _asked = 0;
+  } else {
+    [self write];
+  }
   static dispatch_once_t once;
   dispatch_once(&once, ^{
     TimeMethod(NSClassFromString(@"RCTParagraphTextView"), @selector(drawRect:), &textDraws, &textDrawSeconds);
@@ -307,6 +342,27 @@ typedef struct {
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchWhy"]) WatchWhy();
     CountMethod2(NSClassFromString(@"RCTParagraphComponentView"), NSSelectorFromString(@"updateState:oldState:"), &textStates);
     CountMethod2(NSClassFromString(@"RCTParagraphComponentView"), NSSelectorFromString(@"updateLayoutMetrics:oldLayoutMetrics:"), &textLayouts);
+    {
+      // Which views' layers are displayed, by class and size.
+      displays = [NSMutableDictionary dictionary];
+      Class backing = NSClassFromString(@"NSViewBackingLayer");
+      Method method = class_getInstanceMethod(backing, @selector(display));
+      IMP original = method_getImplementation(method);
+      class_replaceMethod(backing, @selector(display), imp_implementationWithBlock(^(CALayer *self) {
+        if (displaysOn) {
+          NSView *owner = (NSView *)self.delegate;
+          NSString *key = [NSString stringWithFormat:@"%@ %@%@", owner.className, NSHeight(owner.frame) > 10000 ? @"huge" : NSHeight(owner.frame) > 100 ? @"tall" : @"small",
+                                                      owner.wantsUpdateLayer ? @"" : @" draws"];
+          displays[key] = @(displays[key].unsignedIntegerValue + 1);
+        }
+        ((void (*)(id, SEL))original)(self, @selector(display));
+      }), method_getTypeEncoding(method));
+    }
+    Class view = NSClassFromString(@"RCTViewComponentView");
+    CountMethod2(view, NSSelectorFromString(@"mountChildComponentView:index:"), &viewsPutIn);
+    CountMethod2(view, NSSelectorFromString(@"unmountChildComponentView:index:"), &viewsTakenOut);
+    CountMethod2(view, NSSelectorFromString(@"updateProps:oldProps:"), &viewProps);
+    CountMethod2(view, NSSelectorFromString(@"updateLayoutMetrics:oldLayoutMetrics:"), &viewLayouts);
   });
   textDraws = 0;
   textDrawSeconds = 0;
@@ -314,19 +370,52 @@ typedef struct {
   mountSeconds = 0;
   textStates = 0;
   textLayouts = 0;
+  viewsPutIn = 0;
+  viewsTakenOut = 0;
+  viewProps = 0;
+  viewLayouts = 0;
   whyOn = whyStacks != nil;
+  [displays removeAllObjects];
+  displaysOn = YES;
   _ticks = [NSMutableArray array];
   _blank = [NSMutableArray array];
   _boxes = [NSMutableArray array];
   _startY = _scroll.contentView.bounds.origin.y;
   _next = 0;
   _delivered = 0;
+  _windowField = [self windowField];
+  _arrived = 0;
+  _arrivedNoWindow = 0;
+  _arrivedPhased = 0;
+  __weak TableScrollBench *counting = self;
+  _monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel handler:^NSEvent *(NSEvent *event) {
+    TableScrollBench *me = counting;
+    if (me) {
+      if (me->_arrived == 0) {
+        NSView *root = event.window.contentView.superview ?: event.window.contentView;
+        me->_firstArrived = [NSString stringWithFormat:@"at %@ in window %ld, over %@", NSStringFromPoint(event.locationInWindow), (long)event.windowNumber,
+                                                       [root hitTest:event.locationInWindow].className];
+      }
+      me->_arrived++;
+      if (event.window == nil) me->_arrivedNoWindow++;
+      if (event.phase != NSEventPhaseNone || event.momentumPhase != NSEventPhaseNone) me->_arrivedPhased++;
+    }
+    return event;
+  }];
   _link = [_window.contentView displayLinkWithTarget:self selector:@selector(tick:)];
   [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
   _start = CACurrentMediaTime();
-  _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-  dispatch_source_set_timer(_timer, DISPATCH_TIME_NOW, NSEC_PER_SEC / 120, NSEC_PER_MSEC);
   __weak TableScrollBench *weak = self;
+  if (_listen) {
+    // Nothing is sent from here: the scrolling comes from outside, and this only measures.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_listenSeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      [weak end];
+    });
+    return;
+  }
+  // Queued events are put on the app's queue from another thread, as the system's arrive whatever the main thread is doing.
+  _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queued ? dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0) : dispatch_get_main_queue());
+  dispatch_source_set_timer(_timer, DISPATCH_TIME_NOW, NSEC_PER_SEC / 120, NSEC_PER_MSEC);
   dispatch_source_set_event_handler(_timer, ^{
     [weak deliver];
   });
@@ -347,10 +436,30 @@ typedef struct {
   CGEventSetIntegerValueField(scroll, kCGScrollWheelEventIsContinuous, 1);
   CGEventSetIntegerValueField(scroll, kCGScrollWheelEventScrollPhase, phase);
   CGEventSetIntegerValueField(scroll, kCGScrollWheelEventMomentumPhase, momentum);
+  if (_queued && _windowField >= 0) CGEventSetIntegerValueField(scroll, (CGEventField)_windowField, _window.windowNumber);
   NSEvent *event = [NSEvent eventWithCGEvent:scroll];
   CFRelease(scroll);
-  [_target scrollWheel:event];
+  if (_queued) {
+    [NSApp postEvent:event atStart:NO];
+  } else {
+    [_target scrollWheel:event];
+  }
   _delivered++;
+}
+
+/// Which field of a Quartz event becomes an NSEvent's window: found by trying each.
+- (int)windowField
+{
+  NSInteger number = _window.windowNumber;
+  for (int field = 0; field < 256; field++) {
+    CGEventRef scroll = CGEventCreateScrollWheelEvent2(NULL, kCGScrollEventUnitPixel, 1, -1, 0, 0);
+    if (scroll == NULL) return -1;
+    CGEventSetIntegerValueField(scroll, (CGEventField)field, number);
+    NSEvent *event = CGEventGetType(scroll) == kCGEventScrollWheel ? [NSEvent eventWithCGEvent:scroll] : nil;
+    CFRelease(scroll);
+    if (event != nil && event.type == NSEventTypeScrollWheel && event.windowNumber == number) return field;
+  }
+  return -1;
 }
 
 /// Everything due by now. A late main thread gets what it missed in one event, as the system coalesces a trackpad's.
@@ -365,7 +474,7 @@ typedef struct {
   BOOL any = NO;
   while (_next < count && events[_next].at <= now) {
     BenchEvent event = events[_next++];
-    BOOL moves = event.phase == 2 || event.momentum == 2;
+    BOOL moves = _gesture ? (event.phase == 2 || event.momentum == 2) : event.dy != 0;
     if (!moves) {
       if (any) [self post:owed phase:phase momentum:momentum];
       any = NO;
@@ -383,7 +492,12 @@ typedef struct {
     momentum = event.momentum;
   }
   if (any) [self post:owed phase:phase momentum:momentum];
-  if (_next >= count && now > events[count - 1].at + 1.0) [self end];
+  if (_next >= count && now > events[count - 1].at + 1.0) {
+    dispatch_source_cancel(_timer);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self end];
+    });
+  }
 }
 
 #pragma mark What's measured
@@ -436,8 +550,11 @@ typedef struct {
 - (void)end
 {
   whyOn = NO;
-  dispatch_source_cancel(_timer);
+  displaysOn = NO;
+  if (_timer != nil && !dispatch_source_testcancel(_timer)) dispatch_source_cancel(_timer);
   _timer = nil;
+  if (_monitor != nil) [NSEvent removeMonitor:_monitor];
+  _monitor = nil;
   [_link invalidate];
   _link = nil;
   double took = CACurrentMediaTime() - _start;
@@ -472,7 +589,9 @@ typedef struct {
   NSUInteger n = MAX((NSUInteger)1, _blank.count);
   [self finishWith:@{
     @"script": _script,
-    @"as": _gesture ? @"gesture" : @"wheel",
+    @"responsive": @([NSClassFromString(@"RCTEnhancedScrollView") isCompatibleWithResponsiveScrolling]),
+    @"as": _listen ? @"listening" : _gesture ? (_queued ? @"gesture, queued" : @"gesture") : (_queued ? @"wheel, queued" : @"wheel"),
+    @"arrived": @{@"events": @(_arrived), @"withoutWindow": @(_arrivedNoWindow), @"phased": @(_arrivedPhased), @"windowField": @(_windowField), @"window": @(_window.windowNumber), @"first": _firstArrived ?: @"", @"target": [NSString stringWithFormat:@"%@ at %@", _target.className, NSStringFromPoint([_window convertPointFromScreen:NSMakePoint(_at.x, NSMaxY(NSScreen.screens.firstObject.frame) - _at.y)])]},
     @"seconds": @(took),
     @"events": @{@"written": @(_events.length / sizeof(BenchEvent)), @"delivered": @(_delivered)},
     @"moved": @{@"asked": @(-_asked), @"scrolled": @(_scroll.contentView.bounds.origin.y - _startY)},
@@ -486,8 +605,9 @@ typedef struct {
     },
     @"text": @{@"draws": @(textDraws), @"seconds": @(textDrawSeconds), @"stateUpdates": @(textStates), @"layoutUpdates": @(textLayouts)},
     @"around": [self aroundTheMiddle],
-    @"mounts": @{@"count": @(mounts), @"seconds": @(mountSeconds)},
+    @"mounts": @{@"count": @(mounts), @"seconds": @(mountSeconds), @"viewsPutIn": @(viewsPutIn), @"viewsTakenOut": @(viewsTakenOut), @"propsChanged": @(viewProps), @"layoutsChanged": @(viewLayouts)},
     @"why": whyStacks ?: @{},
+    @"displays": [displays copy] ?: @{},
     @"blank": @{
       @"panes": @(_boxes.count),
       @"meanShare": @(sum / n),
