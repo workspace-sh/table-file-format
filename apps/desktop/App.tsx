@@ -6,7 +6,7 @@ import { ScrollView } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { newId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -43,6 +43,10 @@ import {
   ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  HISTORY_KEY,
+  appendFolderHistory,
+  appendStoredHistory,
+  clearStoredHistory,
   SIDEBAR_KEY,
   STORAGE_KEY,
   TOOLBAR_HINTS,
@@ -437,7 +441,7 @@ export default function App() {
   const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: Library } | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY])
+    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, folders: await reopenFolders(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
@@ -467,11 +471,30 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         bundles: { ...initial.bundles, ...reopened.bundles },
         opened: reopened.paths,
         stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+        // Each edit goes to its table's history (SPEC section 14).
+        writesHistory: true,
       });
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    { store, write: (...args) => writeRef.current(...args), delayMs: WRITE_AFTER_MS },
+    {
+      store,
+      write: (...args) => writeRef.current(...args),
+      // What was edited, added to the table's history: in its folder for one opened from disk or
+      // a large table's (each bundle a folder), else in this Mac's store beside the table.
+      appendHistory: async (key, events) => {
+        const now = stateRef.current;
+        const bundle = bundleOf(key);
+        const folder = now.opened[bundle] ?? (now.tables[key]?.indexed ? bundleDir(bundle) : undefined);
+        if (folder) {
+          await appendFolderHistory(desktopFs, joinPath(folder, BundleEntry.tables, tableNameOf(key)), events);
+          return;
+        }
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
+      },
+      delayMs: WRITE_AFTER_MS,
+    },
     systemLocale,
   );
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
@@ -542,6 +565,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // Starting again from the examples: what this Mac saved goes too; opened folders stay.
       if (asking.on.type === "reset" && response === "reset") {
         clearSaved(store);
+        clearStoredHistory(store);
         // The folders this Mac kept for large tables go with it.
         void removeAllFolders().catch(() => {});
       }
@@ -1203,6 +1227,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
       reset: () => {
         clearSaved(store);
+        clearStoredHistory(store);
         dispatch({ type: "reset", fresh });
         dispatch({ type: "answer", response: "reset" });
         return `reset; kept ${Object.keys(stateRef.current.opened).join(", ") || "no folders"}`;
@@ -1224,6 +1249,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // Forget saved edits, opened folders, arrangements and the sidebar's folds; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
+        clearStoredHistory(store);
         store?.removeItem(OPENED_KEY);
         store?.removeItem(ARRANGEMENTS_KEY);
         store?.removeItem(SIDEBAR_KEY);
