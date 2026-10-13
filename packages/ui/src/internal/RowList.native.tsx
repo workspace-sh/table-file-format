@@ -315,13 +315,19 @@ function WindowedRows<T>({
     [page, where, follow],
   );
 
-  // The rows drawn sit in one box at the body's top, moved down to the
-  // first of them by a transform, with each row in it at its offset from
-  // there. The layout engine keeps positions, and snaps them to pixels, as
-  // 32-bit floats: laid out 45 million points down, rows were rounded to
-  // the nearest 4 and overlapped or left gaps. A transform isn't laid out,
-  // and the offsets in the box are small, so every row is where it should be.
+  // The rows drawn sit in one box at the first of them, with each row in it
+  // at its offset from there. The layout engine keeps positions, and snaps
+  // them to pixels, as 32-bit floats: laid out 45 million points down, rows
+  // were rounded to the nearest 4 and overlapped or left gaps. So the box is
+  // laid out at a multiple of 4 (exact as a 32-bit float up to 67 million),
+  // and a transform, which isn't laid out, moves it the rest of the way; the
+  // offsets in the box are small, so every row is where it should be. The
+  // box has its rows' height: AppKit draws a view's text only when its
+  // frame is on screen, and a box of no height at the top left the Mac's
+  // rows farther down with their colours but no words.
   const base = count && lastDrawn >= first ? Math.max(0, layout.itemTop(first) - drawn.shift) : 0;
+  const laidAt = Math.floor(base / 4) * 4;
+  const span = count && lastDrawn >= first ? (lastDrawn + 1 < count ? layout.itemTop(lastDrawn + 1) : layout.height) - drawn.shift - base : 0;
   // Rows are recycled: each is keyed by a slot, its place modulo how many
   // slots there are, so a row scrolled off one end and the row coming on at
   // the other share a key, and React gives the first one's views the second
@@ -348,7 +354,7 @@ function WindowedRows<T>({
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
-      <View style={{ position: "absolute", top: 0, left: 0, right: 0, transform: [{ translateY: base }] }}>{rows}</View>
+      <View style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>{rows}</View>
     </View>
   );
 }
