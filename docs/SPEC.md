@@ -1102,6 +1102,9 @@ fragment:
   - `view=<id>` — the view with this id
   - `field=<name>` — a specific field on the row (cell-level
     addressing for future affordances; reserved)
+  - `rows=<n>`, `cards=<n>`: how much of a view to show at once
+    where the address is drawn in place (see "A view drawn in place"
+    below). They say nothing about which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
 strings). Order is not significant. Unknown keys MUST be tolerated
@@ -1118,6 +1121,35 @@ docs/crm.table#table=deals&row=dl-1              # a row in that table
 docs/crm.table#table=deals&view=pipeline         # a view of that table
 docs/projects.table#row=p1                       # a one-table bundle may omit table=
 ../suppliers.table#table=suppliers&row=ACME_CORP # another bundle
+```
+
+### A view drawn in place
+
+An address may be drawn where it is written: a table's view inside a
+document that links to it (how a document marks such a link is the
+document format's own; in Markdown it is `embed=1` beside these keys).
+The address names the table and the view; with no `view=`, the table's
+first view.
+
+Two keys say how tall it is. Each is a whole number from 1; the view
+shows that many, and scrolls within itself for the rest:
+
+| Key | Layout | What is counted |
+|---|---|---|
+| `rows=<n>` | `table`, `list` | Rows. A table's header, and the headings of the groups those rows are in, are shown as well. |
+| `cards=<n>` | `board` | Cards down each column: the height is that of the column that reaches furthest by its nth card. |
+| `cards=<n>` | `gallery` | Cards: the lines that hold the first n. |
+
+A view with no more rows or cards than the number is shown whole. A
+key that doesn't count what the view's layout shows (`cards=` on a
+table, either on a `calendar`) is ignored, as is a value that isn't a
+whole number from 1; the app then uses a height of its own. An app MAY
+cap the number (the reference apps stop at 500). The keys limit height
+only: the view has the same rows, in the same order, as anywhere else.
+
+```
+docs/projects.table#table=tasks&view=v1&rows=5     # five rows of a table view, then it scrolls
+docs/projects.table#table=tasks&view=v2&cards=3    # a board, three cards down each column
 ```
 
 ### Resolution
@@ -1170,7 +1202,15 @@ CSV is the **only** format-specific converter that lives in core, via
   commas / newlines / escaped `""`, optional BOM, LF or CRLF). With a
   schema, cells are coerced to declared types (the lossless-with-schema
   path); without one, per-column types are inferred. Rows lacking an
-  `id` column get a freshly minted nanoid.
+  `id` column get a freshly minted nanoid. Tabs, semicolons and pipes
+  are read as separators too, whichever the file uses.
+- `tableFromCSV(csv, { keyOf? })` — a spreadsheet someone already has,
+  as a new table: each heading becomes a field (the heading kept as its
+  `title`, a key made for its `name`), each other line a row. Types are
+  inferred conservatively: a column of ISO dates is `date`, digits that
+  aren't a quantity (leading zeros, a `+`, more digits than a number
+  keeps) stay text, and anything ambiguous (`03/04/2025`, `£1,200`)
+  stays text for the person who knows what it means.
 - `toCSV(table, { fields? })` — RFC 4180-correct quoting. **Lossy by
   definition**: relations serialise to raw id(s), attachments to their
   filename, bodies aren't represented. `csvExportWarnings(table)`

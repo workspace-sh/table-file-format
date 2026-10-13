@@ -87,6 +87,7 @@ import { FieldAbout } from "./FieldAbout.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
+import { scrollerHeight, useEmbedded } from "./embedded.js";
 import { gridKeyOf } from "./gridKeys.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
@@ -107,8 +108,8 @@ const DRAW_DISTANCE = 900;
 const MAX_BODY_HEIGHT = 8_000_000;
 /** How close the screen's edge comes to the last built row before more are built. */
 const DRAW_MARGIN = 300;
-/** The frame's margin from the window's edges, each side. */
-const FRAME_MARGIN = 12;
+/** The frame's margin from the window's edges, each side. None when the table is embedded: where it sits has its own. */
+const WINDOW_FRAME_MARGIN = 12;
 /** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
 const FREEZE_FROM_WIDTH = 720;
 /** How much of a row's bottom edge takes a drag to resize it, as on the web. */
@@ -430,6 +431,8 @@ export function TableView({
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
+  const embedded = useEmbedded();
+  const frameMargin = embedded ? 0 : WINDOW_FRAME_MARGIN;
   // Resizing: live sizes while a handle is dragged, saved to the view
   // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
@@ -562,7 +565,7 @@ export function TableView({
     const across = window.getHadjustment();
     const page = across.getPageSize();
     // Across what is scrolled: the frame's margin and line come before the cells.
-    const left = bounds.getX() + FRAME_MARGIN + 1;
+    const left = bounds.getX() + frameMargin + 1;
     const right = left + bounds.getWidth();
     let x = across.getValue();
     if (rtl) {
@@ -606,7 +609,7 @@ export function TableView({
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
   // What the columns don't get: the frame and its margins, a sheet's row numbers, and the "+" after the last column.
-  const chrome = TABLE_CHROME + 2 * FRAME_MARGIN + (coords ? ROW_NUMBER_WIDTH : 0) + (onAddField ? ADD_FIELD_WIDTH : 0);
+  const chrome = TABLE_CHROME + 2 * frameMargin + (coords ? ROW_NUMBER_WIDTH : 0) + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
   // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
@@ -640,7 +643,7 @@ export function TableView({
     };
     // Where the table is scrolled to with each column in turn starting at the edge. The first is there
     // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
-    let at = FRAME_MARGIN + 1 + (freeze || !coords ? 0 : ROW_NUMBER_WIDTH);
+    let at = frameMargin + 1 + (freeze || !coords ? 0 : ROW_NUMBER_WIDTH);
     for (const name of (freeze ? fields.slice(1) : fields).slice(0, -1)) {
       at += colWidth(name);
       if (at < end) nearer(at);
@@ -675,7 +678,7 @@ export function TableView({
   /** Scrolled past the frame's margin and edge, the first column rests against the window's own edge. */
   const pinAcross = () => {
     const across = scroller.current?.getHadjustment();
-    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - FRAME_MARGIN - 1) : 0;
+    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - frameMargin - 1) : 0;
     if (x === scrolledAcross.current) return;
     scrolledAcross.current = x;
     for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
@@ -1487,7 +1490,8 @@ export function TableView({
     <GtkScrolledWindow
       ref={scroller}
       hexpand
-      vexpand
+      // Embedded and asked for so many rows: the header and those rows (and the headings of their groups), when there are more.
+      {...scrollerHeight(embedded, embedded?.rows !== undefined && count > embedded.rows ? HEADER_HEIGHT + ROW_RULE + layout.itemTop(embedded.rows) : null)}
       cssClasses={[styles.table]}
       vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
       hadjustment={
@@ -1515,10 +1519,10 @@ export function TableView({
         // The table is a framed card in the window, as it is on the web and the Mac.
         cssClasses={[styles.tableFrame]}
         overflow={Gtk.Overflow.HIDDEN}
-        marginStart={FRAME_MARGIN}
-        marginEnd={FRAME_MARGIN}
-        marginTop={FRAME_MARGIN}
-        marginBottom={FRAME_MARGIN}
+        marginStart={frameMargin}
+        marginEnd={frameMargin}
+        marginTop={frameMargin}
+        marginBottom={frameMargin}
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}

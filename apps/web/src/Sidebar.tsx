@@ -537,7 +537,7 @@ export function Sidebar({
           + New .table file
         </html.button>
         <html.button style={[styles.item, styles.newTable]} onClick={onOpenFile}>
-          Open .table.zip…
+          Open .table.zip or CSV…
         </html.button>
       </html.div>
       )}
