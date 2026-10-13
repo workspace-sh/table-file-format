@@ -324,7 +324,8 @@ typedef struct {
     NSView *root = window.contentView.superview ?: window.contentView;
     NSPoint inWindow = NSMakePoint(NSWidth(window.frame) * 0.6, NSHeight(window.frame) * 0.4);
     NSView *under = [root hitTest:inWindow] ?: window.contentView;
-    int steps = (int)ceil(lead / 300);
+    // -scrollBenchLeadJump YES: there in one move, not by scrolling through what's between.
+    int steps = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchLeadJump"] ? 1 : (int)ceil(lead / 300);
     for (int i = 0; i < steps; i++) {
       dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CGEventRef scroll = CGEventCreateScrollWheelEvent2(NULL, kCGScrollEventUnitPixel, 1, -(int)(lead / steps), 0, 0);

@@ -512,7 +512,13 @@ So `sample` is for where the time goes, in a run of its own, and what's felt is 
 | One flick: empty | 2% | 57% |
 | Eight flicks: empty | 33 to 40% | 90 to 92% |
 
-Why it differs isn't known yet. The views put in and taken out are about as many (in the slow scroll, about 700 to 870 of each), but further down they arrive in a few large changes that take the main thread four times as long in all (0.9 s against 0.2 s). Reading ten times further ahead from the index (4,000 rows, not 400) didn't move the point where repeated flicks stop keeping up.
+**It isn't how far down: it's how far the page has been scrolled to get there.** Taken 60,000 points down in one move, or 3,000,000, the same brisk scroll is as good as at the top (nothing empty, a longest gap of 67 to 69 ms). Scrolled there, through about 1,300 rows, it is as in the table, and stays so after 30 s at rest. Scrolled 20,000 points (440 rows) it is still good; 40,000 (890 rows), no longer.
+
+What it is has not been found. What it is not:
+- **The threads' work.** Scrolled far, the JavaScript thread is idle for 46% of the brisk scroll and the main thread for 79%, while most of the table's place is empty: the rows drawn follow the page late (12 to 19 changes of the view tree, against about 180 near the top), not slowly.
+- **Rows on their way from the index.** Every row drawn was already read; reading 4,000 rows ahead, not 400, changed nothing.
+- **Responsive scrolling.** The same with scrolling on the main thread.
+- **The kept text drawings filling up.** With 16 kept, not 1,024, it is good near the top and bad far down all the same.
 
 **Where the JavaScript thread's time goes**, 60,000 points down in the brisk scroll (a Hermes profile of production JavaScript in a Debug build; about 35 samples, so only the large shares mean anything): the thread is about 60% busy; five sixths of that is React rendering, a seventh committing. Of the busy time, about a third is under React Strict DOM's element (`useNativeProps`, `useStyleProps`: each element's props and styles worked out again at every render), with `Object.assign` (18%) and the young-generation collector (15%) beside it.
 
