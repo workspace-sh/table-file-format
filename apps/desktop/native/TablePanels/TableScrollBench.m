@@ -330,6 +330,17 @@ typedef struct {
   if (all || [_script isEqualToString:@"slow"]) t = [self drag:-4 seconds:3 from:t] + 0.3;
   // Brisk, as a hand moving down a table to find something: 2,400 points a second.
   if ([_script isEqualToString:@"medium"]) t = [self drag:-20 seconds:3 from:t];
+  // A hard flick: twice as fast at its start as the others, and longer in falling away.
+  if ([_script isEqualToString:@"hardflick"]) {
+    t = [self drag:-120 seconds:0.2 from:t];
+    t = [self momentum:-120 seconds:1.5 from:t] + 1.5;
+  }
+  if ([_script isEqualToString:@"hardflicks"]) {
+    for (int i = 0; i < 4; i++) {
+      t = [self drag:-120 seconds:0.2 from:t];
+      t = [self momentum:-120 seconds:1.5 from:t] + 0.4;
+    }
+  }
   // One flick, and then nothing: how long the table takes to fill once the page has stopped.
   if ([_script isEqualToString:@"flick"]) {
     t = [self drag:-60 seconds:0.2 from:t];
