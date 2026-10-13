@@ -55,6 +55,7 @@ import { TableEmbed } from "@workspace.sh/table-gtk/embed";
 | `within` | The folder the file has to be inside, with links followed. A document can name any path; this keeps it to what the reader opened. |
 | `caption` | Shown beneath, small and centred. |
 | `maxHeight` | The tallest it is (480 by default). Up to that it is as tall as what it holds; past it, it scrolls within itself. |
+| `readOnly` | To look at only: nothing in it can be changed and nothing is written. For a reader who can't write where the file is. |
 | `onOpenLink` | A linked row was clicked: its address, for the app to go to. Without it a linked row is its name. |
 
 It is the table, not a picture of it. The state is table-app's reducer
