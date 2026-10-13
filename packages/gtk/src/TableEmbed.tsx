@@ -57,7 +57,9 @@ function Shown({
 }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
   const { table } = derived;
-  const embedded = useMemo(() => ({ maxHeight }), [maxHeight]);
+  // How much to show at once: the link's own count of rows or cards, else the limit.
+  const { rows, cards } = shown.size;
+  const embedded = useMemo(() => ({ maxHeight, rows, cards }), [maxHeight, rows, cards]);
   // What holds the table (a document's text) gives it the least height it asks for, and a
   // scroller asks for almost none: so the height it would like (its rows, up to the limit)
   // is asked for outright, and again whenever what it holds grows or shrinks.
@@ -67,7 +69,8 @@ function Shown({
     const scroller = frame.current?.getFirstChild();
     if (!scroller) return;
     const [, natural] = scroller.measure(Gtk.Orientation.VERTICAL, scroller.getWidth() > 0 ? scroller.getWidth() : -1);
-    setHeight(Math.min(natural, maxHeight));
+    // (No taller than the limit, or than the rows or cards the link asked for: the scroller's own.)
+    setHeight(natural);
   };
   useEffect(fit);
   useEffect(() => {

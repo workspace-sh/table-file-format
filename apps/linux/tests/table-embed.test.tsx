@@ -183,6 +183,123 @@ describe("a table drawn in a document", () => {
   });
 });
 
+// How much of a view is shown at once is the link's to say: `rows=` and `cards=` (SPEC section 10).
+describe("an embed asked for so many rows or cards", () => {
+  const draw = (fragment: string) => render(inDocument(<TableEmbed address={`../tables/projects.table#${fragment}&embed=1`} baseDir={docs} within={root} />));
+  // The view's own scroller: inside the embed, inside the box that takes its keys.
+  const scrollerOf = async () => {
+    const embed = (await screen.findAllByName("table-embed"))[0]!;
+    await waitFor(() => expect(embed.getFirstChild()?.getFirstChild()).toBeInstanceOf(Gtk.ScrolledWindow));
+    return embed.getFirstChild()!.getFirstChild() as Gtk.ScrolledWindow;
+  };
+  const shown = (scroller: Gtk.ScrolledWindow) => scroller.getVadjustment().getPageSize();
+  const all = (scroller: Gtk.ScrolledWindow) => scroller.getVadjustment().getUpper();
+  /** Where a widget ends, down the scroller's own contents. */
+  const bottomOf = (widget: Gtk.Widget, scroller: Gtk.ScrolledWindow) => {
+    const content = scroller.getFirstChild()!.getFirstChild()!;
+    const [, bounds] = widget.computeBounds(content);
+    return bounds.getY() + bounds.getHeight();
+  };
+
+  it("a table shows its header and that many rows, and scrolls for the rest", async () => {
+    await draw("table=tasks&view=v1&rows=3");
+    const scroller = await scrollerOf();
+    // The header and its rule, then three rows of 44 with theirs.
+    await waitFor(() => expect(shown(scroller)).toBe(36 + 1 + 3 * 45));
+    expect(all(scroller)).toBeGreaterThan(8 * 45);
+    // The embed asks for exactly that much room of the document.
+    const embed = (await screen.findAllByName("table-embed"))[0]!;
+    await waitFor(() => expect(embed.measure(Gtk.Orientation.VERTICAL, -1)[0]).toBe(36 + 1 + 3 * 45));
+  });
+
+  it("more rows than the usual limit holds are shown when the link asks for them", async () => {
+    await draw("table=projects&view=v1&rows=12");
+    const scroller = await scrollerOf();
+    await waitFor(() => expect(shown(scroller)).toBe(36 + 1 + 12 * 45));
+    expect(shown(scroller)).toBeGreaterThan(EMBED_MAX_HEIGHT);
+    // And that much room is asked of the document, past the usual limit too.
+    const embed = (await screen.findAllByName("table-embed"))[0]!;
+    await waitFor(() => expect(embed.measure(Gtk.Orientation.VERTICAL, -1)[0]).toBe(36 + 1 + 12 * 45));
+  });
+
+  it("a table with no more rows than that is shown whole", async () => {
+    await draw("table=tasks&view=v1&rows=20");
+    const scroller = await scrollerOf();
+    await screen.findByText("OG images");
+    await waitFor(() => {
+      expect(shown(scroller)).toBeGreaterThan(8 * 45);
+      expect(all(scroller)).toBe(shown(scroller));
+    });
+  });
+
+  it("a list shows that many rows", async () => {
+    await draw("table=projects&view=v7&rows=3");
+    const scroller = await scrollerOf();
+    await waitFor(() => {
+      const rows = scroller.getFirstChild()!.getFirstChild()!;
+      const third = rows.getFirstChild()!.getNextSibling()!.getNextSibling()!;
+      expect(bottomOf(third, scroller)).toBeGreaterThan(60);
+      expect(shown(scroller)).toBe(Math.ceil(bottomOf(third, scroller)));
+      expect(all(scroller)).toBeGreaterThan(shown(scroller) * 3);
+    });
+  });
+
+  it("a board shows that many cards down each column", async () => {
+    const one = await draw("table=tasks&view=v2&cards=1");
+    let scroller = await scrollerOf();
+    let oneCard = 0;
+    await waitFor(() => {
+      // Each column: its heading, then its cards. The first card of every column is shown, and not the second.
+      const columns = scroller.getFirstChild()!.getFirstChild()!;
+      let first = 0;
+      let second = Infinity;
+      for (let column = columns.getFirstChild(); column; column = column.getNextSibling()) {
+        const card = column.getFirstChild()!.getNextSibling()!;
+        first = Math.max(first, bottomOf(card, scroller));
+        if (card.getNextSibling()) second = Math.min(second, bottomOf(card.getNextSibling()!, scroller));
+      }
+      expect(first).toBeGreaterThan(60);
+      expect(shown(scroller)).toBeGreaterThanOrEqual(first);
+      expect(shown(scroller)).toBeLessThan(second);
+      expect(all(scroller)).toBeGreaterThan(shown(scroller));
+      oneCard = shown(scroller);
+    });
+    await one.unmount();
+
+    await draw("table=tasks&view=v2&cards=2");
+    scroller = await scrollerOf();
+    await waitFor(() => expect(shown(scroller)).toBeGreaterThan(oneCard + 60));
+  });
+
+  it("a board with no column of more cards than that is shown whole", async () => {
+    await draw("table=tasks&view=v2&cards=5");
+    const scroller = await scrollerOf();
+    await screen.findByText("OG images");
+    await waitFor(() => {
+      expect(shown(scroller)).toBeGreaterThan(200);
+      expect(all(scroller)).toBe(shown(scroller));
+    });
+  });
+
+  it("a gallery shows the lines that hold that many cards", async () => {
+    await draw("table=projects&view=v6&cards=1");
+    const scroller = await scrollerOf();
+    await waitFor(() => {
+      const lines = scroller.getFirstChild()!.getFirstChild()!;
+      const first = lines.getFirstChild()!;
+      expect(bottomOf(first, scroller)).toBeGreaterThan(60);
+      expect(shown(scroller)).toBeGreaterThanOrEqual(bottomOf(first, scroller));
+      expect(shown(scroller)).toBeLessThan(bottomOf(first.getNextSibling()!, scroller));
+    });
+  });
+
+  it("a count of what the layout doesn't show is ignored: the usual limit", async () => {
+    await draw("table=projects&view=v1&cards=2");
+    const scroller = await scrollerOf();
+    await waitFor(() => expect(shown(scroller)).toBe(EMBED_MAX_HEIGHT));
+  });
+});
+
 // It is the table, not a picture of it: what is done to it in the document
 // is in the file, read back here as opening it again would.
 describe("a table edited in a document", () => {
