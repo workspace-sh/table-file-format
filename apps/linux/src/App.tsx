@@ -38,6 +38,7 @@ import {
   type ViewCallbacks,
   archiveFileName,
   bundleToArchive,
+  withHistories,
   fromBundle,
   exportFailedText,
   openArchive,
@@ -748,13 +749,12 @@ export function App({
       }
       // Each table's edit history goes with it, as its file holds it once what is still to write is written.
       await flush();
-      for (const [k, t] of Object.entries(whole)) {
-        if (bundleOf(k) !== key || !pathOf(key)) continue;
-        const history = join(tableDir(k), HISTORY_FILE);
-        const { history: _arrived, ...rest } = t;
-        whole[k] = existsSync(history) ? { ...rest, history: readFileSync(history, "utf8") } : rest;
-      }
-      writeFileSync(path, await bundleToArchive(key, toBundle(whole, bundles, key)));
+      const going = Object.fromEntries(Object.entries(whole).filter(([k]) => bundleOf(k) === key));
+      const withHistory = await withHistories(going, (k) => {
+        const history = pathOf(key) ? join(tableDir(k), HISTORY_FILE) : undefined;
+        return history && existsSync(history) ? readFileSync(history, "utf8") : undefined;
+      });
+      writeFileSync(path, await bundleToArchive(key, toBundle(withHistory, bundles, key)));
     } catch (error) {
       tell(exportFailedText(basename(path), error));
     }
