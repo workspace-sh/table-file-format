@@ -34,6 +34,9 @@ import {
   clearSaved,
   clearStoredHistory,
   appendStoredHistory,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   confirmText,
   exportFailedText,
   fileText,
@@ -592,7 +595,11 @@ export function App() {
         const { indexed: _index, ...rest } = held;
         whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
       }
-      bytes = await bundleToArchive(bundle, toBundle(whole, bundles, bundle));
+      // Each table's history goes with it, everything written so far included (SPEC section 14).
+      await flush();
+      const store = browserStore();
+      const going = await withHistories(whole, (key) => (store ? storedHistory(store, key) || undefined : undefined));
+      bytes = await bundleToArchive(bundle, toBundle(going, bundles, bundle));
     } catch (error) {
       dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       return;
@@ -603,7 +610,7 @@ export function App() {
     a.download = archiveFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [tables, bundles, activeTablePath, indexed.everyRow, tell]);
+  }, [tables, bundles, activeTablePath, indexed.everyRow, tell, flush]);
 
   // An archive's bytes, read. A small one is read here. One that could hold
   // a large table is read in a worker, where such a table's rows stay, on
@@ -644,7 +651,7 @@ export function App() {
       if (!file) return;
       try {
         const opened = await openAnyArchive(new Uint8Array(await file.arrayBuffer()));
-        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
         dispatch({ type: "opened", library, skipped: opened.skipped });
       } catch (error) {
         dispatch({ type: "tell", message: { heading: openFailedText(file.name, error) } });
@@ -671,7 +678,7 @@ export function App() {
         const t1 = performance.now();
         const opened = await openAnyArchive(bytes);
         const t2 = performance.now();
-        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
         flushSync(() => dispatch({ type: "opened", library, skipped: opened.skipped }));
         const t3 = performance.now();
         return { key: opened.key, fetch: Math.round(t1 - t0), read: Math.round(t2 - t1), show: Math.round(t3 - t2) };
