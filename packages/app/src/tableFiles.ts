@@ -3,6 +3,7 @@
 // every table in it (D37). The DOM parts stay in App; this is what can be
 // tested without a browser.
 
+import { TextDecoder } from "@exodus/bytes/encoding-lite.js";
 import { newBundle, orderedTables, readTableArchive, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
 import { fieldKey } from "@workspace.sh/table-ui/shared";
 import type { ParsedBundle, ValidationError } from "@workspace.sh/table-core";
@@ -65,7 +66,9 @@ export function isSpreadsheetFile(name: string): boolean {
  * A spreadsheet file's bytes as text. UTF-8 when they are that; Excel's
  * "Unicode text" is UTF-16 and says so in its first two bytes; anything
  * else is read as Windows-1252, which is what older Excel wrote, so a £ or
- * an é comes through.
+ * an é comes through. Decoded with @exodus/bytes's TextDecoder, the
+ * standard one, rather than the host's: the Mac's Hermes has none, only a
+ * polyfill that knows UTF-8 and refuses `fatal`.
  */
 export function spreadsheetText(bytes: Uint8Array): string {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);

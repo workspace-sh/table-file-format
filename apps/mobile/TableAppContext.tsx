@@ -23,6 +23,7 @@ import {
   clearStoredHistory,
   closedIn,
   forgetStoredHistories,
+  isSpreadsheetFile,
   keepArrivedHistories,
   storedHistory,
   withHistories,
@@ -52,7 +53,7 @@ import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
-import { ZipError, chooseZip, readZip, shareZip, type OpenedZip } from "./files";
+import { ZipError, chooseZip, readSpreadsheet, readZip, shareZip, type OpenedZip } from "./files";
 import { useIndexedTables, type IndexedTables } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";
 import { expoFs } from "./expoFs";
@@ -279,7 +280,8 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
         dispatch({ type: "tell", message: { heading } });
       }
     },
-    openBytes: async (bytes, name) => take(await readZip(bytes, Object.keys(state.bundles), name)),
+    openBytes: async (bytes, name) =>
+      take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
     indexed,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
