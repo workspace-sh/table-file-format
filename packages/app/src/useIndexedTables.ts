@@ -92,6 +92,23 @@ export function useIndexedTables(input: {
 
   // Make each indexed table's index ready, once, as it's first held.
   useEffect(() => {
+    // A table no longer held (its file closed) is forgotten, so a file opened again under the
+    // same name is read afresh rather than taken for the one that was here.
+    const gone = [...asked.current].filter((key) => !state.tables[key]);
+    if (gone.length > 0) {
+      const drop = <T,>(was: Record<string, T>) => Object.fromEntries(Object.entries(was).filter(([key]) => !gone.includes(key)));
+      for (const key of gone) {
+        asked.current.delete(key);
+        madeFor.current.delete(key);
+        unsaved.current.delete(key);
+      }
+      for (const bundle of new Set(gone.map(bundleOf))) {
+        if (!Object.keys(state.tables).some((key) => bundleOf(key) === bundle)) hosts.current.delete(bundle);
+      }
+      setMade(drop);
+      setProgress(drop);
+      setFirst(drop);
+    }
     for (const [key, table] of Object.entries(state.tables)) {
       if (!table.indexed || asked.current.has(key)) continue;
       asked.current.add(key);

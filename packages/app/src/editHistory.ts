@@ -49,6 +49,18 @@ export function storedHistory(store: KeyValueStore, key: string): string {
   return storedHistories(store)[key] ?? "";
 }
 
+/** Forget the stored histories of a bundle's tables, as closing it forgets the bundle. */
+export function forgetStoredHistories(store: KeyValueStore | null, bundle: string): void {
+  if (!store) return;
+  try {
+    const all = storedHistories(store);
+    const kept = Object.fromEntries(Object.entries(all).filter(([key]) => !key.startsWith(`${bundle}/`)));
+    if (Object.keys(kept).length !== Object.keys(all).length) store.setItem(HISTORY_KEY, JSON.stringify(kept));
+  } catch {
+    // Nothing kept to forget, or the store refused: a stray history is never read.
+  }
+}
+
 /** Forget every stored table's history, as Reset Demo Data forgets the tables. */
 export function clearStoredHistory(store: KeyValueStore | null): void {
   try {

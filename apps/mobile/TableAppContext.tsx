@@ -21,6 +21,8 @@ import {
   bundleOf,
   clearSaved,
   clearStoredHistory,
+  closedIn,
+  forgetStoredHistories,
   keepArrivedHistories,
   storedHistory,
   withHistories,
@@ -52,7 +54,7 @@ import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, chooseZip, readZip, shareZip, type OpenedZip } from "./files";
 import { useIndexedTables, type IndexedTables } from "@workspace.sh/table-app/react";
-import { bundleDir, openIndexDatabase, removeAllFolders } from "./indexHost";
+import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";
 import { expoFs } from "./expoFs";
 import { writeBundleTo } from "@workspace.sh/table-core/io";
 
@@ -153,9 +155,14 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     // never saved, so an untouched app keeps following them as they change.
     {
       store,
-      write: async (_edited, tables, bundles) => {
+      write: async (edited, tables, bundles, closed) => {
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(store, { tables, bundles });
+        save(store, { tables, bundles, closed });
+        // A file closed: its history kept here and a large table's folder go.
+        for (const bundle of closedIn(edited, bundles)) {
+          forgetStoredHistories(store, bundle);
+          await removeFolder(bundle);
+        }
         await saveIndexed.current(tables);
         // A bundle kept as a folder (it has a large table) has the rest of its files written there too,
         // so the folder is the whole .table; the writer leaves an indexed table's rows file to the index.

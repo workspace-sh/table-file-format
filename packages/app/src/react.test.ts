@@ -31,7 +31,7 @@ test("writes what's dirty after the delay, then says it's written with the table
     mock.timers.tick(399);
     assert.equal(r.calls.length, 0, "not before the delay");
     mock.timers.tick(1);
-    assert.deepEqual(r.calls, [[["crm"], state.tables, state.bundles]]);
+    assert.deepEqual(r.calls, [[["crm"], state.tables, state.bundles, []]]);
     await settle();
     assert.deepEqual(r.seen, [{ type: "written", bundles: ["crm"], tables: state.tables }]);
     assert.deepEqual(r.saving, [{ kind: "saving" }, { kind: "saved" }]);

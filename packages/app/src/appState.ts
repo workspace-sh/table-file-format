@@ -13,6 +13,7 @@ import { arrange, arrangedView, isArranged, reset as resetArrangement, savingFor
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
 import { addressTarget, applyTarget, bundleOf, type AddressTarget } from "./bundles.ts";
 import { appCommands, type AppCommand } from "./commands.ts";
+import { canClose, closePrompt, withClosed } from "./closing.ts";
 import { CANCEL, type Confirm } from "./confirm.ts";
 import { creating, namePrompt, newView, type Making, type NamePrompt } from "./creating.ts";
 import { viewerLocale, viewerOrder, withDisplayChoice } from "./displaySettings.ts";
@@ -67,7 +68,8 @@ export type Pending =
   | { type: "deleteView"; key: string; viewId: string; nextViewId: string }
   | { type: "updateView"; key: string; viewId: string; patch: Partial<View> }
   | { type: "reset"; fresh: Library }
-  | { type: "create"; making: Making };
+  | { type: "create"; making: Making }
+  | { type: "close"; bundle: string };
 
 /** A question waiting for its answer: a Confirm, or a name to type. */
 export type Asking = { kind: "confirm"; confirm: Confirm; on: Pending } | { kind: "name"; prompt: NamePrompt; on: Pending };
@@ -126,8 +128,13 @@ export interface AppState {
   settingsBefore: SettingsBefore | null;
   asking: Asking | null;
   telling: Telling | null;
-  /** Bundles edited since they were last written. */
+  /**
+   * Bundles edited since they were last written. One no longer held was
+   * closed: the app's write removes what it kept of it.
+   */
   dirty: string[];
+  /** Bundles closed here, for the app to keep: an example closed stays out of the next launch's. */
+  closed: string[];
   /**
    * Edits to rows of tables held in the index (`ParsedTable.indexed`),
    * in order, for the app to make there: their rows aren't in `tables`
@@ -225,6 +232,8 @@ export type AppAction =
   // Files, and questions
   | { type: "create"; making: Making }
   | { type: "opened"; library: Library; skipped?: string[] }
+  /** Close a file: asks first, then it leaves what's held and is marked to write (closing.ts). */
+  | { type: "close"; bundle: string }
   | { type: "reset"; fresh: Library }
   | { type: "answer"; response: string; text?: string }
   | { type: "tell"; message: Telling }
@@ -264,6 +273,8 @@ export interface AppStart {
   start?: Address | string;
   /** The app appends edits to each table's history (`state.editLog`), so they are kept for it. */
   writesHistory?: boolean;
+  /** Bundles closed before, as the app kept them. */
+  closed?: string[];
 }
 
 export function initialAppState(input: AppStart): AppState {
@@ -290,6 +301,7 @@ export function initialAppState(input: AppStart): AppState {
     asking: null,
     telling: null,
     dirty: [],
+    closed: input.closed ?? [],
     indexWork: [],
     undo: {},
     editLog: input.writesHistory ? { ...NO_EDIT_LOG, on: true } : NO_EDIT_LOG,
@@ -766,10 +778,17 @@ function step(state: AppState, action: AppAction): AppState {
           openedAt: { ...state.openedAt, ...schemaVersions(library.tables) },
           viewIds: { ...firstViews(library.tables), ...state.viewIds },
           dirty: unkept.reduce(marked, state.dirty),
+          closed: state.closed.filter((b) => !(b in library.bundles)),
           ...(told ? { telling: told } : {}),
         },
         firstTableKey(library.tables),
       );
+    }
+    case "close": {
+      const meta = state.bundles[action.bundle];
+      if (!meta || !canClose(state.bundles, action.bundle)) return state;
+      const prompt = closePrompt(meta.title ?? action.bundle, state.opened[action.bundle] !== undefined);
+      return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "close", bundle: action.bundle } } };
     }
     case "reset":
       return {
@@ -886,9 +905,34 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
           restoring: null,
           shownFile: null,
           dirty: state.dirty.filter((b) => keep.includes(b)),
+          closed: [],
         },
         firstTableKey(on.fresh.tables),
       );
+    }
+    case "close": {
+      const { bundle } = on;
+      if (!canClose(state.bundles, bundle)) return state;
+      const gone = Object.keys(state.tables).filter((k) => bundleOf(k) === bundle);
+      const inIt = (id: string) => id.startsWith(`${bundle}/`);
+      const bundles = without(state.bundles, [bundle]);
+      const tables = without(state.tables, gone);
+      const next: AppState = {
+        ...state,
+        tables,
+        bundles,
+        opened: without(state.opened, [bundle]),
+        openedAt: without(state.openedAt, gone),
+        viewIds: without(state.viewIds, gone),
+        undo: without(state.undo, gone),
+        indexWork: state.indexWork.filter((w) => bundleOf(w.key) !== bundle),
+        openedDirs: Object.fromEntries(Object.entries(state.openedDirs).filter(([id]) => !inIt(id))),
+        shownFile: state.shownFile?.bundle === bundle ? null : state.shownFile,
+        // Written away: the app removes what it kept of it.
+        dirty: marked(state.dirty, bundle),
+        closed: withClosed(state.closed, bundle),
+      };
+      return bundleOf(state.active) === bundle ? show({ ...next, openPage: null }, firstTableKey(tables)) : next;
     }
     case "create": {
       const made = creating(state.tables, state.bundles, on.making, action.text);
