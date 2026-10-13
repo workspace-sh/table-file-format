@@ -6,7 +6,7 @@
     "start": "react-native start --port 8083",
     "macos": "react-native run-macos --port 8083",
     "typecheck": "tsc --noEmit",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package --error-on-fail"
   },
   "dependencies": {
     "@formatjs/intl-locale": "^5.3.12",

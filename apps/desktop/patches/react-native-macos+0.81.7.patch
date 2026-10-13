@@ -28,6 +28,36 @@ index f5b7fd9..039963f 100644
    CGImageSourceRef sourceRef = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
    if (!sourceRef) {
      return nil;
+diff --git a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m b/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
+index a37a1c1..2933ca9 100644
+--- a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
++++ b/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
+@@ -430,7 +430,24 @@ - (void)setNeedsDisplay
+   self.needsDisplay = YES;
+ }
+ 
+-@synthesize clipsToBounds = _clipsToBounds;
++// [table-file-format patch] AppKit has had its own clipsToBounds since macOS 14, and this class's
++// synthesized one hid it: AppKit was never told a view clips, so it took every view to be able to draw
++// anywhere in the window. A view's visible area was then the scroll view's, not its own, and changed
++// with every step of a scroll, and AppKit drew every view's contents again each step: a table's text,
++// a few hundred times a row. Telling AppKit keeps a clipped view's visible area its own bounds, which
++// a scroll doesn't change. Drop once upstream does this.
++- (BOOL)clipsToBounds
++{
++  return _clipsToBounds;
++}
++
++- (void)setClipsToBounds:(BOOL)clipsToBounds
++{
++  _clipsToBounds = clipsToBounds;
++  if (@available(macOS 14.0, *)) {
++    [super setClipsToBounds:clipsToBounds];
++  }
++}
+ 
+ @synthesize backgroundColor = _backgroundColor;
+ 
 diff --git a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm b/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
 index 779480a..cdcc4cd 100644
 --- a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
@@ -142,6 +172,22 @@ index a14a864..988a451 100644
  #endif // [macOS]
    }
  }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
+index 804eec8..6cd31d9 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
+@@ -113,6 +113,11 @@ - (instancetype)initWithFrame:(CGRect)frame
+ #endif // [macOS]
+     _textView = [RCTParagraphTextView new];
+     _textView.backgroundColor = RCTUIColor.clearColor; // [macOS]
++#if TARGET_OS_OSX // [macOS
++    // [table-file-format patch] Text is drawn inside its view, so AppKit can take the view to clip:
++    // its visible area is then its own bounds, and a scroll that moves it doesn't draw it again.
++    _textView.clipsToBounds = YES;
++#endif // macOS]
+     self.contentView = _textView;
+   }
+ 
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm
 index c4bfeb1..d6f1cd9 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/TextInput/RCTTextInputComponentView.mm

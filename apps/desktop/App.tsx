@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { ScrollView } from "react-native";
+import { ScrollView, Settings } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
 // for the entire subtree. Required once per app at the root.
 import "react-native-gesture-handler";
@@ -508,6 +508,16 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
   const stateRef = useRef(state);
   stateRef.current = state;
+  // `-open crm/deals#pipeline` on the command line: the table, and optionally
+  // the view, shown first, as the Linux app's `--open`. The system reads a
+  // launch argument as a default of that name.
+  useEffect(() => {
+    const open: unknown = Settings.get("open");
+    if (typeof open !== "string" || !open) return;
+    const [key, viewId] = open.split("#");
+    if (!key || !stateRef.current.tables[key]) return;
+    dispatch(viewId ? { type: "showView", key, viewId } : { type: "showTable", key });
+  }, [dispatch]);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
   const folders = useFolders({ store, bundles, paths: folderPaths });
   // A quit that couldn't write: the next quits whatever happens, until a write succeeds.
