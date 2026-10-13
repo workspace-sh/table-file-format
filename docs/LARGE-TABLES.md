@@ -463,6 +463,8 @@ The same rows cost the main thread about three times as much off the main thread
 
 ### Scrolling on macOS: in the middle of a table, and what else was tried (13 Oct 2026)
 
+*Read with the next section: these runs had `sample` attached and started 66 rows down.*
+
 The slow scroll above starts at the table's top, where the rows kept drawn above the screen are still being added: 30 of its 50 rows drawn were new rows, not rows changed in place. Started 3,000 points down (`-scrollBenchLead 3000`), where a row goes off for each that comes on, the same scroll with both fixes is smooth:
 
 | Slow scroll, mid-table | With both fixes |
@@ -485,6 +487,37 @@ More rows kept drawn steadies a slow scroll a little and makes each change of ro
 **Recycling.** `RowList` keys a row by its place modulo a number of slots (the rows drawn, rounded up to 16), so that a row coming on shares a key with one going off. It does only when exactly that many rows are drawn: with fewer, the rows coming on land on slots no drawn row has, and are made anew. Giving a row coming on the slot of one just gone off halves the views put in and taken out in the slow scroll (708 to 375 of each) and changes nothing that's felt: the view tree takes 0.16 s to change where it took 0.17 s, and the flicks are no better. Not kept.
 
 **What limits a fast scroll.** Making rows, not drawing them. In the flicks the JavaScript thread is 56 to 67% busy and each change of the rows drawn takes the main thread 130 to 150 ms (about 200 changes of props, 250 of layout and 150 texts), after React has rendered it. At 7,200 px/s the 600 points drawn ahead last 83 ms, so the rows drawn are always behind the screen until the scroll slows.
+
+### Scrolling on macOS: what the profiler hid, and how far down matters (13 Oct 2026)
+
+Two things about the numbers above, found afterwards.
+
+**`sample` slows the app enough to change the result.** Every run above had `sample <pid> 1` attached, stopping the app a thousand times a second. The comparisons stand, since both sides of each had it; the amounts don't. A single flick looked fine and repeated flicks never caught up only because the single flick's run outlasted the sampling. Without it, 3,000 points down:
+
+| | With `sample` attached | Without |
+|---|---|---|
+| Brisk scroll (2,400 px/s for 3 s): the table's place empty | 5% | 0% |
+| One flick (to 7,200 px/s): empty | 4% | 2% |
+| Eight flicks in a row: empty | 96 to 99% | 33 to 40%: about 5% for the first seven seconds, then all of it |
+| 4 s at 14,400 px/s: empty | 73% | 79% |
+
+So `sample` is for where the time goes, in a run of its own, and what's felt is measured without it (the run's own figures need nothing attached).
+
+**"The middle of a table" above was 66 rows down, and further down is worse.** Started 60,000 points down (about 1,300 rows), without `sample`:
+
+| | 3,000 points down | 60,000 points down |
+|---|---|---|
+| Slow scroll: empty; refreshes answered of 240; longest gap | 0%; 222; 71 ms | 0%; 155; 515 ms |
+| Brisk scroll: empty | 0% | 68% |
+| One flick: empty | 2% | 57% |
+| Eight flicks: empty | 33 to 40% | 90 to 92% |
+
+Why it differs isn't known yet. The views put in and taken out are about as many (in the slow scroll, about 700 to 870 of each), but further down they arrive in a few large changes that take the main thread four times as long in all (0.9 s against 0.2 s). Reading ten times further ahead from the index (4,000 rows, not 400) didn't move the point where repeated flicks stop keeping up.
+
+**Where the JavaScript thread's time goes**, 60,000 points down in the brisk scroll (a Hermes profile of production JavaScript in a Debug build; about 35 samples, so only the large shares mean anything): the thread is about 60% busy; five sixths of that is React rendering, a seventh committing. Of the busy time, about a third is under React Strict DOM's element (`useNativeProps`, `useStyleProps`: each element's props and styles worked out again at every render), with `Object.assign` (18%) and the young-generation collector (15%) beside it.
+
+**Tried, and not kept:**
+- **Rows drawn where the page will be**, by its speed and how long drawing has lately taken, as interruptible renders. Repeated flicks: 77% empty against 96%. But one flick: 22 to 24% against 3 to 4%, and a brisk scroll 16 to 48% against 3 to 7%. While React draws a window the JavaScript thread hears nothing of where the page is, transition or not, so the aim is taken from too few hearings.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 

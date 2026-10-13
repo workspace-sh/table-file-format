@@ -209,6 +209,7 @@ typedef struct {
   CADisplayLink *_link;
   NSMutableArray<NSNumber *> *_ticks;
   NSMutableArray<NSNumber *> *_blank;
+  NSMutableArray<NSNumber *> *_places;
   NSMutableArray<NSView *> *_boxes;
   double _startY;
   double _asked;
@@ -293,6 +294,13 @@ typedef struct {
   double t = 0;
   BOOL all = [_script isEqualToString:@"standard"];
   if (all || [_script isEqualToString:@"slow"]) t = [self drag:-4 seconds:3 from:t] + 0.3;
+  // Brisk, as a hand moving down a table to find something: 2,400 points a second.
+  if ([_script isEqualToString:@"medium"]) t = [self drag:-20 seconds:3 from:t];
+  // One flick, and then nothing: how long the table takes to fill once the page has stopped.
+  if ([_script isEqualToString:@"flick"]) {
+    t = [self drag:-60 seconds:0.2 from:t];
+    t = [self momentum:-60 seconds:1.0 from:t] + 1.5;
+  }
   if (all || [_script isEqualToString:@"flicks"]) {
     for (int i = 0; i < 8; i++) {
       t = [self drag:-60 seconds:0.2 from:t];
@@ -404,6 +412,7 @@ typedef struct {
   displaysOn = YES;
   _ticks = [NSMutableArray array];
   _blank = [NSMutableArray array];
+  _places = [NSMutableArray array];
   _boxes = [NSMutableArray array];
   _startY = _scroll.contentView.bounds.origin.y;
   _next = 0;
@@ -570,6 +579,7 @@ typedef struct {
   _frame = link.duration;
   [_ticks addObject:@(CACurrentMediaTime() - _start)];
   [_blank addObject:@([self blankShare])];
+  [_places addObject:@(_scroll.contentView.bounds.origin.y - _startY)];
 }
 
 - (void)end
@@ -611,6 +621,41 @@ typedef struct {
     if (share.doubleValue > 0.01) some++;
     if (share.doubleValue >= 0.5) half++;
   }
+  // The same share, second by second: when in the run the table's place was empty.
+  NSMutableArray<NSNumber *> *bySecond = [NSMutableArray array];
+  {
+    double total = 0;
+    NSUInteger counted = 0;
+    NSUInteger second = 0;
+    for (NSUInteger i = 0; i < _blank.count; i++) {
+      NSUInteger at = (NSUInteger)floor(_ticks[i].doubleValue);
+      if (at != second) {
+        [bySecond addObject:@(counted ? round(100 * total / counted) : -1)];
+        for (second++; second < at; second++) [bySecond addObject:@(-1)];
+        total = 0;
+        counted = 0;
+      }
+      total += _blank[i].doubleValue;
+      counted++;
+    }
+    if (counted) [bySecond addObject:@(round(100 * total / counted))];
+  }
+  // And tenth by tenth for the first four seconds, with where the page was: how a scroll starts.
+  NSMutableArray<NSString *> *byTenth = [NSMutableArray array];
+  {
+    NSUInteger i = 0;
+    for (NSUInteger tenth = 0; tenth < 40 && i < _blank.count; tenth++) {
+      double total = 0;
+      NSUInteger counted = 0;
+      double place = -1;
+      for (; i < _blank.count && _ticks[i].doubleValue < (tenth + 1) * 0.1; i++) {
+        total += _blank[i].doubleValue;
+        counted++;
+        place = _places[i].doubleValue;
+      }
+      [byTenth addObject:counted ? [NSString stringWithFormat:@"%.0f%% at %.0f (%lu)", 100 * total / counted, place, (unsigned long)counted] : @"-"];
+    }
+  }
   NSUInteger n = MAX((NSUInteger)1, _blank.count);
   [self finishWith:@{
     @"script": _script,
@@ -639,6 +684,8 @@ typedef struct {
       @"worstShare": @(worst),
       @"framesWithAny": @((double)some / n),
       @"framesHalfOrMore": @((double)half / n),
+      @"percentBySecond": bySecond,
+      @"byTenth": byTenth,
     },
   }];
 }
