@@ -32,6 +32,8 @@ import {
   bundleToArchive,
   derive,
   clearSaved,
+  clearStoredHistory,
+  appendStoredHistory,
   confirmText,
   exportFailedText,
   fileText,
@@ -492,6 +494,8 @@ export function App() {
         ...initial,
         stored: { sidebar, arrangements: loadArrangements(store), display: loadDisplay(store) },
         ...(start ? { start } : {}),
+        // Each edit goes to its table's history (SPEC section 14), kept in this browser beside the table.
+        writesHistory: true,
       });
       return {
         ...s,
@@ -510,6 +514,12 @@ export function App() {
         // A table held in the index has no rows here: only what's left of it is kept in this store.
         save(browserStore(), { tables, bundles });
         await saveIndexed.current(tables);
+      },
+      // What was edited, added to the table's history in this browser; nowhere to keep it, kept to write.
+      appendHistory: async (key, events) => {
+        const store = browserStore();
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
       },
       delayMs: SAVE_AFTER_MS,
     },
@@ -552,7 +562,10 @@ export function App() {
     }
     const ok = window.confirm(confirmText(asking.confirm));
     // Starting again from the examples: what this browser saved goes too.
-    if (ok && asking.on.type === "reset") clearSaved(browserStore());
+    if (ok && asking.on.type === "reset") {
+      clearSaved(browserStore());
+      clearStoredHistory(browserStore());
+    }
     dispatch({ type: "answer", response: ok ? asking.confirm.responses.at(-1)!.id : "cancel" });
   }, [state.asking]);
   useEffect(() => {
