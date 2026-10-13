@@ -5,17 +5,22 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform } from "react-native";
-import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import { BundleEntry, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { joinPath } from "@workspace.sh/table-core/io";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
   ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  HISTORY_KEY,
   SIDEBAR_KEY,
   STORAGE_KEY,
+  appendFolderHistory,
+  appendStoredHistory,
   archiveFileName,
   bundleOf,
   clearSaved,
+  clearStoredHistory,
   derive,
   exportFailedText,
   fromBundle,
@@ -111,7 +116,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY]).then(setStore, () => setStore(null));
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY]).then(setStore, () => setStore(null));
   }, []);
   if (store === undefined) return <Context.Provider value={null}>{children}</Context.Provider>;
   return <Loaded store={store}>{children}</Loaded>;
@@ -121,6 +126,8 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
   // The platform's language, when the viewer hasn't chosen one.
   const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
   const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  // The tables as they are now, for where a table's history goes: a large table's folder, or the store.
+  const tablesNow = useRef<Record<string, ParsedTable>>({});
   const { state, dispatch, display, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: bundleMetas };
@@ -129,6 +136,8 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
       const s = initialAppState({
         ...initial,
         stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+        // Each edit goes to its table's history (SPEC section 14).
+        writesHistory: true,
       });
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
@@ -146,10 +155,21 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
         const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed ? [bundleOf(key)] : [])));
         for (const bundle of folders) await writeBundleTo(expoFs, bundleDir(bundle), toBundle(tables, bundles, bundle));
       },
+      // What was edited, added to the table's history: in its folder for a large table (the
+      // bundle is a folder on the phone), else in the phone's store beside the table.
+      appendHistory: async (key, events) => {
+        if (tablesNow.current[key]?.indexed) {
+          await appendFolderHistory(expoFs, joinPath(bundleDir(bundleOf(key)), BundleEntry.tables, tableNameOf(key)), events);
+          return;
+        }
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
+      },
       delayMs: SAVE_AFTER_MS,
     },
     systemLocale,
   );
+  tablesNow.current = state.tables;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
@@ -185,6 +205,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
         // or the old edits would come back at the next launch.
         if (asking.on.type === "reset" && response === "reset") {
           clearSaved(store);
+          clearStoredHistory(store);
           // The folders the phone kept for large tables go with it.
           void removeAllFolders().catch(() => {});
         }
