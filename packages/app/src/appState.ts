@@ -232,8 +232,13 @@ export type AppAction =
   // Files, and questions
   | { type: "create"; making: Making }
   | { type: "opened"; library: Library; skipped?: string[] }
-  /** Close a file: asks first, then it leaves what's held and is marked to write (closing.ts). */
-  | { type: "close"; bundle: string }
+  /**
+   * Close a file: asks first, then it leaves what's held and is marked to
+   * write (closing.ts). `fromFolder` is for an app that knows better than
+   * `opened` where the file lives (one whose every file is a folder on
+   * disk): true when closing leaves the folder where it is.
+   */
+  | { type: "close"; bundle: string; fromFolder?: boolean }
   | { type: "reset"; fresh: Library }
   | { type: "answer"; response: string; text?: string }
   | { type: "tell"; message: Telling }
@@ -787,7 +792,7 @@ function step(state: AppState, action: AppAction): AppState {
     case "close": {
       const meta = state.bundles[action.bundle];
       if (!meta || !canClose(state.bundles, action.bundle)) return state;
-      const prompt = closePrompt(meta.title ?? action.bundle, state.opened[action.bundle] !== undefined);
+      const prompt = closePrompt(meta.title ?? action.bundle, action.fromFolder ?? state.opened[action.bundle] !== undefined);
       return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "close", bundle: action.bundle } } };
     }
     case "reset":

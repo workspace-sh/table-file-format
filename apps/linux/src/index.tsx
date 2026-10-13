@@ -1,8 +1,9 @@
 import { createRoot } from "@gtkx/react";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { loadClosed } from "./closedFiles.js";
 import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
 import { openWorkerIndexHost } from "./indexClient.js";
@@ -25,7 +26,13 @@ const examples = join(dataHome, "examples");
 // This viewer's own settings (display language, dates, formula syntax).
 const settings = jsonFileStore(join(dataHome, "settings.json"));
 const fixtures = fixturesDir();
-const paths = named.length > 0 ? named : fixtures ? copiesOf(fixtures, examples) : [];
+// The examples: each copied once, but for the ones closed here, and with them whatever else was made
+// or opened into their folder (a new file, an archive), which is the app's to keep.
+const examplesNow = () => {
+  if (fixtures) copiesOf(fixtures, examples, loadClosed(settings));
+  return existsSync(examples) ? bundlesIn(examples) : [];
+};
+const paths = named.length > 0 ? named : examplesNow();
 
 const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM });
 for (const [bundle, problems] of Object.entries(library.problems)) {
