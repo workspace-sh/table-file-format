@@ -6,7 +6,7 @@ import { ScrollView } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { BundleEntry, newId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -47,6 +47,9 @@ import {
   appendFolderHistory,
   appendStoredHistory,
   clearStoredHistory,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   SIDEBAR_KEY,
   STORAGE_KEY,
   TOOLBAR_HINTS,
@@ -603,12 +606,21 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
           const { indexed: _index, ...rest } = held;
           whole[key] = { ...rest, rows: await everyRow.current(key, held) };
         }
-        await writeBytes(where, await bundleToArchive(bundle, toBundle(whole, bundles, bundle)));
+        // Each table's history goes with it, everything written so far included (SPEC section 14):
+        // from its folder for one opened from disk or a large table's, else from this Mac's store.
+        await flush();
+        const now = stateRef.current;
+        const going = await withHistories(whole, async (key) => {
+          const folder = now.opened[bundleOf(key)] ?? (now.tables[key]?.indexed ? bundleDir(bundleOf(key)) : undefined);
+          if (folder) return (await desktopFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
+          return (store && storedHistory(store, key)) || undefined;
+        });
+        await writeBytes(where, await bundleToArchive(bundle, toBundle(going, bundles, bundle)));
       } catch (error) {
         dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       }
     },
-    [activeTablePath, tables, bundles],
+    [activeTablePath, tables, bundles, flush, store],
   );
   // Import: a .table.zip becomes one more bundle here, saying what the reader
   // skipped (D25). Only a file with no table in it is refused. `path` skips the panel.
@@ -619,7 +631,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // A large table in it stays compressed on its way into its index (indexHost.ts): it comes
       // with no rows, and its first rows beside it to show meanwhile.
       const { opened, first } = await openZip(await readBytes(where), Object.keys(stateRef.current.bundles));
-      const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      // An arrived table's history is kept in this Mac's store for a table kept there; a large
+      // table's goes into its folder with the rest of it.
+      const arrived = fromBundle(opened.key, opened.bundle);
+      const stored = Object.fromEntries(Object.entries(arrived).filter(([, table]) => !table.indexed));
+      const library = { tables: { ...arrived, ...keepArrivedHistories(store, stored) }, bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
       holdFirst.current(Object.fromEntries(Object.entries(first).map(([table, rows]) => [`${opened.key}/${table}`, rows])));
       dispatch({ type: "opened", library, skipped: opened.skipped });
     } catch (error) {
