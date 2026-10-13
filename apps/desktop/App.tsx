@@ -108,6 +108,7 @@ import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter
 import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
+import { EmbedTest } from "./EmbedTest";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
 import { joinPath, writeBundleTo } from "@workspace.sh/table-core/io";
@@ -511,6 +512,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Development only: table embeds over a folder (EmbedTest.tsx), opened by the development hook.
+  const [embedTest, setEmbedTest] = useState<string | null>(null);
   // `-open crm/deals#pipeline` on the command line: the table, and optionally
   // the view, shown first, as the Linux app's `--open`. The system reads a
   // launch argument as a default of that name.
@@ -1117,6 +1120,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       dispatch({ type: "answer", response: "create", text: title });
     };
     (globalThis as { __tableDesktop?: unknown }).__tableDesktop = {
+      // Table embeds over the `.table` folders in `folder` (EmbedTest.tsx); null closes it.
+      embedTest: (folder: string | null) => {
+        setEmbedTest(folder);
+        return folder ? `embeds over ${folder}` : "embeds closed";
+      },
       tables: () => Object.keys(stateRef.current.tables),
       show: (key: string, viewId?: string) => {
         if (!stateRef.current.tables[key]) return `no table ${key}`;
@@ -1515,6 +1523,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         </html.div>
         </DisplaySettingsProvider>
         </PlatformControlsProvider>
+        {__DEV__ && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
       </PortalHost>
       </AttachmentsProvider>
     </GestureHandlerRootView>
