@@ -4250,7 +4250,12 @@ export function TableView({
       ref={(el: any) => {
         gridRef.current = el;
       }}
-      tabIndex={0}
+      // The keyboard's way into the table on the web. Not on native, where
+      // keys come through GridKeys: a focusable view there gets a system
+      // focus ring, which react-native-macos masks over the view's whole
+      // bounds, and a table's bounds are all its rows. AppKit renders that
+      // mask to a bitmap, and for thousands of rows it took gigabytes.
+      tabIndex={PLATFORM_OS === "web" ? 0 : undefined}
       onKeyDown={onGridKey}
       style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
     >
@@ -4559,7 +4564,8 @@ function useCardKeys({
   return {
     focusId,
     setFocusId,
-    containerProps: { ref: containerRef, tabIndex: 0 as const, onKeyDown },
+    // Focusable on the web only, as the table is (its tabIndex says why).
+    containerProps: { ref: containerRef, tabIndex: PLATFORM_OS === "web" ? (0 as const) : undefined, onKeyDown },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     cardRef: (id: string) => (el: any) => {
       cardRefs.current[id] = el;
