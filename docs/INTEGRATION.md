@@ -54,6 +54,8 @@ it), an app places one drop-in and gives it the link:
   link's address names in a file just read: which table and view, or why
   it can't be drawn, in words for the reader. Every drop-in asks it, so a
   link draws the same thing and fails with the same words everywhere.
+  What it answers carries `size`: the `rows=` or `cards=` the address asks
+  to be shown at once (SPEC section 10), for the drop-in to size itself by.
 - **`useEmbeddedTable(shown, files)`** in `table-app/react` holds what it
   names over the app reducer: the views' props and callbacks, with edits
   written through `files` (how the platform writes a bundle and appends
