@@ -4196,23 +4196,35 @@ export function TableView({
     </html.div>
   );
 
+  // An app makes some of the table's props afresh each time it draws (an
+  // inline callback, the bundle's tables gathered again), and draws again on
+  // every selection, as it hears where you are. A part counts as changed only
+  // when what it holds has: any two functions are the same part (each just
+  // asks the app to act, and a row drawn again takes the newer), and a small
+  // record is the same when every entry is.
+  const samePart = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a === "function" && typeof b === "function") return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) || Array.isArray(b)) return false;
+    const ka = Object.keys(a);
+    const rb = b as Record<string, unknown>;
+    return ka.length === Object.keys(b).length && ka.every((k) => (a as Record<string, unknown>)[k] === rb[k]);
+  };
   // When the table draws again only because the window read from an index
   // moved, or its rows arrived, a row on screen whose own row is the same
   // isn't drawn again (RowList's stampOf and drawKey): over a long scroll
-  // that was nearly all the table's drawing. Anything else changed (a
-  // prop, the table's own state, its settings, the editor) draws every row
-  // again, as before.
-  const drawSeen = useRef<{ key: number; range: unknown; win: unknown; rest: unknown[] } | null>(null);
+  // that was nearly all the table's drawing. The selection and a row's
+  // dragged height are a row's own too (rowStamp). Anything else changed (a prop, the table's own state,
+  // its settings, the editor) draws every row again, as before.
+  const drawSeen = useRef<{ key: number; range: unknown; win: unknown; sel: unknown; live: unknown; rest: unknown[] } | null>(null);
   const drawRest: unknown[] = [
     ...Object.values(tableProps),
     liveWidths,
-    liveRow,
     editingFieldName,
     anchorRect,
     formulaCell,
     totalsMenu,
     focusRowId,
-    sel,
     editReq,
     barDraft,
     barFormula,
@@ -4230,15 +4242,21 @@ export function TableView({
   const drawWas = drawSeen.current;
   const windowOnly =
     !!drawWas &&
-    (drawWas.range !== shownRange || drawWas.win !== windowRows) &&
+    (drawWas.range !== shownRange || drawWas.win !== windowRows || drawWas.sel !== sel || drawWas.live !== liveRow) &&
     drawWas.rest.length === drawRest.length &&
-    drawWas.rest.every((v, i) => v === drawRest[i]);
+    drawWas.rest.every((v, i) => samePart(v, drawRest[i]));
   const drawKey = windowOnly ? drawWas.key : (drawWas?.key ?? 0) + 1;
-  drawSeen.current = { key: drawKey, range: shownRange, win: windowRows, rest: drawRest };
-  // A row's own part of what it draws: its row, and the group it starts.
+  drawSeen.current = { key: drawKey, range: shownRange, win: windowRows, sel, live: liveRow, rest: drawRest };
+  // A row's own part of what it draws: its row, the group it starts, the
+  // cell selected in it, and its height while it's dragged. Those are the
+  // row's, not the table's: selecting a cell draws again the row it left
+  // and the row it's in, and a drag the row dragged, not every row drawn
+  // (on the Mac, a hundred of them, a second and a half each time).
   const rowStamp = (place: number): readonly unknown[] => {
     const entry = entryAt(place);
-    return [entry?.row, entry?.starts?.label, entry?.starts?.count];
+    const selected = entry && sel?.rowId === entry.row.id ? sel.name : null;
+    const dragged = entry && liveRow?.rowId === entry.row.id ? liveRow : null;
+    return [entry?.row, entry?.starts?.label, entry?.starts?.count, selected, dragged];
   };
 
   return (
