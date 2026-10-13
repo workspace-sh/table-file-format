@@ -24,7 +24,7 @@ export type { IndexDatabase, OpenedLarge } from "@workspace.sh/table-app";
  */
 const tablesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentDir, "Application Support", "sh.workspace.table.desktop", "tables");
 
-export const { bundleDir, openZip, openIndexDatabase, removeAllFolders } = createIndexHost({
+export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders } = createIndexHost({
   fs: desktopFs,
   home: tablesHome,
   async size(path) {

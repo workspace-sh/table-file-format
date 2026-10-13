@@ -122,6 +122,8 @@ export interface IndexHost {
   openZip(bytes: Uint8Array, taken: Iterable<string>, from?: number): Promise<OpenedLarge>;
   /** A bundle's index here, opened (or made) in its folder. */
   openIndexDatabase(bundle: string): IndexDatabase;
+  /** Forget one bundle kept as a folder here, as closing it does: its index is closed and its folder removed. Nothing when there's none. */
+  removeFolder(bundle: string): Promise<void>;
   /** Forget every bundle kept as a folder here: their indexes are closed and their folders removed. */
   removeAllFolders(): Promise<void>;
 }
@@ -488,11 +490,17 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     };
   }
 
+  async function removeFolder(bundle: string): Promise<void> {
+    if (held.has(bundle)) await openIndexDatabase(bundle).close();
+    for (const key of [...waiting.keys()]) if (key.startsWith(`${bundle}/`)) waiting.delete(key);
+    await fs.remove(bundleDir(bundle));
+  }
+
   async function removeAllFolders(): Promise<void> {
     for (const bundle of [...held.keys()]) await openIndexDatabase(bundle).close();
     waiting.clear();
     await fs.remove(platform.home());
   }
 
-  return { bundleDir, openZip, openIndexDatabase, removeAllFolders };
+  return { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders };
 }

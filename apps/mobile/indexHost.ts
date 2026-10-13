@@ -29,7 +29,7 @@ const OPEN = { useNewConnection: true, finalizeUnusedStatementsBeforeClosing: fa
 const DRIVER_MODE: "async" | "sync" = process.env.EXPO_PUBLIC_TABLE_INDEX_MODE === "sync" ? "sync" : "async";
 const YIELD_AFTER_MS = Number(process.env.EXPO_PUBLIC_TABLE_INDEX_YIELD_MS ?? 0) || 0;
 
-export const { bundleDir, openZip, openIndexDatabase, removeAllFolders } = createIndexHost({
+export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders } = createIndexHost({
   fs: expoFs,
   home: tablesHome,
   async size(path) {

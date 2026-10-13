@@ -367,6 +367,8 @@ interface SidebarProps {
   onNewTable: (bundle: string) => void;
   /** Make a new .table file holding one table, and switch to it. */
   onNewFile: () => void;
+  /** Close a .table file (asks first). */
+  onCloseFile: (bundle: string) => void;
   /** Add a view to this table and open its settings. */
   onNewView: () => void;
   /** Open a `.table.zip` as one more table. */
@@ -402,6 +404,7 @@ export function Sidebar({
   onToggleDisplay,
   onNewTable,
   onNewFile,
+  onCloseFile,
   onNewView,
   onOpenFile,
   display,
@@ -459,7 +462,7 @@ export function Sidebar({
           folded: foldedFiles,
           expanded: [activeTablePath],
           active: { key: activeTablePath, viewId: activeViewId },
-        }).map(({ bundle, title: bundleTitle, file, folded, tables: rows, offersNewTable }) => {
+        }).map(({ bundle, title: bundleTitle, file, folded, tables: rows, offersNewTable, closable }) => {
           return (
             <html.div key={bundle} style={styles.list}>
               {/* A file folds its tables away, as a shadcn/ui group does. */}
@@ -519,6 +522,12 @@ export function Sidebar({
               {offersNewTable && (
                 <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
                   + New table
+                </html.button>
+              )}
+              {/* Offered with New table, in the file on screen. */}
+              {offersNewTable && closable && (
+                <html.button style={[styles.item, styles.newTable]} onClick={() => onCloseFile(bundle)}>
+                  Close file
                 </html.button>
               )}
             </html.div>
