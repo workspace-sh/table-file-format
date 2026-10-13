@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { bundles } from "@workspace.sh/table-fixtures";
 import { fromBundle } from "./bundles.ts";
-import { embedIn } from "./embed.ts";
+import { EMBED_COUNT_MAX, embedIn, embedSize } from "./embed.ts";
 import type { Library } from "./library.ts";
 
 // One `.table` file as an app reads it: its tables by `bundle/table` key.
@@ -57,4 +57,20 @@ test("a file that held no table says what was wrong reading it, when something w
   const nothing: Library = { tables: {}, bundles: {}, paths: {}, problems: {} };
   assert.equal(words(nothing, {}, "notes.table"), "“notes.table” isn’t a .table, or it holds no tables.");
   assert.equal(words({ ...nothing, problems: { notes: ["no schema.json, so this isn't a table"] } }, {}, "notes.table"), "“notes.table” couldn’t be read: no schema.json, so this isn't a table");
+});
+
+test("an address says how many rows or cards to show at once, and only a whole number from 1 counts", () => {
+  assert.deepEqual(embedSize({ extra: { rows: "5", embed: "1" } }), { rows: 5 });
+  assert.deepEqual(embedSize({ extra: { cards: "3", rows: "12" } }), { rows: 12, cards: 3 });
+  assert.deepEqual(embedSize({}), {});
+  for (const not of ["0", "-2", "2.5", "five", "5px", "", "05"]) assert.deepEqual(embedSize({ extra: { rows: not, cards: not } }), {}, not);
+  // No more than the cap, however many are asked for.
+  assert.deepEqual(embedSize({ extra: { rows: "100000" } }), { rows: EMBED_COUNT_MAX });
+});
+
+test("what is drawn carries the size its address asked for", () => {
+  const result = embedIn(projects, { tableName: "tasks", viewId: "v1", extra: { rows: "4", embed: "1" } }, "projects.table");
+  assert.deepEqual(result.kind === "shown" && result.size, { rows: 4 });
+  const plain = embedIn(projects, { tableName: "tasks" }, "projects.table");
+  assert.deepEqual(plain.kind === "shown" && plain.size, {});
 });

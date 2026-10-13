@@ -49,10 +49,12 @@ import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js"
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
 import { styles } from "./theme.js";
-import { scrollerHeight, useEmbedded, viewMargins } from "./embedded.js";
+import { bottomIn, childAt, scrollerHeight, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
 
 /** A board column's width: the web board's. */
 const BOARD_COLUMN_WIDTH = 268;
+/** Between one card and the next down a board's column. */
+const BOARD_CARD_GAP = 8;
 
 /** A title that ends in "…" rather than widening what holds it. */
 function Title({ text, classes = [] }: { text: string; classes?: string[] }) {
@@ -223,9 +225,34 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
     },
   });
 
+  // Embedded and asked for so many cards: as tall as the column that reaches furthest by its
+  // nth card, when some column has more. (A column's first child is its heading.)
+  const columnsBox = useRef<Gtk.Box | null>(null);
+  const cards = embedded?.cards;
+  const scroller = useEmbeddedScroller(
+    embedded,
+    cards === undefined
+      ? null
+      : () => {
+          const box = columnsBox.current;
+          if (!box) return undefined;
+          let more = false;
+          let end = 0;
+          for (let column = box.getFirstChild(); column; column = column.getNextSibling()) {
+            const last = childAt(column, cards);
+            if (last?.getNextSibling()) more = true;
+            const shown = last ?? column.getLastChild();
+            const bottom = shown ? bottomIn(shown, box) : undefined;
+            if (bottom === undefined) return undefined;
+            end = Math.max(end, bottom);
+          }
+          return more ? end + BOARD_CARD_GAP / 2 : null;
+        },
+  );
+
   return (
-    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}>
-      <GtkBox spacing={BOARD_GAP} {...viewMargins(embedded)} valign={Gtk.Align.START}>
+    <GtkScrolledWindow hexpand {...scroller} vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}>
+      <GtkBox ref={columnsBox} spacing={BOARD_GAP} {...viewMargins(embedded)} valign={Gtk.Align.START}>
         {board.keys.map((key) => {
           const members = board.groups[key] ?? [];
           const pill = key === "(empty)" ? { label: columnLabel(groupField, key), color: undefined } : pillFor(groupField, key);
@@ -233,7 +260,7 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
             <GtkBox
               key={key}
               orientation={Gtk.Orientation.VERTICAL}
-              spacing={8}
+              spacing={BOARD_CARD_GAP}
               widthRequest={BOARD_COLUMN_WIDTH}
               cssClasses={[styles.boardColumn]}
               valign={Gtk.Align.START}
@@ -302,20 +329,37 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   const fieldMap = fieldsByName(schema);
   // The gallery's width, less its margins, from the scroller's own page.
   const [width, setWidth] = useState(0);
-  const { perRow } = galleryLayout(Math.max(0, width - 24));
+  const { perRow } = galleryLayout(Math.max(0, width - (embedded ? 0 : 24)));
   const lines: Row[][] = [];
   for (let i = 0; i < rows.length; i += perRow) lines.push(rows.slice(i, i + perRow));
   const ids = rows.map((r) => r.id);
   const keys = useCardKeys({ move: (id, key) => moveInGrid(ids, perRow, id, key) });
 
+  // Embedded and asked for so many cards: as tall as the lines that hold them, when there are more.
+  const linesBox = useRef<Gtk.Box | null>(null);
+  const cards = embedded?.cards;
+  const scroller = useEmbeddedScroller(
+    embedded,
+    cards === undefined
+      ? null
+      : () => {
+          const box = linesBox.current;
+          const last = box ? childAt(box, Math.ceil(cards / perRow) - 1) : null;
+          if (!box || !last) return box && box.getFirstChild() ? null : undefined;
+          if (!last.getNextSibling()) return null;
+          const bottom = bottomIn(last, box);
+          return bottom === undefined ? undefined : bottom + GALLERY_GAP / 2;
+        },
+  );
+
   return (
     <GtkScrolledWindow
       hexpand
-      {...scrollerHeight(embedded)}
+      {...scroller}
       hscrollbarPolicy={Gtk.PolicyType.NEVER}
       hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setWidth(Math.floor(size ?? 0))} />}
     >
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={GALLERY_GAP} {...viewMargins(embedded)}>
+      <GtkBox ref={linesBox} orientation={Gtk.Orientation.VERTICAL} spacing={GALLERY_GAP} {...viewMargins(embedded)}>
         {lines.map((line) => (
           // Homogeneous, and a short last line padded with empty slots, so
           // every card is the same width and lines up with the one above.
@@ -379,9 +423,25 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
     },
   });
 
+  // Embedded and asked for so many rows: as tall as they are (a group's heading with its first row), when there are more.
+  const rowsBox = useRef<Gtk.Box | null>(null);
+  const shownRows = embedded?.rows;
+  const scroller = useEmbeddedScroller(
+    embedded,
+    shownRows === undefined
+      ? null
+      : () => {
+          const box = rowsBox.current;
+          const last = box ? childAt(box, shownRows - 1) : null;
+          if (!box || !last) return box && box.getFirstChild() ? null : undefined;
+          if (!last.getNextSibling()) return null;
+          return bottomIn(last, box);
+        },
+  );
+
   return (
-    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} hscrollbarPolicy={Gtk.PolicyType.NEVER}>
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} {...viewMargins(embedded)}>
+    <GtkScrolledWindow hexpand {...scroller} hscrollbarPolicy={Gtk.PolicyType.NEVER}>
+      <GtkBox ref={rowsBox} orientation={Gtk.Orientation.VERTICAL} {...viewMargins(embedded)}>
         {listed.map(({ row, starts }) => (
           <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
             {starts ? (

@@ -54,9 +54,15 @@ import { TableEmbed } from "@workspace.sh/table-gtk/embed";
 | `baseDir` | The folder the path is relative to: the document's. |
 | `within` | The folder the file has to be inside, with links followed. A document can name any path; this keeps it to what the reader opened. |
 | `caption` | Shown beneath, small and centred. |
-| `maxHeight` | The tallest it is (480 by default). Up to that it is as tall as what it holds; past it, it scrolls within itself. |
+| `maxHeight` | The tallest it is (480 by default) when the link doesn't say. Up to that it is as tall as what it holds; past it, it scrolls within itself. |
 | `readOnly` | To look at only: nothing in it can be changed and nothing is written. For a reader who can't write where the file is. |
 | `onOpenLink` | A linked row was clicked: its address, for the app to go to. Without it a linked row is its name. |
+
+The link can say how much to show at once (SPEC section 10, "A view
+drawn in place"): `rows=5` gives a table or a list the height of five
+rows, `cards=3` gives a board three cards down each column and a gallery
+the lines that hold three. The rest scrolls within it. That count is
+then its height, whatever `maxHeight` is.
 
 It is the table, not a picture of it. The state is table-app's reducer
 (`useEmbeddedTable`, in `table-app/react`), as in an app of its own: cells

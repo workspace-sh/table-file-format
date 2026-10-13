@@ -1490,7 +1490,8 @@ export function TableView({
     <GtkScrolledWindow
       ref={scroller}
       hexpand
-      {...scrollerHeight(embedded)}
+      // Embedded and asked for so many rows: the header and those rows (and the headings of their groups), when there are more.
+      {...scrollerHeight(embedded, embedded?.rows !== undefined && count > embedded.rows ? HEADER_HEIGHT + ROW_RULE + layout.itemTop(embedded.rows) : null)}
       cssClasses={[styles.table]}
       vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
       hadjustment={
