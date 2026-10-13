@@ -31,6 +31,13 @@ A development build can show whether something works at all before a Release bui
 - **Give each candidate its fair setup.** Configure every library as its own docs recommend for the case (for example a list's fixed row height), and say what was set. An unconfigured library loses for the wrong reason.
 - **Report:** the build, the platform and OS, the machine, the data size, and each number's unit. Report memory as the process's peak resident size, sampled while it runs.
 
+## What can make a number wrong
+
+- **A Mac app nobody can see is napped.** With its window hidden (a locked screen, another Space, a Mac driven remotely), macOS naps an app about half a minute after launch: timers come late and it gets little processor time, so it is slow with its threads mostly idle. It looks like a leak (fine at first, then slow for good). Keep the app awake for the run (`NSProcessInfo beginActivityWithOptions:`, as the Mac's scrolling run does, or `defaults write <bundle id> NSAppSleepDisabled -bool YES` for the session), and say whether the screen was locked.
+- **A profiler changes what it measures.** `sample <pid> 1` attached during a run turned an app that kept up into one that never caught up. Profile in a run of its own.
+- **A bad result with idle threads is the harness**, not the app's work: App Nap, a starved timer, events that never arrive.
+- **Say where a run started**, and how it got there: a list's first screen is a special case.
+
 ## Tools
 
 - `scripts/big-table.mts`: seeded large tables, as a folder and a `.table.zip`.
