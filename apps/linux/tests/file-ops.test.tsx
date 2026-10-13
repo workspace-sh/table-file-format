@@ -91,6 +91,61 @@ describe("the File menu on Linux", () => {
     await waitFor(() => expect(existsSync(join(dir, "mine", "household-budget.table", "meta.json"))).toBe(true));
   });
 
+  it("Open Spreadsheet… makes a CSV a new .table: its headings the columns, its lines the rows, shown and saved", async () => {
+    const csv = join(dir, "Q4_invoices.csv");
+    writeFileSync(csv, "Client Name,Due Date,Amount (GBP),Paid\nAda & Co,2026-11-01,1200.50,true\nGrace Ltd,2026-12-15,80,false\n");
+    await openExamples({ chooseSpreadsheet: async () => csv });
+    await run("open-spreadsheet");
+    // On screen: the file by its name, the headings as written, the cells.
+    expect(await screen.findByText(/^Q4 invoices \(q4-invoices\.table\)/)).toBeDefined();
+    await screen.findByText("Client Name");
+    await screen.findByText("Amount (GBP)");
+    await screen.findAllByText("Ada & Co");
+    await screen.findAllByText("2026-12-15");
+    // And a .table folder on disk, beside the examples, that reads back as a table.
+    const made = join(examples, "q4-invoices.table", "tables", "q4-invoices");
+    await waitFor(() => expect(existsSync(join(made, "rows.ndjson"))).toBe(true));
+    const table = await parseTable(made);
+    expect(table.schema.fields.map((f) => [f.name, f.title, f.type])).toEqual([
+      ["client_name", "Client Name", "string"],
+      ["due_date", "Due Date", "date"],
+      ["amount_gbp", "Amount (GBP)", "number"],
+      ["paid", "Paid", "boolean"],
+    ]);
+    expect(table.rows.map(({ id: _id, ...rest }) => rest)).toEqual([
+      { client_name: "Ada & Co", due_date: "2026-11-01", amount_gbp: 1200.5, paid: true },
+      { client_name: "Grace Ltd", due_date: "2026-12-15", amount_gbp: 80, paid: false },
+    ]);
+    // The spreadsheet itself is left as it was.
+    expect(readFileSync(csv, "utf8")).toContain("Ada & Co,2026-11-01");
+    // It is a table like any other: a cell edited is saved.
+    await userEvent.click((await screen.findAllByText("Grace Ltd"))[0]!);
+    const entry = (await screen.findByDisplayValue("Grace Ltd")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Grace & Sons");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => expect((await parseTable(made)).rows.map((r) => r.client_name)).toContain("Grace & Sons"));
+  });
+
+  it("a spreadsheet from older Excel (Windows-1252, semicolons) opens with its letters and columns right; an empty one is refused", async () => {
+    const old = join(dir, "kunden.csv");
+    writeFileSync(old, Buffer.concat([Buffer.from("Name;Stadt;Betrag\nCaf", "latin1"), Buffer.from([0xe9]), Buffer.from(" M", "latin1"), Buffer.from([0xfc]), Buffer.from("ller;K", "latin1"), Buffer.from([0xf6]), Buffer.from("ln;12\n", "latin1")]));
+    let chosen = old;
+    await openExamples({ chooseSpreadsheet: async () => chosen });
+    await run("open-spreadsheet");
+    await screen.findAllByText("Café Müller");
+    await screen.findAllByText("Köln");
+    const made = join(examples, "kunden.table", "tables", "kunden");
+    await waitFor(() => expect(existsSync(join(made, "rows.ndjson"))).toBe(true));
+    expect((await parseTable(made)).rows.map((r) => [r.name, r.stadt, r.betrag])).toEqual([["Café Müller", "Köln", 12]]);
+    const empty = join(dir, "empty.csv");
+    writeFileSync(empty, "\n");
+    chosen = empty;
+    await run("open-spreadsheet");
+    expect(await screen.findByText("Couldn't open empty.csv: there's nothing in it")).toBeDefined();
+    expect(existsSync(join(examples, "empty.table"))).toBe(false);
+  });
+
   it("a file that isn't a .table.zip is refused, and says why", async () => {
     const junk = join(dir, "junk.zip");
     writeFileSync(junk, "not a zip");
