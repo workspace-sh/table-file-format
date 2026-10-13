@@ -8,7 +8,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import type { BundleMeta, ParsedTable, Row } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, fromBundle, toBundle, type Library } from "@workspace.sh/table-app";
+import { archiveFileName, bundleToArchive, fromBundle, isSpreadsheetFile, openSpreadsheet, spreadsheetText, toBundle, type Library } from "@workspace.sh/table-app";
 import { openZip } from "./indexHost";
 
 /** What opening an archive gave: a library to take in, what was skipped, the file's name, and its large tables' first rows by `bundle/table`. */
@@ -55,10 +55,42 @@ export async function readZip(bytes: Uint8Array, held: Iterable<string>, name: s
   };
 }
 
-/** Ask for a .table.zip and read it, named apart from `held`. Null when nothing was chosen. */
+/** A spreadsheet's bytes (CSV, TSV and the like) as a new .table file to take in, named apart from `held`. */
+export function readSpreadsheet(bytes: Uint8Array, held: Iterable<string>, name: string): OpenedZip {
+  let opened;
+  try {
+    opened = openSpreadsheet(spreadsheetText(bytes), name, held);
+  } catch (error) {
+    throw new ZipError(name, error);
+  }
+  return {
+    library: { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} },
+    skipped: opened.skipped,
+    name,
+    first: {},
+  };
+}
+
+/**
+ * Ask for a .table.zip, or a spreadsheet someone already has (which
+ * becomes a new .table file), and read it, named apart from `held`. Null
+ * when nothing was chosen.
+ */
 export async function chooseZip(held: Iterable<string>): Promise<OpenedZip | null> {
   const picked = await DocumentPicker.getDocumentAsync({
-    type: ["application/zip", "application/x-zip-compressed", "public.zip-archive"],
+    type: [
+      "application/zip",
+      "application/x-zip-compressed",
+      "public.zip-archive",
+      // iOS's types for them, and the MIME types Android's picker filters by.
+      "public.comma-separated-values-text",
+      "public.tab-separated-values-text",
+      "public.plain-text",
+      "text/csv",
+      "text/comma-separated-values",
+      "text/tab-separated-values",
+      "text/plain",
+    ],
     copyToCacheDirectory: true,
   });
   if (picked.canceled || !picked.assets[0]) return null;
@@ -69,7 +101,7 @@ export async function chooseZip(held: Iterable<string>): Promise<OpenedZip | nul
   } catch (error) {
     throw new ZipError(asset.name, error);
   }
-  return readZip(bytes, held, asset.name);
+  return isSpreadsheetFile(asset.name) ? readSpreadsheet(bytes, held, asset.name) : readZip(bytes, held, asset.name);
 }
 
 /** A bundle as a .table.zip, offered to the share sheet. Resolves once the sheet is done. */

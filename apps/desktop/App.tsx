@@ -72,16 +72,19 @@ import {
   fromBundle,
   hintWithShortcut,
   ingestingText,
+  isSpreadsheetFile,
   initialAppState,
   loadArrangements,
   loadDisplay,
   loadSaved,
   loadSidebarPrefs,
   openFailedText,
+  openSpreadsheet,
   readingText,
   rowTitleFor,
   save,
   schemaVersions,
+  spreadsheetText,
   tableNameOf,
   toBundle,
   tooLargeToArchiveText,
@@ -644,10 +647,23 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     [activeTablePath, tables, bundles, flush, store],
   );
   // Import: a .table.zip becomes one more bundle here, saying what the reader
-  // skipped (D25). Only a file with no table in it is refused. `path` skips the panel.
+  // skipped (D25). Only a file with no table in it is refused. A spreadsheet
+  // someone already has (CSV, TSV and the like) becomes a new .table file.
+  // `path` skips the panel.
   const importZip = useCallback(async (path?: string) => {
-    const where = path ?? (await chooseFile("Open a .table.zip", ["zip"]));
+    const where = path ?? (await chooseFile("Open a .table.zip or a spreadsheet", ["zip", "csv", "tsv", "tab", "txt"]));
     if (!where) return;
+    const name = where.split("/").pop() ?? where;
+    if (isSpreadsheetFile(name)) {
+      try {
+        const opened = openSpreadsheet(spreadsheetText(await readBytes(where)), name, Object.keys(stateRef.current.bundles));
+        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        dispatch({ type: "opened", library, skipped: opened.skipped });
+      } catch (error) {
+        dispatch({ type: "tell", message: { heading: openFailedText(name, error) } });
+      }
+      return;
+    }
     try {
       // A large table in it stays compressed on its way into its index (indexHost.ts): it comes
       // with no rows, and its first rows beside it to show meanwhile.
