@@ -32,6 +32,8 @@ export interface TableEmbedProps extends EmbedTarget {
   maxHeight?: number;
   /** The reader's locale, for dates, numbers and which way it reads. The system's, when not given. */
   locale?: string;
+  /** The table is to look at: nothing in it can be changed, and nothing is written. For a reader who can't write where it is. */
+  readOnly?: boolean;
   /**
    * A linked row was clicked: its address (`projects.table#table=projects&row=p2`),
    * for the app to go to. Absent: a linked row is its name, and goes nowhere.
@@ -40,7 +42,19 @@ export interface TableEmbedProps extends EmbedTarget {
 }
 
 /** The table, held and edited as an app of its own holds it (table-app's useEmbeddedTable), and written where it was read from. */
-function Shown({ shown, maxHeight, locale, onOpenLink }: { shown: EmbedShown; maxHeight: number; locale: string | undefined; onOpenLink: ((address: string) => void) | undefined }) {
+function Shown({
+  shown,
+  maxHeight,
+  locale,
+  readOnly,
+  onOpenLink,
+}: {
+  shown: EmbedShown;
+  maxHeight: number;
+  locale: string | undefined;
+  readOnly: boolean;
+  onOpenLink: ((address: string) => void) | undefined;
+}) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
   const { table } = derived;
   const embedded = useMemo(() => ({ maxHeight }), [maxHeight]);
@@ -70,7 +84,7 @@ function Shown({ shown, maxHeight, locale, onOpenLink }: { shown: EmbedShown; ma
   }, [derived.view.layout, maxHeight]);
   const asking = state.asking;
   const undoKeys = (keyval: number, mods: Gdk.ModifierType): boolean => {
-    if (!(mods & Gdk.ModifierType.CONTROL_MASK)) return false;
+    if (readOnly || !(mods & Gdk.ModifierType.CONTROL_MASK)) return false;
     const key = Gdk.keyvalToLower(keyval);
     const shift = !!(mods & Gdk.ModifierType.SHIFT_MASK);
     if (key === Gdk.KEY_z && !shift && derived.canUndo) dispatch({ type: "undo" });
@@ -95,7 +109,7 @@ function Shown({ shown, maxHeight, locale, onOpenLink }: { shown: EmbedShown; ma
             allRows={table.rows}
             tableKey={tableName}
             sheet={derived.shown.sheet}
-            {...callbacks}
+            {...(readOnly ? {} : callbacks)}
             onOpenRelation={onOpenLink}
           />
         </GtkBox>
@@ -138,7 +152,7 @@ function Shown({ shown, maxHeight, locale, onOpenLink }: { shown: EmbedShown; ma
   );
 }
 
-export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, onOpenLink }: TableEmbedProps) {
+export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink }: TableEmbedProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -152,7 +166,7 @@ export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBE
 
   return (
     <GtkBox name="table-embed" orientation={Gtk.Orientation.VERTICAL} spacing={6} hexpand>
-      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} onOpenLink={onOpenLink} /> : null}
+      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} onOpenLink={onOpenLink} /> : null}
       {read?.kind === "problem" ? (
         <GtkBox name="table-embed-problem" cssClasses={[styles.embedProblem]}>
           <GtkLabel label={read.text} xalign={0} wrap hexpand cssClasses={["dim-label"]} />
