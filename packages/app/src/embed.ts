@@ -5,12 +5,15 @@
 // document. Every platform's drop-in (table-gtk's and table-ui's
 // TableEmbed) asks this, so a link draws the same thing, and fails with
 // the same words, everywhere. `./react`'s useEmbeddedTable holds what it
-// names; `./node`'s readEmbed finds the file on disk.
+// names; readEmbedWith finds the file over a platform's TableFs (`./node`'s
+// readEmbed is it over the disk, as Node sees it).
 
-import type { Address, BundleMeta, EditEvent, ParsedTable } from "@workspace.sh/table-core";
+import { parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
+import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 
 import { bundleOf, tableNameOf } from "./bundles.ts";
-import type { Library } from "./library.ts";
+import { appendFolderHistory } from "./editHistory.ts";
+import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 
 /**
  * How much of the view is shown before it scrolls within itself, from the
@@ -98,4 +101,94 @@ export interface EmbeddedTableFiles {
   write: (library: Library, tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>, bundle: string) => Promise<void>;
   /** Append events to the history of the table `key` (SPEC section 14). Absent: the platform keeps no history. */
   appendHistory?: (library: Library, key: string, events: EditEvent[]) => Promise<void>;
+}
+
+/** A document's link to a `.table`, and where it can be read from. */
+export interface EmbedTarget {
+  /** The link's destination as written: `../tables/projects.table#table=tasks&view=v2&embed=1`. */
+  address: string;
+  /** The folder the address is relative to: the document's. */
+  baseDir: string;
+  /**
+   * The folder the file has to be inside, links followed: what the reader
+   * opened. A document can name any path; this is what keeps it to theirs.
+   * Absent: anywhere.
+   */
+  within?: string;
+}
+
+/** How a platform reads a linked file, beyond its TableFs. */
+export interface EmbedReading {
+  /** Which of a file's tables keep their rows elsewhere (an index), as the platform's reader decides. */
+  rowsElsewhere?: ReadOptions["rowsElsewhere"];
+  /** A path with its symbolic links followed, where the platform can; the folder check is then of where it really is. */
+  real?: (path: string) => string | Promise<string>;
+}
+
+/** A path as a link writes it: percent-encoded where Markdown needs it. */
+function decoded(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * `path` from `base`, `.` and `..` worked out, `/`-separated: as
+ * `path.resolve` does, for any platform. A base that's a URL (`file:///…`,
+ * as expo-file-system speaks) keeps its scheme.
+ */
+export function resolvePath(base: string, path: string): string {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(base)?.[0] ?? "";
+  const from = base.slice(scheme.length);
+  const parts: string[] = [];
+  for (const part of (path.startsWith("/") ? path : `${from}/${path}`).split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `${scheme}/${parts.join("/")}`;
+}
+
+/** Whether `path` is inside `folder` (not the folder itself). Both are absolute and worked out. */
+function insidePath(path: string, folder: string): boolean {
+  const root = folder.endsWith("/") ? folder : `${folder}/`;
+  return path.startsWith(root) && path.length > root.length;
+}
+
+const lastPart = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/**
+ * What a document's link to a `.table` names, read for drawing in place
+ * over a platform's TableFs: the file as an app holds it, with which
+ * table and view (embedIn), or why it can't be drawn. The same reading,
+ * and the same words, on every platform.
+ */
+export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: EmbedTarget, reading: EmbedReading = {}): Promise<EmbedRead> {
+  const parsed = parseAddress(address);
+  if (!parsed) return embedProblem("This link doesn’t name a table.");
+  const written = decoded(parsed.tablePath);
+  const path = resolvePath(baseDir, written);
+  if (within !== undefined) {
+    const real = reading.real ?? ((p: string) => p);
+    if (!insidePath(await real(path), resolvePath(await real(within), "."))) {
+      return embedProblem(`“${written}” is outside the folder that’s open, so it isn’t shown.`);
+    }
+  }
+  if ((await fs.list(path)) === null) {
+    const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+    const entry = (await fs.list(parent))?.find((e) => e.name === lastPart(path));
+    return embedProblem(entry ? `“${lastPart(path)}” isn’t a .table.` : `There’s no table at “${written}”.`);
+  }
+  const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
+  return embedIn(library, parsed, lastPart(path));
+}
+
+/** An embedded table's files over a platform's TableFs: edits written where the file was read from, and each to its table's history. */
+export function embedFilesWith(fs: TableFs): EmbeddedTableFiles {
+  return {
+    write: (library, tables, metas, bundle) => writeLibraryBundle(fs, library, tables, metas, bundle),
+    appendHistory: (library, key, events) => appendFolderHistory(fs, joinPath(library.paths[bundleOf(key)]!, "tables", tableNameOf(key)), events),
+  };
 }

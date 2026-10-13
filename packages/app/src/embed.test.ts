@@ -74,3 +74,41 @@ test("what is drawn carries the size its address asked for", () => {
   const plain = embedIn(projects, { tableName: "tasks" }, "projects.table");
   assert.deepEqual(plain.kind === "shown" && plain.size, {});
 });
+
+// Read over any platform's files: a workspace in memory, a document in docs/ linking to tables/.
+test("a link is read over any platform's files, from the document's folder and kept inside the open one", async () => {
+  const { memoryFs, writeBundleTo } = await import("@workspace.sh/table-core/io");
+  const { readEmbedWith, embedFilesWith, resolvePath } = await import("./embed.ts");
+  const fs = memoryFs();
+  await writeBundleTo(fs, "/ws/tables/projects.table", bundles.projects!);
+  await fs.mkdir("/ws/docs");
+  await fs.writeText("/ws/docs/notes.txt", "not a table");
+  const at = (address: string, within: string | null = "/ws") =>
+    readEmbedWith(fs, { address, baseDir: "/ws/docs", ...(within ? { within } : {}) }).then((r) => (r.kind === "problem" ? r.text : `shown: ${r.key} ${r.viewId} ${JSON.stringify(r.size)}`));
+
+  assert.equal(resolvePath("/ws/docs", "../tables/./projects.table"), "/ws/tables/projects.table");
+  // As iOS's files speak: a URL keeps its scheme.
+  assert.equal(resolvePath("file:///var/mobile/ws/docs", "../tables/projects.table"), "file:///var/mobile/ws/tables/projects.table");
+  assert.equal(await at("../tables/projects.table#table=tasks&view=v1&rows=5&embed=1"), 'shown: projects/tasks v1 {"rows":5}');
+  // Percent-encoded as Markdown writes a space.
+  await writeBundleTo(fs, "/ws/tables/my projects.table", bundles.projects!);
+  assert.match(await at("../tables/my%20projects.table#table=tasks&embed=1"), /^shown: my projects\/tasks /);
+  assert.equal(await at("../../elsewhere/projects.table#embed=1"), "“../../elsewhere/projects.table” is outside the folder that’s open, so it isn’t shown.");
+  assert.equal(await at("../tables/projects.table#embed=1", "/ws/tables/projects.table"), "“../tables/projects.table” is outside the folder that’s open, so it isn’t shown.");
+  assert.match(await at("../../elsewhere/projects.table#embed=1", null), /^There’s no table at/);
+  assert.equal(await at("../tables/nowhere.table#embed=1"), "There’s no table at “../tables/nowhere.table”.");
+  assert.equal(await at("notes.txt#embed=1"), "“notes.txt” isn’t a .table.");
+  assert.equal(await at("../tables/projects.table#table=nope&embed=1"), "“projects.table” has no table named “nope”. It has “projects”, “tasks”.");
+
+  // Written back where it was read from, history beside its table.
+  const shown = await readEmbedWith(fs, { address: "../tables/projects.table#table=tasks&embed=1", baseDir: "/ws/docs" });
+  assert.equal(shown.kind, "shown");
+  if (shown.kind !== "shown") return;
+  const files = embedFilesWith(fs);
+  const table = shown.library.tables[shown.key]!;
+  const renamed = { ...table, rows: table.rows.map((r, i) => (i === 0 ? { ...r, title: "Renamed" } : r)) };
+  await files.write(shown.library, { ...shown.library.tables, [shown.key]: renamed }, shown.library.bundles, "projects");
+  assert.match((await fs.readText("/ws/tables/projects.table/tables/tasks/rows.ndjson"))!, /Renamed/);
+  await files.appendHistory!(shown.library, shown.key, [{ id: "e1", at: "2026-10-13T00:00:00Z", op: "set", row: renamed.rows[0]!.id, field: "title", to: "Renamed" }]);
+  assert.ok((await fs.readText("/ws/tables/projects.table/tables/tasks/history.ndjson"))?.includes("Renamed"));
+});

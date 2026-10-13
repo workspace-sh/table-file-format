@@ -20,6 +20,11 @@
       "source": "./src/react.ts",
       "default": "./src/react.ts"
     },
+    "./embed-view": {
+      "source": "./src/embedView.ts",
+      "react-native": "./src/embedView.ts",
+      "default": "./src/embedView.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -38,16 +43,28 @@
     "@types/react": "^19.2.0",
     "@workspace.sh/table-fixtures": "file:../table-fixtures",
     "react": "^19.2.0",
+    "react-native": "0.81.5",
+    "react-strict-dom": "0.0.55",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   },
   "peerDependencies": {
-    "react": ">=19.0.0"
+    "react": ">=19.0.0",
+    "react-native": ">=0.81.0",
+    "react-strict-dom": ">=0.0.55"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true,
       "comment": "Only for the ./react subpath (useTableApp). The rest of table-app is renderer-free."
+    },
+    "react-native": {
+      "optional": true,
+      "comment": "Only for the ./embed-view subpath on iOS, Android and macOS (its frame and dialog). The web takes embedView.web.tsx, and the rest of table-app is renderer-free."
+    },
+    "react-strict-dom": {
+      "optional": true,
+      "comment": "Only for the ./embed-view subpath (table-ui's views, the caption and the reason)."
     }
   }
 }
