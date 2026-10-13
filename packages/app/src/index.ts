@@ -29,6 +29,7 @@ export * from "./history.ts";
 export * from "./starting.ts";
 export * from "./leaving.ts";
 export * from "./appState.ts";
+export * from "./embed.ts";
 
 export { createIndexHost, type ClosableDriver, type FileWriter, type IndexDatabase, type IndexHost, type IndexHostPlatform, type OpenedLarge } from "./indexHost.ts";
 export { INDEXED_FROM, buildIndexFromBytes, firstRowsInBytes, linesInBytes, rowsInBytes, rowsInChunks, rowsInAsyncChunks, addIndexedRow, canBeIndexed, indexedViewRows, makeIndexEdits, removeIndexedRow, setIndexedBody, setIndexedCell, viewQuery, type IndexEdit } from "./indexed.ts";

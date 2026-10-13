@@ -58,6 +58,10 @@ export {
   toCSV,
   fromCSV,
   csvExportWarnings,
+  delimitedCells,
+  tableFromCSV,
+  type TableFromCSV,
+  type TableFromCSVOptions,
   type FromCSVResult,
   type ToCSVOptions,
 } from "./csv.js";

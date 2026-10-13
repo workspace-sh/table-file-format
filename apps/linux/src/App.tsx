@@ -40,6 +40,9 @@ import {
   bundleToArchive,
   canClose,
   closedIn,
+  isSpreadsheetFile,
+  openSpreadsheet,
+  spreadsheetText,
   withHistories,
   fromBundle,
   exportFailedText,
@@ -78,16 +81,11 @@ import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRo
 import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
-  BoardView,
-  CalendarView,
   DisplayControls,
   DisplaySettingsProvider,
-  GalleryView,
-  ListView,
+  LayoutView,
   RowPage,
-  TableView,
   ViewSettings,
-  type ViewProps,
 } from "@workspace.sh/table-gtk";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -205,22 +203,6 @@ function Sidebar({
       </GtkListBox>
     </GtkScrolledWindow>
   );
-}
-
-/** The table-gtk view for a layout, as the web demo's `renderView` picks the table-ui one. */
-function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {
-  switch (layout) {
-    case "board":
-      return <BoardView {...props} />;
-    case "gallery":
-      return <GalleryView {...props} />;
-    case "list":
-      return <ListView {...props} />;
-    case "calendar":
-      return <CalendarView {...props} />;
-    default:
-      return <TableView {...props} />;
-  }
 }
 
 /** What the header can do to the table's views, and this viewer's own arrangement of it. */
@@ -518,6 +500,15 @@ function zipFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
 const chooseFileToAttach = () => choosePath((d) => d.open(null, null));
 const chooseFolderToOpen = () => choosePath((d) => d.selectFolder(null, null));
 const chooseZipToOpen = () => choosePath((d) => zipFilter(d).open(null, null));
+/** A spreadsheet kept as text: comma, tab or otherwise separated. */
+const chooseSpreadsheetToOpen = () =>
+  choosePath((d) => {
+    const filter = Gtk.FileFilter.new();
+    filter.setName("Spreadsheets (CSV, TSV, text)");
+    for (const pattern of ["*.csv", "*.tsv", "*.tab", "*.txt"]) filter.addPattern(pattern);
+    d.setDefaultFilter(filter);
+    return d.open(null, null);
+  });
 const chooseZipToSave = (name: string) =>
   choosePath((d) => {
     d.setInitialName(name);
@@ -598,6 +589,7 @@ export function App({
   chooseFile = chooseFileToAttach,
   chooseFolder = chooseFolderToOpen,
   chooseZip = chooseZipToOpen,
+  chooseSpreadsheet = chooseSpreadsheetToOpen,
   chooseZipSaveAs = chooseZipToSave,
   resetExamples,
   openIndex = openIndexHost,
@@ -622,6 +614,8 @@ export function App({
   chooseFolder?: () => Promise<string | null>;
   /** Ask for a .table.zip to open. */
   chooseZip?: () => Promise<string | null>;
+  /** Ask for a spreadsheet (CSV, TSV and the like) to open as a new .table. */
+  chooseSpreadsheet?: () => Promise<string | null>;
   /** Ask where to save a .table.zip, suggesting `name`. */
   chooseZipSaveAs?: (name: string) => Promise<string | null>;
   /**
@@ -794,14 +788,16 @@ export function App({
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
   };
-  // A .table.zip becomes a .table folder beside the new files, written as it opens.
-  const openZip = async () => {
-    const path = await chooseZip();
+  // A .table.zip, or a spreadsheet someone already has, becomes a .table folder beside the new files, written as it opens.
+  const openFile = async (choose: () => Promise<string | null>) => {
+    const path = await choose();
     if (!path || !filesIn) return;
     try {
       // Named apart from the tables held and from any folder already there.
       const onDisk = bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
-      const opened = await openArchive(new Uint8Array(readFileSync(path)), [...Object.keys(bundles), ...onDisk]);
+      const taken = [...Object.keys(bundles), ...onDisk];
+      const bytes = new Uint8Array(readFileSync(path));
+      const opened = isSpreadsheetFile(path) ? openSpreadsheet(spreadsheetText(bytes), basename(path), taken) : await openArchive(bytes, taken);
       const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
       dispatch({ type: "opened", library, ...(opened.skipped.length > 0 ? { skipped: opened.skipped } : {}) });
     } catch (error) {
@@ -869,7 +865,7 @@ export function App({
           // Named apart from every .table folder already there, held or not: a new file never lands in another's folder.
           "new-file": () =>
             dispatch({ type: "create", making: { kind: "file", taken: bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, "")) } }),
-          "open-zip": () => void openZip(),
+          "open-zip": () => void openFile(chooseZip),
         }
       : {}),
     "open-folder": () => void openFolder(),
@@ -898,6 +894,8 @@ export function App({
   if (canAddField) section("File")?.push({ label: "New Row", action: "win.new-row" }, { label: "New Field…", action: "win.new-field" });
   // The file on screen, closed from the menu as from its heading in the sidebar.
   const canCloseFile = canClose(bundles, bundleOf(state.active));
+  // A spreadsheet someone already has (CSV, TSV and the like), opened as a new .table file.
+  if (filesIn) section("File")?.push({ label: "Open Spreadsheet…", action: "win.open-spreadsheet" });
   if (canCloseFile) section("File")?.push({ label: "Close File", action: "win.close-file" });
   if (onTables) {
     section("Edit")?.push({ label: "Find in View…", action: "win.find" });
@@ -973,6 +971,7 @@ export function App({
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
           <GSimpleAction key="close-file" name="close-file" enabled={canCloseFile} onActivate={() => closeFile(bundleOf(state.active))} />,
+          <GSimpleAction key="open-spreadsheet" name="open-spreadsheet" enabled={!!filesIn} onActivate={() => void openFile(chooseSpreadsheet)} />,
           <GSimpleAction key="new-row" name="new-row" enabled={canAddField} onActivate={() => void callbacks.onAddRow()} />,
           <GSimpleAction key="find" name="find" enabled={onTables} onActivate={() => setFindRequest((n) => n + 1)} />,
           <GSimpleAction key="view-settings" name="view-settings" enabled={onTables} onActivate={() => dispatch({ type: "settings", open: !state.settingsOpen })} />,
