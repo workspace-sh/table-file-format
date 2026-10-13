@@ -188,6 +188,7 @@ typedef struct {
   NSString *_script;
   BOOL _quit;
   BOOL _gesture;
+  BOOL _led;
   BOOL _queued;
   BOOL _listen;
   double _listenSeconds;
@@ -303,8 +304,32 @@ typedef struct {
 
 #pragma mark The run
 
+/// -scrollBenchLead <points>: scroll that far down first and let the page settle, so the run
+/// measures scrolling in the middle of a table, where a row goes off for each that comes on,
+/// and not from its top, where the rows kept drawn above the screen are still being added.
 - (void)begin
 {
+  double lead = [NSUserDefaults.standardUserDefaults doubleForKey:@"scrollBenchLead"];
+  if (lead > 0 && !_led) {
+    _led = YES;
+    NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+    NSView *root = window.contentView.superview ?: window.contentView;
+    NSPoint inWindow = NSMakePoint(NSWidth(window.frame) * 0.6, NSHeight(window.frame) * 0.4);
+    NSView *under = [root hitTest:inWindow] ?: window.contentView;
+    int steps = (int)ceil(lead / 300);
+    for (int i = 0; i < steps; i++) {
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        CGEventRef scroll = CGEventCreateScrollWheelEvent2(NULL, kCGScrollEventUnitPixel, 1, -(int)(lead / steps), 0, 0);
+        CGEventSetIntegerValueField(scroll, kCGScrollWheelEventIsContinuous, 1);
+        [under scrollWheel:[NSEvent eventWithCGEvent:scroll]];
+        CFRelease(scroll);
+      });
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((steps * 0.05 + 4) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      [self begin];
+    });
+    return;
+  }
   _window = NSApp.mainWindow ?: NSApp.windows.firstObject;
   for (NSWindow *window in NSApp.windows) {
     if (window.isVisible && window.frame.size.width * window.frame.size.height > _window.frame.size.width * _window.frame.size.height) _window = window;
