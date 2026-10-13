@@ -70,6 +70,20 @@ export const styles = {
     "&:hover": { boxShadow: `inset -2px 0 ${HOVER_LINE}` },
     "&:dir(rtl):hover": { boxShadow: `inset 2px 0 ${HOVER_LINE}` },
   }),
+  /**
+   * A column's line down the table, to drag: two pixels on the column's end, inside a strip wide enough
+   * to take. Faint when pointed at and full while dragged, as its header's edge.
+   */
+  columnLine: css({
+    "&:hover": { backgroundImage: `linear-gradient(to right, transparent 2px, ${HOVER_LINE} 2px, ${HOVER_LINE} 4px, transparent 4px)` },
+    "&:dir(rtl):hover": { backgroundImage: `linear-gradient(to left, transparent 2px, ${HOVER_LINE} 2px, ${HOVER_LINE} 4px, transparent 4px)` },
+  }),
+  columnLineLit: css({
+    backgroundImage: "linear-gradient(to right, transparent 2px, @accent_bg_color 2px, @accent_bg_color 4px, transparent 4px)",
+    "&:hover": { backgroundImage: "linear-gradient(to right, transparent 2px, @accent_bg_color 2px, @accent_bg_color 4px, transparent 4px)" },
+    "&:dir(rtl)": { backgroundImage: "linear-gradient(to left, transparent 2px, @accent_bg_color 2px, @accent_bg_color 4px, transparent 4px)" },
+    "&:dir(rtl):hover": { backgroundImage: "linear-gradient(to left, transparent 2px, @accent_bg_color 2px, @accent_bg_color 4px, transparent 4px)" },
+  }),
   columnHandleLit: css({
     boxShadow: "inset -2px 0 @accent_bg_color",
     "&:hover": { boxShadow: "inset -2px 0 @accent_bg_color" },

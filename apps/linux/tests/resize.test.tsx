@@ -80,6 +80,92 @@ describe("resizing on Linux", () => {
     await waitFor(() => expect(across.getUpper()).toBe(across.getPageSize()));
   });
 
+  // With a pointer, a column resizes from its line anywhere down the table, as on the web and the Mac.
+  const columnLine = async (name: string) => (await screen.findAllByName(`resize-column-line-${name}`))[0]!;
+
+  it("every column has a line down the table at its end, as tall as the rows together", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const table = await parseTable(join(bundle, "tables", "tasks"));
+    let scroller: Gtk.Widget | null = await screen.findByText("status");
+    while (scroller && !(scroller instanceof Gtk.ScrolledWindow)) scroller = scroller.getParent();
+    const xOf = (w: Gtk.Widget) => {
+      const [, bounds] = w.computeBounds(scroller!);
+      return { start: Math.round(bounds!.getX()), end: Math.round(bounds!.getX() + bounds!.getWidth()), top: Math.round(bounds!.getY()), bottom: Math.round(bounds!.getY() + bounds!.getHeight()) };
+    };
+    const headerOf = async (name: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(name);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      return at!;
+    };
+    await waitFor(() => expect(screen.queryAllByName("resize-row-line")).toHaveLength(table.rows.length));
+    for (const field of table.schema.fields) {
+      const line = xOf(await columnLine(field.name));
+      const header = xOf(await headerOf(field.title ?? field.name));
+      // Six wide, four of it before the column's end and two after.
+      expect([line.start, line.end]).toEqual([header.end - 4, header.end + 2]);
+      // From under the header's own line to the last row's foot.
+      expect(line.top).toBe(header.bottom + 1);
+      expect(line.bottom - line.top).toBe(table.rows.length * 45);
+    }
+  });
+
+  it("a column's line dragged resizes the column, and a double click on it puts the column back", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const drag = getController(await columnLine("status"), Gtk.GestureDrag);
+    await fireEvent(drag, "drag-begin", 0, 0);
+    await fireEvent(drag, "drag-update", 70, 0);
+    // Not saved until it is let go.
+    expect((await viewOnDisk()).columnWidths).toBeUndefined();
+    await fireEvent(drag, "drag-end", 70, 0);
+    let width = 0;
+    await waitFor(async () => {
+      width = (await viewOnDisk()).columnWidths?.status ?? 0;
+      expect(width).toBeGreaterThan(70);
+    });
+    expect(Object.keys((await viewOnDisk()).columnWidths ?? {})).toEqual(["status"]);
+    // Its line has gone with the column's end.
+    let header: Gtk.Widget | null = await screen.findByText("status");
+    while (header && !(header instanceof Gtk.Overlay)) header = header.getParent();
+    await waitFor(() => expect(header!.getWidth()).toBe(width));
+    // One press is nothing; two put it back.
+    const click = async (presses: number) => fireEvent(getController(await columnLine("status"), Gtk.GestureClick), "pressed", presses, 0, 0);
+    await click(1);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect((await viewOnDisk()).columnWidths?.status).toBe(width);
+    await click(2);
+    await waitFor(async () => expect((await viewOnDisk()).columnWidths).toBeUndefined());
+  });
+
+  it("a column's line is faint when pointed at and full only while it is dragged, with its header's edge", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await screen.findAllByText("Land .table extension");
+    // Drawn over the rows: seen as part of them (not the header, whose own edge lights with it).
+    const table = async () => (await columnLine("status")).getParent()!;
+    const drawn = async (pointedAt: boolean) => {
+      const line = await columnLine("status");
+      if (pointedAt) line.setStateFlags(Gtk.StateFlags.PRELIGHT, false);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { data } = await screenshot(await table());
+      if (pointedAt) line.unsetStateFlags(Gtk.StateFlags.PRELIGHT);
+      return data;
+    };
+    const rest = await drawn(false);
+    const pointed = await drawn(true);
+    expect(pointed).not.toBe(rest);
+    expect(await drawn(false)).toBe(rest);
+    const gesture = getController(await columnLine("status"), Gtk.GestureDrag);
+    await fireEvent(gesture, "drag-begin", 0, 0);
+    await fireEvent(gesture, "drag-update", 0, 0);
+    const dragged = await drawn(false);
+    expect(dragged).not.toBe(rest);
+    expect(dragged).not.toBe(pointed);
+    await fireEvent(gesture, "drag-end", 0, 0);
+    await waitFor(async () => expect(await drawn(false)).toBe(rest));
+  });
+
   it("never narrower than a column can be", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);

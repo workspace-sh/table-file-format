@@ -113,6 +113,9 @@ const FRAME_MARGIN = 12;
 const FREEZE_FROM_WIDTH = 720;
 /** How much of a row's bottom edge takes a drag to resize it, as on the web. */
 const ROW_LINE_HEIGHT = 6;
+/** A column's line down the table: how wide a strip takes the pointer, and how much of it is before the column's end. */
+const COLUMN_LINE_WIDTH = 6;
+const COLUMN_LINE_BEFORE = 4;
 /** A grabber: the short bar a selected row's grip is drawn as when Display's "Resize handles" says so. */
 const GRABBER_WIDTH = 26;
 const GRABBER_HEIGHT = 9;
@@ -676,6 +679,8 @@ export function TableView({
     if (x === scrolledAcross.current) return;
     scrolledAcross.current = x;
     for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
+    // A column's line that has gone under the first column can't be taken through it.
+    for (const { widget, at } of columnLineWidgets.current.values()) widget.setVisible(at > x + frozenWidth);
   };
   const lastAcross = useRef(0);
   const scrollAcross = (value: number) => {
@@ -718,6 +723,53 @@ export function TableView({
 
   // A column's handle is on its end edge (the left, right to left, where
   // dragging leftwards widens it); a row's grip is on its bottom edge.
+  // How far a drag has gone, across the window. GTK says a drag's offset against the widget it began
+  // on, where that widget is now; these handles move as their column or row is resized, which takes the
+  // movement back out of the offset (a handle that follows the pointer would seem not to have moved).
+  // So it is measured against the window, which stays put. (A drag with no pointer behind it, as a test
+  // makes, has no start to measure from: its offset is taken as it is.)
+  const dragFrom = useRef<{ x: number; y: number } | null>(null);
+  const inWindow = (gesture: Gtk.GestureDrag, dx: number, dy: number) => {
+    const [started, x, y] = gesture.getStartPoint();
+    const widget = gesture.getWidget();
+    const root = widget?.getRoot() as unknown as Gtk.Widget | null | undefined;
+    if (!started || !widget || !root) return null;
+    const [found, wx, wy] = widget.translateCoordinates(root, x + dx, y + dy);
+    return found ? { x: wx, y: wy } : null;
+  };
+  const dragBegan = (gesture: Gtk.GestureDrag) => {
+    dragFrom.current = inWindow(gesture, 0, 0);
+  };
+  const dragGone = (gesture: Gtk.GestureDrag, dx: number, dy: number): { dx: number; dy: number } => {
+    const from = dragFrom.current;
+    const now = from ? inWindow(gesture, dx, dy) : null;
+    return from && now ? { dx: now.x - from.x, dy: now.y - from.y } : { dx, dy };
+  };
+  // Resizing a column, from its header's edge or from its line down the table: dragging sets its
+  // width, and a double click puts it back to its share.
+  const columnResize = (name: string) => {
+    const widthAt = (dx: number) => resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx);
+    return [
+      <GtkGestureClick key="click" onPressed={(presses) => presses === 2 && resetWidth(name)} />,
+      <GtkGestureDrag
+        key="drag"
+        onDragBegin={(_x, _y, self) => {
+          resizeFrom.current = colWidth(name);
+          dragBegan(self);
+        }}
+        onDragUpdate={(dx, dy, self) => {
+          const gone = dragGone(self, dx, dy);
+          setLiveWidths((live) => ({ ...live, [name]: widthAt(gone.dx) }));
+        }}
+        onDragEnd={(dx, dy, self) => {
+          const gone = dragGone(self, dx, dy);
+          // A press that didn't move is a click, not a width.
+          if (gone.dx !== 0) onUpdateView?.({ columnWidths: { ...(view.columnWidths ?? {}), [name]: widthAt(gone.dx) } });
+          setLiveWidths({});
+        }}
+      />,
+    ];
+  };
   const columnHandle = (name: string) =>
     onUpdateView ? (
       <GtkBox
@@ -727,23 +779,43 @@ export function TableView({
         cssClasses={[styles.columnHandle, ...(liveWidths[name] !== undefined ? [styles.columnHandleLit] : [])]}
         tooltipText="Drag to resize the column; double-click to reset it"
         cursor={Gdk.Cursor.newFromName("col-resize", null)}
-        controllers={[
-          <GtkGestureClick key="click" onPressed={(presses) => presses === 2 && resetWidth(name)} />,
-          <GtkGestureDrag
-            key="drag"
-            onDragBegin={() => {
-              resizeFrom.current = colWidth(name);
-            }}
-            onDragUpdate={(dx) => setLiveWidths((live) => ({ ...live, [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) }))}
-            onDragEnd={(dx) => {
-              // A press that didn't move is a click, not a width.
-              if (dx !== 0) onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) } });
-              setLiveWidths({});
-            }}
-          />,
-        ]}
+        controllers={columnResize(name)}
       />
     ) : null;
+  // With a pointer a column also resizes from its line anywhere down the table, as on the web and the
+  // Mac: a strip over the rows at each column's end, faint when pointed at and full while dragged, as
+  // its header's edge is. The first column's stays with it where that column stays put, and a line that
+  // has scrolled under the first column is out of reach until it comes out.
+  const columnLineWidgets = useRef(new Map<string, { widget: Gtk.Widget; at: number }>());
+  const columnLines = () => {
+    if (!onUpdateView) return null;
+    let x = coords ? ROW_NUMBER_WIDTH : 0;
+    return fields.map((name, i) => {
+      x += colWidth(name);
+      const at = x;
+      const stays = freeze && i === 0;
+      return (
+        <GtkBox
+          key={name}
+          name={`resize-column-line-${name}`}
+          ref={(widget: Gtk.Box | null) => {
+            if (stays) pin(`column-line:${name}`, at - COLUMN_LINE_BEFORE)(widget);
+            if (!widget) return void columnLineWidgets.current.delete(name);
+            if (stays) return void columnLineWidgets.current.delete(name);
+            columnLineWidgets.current.set(name, { widget, at });
+            widget.setVisible(!freeze || at > scrolledAcross.current + frozenWidth);
+          }}
+          halign={Gtk.Align.START}
+          marginStart={at - COLUMN_LINE_BEFORE + (stays ? scrolledAcross.current : 0)}
+          widthRequest={COLUMN_LINE_WIDTH}
+          cssClasses={[styles.columnLine, ...(liveWidths[name] !== undefined ? [styles.columnLineLit] : [])]}
+          tooltipText="Drag to resize the column; double-click to reset it"
+          cursor={Gdk.Cursor.newFromName("col-resize", null)}
+          controllers={columnResize(name)}
+        />
+      );
+    });
+  };
   const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
 
   const gutter = (content: string, height: number) =>
@@ -782,12 +854,13 @@ export function TableView({
     return [
       <GtkGestureDrag
         key="drag"
-        onDragBegin={() => {
+        onDragBegin={(_x, _y, self) => {
           resizeFrom.current = heightOf(row.id);
+          dragBegan(self);
         }}
-        onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy), name, by })}
-        onDragEnd={(_dx, dy) => {
-          saveHeight(snappedRowHeight(resizeFrom.current, dy));
+        onDragUpdate={(dx, dy, self) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dragGone(self, dx, dy).dy), name, by })}
+        onDragEnd={(dx, dy, self) => {
+          saveHeight(snappedRowHeight(resizeFrom.current, dragGone(self, dx, dy).dy));
           setLiveRow(null);
         }}
       />,
@@ -1449,9 +1522,13 @@ export function TableView({
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}
-        {before > 0 ? <GtkBox heightRequest={before} /> : null}
-        {body}
-        {after > 0 ? <GtkBox heightRequest={after} /> : null}
+        <GtkOverlay overlays={<>{columnLines()}</>}>
+          <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+            {before > 0 ? <GtkBox heightRequest={before} /> : null}
+            {body}
+            {after > 0 ? <GtkBox heightRequest={after} /> : null}
+          </GtkBox>
+        </GtkOverlay>
         {addRow}
         {footer}
       </GtkBox>
