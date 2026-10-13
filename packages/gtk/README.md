@@ -28,6 +28,51 @@ because they run the same code. Only the drawing is here.
 | `ListView` | Read-only: titles, the view's other fields, group headings, page badges |
 | `CalendarView` | Read-only: the month in the locale's week, `calendar_range` kept, a day's rows in a dialog |
 
+## A table inside something else: `@workspace.sh/table-gtk/embed`
+
+`TableEmbed` is the drop-in for an app that shows a `.table` inside a
+document (a Markdown file that links to it). The app gives it the link
+and where the document is; it reads the file, draws the table, and writes
+edits back.
+
+```tsx
+import { TableEmbed } from "@workspace.sh/table-gtk/embed";
+
+// `[Tasks](../tables/projects.table#table=tasks&view=v2&embed=1 "Tasks by status")`
+<TableEmbed
+  address={link.url}
+  caption={link.title}
+  baseDir={dirname(documentPath)}
+  within={workspaceRoot}
+  onOpenLink={(address) => open(address)}
+/>
+```
+
+| Prop | What it is |
+| --- | --- |
+| `address` | The link's destination as written: a path to the `.table`, then `#table=` and `view=` (SPEC, "Addressing"). Other keys (`embed=1`) are ignored. |
+| `baseDir` | The folder the path is relative to: the document's. |
+| `within` | The folder the file has to be inside, with links followed. A document can name any path; this keeps it to what the reader opened. |
+| `caption` | Shown beneath, small and centred. |
+| `maxHeight` | The tallest it is (480 by default). Up to that it is as tall as what it holds; past it, it scrolls within itself. |
+| `onOpenLink` | A linked row was clicked: its address, for the app to go to. Without it a linked row is its name. |
+
+It is the table, not a picture of it. The state is table-app's reducer
+(`useEmbeddedTable`, in `table-app/react`), as in an app of its own: cells
+edit in place, rows are added and deleted, a view's settings change from
+its headers, a row's page opens, Ctrl+Z and Ctrl+Shift+Z undo and redo,
+and each edit is written to the file and to the table's history.
+
+What can't be drawn says why in the table's place: no file there, a file
+that isn't a `.table`, a table or view the file doesn't have (with the
+ones it has), a path outside `within`, and a table of 50,000 rows or
+more (those are read through an index, which a document doesn't have
+yet). The words are `table-app`'s (`embedIn`), so every platform's
+drop-in says the same.
+
+In an embedded view (`EmbeddedContext`), `TableView` and the card views
+have no margin of their own and are as tall as what they hold.
+
 It has no build or checks of its own: GTK code can only be typechecked
 where GTKX and the machine's bindings are. `apps/linux` typechecks, lints
 and tests it (`npm run check` there).

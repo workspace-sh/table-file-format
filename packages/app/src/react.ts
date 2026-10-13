@@ -6,11 +6,13 @@
 // of this subpath only: the rest of table-app stays renderer-free.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
-import { stampEdits, textDirection, type BundleMeta, type EditChange, type EditEvent, type ParsedTable, type TextDirection } from "@workspace.sh/table-core";
+import { newId, stampEdits, textDirection, type BundleMeta, type EditChange, type EditEvent, type ParsedTable, type TextDirection } from "@workspace.sh/table-core";
 import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
 import { forViews, saveArrangements } from "./arrangements.ts";
-import { tableApp, type AppAction, type AppState } from "./appState.ts";
+import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type AppState, type Derived, type ViewCallbacks } from "./appState.ts";
+import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
+import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
 import { saveDisplay, viewerLocale } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 import { saveSidebarPrefs } from "./sidebarPrefs.ts";
@@ -221,6 +223,61 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
     return historyWrites.current;
   }, []);
   return { state, dispatch, display, saving, flush };
+}
+
+/** A table held for drawing inside something else: what a drop-in's views are given. */
+export interface EmbeddedTable {
+  state: AppState;
+  dispatch: Dispatch<AppAction>;
+  derived: Derived;
+  display: DisplaySettings & { direction: TextDirection };
+  /** The table's name in its bundle: the views' `tableKey`. */
+  tableName: string;
+  /** Every table of its bundle by name: the views' `relatedTables`. */
+  related: Record<string, ParsedTable>;
+  /**
+   * The views' callbacks, each an action on the state. Without following
+   * a linked row: that would put another table here with no way back, and
+   * where a link goes is for the document's app to say.
+   */
+  callbacks: Omit<ViewCallbacks, "onOpenRelation">;
+}
+
+/**
+ * A `.table` drawn inside something else (`./embed`), held as an app of
+ * its own holds it: the same state and the same actions, so a cell edited
+ * in a document is written to the file, goes to its history and can be
+ * undone. What is still to write is written when the drop-in goes.
+ * Mount it anew (a `key`) for another table or view.
+ */
+export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, locale?: string): EmbeddedTable {
+  const { library } = shown;
+  const { state, dispatch, display, flush } = useTableApp(
+    () =>
+      initialAppState({
+        tables: library.tables,
+        bundles: library.bundles,
+        opened: library.paths,
+        start: { tablePath: shown.key, ...(shown.viewId ? { viewId: shown.viewId } : {}) },
+        writesHistory: !!files.appendHistory,
+      }),
+    {
+      store: null,
+      write: async (bundles, tables, metas) => {
+        await Promise.all(bundles.map((bundle) => files.write(library, tables, metas, bundle)));
+      },
+      ...(files.appendHistory ? { appendHistory: (key: string, events: EditEvent[]) => files.appendHistory!(library, key, events) } : {}),
+    },
+    locale,
+  );
+  const flushing = useRef(flush);
+  flushing.current = flush;
+  useEffect(() => () => void flushing.current(), []);
+
+  const derived = derive(state, { locale, newTableIn: "none" });
+  const related = useMemo(() => bundleTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
+  const { onOpenRelation: _follow, ...callbacks } = viewCallbacks(state, dispatch, newId);
+  return { state, dispatch, derived, display, tableName: tableNameOf(state.active), related, callbacks };
 }
 
 export { useIndexedTables, type IndexedTables } from "./useIndexedTables.ts";

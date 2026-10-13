@@ -81,16 +81,11 @@ import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRo
 import { useIndexedTables } from "./useIndexedTables.js";
 import {
   AttachmentsProvider,
-  BoardView,
-  CalendarView,
   DisplayControls,
   DisplaySettingsProvider,
-  GalleryView,
-  ListView,
+  LayoutView,
   RowPage,
-  TableView,
   ViewSettings,
-  type ViewProps,
 } from "@workspace.sh/table-gtk";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -208,22 +203,6 @@ function Sidebar({
       </GtkListBox>
     </GtkScrolledWindow>
   );
-}
-
-/** The table-gtk view for a layout, as the web demo's `renderView` picks the table-ui one. */
-function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {
-  switch (layout) {
-    case "board":
-      return <BoardView {...props} />;
-    case "gallery":
-      return <GalleryView {...props} />;
-    case "list":
-      return <ListView {...props} />;
-    case "calendar":
-      return <CalendarView {...props} />;
-    default:
-      return <TableView {...props} />;
-  }
 }
 
 /** What the header can do to the table's views, and this viewer's own arrangement of it. */

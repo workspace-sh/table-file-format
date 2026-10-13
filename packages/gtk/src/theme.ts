@@ -22,6 +22,8 @@ const TOTAL_PLACEHOLDER = css({ fontSize: "11px", opacity: 0 });
 export const styles = {
   /** The table: a framed card, its rules and sizes the web's and the Mac's (table-ui's views.tsx). */
   tableFrame: css({ border: `1px solid ${RULE}`, borderRadius: "8px" }),
+  /** Where an embedded table would be, when it can't be drawn: the frame's outline, dashed, around why. */
+  embedProblem: css({ border: `1px dashed alpha(currentColor, 0.25)`, borderRadius: "8px", padding: "10px 12px", fontSize: "13px" }),
   cell: css({ padding: "0 16px", fontSize: "13px" }),
   /** A column's title: small capitals, as every platform's table has them. */
   headerCell: css({ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.65 }),
