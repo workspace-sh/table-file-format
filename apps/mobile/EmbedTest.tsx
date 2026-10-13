@@ -14,6 +14,8 @@ import { expoFs } from "./expoFs";
 const CASES: { address: string; caption?: string; note: string }[] = [
   { address: "../projects.table#table=tasks&view=v1&embed=1", caption: "All tasks", note: "a table's view" },
   { address: "../projects.table#table=tasks&rows=3&embed=1", caption: "Three rows, then it scrolls", note: "rows=3" },
+  { address: "../projects.table#table=tasks&rows=3&rest=more&embed=1", note: "rows=3, the rest behind a line" },
+  { address: "../crm.table#table=deals&cards=1&rest=more&embed=1", note: "a board, one card a column, the rest behind a line" },
   { address: "../crm.table#table=deals&embed=1", note: "the CRM's deals" },
   { address: "../projects.table#table=projects&embed=1", note: "the projects, taller than the limit" },
   { address: "../nowhere.table#embed=1", caption: "Missing", note: "no such file" },
