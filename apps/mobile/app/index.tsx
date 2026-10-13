@@ -16,6 +16,7 @@ import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleF
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
+import { EmbedTest } from "../EmbedTest";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
@@ -43,6 +44,8 @@ export default function TableScreen() {
   const [appSettings, setAppSettings] = useState(false);
   // The More menu's New Field: each one opens the table's new-field editor.
   const [newFieldAsk, setNewFieldAsk] = useState(0);
+  // Development only: table embeds over a folder (EmbedTest.tsx), opened by the development hook.
+  const [embedTest, setEmbedTest] = useState<string | null>(null);
   const tables = app?.state.tables;
   const bundles = app?.state.bundles;
   const active = app?.state.active;
@@ -116,6 +119,8 @@ export default function TableScreen() {
   useEffect(() => {
     if (!__DEV__ || !app) return;
     (globalThis as { __tableMobile?: unknown }).__tableMobile = {
+      // Table embeds over the `.table` folders in `folder` (EmbedTest.tsx); null closes it.
+      embedTest: (folder: string | null) => setEmbedTest(folder),
       push: (path: "/tables") => router.push(path),
       back: () => router.back(),
       dispatch: app.dispatch,
@@ -375,6 +380,7 @@ export default function TableScreen() {
             onClose={() => dispatch({ type: "openPage", rowId: null })}
           />
         )}
+        {__DEV__ && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
       </PortalHost>
       </PageGutter.Provider>
       </CellEditorContext.Provider>
