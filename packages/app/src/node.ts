@@ -10,13 +10,14 @@ import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
 import { bundleOf, tableNameOf } from "./bundles.ts";
-import { embedIn, embedProblem, type EmbeddedTableFiles, type EmbedRead } from "./embed.ts";
+import { readEmbedWith, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
+export type { EmbedTarget } from "./embed.ts";
 export { buildTableIndex, countRows, firstRows, largeTables, mayHoldRows, openIndexHost, saveTableRows, tableContentKey, type IndexHost } from "./nodeIndex.ts";
 
 /** The `.table` folders in `dir`, sorted by name. */
@@ -158,61 +159,23 @@ export function attachmentsIn(tableDir: string): string[] {
   }
 }
 
-export interface EmbedTarget {
-  /** The link's destination as written: `../tables/projects.table#table=tasks&view=v2&embed=1`. */
-  address: string;
-  /** The folder the address is relative to: the document's. */
-  baseDir: string;
-  /**
-   * The folder the file has to be inside, links followed: what the reader
-   * opened. A document can name any path; this is what keeps it to theirs.
-   * Absent: anywhere.
-   */
-  within?: string;
-}
-
-/** A path as a link writes it: percent-encoded where Markdown needs it. */
-function decoded(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
-
-/** A path with its links followed, or as it is when it isn't there. */
-function real(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
-
-function inside(path: string, folder: string): boolean {
-  const from = relative(real(folder), real(path));
-  return from !== "" && !from.startsWith("..") && !isAbsolute(from);
-}
-
 /**
  * What a document's link to a `.table` names, read from disk for drawing
- * in place: the file as an app holds it, with which table and view
- * (`./embed`'s embedIn), or why it can't be drawn.
+ * in place (embed.ts's readEmbedWith, over the disk as Node sees it, with
+ * its large tables' rows left to the index and the folder check made of
+ * where links really lead).
  */
 export async function readEmbed({ address, baseDir, within }: EmbedTarget): Promise<EmbedRead> {
-  const parsed = parseAddress(address);
-  if (!parsed) return embedProblem("This link doesn’t name a table.");
-  const written = decoded(parsed.tablePath);
-  const path = resolve(baseDir, written);
-  if (within !== undefined && !inside(path, within)) return embedProblem(`“${written}” is outside the folder that’s open, so it isn’t shown.`);
-  let isFolder = false;
-  try {
-    isFolder = statSync(path).isDirectory();
-  } catch {
-    return embedProblem(`There’s no table at “${written}”.`);
-  }
-  if (!isFolder) return embedProblem(`“${basename(path)}” isn’t a .table.`);
-  return embedIn(await loadLibrary([path], [], { indexedFrom: INDEXED_FROM }), parsed, basename(path));
+  return readEmbedWith(nodeFs, { address, baseDir: resolve(baseDir), ...(within === undefined ? {} : { within: resolve(within) }) }, {
+    rowsElsewhere: largeTables(INDEXED_FROM),
+    real: (path) => {
+      try {
+        return realpathSync(path);
+      } catch {
+        return path;
+      }
+    },
+  });
 }
 
 /** An embedded table's files on disk, for `./react`'s useEmbeddedTable: edits written where the file was read from, and each to its table's history. */
