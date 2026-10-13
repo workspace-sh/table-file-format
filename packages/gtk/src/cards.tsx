@@ -49,6 +49,7 @@ import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js"
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
 import { styles } from "./theme.js";
+import { scrollerHeight, useEmbedded, viewMargins } from "./embedded.js";
 
 /** A board column's width: the web board's. */
 const BOARD_COLUMN_WIDTH = 268;
@@ -195,6 +196,7 @@ function useCardKeys({ move, onAltKey }: { move: (id: string, key: string) => st
 }
 
 export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
+  const embedded = useEmbedded();
   const board = boardColumns(view, rows, schema);
   // A card dropped into a column takes its value; where it lands in the
   // column sets the view's order, as on the web (orderAfterDrop).
@@ -222,8 +224,8 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
   });
 
   return (
-    <GtkScrolledWindow hexpand vexpand vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}>
-      <GtkBox spacing={BOARD_GAP} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12} valign={Gtk.Align.START}>
+    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} vscrollbarPolicy={Gtk.PolicyType.AUTOMATIC}>
+      <GtkBox spacing={BOARD_GAP} {...viewMargins(embedded)} valign={Gtk.Align.START}>
         {board.keys.map((key) => {
           const members = board.groups[key] ?? [];
           const pill = key === "(empty)" ? { label: columnLabel(groupField, key), color: undefined } : pillFor(groupField, key);
@@ -294,6 +296,7 @@ function GalleryHero({ field, value, text }: { field: Field | undefined; value: 
 }
 
 export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTables, onOpenRelation }: ViewProps) {
+  const embedded = useEmbedded();
   const heroField = view.gallery_field;
   const fields = cardFields(view, schema, heroField);
   const fieldMap = fieldsByName(schema);
@@ -308,11 +311,11 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   return (
     <GtkScrolledWindow
       hexpand
-      vexpand
+      {...scrollerHeight(embedded)}
       hscrollbarPolicy={Gtk.PolicyType.NEVER}
       hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setWidth(Math.floor(size ?? 0))} />}
     >
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={GALLERY_GAP} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={GALLERY_GAP} {...viewMargins(embedded)}>
         {lines.map((line) => (
           // Homogeneous, and a short last line padded with empty slots, so
           // every card is the same width and lines up with the one above.
@@ -358,6 +361,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
 }
 
 export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
+  const embedded = useEmbedded();
   // A row dropped on another takes its place in the view's order (orderMovedTo).
   const reorderable = !!onUpdateView;
   const fields = visibleFields(view, schema);
@@ -376,8 +380,8 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
   });
 
   return (
-    <GtkScrolledWindow hexpand vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12}>
+    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} hscrollbarPolicy={Gtk.PolicyType.NEVER}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} {...viewMargins(embedded)}>
         {listed.map(({ row, starts }) => (
           <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
             {starts ? (
@@ -418,6 +422,7 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
 }
 
 export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
+  const embedded = useEmbedded();
   const field = view.calendar_field;
   const { locale } = useDisplaySettings();
   const [month, setMonth] = useState(() => initialMonth(view, rows));
@@ -439,8 +444,8 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewPro
   const dayRows = openDay ? (byDay.get(openDay) ?? []) : [];
 
   return (
-    <GtkScrolledWindow hexpand vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12} cssClasses={["card", styles.calendar]}>
+    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} hscrollbarPolicy={Gtk.PolicyType.NEVER}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} {...viewMargins(embedded)} cssClasses={["card", styles.calendar]}>
         <GtkBox marginTop={6} marginBottom={6} marginStart={6} marginEnd={6}>
           <GtkButton
             iconName="go-previous-symbolic"
