@@ -1182,7 +1182,7 @@ A table is read through the index once it is large enough that memory is no long
 
 **To revisit when** the index answers what forces memory today (formulas across rows, Sheet views), and when edit history (D44) and sync are built, which a database behind every table would simplify.
 
-## D46: an address can say how much of a view to show in place: `rows=` and `cards=`
+## D46: an address can say how much of a view to show in place: `rows=`, `cards=` and `rest=`
 
 **Decided (13 Oct 2026, with the first table drawn inside a Markdown document). Open to revisit.**
 
@@ -1194,5 +1194,7 @@ It is in the address because the height belongs to one placing of a view, not to
 
 **Considered:** a property of the view in `views.json`. Against it: one height for every place the view is drawn, and a change to the format for something that is about the page around the table. A single key (`show=<n>`) counting whatever the layout shows: against it, the link no longer says what is counted, and a view whose layout changes would silently mean something else. Height in pixels: against it, it is not the same on every platform, and an author thinks in rows.
 
-**To revisit when** an embed can show only some rows (the first n and "12 more") rather than a taller or shorter window onto all of them.
+`rest=more` beside a count draws only the first n and says how many more there are, in a line that shows them when chosen; without it the view scrolls to them. It is a key of its own, not a second pair of counts (`first=`, `top=`), so one count means one thing whether the rest scrolls or waits, and a reader that doesn't know `rest` still shows the right rows at the right height, scrolling.
+
+**To revisit when** a document wants a view narrowed for one placing (a filter or a search in the address), which is a different thing from how much of it is shown.
 

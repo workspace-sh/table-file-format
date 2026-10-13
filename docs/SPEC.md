@@ -1102,9 +1102,9 @@ fragment:
   - `view=<id>` — the view with this id
   - `field=<name>` — a specific field on the row (cell-level
     addressing for future affordances; reserved)
-  - `rows=<n>`, `cards=<n>`: how much of a view to show at once
-    where the address is drawn in place (see "A view drawn in place"
-    below). They say nothing about which rows the view has.
+  - `rows=<n>`, `cards=<n>`, `rest=more`: how much of a view to show
+    at once where the address is drawn in place (see "A view drawn in
+    place" below). They say nothing about which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
 strings). Order is not significant. Unknown keys MUST be tolerated
@@ -1147,9 +1147,26 @@ whole number from 1; the app then uses a height of its own. An app MAY
 cap the number (the reference apps stop at 500). The keys limit height
 only: the view has the same rows, in the same order, as anywhere else.
 
+`rest=` says what becomes of the rows or cards past the count:
+
+| Value | The rest |
+|---|---|
+| absent, or `scroll` | The view scrolls within itself to them. |
+| `more` | They are not drawn, and nothing scrolls. Beneath the view a line says how many there are ("Show 12 more rows") and, when chosen, shows them: the view is then as it would be with no count. |
+
+With `rest=more` the view draws the first n in its own order: rows of a
+table or a list, cards of a gallery, and the first n cards of each
+column of a board, where a column that has more says how many
+("+2 more"). What is counted from the whole view stays whole: a
+table's totals, a group's count, a board column's count. Adding a row
+shows the rest first, so the new row is seen. `rest=more` without a
+count that the layout shows does nothing; any other value is read as
+`scroll`.
+
 ```
-docs/projects.table#table=tasks&view=v1&rows=5     # five rows of a table view, then it scrolls
-docs/projects.table#table=tasks&view=v2&cards=3    # a board, three cards down each column
+docs/projects.table#table=tasks&view=v1&rows=5             # five rows of a table view, then it scrolls
+docs/projects.table#table=tasks&view=v2&cards=3            # a board, three cards down each column
+docs/projects.table#table=tasks&view=v1&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
 ```
 
 ### Resolution

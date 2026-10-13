@@ -10,8 +10,8 @@ import * as Adw from "@gtkx/gi/adw";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { AdwAlertDialog } from "@gtkx/jsx/adw";
-import { GtkBox, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
-import { bundleOf, rowTitleFor, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { GtkBox, GtkButton, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
+import { bundleOf, embedLeftOut, embedMoreText, rowTitleFor, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
 import { embedFiles, readEmbed, type EmbedTarget } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
@@ -57,9 +57,14 @@ function Shown({
 }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
   const { table } = derived;
-  // How much to show at once: the link's own count of rows or cards, else the limit.
-  const { rows, cards } = shown.size;
-  const embedded = useMemo(() => ({ maxHeight, rows, cards }), [maxHeight, rows, cards]);
+  // How much to show at once: the link's own count of rows or cards, else the limit. Cut to
+  // that count (`rest=more`), the rest isn't drawn until the line beneath is pressed; from
+  // then on it is the whole view at its usual height.
+  const { rows, cards, rest } = shown.size;
+  const [opened, setOpened] = useState(false);
+  const cut = rest === "more" && !opened;
+  const embedded = useMemo(() => (opened ? { maxHeight } : { maxHeight, rows, cards, cut }), [maxHeight, rows, cards, cut, opened]);
+  const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, derived.shown.rows, table.schema) : 0;
   // What holds the table (a document's text) gives it the least height it asks for, and a
   // scroller asks for almost none: so the height it would like (its rows, up to the limit)
   // is asked for outright, and again whenever what it holds grows or shrinks.
@@ -113,10 +118,22 @@ function Shown({
             tableKey={tableName}
             sheet={derived.shown.sheet}
             {...(readOnly ? {} : callbacks)}
+            // A row added while the rest is left out would be out of sight: the rest is shown first.
+            {...(readOnly || !cut
+              ? {}
+              : {
+                  onAddRow: () => {
+                    setOpened(true);
+                    return callbacks.onAddRow();
+                  },
+                })}
             onOpenRelation={onOpenLink}
           />
         </GtkBox>
       </EmbeddedContext.Provider>
+      {leftOut > 0 ? (
+        <GtkButton name="table-embed-more" label={embedMoreText(leftOut, derived.view.layout)} halign={Gtk.Align.START} cssClasses={["flat"]} onClicked={() => setOpened(true)} />
+      ) : null}
       {state.openPage !== null ? (
         <RowPage
           key={`${state.active}#${state.openPage}`}
