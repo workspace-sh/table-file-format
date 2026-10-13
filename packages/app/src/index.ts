@@ -14,7 +14,7 @@ export * from "./tableKey.ts";
 export * from "./showView.ts";
 export * from "./edits.ts";
 export type { EditLogState } from "./editLog.ts";
-export { appendFolderHistory, appendStoredHistory, clearStoredHistory, HISTORY_KEY, storedHistory } from "./editHistory.ts";
+export { appendFolderHistory, appendStoredHistory, clearStoredHistory, HISTORY_KEY, keepArrivedHistories, storedHistory, withHistories } from "./editHistory.ts";
 export * from "./creating.ts";
 export * from "./sidebar.ts";
 export * from "./library.ts";
