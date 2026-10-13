@@ -379,6 +379,8 @@ interface SidebarProps {
   onFilesMode: (files: boolean) => void;
   /** A table's attachment file names, by its `bundle/table` key. */
   attachmentsOf: (tableKey: string) => string[];
+  /** The tables with a history, by `bundle/table` key: the Files side lists their history.ndjson. */
+  withHistory: readonly string[];
   /** The file shown in place of a view, if any. */
   shownFile: ShownFile | null;
   onShowFile: (file: ShownFile) => void;
@@ -407,6 +409,7 @@ export function Sidebar({
   filesMode,
   onFilesMode,
   attachmentsOf,
+  withHistory,
   shownFile,
   onShowFile,
 }: SidebarProps) {
@@ -442,6 +445,7 @@ export function Sidebar({
           onToggleFile={onToggleFile}
           activeTablePath={activeTablePath}
           attachmentsOf={attachmentsOf}
+          withHistory={withHistory}
           shownFile={shownFile}
           onShowFile={onShowFile}
         />
@@ -574,6 +578,7 @@ function FilesTree({
   onToggleFile,
   activeTablePath,
   attachmentsOf,
+  withHistory,
   shownFile,
   onShowFile,
 }: {
@@ -583,6 +588,8 @@ function FilesTree({
   onToggleFile: (bundle: string) => void;
   activeTablePath: string;
   attachmentsOf: (tableKey: string) => string[];
+  /** The tables with a history, by `bundle/table` key: the Files side lists their history.ndjson. */
+  withHistory: readonly string[];
   shownFile: ShownFile | null;
   onShowFile: (file: ShownFile) => void;
 }) {
@@ -590,9 +597,15 @@ function FilesTree({
   // Folders the viewer opened or closed; the rest follow filesTree's
   // defaults, which open on what you're looking at.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const historied = withHistory.join("\n");
   const trees = useMemo(
-    () => filesTree(tables, bundles, { folded: foldedFiles, activeTable: activeTablePath, opened, attachmentsOf }),
-    [tables, bundles, foldedFiles, activeTablePath, opened, attachmentsOf],
+    () => {
+      const has = new Set(withHistory);
+      return filesTree(tables, bundles, { folded: foldedFiles, activeTable: activeTablePath, opened, attachmentsOf, hasHistory: (key) => has.has(key) });
+    },
+    // `historied` stands for `withHistory`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tables, bundles, foldedFiles, activeTablePath, opened, attachmentsOf, historied],
   );
   const indent = (depth: number, file = false) => styles.indent(8 + depth * 14 + (file ? 18 : 0));
 
