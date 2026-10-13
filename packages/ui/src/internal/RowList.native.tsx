@@ -18,7 +18,7 @@
  * its native build can't do: it windows only what it scrolls itself.
  */
 import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
 import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
@@ -26,8 +26,13 @@ import type { RowListProps } from "./RowList";
 
 export type { RowListHandle, RowListProps } from "./RowList";
 
-/** How far past the screen rows are kept drawn, in points. */
-const DRAW_DISTANCE = 600;
+/**
+ * How far past the screen rows are kept drawn, in points. The Mac's is
+ * four times a phone's: a trackpad's fling covers far more of a large
+ * table between draws, and the Mac has the time to draw it. A phone's
+ * stays short, where drawing further ahead cost more than it saved (#490).
+ */
+const DRAW_DISTANCE = Platform.OS === "macos" ? 2400 : 600;
 /**
  * Where the list starts in the page is asked again when the page can't say
  * (it isn't laid out yet), or doesn't answer at all: after each of these
