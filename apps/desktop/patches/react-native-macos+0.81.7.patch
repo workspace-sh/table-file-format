@@ -160,7 +160,7 @@ index c4bfeb1..d6f1cd9 100644
  
    const auto &props = static_cast<const TextInputProps &>(*_props);
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
-index 0dd5223..2a13675 100644
+index 0dd5223..4715a19 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 @@ -1035,7 +1035,11 @@ - (RCTUIView *)currentContainerView // [macOS]
@@ -176,6 +176,19 @@ index 0dd5223..2a13675 100644
        for (RCTPlatformView *subview in self.subviews) { // [macOS]
          [_containerView addSubview:subview];
        }
+@@ -1733,7 +1737,11 @@ - (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
+ 
+ - (CGRect)focusRingMaskBounds
+ {
+-  return [self bounds];
++  // [table-file-format patch] With its ring off, a view has no ring's area, as NSView's own default
++  // (NSZeroRect). Returning its bounds regardless made AppKit render a mask bitmap the size of the
++  // view whenever it took the keyboard, ring or no ring: a table's keyboard view around a million
++  // rows is 45 million points tall, and that bitmap took gigabytes.
++  return _props->enableFocusRing ? [self bounds] : NSZeroRect;
+ }
+ 
+ - (void)drawFocusRingMask
 diff --git a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm b/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
 index 2d83643..ed1e75a 100644
 --- a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
