@@ -49,7 +49,7 @@ import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js"
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
 import { styles } from "./theme.js";
-import { bottomIn, childAt, scrollerHeight, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
+import { bottomIn, childAt, drawnOf, scrollerHeight, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
 
 /** A board column's width: the web board's. */
 const BOARD_COLUMN_WIDTH = 268;
@@ -212,7 +212,12 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
   const fields = cardFields(view, schema, board.field);
   const fieldMap = fieldsByName(schema);
   const groupField = fieldMap.get(board.field);
-  const columns = board.keys.map((key) => (board.groups[key] ?? []).map((r) => r.id));
+  // The cards drawn in a column: all of them, or the first few when the board is embedded and cut to a count.
+  const drawn = (key: string) => {
+    const members = board.groups[key] ?? [];
+    return members.slice(0, drawnOf(embedded, embedded?.cards, members.length));
+  };
+  const columns = board.keys.map((key) => drawn(key).map((r) => r.id));
   const keys = useCardKeys({
     move: (id, key) => moveInColumns(columns, id, key),
     // Option/Alt+← → to the next column, ↑ ↓ within it: what dragging does.
@@ -272,7 +277,7 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
                 <GtkLabel label={pill.label} cssClasses={[styles.groupLabel]} />
                 <GtkLabel label={String(members.length)} cssClasses={[styles.groupCount]} />
               </GtkBox>
-              {members.map((row) => (
+              {drawn(key).map((row) => (
                 <CardButton
                   key={row.id}
                   onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}
@@ -298,6 +303,9 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
                   />
                 </CardButton>
               ))}
+              {members.length > drawn(key).length ? (
+                <GtkLabel name="board-column-more" label={`+${members.length - drawn(key).length} more`} xalign={0} marginStart={4} cssClasses={["caption", "dim-label"]} />
+              ) : null}
             </GtkBox>
           );
         })}
@@ -330,9 +338,11 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   // The gallery's width, less its margins, from the scroller's own page.
   const [width, setWidth] = useState(0);
   const { perRow } = galleryLayout(Math.max(0, width - (embedded ? 0 : 24)));
+  // Embedded and cut to a count, only the first cards are drawn.
+  const drawn = rows.slice(0, drawnOf(embedded, embedded?.cards, rows.length));
   const lines: Row[][] = [];
-  for (let i = 0; i < rows.length; i += perRow) lines.push(rows.slice(i, i + perRow));
-  const ids = rows.map((r) => r.id);
+  for (let i = 0; i < drawn.length; i += perRow) lines.push(drawn.slice(i, i + perRow));
+  const ids = drawn.map((r) => r.id);
   const keys = useCardKeys({ move: (id, key) => moveInGrid(ids, perRow, id, key) });
 
   // Embedded and asked for so many cards: as tall as the lines that hold them, when there are more.
@@ -411,7 +421,9 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
   const fields = visibleFields(view, schema);
   const [titleField, ...secondary] = fields;
   const fieldMap = fieldsByName(schema);
-  const listed = groupedRows(view, rows, schema);
+  const everyRow = groupedRows(view, rows, schema);
+  // Embedded and cut to a count, only the first rows are drawn.
+  const listed = everyRow.slice(0, drawnOf(embedded, embedded?.rows, everyRow.length));
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   const keys = useCardKeys({
     move: (id, key) => moveInColumns([listed.map((d) => d.row.id)], id, key),

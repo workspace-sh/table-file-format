@@ -12,7 +12,20 @@ export interface Embedded {
   rows?: number;
   /** A board shows this many cards down each column, a gallery the lines that hold this many; then they scroll. */
   cards?: number;
+  /**
+   * The rows or cards past the count aren't drawn at all, and nothing
+   * scrolls: whoever embeds the view says how many more there are.
+   */
+  cut?: boolean;
 }
+
+/** How many of its rows (or cards) an embedded view draws: all `have` of them, or the first `asked` when it is cut to a count. */
+export function drawnOf(embedded: Embedded | null, asked: number | undefined, have: number): number {
+  return embedded?.cut && asked !== undefined ? Math.min(have, asked) : have;
+}
+
+/** A view cut to a count has no limit of its own: it is as tall as what it draws. */
+export const NO_LIMIT = -1;
 
 export const EmbeddedContext = createContext<Embedded | null>(null);
 
@@ -60,7 +73,9 @@ export function useEmbeddedScroller(
 ): { ref: RefObject<Gtk.ScrolledWindow | null>; vexpand: boolean; propagateNaturalHeight: boolean; maxContentHeight: number } {
   const ref = useRef<Gtk.ScrolledWindow | null>(null);
   const [limit, setLimit] = useState<number | null>(null);
-  const asked = embedded !== null && until !== null;
+  // Cut to its count, there is nothing to scroll to: it is as tall as what it draws.
+  const cut = embedded?.cut === true && until !== null;
+  const asked = embedded !== null && until !== null && !cut;
   const fit = () => {
     if (!asked) return setLimit(null);
     const end = until();
@@ -78,7 +93,7 @@ export function useEmbeddedScroller(
       down.off("changed", changed);
     };
   }, []);
-  return { ref, ...scrollerHeight(embedded, asked ? limit : null) };
+  return { ref, ...scrollerHeight(embedded, cut ? NO_LIMIT : asked ? limit : null) };
 }
 
 /** A card view's margins from its window's edges; none when embedded, where it sits has its own. */

@@ -56,6 +56,9 @@ it), an app places one drop-in and gives it the link:
   link draws the same thing and fails with the same words everywhere.
   What it answers carries `size`: the `rows=` or `cards=` the address asks
   to be shown at once (SPEC section 10), for the drop-in to size itself by.
+  With `rest=more` in it the drop-in draws only that many: `embedCount`
+  says which count the layout shows, `embedLeftOut` how many it leaves
+  out, and `embedMoreText` what the line that shows them says.
 - **`useEmbeddedTable(shown, files)`** in `table-app/react` holds what it
   names over the app reducer: the views' props and callbacks, with edits
   written through `files` (how the platform writes a bundle and appends
