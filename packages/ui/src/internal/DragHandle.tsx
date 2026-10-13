@@ -25,7 +25,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, State } from "react-native-gesture-handler";
 
 export interface DragEvent {
@@ -114,6 +114,9 @@ export function DragHandle({
   // while still calling the latest consumer callback every fire.
   // An edge being dragged keeps its line full, wherever the pointer is.
   const [dragged, setDragged] = useState(false);
+  // Pressed on, from the press to its end: an edge's gesture stays on while
+  // the pointer leaves the strip before the drag has started.
+  const [held, setHeld] = useState(false);
   const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDoubleTap });
   callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDoubleTap };
   const doubleTaps = onDoubleTap !== undefined;
@@ -180,6 +183,9 @@ export function DragHandle({
         .failOffsetY([-15, 15]);
     }
     pan = pan
+      .onBegin(() => {
+        if (edge) setHeld(true);
+      })
       .onStart((e) => {
         if (edge) setDragged(true);
         callbacksRef.current.onDragStart?.({
@@ -203,6 +209,7 @@ export function DragHandle({
       // wins). Treat as release so we don't leak drag state.
       .onFinalize((e, success) => {
         setDragged(false);
+        setHeld(false);
         if (!success) {
           callbacksRef.current.onDragEnd?.({
             pageX: e.absoluteX,
@@ -244,19 +251,39 @@ export function DragHandle({
           onMouseLeave: () => setLit(false),
         }
       : {};
+  const strip = edge ? (edge === "end" && straddle ? edgeStyles.endStraddle : edgeStyles[edge]) : undefined;
+  const line = edge && (lit || shown) && (
+    <View
+      pointerEvents="none"
+      style={[
+        edge === "end" ? (straddle ? edgeStyles.endStraddleLine : edgeStyles.endLine) : edgeStyles.bottomLine,
+        shown && edgeStyles.lineDragged,
+      ]}
+    />
+  );
+  // An edge with a pointer has its gesture only while the pointer is over
+  // it or it's pressed on: a plain strip watches for the pointer, and
+  // the gesture's view is laid over it then. Every row of a table has an
+  // edge in each pane, and a gesture attached to each, made again as rows
+  // were drawn, took a fifth of the Mac's script time while scrolling.
+  if (edge && Platform.OS === "macos") {
+    return (
+      <View style={strip} {...pointer}>
+        {children}
+        {line}
+        {(lit || held || dragged) && (
+          <GestureDetector gesture={gesture}>
+            <View collapsable={false} style={StyleSheet.absoluteFill} />
+          </GestureDetector>
+        )}
+      </View>
+    );
+  }
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={edge ? (edge === "end" && straddle ? edgeStyles.endStraddle : edgeStyles[edge]) : undefined} {...pointer}>
+      <View collapsable={false} style={strip} {...pointer}>
         {children}
-        {edge && (lit || shown) && (
-          <View
-            pointerEvents="none"
-            style={[
-              edge === "end" ? (straddle ? edgeStyles.endStraddleLine : edgeStyles.endLine) : edgeStyles.bottomLine,
-              shown && edgeStyles.lineDragged,
-            ]}
-          />
-        )}
+        {line}
       </View>
     </GestureDetector>
   );
