@@ -23,9 +23,12 @@ export interface TableAppAdapter {
    * Write the bundles edited, as `tables` and `metas` hold them. Resolves
    * once they're written; `false` when the app held the write back (a
    * reset under way), so they stay to write. A rejection is shown as
-   * `saving`'s failure, and they stay to write.
+   * `saving`'s failure, and they stay to write. A bundle given that
+   * `metas` doesn't hold was closed: what the app kept of it goes.
+   * `closed`: every bundle closed here, for the app to keep with its
+   * saved tables (`Saved.closed`).
    */
-  write: (bundles: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void | false>;
+  write: (bundles: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>, closed: string[]) => Promise<void | false>;
   /** How long after the last edit to write. 0 (the default) writes as soon as the edit shows. */
   delayMs?: number;
   /**
@@ -82,13 +85,16 @@ export async function writeHistoryNow(
 /** Where the files stand: written, being written, or not written and why. */
 export type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
 
+/** What a write reads of the state. */
+type Writable = Pick<AppState, "dirty" | "tables" | "bundles"> & Partial<Pick<AppState, "closed">>;
+
 /**
  * Write what's dirty now, and say it's written: true when it's all
  * written (or nothing was dirty), false when the app held it back or it
  * failed, and it stays to write. Plain, as scheduleWrite is.
  */
 export async function writeNow(
-  state: Pick<AppState, "dirty" | "tables" | "bundles">,
+  state: Writable,
   adapter: Pick<TableAppAdapter, "write">,
   dispatch: (action: AppAction) => void,
   onSaving: (saving: SaveState) => void,
@@ -97,7 +103,7 @@ export async function writeNow(
   const { dirty: which, tables, bundles } = state;
   onSaving({ kind: "saving" });
   try {
-    const done = await adapter.write(which, tables, bundles);
+    const done = await adapter.write(which, tables, bundles, state.closed ?? []);
     // `tables` as written: a bundle edited again meanwhile stays to write.
     if (done !== false) dispatch({ type: "written", bundles: which, tables });
     onSaving({ kind: "saved" });
@@ -114,7 +120,7 @@ export async function writeNow(
  * without a renderer; useTableApp runs it after every edit.
  */
 export function scheduleWrite(
-  state: Pick<AppState, "dirty" | "tables" | "bundles">,
+  state: Writable,
   adapter: Pick<TableAppAdapter, "write" | "delayMs">,
   dispatch: (action: AppAction) => void,
   onSaving: (saving: SaveState) => void,

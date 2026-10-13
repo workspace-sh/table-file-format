@@ -11,6 +11,8 @@ import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 export interface Saved {
   tables: Record<string, ParsedTable>;
   bundles: Record<string, BundleMeta>;
+  /** Bundles closed here (closing.ts): an example among them isn't added back. */
+  closed?: string[];
 }
 
 export const STORAGE_KEY = "table-demo:tables";
@@ -69,15 +71,18 @@ export function clearSaved(store: KeyValueStore | null): void {
  * since: a table added to a fixture (the household budget's ledger, say)
  * appears in a browser that saved its edits before it existed. Saved
  * tables and edits are kept as they are; the demo can't delete a table,
- * so a fixture table missing from what's saved is always a new one.
+ * so a fixture table missing from what's saved is always a new one. A
+ * fixture file closed here (`saved.closed`) stays closed.
  */
 export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
   const tables = { ...saved.tables };
   const bundles = { ...saved.bundles };
+  const closed = new Set(saved.closed ?? []);
   let changed = false;
   for (const [key, table] of Object.entries(fixtures.tables)) {
     if (key in tables) continue;
     const bundle = key.slice(0, key.indexOf("/"));
+    if (closed.has(bundle)) continue;
     const name = key.slice(bundle.length + 1);
     tables[key] = table;
     changed = true;
@@ -100,6 +105,7 @@ export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
 /** Bundles, and tables that each belong to one of them. */
 function isSaved(value: unknown): value is Saved {
   if (!isObject(value) || !isObject(value.bundles) || !isTables(value.tables)) return false;
+  if (value.closed !== undefined && !(Array.isArray(value.closed) && value.closed.every((b) => typeof b === "string"))) return false;
   const bundles = value.bundles as Record<string, unknown>;
   return Object.keys(value.tables).every((key) => {
     const slash = key.indexOf("/");

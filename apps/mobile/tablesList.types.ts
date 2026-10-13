@@ -8,4 +8,6 @@ export interface TablesListProps {
   active: string;
   onChoose: (key: string) => void;
   onNewTable: (bundle: string) => void;
+  /** Close a file (asks first); offered where the file is `closable`. */
+  onClose: (bundle: string) => void;
 }
