@@ -85,7 +85,8 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
       />
     );
   }
-  if (!onOpenRelation) return <CellText text={link.label} />;
+  // Nowhere to follow it to: the row's name, as the link would show it.
+  if (!onOpenRelation) return <GtkLabel label={link.label} ellipsize={Pango.EllipsizeMode.END} />;
   return (
     <GtkButton
       cssClasses={["flat", styles.relationLink]}

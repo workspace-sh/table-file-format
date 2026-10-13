@@ -45,6 +45,27 @@ it implements is spec-frozen.
   key-value store, and `.table.zip` files. `@workspace.sh/table-app/node`
   opens `.table` folders from disk (`loadLibrary`).
 
+### A table inside a document
+
+To show a `.table` inside something else (a Markdown file that links to
+it), an app places one drop-in and gives it the link:
+
+- **`embedIn(library, address, fileName)`** in `table-app` says what a
+  link's address names in a file just read: which table and view, or why
+  it can't be drawn, in words for the reader. Every drop-in asks it, so a
+  link draws the same thing and fails with the same words everywhere.
+- **`useEmbeddedTable(shown, files)`** in `table-app/react` holds what it
+  names over the app reducer: the views' props and callbacks, with edits
+  written through `files` (how the platform writes a bundle and appends
+  to a history) and whatever is still to write written when it goes.
+- **`readEmbed({ address, baseDir, within })`** and **`embedFiles`** in
+  `table-app/node` are those two over node:fs: the path resolved against
+  the document's folder and kept inside `within`.
+- **`TableEmbed`** in `@workspace.sh/table-gtk/embed` is the GTK drop-in
+  over them (see that package's README). A drop-in for `table-ui`'s
+  views (web, iOS, Android, macOS) is the same hook with those views and
+  the platform's own files; it is not written yet.
+
 Resolution is verified on all three loaders: **Node ESM** (`default`
 condition → `dist/`, explicit `.js` specifiers), **Vite** (`source`
 condition → `src/*.ts`; production build green), **Metro**
