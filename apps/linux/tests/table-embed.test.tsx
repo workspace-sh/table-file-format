@@ -230,6 +230,19 @@ describe("a table edited in a document", () => {
     await waitFor(async () => expect((await tasksOnDisk()).rows.at(-1)?.title).toBe("Added in a document"));
   });
 
+  it("read-only, has nothing to edit with: no editor on a click, no new row, and Ctrl+Z does nothing", async () => {
+    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} readOnly />));
+    const title = await screen.findByText("Land .table extension");
+    await userEvent.click(title);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.queryByDisplayValue("Land .table extension")).toBeNull();
+    expect(screen.queryByText("+ New row")).toBeNull();
+    const before = readFileSync(join(tasksDir(), "rows.ndjson"), "utf8");
+    await cleanup();
+    expect(readFileSync(join(tasksDir(), "rows.ndjson"), "utf8")).toBe(before);
+    expect(history()).toEqual([]);
+  });
+
   it("says what was typed in a row's page when the document lets go of it, as closing the page would", async () => {
     const page = join(root, "tables", "projects.table", "tables", "projects", "bodies", "p2.md");
     const pageHistory = () => {
