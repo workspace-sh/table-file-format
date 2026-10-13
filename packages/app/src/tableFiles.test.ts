@@ -139,6 +139,27 @@ test("a spreadsheet whose name is taken is kept apart; one with nothing in it is
   assert.deepEqual(openSpreadsheet("Name,Qty\n", "x.csv", []).bundle.tables.x!.rows, []);
 });
 
+test("a spreadsheet's bytes as text where there's no TextDecoder, as on the Mac's Hermes", () => {
+  const was = globalThis.TextDecoder;
+  // @ts-expect-error: taken away, as on a host without one
+  delete globalThis.TextDecoder;
+  try {
+    assert.equal(spreadsheetText(new TextEncoder().encode("Name,Price\nCafé,£3,😀\n")), "Name,Price\nCafé,£3,😀\n");
+    // A byte-order mark before UTF-8 isn't part of the first heading.
+    assert.equal(spreadsheetText(Uint8Array.from([0xef, 0xbb, 0xbf, 0x41])), "A");
+    // Windows-1252's own characters between 0x80 and 0x9F: € ' " –.
+    assert.equal(spreadsheetText(Uint8Array.from([0x80, 0x92, 0x93, 0x96, 0xe9])), "€’“–é");
+    // UTF-8 cut short, or an overlong form, isn't UTF-8.
+    assert.equal(spreadsheetText(Uint8Array.from([0x41, 0xc3])), "AÃ");
+    assert.equal(spreadsheetText(Uint8Array.from([0xc0, 0xaf])), "À¯");
+    assert.equal(spreadsheetText(Uint8Array.from([0xfe, 0xff, 0, 0x41, 0xd8, 0x3d, 0xde, 0])), "A😀");
+    // Long enough that one String.fromCharCode call would overflow the stack.
+    assert.equal(spreadsheetText(new Uint8Array(200_000).fill(0x61)).length, 200_000);
+  } finally {
+    globalThis.TextDecoder = was;
+  }
+});
+
 test("which files are spreadsheets, and their bytes as text whatever wrote them", () => {
   for (const name of ["a.csv", "A.CSV", "b.tsv", "c.tab", "d.txt"]) assert.equal(isSpreadsheetFile(name), true, name);
   for (const name of ["a.table.zip", "a.zip", "a.xlsx", "csv", "a.csv.bak"]) assert.equal(isSpreadsheetFile(name), false, name);
