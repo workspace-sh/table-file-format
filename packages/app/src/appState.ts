@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type TableSchema, type View } from "@workspace.sh/table-core";
+import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
@@ -1035,6 +1035,13 @@ function shownLast(tables: Record<string, ParsedTable>, key: string, view: View,
   return answer;
 }
 
+/**
+ * An indexed table's rows here: none, and always the same none. A new
+ * empty list each time was a new prop for the table on every draw of the
+ * app, which drew every row of the table again (a selection, a second).
+ */
+const INDEXED_ROWS: Row[] = [];
+
 export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const table = state.tables[state.active] ?? NO_TABLE;
   const viewId = viewIdOf(state, state.active);
@@ -1046,7 +1053,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const shown: ShownView =
     held && !table.indexed
       ? shownLast(state.tables, state.active, view, arrangement, state.search, locale)
-      : { view: arrangedView(view, arrangement), rows: [], inView: options.indexedShown?.inView ?? table.indexed?.count ?? 0 };
+      : { view: arrangedView(view, arrangement), rows: INDEXED_ROWS, inView: options.indexedShown?.inView ?? table.indexed?.count ?? 0 };
   const live = (a: string) => addressLive(a, state.tables, state.bundles);
   const canGoBack = goBack(state.history, live) !== null;
   const canGoForward = goForward(state.history, live) !== null;
