@@ -97,3 +97,14 @@ test("an example closed stays out of the next launch's", () => {
   assert.equal(merged.bundles.crm, undefined);
   assert.ok(withNewFixtures({ tables: s.tables, bundles: s.bundles }, all).bundles.crm);
 });
+
+test("an app that knows where the file lives says so, whatever `opened` holds", () => {
+  // Every file of the app is a folder on disk, though the state has no path for this one.
+  const folder = run(start(), { type: "close", bundle: "crm", fromFolder: true });
+  assert.deepEqual(folder.asking?.kind === "confirm" && folder.asking.confirm, closePrompt(folder.bundles.crm!.title ?? "crm", true));
+  // And the other way: opened from a path, but the app's own copy.
+  const { tables, bundles } = examples();
+  const own = run(initialAppState({ tables, bundles, opened: { crm: "/data/examples/crm.table" } }), { type: "close", bundle: "crm", fromFolder: false });
+  assert.deepEqual(own.asking?.kind === "confirm" && own.asking.confirm, closePrompt(own.bundles.crm!.title ?? "crm", false));
+});
+

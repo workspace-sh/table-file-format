@@ -1,7 +1,8 @@
+import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { bundleToArchive, openArchive, toBundle } from "@workspace.sh/table-app";
-import { copiesOf, loadLibrary } from "@workspace.sh/table-app/node";
+import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
 import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -9,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App.js";
+import { loadClosed } from "../src/closedFiles.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // Opening a .table folder or a .table.zip, exporting one, and putting the
@@ -164,6 +166,103 @@ describe("the File menu on Linux", () => {
     const text = readFileSync(file, "utf8");
     expect(text.startsWith(theirs)).toBe(true);
     expect(parseEditLog(text).events.map((e) => e.id === "theirs" || (e.op === "set" && e.to))).toEqual([true, "Polished"]);
+  });
+
+  // Close File: from a file's heading in the sidebar (a right-click), and from the main menu for the file on screen.
+  async function fileMenu(title: string): Promise<Gtk.MenuButton | undefined> {
+    const buttons = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON);
+    return buttons.find((b) => b instanceof Gtk.MenuButton && b.getTooltipText() === `File Actions for ${title}`) as Gtk.MenuButton | undefined;
+  }
+  /** A question's answer: its button in the dialog asking (the window has a Close of its own). */
+  const answer = async (label: string): Promise<Gtk.Button> => {
+    let found: Gtk.Button | undefined;
+    await waitFor(() => {
+      found = screen.queryAllByRole(Gtk.AccessibleRole.BUTTON, { name: label }).find((b) => {
+        for (let w: Gtk.Widget | null = b; w; w = w.getParent()) if (w instanceof Adw.AlertDialog) return true;
+        return false;
+      }) as Gtk.Button | undefined;
+      expect(found, `the answer ${label}`).toBeDefined();
+    });
+    return found!;
+  };
+  const windowOf = async () => (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow;
+
+  it("closing an example asks first; Close takes it out of the sidebar and removes the app's copy, and it stays closed", async () => {
+    const settings = jsonFileStore(join(dir, "settings.json"));
+    const library = await loadLibrary([join(examples, "projects.table"), join(examples, "crm.table")]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={examples} settings={settings} />);
+    const copy = join(examples, "crm.table");
+    expect(existsSync(copy)).toBe(true);
+    (await fileMenu("CRM"))!.activateAction("file.close", null);
+    await screen.findByText("Close “CRM”?");
+    await screen.findByText("This app's copy is removed. A .table.zip you opened it from isn't touched.");
+    // Cancelled, nothing changes.
+    (await answer("Cancel")).activate();
+    await waitFor(() => expect(screen.queryByText("Close “CRM”?")).toBeNull());
+    expect(await fileMenu("CRM")).toBeDefined();
+    expect(existsSync(copy)).toBe(true);
+
+    (await fileMenu("CRM"))!.activateAction("file.close", null);
+    (await answer("Close")).activate();
+    await waitFor(async () => expect(await fileMenu("CRM")).toBeUndefined());
+    expect(screen.queryAllByText("Companies")).toHaveLength(0);
+    await waitFor(() => expect(existsSync(copy)).toBe(false));
+    // The other file is as it was, on screen and on disk.
+    await screen.findAllByText("Land .table extension");
+    expect(existsSync(join(examples, "projects.table", "tables", "tasks", "rows.ndjson"))).toBe(true);
+    // Kept with the viewer's settings, so the next launch doesn't copy the example back.
+    await waitFor(() => expect(loadClosed(jsonFileStore(join(dir, "settings.json")))).toEqual(["crm"]));
+    copiesOf(fixturesDir()!, examples, loadClosed(jsonFileStore(join(dir, "settings.json"))));
+    expect(existsSync(copy)).toBe(false);
+    expect(existsSync(join(examples, "household-budget.table"))).toBe(true);
+  });
+
+  it("closing a folder of your own leaves the folder where it is, and says so", async () => {
+    const own = join(dir, "mine", "crm.table");
+    cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
+    const before = readFileSync(join(own, "tables", "companies", "rows.ndjson"), "utf8");
+    const library = await loadLibrary([join(examples, "projects.table"), own]);
+    await render(<App library={library} initialTable="crm/companies" newFilesIn={examples} />);
+    // From the main menu: the file on screen.
+    const window = await windowOf();
+    expect(window.getActionEnabled("close-file")).toBe(true);
+    window.activateAction("win.close-file", null);
+    await screen.findByText("Close “CRM”?");
+    await screen.findByText("The folder stays where it is, and can be opened again.");
+    (await answer("Close")).activate();
+    await waitFor(async () => expect(await fileMenu("CRM")).toBeUndefined());
+    // Another file is on screen now.
+    await screen.findAllByText("Projects");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(readFileSync(join(own, "tables", "companies", "rows.ndjson"), "utf8")).toBe(before);
+    expect(existsSync(join(own, "meta.json"))).toBe(true);
+  });
+
+  it("with no examples library, a file made beside your folder is yours too: closing it leaves it there", async () => {
+    const own = join(dir, "mine", "crm.table");
+    cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
+    const library = await loadLibrary([own]);
+    await render(<App library={library} initialTable="crm/companies" />);
+    // A new file, made beside the folder that is open.
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
+    const entry = (await screen.findAllByRole(Gtk.AccessibleRole.TEXT_BOX)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    await userEvent.type(entry, "Garden");
+    await userEvent.keyboard(entry, "{Enter}");
+    const made = join(dir, "mine", "garden.table");
+    await waitFor(() => expect(existsSync(join(made, "meta.json"))).toBe(true));
+    (await fileMenu("Garden"))!.activateAction("file.close", null);
+    // It is a folder of the viewer's, though the app made it: it stays.
+    await screen.findByText("The folder stays where it is, and can be opened again.");
+    (await answer("Close")).activate();
+    await waitFor(async () => expect(await fileMenu("Garden")).toBeUndefined());
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(existsSync(join(made, "meta.json"))).toBe(true);
+  });
+
+  it("the last file open can't be closed", async () => {
+    await openExamples();
+    expect(await fileMenu("Projects")).toBeUndefined();
+    expect((await windowOf()).getActionEnabled("close-file")).toBe(false);
   });
 
   it("Reset Demo Data… puts the examples back, and keeps a folder opened from elsewhere", async () => {

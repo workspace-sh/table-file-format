@@ -92,3 +92,28 @@ test("history is appended to: a new file is made, an old one is only added to, a
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("copies of the examples are made once, and not of the ones named as closed", async () => {
+  const { copiesOf, bundlesIn } = await import("./node.ts");
+  const { mkdirSync } = await import("node:fs");
+  const { basename } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "table-app-copies-"));
+  try {
+    const from = join(dir, "from");
+    for (const name of ["a.table", "b.table", "c.table"]) {
+      mkdirSync(join(from, name), { recursive: true });
+      writeFileSync(join(from, name, "meta.json"), name);
+    }
+    const to = join(dir, "to");
+    assert.deepEqual(copiesOf(from, to, ["b"]).map((p) => basename(p)), ["a.table", "c.table"]);
+    assert.deepEqual(bundlesIn(to).map((p) => basename(p)), ["a.table", "c.table"]);
+    // Edited since: left as it is.
+    writeFileSync(join(to, "a.table", "meta.json"), "edited");
+    assert.deepEqual(copiesOf(from, to).map((p) => basename(p)), ["a.table", "b.table", "c.table"]);
+    assert.equal(readFileSync(join(to, "a.table", "meta.json"), "utf8"), "edited");
+    assert.equal(readFileSync(join(to, "b.table", "meta.json"), "utf8"), "b.table");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

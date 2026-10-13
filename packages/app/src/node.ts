@@ -79,14 +79,19 @@ export async function appendHistory(tableDir: string, events: readonly EditEvent
 /**
  * Copies of the `.table` folders in `from`, in `to`, made once: a copy
  * already there is left as it is, edits and all. For demos, which edit
- * examples without touching the originals.
+ * examples without touching the originals. `except` names the ones not to
+ * copy (by their name without `.table`): examples the viewer closed, which
+ * stay closed.
  */
-export function copiesOf(from: string, to: string): string[] {
-  return bundlesIn(from).map((source) => {
-    const copy = join(to, basename(source));
-    if (!existsSync(copy)) cpSync(source, copy, { recursive: true });
-    return copy;
-  });
+export function copiesOf(from: string, to: string, except: Iterable<string> = []): string[] {
+  const left = new Set(except);
+  return bundlesIn(from)
+    .filter((source) => !left.has(basename(source).replace(/\.table$/, "")))
+    .map((source) => {
+      const copy = join(to, basename(source));
+      if (!existsSync(copy)) cpSync(source, copy, { recursive: true });
+      return copy;
+    });
 }
 
 /**

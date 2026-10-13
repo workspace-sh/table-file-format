@@ -24,8 +24,8 @@ import {
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkProgressBar, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
+import { GtkBox, GtkButton, GtkEntry, GtkGestureClick, GtkLabel, GtkMenuButton, GtkOverlay, GtkPopoverMenu, GtkProgressBar, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
   derive,
@@ -38,6 +38,8 @@ import {
   type ViewCallbacks,
   archiveFileName,
   bundleToArchive,
+  canClose,
+  closedIn,
   withHistories,
   fromBundle,
   exportFailedText,
@@ -67,8 +69,9 @@ import {
   type Place,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
+import { loadClosed, saveClosed } from "./closedFiles.js";
 import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
 import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
@@ -91,12 +94,50 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 /** A line of the sidebar: table-app's tree, flattened for a ListBox. */
 type Entry = SidebarEntry;
 
+/**
+ * A .table file's heading in the sidebar, with its menu on a right-click:
+ * Close File, as the Mac's sidebar has it. The menu hangs from a button
+ * laid over the heading that is never seen or pressed itself (a popover
+ * needs a widget of its own to open from). The last file open can't be
+ * closed, and has no menu.
+ */
+function FileHeader({ title, onClose, children }: { title: string; onClose?: () => void; children: ReactNode }) {
+  const button = useRef<Gtk.MenuButton | null>(null);
+  const heading = (
+    <GtkBox marginTop={12} spacing={2}>
+      {children}
+    </GtkBox>
+  );
+  if (!onClose) return heading;
+  return (
+    <GtkOverlay
+      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+      actionGroups={<GSimpleActionGroup prefix="file" actions={<GSimpleAction name="close" onActivate={onClose} />} />}
+      overlays={
+        <GtkMenuButton
+          ref={button}
+          opacity={0}
+          canTarget={false}
+          canFocus={false}
+          halign={Gtk.Align.START}
+          valign={Gtk.Align.END}
+          tooltipText={`File Actions for ${title}`}
+          popover={<GtkPopoverMenu hasArrow={false} menuModel={<GMenu items={[{ label: "Close File", action: "file.close" }]} />} />}
+        />
+      }
+    >
+      {heading}
+    </GtkOverlay>
+  );
+}
+
 function Sidebar({
   entries,
   selected,
   onSelect,
   onNewTable,
   onToggleFile,
+  onCloseFile,
 }: {
   entries: Entry[];
   selected: number;
@@ -105,6 +146,8 @@ function Sidebar({
   onNewTable: (bundle: string) => void;
   /** Fold a .table file's tables away, or show them again. */
   onToggleFile: (bundle: string) => void;
+  /** Close a .table file (it asks first). */
+  onCloseFile: (bundle: string) => void;
 }) {
   return (
     <GtkScrolledWindow vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
@@ -125,7 +168,7 @@ function Sidebar({
             case "bundle":
               return (
                 <GtkListBoxRow key={`b:${entry.bundle.bundle}`} selectable={false} activatable={false}>
-                  <GtkBox marginTop={12} spacing={2}>
+                  <FileHeader title={entry.bundle.title} onClose={entry.bundle.closable ? () => onCloseFile(entry.bundle.bundle) : undefined}>
                     <GtkButton
                       iconName={entry.bundle.folded ? "pan-end-symbolic" : "pan-down-symbolic"}
                       cssClasses={["flat", "circular"]}
@@ -139,7 +182,7 @@ function Sidebar({
                       tooltipText={`New Table in ${entry.bundle.title}`}
                       onClicked={() => onNewTable(entry.bundle.bundle)}
                     />
-                  </GtkBox>
+                  </FileHeader>
                 </GtkListBoxRow>
               );
             case "table":
@@ -600,6 +643,11 @@ export function App({
   const closing = useRef(false);
   // Set once the indexed tables' hook below has run: a write can only come after.
   const saveIndexed = useRef<(bundles: string[], tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const closeIndexed = useRef<(bundle: string) => Promise<void>>(async () => {});
+  // Where each file held is on disk, kept past its closing: the write that follows needs it.
+  const lastPaths = useRef(new Map<string, string>());
+  // The app's own copy of a file: one in the examples' folder, which is the app's to make and remove.
+  const ownCopy = (path: string) => !!newFilesIn && path.startsWith(`${newFilesIn}/`);
   // A table's own folder, for its history: set below, where the paths are known.
   const historyDir = useRef<(key: string) => string | undefined>(() => undefined);
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(() => {
@@ -617,6 +665,7 @@ export function App({
       ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
       // Each edit goes to its table's history.ndjson (SPEC section 14).
       writesHistory: true,
+      closed: loadClosed(store),
     });
   }, {
     store,
@@ -624,9 +673,19 @@ export function App({
     // Each bundle to where it is on disk. A reset holds writing while it puts the examples back.
     write: async (bundles, tables, metas) => {
       if (resetting.current) return false;
-      const paths = Object.fromEntries(bundles.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
-      await Promise.all(bundles.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
-      await saveIndexed.current(bundles, tables);
+      // A file closed: its index is let go, and the app's own copy of it (one in the examples' folder)
+      // is removed. A folder of the viewer's own stays where it is.
+      const closed = closedIn(bundles, metas);
+      for (const bundle of closed) {
+        const path = lastPaths.current.get(bundle);
+        await closeIndexed.current(bundle);
+        if (path && ownCopy(path)) rmSync(path, { recursive: true, force: true });
+        lastPaths.current.delete(bundle);
+      }
+      const held = bundles.filter((b) => !closed.includes(b));
+      const paths = Object.fromEntries(held.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
+      await Promise.all(held.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
+      await saveIndexed.current(held, tables);
     },
     // What was edited, added to the table's history in its folder. A table with nowhere on disk keeps it to write.
     appendHistory: async (key, events) => {
@@ -646,6 +705,17 @@ export function App({
   const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (filesIn ? `${filesIn}/${bundle}.table` : undefined);
   // A table's own folder, where its attachments/ is.
   const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
+  for (const bundle of Object.keys(bundles)) {
+    const path = pathOf(bundle);
+    if (path) lastPaths.current.set(bundle, path);
+  }
+  // The examples closed here are kept, so the next launch doesn't copy them back.
+  useEffect(() => saveClosed(store, state.closed), [store, state.closed]);
+  // Close a file: every file here is a folder on disk, and only the app's own copies go with it.
+  const closeFile = (bundle: string) => {
+    const path = pathOf(bundle);
+    dispatch({ type: "close", bundle, fromFolder: !(path && ownCopy(path)) });
+  };
 
   // A table's history as its file holds it now, for the Files side to show.
   const historyText = (key: string): string | undefined => {
@@ -664,6 +734,7 @@ export function App({
   // Tables held in the index: their rows are read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
   saveIndexed.current = indexed.save;
+  closeIndexed.current = indexed.closeBundle;
   const derived = derive(state, {
     ...deriveOptions,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
@@ -825,6 +896,9 @@ export function App({
   const section = (menu: string) => menuSections[["File", "Edit", "View", "Go"].filter((m) => commands.some((c) => c.menu === m)).indexOf(menu)]?.section;
   const onTables = state.sidebar.files !== true && tables[state.active] !== undefined;
   if (canAddField) section("File")?.push({ label: "New Row", action: "win.new-row" }, { label: "New Field…", action: "win.new-field" });
+  // The file on screen, closed from the menu as from its heading in the sidebar.
+  const canCloseFile = canClose(bundles, bundleOf(state.active));
+  if (canCloseFile) section("File")?.push({ label: "Close File", action: "win.close-file" });
   if (onTables) {
     section("Edit")?.push({ label: "Find in View…", action: "win.find" });
     section("View")?.push({ label: state.settingsOpen ? "Hide View Settings" : "Show View Settings", action: "win.view-settings" });
@@ -898,6 +972,7 @@ export function App({
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
+          <GSimpleAction key="close-file" name="close-file" enabled={canCloseFile} onActivate={() => closeFile(bundleOf(state.active))} />,
           <GSimpleAction key="new-row" name="new-row" enabled={canAddField} onActivate={() => void callbacks.onAddRow()} />,
           <GSimpleAction key="find" name="find" enabled={onTables} onActivate={() => setFindRequest((n) => n + 1)} />,
           <GSimpleAction key="view-settings" name="view-settings" enabled={onTables} onActivate={() => dispatch({ type: "settings", open: !state.settingsOpen })} />,
@@ -952,6 +1027,7 @@ export function App({
                     }}
                     onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
                     onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
+                    onCloseFile={closeFile}
                   />
                 )}
               </AdwToolbarView>

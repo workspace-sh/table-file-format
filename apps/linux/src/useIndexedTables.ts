@@ -36,6 +36,8 @@ export interface IndexedTables {
   save(bundles: string[], tables: Record<string, ParsedTable>): Promise<void>;
   /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
   everyRow(key: string): Promise<Row[]>;
+  /** A file closed: its index is let go of, so its folder is no longer held open. */
+  closeBundle(bundle: string): Promise<void>;
 }
 
 export function useIndexedTables(input: {
@@ -111,6 +113,28 @@ export function useIndexedTables(input: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tables]);
+
+  // A table no longer held (its file closed) is forgotten, so a file opened again under the same
+  // name is read afresh rather than taken for the one that was here.
+  useEffect(() => {
+    const gone = [...asked.current].filter((key) => !state.tables[key]);
+    if (gone.length === 0) return;
+    const drop = <T,>(was: Record<string, T>) => Object.fromEntries(Object.entries(was).filter(([key]) => !gone.includes(key)));
+    for (const key of gone) {
+      asked.current.delete(key);
+      madeFor.current.delete(key);
+      unsaved.current.delete(key);
+    }
+    setMade(drop);
+    setProgress(drop);
+    setFirst(drop);
+  }, [state.tables]);
+  /** A file closed: its index is let go of, so its folder is no longer held open. */
+  const closeBundle = useCallback(async (bundle: string) => {
+    const host = hosts.current.get(bundle);
+    hosts.current.delete(bundle);
+    await host?.close().catch(() => {});
+  }, []);
 
   // The view on screen's rows.
   const active = state.tables[state.active];
@@ -300,5 +324,6 @@ export function useIndexedTables(input: {
     reading,
     source: ready && source?.key === state.active ? source.rows : undefined,
     save,
+    closeBundle,
   };
 }
