@@ -354,7 +354,10 @@ function WindowedRows<T>({
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
-      <View style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>{rows}</View>
+      {/* Named for the Mac app's scrolling run (TableScrollBench), which measures how much of the list's place on screen this box covers. */}
+      <View nativeID="table-rows" style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>
+        {rows}
+      </View>
     </View>
   );
 }

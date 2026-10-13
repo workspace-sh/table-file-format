@@ -397,6 +397,29 @@ xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer 
 
 Link parameters: `rows` (comma-separated sizes), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
 
+### Scrolling on macOS: text drawn again on every step (13 Oct 2026)
+
+Scrolling the 1,000,000-row table on the Mac was far behind iOS. A `sample` of the main thread put half its time in drawing text (`RCTParagraphTextView drawRect`), and counting showed why: in a slow scroll past 23 rows React Native asked for about 210 text draws, and AppKit made 3,252. Every text on screen was drawn again on every step of the scroll.
+
+**The cause.** react-native-macos's view class declares its own `clipsToBounds`, which hides the property AppKit has had since macOS 14. AppKit is never told that a view clips, so it takes every view to be able to draw anywhere. A view's visible area is then the scroll view's and not its own, and it changes with each step, so AppKit marks every view's layer as needing display (`NSClipView _immediateScrollToPoint` → `NSViewHierarchyInvalidateVisibleRect` → `NS_viewVisibleRectDidChange` → `setNeedsDisplayInRect`).
+
+**The fix** (in `apps/desktop/patches/react-native-macos+0.81.7.patch`): the view class passes `clipsToBounds` on to AppKit, and a text's own view always clips. A clipped view's visible area is its own bounds, which a scroll doesn't change. Seven views of the fixtures (table, sheet, board, gallery, calendar) are the same pixel for pixel before and after.
+
+**Measured** with the Mac app's scrolling run (`TableScrollBench`, see [BENCHMARKING.md](BENCHMARKING.md)): a Release build, Apple M1 with 8 GB, macOS 27.2 beta, a 1440 × 760 window, 8 columns, the table fully indexed. The scroll arrives as a wheel's, on the main thread.
+
+| | Before | After (three runs) |
+|---|---|---|
+| **Slow scroll** (1,440 px in 3 s): text draws | 2,760 and 3,252 | 282 to 519 |
+| …for each row scrolled past | 119 to 140 | 12 to 22 |
+| …display refreshes the main thread answered, of about 240 | 4 and 5 | 31 to 78 |
+| …its longest gap | 1.1 and 2.0 s | 0.4 to 1.1 s |
+| **Whole run** (21 s, to 14,400 px/s): main thread spent drawing | 51% | 1.7 to 2.4% |
+| …of it, text | 42% | 1.2 to 1.7% |
+| …refreshes answered, of about 1,240 | 8 | 570 to 603 |
+| …its longest gap | 5.5 s | 1.3 to 1.5 s |
+
+**What's left.** The main thread still misses about half the refreshes in the whole run, and at the script's speeds most of the table's place on screen is empty most of the time (over 80%, before and after): rows aren't made as fast as they're scrolled past. With the drawing gone, the main thread's time is the view tree changing (44% of its busy time: views taken out and put in are 36%, and cells' borders built again 12%) and the commit that follows (44%); the JavaScript thread is about 60% busy.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
