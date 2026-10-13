@@ -99,7 +99,7 @@ import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
-import { useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
+import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, openZip, removeAllFolders } from "./indexHost";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
@@ -462,6 +462,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // Edited bundles are written a moment after the last edit: an opened
   // folder's back to the folder (folders.ts), the rest to this Mac's store.
   const writeRef = useRef<TableAppAdapter["write"]>(async () => {});
+  // Read a folder table's history again once it's been added to (useFolderHistories, below).
+  const rereadHistory = useRef<(key: string) => void>(() => {});
   // The large tables' save, set once their hook is made below.
   const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
@@ -491,6 +493,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         const folder = now.opened[bundle] ?? (now.tables[key]?.indexed ? bundleDir(bundle) : undefined);
         if (folder) {
           await appendFolderHistory(desktopFs, joinPath(folder, BundleEntry.tables, tableNameOf(key)), events);
+          rereadHistory.current(key);
           return;
         }
         if (!store) return false;
@@ -724,10 +727,25 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   saveIndexed.current = indexed.save;
   holdFirst.current = indexed.hold;
   everyRow.current = indexed.everyRow;
+  // A table's folder, where its history is: one opened from disk, or a large table's.
+  const historyFolder = (key: string): string | undefined =>
+    state.opened[bundleOf(key)] ?? (state.tables[key]?.indexed ? bundleDir(bundleOf(key)) : undefined);
+  // The folder tables' histories, read so the Files side can show them as it draws.
+  const folderHistories = useFolderHistories(
+    Object.keys(state.tables).filter((key) => historyFolder(key) !== undefined),
+    async (key) => {
+      const folder = historyFolder(key);
+      return folder ? ((await desktopFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined) : undefined;
+    },
+  );
+  rereadHistory.current = folderHistories.reread;
+  const historyText = (key: string): string | undefined =>
+    historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const derived = derive(state, {
     locale: systemLocale,
     attachmentsOf,
     fileNameOf: folderName,
+    hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   const { table, view, summary, direction } = derived;
@@ -735,11 +753,13 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const [newFieldAsk, setNewFieldAsk] = useState(0);
   const shownLayoutRef = useRef(view?.layout);
   shownLayoutRef.current = view?.layout;
+  // Which tables have a history: one gaining its first lists its history.ndjson.
+  const historied = Object.keys(tables).filter((key) => historyText(key) !== undefined).join("\n");
   const files = useMemo(
     () => derived.filesTree.map((b) => ({ ...b, name: folderPaths[b.bundle] ? `${folderName(b.bundle)}/` : b.name })),
     // derived.filesTree is made anew each render; it follows these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, state.openedDirs, attachmentsOf, folderPaths],
+    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, state.openedDirs, attachmentsOf, folderPaths, historied],
   );
   // The file shown from the Files side, in place of the view.
   const shownFile = filesMode ? state.shownFile : null;
@@ -755,7 +775,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     return {
       file,
       folder: `${bundle.name}${parts.slice(0, -1).map((p) => `${p}/`).join("")}`,
-      content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path),
+      content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path, historyText),
       url: attachment ? attachmentUrl(attachment.tableKey, attachment.name, folderPaths) : undefined,
     };
   }, [shownFile, files, tables, bundles, folderPaths]);
