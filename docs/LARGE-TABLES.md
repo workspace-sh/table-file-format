@@ -397,28 +397,48 @@ xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer 
 
 Link parameters: `rows` (comma-separated sizes), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
 
-### Scrolling on macOS: text drawn again on every step (13 Oct 2026)
+### Scrolling on macOS (13 Oct 2026)
 
-Scrolling the 1,000,000-row table on the Mac was far behind iOS. A `sample` of the main thread put half its time in drawing text (`RCTParagraphTextView drawRect`), and counting showed why: in a slow scroll past 23 rows React Native asked for about 210 text draws, and AppKit made 3,252. Every text on screen was drawn again on every step of the scroll.
+Scrolling the 1,000,000-row table on the Mac was far behind iOS. Two faults in how react-native-macos's views meet AppKit were the cause, and both are fixed in `apps/desktop/patches/react-native-macos+0.81.7.patch`. Two faults in how it was first measured hid how much they mattered, and are described after.
 
-**The cause.** react-native-macos's view class declares its own `clipsToBounds`, which hides the property AppKit has had since macOS 14. AppKit is never told that a view clips, so it takes every view to be able to draw anywhere. A view's visible area is then the scroll view's and not its own, and it changes with each step, so AppKit marks every view's layer as needing display (`NSClipView _immediateScrollToPoint` → `NSViewHierarchyInvalidateVisibleRect` → `NS_viewVisibleRectDidChange` → `setNeedsDisplayInRect`).
+**Measured** with the Mac app's scrolling run (`TableScrollBench`, see [BENCHMARKING.md](BENCHMARKING.md)): a Release build, Apple M1 with 8 GB, macOS 27.2 beta, a 1440 × 760 window, 8 columns, the table fully indexed; the page first scrolled 60,000 points down (about 1,300 rows); the app kept awake and nothing attached to it. Two runs of each.
 
-**The fix** (in `apps/desktop/patches/react-native-macos+0.81.7.patch`): the view class passes `clipsToBounds` on to AppKit, and a text's own view always clips. A clipped view's visible area is its own bounds, which a scroll doesn't change. Seven views of the fixtures (table, sheet, board, gallery, calendar) are the same pixel for pixel before and after.
-
-**Measured** with the Mac app's scrolling run (`TableScrollBench`, see [BENCHMARKING.md](BENCHMARKING.md)): a Release build, Apple M1 with 8 GB, macOS 27.2 beta, a 1440 × 760 window, 8 columns, the table fully indexed. The scroll arrives as a wheel's, on the main thread.
-
-| | Before | After (three runs) |
+| | Neither fix | Both |
 |---|---|---|
-| **Slow scroll** (1,440 px in 3 s): text draws | 2,760 and 3,252 | 282 to 519 |
-| …for each row scrolled past | 119 to 140 | 12 to 22 |
-| …display refreshes the main thread answered, of about 240 | 4 and 5 | 31 to 78 |
-| …its longest gap | 1.1 and 2.0 s | 0.4 to 1.1 s |
-| **Whole run** (21 s, to 14,400 px/s): main thread spent drawing | 51% | 1.7 to 2.4% |
-| …of it, text | 42% | 1.2 to 1.7% |
-| …refreshes answered, of about 1,240 | 8 | 570 to 603 |
-| …its longest gap | 5.5 s | 1.3 to 1.5 s |
+| **Slow** (1,440 px in 3 s): the table's place left empty | 0 and 25% | 0% |
+| …display refreshes the main thread answered, of 240 | 101 and 118 | 226 and 227 |
+| …text drawn | 32,028 times | 66 times |
+| **Brisk** (2,400 px/s for 3 s): empty | 28 and 33% | 0% |
+| …refreshes answered, of 240 | 110 and 118 | 170 and 174 |
+| **One flick** (to 7,200 px/s): empty | 27% | 3% |
+| **Eight flicks in a row**: empty | 40 and 41% | 1 to 4% |
+| …the main thread's longest gap | 155 and 218 ms | 74 and 120 ms |
+| **4 s at 14,400 px/s**: empty | 67% | 78% |
 
-**What's left.** The main thread still misses about half the refreshes in the whole run, and at the script's speeds most of the table's place on screen is empty most of the time (over 80%, before and after): rows aren't made as fast as they're scrolled past. With the drawing gone, the main thread's time is the view tree changing (44% of its busy time: views taken out and put in are 36%, and cells' borders built again 12%) and the commit that follows (44%); the JavaScript thread is about 60% busy.
+A slow or brisk scroll and a flick now leave the table drawn. A scroll held at 14,400 px/s (320 rows a second) still outruns the rows, before and after: making rows is the limit there, not drawing them, and the main thread stays free meanwhile (a longest gap of 83 ms).
+
+**What is left: a hard flick.** One that starts at 14,400 px/s and falls away over a second and a half (10,149 px in all) shows an empty table for about the first 0.9 s, while it is fastest, and is drawn again by the time it has slowed (27 and 29% of its run empty; four in a row, 36%). The main thread's longest gap is 76 ms throughout: the page moves freely, and the rows arrive once they can be made as fast as they're passed.
+
+**The first fault: every text drawn again at every step of a scroll.** react-native-macos's view class (`RCTUIView`) declares its own `clipsToBounds`, which hides the property AppKit has had since macOS 14. AppKit was never told that a view clips, so it took every view to be able to draw anywhere: a view's visible area was the scroll view's and not its own, and changed with each step (`NSClipView _immediateScrollToPoint` → `NSViewHierarchyInvalidateVisibleRect` → `NS_viewVisibleRectDidChange` → `setNeedsDisplayInRect`). The patch passes `clipsToBounds` on to AppKit, and a text's own view always clips: a clipped view's visible area is its own bounds, which a scroll doesn't change.
+
+**The second: every text's layer visited at every step.** With the text no longer drawn again, its layer was still displayed: AppKit visits the layer of every view that draws in `-drawRect:` whenever its visible area may have changed. Nothing is drawn, but each visit works out the layer's place and scale, for every text in the rows kept drawn above and below the screen too. A text now draws into its layer's contents itself (`-wantsUpdateLayer`), only when asked to: its string, its size, the window's scale or the appearance changed. The drawings are kept, a thousand of them, by what was drawn and not by which view drew it, so a value a table repeats (a stage, an owner, a date) is drawn once.
+
+**What looks different.** Nine views of the fixtures were compared pixel for pixel against a build with neither fix. One thing differs: a link's underline sits one device pixel (half a point) higher. Not checked: the dark appearance, and text with an inline attachment.
+
+**Scrolling on the main thread, or off it.** Since #494 the app's scroll views take AppKit's responsive scrolling. `-scrollOnMainThread YES` on the command line opts out, to compare. With both fixes the run shows no difference: a brisk scroll leaves nothing empty either way, eight flicks leave 3.5% on the main thread against 1 to 4% off it, and the main thread's longest gap is about 70 ms in both. The default is unchanged.
+
+**A trackpad's gesture** (began, changed, ended, momentum) can be sent by the run only for scrolling on the main thread (`-scrollBenchGesture YES`): there it moves the page, and measures as the wheel does (a brisk scroll: nothing empty; eight flicks: 2%). With responsive scrolling AppKit takes a gesture's events from the system's own stream on its own thread, and ignores ones handed to a view or put on the app's queue; events posted to the app from another process arrive at the real pointer's place, not the place they name. That path needs a hand on the trackpad.
+
+#### How the first measurements went wrong
+
+Both of these made the app look far worse than it is, and the second looked like a fault in the app.
+
+- **`sample` attached during the run.** `sample <pid> 1` stops the app a thousand times a second. With it attached, eight flicks never caught up (96 to 99% empty); without it they do. `sample` says where the time goes, in a run of its own; what's felt is measured with nothing attached.
+- **App Nap.** The Mac was driven with its screen locked, so the app's window couldn't be seen, and about 25 seconds after each launch macOS napped the app: timers came late and it was given little processor time. A brisk scroll then left 70% of the table empty with the main thread 79% idle and the JavaScript thread 46% idle. It looked like something building up as the page was scrolled (a run after a long scroll started later after launch than one after a jump), and wasn't: the same jump, run 40 seconds after launch and not 17, was as bad, and with the app kept awake both were good. The run now holds an activity (`NSProcessInfo beginActivityWithOptions:`) for as long as it is armed.
+
+Tried while the measurements were wrong, and so to be measured again before anything is concluded from them: more rows kept drawn past the screen (1,200 and 2,400 points); recycling that gives a row coming on the slot of one just gone off (`RowList` keys a row by its place modulo a number of slots, which reuses a row only when exactly that many are drawn); rows drawn where the page will be, from its speed; reading further ahead from the index. A first JavaScript profile, taken while napped, put about a third of the thread's busy time under React Strict DOM's element (`useNativeProps`, `useStyleProps`); that too is to be taken again.
+
+Ruled out along the way, for a table that scrolls worse after a while: rows on their way from the index (every row drawn was already read), the kept text drawings filling up, views or layers left in the window (their number doesn't change), and the window's Auto Layout engine growing (about 7,300 constraints throughout: every React view has its frame in it as constraints, since the window's split view and SwiftUI panes use Auto Layout, and that is a cost for each view put in or taken out, but a steady one).
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
