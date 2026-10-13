@@ -31,6 +31,7 @@ export type SidebarEvent =
   | { type: "selectTable"; key: string }
   | { type: "selectView"; key: string; viewId: string }
   | { type: "toggleFile"; bundle: string }
+  | { type: "close"; bundle: string }
   | { type: "newView" }
   | { type: "newTable" }
   | { type: "filesMode"; files: boolean }
@@ -68,12 +69,14 @@ export function setSidebar({ tree, active, filesMode, files, shownFile }: Sideba
       filesLabel: "Files",
       newViewLabel: "New View",
       newTableLabel: "New Table",
+      closeLabel: "Close File",
       bundles: tree.map((b) => ({
         bundle: b.bundle,
         title: b.title,
         file: b.file,
         folded: b.folded,
         offersNewTable: b.offersNewTable,
+        closable: b.closable,
         tables: b.tables.map((t) => ({
           key: t.key,
           title: t.title,

@@ -33,6 +33,7 @@ import {
   derive,
   clearSaved,
   clearStoredHistory,
+  closedIn,
   appendStoredHistory,
   keepArrivedHistories,
   storedHistory,
@@ -40,6 +41,7 @@ import {
   confirmText,
   exportFailedText,
   fileText,
+  forgetStoredHistories,
   fromBundle,
   hintWithShortcut,
   shortcutText,
@@ -513,9 +515,12 @@ export function App() {
     // never saved, so an untouched demo keeps following them as they change.
     {
       store: browserStore(),
-      write: async (_edited, tables, bundles) => {
+      write: async (edited, tables, bundles, closed) => {
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(browserStore(), { tables, bundles });
+        save(browserStore(), { tables, bundles, closed });
+        // A file closed: its history kept here goes. (Its index stays in the browser's storage,
+        // as after Reset Demo Data, and is made again if a file of the same name is opened.)
+        for (const bundle of closedIn(edited, bundles)) forgetStoredHistories(browserStore(), bundle);
         await saveIndexed.current(tables);
       },
       // What was edited, added to the table's history in this browser; nowhere to keep it, kept to write.
@@ -891,6 +896,7 @@ export function App() {
       onToggleDisplay={() => dispatch({ type: "setDisplayFolded", folded: !sidebarPrefs.foldedDisplay })}
       onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
       onNewFile={() => dispatch({ type: "create", making: { kind: "file" } })}
+      onCloseFile={(bundle) => dispatch({ type: "close", bundle })}
       onNewView={() => dispatch({ type: "addView", id: newId() })}
       onOpenFile={openTableFile}
       display={display}

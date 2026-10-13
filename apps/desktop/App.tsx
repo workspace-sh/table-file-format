@@ -62,11 +62,13 @@ import {
   bundleTables,
   bundleToArchive,
   clearSaved,
+  closedIn,
   derive,
   displayChoices,
   exportFailedText,
   fileText,
   flattenFilesTree,
+  forgetStoredHistories,
   fromBundle,
   hintWithShortcut,
   ingestingText,
@@ -100,7 +102,7 @@ import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
 import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
-import { bundleDir, openIndexDatabase, openZip, removeAllFolders } from "./indexHost";
+import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
 import { chooseFile, chooseFolder, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
 import { desktopFs } from "./desktopFs";
@@ -535,13 +537,19 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   );
   // The fixtures themselves are never saved, so an untouched app keeps
   // following them as they change; an opened folder's tables live in the folder.
-  writeRef.current = async (edited, all, metas) => {
+  writeRef.current = async (edited, all, metas, closed) => {
     const opened = new Set(Object.keys(stateRef.current.opened));
     // A table held in the index has no rows here: only what's left of it is kept in this store.
     save(store, {
       tables: Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
       bundles: Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
+      closed,
     });
+    // A file closed: its history kept here and a large table's folder go (an opened folder stays on disk).
+    for (const bundle of closedIn(edited, metas)) {
+      forgetStoredHistories(store, bundle);
+      await removeFolder(bundle);
+    }
     await folders.write(edited.filter((b) => opened.has(b)), all, metas);
     // A large table's rows, to the file beside its index; and the rest of a bundle kept as a
     // folder for one (its index's), so the folder is the whole .table. The writer leaves an
@@ -1316,6 +1324,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         else if (e.type === "selectView") dispatch({ type: "showView", key: e.key, viewId: e.viewId });
         else if (e.type === "toggleFile") dispatch({ type: "toggleFile", bundle: e.bundle });
         else if (e.type === "newView") dispatch({ type: "addView", id: newId() });
+        else if (e.type === "close") dispatch({ type: "close", bundle: e.bundle });
         else if (e.type === "newTable") dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeRef.current) } });
         else if (e.type === "filesMode") chooseFilesMode(e.files);
         else if (e.type === "toggleDir") dispatch({ type: "toggleDir", id: `${e.bundle}/${e.path}`, open: e.open });
