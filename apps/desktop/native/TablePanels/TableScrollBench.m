@@ -27,10 +27,28 @@
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
+#import <React/RCTLog.h>
+
+// -scrollBenchTimeline YES: everything that happens during the run, in order and timed from its
+// start: each move of the page, each change of the view tree, each display refresh answered (with
+// where the page and the drawn rows were), and each line the JavaScript logs that begins "TR ".
+static NSMutableArray<NSArray *> *timeline;
+static CFTimeInterval timelineStart;
+static BOOL timelineOn;
+
+static void Note(NSString *kind, NSString *what)
+{
+  if (!timelineOn) return;
+  NSArray *entry = @[@(round((CACurrentMediaTime() - timelineStart) * 10000) / 10), kind, what];
+  @synchronized(timeline) {
+    [timeline addObject:entry];
+  }
+}
 
 // How often, and for how long, the app's text was drawn and its view tree
 // changed during the run: counted by standing in for React Native's own
 // methods while a run is asked for.
+static NSUInteger viewsPutIn;
 static NSUInteger textDraws;
 static double textDrawSeconds;
 static NSUInteger mounts;
@@ -39,7 +57,6 @@ static NSUInteger textStates;
 static NSUInteger textLayouts;
 static NSMutableDictionary<NSString *, NSNumber *> *displays;
 static BOOL displaysOn;
-static NSUInteger viewsPutIn;
 static NSUInteger viewsTakenOut;
 static NSUInteger viewProps;
 static NSUInteger viewLayouts;
@@ -61,9 +78,11 @@ static void TimeMethod(Class cls, SEL selector, NSUInteger *count, double *secon
   } else {
     timed = imp_implementationWithBlock(^(id self, void *argument) {
       CFTimeInterval began = CACurrentMediaTime();
+      NSUInteger putInBefore = viewsPutIn;
       ((void (*)(id, SEL, void *))original)(self, selector, argument);
       *count += 1;
       *seconds += CACurrentMediaTime() - began;
+      if (count == &mounts) Note(@"mount", [NSString stringWithFormat:@"%.1f ms, %lu views put in", (CACurrentMediaTime() - began) * 1000, (unsigned long)(viewsPutIn - putInBefore)]);
     });
   }
   class_replaceMethod(cls, selector, timed, types);
@@ -189,6 +208,9 @@ typedef struct {
   BOOL _quit;
   BOOL _gesture;
   BOOL _led;
+  NSDictionary *_viewsAtStart;
+  NSDictionary *_probe;
+  id _moves;
   BOOL _queued;
   BOOL _listen;
   double _listenSeconds;
@@ -223,6 +245,11 @@ typedef struct {
   if (out.length == 0) return;
   static TableScrollBench *bench;
   bench = [TableScrollBench new];
+  // A run is often made with the window out of sight (a locked screen, another app in front),
+  // and macOS then naps the app about half a minute after launch: timers come late and the app
+  // is given little time, so it scrolls as it never would in front of someone. Not while measuring.
+  static id awake;
+  awake = [NSProcessInfo.processInfo beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical reason:@"A scrolling run is being measured"];
   bench->_out = out;
   bench->_script = [NSUserDefaults.standardUserDefaults stringForKey:@"scrollBenchScript"] ?: @"standard";
   bench->_quit = [NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchQuit"];
@@ -240,6 +267,13 @@ typedef struct {
         return NO;
       }), method_getTypeEncoding(method));
     }
+  }
+  if ([NSUserDefaults.standardUserDefaults boolForKey:@"scrollBenchTimeline"]) {
+    timeline = [NSMutableArray array];
+    RCTSetLogThreshold(RCTLogLevelInfo);
+    RCTAddLogFunction(^(__unused RCTLogLevel level, __unused RCTLogSource source, __unused NSString *file, __unused NSNumber *line, NSString *message) {
+      if ([message hasPrefix:@"TR "]) Note(@"js", [message substringFromIndex:3]);
+    });
   }
   double after = [NSUserDefaults.standardUserDefaults doubleForKey:@"scrollBenchAfter"] ?: 25;
   [NSNotificationCenter.defaultCenter addObserverForName:NSApplicationDidFinishLaunchingNotification
@@ -439,9 +473,20 @@ typedef struct {
     }
     return event;
   }];
+  if (timeline != nil) {
+    __weak NSScrollView *page = _scroll;
+    double startY = _startY;
+    _moves = [NSNotificationCenter.defaultCenter addObserverForName:NSViewBoundsDidChangeNotification object:_scroll.contentView queue:nil usingBlock:^(__unused NSNotification *note) {
+      Note(@"page", [NSString stringWithFormat:@"%.0f", page.contentView.bounds.origin.y - startY]);
+    }];
+  }
   _link = [_window.contentView displayLinkWithTarget:self selector:@selector(tick:)];
   [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+  _viewsAtStart = CountViews(_window.contentView.superview ?: _window.contentView);
+  _probe = [self probeViews];
   _start = CACurrentMediaTime();
+  timelineStart = _start;
+  timelineOn = timeline != nil;
   __weak TableScrollBench *weak = self;
   if (_listen) {
     // Nothing is sent from here: the scrolling comes from outside, and this only measures.
@@ -583,12 +628,20 @@ typedef struct {
   [_ticks addObject:@(CACurrentMediaTime() - _start)];
   [_blank addObject:@([self blankShare])];
   [_places addObject:@(_scroll.contentView.bounds.origin.y - _startY)];
+  if (timelineOn && _boxes.count) {
+    NSView *box = _boxes.lastObject;
+    NSRect drawn = [box convertRect:box.bounds toView:_scroll.documentView];
+    double y = _scroll.contentView.bounds.origin.y;
+    Note(@"shown", [NSString stringWithFormat:@"page %.0f; rows drawn from %.0f above the screen's top to %.0f below its bottom", y - _startY, y - NSMinY(drawn), NSMaxY(drawn) - NSMaxY(_scroll.contentView.bounds)]);
+  }
 }
 
 - (void)end
 {
   whyOn = NO;
   displaysOn = NO;
+  timelineOn = NO;
+  if (_moves != nil) [NSNotificationCenter.defaultCenter removeObserver:_moves];
   if (_timer != nil && !dispatch_source_testcancel(_timer)) dispatch_source_cancel(_timer);
   _timer = nil;
   if (_monitor != nil) [NSEvent removeMonitor:_monitor];
@@ -680,6 +733,12 @@ typedef struct {
     @"around": [self aroundTheMiddle],
     @"mounts": @{@"count": @(mounts), @"seconds": @(mountSeconds), @"viewsPutIn": @(viewsPutIn), @"viewsTakenOut": @(viewsTakenOut), @"propsChanged": @(viewProps), @"layoutsChanged": @(viewLayouts)},
     @"why": whyStacks ?: @{},
+    @"timeline": timeline ?: @[],
+    @"viewsAtStart": _viewsAtStart ?: @{},
+    @"probe": _probe ?: @{},
+    @"probeAtEnd": [self probeViews],
+    @"viewsAtEnd": CountViews(_window.contentView.superview ?: _window.contentView),
+    @"sublayers": @([self layersUnder:_window.contentView.superview.layer ?: _window.contentView.layer]),
     @"displays": [displays copy] ?: @{},
     @"blank": @{
       @"panes": @(_boxes.count),
@@ -693,6 +752,35 @@ typedef struct {
   }];
 }
 
+/// How many views are under `view`, how many are hidden or have no window, the most children any one has, and the commonest classes.
+static NSDictionary *CountViews(NSView *root)
+{
+  NSUInteger total = 0;
+  NSUInteger hidden = 0;
+  NSUInteger most = 0;
+  NSString *mostOf = @"";
+  NSCountedSet<NSString *> *classes = [NSCountedSet set];
+  NSMutableArray<NSView *> *stack = [NSMutableArray arrayWithObject:root];
+  while (stack.count) {
+    NSView *view = stack.lastObject;
+    [stack removeLastObject];
+    total++;
+    if (view.isHidden) hidden++;
+    [classes addObject:view.className];
+    NSArray<NSView *> *subviews = view.subviews;
+    if (subviews.count > most) {
+      most = subviews.count;
+      mostOf = [NSString stringWithFormat:@"%@ %.0fx%.0f", view.className, NSWidth(view.frame), NSHeight(view.frame)];
+    }
+    [stack addObjectsFromArray:subviews];
+  }
+  NSMutableDictionary *byClass = [NSMutableDictionary dictionary];
+  for (NSString *name in classes) {
+    if ([classes countForObject:name] * 50 > total) byClass[name] = @([classes countForObject:name]);
+  }
+  return @{@"views": @(total), @"hidden": @(hidden), @"mostChildren": @(most), @"mostChildrenOf": mostOf, @"byClass": byClass};
+}
+
 /// A text view near the middle of the window, and the views around it.
 - (NSArray<NSString *> *)aroundTheMiddle
 {
@@ -704,6 +792,38 @@ typedef struct {
     if (found) return ChainFrom(found);
   }
   return @[];
+}
+
+/// What it costs, now, to put 300 plain views into the page, lay them out, move them and take them
+/// out again: AppKit's own work for views coming and going, with nothing of React's in it.
+- (NSDictionary *)probeViews
+{
+  NSView *into = _scroll.documentView;
+  NSMutableArray<NSView *> *views = [NSMutableArray array];
+  for (int i = 0; i < 300; i++) [views addObject:[[NSView alloc] initWithFrame:NSMakeRect(10 + (i % 20) * 12, _scroll.contentView.bounds.origin.y + 10 + (i / 20) * 12, 10, 10)]];
+  CFTimeInterval began = CACurrentMediaTime();
+  for (NSView *view in views) [into addSubview:view];
+  CFTimeInterval added = CACurrentMediaTime();
+  [into layoutSubtreeIfNeeded];
+  CFTimeInterval laidOut = CACurrentMediaTime();
+  for (NSView *view in views) [view setFrameOrigin:NSMakePoint(view.frame.origin.x + 1, view.frame.origin.y + 1)];
+  [into layoutSubtreeIfNeeded];
+  CFTimeInterval moved = CACurrentMediaTime();
+  for (NSView *view in views) [view removeFromSuperview];
+  CFTimeInterval removed = CACurrentMediaTime();
+  return @{
+    @"addMs": @((added - began) * 1000),
+    @"layoutMs": @((laidOut - added) * 1000),
+    @"moveMs": @((moved - laidOut) * 1000),
+    @"removeMs": @((removed - moved) * 1000),
+  };
+}
+
+- (NSUInteger)layersUnder:(CALayer *)layer
+{
+  NSUInteger total = 1;
+  for (CALayer *sublayer in layer.sublayers) total += [self layersUnder:sublayer];
+  return total;
 }
 
 - (void)finishWith:(NSDictionary *)result
