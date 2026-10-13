@@ -54,6 +54,9 @@ import {
   ARCHIVE_ROWS,
   tooLargeToArchiveText,
   openFailedText,
+  isSpreadsheetFile,
+  openSpreadsheet,
+  spreadsheetText,
   rowTitleFor,
   save,
   schemaVersions,
@@ -654,14 +657,16 @@ export function App() {
   const openTableFile = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".zip,application/zip";
+    // A .table.zip, or a spreadsheet someone already has (CSV, TSV and the like), which becomes a new .table file.
+    input.accept = ".zip,application/zip,.csv,.tsv,.tab,.txt,text/csv,text/tab-separated-values";
     input.style.display = "none";
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       input.remove();
       if (!file) return;
       try {
-        const opened = await openAnyArchive(new Uint8Array(await file.arrayBuffer()));
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const opened = isSpreadsheetFile(file.name) ? openSpreadsheet(spreadsheetText(bytes), file.name, Object.keys(bundles)) : await openAnyArchive(bytes);
         const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
         dispatch({ type: "opened", library, skipped: opened.skipped });
       } catch (error) {

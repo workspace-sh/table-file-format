@@ -3,7 +3,8 @@
 // every table in it (D37). The DOM parts stay in App; this is what can be
 // tested without a browser.
 
-import { orderedTables, readTableArchive, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
+import { newBundle, orderedTables, readTableArchive, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
+import { fieldKey } from "@workspace.sh/table-ui/shared";
 import type { ParsedBundle, ValidationError } from "@workspace.sh/table-core";
 
 import { tableKeyFor } from "./tableKey.ts";
@@ -49,6 +50,66 @@ export async function openArchive(bytes: Uint8Array, taken: Iterable<string>, op
   return {
     key: tableKeyFor(read.path.replace(/\.table$/, ""), taken),
     bundle: { ...rest, tables },
+    skipped,
+  };
+}
+
+// -- A spreadsheet someone already has: CSV, TSV and the like, opened as a new .table file ----
+
+/** Whether a file is a spreadsheet as text, by its name: comma, tab or otherwise separated. */
+export function isSpreadsheetFile(name: string): boolean {
+  return /\.(csv|tsv|tab|txt)$/i.test(name);
+}
+
+/**
+ * A spreadsheet file's bytes as text. UTF-8 when they are that; Excel's
+ * "Unicode text" is UTF-16 and says so in its first two bytes; anything
+ * else is read as Windows-1252, which is what older Excel wrote, so a £ or
+ * an é comes through.
+ */
+export function spreadsheetText(bytes: Uint8Array): string {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
+
+/** A file's name as a title: `Q4_sales-2026.csv` is "Q4 sales 2026". */
+function titleOf(fileName: string): string {
+  const title = fileName
+    .replace(/^.*[\\/]/, "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return title || "Table";
+}
+
+/**
+ * A spreadsheet as a new `.table` file holding one table, named after the
+ * file: its headings the fields, its lines the rows (core's tableFromCSV,
+ * with the keys an app's own new fields get), and one table view of them
+ * all. Throws when there is nothing in it to make a table of. `taken`:
+ * the names already used, which this one is kept unlike.
+ */
+export function openSpreadsheet(text: string, fileName: string, taken: Iterable<string>, now?: Date): OpenedBundle {
+  const read = tableFromCSV(text, { keyOf: fieldKey });
+  if (read.schema.fields.length === 0) throw new Error("there's nothing in it");
+  const title = titleOf(fileName);
+  const key = tableKeyFor(title, taken);
+  const name = tableKeyFor(title, []);
+  const made = newBundle(title, `${key}.table`, name, now);
+  const table = made.tables[name]!;
+  const skipped =
+    read.extraCells > 0
+      ? [`${read.extraCells} ${read.extraCells === 1 ? "cell was" : "cells were"} past the last heading, and left out.`]
+      : [];
+  return {
+    key,
+    bundle: { ...made, tables: { [name]: { ...table, schema: { ...table.schema, fields: read.schema.fields }, rows: read.rows } } },
     skipped,
   };
 }

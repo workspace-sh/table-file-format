@@ -4,7 +4,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 
 import { newBundle, newTable } from "@workspace.sh/table-core";
 import type { ParsedBundle } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, importSkippedText, openArchive, openFailedText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
+import { archiveFileName, bundleToArchive, importSkippedText, isSpreadsheetFile, openArchive, openFailedText, openSpreadsheet, spreadsheetText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
 
 const NOW = new Date("2026-09-25T20:00:00Z");
 
@@ -93,3 +93,65 @@ test("an export that fails says which file and why", () => {
   assert.equal(exportFailedText("crm.table.zip", new Error("disk full")), "Couldn't export crm.table.zip: disk full");
   assert.equal(exportFailedText("crm.table.zip", "no"), "Couldn't export crm.table.zip: no");
 });
+
+// A spreadsheet someone already has
+
+test("a spreadsheet opens as a new .table file: one table named after the file, a field a heading, a row a line", async () => {
+  const csv = "Client Name,Due Date,Amount (GBP),Paid\nAda & Co,2026-11-01,1200.50,true\nGrace Ltd,2026-12-15,80,false\n";
+  const opened = openSpreadsheet(csv, "Q4_invoices-2026.csv", [], new Date("2026-10-14T10:00:00Z"));
+  assert.equal(opened.key, "q4-invoices-2026");
+  assert.equal(opened.bundle.meta.title, "Q4 invoices 2026");
+  assert.deepEqual(Object.keys(opened.bundle.tables), ["q4-invoices-2026"]);
+  const table = opened.bundle.tables["q4-invoices-2026"]!;
+  assert.equal(table.meta.title, "Q4 invoices 2026");
+  // Keys as the app's own new fields get them, so formulas read plainly; the headings stay as titles.
+  assert.deepEqual(table.schema.fields, [
+    { name: "client_name", title: "Client Name", type: "string" },
+    { name: "due_date", title: "Due Date", type: "date" },
+    { name: "amount_gbp", title: "Amount (GBP)", type: "number" },
+    { name: "paid", title: "Paid", type: "boolean" },
+  ]);
+  assert.deepEqual(
+    table.rows.map(({ id: _id, ...rest }) => rest),
+    [
+      { client_name: "Ada & Co", due_date: "2026-11-01", amount_gbp: 1200.5, paid: true },
+      { client_name: "Grace Ltd", due_date: "2026-12-15", amount_gbp: 80, paid: false },
+    ],
+  );
+  // One view of every row, to start from.
+  assert.deepEqual(table.views.map((v) => [v.name, v.layout]), [["All", "table"]]);
+  assert.deepEqual(opened.skipped, []);
+  // It is a real .table: out as an archive and back, it is the same.
+  const back = await openArchive(await bundleToArchive(opened.key, opened.bundle), []);
+  assert.deepEqual(back.bundle.tables["q4-invoices-2026"]!.rows, table.rows);
+  assert.deepEqual(back.bundle.tables["q4-invoices-2026"]!.schema.fields, table.schema.fields);
+});
+
+test("a spreadsheet whose name is taken is kept apart; one with nothing in it is refused; what was left out is said", () => {
+  assert.equal(openSpreadsheet("a,b\n1,2\n", "Sales.csv", ["sales"]).key, "sales-2");
+  assert.equal(openSpreadsheet("a,b\n1,2\n", "/home/me/My Files/Sales.tsv", []).bundle.meta.title, "Sales");
+  assert.equal(openSpreadsheet("a,b\n1,2\n", ".csv", []).bundle.meta.title, "Table");
+  assert.throws(() => openSpreadsheet("", "empty.csv", []), /nothing in it/);
+  assert.throws(() => openSpreadsheet("\n\n", "empty.csv", []), /nothing in it/);
+  assert.deepEqual(openSpreadsheet("a,b\n1,2,3\n", "x.csv", []).skipped, ["1 cell was past the last heading, and left out."]);
+  assert.deepEqual(openSpreadsheet("a\n1,2,3\n4,5,6\n", "x.csv", []).skipped, ["4 cells were past the last heading, and left out."]);
+  // Headings and no rows is a table with no rows.
+  assert.deepEqual(openSpreadsheet("Name,Qty\n", "x.csv", []).bundle.tables.x!.rows, []);
+});
+
+test("which files are spreadsheets, and their bytes as text whatever wrote them", () => {
+  for (const name of ["a.csv", "A.CSV", "b.tsv", "c.tab", "d.txt"]) assert.equal(isSpreadsheetFile(name), true, name);
+  for (const name of ["a.table.zip", "a.zip", "a.xlsx", "csv", "a.csv.bak"]) assert.equal(isSpreadsheetFile(name), false, name);
+  const utf8 = new TextEncoder().encode("Name,Price\nCafé,£3\n");
+  assert.equal(spreadsheetText(utf8), "Name,Price\nCafé,£3\n");
+  // Older Excel: one byte a letter. é is E9 and £ is A3, which aren't UTF-8.
+  const latin = Uint8Array.from([...Buffer.from("Name,Price\nCaf", "latin1"), 0xe9, ...Buffer.from(",", "latin1"), 0xa3, ...Buffer.from("3\n", "latin1")]);
+  assert.equal(spreadsheetText(latin), "Name,Price\nCafé,£3\n");
+  // Excel's "Unicode text": UTF-16, tab separated, with its mark first.
+  const utf16 = Uint8Array.from([0xff, 0xfe, ...Buffer.from("Name\tPrice\nCafé\t£3\n", "utf16le")]);
+  const text = spreadsheetText(utf16);
+  const table = openSpreadsheet(text, "export.txt", []).bundle.tables.export!;
+  assert.deepEqual(table.schema.fields.map((f) => f.title ?? f.name), ["Name", "Price"]);
+  assert.deepEqual(table.rows.map((r) => [r.name, r.price]), [["Café", "£3"]]);
+});
+
