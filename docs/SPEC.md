@@ -1170,7 +1170,15 @@ CSV is the **only** format-specific converter that lives in core, via
   commas / newlines / escaped `""`, optional BOM, LF or CRLF). With a
   schema, cells are coerced to declared types (the lossless-with-schema
   path); without one, per-column types are inferred. Rows lacking an
-  `id` column get a freshly minted nanoid.
+  `id` column get a freshly minted nanoid. Tabs, semicolons and pipes
+  are read as separators too, whichever the file uses.
+- `tableFromCSV(csv, { keyOf? })` — a spreadsheet someone already has,
+  as a new table: each heading becomes a field (the heading kept as its
+  `title`, a key made for its `name`), each other line a row. Types are
+  inferred conservatively: a column of ISO dates is `date`, digits that
+  aren't a quantity (leading zeros, a `+`, more digits than a number
+  keeps) stay text, and anything ambiguous (`03/04/2025`, `£1,200`)
+  stays text for the person who knows what it means.
 - `toCSV(table, { fields? })` — RFC 4180-correct quoting. **Lossy by
   definition**: relations serialise to raw id(s), attachments to their
   filename, bodies aren't represented. `csvExportWarnings(table)`
