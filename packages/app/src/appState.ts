@@ -909,6 +909,8 @@ export interface DeriveOptions {
   newTableIn?: "active" | "every" | "none";
   /** A table's attachment file names, for the Files side. */
   attachmentsOf?: (tableKey: string) => string[];
+  /** Whether a table has an edit history where the app keeps it, for the Files side to list it. */
+  hasHistory?: (tableKey: string) => boolean;
   /** What a bundle's file is called where it is (an opened folder's own name), for the breadcrumb. */
   fileNameOf?: (bundle: string) => string | undefined;
   /** For a table held in the index: how many rows its view shows now, and before the search, once the app has read them. */
@@ -1036,6 +1038,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
             activeTable: state.active,
             opened: state.openedDirs,
             ...(options.attachmentsOf ? { attachmentsOf: options.attachmentsOf } : {}),
+            ...(options.hasHistory ? { hasHistory: options.hasHistory } : {}),
           })
         : [],
     canGoBack,

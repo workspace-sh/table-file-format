@@ -647,10 +647,17 @@ export function App({
   // A table's own folder, where its attachments/ is.
   const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
 
+  // A table's history as its file holds it now, for the Files side to show.
+  const historyText = (key: string): string | undefined => {
+    const file = pathOf(bundleOf(key)) ? join(tableDir(key), HISTORY_FILE) : undefined;
+    return file && existsSync(file) ? readFileSync(file, "utf8") : undefined;
+  };
   const deriveOptions = {
     locale: ownLocale,
     newTableIn: "none" as const,
     attachmentsOf: (key: string) => (pathOf(bundleOf(key)) ? attachmentsIn(tableDir(key)) : []),
+    // A table's history is a file in its folder: listed when it is there.
+    hasHistory: (key: string) => !!pathOf(bundleOf(key)) && existsSync(join(tableDir(key), HISTORY_FILE)),
     fileNameOf: (bundle: string) => pathOf(bundle)?.split("/").pop(),
   };
   const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
@@ -954,7 +961,7 @@ export function App({
               <AttachmentsProvider
                 value={(file) => (shownAttachment && tables[shownAttachment.tableKey] ? attachmentPath({ ...tables[shownAttachment.tableKey]!, path: tableDir(shownAttachment.tableKey) }, file) : undefined)}
               >
-                <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path)} attachmentName={shownAttachment?.name} />
+                <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path, historyText)} attachmentName={shownAttachment?.name} />
               </AttachmentsProvider>
             ) : held ? (
               <TablePane
