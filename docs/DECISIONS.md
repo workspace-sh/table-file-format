@@ -1181,3 +1181,18 @@ A table is read through the index once it is large enough that memory is no long
 **Considered:** an index behind every table, for one path through the apps. Against it: a small table is already immediate from text, and would gain a worker, a file about four times the size of its rows, and reads that arrive a moment late; the in-memory path can't go anyway (no SQLite, no space, formulas that read other rows, Sheet views); and on the web everyone would fetch the SQLite engine to open twenty rows.
 
 **To revisit when** the index answers what forces memory today (formulas across rows, Sheet views), and when edit history (D44) and sync are built, which a database behind every table would simplify.
+
+## D46: an address can say how much of a view to show in place: `rows=` and `cards=`
+
+**Decided (13 Oct 2026, with the first table drawn inside a Markdown document). Open to revisit.**
+
+**Builds on** SPEC section 10 (addresses, whose unknown keys every reader ignores).
+
+Where an address is drawn in place (a view inside a document that links to it), `rows=<n>` gives a table or a list the height of n rows, and `cards=<n>` gives a board n cards down each column and a gallery the lines holding n cards. Past that the view scrolls within itself. The keys limit height only, never which rows the view has. With neither, the app uses a height of its own.
+
+It is in the address because the height belongs to one placing of a view, not to the view: the same view sits tall in one document and short in another, every platform reads the same link, and a tool that doesn't know the keys ignores them.
+
+**Considered:** a property of the view in `views.json`. Against it: one height for every place the view is drawn, and a change to the format for something that is about the page around the table. A single key (`show=<n>`) counting whatever the layout shows: against it, the link no longer says what is counted, and a view whose layout changes would silently mean something else. Height in pixels: against it, it is not the same on every platform, and an author thinks in rows.
+
+**To revisit when** an embed can show only some rows (the first n and "12 more") rather than a taller or shorter window onto all of them.
+

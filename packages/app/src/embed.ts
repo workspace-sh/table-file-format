@@ -12,6 +12,33 @@ import type { Address, BundleMeta, EditEvent, ParsedTable } from "@workspace.sh/
 import { bundleOf, tableNameOf } from "./bundles.ts";
 import type { Library } from "./library.ts";
 
+/**
+ * How much of the view is shown before it scrolls within itself, from the
+ * link's address (SPEC section 10): `rows=` for a table or a list, `cards=`
+ * for a board (down each column) or a gallery. Absent: the drop-in's own
+ * limit.
+ */
+export interface EmbedSize {
+  rows?: number;
+  cards?: number;
+}
+
+/** The most rows or cards an address can ask to be shown at once. */
+export const EMBED_COUNT_MAX = 500;
+
+/** A whole number from 1, as an address writes it; anything else is not a count. */
+function count(value: string | undefined): number | undefined {
+  if (value === undefined || !/^[1-9]\d{0,5}$/.test(value)) return undefined;
+  return Math.min(Number(value), EMBED_COUNT_MAX);
+}
+
+/** What an address says of how much to show. A value that isn't a count is ignored, as an unknown key is. */
+export function embedSize(address: Pick<Address, "extra">): EmbedSize {
+  const rows = count(address.extra?.rows);
+  const cards = count(address.extra?.cards);
+  return { ...(rows === undefined ? {} : { rows }), ...(cards === undefined ? {} : { cards }) };
+}
+
 export interface EmbedShown {
   kind: "shown";
   /** The file as read: its tables by `bundle/table` key, and where it is, for writing it back. */
@@ -20,6 +47,8 @@ export interface EmbedShown {
   key: string;
   /** Its view's id; "" for a table with no views of its own. */
   viewId: string;
+  /** How much of it to show at once, when the address says. */
+  size: EmbedSize;
 }
 
 export interface EmbedProblem {
@@ -38,7 +67,7 @@ const listed = (names: string[]) => names.map((n) => `“${n}”`).join(", ");
  * large tables without their rows: `indexed`). `file` is what the file is
  * called, for the words.
  */
-export function embedIn(library: Library, address: Pick<Address, "tableName" | "viewId">, file: string): EmbedRead {
+export function embedIn(library: Library, address: Pick<Address, "tableName" | "viewId" | "extra">, file: string): EmbedRead {
   const keys = Object.keys(library.tables);
   if (keys.length === 0) {
     const why = Object.values(library.problems).flat()[0];
@@ -60,7 +89,7 @@ export function embedIn(library: Library, address: Pick<Address, "tableName" | "
     const has = table.views.length > 0 ? ` It has ${listed(table.views.map((v) => v.id))}.` : " It has no views of its own.";
     return embedProblem(`The table “${name}” has no view “${address.viewId}”.${has}`);
   }
-  return { kind: "shown", library, key, viewId: address.viewId ?? table.views[0]?.id ?? "" };
+  return { kind: "shown", library, key, viewId: address.viewId ?? table.views[0]?.id ?? "", size: embedSize(address) };
 }
 
 /** Where an embedded table's file is, for the platform: how a bundle is written back, and how its history is added to. */
