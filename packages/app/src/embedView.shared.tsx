@@ -9,15 +9,15 @@
 // table-gtk's TableEmbed is the same for GTK. Each platform's frame (what
 // scrolls it) and dialogs are in embedView.tsx and embedView.web.tsx.
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 import type { View } from "@workspace.sh/table-core";
 import { BoardView, BodyEditor, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
-import type { ViewProps } from "@workspace.sh/table-ui/shared";
+import { boardColumns, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
-import type { EmbeddedTableFiles, EmbedRead, EmbedShown } from "./embed.ts";
+import { embedCount, embedLeftOut, embedMoreText, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
 import { rowTitleFor } from "./edits.ts";
 
@@ -85,10 +85,24 @@ function Shown({
 }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
   const { table, view } = derived;
-  // How much to show at once: the link's own count of rows, else the limit. (A count of
-  // cards, for a board or a gallery, is the limit for now.)
+  // How much to show at once: the link's own count of rows, else the limit. Cut to the
+  // count (`rest=more`), only the counted rows or cards are drawn, each column's first on a
+  // board, until the line beneath is pressed; from then on it is the whole view.
+  const count = embedCount(shown.size, view.layout);
+  const [opened, setOpened] = useState(false);
+  const cut = shown.size.rest === "more" && count !== undefined && !opened;
+  const allShown = derived.shown.rows;
+  const drawn = useMemo(() => {
+    if (!cut) return allShown;
+    if (view.layout !== "board") return allShown.slice(0, count);
+    const board = boardColumns(derived.shown.view, allShown, table.schema);
+    const kept = new Set(board.keys.flatMap((key) => (board.groups[key] ?? []).slice(0, count).map((r) => r.id)));
+    return allShown.filter((r) => kept.has(r.id));
+  }, [cut, count, allShown, view.layout, derived.shown.view, table.schema]);
+  const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, allShown, table.schema) : 0;
   const rows = shown.size.rows;
-  const limit = rows !== undefined && (view.layout === "table" || view.layout === "list") ? Math.min(maxHeight, ROW_HEIGHT + rows * (view.rowHeight ?? ROW_HEIGHT)) : maxHeight;
+  const limit =
+    !cut && rows !== undefined && (view.layout === "table" || view.layout === "list") ? Math.min(maxHeight, ROW_HEIGHT + rows * (view.rowHeight ?? ROW_HEIGHT)) : maxHeight;
   // A question (deleting a row, say) or a message, in the host's own dialog, once each.
   const asking = state.asking;
   useEffect(() => {
@@ -107,7 +121,7 @@ function Shown({
           key={view.id}
           layout={view.layout}
           view={derived.shown.view}
-          rows={derived.shown.rows}
+          rows={drawn}
           schema={table.schema}
           bodies={table.bodies}
           relatedTables={related}
@@ -115,9 +129,23 @@ function Shown({
           tableKey={tableName}
           sheet={derived.shown.sheet}
           {...(readOnly ? {} : callbacks)}
+          // A row added while the rest is left out would be out of sight: the rest is shown first.
+          {...(readOnly || !cut
+            ? {}
+            : {
+                onAddRow: () => {
+                  setOpened(true);
+                  return callbacks.onAddRow();
+                },
+              })}
           {...(onOpenLink ? { onOpenRelation: onOpenLink } : {})}
         />
       </Frame>
+      {leftOut > 0 ? (
+        <html.button style={styles.more} onClick={() => setOpened(true)}>
+          <html.span style={styles.moreText}>{embedMoreText(leftOut, view.layout)}</html.span>
+        </html.button>
+      ) : null}
       {state.openPage !== null ? (
         <BodyEditor
           key={`${state.active}/${state.openPage}`}
@@ -177,4 +205,6 @@ const styles = css.create({
   },
   problemText: { fontSize: 14, color: dim },
   caption: { fontSize: 13, color: dim, textAlign: "center" },
+  more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
+  moreText: { fontSize: 14, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
 });

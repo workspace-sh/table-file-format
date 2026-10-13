@@ -8,8 +8,9 @@
 // names; readEmbedWith finds the file over a platform's TableFs (`./node`'s
 // readEmbed is it over the disk, as Node sees it).
 
-import { parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
+import { parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
+import { boardColumns } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, tableNameOf } from "./bundles.ts";
 import { appendFolderHistory } from "./editHistory.ts";
@@ -24,6 +25,13 @@ import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 export interface EmbedSize {
   rows?: number;
   cards?: number;
+  /**
+   * What becomes of the rows or cards past the count: absent, the view
+   * scrolls within itself to them; "more" (`rest=more`), only the counted
+   * ones are drawn, with a line beneath that says how many more there are
+   * and shows them.
+   */
+  rest?: "more";
 }
 
 /** The most rows or cards an address can ask to be shown at once. */
@@ -39,7 +47,34 @@ function count(value: string | undefined): number | undefined {
 export function embedSize(address: Pick<Address, "extra">): EmbedSize {
   const rows = count(address.extra?.rows);
   const cards = count(address.extra?.cards);
-  return { ...(rows === undefined ? {} : { rows }), ...(cards === undefined ? {} : { cards }) };
+  return { ...(rows === undefined ? {} : { rows }), ...(cards === undefined ? {} : { cards }), ...(address.extra?.rest === "more" ? { rest: "more" as const } : {}) };
+}
+
+/** Which of an address's counts a view's layout shows: rows for a table or a list, cards for a board or a gallery. */
+export function embedCount(size: EmbedSize, layout: View["layout"]): number | undefined {
+  if (layout === "table" || layout === "list") return size.rows;
+  if (layout === "board" || layout === "gallery") return size.cards;
+  return undefined;
+}
+
+/**
+ * How many of a view's rows or cards an embed asked for only the first of
+ * (`rest=more`) leaves out: what its "Show 12 more rows" line counts. A
+ * board leaves out the cards past the count in each column. 0 when it
+ * isn't cut, or leaves nothing out.
+ */
+export function embedLeftOut(size: EmbedSize, view: View, rows: Row[], schema: TableSchema): number {
+  const shown = size.rest === "more" ? embedCount(size, view.layout) : undefined;
+  if (shown === undefined) return 0;
+  if (view.layout !== "board") return Math.max(0, rows.length - shown);
+  const board = boardColumns(view, rows, schema);
+  return board.keys.reduce((left, key) => left + Math.max(0, (board.groups[key]?.length ?? 0) - shown), 0);
+}
+
+/** The line beneath a cut embed, which shows the rest when pressed: "Show 12 more rows". */
+export function embedMoreText(leftOut: number, layout: View["layout"]): string {
+  const what = layout === "board" || layout === "gallery" ? "card" : "row";
+  return `Show ${leftOut.toLocaleString("en")} more ${what}${leftOut === 1 ? "" : "s"}`;
 }
 
 export interface EmbedShown {

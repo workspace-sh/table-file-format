@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { bundles } from "@workspace.sh/table-fixtures";
 import { fromBundle } from "./bundles.ts";
-import { EMBED_COUNT_MAX, embedIn, embedSize } from "./embed.ts";
+import { EMBED_COUNT_MAX, embedCount, embedIn, embedLeftOut, embedMoreText, embedSize } from "./embed.ts";
 import type { Library } from "./library.ts";
 
 // One `.table` file as an app reads it: its tables by `bundle/table` key.
@@ -73,6 +73,48 @@ test("what is drawn carries the size its address asked for", () => {
   assert.deepEqual(result.kind === "shown" && result.size, { rows: 4 });
   const plain = embedIn(projects, { tableName: "tasks" }, "projects.table");
   assert.deepEqual(plain.kind === "shown" && plain.size, {});
+});
+
+test("rest=more is read beside a count; any other value is the same as none", () => {
+  assert.deepEqual(embedSize({ extra: { rows: "5", rest: "more" } }), { rows: 5, rest: "more" });
+  for (const other of ["scroll", "MORE", "all", ""]) assert.deepEqual(embedSize({ extra: { rows: "5", rest: other } }), { rows: 5 }, other);
+});
+
+test("a layout shows one of the two counts: rows for a table or a list, cards for a board or a gallery, neither for a calendar", () => {
+  const size = { rows: 4, cards: 2 };
+  assert.deepEqual(
+    (["table", "list", "board", "gallery", "calendar"] as const).map((layout) => embedCount(size, layout)),
+    [4, 4, 2, 2, undefined],
+  );
+});
+
+test("an embed cut to its count says how many rows or cards it leaves out", () => {
+  const tasks = projects.tables["projects/tasks"]!;
+  const table = tasks.views.find((v) => v.id === "v1")!;
+  const board = tasks.views.find((v) => v.id === "v2")!;
+  const left = (size: Parameters<typeof embedLeftOut>[0], view = table) => embedLeftOut(size, view, tasks.rows, tasks.schema);
+  // Eight tasks.
+  assert.equal(left({ rows: 5, rest: "more" }), 3);
+  assert.equal(left({ rows: 8, rest: "more" }), 0);
+  assert.equal(left({ rows: 20, rest: "more" }), 0);
+  // Not cut: it scrolls to them, so nothing is left out.
+  assert.equal(left({ rows: 5 }), 0);
+  // A count the layout doesn't show cuts nothing.
+  assert.equal(left({ cards: 2, rest: "more" }), 0);
+  assert.equal(left({ rest: "more" }), 0);
+  // A board: the cards past the count in each column. todo 3, doing 3, done 2.
+  assert.equal(left({ cards: 1, rest: "more" }, board), 2 + 2 + 1);
+  assert.equal(left({ cards: 2, rest: "more" }, board), 1 + 1 + 0);
+  assert.equal(left({ cards: 3, rest: "more" }, board), 0);
+  assert.equal(left({ rows: 1, rest: "more" }, board), 0);
+});
+
+test("the line beneath a cut embed counts what its layout shows", () => {
+  assert.equal(embedMoreText(12, "table"), "Show 12 more rows");
+  assert.equal(embedMoreText(1, "list"), "Show 1 more row");
+  assert.equal(embedMoreText(5, "board"), "Show 5 more cards");
+  assert.equal(embedMoreText(1, "gallery"), "Show 1 more card");
+  assert.equal(embedMoreText(1200, "table"), "Show 1,200 more rows");
 });
 
 // Read over any platform's files: a workspace in memory, a document in docs/ linking to tables/.

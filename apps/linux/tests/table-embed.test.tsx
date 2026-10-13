@@ -300,6 +300,124 @@ describe("an embed asked for so many rows or cards", () => {
   });
 });
 
+// `rest=more`: only the counted rows or cards are drawn, and a line beneath shows the rest.
+describe("an embed cut to its count", () => {
+  const draw = (fragment: string) => render(inDocument(<TableEmbed address={`../tables/projects.table#${fragment}&embed=1`} baseDir={docs} within={root} />));
+  const scrollerOf = async () => {
+    const embed = (await screen.findAllByName("table-embed"))[0]!;
+    await waitFor(() => expect(embed.getFirstChild()?.getFirstChild()).toBeInstanceOf(Gtk.ScrolledWindow));
+    return embed.getFirstChild()!.getFirstChild() as Gtk.ScrolledWindow;
+  };
+  const nothingToScroll = (scroller: Gtk.ScrolledWindow) => expect(scroller.getVadjustment().getUpper()).toBe(scroller.getVadjustment().getPageSize());
+
+  it("a table draws only its first rows, says how many more, and shows them when asked", async () => {
+    await draw("table=tasks&view=v1&rows=3&rest=more");
+    const scroller = await scrollerOf();
+    // Sorted by priority: these three, and not the fourth.
+    for (const title of ["Land .table extension", "Markdown editor polish", "Wire RSD + StyleX"]) expect(await screen.findByText(title)).toBeDefined();
+    expect(screen.queryByText("Settings panel")).toBeNull();
+    expect(screen.queryByText("OG images")).toBeNull();
+    await waitFor(() => nothingToScroll(scroller));
+    const more = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 5 more rows" });
+    expect(more.getName()).toBe("table-embed-more");
+
+    await userEvent.click(more);
+    expect(await screen.findByText("OG images")).toBeDefined();
+    expect(screen.queryByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 5 more rows" })).toBeNull();
+  });
+
+  it("a table with no more rows than its count has no line beneath", async () => {
+    await draw("table=tasks&view=v1&rows=8&rest=more");
+    expect(await screen.findByText("OG images")).toBeDefined();
+    expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
+  });
+
+  it("a table cut to its rows still totals the whole view", async () => {
+    // All deals: a count of titles and two sums, over eight rows.
+    await render(inDocument(<TableEmbed address="../tables/crm.table#table=deals&view=all&rows=2&rest=more&embed=1" baseDir={docs} within={root} />));
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 6 more rows" })).toBeDefined();
+    // The footer's count is of every row, not of the two drawn.
+    expect((await screen.findAllByText("8")).length).toBeGreaterThan(0);
+  });
+
+  it("a row added shows the rest first, so it is seen", async () => {
+    await draw("table=tasks&view=v1&rows=3&rest=more");
+    await userEvent.click(await screen.findByText("+ New row"));
+    expect(await screen.findByText("OG images")).toBeDefined();
+    expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
+    const entry = (await screen.findAllByDisplayValue("")).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    expect(entry).toBeDefined();
+  });
+
+  it("a list draws only its first rows", async () => {
+    await draw("table=projects&view=v7&rows=3&rest=more");
+    const scroller = await scrollerOf();
+    await screen.findByText("Workspace v1");
+    await waitFor(() => {
+      const rows = scroller.getFirstChild()!.getFirstChild()!;
+      let n = 0;
+      for (let row = rows.getFirstChild(); row; row = row.getNextSibling()) n++;
+      expect(n).toBe(3);
+      nothingToScroll(scroller);
+    });
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 14 more rows" })).toBeDefined();
+  });
+
+  it("a board draws the first cards of each column, each column saying how many more it has and its whole count", async () => {
+    await draw("table=tasks&view=v2&cards=1&rest=more");
+    const scroller = await scrollerOf();
+    await screen.findByText("Settings panel");
+    await waitFor(() => {
+      const columns = scroller.getFirstChild()!.getFirstChild()!;
+      const cardsIn: number[] = [];
+      for (let column = columns.getFirstChild(); column; column = column.getNextSibling()) {
+        let n = 0;
+        for (let child = column.getFirstChild(); child; child = child.getNextSibling()) if (child instanceof Gtk.Button) n++;
+        cardsIn.push(n);
+      }
+      expect(cardsIn).toEqual([1, 1, 1]);
+      nothingToScroll(scroller);
+    });
+    // todo 3, doing 3, done 2: two more, two more, one more.
+    expect(screen.queryAllByName("board-column-more").map((label) => (label as Gtk.Label).getLabel())).toEqual(["+2 more", "+2 more", "+1 more"]);
+    // A column's count is of all its cards.
+    expect((await screen.findAllByText("3")).length).toBe(2);
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 5 more cards" })).toBeDefined();
+  });
+
+  it("a gallery draws only its first cards", async () => {
+    await draw("table=projects&view=v6&cards=2&rest=more");
+    await screen.findByText("Workspace v1");
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 15 more cards" })).toBeDefined();
+    expect(screen.queryByText("iOS Pro launch")).toBeNull();
+  });
+
+  it("is as tall as what it draws, past the usual limit too, with nothing to scroll", async () => {
+    const table = await draw("table=projects&view=v1&rows=12&rest=more");
+    let scroller = await scrollerOf();
+    await waitFor(() => {
+      expect(scroller.getVadjustment().getPageSize()).toBeGreaterThan(36 + 12 * 45);
+      nothingToScroll(scroller);
+    });
+    await table.unmount();
+
+    // A list of all seventeen rows: taller than the limit, and whole.
+    await draw("table=projects&view=v7&rows=17&rest=more");
+    scroller = await scrollerOf();
+    await screen.findByText("Workspace v1");
+    await waitFor(() => {
+      expect(scroller.getVadjustment().getPageSize()).toBeGreaterThan(EMBED_MAX_HEIGHT);
+      nothingToScroll(scroller);
+    });
+  });
+
+  it("rest=more with a count the layout doesn't show cuts nothing", async () => {
+    await draw("table=tasks&view=v1&cards=2&rest=more");
+    expect(await screen.findByText("OG images")).toBeDefined();
+    expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
+  });
+});
+
 // It is the table, not a picture of it: what is done to it in the document
 // is in the file, read back here as opening it again would.
 describe("a table edited in a document", () => {

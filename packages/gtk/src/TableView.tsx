@@ -87,7 +87,7 @@ import { FieldAbout } from "./FieldAbout.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
 import { styles } from "./theme.js";
-import { scrollerHeight, useEmbedded } from "./embedded.js";
+import { drawnOf, NO_LIMIT, scrollerHeight, useEmbedded } from "./embedded.js";
 import { gridKeyOf } from "./gridKeys.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
@@ -449,7 +449,9 @@ export function TableView({
       memoryViewRows(rows, { schema, ...(groupField !== undefined ? { group: groupField } : {}), ...(view.totals ? { totals: view.totals } : {}) }),
     [given, rows, schema, groupField, view.totals],
   );
-  const count = source.count;
+  // Embedded and cut to a count, only the first rows are drawn; the totals and each group's count are still the whole view's.
+  const cut = embedded?.cut === true && embedded.rows !== undefined;
+  const count = drawnOf(embedded, embedded?.rows, source.count);
   // Where each row is, built or not: one height each, but for a group's
   // heading above its first row and the rows with a height of their own.
   const ownHeights = useMemo(
@@ -458,8 +460,8 @@ export function TableView({
   );
   const facts = useViewFacts(source, ownHeights);
   const defaultHeight = view.rowHeight ?? DEFAULT_ROW_HEIGHT;
-  const marks: RowMark[] = facts.groups.map((g) => ({ place: g.start, before: GROUP_ROW_HEIGHT }));
-  for (const [id, place] of facts.places) marks.push({ place, taller: heightOf(id) - defaultHeight });
+  const marks: RowMark[] = facts.groups.filter((g) => g.start < count).map((g) => ({ place: g.start, before: GROUP_ROW_HEIGHT }));
+  for (const [id, place] of facts.places) if (place < count) marks.push({ place, taller: heightOf(id) - defaultHeight });
   const layout = rowLayout(count, defaultHeight + ROW_RULE, marks);
   const bodyHeight = layout.height;
   const groupStarts = new Map(facts.groups.map((g) => [g.start, g]));
@@ -1491,7 +1493,8 @@ export function TableView({
       ref={scroller}
       hexpand
       // Embedded and asked for so many rows: the header and those rows (and the headings of their groups), when there are more.
-      {...scrollerHeight(embedded, embedded?.rows !== undefined && count > embedded.rows ? HEADER_HEIGHT + ROW_RULE + layout.itemTop(embedded.rows) : null)}
+      // Cut to them, it is as tall as what it draws, and nothing scrolls.
+      {...scrollerHeight(embedded, cut ? NO_LIMIT : embedded?.rows !== undefined && count > embedded.rows ? HEADER_HEIGHT + ROW_RULE + layout.itemTop(embedded.rows) : null)}
       cssClasses={[styles.table]}
       vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
       hadjustment={
