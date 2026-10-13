@@ -5,7 +5,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform } from "react-native";
-import { BundleEntry, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -21,6 +21,9 @@ import {
   bundleOf,
   clearSaved,
   clearStoredHistory,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   derive,
   exportFailedText,
   fromBundle,
@@ -170,6 +173,13 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     systemLocale,
   );
   tablesNow.current = state.tables;
+  // A table's history, from where appendHistory puts it: a large table's folder, or the store.
+  const historyOf = async (key: string): Promise<string | undefined> => {
+    if (tablesNow.current[key]?.indexed) {
+      return (await expoFs.readText(joinPath(bundleDir(bundleOf(key)), BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
+    }
+    return (store && storedHistory(store, key)) || undefined;
+  };
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
@@ -181,7 +191,12 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
   /** What reading an archive gave, taken in: its large tables' first rows are held for showing meanwhile. */
   const take = (opened: OpenedZip): string => {
     indexed.hold(opened.first);
-    dispatch({ type: "opened", library: opened.library, skipped: opened.skipped });
+    // An arrived table's history is kept in the store for a table kept there; a large table's
+    // goes into its folder with the rest of it.
+    const arrived = opened.library.tables;
+    const stored = Object.fromEntries(Object.entries(arrived).filter(([, table]) => !table.indexed));
+    const tables = { ...arrived, ...keepArrivedHistories(store, stored) };
+    dispatch({ type: "opened", library: { ...opened.library, tables }, skipped: opened.skipped });
     return Object.keys(opened.library.bundles)[0]!;
   };
 
@@ -260,7 +275,9 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
           const { indexed: _index, ...rest } = held;
           whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
         }
-        await shareZip(bundle, whole, state.bundles);
+        // Each table's history goes with it, everything written so far included (SPEC section 14).
+        await flush();
+        await shareZip(bundle, await withHistories(whole, historyOf), state.bundles);
       } catch (error) {
         dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
       }
