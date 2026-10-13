@@ -64,6 +64,12 @@ export interface DragHandleProps {
   grabOnTouch?: boolean;
   /** Show the edge's line though the pointer isn't over it: the same edge is being dragged elsewhere. */
   lit?: boolean;
+  /**
+   * An end edge whose strip straddles the line instead of lying inside it:
+   * half each side, so a pointer on the line or just past it takes it. For
+   * a column's line drawn over the table (nothing later covers its far half).
+   */
+  straddle?: boolean;
 }
 
 // The pointer's resize cursors, where there's a pointer (macOS, and an
@@ -79,6 +85,9 @@ const edgeStyles = StyleSheet.create({
   // table as the pointer passes; full while dragged (lineDragged).
   endLine: { position: "absolute", top: 0, bottom: 0, end: 0, width: 2, backgroundColor: "#0a84ff", opacity: 0.35 },
   bottomLine: { position: "absolute", left: 0, right: 0, bottom: 0, height: 2, backgroundColor: "#0a84ff", opacity: 0.35 },
+  // The straddling strip: 16 wide, centred on the line, its line in the middle.
+  endStraddle: { position: "absolute", top: 0, bottom: 0, end: -8, width: 16, zIndex: 4, cursor: "col-resize" as "auto" },
+  endStraddleLine: { position: "absolute", top: 0, bottom: 0, end: 7, width: 2, backgroundColor: "#0a84ff", opacity: 0.35 },
   lineDragged: { opacity: 1 },
 });
 
@@ -92,6 +101,7 @@ export function DragHandle({
   onDoubleTap,
   grabOnTouch,
   lit: litElsewhere,
+  straddle,
 }: DragHandleProps) {
   // Read callbacks through refs so the gesture object stays stable
   // across renders. Without this, consumers passing inline lambdas
@@ -236,10 +246,16 @@ export function DragHandle({
       : {};
   return (
     <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={edge ? edgeStyles[edge] : undefined} {...pointer}>
+      <View collapsable={false} style={edge ? (edge === "end" && straddle ? edgeStyles.endStraddle : edgeStyles[edge]) : undefined} {...pointer}>
         {children}
         {edge && (lit || shown) && (
-          <View pointerEvents="none" style={[edge === "end" ? edgeStyles.endLine : edgeStyles.bottomLine, shown && edgeStyles.lineDragged]} />
+          <View
+            pointerEvents="none"
+            style={[
+              edge === "end" ? (straddle ? edgeStyles.endStraddleLine : edgeStyles.endLine) : edgeStyles.bottomLine,
+              shown && edgeStyles.lineDragged,
+            ]}
+          />
         )}
       </View>
     </GestureDetector>
