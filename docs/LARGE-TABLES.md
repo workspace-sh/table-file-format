@@ -461,6 +461,31 @@ The same rows cost the main thread about three times as much off the main thread
 
 **What the run can and can't stand in for.** A trackpad's gesture, with its momentum, can be simulated only for scrolling on the main thread (`-scrollBenchGesture YES` with `-scrollOnMainThread YES`): there the events handed to the view move the page. With responsive scrolling AppKit takes a gesture's events from the system's own stream on its own thread, and ignores ones handed to a view or put on the app's queue. Events posted to the app from another process arrive with the window but at the real pointer's place, not the place they name. So a gesture off the main thread needs real events: a hand on the trackpad, or events posted at the system's level with the pointer over the table and the screen unlocked.
 
+### Scrolling on macOS: in the middle of a table, and what else was tried (13 Oct 2026)
+
+The slow scroll above starts at the table's top, where the rows kept drawn above the screen are still being added: 30 of its 50 rows drawn were new rows, not rows changed in place. Started 3,000 points down (`-scrollBenchLead 3000`), where a row goes off for each that comes on, the same scroll with both fixes is smooth:
+
+| Slow scroll, mid-table | With both fixes |
+|---|---|
+| Refreshes the main thread answered, of 240 | 199 and 225 |
+| Its longest gap | 74 and 78 ms |
+| Share of the table's place left empty | 0% |
+
+**How far past the screen rows are kept drawn** (`DRAW_DISTANCE`, 600 points), mid-table:
+
+| | 600 | 1,200 | 2,400 |
+|---|---|---|---|
+| Slow scroll: refreshes answered, of 240 | 199 and 225 | 232 and 236 | 235 |
+| Slow scroll: JavaScript thread busy | 19 to 22% | 26 to 51% | 50% |
+| Flicks: the table's place empty | 99% | 99% | 97 to 100% |
+| Flicks: the main thread's longest gap | 0.9 s | 1.8 s | 1.8 and 3.1 s |
+
+More rows kept drawn steadies a slow scroll a little and makes each change of rows in a fast one longer. It stays at 600.
+
+**Recycling.** `RowList` keys a row by its place modulo a number of slots (the rows drawn, rounded up to 16), so that a row coming on shares a key with one going off. It does only when exactly that many rows are drawn: with fewer, the rows coming on land on slots no drawn row has, and are made anew. Giving a row coming on the slot of one just gone off halves the views put in and taken out in the slow scroll (708 to 375 of each) and changes nothing that's felt: the view tree takes 0.16 s to change where it took 0.17 s, and the flicks are no better. Not kept.
+
+**What limits a fast scroll.** Making rows, not drawing them. In the flicks the JavaScript thread is 56 to 67% busy and each change of the rows drawn takes the main thread 130 to 150 ms (about 200 changes of props, 250 of layout and 150 texts), after React has rendered it. At 7,200 px/s the 600 points drawn ahead last 83 ms, so the rows drawn are always behind the screen until the scroll slows.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
