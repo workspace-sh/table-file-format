@@ -320,6 +320,12 @@ const styles = css.create({
   positioned: {
     position: "relative",
   },
+  // Native: the frozen column over the pane beside it, so its line's strip, which
+  // reaches past its edge, isn't under the pane's first cells.
+  frozenOverPane: {
+    position: "relative",
+    zIndex: 5,
+  },
   // A line of no height under the selected row, outside its row-actions
   // wrapper, that the grip hangs from. On iOS that wrapper is a native
   // context-menu view, which takes no touch outside its bounds, so a grip
@@ -3217,17 +3223,19 @@ export function TableView({
           x += colWidth(name);
           return (
             <html.div key={name} style={[styles.columnLine, styles.columnLineAt(x)]}>
-              {columnResizer(name)}
+              {columnResizer(name, true)}
             </html.div>
           );
         })}
       </html.div>
     );
   };
-  const columnResizer = (name: string) =>
+  // On a column's line (`straddle`), the strip is centred on the line.
+  const columnResizer = (name: string, straddle = false) =>
     onUpdateView ? (
       <DragHandle
         edge="end"
+        straddle={straddle}
         // A double click on the edge puts the column back to its share.
         onDoubleTap={() => resetWidth(name)}
         onDragStart={(e) => {
@@ -4266,7 +4274,7 @@ export function TableView({
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
         {primaryName && (
-          <html.div style={[styles.tableFrozenColumn, byLines && styles.positioned]}>
+          <html.div style={[styles.tableFrozenColumn, byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane)]}>
             {columnLines([primaryName], coords ? ROW_NUMBER_WIDTH : 0)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
