@@ -132,6 +132,40 @@ describe("a wide table's first column on Linux", () => {
   });
 });
 
+describe("columns' lines down a wide table on Linux", () => {
+  it("the first column's line stays with it, and a line that has gone under the first column is out of reach until it comes out", async () => {
+    const library = await loadLibrary([join(dir, "projects.table")]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v4" />);
+    const title = (await screen.findAllByText("Workspace v1"))[0]!;
+    const scroller = scrollerOf(title);
+    const across = scroller.getHadjustment();
+    await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
+    const line = async (name: string) => (await screen.findAllByName(`resize-column-line-${name}`))[0]!;
+    const header = async (name: string) => {
+      let at: Gtk.Widget | null = await screen.findByText(name);
+      while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
+      const start = startIn(at!, scroller);
+      return { start, end: start + at!.getWidth() };
+    };
+    // Unscrolled, each line is on its column's end.
+    for (const name of ["title", "status", "owner"]) expect(startIn(await line(name), scroller)).toBe((await header(name)).end - 4);
+    const second = await line("status");
+    expect(second.getVisible()).toBe(true);
+    // Scrolled so the second column is under the first, and the third starts at its end.
+    across.setValue(193);
+    await waitFor(async () => expect((await header("owner")).start).toBe((await header("title")).end));
+    // The first column's line is still on its end, at the window's edge now.
+    expect(startIn(await line("title"), scroller)).toBe((await header("title")).end - 4);
+    // The second column's is under the first column: it can't be taken there.
+    expect(second.getVisible()).toBe(false);
+    // The third's is where its column ends, past the first.
+    expect((await line("owner")).getVisible()).toBe(true);
+    expect(startIn(await line("owner"), scroller)).toBe((await header("owner")).end - 4);
+    across.setValue(0);
+    await waitFor(() => expect(second.getVisible()).toBe(true));
+  });
+});
+
 describe("Back on Linux", () => {
   it("puts a table back where it was scrolled across to", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
@@ -227,6 +261,15 @@ describe("a wide table's first column on Linux, right to left", () => {
     await waitFor(async () => expect((await header("title")).start).toBe(page));
     // The last column has come into the window, past the first.
     expect((await header("Budget / month")).end).toBeGreaterThanOrEqual(0);
+  });
+
+  it("a column's line down the table is on its column's end, which is its left", async () => {
+    const { scroller, header } = await openArabic();
+    for (const name of ["title", "status", "owner"]) {
+      const line = (await screen.findAllByName(`resize-column-line-${name}`))[0]!;
+      // Six wide: four of it inside the column, two past its end.
+      expect(startIn(line, scroller)).toBe((await header(name)).end - 2);
+    }
   });
 
   it("a sideways scroll comes to rest with a column starting where the first column ends", async () => {
