@@ -6,7 +6,7 @@ import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/t
 import { loadClosed } from "./closedFiles.js";
 import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
-import { openWorkerIndexHost } from "./indexClient.js";
+import { openWorkerIndexHost } from "@workspace.sh/table-gtk/embed";
 import { fixturesDir } from "./fixtures.js";
 
 // `.table` folders named on the command line, or the repo's fixtures.
