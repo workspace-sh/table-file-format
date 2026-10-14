@@ -144,6 +144,57 @@ describe("a .table opened as a document", () => {
     expect(opened).toEqual([]);
   });
 
+  it("a filter added is this reader's own until saved for everyone (D4), and is kept for the next opening", async () => {
+    const path = join(root, "projects.table");
+    const views = () => JSON.parse(readFileSync(join(path, "tables", "projects", "views.json"), "utf8")) as { id: string; filter?: unknown[] }[];
+    const kept: Record<string, string> = {};
+    const store = { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => void (kept[k] = v), removeItem: (k: string) => void delete kept[k] };
+    const opened = await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={path} store={store} />
+      </GtkWindow>,
+    );
+    await screen.findByText("Workspace v1");
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" })).toBeDefined();
+    // The file is as it was; the filter is kept apart from it, under this file's path.
+    expect(views().find((v) => v.id === "v1")?.filter).toBeUndefined();
+    await waitFor(() => expect(Object.keys(kept).some((k) => k.startsWith(path))).toBe(true));
+
+    const filtered = await count();
+    expect(filtered).not.toBe("17 of 17 rows");
+    await opened.unmount();
+
+    // Opened again with the same store: still this reader's filter.
+    await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={path} store={store} />
+      </GtkWindow>,
+    );
+    await waitFor(async () => expect(await count()).toBe(filtered));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" }));
+    await waitFor(() => expect(views().find((v) => v.id === "v1")?.filter).toHaveLength(1));
+  });
+
+  it("says why a table of 50,000 rows or more isn't drawn, rather than drawing no rows", async () => {
+    const tasks = join(root, "projects.table", "tables", "tasks");
+    let rows = "";
+    for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":1}\n`;
+    writeFileSync(join(tasks, "rows.ndjson"), rows);
+    const path = join(root, "projects.table");
+    await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={path} at={{ address: `${path}#table=tasks`, n: 1 }} />
+      </GtkWindow>,
+    );
+    expect(await screen.findByText(/^“tasks” has 50,000 rows or more\./)).toBeDefined();
+    // The file's other table is drawn as ever.
+    await pick(await picker("table-file-tables"), 0);
+    expect(await screen.findByText("Workspace v1")).toBeDefined();
+  });
+
   it("says why when it can't be opened", async () => {
     await open(join(root, "nowhere.table"));
     expect(await screen.findByText("“nowhere.table” isn’t there any more.")).toBeDefined();
