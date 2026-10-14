@@ -485,6 +485,7 @@ function Capsule(props: Part) {
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
           <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || "Search"}</Text>
           <Spacer />
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -493,6 +494,13 @@ function Capsule(props: Part) {
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
           <TextField key="search" defaultValue={state.query} placeholder="Search" autoFocus onValueChange={props.onQueryChange} />
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
+          {state.query && props.onSearchStep ? (
+            <>
+              <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
+              <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
+            </>
+          ) : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
