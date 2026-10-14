@@ -1,0 +1,53 @@
+[
+  {
+    "id": "all",
+    "name": "All books",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "title",
+        "direction": "asc"
+      }
+    ]
+  },
+  {
+    "id": "genre",
+    "name": "By genre",
+    "layout": "board",
+    "board_field": "genre",
+    "fields": [
+      "title",
+      "author",
+      "year"
+    ]
+  },
+  {
+    "id": "unread",
+    "name": "To read",
+    "layout": "table",
+    "filter": [
+      {
+        "field": "read",
+        "operator": "eq",
+        "value": false
+      }
+    ],
+    "sort": [
+      {
+        "field": "added",
+        "direction": "desc"
+      }
+    ]
+  },
+  {
+    "id": "recent",
+    "name": "Recently added",
+    "layout": "table",
+    "sort": [
+      {
+        "field": "added",
+        "direction": "desc"
+      }
+    ]
+  }
+]

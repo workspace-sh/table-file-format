@@ -2,11 +2,13 @@
 import type { ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 import { crmBundle } from "./crm";
 import { householdBudgetBundle } from "./household-budget";
+import { libraryBundle } from "./library";
 import { projectsBundle } from "./projects";
 import { shopBundle } from "./shop";
 
 export { crmBundle } from "./crm";
 export { householdBudgetBundle } from "./household-budget";
+export { libraryBundle } from "./library";
 export { projectsBundle } from "./projects";
 export { shopBundle } from "./shop";
 
@@ -14,6 +16,7 @@ export { shopBundle } from "./shop";
 export const bundles: Record<string, ParsedBundle> = {
   "crm": crmBundle,
   "household-budget": householdBudgetBundle,
+  "library": libraryBundle,
   "projects": projectsBundle,
   "shop": shopBundle,
 };
