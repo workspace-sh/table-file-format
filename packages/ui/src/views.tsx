@@ -23,7 +23,7 @@ import {
   snappedRowHeight,
   ADD_FIELD_WIDTH,
   MIN_RESIZED_COLUMN_WIDTH,
-  ROW_NUMBER_WIDTH,
+  rowNumberWidth,
   SQUEEZED_CELL_WIDTH,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
@@ -1267,6 +1267,9 @@ const styles = css.create({
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
     backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
   },
+  rowNumberWide: (width: number) => ({
+    width,
+  }),
   rowNumberCorner: {
     alignSelf: "stretch",
   },
@@ -3030,7 +3033,7 @@ export function TableView({
             place === total - 1 && !onAddRow && styles.tableRowLast,
           ]}
         >
-          {numbered && <html.div style={styles.rowNumber} />}
+          {numbered && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]} />}
           {names.map((name, idx) => (
             <html.div
               key={name}
@@ -3183,7 +3186,14 @@ export function TableView({
   //
   // Columns the user has resized keep their width; the rest share what's
   // left the same way.
-  const chrome = (freezePrimary ? 3 : 2) + (coords ? ROW_NUMBER_WIDTH : 0);
+  // A sheet's row numbers: their gutter is as wide as the largest of them, once.
+  const largestNumber = useMemo(() => {
+    let most = total;
+    if (sheet?.position) for (const n of sheet.position.values()) if (n > most) most = n;
+    return most;
+  }, [total, sheet?.position]);
+  const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
+  const chrome = (freezePrimary ? 3 : 2) + numberWidth;
   // The "+" for a new field is a narrow column of its own at the end of the
   // header: it takes its width from the columns', as the borders do.
   const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
@@ -3195,7 +3205,7 @@ export function TableView({
   // "+", which is a place a column could go, not a column.
   const restRowWidth = () =>
     addFieldW > 0
-      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? ROW_NUMBER_WIDTH : 0))
+      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? numberWidth : 0))
       : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
@@ -3409,7 +3419,7 @@ export function TableView({
   // Where the selected cell starts in its pane: the grip sits under that
   // cell, so it's in view wherever the pane has been scrolled.
   const cellStartIn = (names: string[], name: string, numbered: boolean) => {
-    let x = numbered ? ROW_NUMBER_WIDTH : 0;
+    let x = numbered ? numberWidth : 0;
     for (const n of names) {
       if (n === name) break;
       x += colWidth(n);
@@ -4293,9 +4303,9 @@ export function TableView({
             viewports — the right pane then carries all fields. */}
         {primaryName && (
           <html.div style={[styles.tableFrozenColumn, byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane)]}>
-            {columnLines([primaryName], coords ? ROW_NUMBER_WIDTH : 0)}
+            {columnLines([primaryName], numberWidth)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
-              {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+              {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
               {headerCell(primaryName, 0, 1)}
             </html.div>
             <RowList
@@ -4328,7 +4338,7 @@ export function TableView({
                         i === total - 1 && !onAddRow && styles.tableRowLast,
                       ]}
                     >
-                      {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                      {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                       {renderBodyCell(row, primaryName, 0, 1)}
                       {rowLine(row, true)}
                     </html.div>
@@ -4345,7 +4355,7 @@ export function TableView({
             {addRow && newRowBand(true)}
             {showTotals && (
               <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, !quietTotals && styles.frozenEdge, styles.tableRowLast]}>
-                {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {renderTotalCell(primaryName, 0, 1)}
               </html.div>
             )}
@@ -4357,9 +4367,9 @@ export function TableView({
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
-              {columnLines(restNames, coords && !primaryName ? ROW_NUMBER_WIDTH : 0)}
+              {columnLines(restNames, coords && !primaryName ? numberWidth : 0)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   headerCell(name, idx, restNames.length),
                 )}
@@ -4400,7 +4410,7 @@ export function TableView({
                           i === total - 1 && !onAddRow && styles.tableRowLast,
                         ]}
                       >
-                        {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                        {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                         {restNames.map((name, idx) =>
                           renderBodyCell(row, name, idx, restNames.length),
                         )}
@@ -4419,7 +4429,7 @@ export function TableView({
               {addRow && newRowBand(!primaryName)}
               {showTotals && (
                 <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
-                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
                 </html.div>
               )}
