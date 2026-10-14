@@ -2,6 +2,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { GtkWindow } from "@gtkx/jsx/gtk";
 import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { TableFile } from "@workspace.sh/table-gtk/embed";
+import { openIndexHost } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { bundleToArchive } from "@workspace.sh/table-app";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
@@ -178,22 +179,31 @@ describe("a .table opened as a document", () => {
     await waitFor(() => expect(views().find((v) => v.id === "v1")?.filter).toHaveLength(1));
   });
 
-  it("says why a table of 50,000 rows or more isn't drawn, rather than drawing no rows", async () => {
+  it("reads a table of 50,000 rows through its index, as the table app does: shown, counted, and an edit written back to the file", async () => {
     const tasks = join(root, "projects.table", "tables", "tasks");
     let rows = "";
-    for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":1}\n`;
+    for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":${i}}\n`;
     writeFileSync(join(tasks, "rows.ndjson"), rows);
     const path = join(root, "projects.table");
     await render(
       <GtkWindow defaultWidth={1000} defaultHeight={700}>
-        <TableFile path={path} at={{ address: `${path}#table=tasks`, n: 1 }} />
+        {/* The index in this thread, as the table app's tests have it; the app's own is a worker. */}
+        <TableFile path={path} at={{ address: `${path}#table=tasks&view=v1`, n: 1 }} openIndex={openIndexHost} />
       </GtkWindow>,
     );
-    expect(await screen.findByText(/^“tasks” has 50,000 rows or more\./)).toBeDefined();
-    // The file's other table is drawn as ever.
+    // Sorted by priority, from the index: the first rows, and every row counted.
+    await waitFor(async () => expect(await count()).toBe("50,000 of 50,000 rows"), { timeout: 30_000 });
+    await userEvent.click(await cell("Big 0"));
+    const entry = (await screen.findByDisplayValue("Big 0")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Edited through the index");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(() => expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").split("\n")[0]).toContain("Edited through the index"), { timeout: 30_000 });
+    expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").trimEnd().split("\n")).toHaveLength(50_000);
+    // The file's other table is held in memory as ever.
     await pick(await picker("table-file-tables"), 0);
     expect(await screen.findByText("Workspace v1")).toBeDefined();
-  });
+  }, 60_000);
 
   it("a linked row in another .table beside it shows its name, and is handed to the app as that file's address (D47)", async () => {
     // orders.table's orders name a supplier; suppliers.table, beside it, holds them.

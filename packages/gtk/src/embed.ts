@@ -10,3 +10,4 @@ export type { EmbedProblem, EmbedRead, EmbedShown } from "@workspace.sh/table-ap
 // Node: the hook over table-app's state, and the index in a worker of its own.
 export { useIndexedTables, type IndexedTables } from "./indexed/useIndexedTables.js";
 export { openWorkerIndexHost } from "./indexed/indexClient.js";
+export { FewRows, LAYOUT_ROWS } from "./indexed/FewRows.js";
