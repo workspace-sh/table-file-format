@@ -28,7 +28,7 @@ import {
   attachmentShown,
   browserStore,
   bundleOf,
-  bundleTables,
+  relatedTables,
   bundleToArchive,
   derive,
   clearSaved,
@@ -1162,7 +1162,7 @@ export function App() {
               reading
                 ? {
                     source: reading,
-                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
                     onOpenRelation: () => {},
                     allRows: NO_ROWS,
                     tableKey: tableNameOf(activeTablePath),
@@ -1171,7 +1171,7 @@ export function App() {
                     ...callbacks,
                     // The bundle's tables by name, so lookups and rollups reach the ones
                     // they name (D36), within this bundle (D37).
-                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
                     allRows: table.rows,
                     tableKey: tableNameOf(activeTablePath),
                     sheet,

@@ -278,9 +278,15 @@ labels apply to each item.
   the table named `<name>`, by that table's system `id`.
   `cardinality` defaults to `"one"`; `"many"` means the row value is
   an array of ids. The name resolves **within the same bundle first**
-  (section 1). A name the bundle doesn't contain is the app's to
-  resolve elsewhere, for example in other `.table` files in the same
-  workspace (D3).
+  (section 1). A name the bundle doesn't contain names **another
+  `.table` beside it**: `<name>.table` in the same folder as this
+  bundle. Its rows are that file's table named `<name>`, or, when the
+  file holds exactly one table, that table. When there is no such file,
+  or it holds neither, the relation is dangling: its values are kept,
+  and shown as unresolved, never dropped. An app MAY look further (a
+  workspace's other folders) only after this. Only the file beside it
+  is read for this: that file's own relations to further files are
+  resolved from that file, when it is open in its own right (D3, D47).
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
 - `computed: { expr, dialect }` — a formula; see "Computed fields".

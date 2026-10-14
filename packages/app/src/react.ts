@@ -11,7 +11,7 @@ import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
 import { forViews, loadArrangements, saveArrangements } from "./arrangements.ts";
 import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type AppState, type Derived, type ViewCallbacks } from "./appState.ts";
-import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
+import { bundleOf, relatedTables, tableNameOf } from "./bundles.ts";
 import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
 import { saveDisplay, viewerLocale } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
@@ -289,7 +289,7 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
   useEffect(() => () => void flushing.current(), []);
 
   const derived = derive(state, { locale, newTableIn: "none" });
-  const related = useMemo(() => bundleTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
+  const related = useMemo(() => relatedTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
   const { onOpenRelation: _follow, ...callbacks } = viewCallbacks(state, dispatch, newId);
   return { state, dispatch, derived, display, tableName: tableNameOf(state.active), related, callbacks };
 }

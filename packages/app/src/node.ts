@@ -12,7 +12,7 @@ import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type 
 import { bundleOf, fromBundle, tableNameOf } from "./bundles.ts";
 import { firstTableKey } from "./starting.ts";
 import { openArchive } from "./tableFiles.ts";
-import { embedProblem, readEmbedWith, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
+import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
@@ -203,7 +203,8 @@ export async function readTableFile(path: string): Promise<EmbedRead> {
   }
   let library: Library;
   if (isFolder) {
-    library = await loadLibrary([path], [], { indexedFrom: INDEXED_FROM });
+    // With the .table files its relations name beside it (SPEC section 2).
+    library = await withOtherFiles(nodeFs, await loadLibrary([path], [], { indexedFrom: INDEXED_FROM }), { rowsElsewhere: largeTables(INDEXED_FROM) });
   } else {
     try {
       const opened = await openArchive(new Uint8Array(readFileSync(path)), []);
