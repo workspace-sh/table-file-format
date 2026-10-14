@@ -29,6 +29,15 @@ export type { RowListHandle, RowListProps } from "./RowList";
 /** How far past the screen rows are kept drawn, in points. */
 const DRAW_DISTANCE = 600;
 /**
+ * A fast scroll: rows are kept drawn further ahead of it, as far as it goes
+ * in this long (from scroll event to rows on screen takes a few frames, and
+ * a hard flick moves a few hundred points in each), up to the most; and
+ * less behind it, so about as many rows are drawn as at rest.
+ */
+const FAST_POINTS_PER_MS = 2;
+const LEAD_MS = 250;
+const LEAD_MOST = 2400;
+/**
  * Where the list starts in the page is asked again when the page can't say
  * (it isn't laid out yet), or doesn't answer at all: after each of these
  * waits, in milliseconds. The rows don't wait for it.
@@ -164,6 +173,8 @@ function WindowedRows<T>({
   const top = useRef<number | null>(null);
   // Where the page was when last looked at; `jump` and `settled` are moves this list made itself.
   const last = useRef<{ at: number | null; jump: boolean; settled: number | null }>({ at: null, jump: false, settled: null });
+  // How fast the page was last moving, in points a millisecond, signed: down is positive.
+  const pace = useRef<{ at: number; when: number; speed: number }>({ at: 0, when: 0, speed: 0 });
   const now = useRef({ laidOut, extra, layout });
   now.current = { laidOut, extra, layout };
   const drawnShift = useRef(0);
@@ -186,13 +197,29 @@ function WindowedRows<T>({
     const atAnEnd = at <= 0 || at >= range - 0.5;
     const settled = last.current.settled;
     last.current = { at, jump: false, settled: null };
+    const nowMs = Date.now();
+    const p = pace.current;
+    const dt = nowMs - p.when;
+    if (dt > 0 && dt < 200 && !jumped) p.speed = (at - p.at) / dt;
+    else if (dt >= 200 || jumped) p.speed = 0;
+    p.at = at;
+    p.when = nowMs;
+    const fast = Math.abs(p.speed) >= FAST_POINTS_PER_MS;
+    const lead = fast ? Math.min(LEAD_MOST, Math.max(DRAW_DISTANCE, Math.abs(p.speed) * LEAD_MS)) : DRAW_DISTANCE;
+    const trail = fast ? DRAW_DISTANCE / 2 : DRAW_DISTANCE;
+    const down = p.speed >= 0;
+    const before = down ? trail : lead;
+    const after = down ? lead : trail;
     setDrawn((was) => {
       const shift =
         more <= 0 ? 0 : settled !== null ? settled : jumped || atAnEnd ? more * Math.min(1, Math.max(0, at / range)) : Math.min(was.shift, more);
       const start = at + shift;
-      return shift === was.shift && start - DRAW_DISTANCE / 2 >= was.from && start + screen + DRAW_DISTANCE / 2 <= was.to
+      // Kept while what's on screen has half its margin either side; a window grown for a fast
+      // scroll goes back to the usual once it has slowed.
+      const grown = !fast && was.to - was.from > screen + 2 * DRAW_DISTANCE + 1;
+      return !grown && shift === was.shift && start - before / 2 >= was.from && start + screen + after / 2 <= was.to
         ? was
-        : { from: start - DRAW_DISTANCE, to: start + screen + DRAW_DISTANCE, shift };
+        : { from: start - before, to: start + screen + after, shift };
     });
   }, [where]);
 
