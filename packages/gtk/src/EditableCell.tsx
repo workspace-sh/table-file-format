@@ -156,6 +156,20 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     const day = calendar.getDate();
     pick((from) => localDate(day.getYear(), day.getMonth() - 1, day.getDayOfMonth(), from.getHours(), from.getMinutes(), from.getSeconds()));
   };
+  // A calendar says a day was chosen only when the day's number changes. So the same number in
+  // another month (paged to, or chosen there) and today's own day in an empty field say nothing,
+  // and are heard another way: the month or the year moving, and a press on the calendar.
+  const calendar = useRef<Gtk.Calendar | null>(null);
+  /** The calendar's day as the draft would have it, or that the draft already names it (the calendar only followed what was typed). */
+  const followCalendar = () =>
+    setTimeout(() => {
+      const shown = calendar.current;
+      if (!shown || !dateKind || closed.current) return;
+      const day = shown.getDate();
+      const named = dateOfStored(dateKind, draftNow.current);
+      if (named && named.getFullYear() === day.getYear() && named.getMonth() === day.getMonth() - 1 && named.getDate() === day.getDayOfMonth()) return;
+      pickDay(shown);
+    }, 0);
   const pickTime = (part: "hours" | "minutes", value: number) =>
     pick((from) => {
       const to = new Date(from.getTime());
@@ -367,7 +381,15 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
             >
               <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={8}>
                 {dateKind !== "time" ? (
-                  <GtkCalendar {...(drafted ? { year: drafted.getFullYear(), month: drafted.getMonth(), day: drafted.getDate() } : {})} onDaySelected={pickDay} />
+                  <GtkCalendar
+                    ref={calendar}
+                    {...(drafted ? { year: drafted.getFullYear(), month: drafted.getMonth(), day: drafted.getDate() } : {})}
+                    onDaySelected={pickDay}
+                    onNotifyMonth={followCalendar}
+                    onNotifyYear={followCalendar}
+                    // A press on the day already shown (today's, in an empty field) changes nothing the calendar would say.
+                    controllers={<GtkGestureClick name="pick-shown-day" propagationPhase={Gtk.PropagationPhase.CAPTURE} onPressed={followCalendar} />}
+                  />
                 ) : null}
                 {dateKind !== "date" ? (
                   <GtkBox spacing={6} halign={Gtk.Align.CENTER}>

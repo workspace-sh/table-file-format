@@ -1,6 +1,6 @@
 import * as GLib from "@gtkx/gi/glib";
 import * as Gtk from "@gtkx/gi/gtk";
-import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
+import { act, cleanup, queryAllControllers, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -199,6 +199,59 @@ describe("a time on Linux", () => {
     const picked = new Date(entry.getText());
     expect([picked.getFullYear(), picked.getMonth() + 1, picked.getDate(), picked.getSeconds()]).toEqual([2027, 2, 14, 0]);
     expect(Math.abs(picked.getHours() * 60 + picked.getMinutes() - (new Date().getHours() * 60 + new Date().getMinutes()))).toBeLessThanOrEqual(2);
+  });
+
+  it("picks the day with today's number in another month, which the calendar itself says nothing of", async () => {
+    withTimes();
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v1" />);
+    const entry = await openCell("—");
+    const { button, calendar } = await picker("Choose a Date and Time");
+    button.popup();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    // The calendar opens on today. The same day number, in a January (which has every one of them).
+    const today = new Date().getDate();
+    calendar!.selectDay(GLib.DateTime.newLocal(2027, 1, today, 0, 0, 0)!);
+    await waitFor(() => expect(entry.getText()).not.toBe(""));
+    const picked = new Date(entry.getText());
+    expect([picked.getFullYear(), picked.getMonth() + 1, picked.getDate()]).toEqual([2027, 1, today]);
+  });
+
+  it("picks today when today's own day is pressed in an empty field", async () => {
+    withTimes();
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v1" />);
+    const entry = await openCell("—");
+    const { button, calendar } = await picker("Choose a Date and Time");
+    button.popup();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(entry.getText()).toBe("");
+    // A press on the calendar that moves nothing: the day it already shows.
+    const press = queryAllControllers(calendar!, Gtk.GestureClick).find((gesture) => gesture.getName() === "pick-shown-day")!;
+    await act(() => {
+      press.emit("pressed", 1, 10, 10);
+    });
+    await waitFor(() => expect(entry.getText()).not.toBe(""));
+    const picked = new Date(entry.getText());
+    const now = new Date();
+    expect([picked.getFullYear(), picked.getMonth(), picked.getDate()]).toEqual([now.getFullYear(), now.getMonth(), now.getDate()]);
+  });
+
+  it("a press on the calendar leaves a date that is already there as it is", async () => {
+    withTimes();
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v1" />);
+    const entry = await openCell("—");
+    await userEvent.type(entry, "2026-11-05T08:15");
+    const { button, calendar } = await picker("Choose a Date and Time");
+    button.popup();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const press = queryAllControllers(calendar!, Gtk.GestureClick).find((gesture) => gesture.getName() === "pick-shown-day")!;
+    await act(() => {
+      press.emit("pressed", 1, 10, 10);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(entry.getText()).toBe("2026-11-05T08:15");
   });
 
   it("typing a date and time isn't rewritten by the picker following it", async () => {
