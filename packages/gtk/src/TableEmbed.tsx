@@ -6,6 +6,7 @@
 // tall as what it holds up to a limit, with the link's caption beneath.
 // What can't be drawn says why, in the table's place.
 
+import { css } from "@gtkx/css";
 import * as Adw from "@gtkx/gi/adw";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
@@ -22,6 +23,18 @@ import { LayoutView } from "./LayoutView.js";
 import { RowPage } from "./RowPage.js";
 import { styles } from "./theme.js";
 
+const overs = new Map<number, string>();
+/** The view's frame, wider than the page's text by its margin on each side: what scrolls sideways in it reaches the window's edges. */
+function overMargins(gutter: number): string {
+  let over = overs.get(gutter);
+  if (!over) {
+    // (No narrower than its two margins, or it would ask for less than no width.)
+    over = css({ marginLeft: `-${gutter}px`, marginRight: `-${gutter}px`, minWidth: `${2 * gutter}px` });
+    overs.set(gutter, over);
+  }
+  return over;
+}
+
 /** The tallest an embedded view is before it scrolls within itself. */
 export const EMBED_MAX_HEIGHT = 480;
 
@@ -32,6 +45,13 @@ export interface TableEmbedProps extends EmbedTarget {
   maxHeight?: number;
   /** The reader's locale, for dates, numbers and which way it reads. The system's, when not given. */
   locale?: string;
+  /**
+   * The side margin of the page the embed sits in. A view that scrolls sideways then runs over it to
+   * the window's edges: resting in line with the page's text, passing under the margin as it is
+   * scrolled, and stopping on the far margin at its end. The caption and the lines beneath stay in
+   * line with the text. Absent: it is kept to the width it is given.
+   */
+  gutter?: number;
   /** The table is to look at: nothing in it can be changed, and nothing is written. For a reader who can't write where it is. */
   readOnly?: boolean;
   /**
@@ -47,9 +67,11 @@ function Shown({
   maxHeight,
   locale,
   readOnly,
+  gutter,
   onOpenLink,
 }: {
   shown: EmbedShown;
+  gutter: number;
   maxHeight: number;
   locale: string | undefined;
   readOnly: boolean;
@@ -63,7 +85,7 @@ function Shown({
   const { rows, cards, rest } = shown.size;
   const [opened, setOpened] = useState(false);
   const cut = rest === "more" && !opened;
-  const embedded = useMemo(() => (opened ? { maxHeight } : { maxHeight, rows, cards, cut }), [maxHeight, rows, cards, cut, opened]);
+  const embedded = useMemo(() => (opened ? { maxHeight, gutter } : { maxHeight, gutter, rows, cards, cut }), [maxHeight, gutter, rows, cards, cut, opened]);
   const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, derived.shown.rows, table.schema) : 0;
   // What holds the table (a document's text) gives it the least height it asks for, and a
   // scroller asks for almost none: so the height it would like (its rows, up to the limit)
@@ -105,7 +127,7 @@ function Shown({
     <DisplaySettingsProvider value={display}>
       <EmbeddedContext.Provider value={embedded}>
         {/* Undo and redo here are the table's own: the keys don't reach the document around it. */}
-        <GtkBox ref={frame} heightRequest={height} controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, mods) => undoKeys(keyval, mods)} />}>
+        <GtkBox ref={frame} heightRequest={height} cssClasses={gutter > 0 ? [overMargins(gutter)] : []} controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, mods) => undoKeys(keyval, mods)} />}>
           <LayoutView
             key={derived.view.id}
             layout={derived.view.layout}
@@ -165,7 +187,7 @@ function Shown({
   );
 }
 
-export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink }: TableEmbedProps) {
+export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, gutter = 0, onOpenLink }: TableEmbedProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -179,7 +201,7 @@ export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBE
 
   return (
     <GtkBox name="table-embed" orientation={Gtk.Orientation.VERTICAL} spacing={6} hexpand>
-      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} onOpenLink={onOpenLink} /> : null}
+      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} gutter={gutter} onOpenLink={onOpenLink} /> : null}
       {read?.kind === "problem" ? (
         <GtkBox name="table-embed-problem" cssClasses={[styles.embedProblem]}>
           <GtkLabel label={read.text} xalign={0} wrap hexpand cssClasses={["dim-label"]} />

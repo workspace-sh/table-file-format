@@ -55,6 +55,7 @@ import { TableEmbed } from "@workspace.sh/table-gtk/embed";
 | `within` | The folder the file has to be inside, with links followed. A document can name any path; this keeps it to what the reader opened. |
 | `caption` | Shown beneath, small and centred. |
 | `maxHeight` | The tallest it is (480 by default) when the link doesn't say. Up to that it is as tall as what it holds; past it, it scrolls within itself. |
+| `gutter` | The side margin of the page the embed sits in. A view that scrolls sideways then runs over it to the window's edges: it rests in line with the page's text, passes under the margin as it is scrolled, and stops on the far margin at its end. A first column that stays put stays on the margin. The caption and the lines beneath stay in line with the text. Without it the embed is kept to the width it is given. |
 | `readOnly` | To look at only: nothing in it can be changed and nothing is written. For a reader who can't write where the file is. |
 | `onOpenLink` | A linked row was clicked: its address, for the app to go to. Without it a linked row is its name. |
 
@@ -86,7 +87,8 @@ yet). The words are `table-app`'s (`embedIn`), so every platform's
 drop-in says the same.
 
 In an embedded view (`EmbeddedContext`), `TableView` and the card views
-have no margin of their own and are as tall as what they hold.
+have no margin of their own above or below, the page's margin (`gutter`)
+at their sides, and are as tall as what they hold.
 
 It has no build or checks of its own: GTK code can only be typechecked
 where GTKX and the machine's bindings are. `apps/linux` typechecks, lints

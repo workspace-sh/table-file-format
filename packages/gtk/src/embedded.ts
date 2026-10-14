@@ -13,6 +13,14 @@ export interface Embedded {
   /** A board shows this many cards down each column, a gallery the lines that hold this many; then they scroll. */
   cards?: number;
   /**
+   * The side margin of the page the view sits in. The view's scroller is
+   * that much wider than the page's text on each side (whoever embeds it
+   * makes it so), and what it holds rests this far in: in line with the
+   * text until it is scrolled sideways, when it runs under the margin to
+   * the window's edge, and at its end stops on the far margin.
+   */
+  gutter?: number;
+  /**
    * The rows or cards past the count aren't drawn at all, and nothing
    * scrolls: whoever embeds the view says how many more there are.
    */
@@ -96,7 +104,8 @@ export function useEmbeddedScroller(
   return { ref, ...scrollerHeight(embedded, cut ? NO_LIMIT : asked ? limit : null) };
 }
 
-/** A card view's margins from its window's edges; none when embedded, where it sits has its own. */
+/** A card view's margins from its window's edges; embedded, none above or below, and the page's own margin (`gutter`) at the sides. */
 export function viewMargins(embedded: Embedded | null): { marginStart: number; marginEnd: number; marginTop: number; marginBottom: number } {
-  return embedded ? { marginStart: 0, marginEnd: 0, marginTop: 0, marginBottom: 0 } : { marginStart: 12, marginEnd: 12, marginTop: 6, marginBottom: 12 };
+  const side = embedded?.gutter ?? 0;
+  return embedded ? { marginStart: side, marginEnd: side, marginTop: 0, marginBottom: 0 } : { marginStart: 12, marginEnd: 12, marginTop: 6, marginBottom: 12 };
 }

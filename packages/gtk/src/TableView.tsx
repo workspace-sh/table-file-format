@@ -433,6 +433,10 @@ export function TableView({
   const fieldMap = fieldsByName(schema);
   const embedded = useEmbedded();
   const frameMargin = embedded ? 0 : WINDOW_FRAME_MARGIN;
+  // At the sides, embedded: the page's own margin, which the scroller runs over (`gutter`). The first
+  // column, when it stays put, then rests on that margin, in line with the page's text, not at the edge.
+  const sideMargin = embedded ? (embedded.gutter ?? 0) : WINDOW_FRAME_MARGIN;
+  const pinAt = embedded ? sideMargin : 0;
   // Resizing: live sizes while a handle is dragged, saved to the view
   // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
@@ -563,11 +567,11 @@ export function TableView({
     if (!found || !bounds) return;
     // The first column, when it stays put, is always in view, and covers that much of the others' start.
     if (frozenNow.current.width > 0 && cell === frozenNow.current.cellOf?.(place)) return;
-    const covered = frozenNow.current.width;
+    const covered = frozenNow.current.width > 0 ? frozenNow.current.width + pinAt : 0;
     const across = window.getHadjustment();
     const page = across.getPageSize();
     // Across what is scrolled: the frame's margin and line come before the cells.
-    const left = bounds.getX() + frameMargin + 1;
+    const left = bounds.getX() + sideMargin + 1;
     const right = left + bounds.getWidth();
     let x = across.getValue();
     if (rtl) {
@@ -620,7 +624,7 @@ export function TableView({
     return most;
   }, [source.count, sheet?.position]);
   const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
-  const chrome = TABLE_CHROME + 2 * frameMargin + numberWidth + (onAddField ? ADD_FIELD_WIDTH : 0);
+  const chrome = TABLE_CHROME + 2 * sideMargin + numberWidth + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
   // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
@@ -634,7 +638,25 @@ export function TableView({
   const pin = (key: string, from = 0) => (widget: Gtk.Widget | null) => {
     if (!widget) return void pinned.current.delete(key);
     pinned.current.set(key, { widget, from });
-    widget.setMarginStart(from + scrolledAcross.current);
+    placePinned(key, widget, from, scrolledAcross.current);
+  };
+  // Where the first column rests on a page's margin (`pinAt`), each of its cells has a skirt before it:
+  // the page's ground over the margin, as wide as the table has gone under it, up to the margin's width.
+  const skirts = useRef(new Map<string, Gtk.Widget>());
+  const skirt = (key: string) => (widget: Gtk.Widget | null) => {
+    if (!widget) return void skirts.current.delete(key);
+    skirts.current.set(key, widget);
+    const held = pinned.current.get(key);
+    if (held) placePinned(key, held.widget, held.from, scrolledAcross.current);
+  };
+  const placePinned = (key: string, widget: Gtk.Widget, from: number, x: number) => {
+    const before = skirts.current.get(key);
+    const over = before ? Math.min(x, pinAt) : 0;
+    if (before) {
+      before.setVisible(over > 0);
+      before.setSizeRequest(over, -1);
+    }
+    widget.setMarginStart(from + x - over);
   };
   // Scrolled sideways, the columns come to rest with one starting at the edge (the first column's end
   // when that stays put), so none is left cut in half there with its title out of sight. A scroll the
@@ -654,7 +676,7 @@ export function TableView({
     };
     // Where the table is scrolled to with each column in turn starting at the edge. The first is there
     // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
-    let at = frameMargin + 1 + (freeze ? 0 : numberWidth);
+    let at = sideMargin + 1 - pinAt + (freeze ? 0 : numberWidth);
     for (const name of (freeze ? fields.slice(1) : fields).slice(0, -1)) {
       at += colWidth(name);
       if (at < end) nearer(at);
@@ -689,10 +711,10 @@ export function TableView({
   /** Scrolled past the frame's margin and edge, the first column rests against the window's own edge. */
   const pinAcross = () => {
     const across = scroller.current?.getHadjustment();
-    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - frameMargin - 1) : 0;
+    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - sideMargin - 1 + pinAt) : 0;
     if (x === scrolledAcross.current) return;
     scrolledAcross.current = x;
-    for (const { widget, from } of pinned.current.values()) widget.setMarginStart(from + x);
+    for (const [key, { widget, from }] of pinned.current) placePinned(key, widget, from, x);
     // A column's line that has gone under the first column can't be taken through it.
     for (const { widget, at } of columnLineWidgets.current.values()) widget.setVisible(at > x + frozenWidth);
   };
@@ -721,6 +743,7 @@ export function TableView({
       ? {
           frozen: (
             <GtkBox ref={pin(key)} halign={Gtk.Align.START} valign={valign} cssClasses={classes}>
+              {pinAt > 0 ? <GtkBox ref={skirt(key)} name="pinned-skirt" visible={false} cssClasses={[styles.pinnedSkirt]} /> : null}
               {gutter(number, height)}
               {firstCell}
             </GtkBox>
@@ -1531,8 +1554,8 @@ export function TableView({
         // The table is a framed card in the window, as it is on the web and the Mac.
         cssClasses={[styles.tableFrame]}
         overflow={Gtk.Overflow.HIDDEN}
-        marginStart={frameMargin}
-        marginEnd={frameMargin}
+        marginStart={sideMargin}
+        marginEnd={sideMargin}
         marginTop={frameMargin}
         marginBottom={frameMargin}
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
