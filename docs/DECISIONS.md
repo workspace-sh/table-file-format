@@ -1198,3 +1198,17 @@ It is in the address because the height belongs to one placing of a view, not to
 
 **To revisit when** a document wants a view narrowed for one placing (a filter or a search in the address), which is a different thing from how much of it is shown.
 
+## D47: a relation's table not in its bundle is the `.table` of that name beside it
+
+**Decided (14 Oct 2026, with relations followed out of an embedded table). Open to revisit.**
+
+**Builds on** D3 (relations name a table, not a path) and SPEC section 2 ("relation").
+
+A relation's `table` that the bundle doesn't hold names `<name>.table` in the same folder: that file's table of that name, or its only table. Missing either, the relation is dangling, its values kept and shown as unresolved. Apps may look further only after this.
+
+It keeps D3's promise (no paths in the format, so moving a folder of files together breaks nothing) and makes the answer the same in every app, rather than whatever each one's search of a workspace finds first. One step only: a file's own relations to further files are resolved when that file is open in its own right, so reading a table never walks a chain of files.
+
+**Considered:** a path in the relation (`"table": "../suppliers.table#table=suppliers"`): against it, D3, and a folder renamed breaks every link into it. Searching the whole workspace by name: against it, two files of one name in different folders give different answers in different apps, and a search costs a walk of every folder.
+
+**To revisit when** a workspace wants one table shared by files in different folders.
+

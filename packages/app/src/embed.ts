@@ -12,7 +12,7 @@ import { formatAddress, parseAddress, type Address, type BundleMeta, type EditEv
 import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
-import { addressTarget, bundleOf, tableNameOf } from "./bundles.ts";
+import { addressTarget, bundleOf, otherFilesNamed, tableNameOf } from "./bundles.ts";
 import { appendFolderHistory } from "./editHistory.ts";
 import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 
@@ -229,7 +229,7 @@ export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: E
     return embedProblem(entry ? `“${lastPart(path)}” isn’t a .table.` : `There’s no table at “${written}”.`);
   }
   const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
-  return embedIn(library, parsed, lastPart(path));
+  return embedIn(await withOtherFiles(fs, library, reading), parsed, lastPart(path));
 }
 
 /** An embedded table's files over a platform's TableFs: edits written where the file was read from, and each to its table's history. */
@@ -267,4 +267,30 @@ export function embedFileAddress(shown: EmbedShown, viewId: string = shown.viewI
   const path = shown.library.paths[bundleOf(shown.key)];
   if (path === undefined) return null;
   return formatAddress({ tablePath: path, tableName: tableNameOf(shown.key), ...(viewId ? { viewId } : {}) });
+}
+
+/**
+ * A file just read, with the `.table` files its relations name beside it
+ * (SPEC section 2): read too, so a linked row there shows its name and can
+ * be opened, and lookups through it reach it. Only those beside it, one step:
+ * their own relations to further files are not followed. A file that isn't
+ * there is a dangling relation, as before.
+ */
+export async function withOtherFiles(fs: TableFs, library: Library, reading: Pick<EmbedReading, "rowsElsewhere"> = {}): Promise<Library> {
+  const paths: string[] = [];
+  for (const [bundle, path] of Object.entries(library.paths)) {
+    const folder = path.slice(0, Math.max(0, path.lastIndexOf("/")));
+    for (const name of otherFilesNamed(library.tables, bundle)) {
+      const other = joinPath(folder, `${name}.table`);
+      if (!paths.includes(other) && !Object.values(library.paths).includes(other) && (await fs.list(other)) !== null) paths.push(other);
+    }
+  }
+  if (paths.length === 0) return library;
+  const others = await openLibrary(fs, paths, Object.keys(library.bundles), reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
+  return {
+    tables: { ...library.tables, ...others.tables },
+    bundles: { ...library.bundles, ...others.bundles },
+    paths: { ...library.paths, ...others.paths },
+    problems: { ...library.problems, ...others.problems },
+  };
 }
