@@ -166,6 +166,16 @@ function hasWindowSize(): boolean {
 const GROUP_ROW_HEIGHT = 32;
 /** The line under each row (tableRow's borderBottomWidth). */
 const ROW_BORDER = 1;
+/**
+ * Native: a table body's lines are drawn once, not by each cell and row.
+ * React Native draws a border on one side only (a cell's end, a row's
+ * bottom) as an image, made for each view: about ten a row, which was
+ * much of what putting a row on screen cost. So a pane's column lines are
+ * views of their own behind its rows (`bodyRules`), a row's line beneath
+ * it is a plain view inside it, and a cell keeps the point its border took.
+ * The web keeps its borders, which cost it nothing.
+ */
+const NATIVE_RULES = PLATFORM_OS !== "web";
 
 const styles = css.create({
   // Table
@@ -555,6 +565,59 @@ const styles = css.create({
       default: "rgba(10, 132, 255, 0.10)",
       "@media (prefers-color-scheme: dark)": "rgba(10, 132, 255, 0.16)",
     },
+  },
+  // Native, NATIVE_RULES: what a cell's, a row's and a pane's one-sided
+  // borders were, as views and padding of the same size.
+  ruledCell: {
+    paddingInlineEnd: 17,
+  },
+  ruledRow: {
+    borderBottomWidth: 0,
+    paddingBottom: ROW_BORDER,
+  },
+  ruledFrozenRow: {
+    paddingInlineEnd: 1,
+  },
+  // A row's number has a background of its own, which would hide the line
+  // behind it: it gives up its border's point as a margin, which the line shows through.
+  ruledRowNumber: {
+    borderInlineEndWidth: 0,
+    marginInlineEnd: 1,
+  },
+  rowRule: {
+    position: "absolute",
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
+    bottom: 0,
+    height: ROW_BORDER,
+    backgroundColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  bodyRules: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
+    pointerEvents: "none",
+  },
+  bodyRule: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: {
+      default: "#e5e5ea",
+      "@media (prefers-color-scheme: dark)": "#26262b",
+    },
+  },
+  bodyRuleAt: (x: number) => ({
+    insetInlineStart: x,
+  }),
+  bodyRuleAtEnd: {
+    insetInlineEnd: 0,
   },
   tableCellSeparator: {
     borderInlineEndWidth: 1,
@@ -3042,17 +3105,26 @@ export function TableView({
           style={[
             styles.tableRow,
             styles.rowHeight(tallAt.get(place) ?? defaultHeight),
-            frozen ? styles.frozenEdge : restRowWidth(),
+            frozen ? (NATIVE_RULES ? styles.ruledFrozenRow : styles.frozenEdge) : restRowWidth(),
+            NATIVE_RULES && !(place === total - 1 && !onAddRow) && styles.ruledRow,
+            NATIVE_RULES && styles.positioned,
             place === total - 1 && !onAddRow && styles.tableRowLast,
           ]}
         >
-          {numbered && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]} />}
-          {names.map((name, idx) => (
-            <html.div
-              key={name}
-              style={[styles.tableCell, styles.cellWidth(colWidth(name)), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
-            />
-          ))}
+          {/* Native: the pane's lines behind it draw its grid (bodyRules), so it needs no cells. */}
+          {NATIVE_RULES ? (
+            place === total - 1 && !onAddRow ? null : <html.div style={styles.rowRule} />
+          ) : (
+            <>
+              {numbered && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]} />}
+              {names.map((name, idx) => (
+                <html.div
+                  key={name}
+                  style={[styles.tableCell, styles.cellWidth(colWidth(name)), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
+                />
+              ))}
+            </>
+          )}
         </html.div>
       </>
     );
@@ -3237,6 +3309,24 @@ export function TableView({
   // its column: it shows a line on hover, drags to resize, and a double
   // click puts the column back to its share. Placed in a box of no size, so
   // only the strips take the pointer.
+  // Native: a pane's column lines, drawn once behind its rows rather than as
+  // each cell's border (NATIVE_RULES). A row, a cell and a placeholder see
+  // through to them; a group's band, which has a background, hides them, as
+  // it has no lines of its own. `edge`: the frozen pane's line at its end.
+  const bodyRules = (names: string[], numbered: boolean, edge: boolean) => {
+    if (!NATIVE_RULES) return null;
+    let x = numbered ? numberWidth : 0;
+    return (
+      <html.div style={styles.bodyRules}>
+        {numbered && <html.div style={[styles.bodyRule, styles.bodyRuleAt(numberWidth - 1)]} />}
+        {names.map((name, idx) => {
+          x += colWidth(name);
+          return idx !== names.length - 1 || closes(name) ? <html.div key={name} style={[styles.bodyRule, styles.bodyRuleAt(x - 1)]} /> : null;
+        })}
+        {edge && <html.div style={[styles.bodyRule, styles.bodyRuleAtEnd]} />}
+      </html.div>
+    );
+  };
   const columnLines = (names: string[], from: number) => {
     if (!byLines) return null;
     let x = from;
@@ -3741,7 +3831,7 @@ export function TableView({
           styles.tableCell,
           styles.cellWidth(colWidth(name)),
           cellAlignStyle(align),
-          (!isLast || closes(name)) && styles.tableCellSeparator,
+          (!isLast || closes(name)) && (NATIVE_RULES ? styles.ruledCell : styles.tableCellSeparator),
           isFormula && styles.formulaCellClickable,
           inOpenColumn && styles.formulaColumnTint,
           isInputCell && styles.formulaInputCell,
@@ -4322,6 +4412,7 @@ export function TableView({
               {headerCell(primaryName, 0, 1)}
             </html.div>
             <RowList
+              behind={bodyRules([primaryName], !!coords, true)}
               items={places}
               keyOf={rowKeyOf}
               sizeOf={rowItemHeight}
@@ -4347,12 +4438,14 @@ export function TableView({
                         styles.tableRow,
                         styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
-                        styles.frozenEdge,
+                        NATIVE_RULES ? styles.ruledFrozenRow : styles.frozenEdge,
+                        NATIVE_RULES && !(i === total - 1 && !onAddRow) && styles.ruledRow,
                         i === total - 1 && !onAddRow && styles.tableRowLast,
                       ]}
                     >
-                      {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                      {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(NATIVE_RULES ? numberWidth - 1 : numberWidth), NATIVE_RULES && styles.ruledRowNumber]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                       {renderBodyCell(row, primaryName, 0, 1)}
+                      {NATIVE_RULES && !(i === total - 1 && !onAddRow) ? <html.div style={styles.rowRule} /> : null}
                       {rowLine(row, true)}
                     </html.div>
                   </RowActions>
@@ -4389,6 +4482,7 @@ export function TableView({
                 {headerAddCell}
               </html.div>
               <RowList
+                behind={bodyRules(restNames, !!coords && !primaryName, false)}
                 items={places}
                 keyOf={rowKeyOf}
                 sizeOf={rowItemHeight}
@@ -4420,13 +4514,15 @@ export function TableView({
                           styles.rowHeight(heightOf(row.id)),
                           styles.positioned,
                           restRowWidth(),
+                          NATIVE_RULES && !(i === total - 1 && !onAddRow) && styles.ruledRow,
                           i === total - 1 && !onAddRow && styles.tableRowLast,
                         ]}
                       >
-                        {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                        {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(NATIVE_RULES ? numberWidth - 1 : numberWidth), NATIVE_RULES && styles.ruledRowNumber]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                         {restNames.map((name, idx) =>
                           renderBodyCell(row, name, idx, restNames.length),
                         )}
+                        {NATIVE_RULES && !(i === total - 1 && !onAddRow) ? <html.div style={styles.rowRule} /> : null}
                         {rowLine(row, !primaryName)}
                       </html.div>
                     </RowActions>

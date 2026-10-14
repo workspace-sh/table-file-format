@@ -43,6 +43,12 @@ export interface RowListProps<T> {
   stampOf?: (item: T) => readonly unknown[];
   /** Changes when everything drawn must be drawn again (see `stampOf`). */
   drawKey?: unknown;
+  /**
+   * Drawn behind the rows, the list's whole height: on native, a table's
+   * column lines, drawn once rather than by every cell (views.tsx's
+   * NATIVE_RULES). The web's list leaves it out.
+   */
+  behind?: ReactNode;
 }
 
 /**
