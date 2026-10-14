@@ -6,7 +6,7 @@
 // it; queued edits are made in it; and a save writes its rows back to
 // rows.ndjson.
 
-import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
+import { bundleOf, remoteEdits, remoteViewRows, settled, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import { computeRows, queryIndex } from "@workspace.sh/table-core";
 import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
@@ -60,6 +60,8 @@ export function useIndexedTables(input: {
   const asked = useRef(new Set<string>());
   // The schema each table's index was made for.
   const madeFor = useRef(new Map<string, TableSchema>());
+  // The view has gone: what the index answers after isn't for anyone.
+  const gone = useRef(false);
   const [first, setFirst] = useState<Record<string, Row[]>>({});
   // Tables whose rows changed in the index since they were last written.
   const unsaved = useRef(new Set<string>());
@@ -103,13 +105,20 @@ export function useIndexedTables(input: {
             setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
           },
           async (error: unknown) => {
+            // The view has gone (its file closed) while the index was made: nothing is waiting for it.
+            if (gone.current) return;
             // No index to be had (no space, no SQLite): the table is held in memory instead, and says so.
-            const table = await readTable(nodeFs, dirOf(key));
-            latest.current.dispatch({ type: "reloaded", key, table });
-            latest.current.tell(
-              "Opened without its index",
-              `${tableNameOf(key)} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`,
-            );
+            const why = error instanceof Error ? error.message : String(error);
+            try {
+              const table = await readTable(nodeFs, dirOf(key));
+              if (gone.current) return;
+              latest.current.dispatch({ type: "reloaded", key, table });
+              latest.current.tell("Opened without its index", `${tableNameOf(key)} is large, and its index couldn't be made (${why}). It's held in memory instead, and may be slow.`);
+            } catch (unread) {
+              // Nor can the file be read: it has gone from where it was, or can't be read.
+              if (gone.current) return;
+              latest.current.tell(`Couldn't read ${tableNameOf(key)}`, unread instanceof Error ? unread.message : String(unread));
+            }
           },
         );
     }
@@ -131,6 +140,18 @@ export function useIndexedTables(input: {
     setProgress(drop);
     setFirst(drop);
   }, [state.tables]);
+  // Gone (the view closed): its indexes are let go of, once whatever it was writing is written.
+  useEffect(
+    () => () => {
+      gone.current = true;
+      for (const [bundle, host] of hosts.current) {
+        const path = latest.current.pathOf(bundle);
+        void (path ? settled(path) : Promise.resolve()).then(() => host.close()).catch(() => {});
+      }
+      hosts.current.clear();
+    },
+    [],
+  );
   /** A file closed: its index is let go of, so its folder is no longer held open. */
   const closeBundle = useCallback(async (bundle: string) => {
     const host = hosts.current.get(bundle);

@@ -3,7 +3,8 @@ import { GtkBox, GtkScrolledWindow, GtkWindow } from "@gtkx/jsx/gtk";
 import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
-import { EMBED_MAX_HEIGHT, readEmbed, TableEmbed } from "@workspace.sh/table-gtk/embed";
+import { EMBED_MAX_HEIGHT, indexHostUsers, readEmbed, TableEmbed, TableFile } from "@workspace.sh/table-gtk/embed";
+import { openIndexHost } from "@workspace.sh/table-app/node";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -556,6 +557,49 @@ describe("an embed in a page with margins", () => {
   });
 });
 
+// A table of 50,000 rows or more, read through its bundle's index: drawn in the document, and its index
+// shared with every other view of the file.
+describe("a large table embedded in a document", () => {
+  const big = () => {
+    const tasks = join(root, "tables", "projects.table", "tables", "tasks");
+    let rows = "";
+    for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":${i}}\n`;
+    writeFileSync(join(tasks, "rows.ndjson"), rows);
+    return tasks;
+  };
+  const address = "../tables/projects.table#table=tasks&view=v1&rows=5&rest=more&embed=1";
+
+  it("is drawn from its index: its first rows, cut to the link's count with the rest counted, and an edit written back", async () => {
+    const tasks = big();
+    await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} openIndex={openIndexHost} />));
+    // Sorted by priority, from the index; the rest counted from every row.
+    await waitFor(async () => expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 49,995 more rows" })).toBeDefined(), { timeout: 30_000 });
+    await userEvent.click(await screen.findByText("Big 0"));
+    const entry = (await screen.findByDisplayValue("Big 0")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Edited in a document, through the index");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(() => expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").split("\n")[0]).toContain("Edited in a document, through the index"), { timeout: 30_000 });
+  }, 60_000);
+
+  it("shares one index with the file opened beside it, and lets go of it when both have gone", async () => {
+    big();
+    const dir = join(root, "tables", "projects.table");
+    const opened = await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={900}>
+        <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+          <TableEmbed address={address} baseDir={docs} within={root} openIndex={openIndexHost} />
+          <TableFile path={dir} at={{ address: `${dir}#table=tasks`, n: 1 }} openIndex={openIndexHost} />
+        </GtkBox>
+      </GtkWindow>,
+    );
+    await waitFor(async () => expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 49,995 more rows" })).toBeDefined(), { timeout: 30_000 });
+    await waitFor(() => expect(indexHostUsers(dir)).toBe(2), { timeout: 30_000 });
+    await opened.unmount();
+    await waitFor(() => expect(indexHostUsers(dir)).toBe(0));
+  }, 60_000);
+});
+
 // It is the table, not a picture of it: what is done to it in the document
 // is in the file, read back here as opening it again would.
 describe("a table edited in a document", () => {
@@ -637,6 +681,20 @@ describe("a table edited in a document", () => {
     await waitFor(async () => expect((await screen.findAllByText("Changed in one")).length).toBe(2));
     expect(screen.queryAllByText("Land .table extension")).toHaveLength(0);
     await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Changed in one"));
+  });
+
+  it("keeps an edit made in the same moment the document lets go of the table", async () => {
+    const first = await tasks();
+    await userEvent.click(await screen.findByText("Land .table extension"));
+    const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Committed as it closed");
+    // The edit is committed and the view goes in one go, before React draws the edit.
+    await act(() => {
+      entry.emit("activate");
+      void first.unmount();
+    });
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Committed as it closed"));
   });
 
   it("a file read just after an edit was let go of reads the edit", async () => {
