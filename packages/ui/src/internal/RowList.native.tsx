@@ -43,18 +43,21 @@ export function RowList<T>(props: RowListProps<T>) {
 }
 
 /** Every row drawn: a page that doesn't say where it is scrolled. */
-function EveryRow<T>({ items, keyOf, render, handle, onShown }: RowListProps<T>) {
+function EveryRow<T>({ items, keyOf, render, handle, onShown, behind }: RowListProps<T>) {
   useImperativeHandle(handle, () => ({ scrollIndexIntoView: () => {}, top: () => null }), []);
   useEffect(() => {
     if (items.length > 0) onShown?.(0, items.length - 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length]);
-  return (
-    <>
-      {items.map((item, i) => (
-        <Fragment key={keyOf(item)}>{render(item, i)}</Fragment>
-      ))}
-    </>
+  const rows = items.map((item, i) => <Fragment key={keyOf(item)}>{render(item, i)}</Fragment>);
+  // What's drawn behind needs a box of the rows' height to fill.
+  return behind ? (
+    <View>
+      {behind}
+      {rows}
+    </View>
+  ) : (
+    <>{rows}</>
   );
 }
 
@@ -142,6 +145,7 @@ function WindowedRows<T>({
   layout: layoutOf,
   stampOf,
   drawKey,
+  behind,
   page,
 }: RowListProps<T> & { page: PageScroll }) {
   const renderer = useRef(render);
@@ -362,6 +366,7 @@ function WindowedRows<T>({
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
+      {behind}
       {/* Named for the Mac app's scrolling run (TableScrollBench), which measures how much of the list's place on screen this box covers. */}
       <View nativeID="table-rows" style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>
         {rows}
