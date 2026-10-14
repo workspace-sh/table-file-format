@@ -137,13 +137,15 @@ prove the format and the libraries, and to be read as examples.
 | Platform | Where | Built with |
 |---|---|---|
 | Web | `apps/web` | React and [react-strict-dom](https://github.com/facebook/react-strict-dom). This is the [live demo](https://workspace-sh.github.io/table-file-format/). |
-| iOS | `apps/mobile` | Expo and React Native, with the system's own controls. iOS 26 and later. |
-| macOS | `apps/desktop` | react-native-macos, in a native window with a sidebar, toolbar and inspector. |
+| iOS | `apps/mobile` | Expo and React Native, with the system's own controls; the views inside them are react-strict-dom. iOS 26 and later. |
+| macOS | `apps/desktop` | react-native-macos, in a native window with a sidebar, toolbar and inspector; the views inside it are react-strict-dom. |
 | Linux | `apps/linux` | GTK 4 and libadwaita, through [GTKX](https://gtkx.dev). |
-| Android | `apps/mobile` | The same code as iOS, with Material controls. It is behind the others; what's missing is listed in [#429](https://github.com/workspace-sh/table-file-format/issues/429). |
+| Android | `apps/mobile` | Not yet: the same code as iOS, with Material controls, but it hasn't been run on a device, and it likely stops at launch for want of a file module iOS has. What's missing is listed in [#429](https://github.com/workspace-sh/table-file-format/issues/429). |
 
 The web, iOS, macOS and Android apps draw their views with
-`@workspace.sh/table-ui`, written once for all four. Linux draws the same
+`@workspace.sh/table-ui`, written once for all four in react-strict-dom,
+which draws HTML elements on the web and React Native's components
+elsewhere. Linux draws the same
 views as GTK widgets with `@workspace.sh/table-gtk`. Where the platforms
 do differ is listed in [docs/PLATFORMS.md](docs/PLATFORMS.md).
 
