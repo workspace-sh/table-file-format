@@ -593,8 +593,9 @@ export function TableView({
   });
   const totals = view.totals ?? {};
   // The footer is there whenever a total could be chosen; with none chosen it is quiet (no rules), as on the web.
+  // Not under a table cut to its first rows, though: an empty band there reads as part of what was left out.
   const quietTotals = Object.keys(totals).length === 0;
-  const showTotals = !quietTotals || !!onUpdateView;
+  const showTotals = !quietTotals || (!!onUpdateView && !(cut && source.count > count));
   const chooseTotal = (name: string, kind: ViewTotal | null) => {
     const next = { ...(view.totals ?? {}) };
     if (kind) next[name] = kind;
