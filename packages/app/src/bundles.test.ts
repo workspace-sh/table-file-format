@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { ParsedTable } from "@workspace.sh/table-core";
-import { addressTarget, applyTarget, bundleTables, fromBundle, keyForAddress, tableKeysIn, toBundle } from "./bundles.ts";
+import { addressTarget, applyTarget, bundleTables, fromBundle, keyForAddress, otherFileTable, otherFilesNamed, relatedTables, tableKeysIn, toBundle } from "./bundles.ts";
 
 const t = (title: string): ParsedTable => ({
   path: title,
@@ -76,3 +76,43 @@ test("applying a target: its table, its view over the others, its page, the view
   assert.equal(noView.viewIds, current.viewIds, "no view named: the views as they were");
   assert.equal(noView.openBody, null);
 });
+
+// Relations to another .table, beside the file (SPEC section 2, D47).
+{
+  const table = (fields: { name: string; type: "string"; relation?: { table: string; field: "id" } }[], rows: Record<string, unknown>[] = []) =>
+    ({ path: "", schema: { fields }, rows: rows.map((r) => ({ id: String(r.id), ...r })), views: [], meta: {} }) as never;
+  const held = {
+    "orders/orders": table([{ name: "title", type: "string" }, { name: "supplier", type: "string", relation: { table: "suppliers", field: "id" } }]),
+    "orders/lines": table([{ name: "order", type: "string", relation: { table: "orders", field: "id" } }]),
+    "suppliers/suppliers": table([{ name: "name", type: "string" }], [{ id: "s1", name: "Acme" }]),
+    "suppliers/contacts": table([{ name: "name", type: "string" }]),
+    "parts/catalogue": table([{ name: "name", type: "string" }]),
+  };
+
+  test("a relation's table the file doesn't hold is the .table of that name beside it: its table of that name", () => {
+    assert.equal(otherFileTable(held, "suppliers"), "suppliers/suppliers");
+    // Or its only table.
+    assert.equal(otherFileTable(held, "parts"), "parts/catalogue");
+    // Not one held, not a path.
+    assert.equal(otherFileTable(held, "nowhere"), undefined);
+    assert.equal(otherFileTable(held, "suppliers/contacts"), undefined);
+  });
+
+  test("the tables a file's relations reach: its own by name, and another file's under the name the relation uses", () => {
+    assert.deepEqual(Object.keys(relatedTables(held, "orders")).sort(), ["lines", "orders", "suppliers"]);
+    assert.equal(relatedTables(held, "orders")["suppliers"], held["suppliers/suppliers"]);
+    // A file's own table of a name comes first.
+    assert.deepEqual(Object.keys(relatedTables(held, "suppliers")).sort(), ["contacts", "suppliers"]);
+  });
+
+  test("the files a bundle's relations name and it doesn't hold", () => {
+    assert.deepEqual(otherFilesNamed(held, "orders"), ["suppliers"]);
+    assert.deepEqual(otherFilesNamed(held, "suppliers"), []);
+  });
+
+  test("an address naming another file's table by the relation's name leads there", () => {
+    assert.equal(keyForAddress({ tablePath: "suppliers", rowId: "s1" }, held, {}, "orders"), "suppliers/suppliers");
+    assert.equal(keyForAddress({ tablePath: "lines" }, held, {}, "orders"), "orders/lines");
+    assert.equal(keyForAddress({ tablePath: "nowhere" }, held, {}, "orders"), null);
+  });
+}
