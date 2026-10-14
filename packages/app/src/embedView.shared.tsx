@@ -129,15 +129,8 @@ function Shown({
           tableKey={tableName}
           sheet={derived.shown.sheet}
           {...(readOnly ? {} : callbacks)}
-          // A row added while the rest is left out would be out of sight: the rest is shown first.
-          {...(readOnly || !cut
-            ? {}
-            : {
-                onAddRow: () => {
-                  setOpened(true);
-                  return callbacks.onAddRow();
-                },
-              })}
+          // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
+          {...(leftOut > 0 ? { onAddRow: undefined } : {})}
           {...(onOpenLink ? { onOpenRelation: onOpenLink } : {})}
         />
       </Frame>
