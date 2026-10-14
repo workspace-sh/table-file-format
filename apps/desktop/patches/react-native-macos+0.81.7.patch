@@ -405,3 +405,84 @@ index 2d83643..ed1e75a 100644
  #endif // macOS]
  
    activeTouch.touch.offsetPoint = RCTPointFromCGPoint(offsetPoint);
+diff --git a/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp b/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
+index 61de2be..b99ee31 100644
+--- a/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
++++ b/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
+@@ -12,7 +12,11 @@
+ 
+ namespace facebook::yoga {
+ 
+-float roundValueToPixelGrid(
++// [macOS The value on the pixel grid, at the precision it was worked out in.
++// A size is the difference of two of these, and has to be taken before either
++// is narrowed to a float: tens of millions of points down a long list a float
++// holds only every fourth point, and a 14 point view came out 12 or 16 high.
++static double roundValueToPixelGridExact(
+     const double value,
+     const double pointScaleFactor,
+     const bool forceCeil,
+@@ -58,9 +62,19 @@ float roundValueToPixelGrid(
+              : 0.0);
+   }
+   return (std::isnan(scaledValue) || std::isnan(pointScaleFactor))
+-      ? YGUndefined
+-      : (float)(scaledValue / pointScaleFactor);
++      ? (double)YGUndefined
++      : scaledValue / pointScaleFactor;
++}
++
++float roundValueToPixelGrid(
++    const double value,
++    const double pointScaleFactor,
++    const bool forceCeil,
++    const bool forceFloor) {
++  return (float)roundValueToPixelGridExact(
++      value, pointScaleFactor, forceCeil, forceFloor);
+ }
++// macOS]
+ 
+ void roundLayoutResultsToPixelGrid(
+     yoga::Node* const node,
+@@ -106,25 +120,27 @@ void roundLayoutResultsToPixelGrid(
+     const bool hasFractionalHeight =
+         !yoga::inexactEquals(round(scaledNodeHeight), scaledNodeHeight);
+ 
++    // [macOS Each size is taken from the two edges before narrowing to float
+     node->getLayout().setDimension(
+         Dimension::Width,
+-        roundValueToPixelGrid(
+-            absoluteNodeRight,
+-            pointScaleFactor,
+-            (textRounding && hasFractionalWidth),
+-            (textRounding && !hasFractionalWidth)) -
+-            roundValueToPixelGrid(
+-                absoluteNodeLeft, pointScaleFactor, false, textRounding));
++        (float)(roundValueToPixelGridExact(
++                    absoluteNodeRight,
++                    pointScaleFactor,
++                    (textRounding && hasFractionalWidth),
++                    (textRounding && !hasFractionalWidth)) -
++                roundValueToPixelGridExact(
++                    absoluteNodeLeft, pointScaleFactor, false, textRounding)));
+ 
+     node->getLayout().setDimension(
+         Dimension::Height,
+-        roundValueToPixelGrid(
+-            absoluteNodeBottom,
+-            pointScaleFactor,
+-            (textRounding && hasFractionalHeight),
+-            (textRounding && !hasFractionalHeight)) -
+-            roundValueToPixelGrid(
+-                absoluteNodeTop, pointScaleFactor, false, textRounding));
++        (float)(roundValueToPixelGridExact(
++                    absoluteNodeBottom,
++                    pointScaleFactor,
++                    (textRounding && hasFractionalHeight),
++                    (textRounding && !hasFractionalHeight)) -
++                roundValueToPixelGridExact(
++                    absoluteNodeTop, pointScaleFactor, false, textRounding)));
++    // macOS]
+   }
+ 
+   for (yoga::Node* child : node->getChildren()) {

@@ -1187,6 +1187,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         dispatch({ type: "display", choice: { kind: "locale", value: next.locale ?? "" } });
         dispatch({ type: "display", choice: { kind: "dateFormat", value: next.dateFormat ?? "iso" } });
         dispatch({ type: "display", choice: { kind: "formulaSyntax", value: next.formulaSyntax ?? "excel" } });
+        dispatch({ type: "display", choice: { kind: "resizeHandles", value: next.resizeHandles ?? "pills" } });
         return "display set";
       },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, stateRef.current.opened) ?? null,

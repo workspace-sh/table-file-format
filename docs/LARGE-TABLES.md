@@ -459,6 +459,17 @@ A first JavaScript profile, taken while napped, put about a third of the thread'
 
 Ruled out along the way, for a table that scrolls worse after a while: rows on their way from the index (every row drawn was already read), the kept text drawings filling up, views or layers left in the window (their number doesn't change), and the window's Auto Layout engine growing (about 7,300 constraints throughout: every React view has its frame in it as constraints, since the window's split view and SwiftUI panes use Auto Layout, and that is a cost for each view put in or taken out, but a steady one).
 
+#### Sizes far down the table (#518)
+
+Near the end of the 1,000,000-row table, 45 million points down, a selected cell's row handle was drawn differently from row to row: its two 1.5 point bars as one thick bar, as two thick bars, or not at all, and its pill 12 or 16 points high where it should be 14. Nothing was clipped; the sizes were wrong.
+
+Yoga snaps a node to the pixel grid by its place in the whole tree, and sets its size to the difference of its two snapped edges (`roundLayoutResultsToPixelGrid`). Each edge is worked out as a `double` and handed back as a `float`, and past 33,554,432 a float holds only every fourth whole number: so both edges were multiples of 4, and so was every width and height down there. The patch takes the difference before narrowing it. The rows' places were already right (the box they sit in is laid out at a multiple of 4, as `RowList.native.tsx` notes); this is what was left.
+
+- **Nothing changes nearer the top.** For a view less than about 8 million points down, both edges and their difference are exact in a float, so the size is the same number as before.
+- **Checked** on five neighbouring rows around row 999,775, in both looks of the handle ("Resize handles": Pills and Grabbers): each is drawn as it is at the top of the table.
+- **No cost.** Measured 1,300 rows down as above, with the change and without, two runs each: one flick left 5.7 to 6.2% of the table empty with it and 5.9 to 6.3% without, eight flicks 7.5 to 8.3% and 6.0 to 8.4%.
+- **Not on iOS or Android yet.** Yoga's code is the same there (React Native 0.83, and Yoga's main branch), but the iOS app links React Native prebuilt, so a patch to its source isn't compiled in.
+
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
 Leslie, 2 Oct: compare FlashList v2 (there's no v3 beta) and LegendList for drawing the rows, toward a million. Both only draw the rows on screen; both can handle rows of different heights, which other formats in a table may want soon.
