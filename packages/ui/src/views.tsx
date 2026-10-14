@@ -713,6 +713,13 @@ const styles = css.create({
     fontSize: 11,
     fontWeight: "400",
   },
+  /** Under a cut column's cards: how many more it has. */
+  boardMore: {
+    paddingInlineStart: 4,
+    fontSize: 11,
+    fontWeight: "400",
+    opacity: 0.6,
+  },
 
   // Gallery
   gallery: {
@@ -2699,6 +2706,7 @@ const NO_ENTRIES: RowEntry[] = [];
 
 export function TableView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -2910,7 +2918,9 @@ export function TableView({
   // Where totals are chosen in the view's settings (a phone's settings
   // form), an empty footer is only noise: it shows once a column has a total.
   const { SettingsForm: settingsForm } = usePlatformControls();
-  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm);
+  // Nor under a table cut to its first rows (`cut`): an empty row there reads as part of what was left out.
+  const leavesOut = cut !== undefined && (given ? given.count : rows.length) > cut;
+  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm && !leavesOut);
   // No totals chosen: the footer is only a place to choose one, so it
   // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
   const quietTotals = Object.keys(totals).length === 0;
@@ -2937,7 +2947,9 @@ export function TableView({
   );
   const facts = useViewFacts(given ?? NO_SOURCE, indexed ? ownHeights : NO_IDS);
   const inMemory = indexed ? NO_ENTRIES : groupedRows(view, rows, schema);
-  const total = indexed ? given.count : inMemory.length;
+  // Cut to its first rows (`cut`), only those have a place; the totals and each group's count are still of every row.
+  const whole = indexed ? given.count : inMemory.length;
+  const total = cut === undefined ? whole : Math.min(whole, cut);
   const groupStarts = indexed
     ? new Map(facts.groups.map((g) => [g.start, { label: groupLabel(g.key, view.group?.field ?? "", schema), count: g.count }] as const))
     : null;
@@ -4611,6 +4623,7 @@ function useCardKeys({
 
 export function BoardView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4696,7 +4709,12 @@ export function BoardView({
   const groups = board.groups;
   const columnKeys = board.keys;
 
-  const cardColumns = columnKeys.map((k) => (groups[k] ?? []).map((r) => r.id));
+  // The cards drawn in a column: all of them, or its first few when the board is cut (`cut`).
+  const drawnIn = (key: string): Row[] => {
+    const members = groups[key] ?? [];
+    return cut === undefined ? members : members.slice(0, cut);
+  };
+  const cardColumns = columnKeys.map((k) => drawnIn(k).map((r) => r.id));
   const cards = useCardKeys({
     move: (id, key) => moveInColumns(cardColumns, id, key),
     firstId: cardColumns.find((col) => col.length > 0)?.[0],
@@ -4729,7 +4747,7 @@ export function BoardView({
           <BoardColumnTitle field={schema.fields.find((f) => f.name === groupField)} value={key} />
           <html.span style={styles.boardCount}>{groupRows.length}</html.span>
         </html.div>
-        {groupRows.map((row) => (
+        {drawnIn(key).map((row) => (
           <DragHandle
             key={row.id}
             longPressMs={dragLongPressMs}
@@ -4809,6 +4827,9 @@ export function BoardView({
             </html.div>
           </DragHandle>
         ))}
+        {groupRows.length > drawnIn(key).length ? (
+          <html.span style={styles.boardMore}>{`+${groupRows.length - drawnIn(key).length} more`}</html.span>
+        ) : null}
       </html.div>
     );
   });
@@ -4864,6 +4885,7 @@ export function BoardView({
 
 export function GalleryView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4887,7 +4909,9 @@ export function GalleryView({
   const { measureProps, width: containerWidth } = useContainerWidth();
   const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
 
-  const ids = rows.map((r) => r.id);
+  // Cut (`cut`), only the first cards are drawn.
+  const drawn = cut === undefined ? rows : rows.slice(0, cut);
+  const ids = drawn.map((r) => r.id);
   const cards = useCardKeys({
     move: (id, key) => moveInGrid(ids, cardsPerRow, id, key),
     firstId: ids[0],
@@ -4905,7 +4929,7 @@ export function GalleryView({
       }}
       style={styles.gallery}
     >
-      {rows.map((row) => {
+      {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         return (
@@ -4952,6 +4976,7 @@ export function GalleryView({
 
 export function ListView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4992,7 +5017,9 @@ export function ListView({
 
   const computeOrder = (draggedId: string, targetRowId: string): string[] => orderMovedTo(rows, draggedId, targetRowId);
 
-  const listed = groupedRows(view, rows, schema);
+  // Cut (`cut`), only the first rows are drawn; a group's count is still of all its rows.
+  const everyRow = groupedRows(view, rows, schema);
+  const listed = cut === undefined ? everyRow : everyRow.slice(0, cut);
   const cards = useCardKeys({
     move: (id, key) => moveInColumns([listed.map((d) => d.row.id)], id, key),
     firstId: listed[0]?.row.id,
@@ -5074,7 +5101,7 @@ export function ListView({
                 styles.listItem,
                 cards.focusId === row.id && styles.listItemFocused,
                 viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
-                i === rows.length - 1 && styles.listItemLast,
+                i === listed.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
                 isDropTarget && styles.listItemDropTarget,
