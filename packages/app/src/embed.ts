@@ -244,3 +244,15 @@ export function linkedRowAddress(address: string, library: Library, held: { tabl
   const rowId = parseAddress(address)?.rowId;
   return formatAddress({ tablePath: path, tableName: tableNameOf(target.key), ...(target.viewId ? { viewId: target.viewId } : {}), ...(rowId ? { rowId } : {}) });
 }
+
+/**
+ * Where an embed's table is, as an address an app can open the file at: the
+ * `.table`'s path as it was read, and the table and view drawn
+ * (`/notes/projects.table#table=tasks&view=v2`). Null for a file read from a
+ * `.table.zip`, which has no path.
+ */
+export function embedFileAddress(shown: EmbedShown, viewId: string = shown.viewId): string | null {
+  const path = shown.library.paths[bundleOf(shown.key)];
+  if (path === undefined) return null;
+  return formatAddress({ tablePath: path, tableName: tableNameOf(shown.key), ...(viewId ? { viewId } : {}) });
+}
