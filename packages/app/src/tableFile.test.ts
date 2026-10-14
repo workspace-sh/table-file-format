@@ -54,6 +54,20 @@ test("a .table folder is read with the .table its relations name beside it (SPEC
   }
 });
 
+test("a .table opens on the first table its manifest names, even beside a table called projects", async () => {
+  const root = mkdtempSync(join(tmpdir(), "table-file-order-"));
+  try {
+    const path = join(root, "plans.table");
+    const table = (title: string) => ({ schema: { fields: [{ name: "title", type: "string" }] }, rows: [{ id: "r1", title }], views: [{ id: "all", name: "All", layout: "table" }], meta: {} });
+    await writeBundleTo(nodeFs, path, { meta: { tables: ["tasks", "projects"] }, tables: { projects: table("P"), tasks: table("T") } } as never);
+    for (const read of [await readTableFileWith(nodeFs, path), await readTableArchiveFile(await writeTableArchive("plans", { meta: { tables: ["tasks", "projects"] }, tables: { projects: table("P"), tasks: table("T") } } as never), "plans.table.zip")]) {
+      assert.equal(read.kind === "shown" && read.key, "plans/tasks");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a folder that isn't there says so", async () => {
   const read = await readTableFileWith(nodeFs, `${projects}-gone.table`);
   assert.deepEqual(read, { kind: "problem", text: "“projects.table-gone.table” isn’t there any more." });
