@@ -5,9 +5,9 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 import { openIndexHost } from "@workspace.sh/table-app/node";
-import { buildSearchIndex } from "@workspace.sh/table-core";
+import { alterIndex, buildSearchIndex, fillIndex } from "@workspace.sh/table-core";
 import type { RowsRequest } from "@workspace.sh/table-app";
-import type { SqlValue } from "@workspace.sh/table-core";
+import type { SqlValue, TableSchema } from "@workspace.sh/table-core";
 
 export type IndexRequest = { id: number } & (
   | { op: "exec"; sql: string }
@@ -20,6 +20,8 @@ export type IndexRequest = { id: number } & (
   | { op: "rows"; request: RowsRequest }
   | { op: "peek"; name: string; start: number; end: number }
   | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[]; whole?: boolean }
+  | { op: "alter"; name: string; from: TableSchema; to: TableSchema }
+  | { op: "fill"; name: string; schema: TableSchema }
   | { op: "close" }
 );
 
@@ -67,8 +69,12 @@ async function answer(request: IndexRequest): Promise<unknown> {
     case "build":
       return host.build(request.name, request.tableDir, (done, total) => port.postMessage({ id: request.id, progress: [done, total] } satisfies IndexResponse));
     case "save":
-      // Not reached: a save takes its own turns, below.
+    case "fill":
+      // Not reached: these take their own turns, below.
       return undefined;
+    case "alter":
+      // In this turn, whole.
+      return alterIndex(host, request.name, request.from, request.to);
     case "close":
       return host.close();
   }
@@ -82,6 +88,8 @@ const writes = (request: IndexRequest): boolean =>
   request.op === "build" ||
   request.op === "save" ||
   request.op === "search" ||
+  request.op === "alter" ||
+  request.op === "fill" ||
   request.op === "run" ||
   request.op === "exec" ||
   request.op === "batch" ||
@@ -151,9 +159,25 @@ function searchStep(request: IndexRequest & { op: "search" }): void {
     );
 }
 
+/** What a change of fields left to work out, a step at a time in the same way as a search index. */
+function fillStep(request: IndexRequest & { op: "fill" }): void {
+  if (savesUnderWay > 0 || Date.now() - lastAsked < 250) return void setTimeout(() => fillStep(request), 125);
+  inTurn(() => fillIndex(host, request.name, request.schema)).then(
+    async (more) => {
+      if (more) setImmediate(() => fillStep(request));
+      else {
+        await host.exec("pragma wal_checkpoint(truncate)");
+        port.postMessage({ id: request.id, ok: true, value: undefined } satisfies IndexResponse);
+      }
+    },
+    (error: unknown) => port.postMessage({ id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) } satisfies IndexResponse),
+  );
+}
+
 function take(request: IndexRequest): void {
   if (request.op === "ensure" || request.op === "build") return build(request);
   if (request.op === "search") return searchStep(request);
+  if (request.op === "fill") return fillStep(request);
   if (request.op === "save") return save(request);
   // Closing waits for a save to finish its file.
   if (request.op === "close") return void saving.then(() => answered(request));

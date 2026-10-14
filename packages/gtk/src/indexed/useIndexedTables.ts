@@ -101,8 +101,9 @@ export function useIndexedTables(input: {
             madeFor.current.set(key, schema);
             latest.current.dispatch({ type: "indexed", key, count });
             setMade((was) => ({ ...was, [key]: "ready" }));
-            // The search's own index is made after the view has its first rows, behind whatever the window asks for.
-            setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
+            // The search's own index is made after the view has its first rows, behind whatever the window asks for;
+            // and what a change of fields left to work out, when the app closed before it was done.
+            setTimeout(() => fillIn(host, key, schema), 1500);
           },
           async (error: unknown) => {
             // The view has gone (its file closed) while the index was made: nothing is waiting for it.
@@ -152,6 +153,25 @@ export function useIndexedTables(input: {
     },
     [],
   );
+  /**
+   * What a change of fields left to work out, behind whatever the window
+   * asks for (IndexHost.fill); then the search's own index. Done, the view
+   * is asked again: what it sorts or filters by may now be the index's to answer.
+   */
+  const fillIn = useCallback((host: IndexHost, key: string, schema: TableSchema) => {
+    const name = tableNameOf(key);
+    void host
+      .fill(name, schema)
+      .then(async () => {
+        if (gone.current || madeFor.current.get(key) !== schema) return;
+        const count = (await queryIndex(host, { name, schema }))?.count;
+        if (count !== undefined && !gone.current && madeFor.current.get(key) === schema) latest.current.dispatch({ type: "indexed", key, count });
+      })
+      .then(() => host.search(name))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** A file closed: its index is let go of, so its folder is no longer held open. */
   const closeBundle = useCallback(async (bundle: string) => {
     const host = hosts.current.get(bundle);
@@ -250,8 +270,8 @@ export function useIndexedTables(input: {
         const was = madeFor.current.get(key);
         const gone = was ? was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name) : [];
         const rows = unsaved.current.has(key) || gone.length > 0;
-        // Its fields changed in a way the index holds: it's made again from the rows
-        // saved here, so edits wait from now (they'd be lost between the two).
+        // Its fields changed in a way the index holds: it's changed in place, or made
+        // again from the rows saved here, so edits wait from now (they'd be lost between the two).
         const again = was !== undefined && indexedFor(was) !== indexedFor(table.schema);
         if (again) setMade((m) => ({ ...m, [key]: "building" }));
         unsaved.current.delete(key);
@@ -272,9 +292,20 @@ export function useIndexedTables(input: {
           madeFor.current.set(key, table.schema);
           continue;
         }
+        const schema = table.schema;
+        // Changed where it is when it can be: the table answers for its new fields at once,
+        // and what has to be worked out again is, behind it.
+        const altered = await host.alter(tableNameOf(key), was, schema).catch(() => false);
+        const count = altered ? (await queryIndex(host, { name: tableNameOf(key), schema }))?.count : undefined;
+        if (count !== undefined) {
+          madeFor.current.set(key, schema);
+          latest.current.dispatch({ type: "indexed", key, count });
+          setMade((m) => ({ ...m, [key]: "ready" }));
+          fillIn(host, key, schema);
+          continue;
+        }
         // Not awaited: the save is done, and the table shows its first rows while this runs.
         setProgress(({ [key]: _old, ...rest }) => rest);
-        const schema = table.schema;
         void firstRows(dirOf(key), FIRST_ROWS).then((first) => setFirst((f) => ({ ...f, [key]: computeRows(schema, first).rows })), () => {});
         void host
           .build(tableNameOf(key), dirOf(key), (done, total) => setProgress((p) => ({ ...p, [key]: { done, total } })))
@@ -283,7 +314,7 @@ export function useIndexedTables(input: {
               madeFor.current.set(key, schema);
               latest.current.dispatch({ type: "indexed", key, count });
               setMade((m) => ({ ...m, [key]: "ready" }));
-              setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), 1500);
+              setTimeout(() => fillIn(host, key, schema), 1500);
             },
             (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
           );

@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, readFileSync, readdirS
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { buildIndex, buildSearchIndex, rowsBeingBuilt, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, buildIndex, buildSearchIndex, fillIndex, rowsBeingBuilt, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -34,7 +34,7 @@ export interface IndexHost extends SqlDriver {
    * when it's whole; safe to ask of one that already is.
    */
   search(name: string): Promise<void>;
-  /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields. */
+  /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields it can't `alter`. */
   build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the table's rows out of the index to its
@@ -49,6 +49,19 @@ export interface IndexHost extends SqlDriver {
    * stops; the caller holds edits for it.
    */
   save(name: string, tableDir: string, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
+  /**
+   * After a change to table `name`'s fields from `from` to `to`: change its
+   * index where it is (core's alterIndex), answering for `to` at once.
+   * False when it can't, and it's to be built again.
+   */
+  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  /**
+   * Work out what a change of fields left to work out (core's fillIndex),
+   * a step at a time behind whatever else is asked: until it's done, a
+   * view sorted, filtered or grouped by those fields is worked out in
+   * memory. Resolves when it's done; safe to ask when there's nothing to do.
+   */
+  fill(name: string, schema: TableSchema): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -311,6 +324,15 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
         return true;
       };
       return turn ? turn(stamp) : stamp();
+    },
+    // One transaction each, in one turn: nothing else asked comes between its statements.
+    alter: (name, from, to) => (turn ? turn(() => alterIndex(whole, name, from, to)) : alterIndex(whole, name, from, to)),
+    async fill(name, schema) {
+      const step = () => fillIndex(whole, name, schema);
+      while (await (turn ? turn(step) : step())) {
+        // A step at a time.
+      }
+      await whole.exec("pragma wal_checkpoint(truncate)");
     },
     async close() {
       await whole.exec("pragma wal_checkpoint(truncate)").catch(() => {});
