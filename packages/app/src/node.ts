@@ -171,6 +171,8 @@ export function attachmentsIn(tableDir: string): string[] {
 export async function readEmbed({ address, baseDir, within }: EmbedTarget): Promise<EmbedRead> {
   return readEmbedWith(nodeFs, { address, baseDir: resolve(baseDir), ...(within === undefined ? {} : { within: resolve(within) }) }, {
     rowsElsewhere: largeTables(INDEXED_FROM),
+    // GTK's drop-in reads a large table through its index.
+    readsIndex: true,
     real: (path) => {
       try {
         return realpathSync(path);

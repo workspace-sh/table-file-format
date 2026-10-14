@@ -7,13 +7,13 @@
 
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
-import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkProgressBar, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { asStored, bundleOf, bundleTables, derive, ingestingText, linkedRowAddress, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
+import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { bundleOf, bundleTables, derive, linkedRowAddress, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
-import { newId, parseAddress, type ParsedTable, type Row } from "@workspace.sh/table-core";
+import { newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LayoutView } from "./LayoutView.js";
@@ -22,15 +22,10 @@ import { TableDialogs } from "./TableDialogs.js";
 import { styles } from "./theme.js";
 import { useSelected } from "./useSelected.js";
 import { ViewSettings } from "./ViewSettings.js";
-import { FewRows } from "./indexed/FewRows.js";
+import { IndexedView } from "./indexed/IndexedView.js";
+import { sharedIndexHosts } from "./indexed/sharedHosts.js";
 import { openWorkerIndexHost } from "./indexed/indexClient.js";
 import { useIndexedTables } from "./indexed/useIndexedTables.js";
-
-const NO_ROWS: Row[] = [];
-
-/** How far a large table's reading has got. */
-const readingLine = ({ done, total }: { done: number; total: number }) =>
-  total > 0 ? `${done.toLocaleString("en")} of ${total.toLocaleString("en")} rows read` : "Reading its rows";
 
 export interface TableFileProps {
   /** The `.table` folder, or a `.table.zip`. */
@@ -87,18 +82,19 @@ function Opened({
     },
   };
   const { state, dispatch, derived: drawn, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale, kept);
+  // One index per folder, shared with any other view of this file (an embed of it).
+  const sharedOpen = useMemo(() => sharedIndexHosts(openIndex), [openIndex]);
   const indexed = useIndexedTables({
     state,
     dispatch,
     view: drawn.shown.view,
     pathOf: (bundle) => shown.library.paths[bundle],
-    openIndex,
+    openIndex: sharedOpen,
     tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
   });
   saveIndexed.current = indexed.save;
   // The count says what the index has read, for a large table.
   const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
-  const showReading = derived.view.layout === "table" && !indexed.source && !!indexed.reading;
   const { table, view } = derived;
   // A .table.zip was read into memory: there is nowhere to write it back.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
@@ -189,58 +185,19 @@ function Opened({
           )}
         </GtkBox>
         {table.indexed ? (
-          // A table this large is read through its bundle's index (SPEC section 8), as the table app reads it:
-          // the head of its file at once while the index is made, then the view's own rows from the index.
-          indexed.building && !showReading ? (
-            <GtkBox name="table-file-building" orientation={Gtk.Orientation.VERTICAL} spacing={8} vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12}>
-              <GtkLabel label={readingLine(indexed.building)} xalign={0} cssClasses={["dim-label"]} />
-              <GtkProgressBar fraction={indexed.building.total > 0 ? indexed.building.done / indexed.building.total : 0} />
-            </GtkBox>
-          ) : showReading ? (
-            <GtkBox orientation={Gtk.Orientation.VERTICAL} vexpand>
-              <GtkLabel label={ingestingText(derived.shown.view)} xalign={0} wrap marginStart={12} marginEnd={12} marginBottom={6} cssClasses={["dim-label", "caption"]} />
-              {/* While it's read it is to look at, not to work in. */}
-              <GtkBox canFocus={false} vexpand>
-                <LayoutView key={`${state.active}\u0000${view.id}\u0000reading`} layout="table" view={asStored(derived.shown.view)} rows={NO_ROWS} source={indexed.reading} schema={table.schema} relatedTables={related} tableKey={tableName} />
-              </GtkBox>
-            </GtkBox>
-          ) : indexed.source && view.layout !== "table" ? (
-            <FewRows source={indexed.source}>
-              {(rows) => (
-                <LayoutView
-                  key={`${state.active}\u0000${view.id}`}
-                  layout={view.layout}
-                  view={derived.shown.view}
-                  rows={rows}
-                  schema={table.schema}
-                  bodies={table.bodies}
-                  relatedTables={related}
-                  tableKey={tableName}
-                  {...(lookOnly ? {} : { ...callbacks, onRemoveEnumValue: undefined, onInsertRow: undefined })}
-                  onOpenRelation={followLink}
-                />
-              )}
-            </FewRows>
-          ) : indexed.source ? (
-            <LayoutView
-              key={`${state.active}\u0000${view.id}`}
-              layout="table"
-              view={derived.shown.view}
-              rows={NO_ROWS}
-              source={indexed.source}
-              schema={table.schema}
-              bodies={table.bodies}
-              relatedTables={related}
-              tableKey={tableName}
-              sheet={derived.shown.sheet}
-              // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
-              {...(lookOnly ? {} : { ...callbacks, onRemoveEnumValue: undefined, onInsertRow: undefined })}
-              onOpenRelation={followLink}
-              restorePlace={select}
-            />
-          ) : (
-            <GtkBox vexpand />
-          )
+          // A table this large is read through its bundle's index (SPEC section 8), as the table app reads it.
+          <IndexedView
+            indexed={indexed}
+            view={derived.shown.view}
+            table={table}
+            tableName={tableName}
+            related={related}
+            sheet={derived.shown.sheet}
+            viewKey={`${state.active}\u0000${view.id}`}
+            edits={lookOnly ? {} : callbacks}
+            onOpenRelation={followLink}
+            restorePlace={select}
+          />
         ) : (
           <LayoutView
             key={`${state.active}\u0000${view.id}`}

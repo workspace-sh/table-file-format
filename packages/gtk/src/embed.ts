@@ -11,3 +11,5 @@ export type { EmbedProblem, EmbedRead, EmbedShown } from "@workspace.sh/table-ap
 export { useIndexedTables, type IndexedTables } from "./indexed/useIndexedTables.js";
 export { openWorkerIndexHost } from "./indexed/indexClient.js";
 export { FewRows, LAYOUT_ROWS } from "./indexed/FewRows.js";
+export { indexHostUsers, sharedIndexHosts } from "./indexed/sharedHosts.js";
+export { IndexedView, type IndexedViewProps } from "./indexed/IndexedView.js";
