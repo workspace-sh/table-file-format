@@ -7,6 +7,7 @@ import { applyView, searchRows } from "./query.js";
 import { arraySource, memoryViewRows } from "./row-source.js";
 import { alterIndex, buildIndex, buildSearchIndex, fillIndex, indexFilling, storedRows, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
+import type { SqlValue } from "./indexer.js";
 
 /** The parts of node:assert/strict the cases use. */
 export interface CaseAssert {
@@ -736,6 +737,27 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     }
     // Once it's done, the name is free again.
     assert.equal(await alterIndex(db, "t", gone, { fields: [...gone.fields, { name: "flag", type: "string" }] }), true);
+  });
+
+  test("a fill writes a batch of rows in one statement, not one a row", async () => {
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows: makeRows(42, 300), key: "k" });
+    const to: TableSchema = { fields: [...schema.fields, { name: "triple", type: "number", computed: formula("(* n 3)") }] };
+    assert.equal(await alterIndex(db, "t", schema, to), true);
+    // Every statement the fill sends, whichever way it's sent.
+    let updates = 0;
+    const counted: SqlDriver = {
+      exec: (sql) => db.exec(sql),
+      run: (sql, params) => ((updates += /^\s*update r/i.test(sql) ? 1 : 0), db.run(sql, params)),
+      all: (sql, params) => db.all(sql, params),
+      ...(db.batch ? { batch: (sql: string, lists: SqlValue[][]) => ((updates += /^\s*update r/i.test(sql) ? lists.length : 0), db.batch!(sql, lists)) } : {}),
+    };
+    let steps = 0;
+    while (await fillIndex(counted, "t", to, 64)) steps++;
+    assert.equal(steps, 5);
+    assert.equal(updates, 5, "one update a batch of 64 rows");
+    // And it is filled: sorted by the index, as a build gives.
+    assert.ok(await queryIndex(db, { name: "t", schema: to, query: { sort: [{ field: "triple", direction: "asc" }] } }));
   });
 
   test("a build drops a fill left under way: its fields are counted as the build found them", async () => {
