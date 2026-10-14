@@ -43,7 +43,7 @@ export type Request = { id: number } & (
       | { op: "build"; name: string; schema: TableSchema }
       | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[]; whole?: boolean }
       | { op: "search"; name: string }
-      | { op: "alter"; name: string; from: TableSchema; to: TableSchema }
+      | { op: "alter"; name: string; from: TableSchema; to: TableSchema; restore?: string[] }
       | { op: "fill"; name: string; schema: TableSchema }
       | { op: "rows"; request: RowsRequest }
       | { op: "peek"; name: string; start: number; end: number }
@@ -326,7 +326,7 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
     case "peek":
       return rowsBeingBuilt(driver, req.name, req.start, req.end);
     case "alter":
-      return alterIndex(driver, req.name, req.from, req.to);
+      return alterIndex(driver, req.name, req.from, req.to, req.restore ? { restore: req.restore } : {});
     case "close":
       held.get(bundle)?.db.close();
       held.delete(bundle);

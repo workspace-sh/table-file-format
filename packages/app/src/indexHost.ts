@@ -98,7 +98,7 @@ export interface IndexDatabase {
    * where it is (core's alterIndex), answering for `to` at once. False when
    * it can't, and it's to be built again.
    */
-  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
   /**
    * Work out what a change of fields left to work out (core's fillIndex), a
    * step at a time behind whatever else is asked. Resolves when it's done;
@@ -489,7 +489,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       },
       search: (name) => inSteps(bundle, (driver) => buildSearchIndex(driver, name, SEARCH_STEP)),
       // One transaction, in one turn, after a build of its bundle.
-      alter: (name, from, to) => afterBuild(bundle, () => asked(({ driver }) => alterIndex(driver, name, from, to))),
+      alter: (name, from, to, options = {}) => afterBuild(bundle, () => asked(({ driver }) => alterIndex(driver, name, from, to, options))),
       fill: (name, schema) => inSteps(bundle, (driver) => fillIndex(driver, name, schema, SEARCH_STEP)),
       heldRows: (name) => {
         const entry = waiting.get(`${bundle}/${name}`);

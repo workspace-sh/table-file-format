@@ -1036,13 +1036,15 @@ A change of fields does not need a rebuild either. `alterIndex` changes
 the index from the old schema to the new one where it is: a field
 added, removed, moved, retyped or given another formula. It renames
 columns to their fields' new places, adds empty ones for new fields,
-and leaves a gone field out of every row read, so the index answers for
-the new schema at once. What must be worked out again (a formula's
-results, a retyped or new field's columns, the search text, and a gone
-field's values taken out of each row's stored JSON) is filled in
+and hides a gone field: its values stay in each row's stored JSON, and
+every row read or saved leaves them out, so the file loses the field.
+The index answers for the new schema at once. An undo that brings the
+field back (`restore`) shows its values again; a new field that only
+reuses the name has them taken out, and starts empty. A build forgets
+what was hidden. What must be worked out again (a formula's results, a
+retyped, new or restored field's columns, the search text) is filled in
 afterwards, a batch at a time (`fillIndex`), behind whatever else is
-asked; a field added back under a gone field's name before then is
-built instead. Until a field is filled, the index
+asked. Until a field is filled, the index
 doesn't promise it: a view sorted, filtered, grouped or totalled by it,
 or a search while the search text is filled, is computed in memory, and
 a formula's values are worked out as rows are read. Once filled, it

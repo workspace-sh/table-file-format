@@ -20,7 +20,7 @@ export type IndexRequest = { id: number } & (
   | { op: "rows"; request: RowsRequest }
   | { op: "peek"; name: string; start: number; end: number }
   | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[]; whole?: boolean }
-  | { op: "alter"; name: string; from: TableSchema; to: TableSchema }
+  | { op: "alter"; name: string; from: TableSchema; to: TableSchema; restore?: string[] }
   | { op: "fill"; name: string; schema: TableSchema }
   | { op: "close" }
 );
@@ -74,7 +74,7 @@ async function answer(request: IndexRequest): Promise<unknown> {
       return undefined;
     case "alter":
       // In this turn, whole.
-      return alterIndex(host, request.name, request.from, request.to);
+      return alterIndex(host, request.name, request.from, request.to, request.restore ? { restore: request.restore } : {});
     case "close":
       return host.close();
   }
