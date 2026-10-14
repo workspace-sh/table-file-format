@@ -30,6 +30,7 @@ export * from "./starting.ts";
 export * from "./leaving.ts";
 export * from "./appState.ts";
 export * from "./embed.ts";
+export * from "./heldFiles.ts";
 export * from "./tableFile.ts";
 
 export { createIndexHost, type ClosableDriver, type FileWriter, type IndexDatabase, type IndexHost, type IndexHostPlatform, type OpenedLarge } from "./indexHost.ts";

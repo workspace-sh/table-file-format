@@ -11,6 +11,7 @@ import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type 
 
 import { bundleOf, fromBundle, tableNameOf } from "./bundles.ts";
 import { firstTableOfFile } from "./tableFile.ts";
+import { settled } from "./heldFiles.ts";
 import { openArchive } from "./tableFiles.ts";
 import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
@@ -203,6 +204,8 @@ export async function readTableFile(path: string): Promise<EmbedRead> {
   }
   let library: Library;
   if (isFolder) {
+    // After any write of it another view has under way.
+    await settled(path);
     // With the .table files its relations name beside it (SPEC section 2).
     library = await withOtherFiles(nodeFs, await loadLibrary([path], [], { indexedFrom: INDEXED_FROM }), { rowsElsewhere: largeTables(INDEXED_FROM) });
   } else {

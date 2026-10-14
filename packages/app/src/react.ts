@@ -13,6 +13,7 @@ import { forViews, loadArrangements, saveArrangements } from "./arrangements.ts"
 import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type AppState, type Derived, type ViewCallbacks } from "./appState.ts";
 import { bundleOf, relatedTables, tableNameOf } from "./bundles.ts";
 import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
+import { heldFile, noteWriting, tellHeld } from "./heldFiles.ts";
 import { saveDisplay, viewerLocale } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 import { saveSidebarPrefs } from "./sidebarPrefs.ts";
@@ -278,7 +279,15 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
     {
       store,
       write: async (bundles, tables, metas) => {
-        await Promise.all(bundles.map((bundle) => files.write(library, tables, metas, bundle)));
+        await Promise.all(
+          bundles.map((bundle) => {
+            const write = files.write(library, tables, metas, bundle);
+            // Another view reading this file now waits for it.
+            const path = library.paths[bundle];
+            if (path !== undefined) noteWriting(path, write);
+            return write;
+          }),
+        );
       },
       ...(files.appendHistory ? { appendHistory: (key: string, events: EditEvent[]) => files.appendHistory!(library, key, events) } : {}),
     },
@@ -286,7 +295,46 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
   );
   const flushing = useRef(flush);
   flushing.current = flush;
-  useEffect(() => () => void flushing.current(), []);
+  useEffect(
+    () => () => {
+      const written = flushing.current();
+      for (const path of Object.values(library.paths)) noteWriting(path, written);
+    },
+    // Once, as it goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // The same file held by other views (heldFiles): kept in step with them. A table this view
+  // changed is told to them; one they changed is taken as it is, and not told back.
+  const self = useRef({});
+  const taken = useRef(new WeakSet<ParsedTable>());
+  const latestTables = useRef(state.tables);
+  latestTables.current = state.tables;
+  useEffect(() => {
+    const stops = Object.entries(library.paths).map(([bundle, path]) =>
+      heldFile(path, (name, table, from) => {
+        const key = `${bundle}/${name}`;
+        if (from === self.current || !latestTables.current[key] || latestTables.current[key] === table) return;
+        taken.current.add(table);
+        dispatch({ type: "reloaded", key, table });
+      }),
+    );
+    return () => stops.forEach((stop) => stop());
+    // The file's paths don't change while it is held.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const before = useRef(state.tables);
+  useEffect(() => {
+    const was = before.current;
+    before.current = state.tables;
+    for (const [key, table] of Object.entries(state.tables)) {
+      if (was[key] === table || taken.current.has(table) || table.indexed) continue;
+      const path = library.paths[bundleOf(key)];
+      if (path !== undefined) tellHeld(path, tableNameOf(key), table, self.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tables]);
 
   const derived = derive(state, { locale, newTableIn: "none" });
   const related = useMemo(() => relatedTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
