@@ -1,9 +1,9 @@
 // The example tables as .table.zip files, for the fixtures repository (workspace-sh/workspace-fixtures,
 // Fixtures/table/) and anyone who wants to open one as a file:
 //
-//   npx tsx scripts/fixture-archives.mts <folder holding crm.table, household-budget.table, projects.table, shop.table>
+//   npx tsx scripts/fixture-archives.mts <folder holding .table folders, such as fixtures/>
 //
-// Writes <name>.table.zip beside each folder. Each is the whole folder, attachments included (the
+// Writes <name>.table.zip beside each <name>.table folder in it. Each is the whole folder, attachments included (the
 // reference archive writer leaves them out, SPEC section 13, and the CRM's logos are attachments), under
 // one <name>.table/ root, entries in a fixed order (the manifest first) with a fixed time: the same
 // folder always gives the same bytes. Each is then read back two ways, and says so: unzipped it is the
@@ -17,7 +17,7 @@ import { nodeFs } from "../packages/core/src/node-fs.ts";
 import { openArchive } from "../packages/app/src/tableFiles.ts";
 
 const dir = process.argv[2]!;
-const names = ["crm", "household-budget", "projects", "shop"];
+const names = readdirSync(dir).filter((n) => n.endsWith(".table") && statSync(join(dir, n)).isDirectory()).map((n) => n.slice(0, -".table".length)).sort();
 const FIXED = new Date(Date.UTC(2026, 9, 14, 0, 0, 0));
 const walk = (at: string): string[] => readdirSync(at).flatMap((n) => (statSync(join(at, n)).isDirectory() ? walk(join(at, n)) : [join(at, n)]));
 for (const name of names) {
