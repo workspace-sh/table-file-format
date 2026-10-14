@@ -1,0 +1,11 @@
+{
+  "format": "table",
+  "formatVersion": 1,
+  "title": "Library",
+  "description": "A long list: 180 books, for scrolling a long table and its header.",
+  "tables": [
+    "books"
+  ],
+  "created_at": "2026-10-14T00:00:00Z",
+  "modified_at": "2026-10-14T00:00:00Z"
+}
