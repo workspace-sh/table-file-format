@@ -7,7 +7,7 @@
 import type { TableFs } from "@workspace.sh/table-core/io";
 
 import { fromBundle } from "./bundles.ts";
-import { embedProblem, type EmbedRead } from "./embed.ts";
+import { embedProblem, withOtherFiles, type EmbedRead } from "./embed.ts";
 import { openLibrary, type Library } from "./library.ts";
 import { firstTableKey } from "./starting.ts";
 import { openArchive } from "./tableFiles.ts";
@@ -28,11 +28,14 @@ function opened(library: Library, file: string): EmbedRead {
   return { kind: "shown", library, key, viewId: library.tables[key]!.views[0]?.id ?? "", size: {} };
 }
 
-/** A `.table` folder at `path`, read over `fs`. */
+/**
+ * A `.table` folder at `path`, read over `fs`, with the `.table` files its
+ * relations name beside it (SPEC section 2), as node.ts's readTableFile reads.
+ */
 export async function readTableFileWith(fs: TableFs, path: string): Promise<EmbedRead> {
   const file = fileName(path);
   if ((await fs.list(path)) === null) return embedProblem(`“${file}” isn’t there any more.`);
-  return opened(await openLibrary(fs, [path], []), file);
+  return opened(await withOtherFiles(fs, await openLibrary(fs, [path], [])), file);
 }
 
 /** A `.table.zip`'s bytes, read into memory: to look at. */
