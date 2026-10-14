@@ -13,6 +13,7 @@ import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-co
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
 import { addressTarget, bundleOf, otherFilesNamed, tableNameOf } from "./bundles.ts";
+import { settled } from "./heldFiles.ts";
 import { appendFolderHistory } from "./editHistory.ts";
 import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 
@@ -228,6 +229,8 @@ export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: E
     const entry = (await fs.list(parent))?.find((e) => e.name === lastPart(path));
     return embedProblem(entry ? `“${lastPart(path)}” isn’t a .table.` : `There’s no table at “${written}”.`);
   }
+  // After any write of it another view has under way.
+  await settled(path);
   const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
   return embedIn(await withOtherFiles(fs, library, reading), parsed, lastPart(path));
 }

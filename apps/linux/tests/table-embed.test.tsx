@@ -616,6 +616,42 @@ describe("a table edited in a document", () => {
     expect(history()).toEqual([]);
   });
 
+  it("keeps two embeds of the same file in step: an edit in one shows in the other (#514)", async () => {
+    await render(
+      inDocument(
+        <>
+          <TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} />
+          <TableEmbed address="../tables/projects.table#table=tasks&view=v2&embed=1" baseDir={docs} within={root} />
+        </>,
+      ),
+    );
+    // In the table and on the board.
+    await waitFor(async () => expect((await screen.findAllByText("Land .table extension")).length).toBe(2));
+    const cells = (await screen.findAllByText("Land .table extension")).filter((w) => w.getMapped());
+    await userEvent.click(cells[0]!);
+    const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Changed in one");
+    await userEvent.keyboard(entry, "{Enter}");
+    // Both show it, and the file has it once.
+    await waitFor(async () => expect((await screen.findAllByText("Changed in one")).length).toBe(2));
+    expect(screen.queryAllByText("Land .table extension")).toHaveLength(0);
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Changed in one"));
+  });
+
+  it("a file read just after an edit was let go of reads the edit", async () => {
+    const first = await tasks();
+    await userEvent.click(await screen.findByText("Land .table extension"));
+    const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Read straight after");
+    await userEvent.keyboard(entry, "{Enter}");
+    await first.unmount();
+    // At once, as switching from a document to the table opened as a document does.
+    const read = await readEmbed({ address: "../tables/projects.table#table=tasks&embed=1", baseDir: docs, within: root });
+    expect(read.kind === "shown" && read.library.tables[read.key]!.rows.find((r) => r.id === "t1")?.title).toBe("Read straight after");
+  });
+
   it("says what was typed in a row's page when the document lets go of it, as closing the page would", async () => {
     const page = join(root, "tables", "projects.table", "tables", "projects", "bodies", "p2.md");
     const pageHistory = () => {
