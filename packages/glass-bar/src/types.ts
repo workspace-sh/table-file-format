@@ -103,8 +103,14 @@ export type GlassBarProps = {
   moreActions?: GlassBarAction[];
   ref?: import("react").Ref<GlassBarHandle>;
   onFilter?: () => void;
+  /**
+   * At rest, what the lead button is: its SF Symbol and what VoiceOver reads.
+   * It still calls `onFilter`. Absent: Filter. (A document's bar, say, makes
+   * it Edit.)
+   */
+  restLead?: { symbol: string; label: string };
   onMore?: () => void;
-  /** Rest: Search tapped. */
+  /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
   onQueryChange?: (query: string) => void;
   /** Searching: Close, or Return. The query stays. */

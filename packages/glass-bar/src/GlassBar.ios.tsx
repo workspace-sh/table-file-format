@@ -260,7 +260,7 @@ type EditorHandle = GlassBarHandle & { value: () => string };
 type Expansion = { can: boolean; on: boolean; height: number; toggle: () => void; settling?: boolean };
 type Part = GlassBarProps & { ns: string; editor?: RefObject<EditorHandle | null>; expansion?: Expansion };
 
-function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
+function Lead({ state, ns, onFilter, restLead, onDeselect, onCancel, expansion }: Part) {
   if (state.kind === "searching") return null; // absorbed into the search field
   // Expanded, ✕ is inside the capsule. This circle stays, shrunk to nothing
   // at the capsule's corner, so collapsing grows it back out of that corner:
@@ -270,7 +270,7 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
   const action = rest ? onFilter : state.kind === "selected" ? onDeselect : onCancel;
   return (
     <Image
-      systemName={rest ? "line.3.horizontal.decrease" : "xmark"}
+      systemName={rest ? ((restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease") : "xmark"}
       size={rest ? 19 : 17}
       onPress={action}
       modifiers={[
@@ -279,7 +279,7 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
         glass("circle"),
         glassEffectId("lead", ns),
         contentShape(shapes.circle()),
-        accessibilityLabel(rest ? "Filter" : state.kind === "selected" ? "Deselect" : "Cancel"),
+        accessibilityLabel(rest ? (restLead?.label ?? "Filter") : state.kind === "selected" ? "Deselect" : "Cancel"),
       ]}
     />
   );
@@ -478,6 +478,8 @@ function Capsule(props: Part) {
   ];
   switch (state.kind) {
     case "rest":
+      // No search: the two buttons at the ends, and nothing between them.
+      if (!props.onSearch) return <Spacer />;
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape, onTapGesture(() => props.onSearch?.()), accessibilityLabel("Search")]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
