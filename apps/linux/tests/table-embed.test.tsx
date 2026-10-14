@@ -163,7 +163,8 @@ describe("a table drawn in a document", () => {
     await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} onOpenLink={(to) => opened.push(to)} />));
     await userEvent.click((await screen.findAllByText("Table file format spike"))[0]!);
     expect(opened).toHaveLength(1);
-    expect(opened[0]).toContain("row=p2");
+    // As the file's address: the .table as it was read, the table and the row.
+    expect(opened[0]).toBe(`${join(root, "tables", "projects.table")}#table=projects&row=p2`);
   });
 
   it("draws a board for a board view", async () => {
