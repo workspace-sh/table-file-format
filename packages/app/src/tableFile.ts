@@ -6,10 +6,9 @@
 
 import type { TableFs } from "@workspace.sh/table-core/io";
 
-import { fromBundle } from "./bundles.ts";
+import { fromBundle, tableKeysIn } from "./bundles.ts";
 import { embedProblem, withOtherFiles, type EmbedRead } from "./embed.ts";
 import { openLibrary, type Library } from "./library.ts";
-import { firstTableKey } from "./starting.ts";
 import { openArchive } from "./tableFiles.ts";
 
 /** The last part of a path or `file://` URL, without a trailing slash. */
@@ -18,9 +17,20 @@ const fileName = (path: string): string => {
   return decodeURIComponent(trimmed.slice(trimmed.lastIndexOf("/") + 1));
 };
 
+/**
+ * A file's first table, as its manifest orders them: the file read is the
+ * library's first bundle (the files beside it, read for its relations, come
+ * after it). Not the table app's own first choice, which starts on a table
+ * named "projects" wherever it is.
+ */
+export function firstTableOfFile(library: Library): string | undefined {
+  const bundle = Object.keys(library.bundles)[0];
+  return bundle === undefined ? undefined : tableKeysIn(library.tables, library.bundles, bundle)[0];
+}
+
 /** What was read, on its first table in its first view; or why it can't be shown. */
 function opened(library: Library, file: string): EmbedRead {
-  const key = firstTableKey(library.tables);
+  const key = firstTableOfFile(library);
   if (key === undefined) {
     const why = Object.values(library.problems).flat()[0];
     return embedProblem(why ? `“${file}” couldn’t be read: ${why}` : `“${file}” isn’t a .table, or it holds no tables.`);
