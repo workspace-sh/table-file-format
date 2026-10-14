@@ -2,10 +2,14 @@
 // scroll view of its own, which is the page its rows are drawn and
 // recycled in (PageScrollContext), as tall as what it holds up to the
 // limit; and the platform's alert for a question. See embedView.shared.tsx.
+// The frame runs over the host page's side margins to the screen's edges
+// (PageGutter, as table-ui's Bleed does), so a view that scrolls sideways
+// inside it isn't cut off at the margin; what it holds starts and ends in
+// line with the page. A host that gives no PageGutter gets no bleed.
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, ScrollView } from "react-native";
-import { PageScrollContext, pageScrollOver } from "@workspace.sh/table-ui";
+import { PageGutter, PageScrollContext, pageScrollOver } from "@workspace.sh/table-ui";
 
 import type { Confirm } from "./confirm.ts";
 import { EMBED_MAX_HEIGHT, TableEmbedWith, type TableEmbedProps } from "./embedView.shared.tsx";
@@ -17,10 +21,12 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   const page = useMemo(() => pageScrollOver(scroller), []);
   // What it holds, measured: the frame is that tall, up to the limit.
   const [held, setHeld] = useState(0);
+  const gutter = useContext(PageGutter);
   return (
     <ScrollView
       ref={scroller}
-      style={{ height: Math.min(held || limit, limit) }}
+      style={{ height: Math.min(held || limit, limit), marginHorizontal: -gutter }}
+      contentContainerStyle={{ paddingHorizontal: gutter }}
       nestedScrollEnabled
       scrollEventThrottle={16}
       onScroll={page.onScroll}

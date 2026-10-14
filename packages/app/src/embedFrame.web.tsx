@@ -1,7 +1,11 @@
 // The embed's frame and dialog on the web: a box that scrolls once what it
 // holds is taller than the limit (table-ui's web list follows the nearest
 // box that scrolls it), and the browser's confirm for a question. See
-// embedView.shared.tsx.
+// embedView.shared.tsx. The box runs over the host page's side padding to
+// its edges (`--page-gutter`, as table-ui's Bleed does), so a view that
+// scrolls sideways inside it isn't cut off at the padding; what it holds
+// starts and ends in line with the page. A page that doesn't set the
+// variable gets no bleed.
 
 import type { ReactNode } from "react";
 import { css, html } from "react-strict-dom";
@@ -26,5 +30,11 @@ export function TableEmbed(props: TableEmbedProps) {
 }
 
 const styles = css.create({
-  frame: (limit: number) => ({ maxHeight: limit, overflowY: "auto", position: "relative" }),
+  frame: (limit: number) => ({
+    maxHeight: limit,
+    overflowY: "auto",
+    position: "relative",
+    marginInline: "calc(-1 * var(--page-gutter, 0px))",
+    paddingInline: "var(--page-gutter, 0px)",
+  }),
 });
