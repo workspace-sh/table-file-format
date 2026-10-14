@@ -9,11 +9,12 @@
 import { css } from "@gtkx/css";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
-import { GtkBox, GtkButton, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
-import { bundleOf, embedLeftOut, embedMoreText, linkedRowAddress, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { GtkBox, GtkButton, GtkCenterBox, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
+import { bundleOf, embedFileAddress, embedLeftOut, embedMoreText, linkedRowAddress, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
 import { embedFiles, readEmbed, type EmbedTarget } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
+import { basename } from "node:path";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EmbeddedContext } from "./embedded.js";
@@ -58,6 +59,12 @@ export interface TableEmbedProps extends EmbedTarget {
    * for the app to open there. Absent: a linked row is its name, and goes nowhere.
    */
   onOpenLink?: (address: string) => void;
+  /**
+   * The table opened as a document of its own: the file's address at the table and view drawn
+   * (`/notes/projects.table#table=tasks&view=v2`), for the app to open there. Given, the embed offers
+   * it beside its caption (Open). Absent: it offers nothing.
+   */
+  onOpen?: (address: string) => void;
 }
 
 /** The table, held and edited as an app of its own holds it (table-app's useEmbeddedTable), and written where it was read from. */
@@ -160,7 +167,7 @@ function Shown({
   );
 }
 
-export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, gutter = 0, onOpenLink }: TableEmbedProps) {
+export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, gutter = 0, onOpenLink, onOpen }: TableEmbedProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -172,6 +179,8 @@ export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBE
     };
   }, [address, baseDir, within]);
 
+  // Where Open goes: the file at the table and view drawn. Nothing for a file without a path, or a host that opens none.
+  const openAt = onOpen && read?.kind === "shown" ? embedFileAddress(read) : null;
   return (
     <GtkBox name="table-embed" orientation={Gtk.Orientation.VERTICAL} spacing={6} hexpand>
       {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} gutter={gutter} onOpenLink={onOpenLink} /> : null}
@@ -180,7 +189,25 @@ export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBE
           <GtkLabel label={read.text} xalign={0} wrap hexpand cssClasses={["dim-label"]} />
         </GtkBox>
       ) : null}
-      {caption && read ? <GtkLabel name="table-embed-caption" label={caption} wrap justify={Gtk.Justification.CENTER} cssClasses={["caption", "dim-label"]} /> : null}
+      {(caption && read) || openAt ? (
+        // The caption, centred under the table; and Open, at its end, for the table as a document.
+        <GtkCenterBox
+          name="table-embed-foot"
+          centerWidget={caption && read ? <GtkLabel name="table-embed-caption" label={caption} wrap justify={Gtk.Justification.CENTER} cssClasses={["caption", "dim-label"]} /> : undefined}
+          endWidget={
+            openAt ? (
+              <GtkButton
+                name="table-embed-open"
+                iconName="view-fullscreen-symbolic"
+                tooltipText={`Open ${basename(read?.kind === "shown" ? (read.library.paths[bundleOf(read.key)] ?? "") : "")}`}
+                cssClasses={["flat", "circular"]}
+                valign={Gtk.Align.CENTER}
+                onClicked={() => onOpen!(openAt)}
+              />
+            ) : undefined
+          }
+        />
+      ) : null}
     </GtkBox>
   );
 }

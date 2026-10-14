@@ -113,8 +113,11 @@ describe("a table drawn in a document", () => {
     const caption = await screen.findByText("All tasks by priority");
     expect(caption.getName()).toBe("table-embed-caption");
     // The library's own table view, above the caption.
-    expect(caption.getParent()!.getName()).toBe("table-embed");
-    expect(caption.getPrevSibling()!.getFirstChild()).toBeInstanceOf(Gtk.ScrolledWindow);
+    // Beneath the table, in the embed's foot.
+    const foot = caption.getParent()!;
+    expect(foot.getName()).toBe("table-embed-foot");
+    expect(foot.getParent()!.getName()).toBe("table-embed");
+    expect(foot.getPrevSibling()!.getFirstChild()).toBeInstanceOf(Gtk.ScrolledWindow);
   });
 
   it("is as tall as its rows when they are few, and no taller than the limit when they are many", async () => {
@@ -165,6 +168,24 @@ describe("a table drawn in a document", () => {
     expect(opened).toHaveLength(1);
     // As the file's address: the .table as it was read, the table and the row.
     expect(opened[0]).toBe(`${join(root, "tables", "projects.table")}#table=projects&row=p2`);
+  });
+
+  it("offers the table as a document of its own beside its caption, when the app can open one", async () => {
+    const opened: string[] = [];
+    const address = "../tables/projects.table#table=tasks&view=v2&embed=1";
+    const first = await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} caption="Tasks by status" />));
+    await screen.findByText("Tasks by status");
+    expect(screen.queryAllByName("table-embed-open")).toHaveLength(0);
+    await first.unmount();
+
+    await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} caption="Tasks by status" onOpen={(to) => opened.push(to)} />));
+    const open = (await screen.findAllByName("table-embed-open"))[0] as Gtk.Button;
+    expect(open.getTooltipText()).toBe("Open projects.table");
+    await userEvent.click(open);
+    // The file, at the table and view drawn.
+    expect(opened).toEqual([`${join(root, "tables", "projects.table")}#table=tasks&view=v2`]);
+    // The caption is still there, centred under the table.
+    expect(await screen.findByText("Tasks by status")).toBeDefined();
   });
 
   it("draws a board for a board view", async () => {
