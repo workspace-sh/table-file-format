@@ -118,7 +118,7 @@ export const householdBudgetBundle: ParsedBundle = {
             "format": "percent",
             "description": "This line's share of the quarter's total spending: its Q1 over the whole Spend column (D36).",
             "computed": {
-              "expr": "(if (<> category \"Income\") (/ quarter (sum (column \"spend\"))))",
+              "expr": "(if (<> category \"Income\") (/ quarter (sum (values \"spend\"))))",
               "dialect": "table-expr-v1"
             }
           }

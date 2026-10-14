@@ -364,11 +364,16 @@ empty and reports it.
   place" below, and DECISIONS D41).
 - Function names are case-insensitive and stored lowercase; field
   names are case-sensitive.
+- `.table`'s own forms never take an OpenFormula function's name
+  (DECISIONS D38, D48). Three were renamed on 14 October 2026:
+  `column` is now `values`, `lookup` is `related`, and `concat` is
+  `concatenate`. A reader MUST read the former names as the new ones;
+  a writer MUST store the new ones.
 - A formula reads its own row, any other row it names by `id`, and any
   row it names by its place in a Sheet view.
 - Reading across rows and tables (DECISIONS D36):
-  - `(column "q1")` is every row's `q1`, as a list, in file order.
-  - `(lookup "company" "industry")` follows this row's relation field
+  - `(values "q1")` is every row's `q1`, as a list, in file order.
+  - `(related "company" "industry")` follows this row's relation field
     `company` to its row and reads `industry` there (a list for a
     relation of cardinality `many`).
   - `(linked "deals" "company" "value")` is the `value` of every row in
@@ -420,7 +425,7 @@ contains no test cases.
 | `sum` `min` `max` | any number of arguments, lists included; empty values are skipped |
 | `average` | the mean of its arguments, lists included; empty values are skipped |
 | `count` | how many non-empty values its arguments hold, lists included |
-| `column` `lookup` `linked` | read across rows and tables (above); each gives a list, or one value for a `lookup` of cardinality `one` |
+| `values` `related` `linked` | read across rows and tables (above); each gives a list, or one value for a `related` of cardinality `one` |
 | `round` | `(round x)` or `(round x digits)`; halves round away from zero |
 | `abs` | absolute value |
 | `=` `<>` | equality; two empties are equal |
@@ -428,7 +433,7 @@ contains no test cases.
 | `and` `or` `not` | `true` / `false` only |
 | `if` | `(if test then)` or `(if test then else)`; only the chosen branch is evaluated; an empty test takes `else` |
 | `isblank` | `true` when the value is empty |
-| `concat` | joins its arguments as text; empties add nothing |
+| `concatenate` | joins its arguments as text; empties add nothing (`&` in the typed form) |
 | `upper` `lower` `len` | text; `len` counts characters |
 
 **Empty values** (see "Empty values"): an empty argument makes
@@ -466,7 +471,7 @@ result; `empty` means the cell shows nothing.
 | `{"price": 1}` | `(* Price 2)` | `#NAME?` |
 | `{"price": 1}` | `(SUM price 1)` | `2` |
 | `{"unit price": 3, "quantity": 2}` | `(* (field "unit price") quantity)` | `6` |
-| `{"status": "active", "price": 5}` | `(concat status ": " price)` | `"active: 5"` |
+| `{"status": "active", "price": 5}` | `(concatenate status ": " price)` | `"active: 5"` |
 | `{}` | `(if (isblank status) "none" status)` | `"none"` |
 | `{"status": "done"}` | `(upper status)` | `"DONE"` |
 | `{}` | `(* 1e308 10)` | `#NUM!` |
@@ -490,9 +495,9 @@ whose `share` field is `(/ q1 (field "q1" "income"))`:
 | `rent` | `(- q1 (field "q1" "food"))` | `1800` |
 | `rent` | `(field "q1" "gone")` | `#REF!` |
 | `rent` | `(field "q1" "income" "extra")` | `#VALUE!` |
-| `rent` | `(sum (column "q1"))` | `16200` |
-| `rent` | `(count (column "q1"))` | `3` |
-| `rent` | `(/ q1 (max (column "q1")))` | `0.25` |
+| `rent` | `(sum (values "q1"))` | `16200` |
+| `rent` | `(count (values "q1"))` | `3` |
+| `rent` | `(/ q1 (max (values "q1")))` | `0.25` |
 <!-- other-row-examples:end -->
 
 **References by place** (DECISIONS D41). A Sheet view (section 4)
@@ -587,7 +592,7 @@ constraint over user-facing fields, not row identity.
 ### Row ordering
 
 Row order in `rows.ndjson` is the table's **file order**. It means
-something: `(column "x")` reads in it, and a Sheet view with no saved
+something: `(values "x")` reads in it, and a Sheet view with no saved
 sort numbers its rows in it (DECISIONS D41). How rows are shown is
 still each view's business (`sort`, `group`, `order`). Appending a new
 row to the end MUST be a valid edit, and so is inserting one at a

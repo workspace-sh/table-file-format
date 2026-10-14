@@ -69,16 +69,16 @@ test("saving a lookup leaves a number field a number", () => {
   const explain = (from: typeof price, draft: string, computeOptions?: typeof options) =>
     explainFormula({ field: from, row, fields: lines.schema.fields.map((f) => (f.name === from.name ? from : f)), draft, editable: true, allRows: lines.rows, ...(computeOptions ? { computeOptions } : {}) });
   // To a number by arithmetic, and back to the bare lookup: its type is the product's price's, a number, either way.
-  const times = explain(price, '=lookup("product", "price") * 1', options);
+  const times = explain(price, '=related("product", "price") * 1', options);
   assert.ok(times.save);
   assert.equal(times.save!.type, undefined);
-  const back = explain({ ...price, ...times.save! }, '=lookup("product", "price")', options);
+  const back = explain({ ...price, ...times.save! }, '=related("product", "price")', options);
   assert.ok(back.save);
   assert.equal(back.save!.type, undefined, "the field stays a number");
   // Without the other table at hand the lookup's type is a guess, and a guess changes nothing.
-  const blind = explain({ ...price, ...times.save! }, '=lookup("product", "price")');
+  const blind = explain({ ...price, ...times.save! }, '=related("product", "price")');
   assert.equal(blind.save!.type, undefined);
   // A lookup that reads text does make a number field text, when that is known.
-  const name = explain(price, '=lookup("product", "name")', options);
+  const name = explain(price, '=related("product", "name")', options);
   assert.equal(name.save!.type, "string");
 });

@@ -43,7 +43,7 @@ test("lookup: a deal shows its company's industry", async () => {
 test("column total: the pipeline's total value", async () => {
   const deals = await fixture("deals");
   const schema: TableSchema = {
-    fields: [...deals.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (column "value"))', dialect: "table-expr-v1" } }],
+    fields: [...deals.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (values "value"))', dialect: "table-expr-v1" } }],
   };
   assert.equal(computeRows(schema, deals.rows).rows[0]!.total, 732800);
 });
@@ -52,7 +52,7 @@ test("sheet: each line's share of the quarter's total spending", async () => {
   const budget = await fixture("budget");
   const { rows } = computeRows(budget.schema, budget.rows);
   const schema: TableSchema = {
-    fields: [...budget.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (column "spend"))', dialect: "table-expr-v1" } }],
+    fields: [...budget.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (values "spend"))', dialect: "table-expr-v1" } }],
   };
   assert.equal(computeRows(schema, budget.rows).rows[0]!.total, 8313);
   assert.equal(Math.round(Number(byId(rows, "rent").of_spending) * 1000) / 1000, 0.523);
@@ -64,9 +64,9 @@ test("count and average skip blanks, and take lists as spreadsheets take ranges"
   const schema: TableSchema = {
     fields: [
       { name: "n", type: "number" },
-      { name: "c", type: "number", computed: { expr: '(count (column "n"))', dialect: "table-expr-v1" } },
-      { name: "a", type: "number", computed: { expr: '(average (column "n"))', dialect: "table-expr-v1" } },
-      { name: "bad", type: "number", computed: { expr: '(+ 1 (column "n"))', dialect: "table-expr-v1" } },
+      { name: "c", type: "number", computed: { expr: '(count (values "n"))', dialect: "table-expr-v1" } },
+      { name: "a", type: "number", computed: { expr: '(average (values "n"))', dialect: "table-expr-v1" } },
+      { name: "bad", type: "number", computed: { expr: '(+ 1 (values "n"))', dialect: "table-expr-v1" } },
     ],
   };
   const { rows } = computeRows(schema, [{ id: "x", n: 2 }, { id: "y" }, { id: "z", n: 6 }]);
@@ -91,7 +91,7 @@ test("tables that look each other up don't loop", () => {
       fields: [
         { name: "b", type: "string", relation: { table: "b", field: "id" } },
         { name: "n", type: "number" },
-        { name: "from_b", type: "number", computed: { expr: '(lookup "b" "from_a")', dialect: "table-expr-v1" } },
+        { name: "from_b", type: "number", computed: { expr: '(related "b" "from_a")', dialect: "table-expr-v1" } },
       ],
     },
     rows: [{ id: "a1", b: "b1", n: 5 }],
@@ -103,7 +103,7 @@ test("tables that look each other up don't loop", () => {
     schema: {
       fields: [
         { name: "a", type: "string", relation: { table: "a", field: "id" } },
-        { name: "from_a", type: "number", computed: { expr: '(lookup "a" "n")', dialect: "table-expr-v1" } },
+        { name: "from_a", type: "number", computed: { expr: '(related "a" "n")', dialect: "table-expr-v1" } },
       ],
     },
     rows: [{ id: "b1", a: "a1" }],
@@ -137,7 +137,7 @@ test("a real loop across two tables is #REF!, not a hang", () => {
     "a",
     [
       { name: "b", type: "string", relation: { table: "b", field: "id" } },
-      { name: "x", type: "number", ...f('(lookup "b" "y")') },
+      { name: "x", type: "number", ...f('(related "b" "y")') },
     ],
     [{ id: "a1", b: "b1" }],
   );
@@ -145,7 +145,7 @@ test("a real loop across two tables is #REF!, not a hang", () => {
     "b",
     [
       { name: "a", type: "string", relation: { table: "a", field: "id" } },
-      { name: "y", type: "number", ...f('(lookup "a" "x")') },
+      { name: "y", type: "number", ...f('(related "a" "x")') },
     ],
     [{ id: "b1", a: "a1" }],
   );
@@ -163,7 +163,7 @@ test("a three-table chain computes, each value once", () => {
     [
       { name: "order", type: "string", relation: { table: "orders", field: "id" } },
       { name: "amount", type: "number" },
-      { name: "customer_value", type: "number", ...f('(lookup "order" "customer_value")') },
+      { name: "customer_value", type: "number", ...f('(related "order" "customer_value")') },
     ],
     [
       { id: "l1", order: "o1", amount: 10 },
@@ -176,7 +176,7 @@ test("a three-table chain computes, each value once", () => {
     [
       { name: "customer", type: "string", relation: { table: "customers", field: "id" } },
       { name: "total", type: "number", ...f('(sum (linked "lines" "order" "amount"))') },
-      { name: "customer_value", type: "number", ...f('(lookup "customer" "value")') },
+      { name: "customer_value", type: "number", ...f('(related "customer" "value")') },
     ],
     [
       { id: "o1", customer: "c1" },

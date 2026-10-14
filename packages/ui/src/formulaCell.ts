@@ -121,11 +121,11 @@ export function explainFormula(options: {
     const trial = fields.map((f) => (f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: FORMULA_DIALECT } } : f));
     preview = { value: computeRows({ fields: trial }, tableRows, computeOptions).rows.find((r) => r.id === rowId)?.[field.name] };
     // The field's type follows the formula only when the formula's type is
-    // known: a lookup reads a field of another table, and is that field's
+    // known: `related` reads a field of another table, and is that field's
     // type when the table is at hand. A guess is no reason to change a type
     // the field already has (a price that became text, and lost its format).
     const produced = formulaTypeIfKnown(compiled.expr, new Map(fields.map((f) => [f.name, f.type] as const)), {
-      lookup: (relation, target) => {
+      related: (relation, target) => {
         const table = fields.find((f) => f.name === relation)?.relation?.table;
         return table === undefined ? undefined : computeOptions?.tables?.[table]?.schema.fields.find((f) => f.name === target)?.type;
       },

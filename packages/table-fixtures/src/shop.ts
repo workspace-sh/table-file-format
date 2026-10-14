@@ -123,7 +123,7 @@ export const shopBundle: ParsedBundle = {
             "title": "City",
             "description": "Looked up from the order's customer (D36).",
             "computed": {
-              "expr": "(lookup \"customer\" \"city\")",
+              "expr": "(related \"customer\" \"city\")",
               "dialect": "table-expr-v1"
             }
           }
@@ -746,7 +746,7 @@ export const shopBundle: ParsedBundle = {
             "format": "currency:GBP",
             "description": "Looked up from the product (D36).",
             "computed": {
-              "expr": "(lookup \"product\" \"price\")",
+              "expr": "(related \"product\" \"price\")",
               "dialect": "table-expr-v1"
             }
           },
