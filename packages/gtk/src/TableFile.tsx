@@ -8,13 +8,13 @@
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { bundleOf, bundleTables, linkedRowAddress, tableNameOf, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { bundleOf, bundleTables, INDEXED_FROM, linkedRowAddress, tableNameOf, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile } from "@workspace.sh/table-app/node";
-import { useEmbeddedTable } from "@workspace.sh/table-app/react";
+import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
 import { newId, parseAddress } from "@workspace.sh/table-core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { LayoutView } from "./LayoutView.js";
 import { StringList } from "./StringList.js";
@@ -37,6 +37,11 @@ export interface TableFileProps {
    */
   at?: { address: string; n: number };
   /**
+   * Where this reader's own sorts, filters and groupings of each view are kept (D4), apart from the file:
+   * each file's under its own path. Absent: they last while the file is open.
+   */
+  store?: KeyValueStore;
+  /**
    * A linked row in another `.table` was clicked: its address as that file's, for the app to open. A linked row
    * in this file is gone to here.
    */
@@ -48,15 +53,18 @@ function Opened({
   readOnly,
   locale,
   at,
+  store,
   onOpenLink,
 }: {
   shown: EmbedShown;
+  store: KeyValueStore | null;
   readOnly: boolean;
   locale: string | undefined;
   at: TableFileProps["at"];
   onOpenLink: ((address: string) => void) | undefined;
 }) {
-  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
+  const kept = useMemo(() => (store ? storeFor(store, shown.library.paths[bundleOf(shown.key)] ?? shown.key) : null), [store, shown]);
+  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale, kept);
   const { table, view } = derived;
   // A .table.zip was read into memory: there is nowhere to write it back.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
@@ -95,7 +103,8 @@ function Opened({
     else if (link) onOpenLink?.(link);
   };
 
-  // The view's own settings (layout, filters, sorts, grouping), changed for everyone who opens the file.
+  // The view's own settings: its layout and fields for everyone who opens the file; sorts, filters and
+  // grouping this reader's own until saved for everyone.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const undoKeys = (keyval: number, mods: Gdk.ModifierType): boolean => {
     if (lookOnly || !(mods & Gdk.ModifierType.CONTROL_MASK)) return false;
@@ -145,21 +154,35 @@ function Opened({
             </>
           )}
         </GtkBox>
-        <LayoutView
-          key={`${state.active}\u0000${view.id}`}
-          layout={view.layout}
-          view={derived.shown.view}
-          rows={derived.shown.rows}
-          schema={table.schema}
-          bodies={table.bodies}
-          relatedTables={related}
-          allRows={table.rows}
-          tableKey={tableName}
-          sheet={derived.shown.sheet}
-          {...(lookOnly ? {} : callbacks)}
-          onOpenRelation={followLink}
-          restorePlace={select}
-        />
+        {table.indexed ? (
+          // A table this large is read through its index (SPEC section 8), which isn't opened here yet:
+          // said, rather than drawn as a table with no rows.
+          <GtkBox name="table-file-too-large" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={6} cssClasses={[styles.embedProblem]}>
+            <GtkLabel
+              label={`“${tableName}” has ${INDEXED_FROM.toLocaleString("en")} rows or more. A table this large is read through its index, which isn’t opened here yet; the .table app opens it.`}
+              xalign={0}
+              wrap
+              hexpand
+              cssClasses={["dim-label"]}
+            />
+          </GtkBox>
+        ) : (
+          <LayoutView
+            key={`${state.active}\u0000${view.id}`}
+            layout={view.layout}
+            view={derived.shown.view}
+            rows={derived.shown.rows}
+            schema={table.schema}
+            bodies={table.bodies}
+            relatedTables={related}
+            allRows={table.rows}
+            tableKey={tableName}
+            sheet={derived.shown.sheet}
+            {...(lookOnly ? {} : callbacks)}
+            onOpenRelation={followLink}
+            restorePlace={select}
+          />
+        )}
       </GtkBox>
       {settingsOpen && !lookOnly ? (
         <ViewSettings
@@ -167,6 +190,11 @@ function Opened({
           schema={table.schema}
           onChange={callbacks.onUpdateView}
           {...(views.length > 1 ? { onDelete: () => dispatch({ type: "deleteView" }) } : {})}
+          // Sorts, filters and grouping are this reader's own until saved for everyone (D4).
+          onArrange={(patch) => dispatch({ type: "arrange", patch })}
+          personal={derived.arranged}
+          onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
+          onReset={() => dispatch({ type: "resetArrangement" })}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
@@ -175,7 +203,7 @@ function Opened({
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, at, onOpenLink }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, store, onOpenLink }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -187,7 +215,7 @@ export function TableFile({ path, readOnly = false, locale, at, onOpenLink }: Ta
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} onOpenLink={onOpenLink} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} onOpenLink={onOpenLink} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>
