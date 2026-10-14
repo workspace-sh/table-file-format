@@ -274,6 +274,26 @@ export function useIndexedTables(input: {
         // again from the rows saved here, so edits wait from now (they'd be lost between the two).
         const again = was !== undefined && indexedFor(was) !== indexedFor(table.schema);
         if (again) setMade((m) => ({ ...m, [key]: "building" }));
+        // An undo brought fields back (#562): the index is changed first, so the rows it
+        // writes have their values again, kept hidden since they were removed.
+        const restore = (table.indexed.restore ?? []).filter((name) => !was?.fields.some((f) => f.name === name));
+        if (again && restore.length > 0 && (await host.alter(tableNameOf(key), was, table.schema, { restore }).catch(() => false))) {
+          const schema = table.schema;
+          madeFor.current.set(key, schema);
+          unsaved.current.delete(key);
+          try {
+            await host.save(tableNameOf(key), dirOf(key), true, gone, true);
+          } catch (error) {
+            unsaved.current.add(key);
+            setMade((m) => ({ ...m, [key]: "ready" }));
+            throw error;
+          }
+          const count = (await queryIndex(host, { name: tableNameOf(key), schema }))?.count ?? table.indexed.count;
+          latest.current.dispatch({ type: "indexed", key, count });
+          setMade((m) => ({ ...m, [key]: "ready" }));
+          fillIn(host, key, schema);
+          continue;
+        }
         unsaved.current.delete(key);
         let saved: boolean;
         try {

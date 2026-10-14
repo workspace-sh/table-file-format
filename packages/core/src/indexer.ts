@@ -233,8 +233,9 @@ async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await db.run("delete from _bad where n = ?", [n]);
   await searchUpTo(db, n);
   await db.run("delete from _fts where n = ?", [n]);
-  // A fill left under way by a change of fields is for the tables just dropped.
+  // A fill left under way by a change of fields, and fields' values kept hidden, are for the tables just dropped.
   await setFill(db, n, null);
+  await setHidden(db, n, []);
 }
 
 /**
@@ -379,19 +380,16 @@ interface Fill {
   search: boolean;
   /** Values found that their field's type doesn't hold, by field. */
   bad: Record<number, number>;
-  /**
-   * Fields gone from the schema whose values are still in rows' JSON the
-   * fill hasn't reached: left out of every row read until it has.
-   */
-  drop: string[];
 }
 
 async function fillOf(db: SqlDriver, n: number): Promise<Fill | null> {
   await db.exec("create table if not exists _fill(n integer primary key, upto integer not null, fill text not null)");
   const found = await db.all("select upto, fill from _fill where n = ?", [n]);
   if (!found[0]) return null;
-  const rest = JSON.parse(found[0].fill as string) as Omit<Fill, "upto">;
-  return { upto: found[0].upto as number, ...rest, drop: rest.drop ?? [] };
+  const { drop, ...rest } = JSON.parse(found[0].fill as string) as Omit<Fill, "upto"> & { drop?: string[] };
+  // A fill from before fields were hidden took gone fields out as it went: what it hadn't yet is hidden now.
+  if (drop?.length) await setHidden(db, n, [...new Set([...(await hiddenOf(db, n)), ...drop])]);
+  return { upto: found[0].upto as number, ...rest };
 }
 
 async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<void> {
@@ -404,15 +402,41 @@ async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<voi
   await db.run("insert or replace into _fill(n, upto, fill) values(?, ?, ?)", [n, upto, JSON.stringify(rest)]);
 }
 
-/** Rows as they are without the fields a fill has still to take out of them. */
-function withoutDropped<R extends Row>(fill: Fill | null, rows: R[]): R[] {
-  if (!fill || fill.drop.length === 0) return rows;
+// -- Fields hidden --------------------------------------------------------
+//
+// A field removed from the schema leaves its values in each row's JSON,
+// hidden: every row read or saved leaves them out, so the file loses the
+// field as it did. An undo that brings the field back (alterIndex's
+// `restore`) finds its values where they were (#562). A new field that
+// only reuses the name has them taken out then; a build forgets them.
+
+async function hiddenOf(db: SqlDriver, n: number): Promise<string[]> {
+  await db.exec("create table if not exists _hidden(n integer, name text not null, primary key(n, name))");
+  return (await db.all("select name from _hidden where n = ? order by name", [n])).map((r) => r.name as string);
+}
+
+async function setHidden(db: SqlDriver, n: number, names: string[]): Promise<void> {
+  await db.exec("create table if not exists _hidden(n integer, name text not null, primary key(n, name))");
+  await db.run("delete from _hidden where n = ?", [n]);
+  for (const name of names) await db.run("insert into _hidden(n, name) values(?, ?)", [n, name]);
+}
+
+/** Rows as they are read: without the fields hidden. */
+function withoutHidden<R extends Row>(hidden: string[], rows: R[]): R[] {
+  if (hidden.length === 0) return rows;
   return rows.map((row) => {
-    if (!fill.drop.some((name) => name in row)) return row;
+    if (!hidden.some((name) => name in row)) return row;
     const out = { ...row };
-    for (const name of fill.drop) delete out[name];
+    for (const name of hidden) delete out[name];
     return out;
   });
+}
+
+/** A row's hidden fields' values, to keep when the row is written again. */
+function hiddenValues(hidden: string[], row: Row): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const name of hidden) if (name in row) kept[name] = row[name];
+  return kept;
 }
 
 /** Field names in the order the search text holds them. */
@@ -426,8 +450,12 @@ let parked = 0;
  * formulas that read other rows among those changed): build it instead.
  * Resolves true with the index answering for `to` at once; what has to be
  * worked out again is left to `fillIndex`.
+ *
+ * A field `to` doesn't have keeps its values, hidden. `restore` names the
+ * fields of `to` that come back with them (an undo of their removal);
+ * any other field of a hidden field's name starts empty.
  */
-export async function alterIndex(db: SqlDriver, name: string, from: TableSchema, to: TableSchema): Promise<boolean> {
+export async function alterIndex(db: SqlDriver, name: string, from: TableSchema, to: TableSchema, options: { restore?: string[] } = {}): Promise<boolean> {
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) return false;
   const sig = (await db.all("select sig from _tables where n = ?", [n]))[0]?.sig;
@@ -439,16 +467,17 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
   const before = new Map(from.fields.map((f, i) => [f.name, i]));
   const after = new Set(to.fields.map((f) => f.name));
   const pending = await fillOf(db, n);
-  // A field gone: its values are taken out of each row's JSON as the fill reaches it, and
-  // left out of every row read until then. A field added back under such a name before
-  // then would have its new values taken out too: built instead.
+  const wasHidden = await hiddenOf(db, n);
+  // A field gone is hidden, its values kept. One that comes back is shown again: with its
+  // values when it's restored, and emptied first when it's a new field of that name.
   const gone = from.fields.filter((f) => !after.has(f.name)).map((f) => f.name);
-  const drop = [...new Set([...(pending?.drop ?? []), ...gone])];
-  if (drop.some((name) => after.has(name))) return false;
+  const back = wasHidden.filter((name) => after.has(name));
+  const hidden = [...new Set([...wasHidden.filter((name) => !after.has(name)), ...gone])];
+  const emptied = back.filter((name) => !(options.restore ?? []).includes(name));
   // A field that keeps its name and loses its formula holds nothing (its results were never
   // in the file): taken out of the JSON now, as edits to it from now on are its own.
   const unformulated = from.fields.filter((f) => f.computed && after.has(f.name) && !to.fields.find((g) => g.name === f.name)!.computed).map((f) => f.name);
-  if (unformulated.some((name) => /["\\]/.test(name))) return false;
+  if ([...unformulated, ...emptied].some((name) => /["\\]/.test(name))) return false;
 
   // Each field of `to`: where it was, and whether its values are worked out again.
   // A new field is: its values are whatever the rows hold under its name, as a build reads them.
@@ -471,7 +500,7 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
     for (const ix of await db.all("select name from sqlite_master where type = 'index' and tbl_name = ? and name like ?", [`r${n}`, `r${n}\_o%`])) {
       if (String(ix.name).startsWith(`r${n}_o`)) await db.exec(`drop index if exists ${ix.name as string}`);
     }
-    for (const name of unformulated) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
+    for (const name of [...unformulated, ...emptied]) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
     // Every column out of the way first, so no new name meets an old one.
     for (const col of was.columns) await db.exec(`alter table r${n} rename column ${col} to q_${col}`);
     const kept = new Set<string>();
@@ -509,8 +538,9 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
     }
 
     const search = searchChanged || (pending?.search ?? false);
-    if (refill.size > 0 || search || drop.length > 0) {
-      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {}, drop });
+    await setHidden(db, n, hidden);
+    if (refill.size > 0 || search) {
+      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {} });
       // Until the search text is made again, a search reads every row's text, and the search's own index is made after.
       if (search) {
         await searchUpTo(db, n);
@@ -567,10 +597,13 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
       return false;
     }
     const computes = fill.fields.some((k) => schema.fields[k]?.computed);
-    const stored = withoutDropped(fill, found.map((r) => JSON.parse(r.j as string) as Row));
+    const hidden = await hiddenOf(db, n);
+    const raw = found.map((r) => JSON.parse(r.j as string) as Row);
+    // Worked out as a build would: without the fields hidden.
+    const stored = withoutHidden(hidden, raw);
     const rows = computes ? computeRows(schema, stored).rows : stored;
-    // Each row's JSON is written again when its formulas' results or the fields it loses change it.
-    const rewrite = computes || fill.drop.length > 0;
+    // Each row's JSON is written again when its formulas' results change it, keeping its hidden values.
+    const rewrite = computes;
     const cols: { col: string; at: number }[] = [];
     for (const k of fill.fields) {
       // The value's place in what `encode` gives: the fields' columns in order.
@@ -587,7 +620,7 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
       const e = encode(plan, row, body === "" ? undefined : body);
       for (const k of e.bad) if (fill.fields.includes(k)) fill.bad[k] = (fill.bad[k] ?? 0) + 1;
       const values: SqlValue[] = [found[x]!.pos as number];
-      if (rewrite) values.push(JSON.stringify(row));
+      if (rewrite) values.push(JSON.stringify({ ...row, ...hiddenValues(hidden, raw[x]!) }));
       if (fill.search) values.push(e.search);
       for (const { at } of cols) values.push(e.values[at] ?? null);
       return values;
@@ -664,6 +697,8 @@ export async function putRows(
   const upto = await searchUpTo(db, n);
   const searched = (pos: number) => upto === null || pos <= upto;
   const counted = countedAt(await fillOf(db, n));
+  // A row written again keeps its hidden fields' values: an undo of their removal finds them.
+  const hidden = await hiddenOf(db, n);
   await db.exec("begin");
   try {
     for (const raw of rows) {
@@ -678,7 +713,7 @@ export async function putRows(
         if (searched(old.pos as number)) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
         await db.run(
           `update r${n} set j = ?, s = ?, ${cols.map((c) => `${c} = ?`).join(", ")} where pos = ?`,
-          [JSON.stringify(row), e.search, ...e.values, old.pos as number],
+          [JSON.stringify({ ...row, ...hiddenValues(hidden, JSON.parse(old.j as string) as Row) }), e.search, ...e.values, old.pos as number],
         );
         if (searched(old.pos as number)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [old.pos as number, e.search]);
       } else {
@@ -726,7 +761,8 @@ export async function removeRows(
     for (const id of ids) {
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
-      removed.push({ row: withoutDropped(fill, [JSON.parse(old.j as string) as Row])[0]!, at: num(old.pos) });
+      // Whole, hidden fields and all: put back (undo), it is as it was.
+      removed.push({ row: JSON.parse(old.j as string) as Row, at: num(old.pos) });
       await shiftBad(db, n, counted(encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, old.pos as number), -1);
       if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
@@ -957,6 +993,7 @@ export async function queryIndex(
   const plan = planOf(schema);
   const bad = await badFields(db, n);
   const pendingFill = await fillOf(db, n);
+  const hidden = await hiddenOf(db, n);
   const filling = pendingFill !== null && plan.never.size === 0 && pendingFill.fields.some((k) => schema.fields[k]?.computed);
   const index = new Map(schema.fields.map((f, i) => [f.name, i]));
   const usable = (fieldName: string): number | null => {
@@ -1258,7 +1295,7 @@ export async function queryIndex(
     async rows(start, end) {
       const rows = (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
       // A formula still being filled in (alterIndex) is worked out for the rows asked, so they show it at once.
-      const shown = withoutDropped(pendingFill, rows);
+      const shown = withoutHidden(hidden, rows);
       return filling ? computeRows(schema, shown).rows : shown;
     },
     async ids(start, end) {
@@ -1281,7 +1318,7 @@ export async function queryIndex(
       const found = await db.all(`select r.j as j from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
       if (!found[0]) return undefined;
       const row = JSON.parse(found[0].j as string) as Row;
-      const [shown] = withoutDropped(pendingFill, [row]);
+      const [shown] = withoutHidden(hidden, [row]);
       return filling ? computeRows(schema, [shown!]).rows[0] : shown;
     },
     totals: () => (totals ??= loadTotals()),
@@ -1330,7 +1367,7 @@ export async function* storedRows(
   if (n === null) throw new Error(`no index for ${options.name}`);
   const size = options.batchSize ?? BATCH;
   // And the fields a fill has still to take out of rows' JSON.
-  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...((await fillOf(db, n))?.drop ?? [])];
+  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...(await hiddenOf(db, n))];
   let after = -1;
   for (;;) {
     const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);

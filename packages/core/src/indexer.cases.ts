@@ -698,45 +698,76 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     await changedInPlace("changed twice", first, { seed: 37, edits: true, then, search: "later" });
   });
 
-  test("a field removed is gone from rows read and saved at once, and from their JSON as the fill reaches them", async () => {
+  test("a field removed is gone from rows read and saved, its values kept hidden in the rows", async () => {
     const db = driver();
     const rows = makeRows(41, 300);
     await buildIndex(db, { name: "t", schema, rows, key: "k" });
     const gone: TableSchema = { fields: without("name") };
     assert.equal(await alterIndex(db, "t", schema, gone), true);
+    while (await fillIndex(db, "t", gone, 64)) {
+      // To the end.
+    }
     const held = async () => (await db.all("select count(*) as n from r1 where json_type(j, '$.name') is not null"))[0]!.n as number;
-    const before = await held();
-    assert.ok(before > 100, "still in the rows' JSON");
-    assert.equal(await fillIndex(db, "t", gone, 64), true);
-    assert.ok((await held()) < before, "taken out as the fill reaches them");
-    // A save meanwhile writes the rows without it.
+    assert.equal(await held(), rows.filter((r) => "name" in r).length, "kept in the rows' JSON");
+    // Read without it.
+    const read = await (await queryIndex(db, { name: "t", schema: gone }))!.rows(0, 300);
+    assert.equal(read.filter((r) => "name" in r).length, 0);
+    // Saved without it.
     let text = "";
     for await (const piece of storedRows(db, { name: "t", schema: gone })) text += piece;
     assert.equal(text.split("\n").filter((l) => l.includes('"name":')).length, 0);
     assert.equal(text.split("\n").filter(Boolean).length, 300);
-    // And a row removed and put back (undo) comes back without it.
+    // A row removed is given back whole, so put back (undo) it's as it was, its hidden value with it.
     const named = rows.filter((r) => typeof r.name === "string").at(-1)!;
     const [back] = await removeRows(db, { name: "t", schema: gone, ids: [named.id], key: "k2" });
-    assert.equal("name" in back!.row, false);
-    while (await fillIndex(db, "t", gone, 64)) {
-      // To the end.
-    }
-    assert.equal(await held(), 0);
+    assert.equal(back!.row.name, named.name);
+    // A row edited meanwhile keeps its hidden value (the app's row hasn't got it).
+    const edited = rows.filter((r) => typeof r.name === "string")[0]!;
+    const { name: _, ...shown } = edited;
+    await putRows(db, { name: "t", schema: gone, rows: [{ ...shown, n: 12345 }], key: "k3" });
+    assert.equal((await held()) , rows.filter((r) => "name" in r).length - 1, "only the removed row's has gone");
   });
 
-  test("a field added back under a name whose values are still being taken out is built instead", async () => {
+  test("a field removed and then restored (undo) comes back with its values; a new field of its name starts empty", async () => {
+    const rows = makeRows(43, 300);
+    const named = rows.filter((r) => typeof r.name === "string");
     const db = driver();
-    await buildIndex(db, { name: "t", schema, rows: makeRows(40, 300), key: "k" });
-    const gone: TableSchema = { fields: without("flag") };
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    // Removed, and a formula added while it's hidden: the fill writes every row's JSON again.
+    const triple = { name: "triple", type: "number" as const, computed: formula("(* n 3)") };
+    const gone: TableSchema = { fields: [...without("name"), triple] };
+    const whole: TableSchema = { fields: [...schema.fields, triple] };
     assert.equal(await alterIndex(db, "t", schema, gone), true);
-    assert.equal(await fillIndex(db, "t", gone, 64), true);
-    // Rows the fill hasn't reached still hold the old flag: a new flag's edits would be taken out with it.
-    assert.equal(await alterIndex(db, "t", gone, { fields: [...gone.fields, { name: "flag", type: "string" }] }), false);
     while (await fillIndex(db, "t", gone, 64)) {
       // To the end.
     }
-    // Once it's done, the name is free again.
-    assert.equal(await alterIndex(db, "t", gone, { fields: [...gone.fields, { name: "flag", type: "string" }] }), true);
+    // An edit to another field meanwhile, on a row with a name.
+    const { name: _, ...shown } = named[0]!;
+    await putRows(db, { name: "t", schema: gone, rows: [{ ...shown, n: 777 }], key: "k2" });
+    // Undo: the field comes back where it was, with its values.
+    assert.equal(await alterIndex(db, "t", gone, whole, { restore: ["name"] }), true);
+    while (await fillIndex(db, "t", whole, 64)) {
+      // To the end.
+    }
+    const now = rows.map((r) => (r.id === named[0]!.id ? { ...r, n: 777 } : r));
+    const fresh = driver();
+    await buildIndex(fresh, { name: "t", schema: whole, rows: now, key: "z" });
+    for (const query of [{}, { sort: [{ field: "name", direction: "asc" as const }] }, { filter: [{ field: "name", operator: "contains" as const, value: "a" }] }, { search: "apple" }]) {
+      const mine = await queryIndex(db, { name: "t", schema: whole, query });
+      const theirs = await queryIndex(fresh, { name: "t", schema: whole, query });
+      assert.equal(mine === null, theirs === null, JSON.stringify(query));
+      if (mine) assert.deepEqual(await mine.rows(0, 300), await theirs!.rows(0, 300), JSON.stringify(query));
+    }
+    // Removed again, and a new field takes the name: it starts empty.
+    assert.equal(await alterIndex(db, "t", whole, gone), true);
+    const renamed: TableSchema = { fields: [...gone.fields, { name: "name", type: "string" }] };
+    assert.equal(await alterIndex(db, "t", gone, renamed), true);
+    while (await fillIndex(db, "t", renamed, 64)) {
+      // To the end.
+    }
+    const read = await (await queryIndex(db, { name: "t", schema: renamed }))!.rows(0, 300);
+    assert.equal(read.filter((r) => "name" in r).length, 0, "a new field holds nothing");
+    assert.equal((await db.all("select count(*) as n from r1 where json_type(j, '$.name') is not null"))[0]!.n, 0);
   });
 
   test("a fill writes a batch of rows in one statement, not one a row", async () => {

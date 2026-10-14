@@ -348,7 +348,15 @@ export interface ParsedTable {
    * how many there are, and a number that changes with every edit to
    * them. A writer leaves such a table's `rows.ndjson` alone.
    */
-  indexed?: { count: number; version: number };
+  indexed?: {
+    count: number;
+    version: number;
+    /**
+     * Fields an undo or redo has just brought back: the index has their
+     * values, hidden since they were removed (alterIndex's `restore`).
+     */
+    restore?: string[];
+  };
   /**
    * Its edit history, as `history.ndjson` holds it (SPEC section 14):
    * carried whole, so a table that travels as an archive keeps it. Set by
