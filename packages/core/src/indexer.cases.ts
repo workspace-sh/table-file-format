@@ -5,7 +5,7 @@
 
 import { applyView, searchRows } from "./query.js";
 import { arraySource, memoryViewRows } from "./row-source.js";
-import { alterIndex, buildIndex, buildSearchIndex, fillIndex, indexFilling, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
+import { alterIndex, buildIndex, buildSearchIndex, fillIndex, indexFilling, storedRows, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 
 /** The parts of node:assert/strict the cases use. */
@@ -693,8 +693,65 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
   test("a change made while the last is still being filled carries on from it", async () => {
     const triple = { name: "triple", type: "number" as const, computed: formula("(* n 3)") };
     const first: TableSchema = { fields: [field("name"), { ...field("level"), type: "date" as const }, ...without("name", "level", "flag"), triple] };
-    const then: TableSchema = { fields: [...first.fields.filter((f) => f.name !== "when"), { name: "flag", type: "string" }] };
+    const then: TableSchema = { fields: [...first.fields.filter((f) => f.name !== "when"), { name: "flag2", type: "string" }] };
     await changedInPlace("changed twice", first, { seed: 37, edits: true, then, search: "later" });
+  });
+
+  test("a field removed is gone from rows read and saved at once, and from their JSON as the fill reaches them", async () => {
+    const db = driver();
+    const rows = makeRows(41, 300);
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    const gone: TableSchema = { fields: without("name") };
+    assert.equal(await alterIndex(db, "t", schema, gone), true);
+    const held = async () => (await db.all("select count(*) as n from r1 where json_type(j, '$.name') is not null"))[0]!.n as number;
+    const before = await held();
+    assert.ok(before > 100, "still in the rows' JSON");
+    assert.equal(await fillIndex(db, "t", gone, 64), true);
+    assert.ok((await held()) < before, "taken out as the fill reaches them");
+    // A save meanwhile writes the rows without it.
+    let text = "";
+    for await (const piece of storedRows(db, { name: "t", schema: gone })) text += piece;
+    assert.equal(text.split("\n").filter((l) => l.includes('"name":')).length, 0);
+    assert.equal(text.split("\n").filter(Boolean).length, 300);
+    // And a row removed and put back (undo) comes back without it.
+    const named = rows.filter((r) => typeof r.name === "string").at(-1)!;
+    const [back] = await removeRows(db, { name: "t", schema: gone, ids: [named.id], key: "k2" });
+    assert.equal("name" in back!.row, false);
+    while (await fillIndex(db, "t", gone, 64)) {
+      // To the end.
+    }
+    assert.equal(await held(), 0);
+  });
+
+  test("a field added back under a name whose values are still being taken out is built instead", async () => {
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows: makeRows(40, 300), key: "k" });
+    const gone: TableSchema = { fields: without("flag") };
+    assert.equal(await alterIndex(db, "t", schema, gone), true);
+    assert.equal(await fillIndex(db, "t", gone, 64), true);
+    // Rows the fill hasn't reached still hold the old flag: a new flag's edits would be taken out with it.
+    assert.equal(await alterIndex(db, "t", gone, { fields: [...gone.fields, { name: "flag", type: "string" }] }), false);
+    while (await fillIndex(db, "t", gone, 64)) {
+      // To the end.
+    }
+    // Once it's done, the name is free again.
+    assert.equal(await alterIndex(db, "t", gone, { fields: [...gone.fields, { name: "flag", type: "string" }] }), true);
+  });
+
+  test("a build drops a fill left under way: its fields are counted as the build found them", async () => {
+    const rows = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, n: i, ...(i === 5 ? { note: 4 } : {}) })) as Row[];
+    const to: TableSchema = { fields: [...schema.fields, { name: "note", type: "string" }] };
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    assert.equal(await alterIndex(db, "t", schema, to), true);
+    // Built again before the fill was done (as an app that couldn't change it in place does).
+    await buildIndex(db, { name: "t", schema: to, rows, key: "k2" });
+    assert.equal(await indexFilling(db, "t"), false);
+    while (await fillIndex(db, "t", to, 64)) {
+      // Nothing left to fill.
+    }
+    // Row 5's note is a number: the index doesn't promise the field.
+    assert.equal(await queryIndex(db, { name: "t", schema: to, query: { sort: [{ field: "note", direction: "asc" }] } }), null);
   });
 
   test("a change it can't make in place says so, and the index is left as it was", async () => {

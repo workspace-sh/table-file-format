@@ -226,6 +226,8 @@ async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await db.run("delete from _bad where n = ?", [n]);
   await searchUpTo(db, n);
   await db.run("delete from _fts where n = ?", [n]);
+  // A fill left under way by a change of fields is for the tables just dropped.
+  await setFill(db, n, null);
 }
 
 /**
@@ -370,6 +372,11 @@ interface Fill {
   search: boolean;
   /** Values found that their field's type doesn't hold, by field. */
   bad: Record<number, number>;
+  /**
+   * Fields gone from the schema whose values are still in rows' JSON the
+   * fill hasn't reached: left out of every row read until it has.
+   */
+  drop: string[];
 }
 
 async function fillOf(db: SqlDriver, n: number): Promise<Fill | null> {
@@ -377,7 +384,7 @@ async function fillOf(db: SqlDriver, n: number): Promise<Fill | null> {
   const found = await db.all("select upto, fill from _fill where n = ?", [n]);
   if (!found[0]) return null;
   const rest = JSON.parse(found[0].fill as string) as Omit<Fill, "upto">;
-  return { upto: found[0].upto as number, ...rest };
+  return { upto: found[0].upto as number, ...rest, drop: rest.drop ?? [] };
 }
 
 async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<void> {
@@ -388,6 +395,17 @@ async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<voi
   }
   const { upto, ...rest } = fill;
   await db.run("insert or replace into _fill(n, upto, fill) values(?, ?, ?)", [n, upto, JSON.stringify(rest)]);
+}
+
+/** Rows as they are without the fields a fill has still to take out of them. */
+function withoutDropped<R extends Row>(fill: Fill | null, rows: R[]): R[] {
+  if (!fill || fill.drop.length === 0) return rows;
+  return rows.map((row) => {
+    if (!fill.drop.some((name) => name in row)) return row;
+    const out = { ...row };
+    for (const name of fill.drop) delete out[name];
+    return out;
+  });
 }
 
 /** Field names in the order the search text holds them. */
@@ -413,10 +431,17 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
   if (was.never.size > 0 || now.never.size > 0) return false;
   const before = new Map(from.fields.map((f, i) => [f.name, i]));
   const after = new Set(to.fields.map((f) => f.name));
-  // What a row's JSON no longer holds: a field gone, or one whose formula went (its
-  // results were never in the file). A name a JSON path can't spell is built instead.
-  const drop = from.fields.filter((f) => !after.has(f.name) || (f.computed && !to.fields.find((g) => g.name === f.name)!.computed)).map((f) => f.name);
-  if (drop.some((name) => /["\\]/.test(name))) return false;
+  const pending = await fillOf(db, n);
+  // A field gone: its values are taken out of each row's JSON as the fill reaches it, and
+  // left out of every row read until then. A field added back under such a name before
+  // then would have its new values taken out too: built instead.
+  const gone = from.fields.filter((f) => !after.has(f.name)).map((f) => f.name);
+  const drop = [...new Set([...(pending?.drop ?? []), ...gone])];
+  if (drop.some((name) => after.has(name))) return false;
+  // A field that keeps its name and loses its formula holds nothing (its results were never
+  // in the file): taken out of the JSON now, as edits to it from now on are its own.
+  const unformulated = from.fields.filter((f) => f.computed && after.has(f.name) && !to.fields.find((g) => g.name === f.name)!.computed).map((f) => f.name);
+  if (unformulated.some((name) => /["\\]/.test(name))) return false;
 
   // Each field of `to`: where it was, and whether its values are worked out again.
   // A new field is: its values are whatever the rows hold under its name, as a build reads them.
@@ -431,7 +456,6 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
   // The search text holds the searched fields' values in order.
   const searchChanged =
     JSON.stringify(searchedNames(from)) !== JSON.stringify(searchedNames(to)) || moves.some((m) => m.refill && searched(to.fields[m.k]!));
-  const pending = await fillOf(db, n);
 
   forgetIndexes(db, n);
   await db.exec("begin");
@@ -440,7 +464,7 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
     for (const ix of await db.all("select name from sqlite_master where type = 'index' and tbl_name = ? and name like ?", [`r${n}`, `r${n}\_o%`])) {
       if (String(ix.name).startsWith(`r${n}_o`)) await db.exec(`drop index if exists ${ix.name as string}`);
     }
-    for (const name of drop) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
+    for (const name of unformulated) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
     // Every column out of the way first, so no new name meets an old one.
     for (const col of was.columns) await db.exec(`alter table r${n} rename column ${col} to q_${col}`);
     const kept = new Set<string>();
@@ -478,8 +502,8 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
     }
 
     const search = searchChanged || (pending?.search ?? false);
-    if (refill.size > 0 || search) {
-      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {} });
+    if (refill.size > 0 || search || drop.length > 0) {
+      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {}, drop });
       // Until the search text is made again, a search reads every row's text, and the search's own index is made after.
       if (search) {
         await searchUpTo(db, n);
@@ -536,10 +560,12 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
       return false;
     }
     const computes = fill.fields.some((k) => schema.fields[k]?.computed);
-    const stored = found.map((r) => JSON.parse(r.j as string) as Row);
+    const stored = withoutDropped(fill, found.map((r) => JSON.parse(r.j as string) as Row));
     const rows = computes ? computeRows(schema, stored).rows : stored;
+    // Each row's JSON is written again when its formulas' results or the fields it loses change it.
+    const rewrite = computes || fill.drop.length > 0;
     const sets: string[] = [];
-    if (computes) sets.push("j = ?");
+    if (rewrite) sets.push("j = ?");
     if (fill.search) sets.push("s = ?");
     const cols: { col: string; at: number }[] = [];
     for (const k of fill.fields) {
@@ -557,7 +583,7 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
       const e = encode(plan, row, body === "" ? undefined : body);
       for (const k of e.bad) if (fill.fields.includes(k)) fill.bad[k] = (fill.bad[k] ?? 0) + 1;
       const params: SqlValue[] = [];
-      if (computes) params.push(JSON.stringify(row));
+      if (rewrite) params.push(JSON.stringify(row));
       if (fill.search) params.push(e.search);
       for (const { at } of cols) params.push(e.values[at] ?? null);
       params.push(found[x]!.pos as number);
@@ -681,14 +707,15 @@ export async function removeRows(
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
   const upto = await searchUpTo(db, n);
-  const counted = countedAt(await fillOf(db, n));
+  const fill = await fillOf(db, n);
+  const counted = countedAt(fill);
   const removed: { row: Row; at: number }[] = [];
   await db.exec("begin");
   try {
     for (const id of ids) {
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
-      removed.push({ row: JSON.parse(old.j as string) as Row, at: num(old.pos) });
+      removed.push({ row: withoutDropped(fill, [JSON.parse(old.j as string) as Row])[0]!, at: num(old.pos) });
       await shiftBad(db, n, counted(encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, old.pos as number), -1);
       if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
@@ -1220,7 +1247,8 @@ export async function queryIndex(
     async rows(start, end) {
       const rows = (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
       // A formula still being filled in (alterIndex) is worked out for the rows asked, so they show it at once.
-      return filling ? computeRows(schema, rows).rows : rows;
+      const shown = withoutDropped(pendingFill, rows);
+      return filling ? computeRows(schema, shown).rows : shown;
     },
     async ids(start, end) {
       return (await windowOf("r.id", start, end)) as string[];
@@ -1242,7 +1270,8 @@ export async function queryIndex(
       const found = await db.all(`select r.j as j from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
       if (!found[0]) return undefined;
       const row = JSON.parse(found[0].j as string) as Row;
-      return filling ? computeRows(schema, [row]).rows[0] : row;
+      const [shown] = withoutDropped(pendingFill, [row]);
+      return filling ? computeRows(schema, [shown!]).rows[0] : shown;
     },
     totals: () => (totals ??= loadTotals()),
     groups: async () => (await loadBuckets()).map(({ key, start, count }) => ({ key, start, count })),
@@ -1289,7 +1318,8 @@ export async function* storedRows(
   const n = await tableNumber(db, options.name, false);
   if (n === null) throw new Error(`no index for ${options.name}`);
   const size = options.batchSize ?? BATCH;
-  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? [])];
+  // And the fields a fill has still to take out of rows' JSON.
+  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...((await fillOf(db, n))?.drop ?? [])];
   let after = -1;
   for (;;) {
     const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
