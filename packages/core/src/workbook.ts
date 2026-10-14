@@ -31,7 +31,7 @@ import type { Field, ParsedTable, Row, TableSchema, ValidationError, View } from
 /** What computing a table can see beyond its own rows (D36). */
 export interface ComputeOptions {
   /**
-   * The other tables `lookup` and `linked` read, keyed as a relation's
+   * The other tables `related` and `linked` read, keyed as a relation's
    * `table` names them. Without them, those forms are #REF!.
    */
   tables?: Record<string, ParsedTable>;
@@ -68,7 +68,7 @@ interface Sheet {
    * and whether they read only rows below (so are worked out bottom up).
    */
   places: Map<string, { view: string; forward: boolean }>;
-  /** `(column "x")`: each field's values in file order, built once (D36). */
+  /** `(values "x")`: each field's values in file order, built once (D36). */
   columns: Map<string, Value[]>;
   /** For `linked`: this table's row indexes by the id each relation field points at, built once per relation. */
   backlinks: Map<string, Map<string, number[]>>;
@@ -362,7 +362,7 @@ class Workbook {
     return { top: r.top, height: Math.max(r.bottom - r.top + 1, 0), size: r.grid.order.length };
   }
 
-  column(sheet: Sheet, name: string): Value {
+  values(sheet: Sheet, name: string): Value {
     if (!sheet.known.has(name)) return new FormulaError("#NAME?", `no field named ${name}`);
     let list = sheet.columns.get(name);
     if (!list) {
@@ -393,7 +393,7 @@ class Workbook {
     return (index.get(sheet.rows[i]!.id) ?? []).map((j) => this.value(there, j, name));
   }
 
-  lookup(sheet: Sheet, i: number, relation: string, name: string): Value {
+  related(sheet: Sheet, i: number, relation: string, name: string): Value {
     const def = sheet.known.get(relation);
     if (!def) return new FormulaError("#NAME?", `no field named ${relation}`);
     if (!def.relation) return new FormulaError("#VALUE!", `${relation} doesn't link to another table`);
@@ -437,11 +437,11 @@ class RowScope implements Scope {
     // as a spreadsheet's is: shown, not silently empty.
     return other !== undefined ? this.book.value(this.sheet, other, name) : new FormulaError("#REF!", `no row ${rowId}`);
   }
-  column(name: string): Value {
-    return this.book.column(this.sheet, name);
+  values(name: string): Value {
+    return this.book.values(this.sheet, name);
   }
-  lookup(relation: string, name: string): Value {
-    return this.book.lookup(this.sheet, this.i, relation, name);
+  related(relation: string, name: string): Value {
+    return this.book.related(this.sheet, this.i, relation, name);
   }
   linked(table: string, relation: string, name: string): Value {
     return this.book.linked(this.sheet, this.i, table, relation, name);
@@ -565,7 +565,7 @@ export function computeRows(
  * table is computed whole each time.
  */
 // Anything that reads the clock or chance (TODAY, NOW, RAND, #124) must be added here too: its answer isn't the row's alone.
-const ACROSS_ROWS = new Set(["column", "lookup", "linked", "at", "range", "row", "rows"]);
+const ACROSS_ROWS = new Set(["values", "related", "linked", "at", "range", "row", "rows"]);
 const localSchemas = new WeakMap<TableSchema, boolean>();
 const memos = new WeakMap<TableSchema, { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] }>();
 

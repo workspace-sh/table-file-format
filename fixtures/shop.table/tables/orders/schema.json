@@ -101,7 +101,7 @@
       "title": "City",
       "description": "Looked up from the order's customer (D36).",
       "computed": {
-        "expr": "(lookup \"customer\" \"city\")",
+        "expr": "(related \"customer\" \"city\")",
         "dialect": "table-expr-v1"
       }
     }
