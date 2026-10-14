@@ -12,7 +12,8 @@
  * usual RN layout-event channel. Instead: attach a ref to the html.div,
  * call `measureInWindow` on attach to seed the initial size, then
  * subscribe to `Dimensions` change events to catch window resizes /
- * orientation changes. That covers iOS rotation. A change the system
+ * orientation changes, measuring again as the new layout settles. That
+ * covers iOS rotation. A change the system
  * doesn't announce (a Mac window dragged wider, its sidebar or inspector
  * opening) comes from the host, which says when its content's own view
  * was laid out again (`notifyLayoutChanged`, internal/relayout).
@@ -60,10 +61,13 @@ export function useContainerWidth(): ContainerMeasurement {
     [measure],
   );
 
-  // Re-measure on window resize / orientation change.
+  // Re-measure on window resize / orientation change. The event comes
+  // before the views have their new sizes, and a rotation's layout settles
+  // over a few frames, so it's measured again as it settles: once only
+  // could read the old width and keep it.
   useEffect(() => {
     const sub = Dimensions.addEventListener("change", () => {
-      setTimeout(measure, 0);
+      for (const ms of [0, 100, 300]) setTimeout(measure, ms);
     });
     // And when the host says its content was laid out again.
     const stop = onLayoutChanged(measure);

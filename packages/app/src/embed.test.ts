@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { bundles } from "@workspace.sh/table-fixtures";
 import { fromBundle } from "./bundles.ts";
-import { EMBED_COUNT_MAX, embedCount, embedIn, embedLeftOut, embedMoreText, embedSize } from "./embed.ts";
+import { EMBED_COUNT_MAX, embedCount, embedIn, embedLeftOut, embedMoreText, embedRoom, embedSize } from "./embed.ts";
 import type { Library } from "./library.ts";
 
 // One `.table` file as an app reads it: its tables by `bundle/table` key.
@@ -153,4 +153,11 @@ test("a link is read over any platform's files, from the document's folder and k
   assert.match((await fs.readText("/ws/tables/projects.table/tables/tasks/rows.ndjson"))!, /Renamed/);
   await files.appendHistory!(shown.library, shown.key, [{ id: "e1", at: "2026-10-13T00:00:00Z", op: "set", row: renamed.rows[0]!.id, field: "title", to: "Renamed" }]);
   assert.ok((await fs.readText("/ws/tables/projects.table/tables/tasks/history.ndjson"))?.includes("Renamed"));
+});
+
+test("an embed keeps the room its link says it will take while it's read", () => {
+  assert.equal(embedRoom("projects.table#table=tasks&rows=3&embed=1", 480, 44), 44 * 4);
+  assert.equal(embedRoom("projects.table#table=tasks&rows=40&embed=1", 480, 44), 480);
+  assert.equal(embedRoom("projects.table#table=tasks&embed=1", 480, 44), 480);
+  assert.equal(embedRoom(undefined, 480, 44), null);
 });

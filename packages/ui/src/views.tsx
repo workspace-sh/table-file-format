@@ -104,6 +104,7 @@ import { SnapHScroll } from "./internal/SnapHScroll";
 import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
+import { onWindowResize } from "./internal/onWindowResize";
 import { useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
@@ -1965,6 +1966,20 @@ function EditableCell({
   // lines have room; the cell itself is a row high. Measured from the cell.
   const cellAnchor = useRef<HTMLElement | null>(null);
   const [longAt, setLongAt] = useState<AnchorRect | null>(null);
+  // The phone turned or the window resized: the box goes where the cell is
+  // now, once the new layout has settled.
+  useEffect(
+    () =>
+      onWindowResize(() => {
+        for (const ms of [100, 300]) {
+          setTimeout(() => {
+            const el = cellAnchor.current;
+            if (el) void measureAnchor(el).then((at) => at && setLongAt(at));
+          }, ms);
+        }
+      }),
+    [],
+  );
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
@@ -2792,6 +2807,16 @@ export function TableView({
     });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  // The phone turned or the window resized: a menu or panel placed over a
+  // cell would stay where the cell was, so it's closed.
+  useEffect(
+    () =>
+      onWindowResize(() => {
+        setTotalsMenu(null);
+        setFormulaCell(null);
+      }),
+    [],
+  );
   const { Select: TotalsSelect } = usePlatformControls();
   const chooseTotal = (name: string, kind: ViewTotal | null) => {
     const next = { ...(view.totals ?? {}) };

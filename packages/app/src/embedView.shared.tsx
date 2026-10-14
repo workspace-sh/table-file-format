@@ -12,13 +12,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 import type { View } from "@workspace.sh/table-core";
-import { BoardView, BodyEditor, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
-import type { ViewProps } from "@workspace.sh/table-ui/shared";
+import { BodyEditor, DisplaySettingsProvider } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
-import { embedCount, embedLeftOut, embedMoreText, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
+import { embedCount, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
+import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
 
 /** The tallest an embedded view is before it scrolls within itself, as on GTK. */
@@ -48,25 +48,17 @@ export interface TableEmbedProps {
   onOpenLink?: (address: string) => void;
   /** Ask a question (deleting a row, say) in the host's own way; `answer` gets the response's id. Each platform has a default. */
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
+  /**
+   * The link as written. While it's read, the embed keeps the room it will
+   * take (the link's `rows=`, else the limit), so the document around it
+   * doesn't move when the table arrives. Absent: no room is kept.
+   */
+  address?: string;
 }
 
 /** What scrolls an embedded view, as tall as what it holds up to `limit`. */
 export type EmbedFrame = (props: { limit: number; children: ReactNode }) => ReactNode;
 
-function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {
-  switch (layout) {
-    case "board":
-      return <BoardView {...props} />;
-    case "gallery":
-      return <GalleryView {...props} />;
-    case "list":
-      return <ListView {...props} />;
-    case "calendar":
-      return <CalendarView {...props} />;
-    default:
-      return <TableView {...props} />;
-  }
-}
 
 function Shown({
   shown,
@@ -162,12 +154,14 @@ function Shown({
 
 /** The drop-in, given a platform's frame and its default dialog. */
 export function TableEmbedWith(
-  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, ask }: TableEmbedProps,
+  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, ask, address }: TableEmbedProps,
   Frame: EmbedFrame,
   defaultAsk: NonNullable<TableEmbedProps["ask"]>,
 ) {
+  const room = read === null ? embedRoom(address, maxHeight, ROW_HEIGHT) : null;
   return (
     <html.div style={styles.embed}>
+      {room !== null ? <html.div aria-hidden={true} style={styles.room(room)} /> : null}
       {read?.kind === "shown" ? (
         <Shown
           key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`}
@@ -186,7 +180,7 @@ export function TableEmbedWith(
           <html.span style={styles.problemText}>{read.text}</html.span>
         </html.div>
       ) : null}
-      {caption && read ? <html.span style={styles.caption}>{caption}</html.span> : null}
+      {caption && (read || room !== null) ? <html.span style={styles.caption}>{caption}</html.span> : null}
     </html.div>
   );
 }
@@ -205,6 +199,7 @@ const styles = css.create({
   },
   problemText: { fontSize: 14, color: dim },
   caption: { fontSize: 13, color: dim, textAlign: "center" },
+  room: (height: number) => ({ height }),
   more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
   moreText: { fontSize: 14, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
 });
