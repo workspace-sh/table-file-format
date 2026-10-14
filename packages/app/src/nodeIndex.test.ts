@@ -23,7 +23,7 @@ import {
   type IndexEdit,
 } from "./indexed.ts";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { isIndexStale, queryIndex } from "@workspace.sh/table-core";
+import { isIndexStale, queryIndex, type TableSchema } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -271,6 +271,45 @@ test("a save can leave out a field the table no longer has, and a build makes th
     assert.equal(await host.build("tasks", s.tasks, () => (progressed = true)), 8);
     assert.equal(progressed, true);
     await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a change of fields is made in the index where it is, and what it leaves to work out is filled in after", async () => {
+  const s = scratch();
+  try {
+    const host = openIndexHost(s.bundle, { turn: (run) => run() });
+    await host.ensure("tasks", s.tasks);
+    const from = JSON.parse(readFileSync(join(s.tasks, "schema.json"), "utf8")) as TableSchema;
+    // A formula added, and a field gone: the file is saved without it first, as the app saves it.
+    const to: TableSchema = {
+      ...from,
+      fields: [...from.fields.filter((f) => f.name !== "assignee"), { name: "urgency", type: "integer", computed: { dialect: "table-expr-v1", expr: "(- 6 priority)" } }],
+    };
+    writeFileSync(join(s.tasks, "schema.json"), JSON.stringify(to));
+    assert.equal(await host.save("tasks", s.tasks, true, ["assignee"], true), true);
+    let built = false;
+    const build = host.build;
+    host.build = (...args) => ((built = true), build(...args));
+    assert.equal(await host.alter("tasks", from, to), true);
+    // Answering for the new fields at once, the formula's values worked out as they're read.
+    const now = await queryIndex(host, { name: "tasks", schema: to });
+    assert.deepEqual((await now!.rows(0, 2)).map((r) => [r.id, r.urgency, "assignee" in r]), [["t1", 5, false], ["t2", 4, false]]);
+    const bySoonest = { sort: [{ field: "urgency", direction: "desc" as const }] };
+    assert.equal(await queryIndex(host, { name: "tasks", schema: to, query: bySoonest }), null, "sorted by it once it's filled in");
+    await host.fill("tasks", to);
+    const sorted = await queryIndex(host, { name: "tasks", schema: to, query: bySoonest });
+    const want = applyView({ path: "", schema: to, rows: rowsOnDisk(s.tasks), views: [], meta: {} as never }, { id: "v", name: "v", layout: "table", ...bySoonest });
+    assert.deepEqual(await sorted!.ids(0, 8), want.map((r) => r.id));
+    assert.equal(built, false, "never built again");
+    // Fresh for the files as they are: opened again, it's kept.
+    assert.equal(await host.ensure("tasks", s.tasks), 8);
+    await host.close();
+    // A change it can't make in place: from a schema it wasn't made for.
+    const again = openIndexHost(s.bundle);
+    assert.equal(await again.alter("tasks", from, to), false);
+    await again.close();
   } finally {
     s.done();
   }
