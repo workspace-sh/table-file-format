@@ -138,6 +138,18 @@ export interface EmbeddedTableFiles {
   appendHistory?: (library: Library, key: string, events: EditEvent[]) => Promise<void>;
 }
 
+/**
+ * The room an embed is likely to take, from its link alone, before its file
+ * is read: exact for a table's `rows=n` (a header and n rows of `rowHeight`),
+ * else the limit. Null when the link names no table.
+ */
+export function embedRoom(address: string | undefined, maxHeight: number, rowHeight: number): number | null {
+  const parsed = address === undefined ? null : parseAddress(address);
+  if (!parsed) return null;
+  const rows = embedSize(parsed).rows;
+  return rows === undefined ? maxHeight : Math.min(maxHeight, rowHeight + rows * rowHeight);
+}
+
 /** A document's link to a `.table`, and where it can be read from. */
 export interface EmbedTarget {
   /** The link's destination as written: `../tables/projects.table#table=tasks&view=v2&embed=1`. */
