@@ -23,7 +23,9 @@ import {
   BUNDLE_EXTENSION,
   BundleEntry,
   TableEntry,
+  alterIndex,
   buildSearchIndex,
+  fillIndex,
   queryIndex,
   indexKey,
   rowsBeingBuilt,
@@ -76,7 +78,7 @@ export interface IndexHostPlatform {
 export interface IndexDatabase {
   /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
-  /** Make it again from the rows kept here: after a change to its fields. */
+  /** Make it again from the rows kept here: after a change to its fields it can't `alter`. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * Write a table's rows out to its file and say the index is as the file
@@ -91,6 +93,18 @@ export interface IndexDatabase {
   rows(request: RowsRequest): Promise<unknown>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /**
+   * After a change to a table's fields from `from` to `to`: change its index
+   * where it is (core's alterIndex), answering for `to` at once. False when
+   * it can't, and it's to be built again.
+   */
+  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  /**
+   * Work out what a change of fields left to work out (core's fillIndex), a
+   * step at a time behind whatever else is asked. Resolves when it's done;
+   * safe to ask when there's nothing to do.
+   */
+  fill(name: string, schema: TableSchema): Promise<void>;
   /**
    * Every row of a table just read from an archive and not yet in the
    * index, inflated into memory: for holding the table there when no index
@@ -402,14 +416,17 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   // Edits asked of each table (`bundle/table`), counted: a save looks before and after.
   const edited = new Map<string, number>();
 
-  /** A search index is made a step at a time, each behind whatever the screen asked meanwhile. */
-  function searchSteps(bundle: string, name: string): Promise<void> {
+  /**
+   * Work made a step at a time (a search index, a fill), each behind
+   * whatever the screen asked meanwhile. `take` resolves true while there's more.
+   */
+  function inSteps(bundle: string, take: (driver: SqlDriver) => Promise<boolean>): Promise<void> {
     return new Promise((resolve, reject) => {
       const step = (): void => {
         // The screen comes first: a step waits until it has asked for nothing for a moment.
         // So does a save: its rows are the person's edits on their way to the file.
         if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(step, QUIET_MS / 2);
-        afterBuild(bundle, () => inTurn(async () => buildSearchIndex((await open(bundle)).driver, name, SEARCH_STEP))).then(
+        afterBuild(bundle, () => inTurn(async () => take((await open(bundle)).driver))).then(
           (more) => (more ? void setTimeout(step, 0) : resolve()),
           reject,
         );
@@ -470,7 +487,10 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         edited.set(table, (edited.get(table) ?? 0) + 1);
         return afterBuild(bundle, () => asked(({ serve }) => serve(request)));
       },
-      search: (name) => searchSteps(bundle, name),
+      search: (name) => inSteps(bundle, (driver) => buildSearchIndex(driver, name, SEARCH_STEP)),
+      // One transaction, in one turn, after a build of its bundle.
+      alter: (name, from, to) => afterBuild(bundle, () => asked(({ driver }) => alterIndex(driver, name, from, to))),
+      fill: (name, schema) => inSteps(bundle, (driver) => fillIndex(driver, name, schema, SEARCH_STEP)),
       heldRows: (name) => {
         const entry = waiting.get(`${bundle}/${name}`);
         if (!entry) return null;

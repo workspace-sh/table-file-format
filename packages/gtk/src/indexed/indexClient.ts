@@ -48,6 +48,8 @@ export function openWorkerIndexHost(bundleDir: string): IndexHost {
     rows: (request) => call({ op: "rows", request }),
     peek: (name, start, end) => call({ op: "peek", name, start, end }),
     build: (name, tableDir, onProgress) => call<number>({ op: "build", name, tableDir }, onProgress),
+    alter: (name, from, to) => call<boolean>({ op: "alter", name, from, to }),
+    fill: (name, schema) => call({ op: "fill", name, schema }),
     save: (name, tableDir, rows, omit, whole) => call<boolean>({ op: "save", name, tableDir, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }),
     close: async () => {
       await call({ op: "close" });
