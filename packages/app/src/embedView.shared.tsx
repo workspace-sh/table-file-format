@@ -16,7 +16,7 @@ import { BodyEditor, DisplaySettingsProvider } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
-import { embedCount, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
+import { embedCount, embedFileAddress, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
@@ -26,6 +26,9 @@ export const EMBED_MAX_HEIGHT = 480;
 
 /** A row's height and the header's, for how tall `rows=n` is: table-ui's own default. */
 const ROW_HEIGHT = 44;
+
+/** The room Open takes at the end of the caption line, kept on both sides so the caption stays centred. */
+const OPEN_WIDTH = 56;
 
 export interface TableEmbedProps {
   /** What the link names, read by the host over its own files (readEmbedWith); null while it's read. */
@@ -46,6 +49,13 @@ export interface TableEmbedProps {
    * Absent: a linked row goes nowhere.
    */
   onOpenLink?: (address: string) => void;
+  /**
+   * The table opened as a document of its own: the file's address at the table and view drawn
+   * (`/notes/projects.table#table=tasks&view=v2`), for the host to open there. Given, the embed
+   * offers it at the end of its caption line (Open). Absent, or for a file read from a
+   * `.table.zip` (no path), it offers nothing.
+   */
+  onOpen?: (address: string) => void;
   /** Ask a question (deleting a row, say) in the host's own way; `answer` gets the response's id. Each platform has a default. */
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
   /**
@@ -154,11 +164,14 @@ function Shown({
 
 /** The drop-in, given a platform's frame and its default dialog. */
 export function TableEmbedWith(
-  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, ask, address }: TableEmbedProps,
+  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, onOpen, ask, address }: TableEmbedProps,
   Frame: EmbedFrame,
   defaultAsk: NonNullable<TableEmbedProps["ask"]>,
 ) {
   const room = read === null ? embedRoom(address, maxHeight, ROW_HEIGHT) : null;
+  // Where Open goes: the file at the table and view drawn. Nothing for a file without a path, or a host that opens none.
+  const openAt = onOpen && read?.kind === "shown" ? embedFileAddress(read) : null;
+  const captioned = caption && (read || room !== null);
   return (
     <html.div style={styles.embed}>
       {room !== null ? <html.div aria-hidden={true} style={styles.room(room)} /> : null}
@@ -180,7 +193,21 @@ export function TableEmbedWith(
           <html.span style={styles.problemText}>{read.text}</html.span>
         </html.div>
       ) : null}
-      {caption && (read || room !== null) ? <html.span style={styles.caption}>{caption}</html.span> : null}
+      {captioned || openAt ? (
+        // The caption, centred under the table; and Open, at its end, for the table as a document.
+        <html.div style={styles.foot}>
+          {/* Each side as wide as Open, so a long caption stays centred and Open stays whole. */}
+          <html.div style={[styles.side, openAt ? styles.holdsOpen : null]} />
+          {captioned ? <html.span style={styles.caption}>{caption}</html.span> : null}
+          <html.div style={[styles.side, styles.end, openAt ? styles.holdsOpen : null]}>
+            {openAt ? (
+              <html.button aria-label="Open as a document" style={styles.open} onClick={() => onOpen?.(openAt)}>
+                <html.span style={styles.moreText}>Open</html.span>
+              </html.button>
+            ) : null}
+          </html.div>
+        </html.div>
+      ) : null}
     </html.div>
   );
 }
@@ -198,7 +225,12 @@ const styles = css.create({
     borderColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#3a3a3f" },
   },
   problemText: { fontSize: 14, color: dim },
-  caption: { fontSize: 13, color: dim, textAlign: "center" },
+  caption: { flexShrink: 1, fontSize: 13, color: dim, textAlign: "center" },
+  foot: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  side: { flexGrow: 1, flexShrink: 0, flexBasis: 0, display: "flex", flexDirection: "row" },
+  end: { justifyContent: "flex-end" },
+  holdsOpen: { minWidth: OPEN_WIDTH },
+  open: { paddingBlock: 2, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
   room: (height: number) => ({ height }),
   more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
   moreText: { fontSize: 14, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
