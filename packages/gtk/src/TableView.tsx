@@ -53,13 +53,13 @@ import {
   DEFAULT_ROW_HEIGHT,
   type RowMark,
   linesFor,
-  ROW_NUMBER_WIDTH,
   TOTAL_LABELS,
   TOTAL_NAMES,
   totalKindsFor,
   visibleFields,
   type ViewProps,
   rowNumber,
+  rowNumberWidth,
   fieldHint,
   fieldHintText,
   rowActions,
@@ -612,14 +612,22 @@ export function TableView({
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
   // What the columns don't get: the frame and its margins, a sheet's row numbers, and the "+" after the last column.
-  const chrome = TABLE_CHROME + 2 * frameMargin + (coords ? ROW_NUMBER_WIDTH : 0) + (onAddField ? ADD_FIELD_WIDTH : 0);
+  // A sheet's row numbers: their gutter is as wide as the largest of them (table-ui's rowNumberWidth), worked
+  // out once from how many rows the view has and the sheet's own numbering, not from the rows on screen.
+  const largestNumber = useMemo(() => {
+    let most = source.count;
+    if (sheet?.position) for (const n of sheet.position.values()) if (n > most) most = n;
+    return most;
+  }, [source.count, sheet?.position]);
+  const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
+  const chrome = TABLE_CHROME + 2 * frameMargin + numberWidth + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
   // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
   // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
   // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
   const freeze = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH;
-  const frozenWidth = freeze ? (coords ? ROW_NUMBER_WIDTH : 0) + colWidth(fields[0]!) : 0;
+  const frozenWidth = freeze ? numberWidth + colWidth(fields[0]!) : 0;
   const scrolledAcross = useRef(0);
   const pinned = useRef(new Map<string, { widget: Gtk.Widget; from: number }>());
   /** A ref for something that stays where it is across the table (`from` its start) however far it is scrolled. */
@@ -646,7 +654,7 @@ export function TableView({
     };
     // Where the table is scrolled to with each column in turn starting at the edge. The first is there
     // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
-    let at = frameMargin + 1 + (freeze || !coords ? 0 : ROW_NUMBER_WIDTH);
+    let at = frameMargin + 1 + (freeze ? 0 : numberWidth);
     for (const name of (freeze ? fields.slice(1) : fields).slice(0, -1)) {
       at += colWidth(name);
       if (at < end) nearer(at);
@@ -795,7 +803,7 @@ export function TableView({
   const columnLineWidgets = useRef(new Map<string, { widget: Gtk.Widget; at: number }>());
   const columnLines = () => {
     if (!onUpdateView) return null;
-    let x = coords ? ROW_NUMBER_WIDTH : 0;
+    let x = numberWidth;
     return fields.map((name, i) => {
       x += colWidth(name);
       const at = x;
@@ -826,7 +834,7 @@ export function TableView({
 
   const gutter = (content: string, height: number) =>
     coords ? (
-      <GtkLabel label={content} widthRequest={ROW_NUMBER_WIDTH} heightRequest={height} cssClasses={[styles.rowNumber]} />
+      <GtkLabel label={content} name="row-number" widthRequest={numberWidth} heightRequest={height} cssClasses={[styles.rowNumber]} />
     ) : null;
 
   const display = useDisplaySettings();
@@ -892,7 +900,7 @@ export function TableView({
     const dragged = liveRow?.rowId === row.id && liveRow.by === "grip";
     if (!onUpdateView || (selectedRow !== row.id && !dragged)) return null;
     const gripName = (selectedRow === row.id ? selectedName : liveRow?.name) ?? fields[0]!;
-    let cellStart = coords ? ROW_NUMBER_WIDTH : 0;
+    let cellStart = numberWidth;
     for (const field of fields) {
       if (field === gripName) break;
       cellStart += colWidth(field);
@@ -942,7 +950,7 @@ export function TableView({
           name="resize-row-line"
           // As wide as the row's cells: like its rule, it stops at the last column.
           halign={Gtk.Align.START}
-          widthRequest={(coords ? ROW_NUMBER_WIDTH : 0) + fields.reduce((sum, field) => sum + colWidth(field), 0)}
+          widthRequest={numberWidth + fields.reduce((sum, field) => sum + colWidth(field), 0)}
           valign={Gtk.Align.END}
           heightRequest={ROW_LINE_HEIGHT}
           cssClasses={[styles.rowLine, ...(label !== null ? [styles.rowLineLit] : [])]}
