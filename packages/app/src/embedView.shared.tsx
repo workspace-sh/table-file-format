@@ -17,7 +17,7 @@ import type { ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
-import { embedCount, embedLeftOut, embedMoreText, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
+import { embedCount, embedLeftOut, embedMoreText, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
 import { rowTitleFor } from "./edits.ts";
 
@@ -40,7 +40,11 @@ export interface TableEmbedProps {
   locale?: string;
   /** The table is to look at: nothing in it can be changed, and nothing is written. */
   readOnly?: boolean;
-  /** A linked row was chosen: its address, for the host to go to. Absent: a linked row goes nowhere. */
+  /**
+   * A linked row was chosen: its address as the file's (the `.table`'s path as it was read, the
+   * table and the row: `/notes/projects.table#table=projects&row=p2`), for the host to open there.
+   * Absent: a linked row goes nowhere.
+   */
   onOpenLink?: (address: string) => void;
   /** Ask a question (deleting a row, say) in the host's own way; `answer` gets the response's id. Each platform has a default. */
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
@@ -126,7 +130,15 @@ function Shown({
           {...(readOnly ? {} : callbacks)}
           // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
           {...(leftOut > 0 ? { onAddRow: undefined } : {})}
-          {...(onOpenLink ? { onOpenRelation: onOpenLink } : {})}
+          // A linked row, said as the file's address, for the app to open there.
+          {...(onOpenLink
+            ? {
+                onOpenRelation: (address: string) => {
+                  const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
+                  if (link) onOpenLink(link);
+                },
+              }
+            : {})}
         />
       </Frame>
       {leftOut > 0 ? (

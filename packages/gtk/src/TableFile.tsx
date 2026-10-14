@@ -8,12 +8,12 @@
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { bundleOf, bundleTables, tableNameOf, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { bundleOf, bundleTables, linkedRowAddress, tableNameOf, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
-import { newId } from "@workspace.sh/table-core";
+import { newId, parseAddress } from "@workspace.sh/table-core";
 import { useEffect, useState } from "react";
 
 import { LayoutView } from "./LayoutView.js";
@@ -30,11 +30,32 @@ export interface TableFileProps {
   readOnly?: boolean;
   /** The reader's locale, for dates, numbers and which way it reads. The system's, when not given. */
   locale?: string;
-  /** A linked row was clicked: its address, for the app to go to. Absent: a linked row is its name. */
+  /**
+   * Where to go in the file, from the app: an address as the file's (`…/projects.table#table=tasks&view=v2&row=t3`).
+   * Its table and view are shown, its row is selected, and its row's page opens when it has one. Each new `n` goes
+   * there again.
+   */
+  at?: { address: string; n: number };
+  /**
+   * A linked row in another `.table` was clicked: its address as that file's, for the app to open. A linked row
+   * in this file is gone to here.
+   */
   onOpenLink?: (address: string) => void;
 }
 
-function Opened({ shown, readOnly, locale, onOpenLink }: { shown: EmbedShown; readOnly: boolean; locale: string | undefined; onOpenLink: ((address: string) => void) | undefined }) {
+function Opened({
+  shown,
+  readOnly,
+  locale,
+  at,
+  onOpenLink,
+}: {
+  shown: EmbedShown;
+  readOnly: boolean;
+  locale: string | undefined;
+  at: TableFileProps["at"];
+  onOpenLink: ((address: string) => void) | undefined;
+}) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
   const { table, view } = derived;
   // A .table.zip was read into memory: there is nowhere to write it back.
@@ -48,6 +69,31 @@ function Opened({ shown, readOnly, locale, onOpenLink }: { shown: EmbedShown; re
   const views = table.views;
   const viewAt = Math.max(0, views.findIndex((v) => v.id === view.id));
   const viewsPicker = useSelected<Gtk.DropDown>(viewAt, views.map((v) => v.id).join("\u0000"));
+
+  // Going to a row: its table and view shown, the row selected, its page open when it has one.
+  const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
+  const goTo = (address: string) => {
+    const parsed = parseAddress(address);
+    if (!parsed) return;
+    const bundle = bundleOf(shown.key);
+    const key = parsed.tableName ? `${bundle}/${parsed.tableName}` : state.active;
+    if (!state.tables[key]) return;
+    const rowId = parsed.rowId;
+    const hasPage = rowId !== undefined && state.tables[key]!.bodies?.[rowId] !== undefined;
+    dispatch({ type: "follow", target: { key, ...(parsed.viewId ? { viewId: parsed.viewId } : {}), openBody: hasPage ? rowId : null } });
+    if (rowId) setSelect((was) => ({ place: { rowId }, n: (was?.n ?? 0) + 1 }));
+  };
+  useEffect(() => {
+    if (at) goTo(at.address);
+    // Each request once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [at?.n]);
+  /** A linked row clicked: gone to here when it is in this file; else the app's to open. */
+  const followLink = (address: string) => {
+    const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
+    if (link && parseAddress(link)?.tablePath === shown.library.paths[bundleOf(shown.key)]) goTo(link);
+    else if (link) onOpenLink?.(link);
+  };
 
   // The view's own settings (layout, filters, sorts, grouping), changed for everyone who opens the file.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -111,7 +157,8 @@ function Opened({ shown, readOnly, locale, onOpenLink }: { shown: EmbedShown; re
           tableKey={tableName}
           sheet={derived.shown.sheet}
           {...(lookOnly ? {} : callbacks)}
-          onOpenRelation={onOpenLink}
+          onOpenRelation={followLink}
+          restorePlace={select}
         />
       </GtkBox>
       {settingsOpen && !lookOnly ? (
@@ -128,7 +175,7 @@ function Opened({ shown, readOnly, locale, onOpenLink }: { shown: EmbedShown; re
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, onOpenLink }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, onOpenLink }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -140,7 +187,7 @@ export function TableFile({ path, readOnly = false, locale, onOpenLink }: TableF
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} onOpenLink={onOpenLink} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} onOpenLink={onOpenLink} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>
