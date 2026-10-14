@@ -285,8 +285,21 @@ export const SQUEEZED_CELL_WIDTH = 140;
 
 /** The "+" for a new field: the width of its header cell after the last column, taken from the columns'. */
 export const ADD_FIELD_WIDTH = 40;
-/** A sheet's row-number gutter (`coordinates`). */
+/** A sheet's row-number gutter (`coordinates`): its narrowest, for up to three digits. */
 export const ROW_NUMBER_WIDTH = 32;
+
+/**
+ * A sheet's row-number gutter, wide enough for its largest number on one
+ * line: worked out once from how many rows there are (not from the rows on
+ * screen), so it never changes as the table scrolls. 11-point tabular
+ * figures, the gutter's padding either side and its line.
+ */
+export function rowNumberWidth(largest: number): number {
+  const digits = String(Math.max(1, Math.floor(largest))).length;
+  // Three digits fit the narrowest, as they always have; past that, each is a figure's
+  // width (6.6 at 11 points), with the padding, the line and a point to spare.
+  return digits <= 3 ? ROW_NUMBER_WIDTH : Math.ceil(digits * 6.6) + 14;
+}
 
 /**
  * Each column's width in a table of `containerWidth`, less `chrome` (the
