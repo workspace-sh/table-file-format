@@ -22,6 +22,13 @@ export interface PageScroll {
   topOf(view: unknown): Promise<number | null>;
   /** The scrolled content's top in the window, now: a view's top in the window is this plus `topOf` it. */
   windowTop(): number;
+  /**
+   * Hold the page still (true) while something in it is dragged (a row or
+   * column being resized, a card being moved), and let it go (false). A
+   * scroll that started under the finger would otherwise take the drag.
+   * Absent: the page can't be held, and isn't.
+   */
+  lock?(on: boolean): void;
 }
 
 export const PageScrollContext = createContext<PageScroll | null>(null);
@@ -40,7 +47,11 @@ interface MeasurableLike {
  * ScrollView so it stays true: `onScroll`, `onLayout` and
  * `onContentSizeChange`. `scroller` is a ref to it. Made once per screen.
  */
-export function pageScrollOver(scroller: { current: ScrollerLike | null }) {
+export function pageScrollOver(
+  scroller: { current: ScrollerLike | null },
+  /** How to hold the page still: the screen sets its ScrollView's `scrollEnabled`. */
+  options: { lock?: (on: boolean) => void } = {},
+) {
   const listeners = new Set<(what: "scroll" | "resize") => void>();
   const at = { offset: 0, height: 0, top: 0 };
   const tell = (what: "scroll" | "resize") => listeners.forEach((listener) => listener(what));
@@ -63,6 +74,7 @@ export function pageScrollOver(scroller: { current: ScrollerLike | null }) {
         );
       }),
     windowTop: () => at.top - at.offset,
+    ...(options.lock ? { lock: options.lock } : {}),
   };
   return {
     pageScroll,
