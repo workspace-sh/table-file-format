@@ -8,6 +8,16 @@ export interface ViewProps {
   view: View;
   rows: Row[];
   /**
+   * Draw only the first of what the view shows: so many rows of a table
+   * or a list, cards down each column of a board, cards of a gallery. For
+   * a view drawn in place with `rest=more` (SPEC section 10). `rows` is
+   * still every row, so what is counted stays the whole view's: a table's
+   * totals, a group's count, a board column's count, and a column that
+   * has more says how many. (table-gtk's views are told the same through
+   * their EmbeddedContext.)
+   */
+  cut?: number;
+  /**
    * For a table whose rows are in the index (`ParsedTable.indexed`): what
    * the view reads them from, a window at a time. `rows` is then empty.
    * A view that can't read a source draws from `rows`.
