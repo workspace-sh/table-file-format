@@ -68,8 +68,8 @@ export function useIndexedTables(input: {
   const madeFor = useRef(new Map<string, TableSchema>());
   // Tables whose rows changed in the index since they were last written.
   const unsaved = useRef(new Set<string>());
-  const latest = useRef({ tell, dispatch });
-  latest.current = { tell, dispatch };
+  const latest = useRef({ tell, dispatch, tables: state.tables });
+  latest.current = { tell, dispatch, tables: state.tables };
 
   /** A bundle's database: the one its archive was read into, or the one this device kept from before. */
   const hostOf = useCallback((bundle: string): Promise<IndexDatabase> => {
@@ -82,12 +82,23 @@ export function useIndexedTables(input: {
     setFirst((was) => ({ ...was, ...rows }));
   }, []);
 
-  const ready = (key: string, schema: TableSchema, count: number, host: IndexDatabase) => {
+  const ready = (key: string, schema: TableSchema, count: number, host: IndexDatabase, after = SEARCH_AFTER_MS) => {
     madeFor.current.set(key, schema);
     latest.current.dispatch({ type: "indexed", key, count });
     setMade((was) => ({ ...was, [key]: "ready" }));
-    // The search's own index is made after the view has its first rows, behind whatever the screen asks for.
-    setTimeout(() => void host.search(tableNameOf(key)).catch(() => {}), SEARCH_AFTER_MS);
+    // After the view has its first rows, behind whatever the screen asks for: what a change of fields
+    // left to work out (IndexDatabase.fill), and then the search's own index. Once filled, the view
+    // is asked again: what it sorts or filters by may now be the index's to answer.
+    setTimeout(() => {
+      void host
+        .fill(tableNameOf(key), schema)
+        .then(() => {
+          const table = latest.current.tables[key];
+          if (table?.indexed && madeFor.current.get(key) === schema) latest.current.dispatch({ type: "indexed", key, count: table.indexed.count });
+        })
+        .then(() => host.search(tableNameOf(key)))
+        .catch(() => {});
+    }, after);
   };
 
   // Make each indexed table's index ready, once, as it's first held.
@@ -221,8 +232,8 @@ export function useIndexedTables(input: {
         const was = madeFor.current.get(key)!;
         const gone = was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
         const rows = unsaved.current.has(key) || gone.length > 0;
-        // Its fields changed in a way the index holds: it's made again from the rows
-        // saved here, so edits wait from now (they'd be lost between the two).
+        // Its fields changed in a way the index holds: it's changed in place, or made
+        // again from the rows saved here, so edits wait from now (they'd be lost between the two).
         const again = indexedFor(was) !== indexedFor(table.schema);
         if (again) setMade((m) => ({ ...m, [key]: "building" }));
         unsaved.current.delete(key);
@@ -245,8 +256,14 @@ export function useIndexedTables(input: {
           madeFor.current.set(key, table.schema);
           continue;
         }
-        setProgress(({ [key]: _old, ...rest }) => rest);
         const schema = table.schema;
+        // Changed where it is when it can be: the table answers for its new fields at once,
+        // and what has to be worked out again is, behind it.
+        if (await host.alter(tableNameOf(key), was, schema).catch(() => false)) {
+          ready(key, schema, latest.current.tables[key]?.indexed?.count ?? table.indexed.count, host, 0);
+          continue;
+        }
+        setProgress(({ [key]: _old, ...rest }) => rest);
         void host
           .build(tableNameOf(key), schema, (done, total) => setProgress((p) => ({ ...p, [key]: { done, total } })))
           .then(

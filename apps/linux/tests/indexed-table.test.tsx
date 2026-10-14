@@ -37,13 +37,13 @@ afterEach(async () => {
 
 const rowsOnDisk = () => parseRowsText(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8"), []);
 
-async function openTasks() {
+async function openTasks(openIndex?: (bundleDir: string) => IndexHost) {
   const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
   expect(library.tables["projects/tasks"]!.rows).toEqual([]);
   expect(library.tables["projects/tasks"]!.indexed).toBeDefined();
   // Small tables beside it are held in memory as ever.
   expect(library.tables["projects/projects"]!.rows.length).toBeGreaterThan(0);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} {...(openIndex ? { openIndex } : {})} />);
   // Past the first rows shown while its index is made: the view itself.
   await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
   await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
@@ -229,8 +229,19 @@ describe("a table held in the index on Linux", () => {
     );
   });
 
-  it("a field can be added: the index is made again, and the rows are all still there", async () => {
-    await openTasks();
+  it("a field can be added: the index is changed where it is, not made again, and the rows are all still there", async () => {
+    // What's asked of the index after it's made.
+    const asked: string[] = [];
+    const watched = (bundleDir: string): IndexHost => {
+      const host = openIndexHost(bundleDir);
+      return {
+        ...host,
+        build: (...args) => (asked.push("build"), host.build(...args)),
+        alter: (...args) => host.alter(...args).then((done) => (asked.push(`alter ${done}`), done)),
+        fill: (...args) => host.fill(...args).then(() => void asked.push("fill")),
+      };
+    };
+    await openTasks(watched);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
     let name: Adw.EntryRow | undefined;
     await waitFor(async () => {
@@ -243,12 +254,14 @@ describe("a table held in the index on Linux", () => {
     await screen.findAllByText("Due soon");
     const schemaOnDisk = () => JSON.parse(readFileSync(join(bundle, "tables", "tasks", "schema.json"), "utf8")) as { fields: { name: string }[] };
     await waitFor(() => expect(schemaOnDisk().fields.at(-1)?.name).toBe("due_soon"), { timeout: 5000 });
-    // Made again for the new field, and answering: an edit to it is saved.
+    // Changed in place for the new field (its values read from the rows, a step at a time), and answering.
+    await waitFor(() => expect(asked.slice(asked.indexOf("alter true"))).toEqual(["alter true", "fill"]), { timeout: 20000 });
+    expect(asked).not.toContain("build");
     await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const host = openIndexHost(bundle);
     const { queryIndex } = await import("@workspace.sh/table-core");
-    // The save and the rebuild follow the edit by a moment, and take longer with the whole suite running.
+    // The save and the change follow the edit by a moment, and take longer with the whole suite running.
     await waitFor(async () => expect((await queryIndex(host, { name: "tasks", schema: schemaOnDisk() as never }))?.count).toBe(ROWS + 8), { timeout: 20000 });
     await host.close();
     expect(rowsOnDisk()).toHaveLength(ROWS + 8);

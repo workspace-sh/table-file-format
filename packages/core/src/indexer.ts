@@ -250,6 +250,8 @@ export async function buildSearchIndex(db: SqlDriver, name: string, batchSize = 
   if (n === null) return false;
   const upto = await searchUpTo(db, n);
   if (upto === null) return false;
+  // The search text is being made again (alterIndex): its index is made after.
+  if ((await fillOf(db, n))?.search) return false;
   const last = (await db.all(`select max(pos) as m from (select pos from r${n} where pos > ? order by pos limit ?)`, [upto, batchSize]))[0]?.m as number | null;
   await db.exec("begin");
   try {
@@ -348,6 +350,232 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
   }
 }
 
+// -- A change of fields, in place ---------------------------------------
+//
+// A field added, removed, moved, retyped or given a formula changes the
+// index where it is, from each row's JSON (`j`): never by reading the rows
+// file again (#551). Columns are by field position, so they are renamed to
+// their new places (a change to the table's schema, not its rows); a
+// field's new columns are added empty; a removed field's are parked. What
+// has to be worked out again (a formula's values, a retyped field's
+// columns, the search text) is filled a step at a time behind whatever is
+// asked meanwhile (`fillIndex`); until it's done, those fields are ones
+// the index doesn't promise, and a view that sorts, filters or groups by
+// them is worked out the slow way, which is right.
+
+/** A pending fill: which fields, by their place in the schema, and how far it has got. */
+interface Fill {
+  upto: number;
+  fields: number[];
+  search: boolean;
+  /** Values found that their field's type doesn't hold, by field. */
+  bad: Record<number, number>;
+}
+
+async function fillOf(db: SqlDriver, n: number): Promise<Fill | null> {
+  await db.exec("create table if not exists _fill(n integer primary key, upto integer not null, fill text not null)");
+  const found = await db.all("select upto, fill from _fill where n = ?", [n]);
+  if (!found[0]) return null;
+  const rest = JSON.parse(found[0].fill as string) as Omit<Fill, "upto">;
+  return { upto: found[0].upto as number, ...rest };
+}
+
+async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<void> {
+  await db.exec("create table if not exists _fill(n integer primary key, upto integer not null, fill text not null)");
+  if (!fill) {
+    await db.run("delete from _fill where n = ?", [n]);
+    return;
+  }
+  const { upto, ...rest } = fill;
+  await db.run("insert or replace into _fill(n, upto, fill) values(?, ?, ?)", [n, upto, JSON.stringify(rest)]);
+}
+
+/** Field names in the order the search text holds them. */
+const searchedNames = (schema: TableSchema) => schema.fields.filter(searched).map((f) => f.name);
+
+let parked = 0;
+
+/**
+ * Change table `name`'s index from schema `from` to schema `to` in place.
+ * Resolves false when it can't (no index, an index of another schema, or
+ * formulas that read other rows among those changed): build it instead.
+ * Resolves true with the index answering for `to` at once; what has to be
+ * worked out again is left to `fillIndex`.
+ */
+export async function alterIndex(db: SqlDriver, name: string, from: TableSchema, to: TableSchema): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || (await indexKey(db, name)) === null) return false;
+  const sig = (await db.all("select sig from _tables where n = ?", [n]))[0]?.sig;
+  if (sig !== signature(from)) return false;
+  const was = planOf(from);
+  const now = planOf(to);
+  // Formulas over other rows are worked out over every row at once: no steps for them.
+  if (was.never.size > 0 || now.never.size > 0) return false;
+  const before = new Map(from.fields.map((f, i) => [f.name, i]));
+  const after = new Set(to.fields.map((f) => f.name));
+  // What a row's JSON no longer holds: a field gone, or one whose formula went (its
+  // results were never in the file). A name a JSON path can't spell is built instead.
+  const drop = from.fields.filter((f) => !after.has(f.name) || (f.computed && !to.fields.find((g) => g.name === f.name)!.computed)).map((f) => f.name);
+  if (drop.some((name) => /["\\]/.test(name))) return false;
+
+  // Each field of `to`: where it was, and whether its values are worked out again.
+  // A new field is: its values are whatever the rows hold under its name, as a build reads them.
+  const moves = to.fields.map((f, k) => {
+    const o = before.get(f.name);
+    if (o === undefined) return { k, o: null as number | null, refill: true };
+    const old = from.fields[o]!;
+    const retyped = was.kinds[o] !== now.kinds[k];
+    const reformulated = JSON.stringify(old.computed ?? null) !== JSON.stringify(f.computed ?? null);
+    return { k, o, refill: retyped || reformulated };
+  });
+  // The search text holds the searched fields' values in order.
+  const searchChanged =
+    JSON.stringify(searchedNames(from)) !== JSON.stringify(searchedNames(to)) || moves.some((m) => m.refill && searched(to.fields[m.k]!));
+  const pending = await fillOf(db, n);
+
+  forgetIndexes(db, n);
+  await db.exec("begin");
+  try {
+    // Sort indexes are named by field place: dropped, and made again as they're asked for.
+    for (const ix of await db.all("select name from sqlite_master where type = 'index' and tbl_name = ? and name like ?", [`r${n}`, `r${n}\_o%`])) {
+      if (String(ix.name).startsWith(`r${n}_o`)) await db.exec(`drop index if exists ${ix.name as string}`);
+    }
+    for (const name of drop) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
+    // Every column out of the way first, so no new name meets an old one.
+    for (const col of was.columns) await db.exec(`alter table r${n} rename column ${col} to q_${col}`);
+    const kept = new Set<string>();
+    for (const { k, o } of moves) {
+      for (const [mine, theirs] of [
+        [now.c[k], o === null ? null : was.c[o]],
+        [now.f[k], o === null ? null : was.f[o]],
+        [now.i[k], o === null ? null : was.i[o]],
+      ] as [string | null | undefined, string | null | undefined][]) {
+        if (!mine) continue;
+        if (theirs) {
+          await db.exec(`alter table r${n} rename column q_${theirs} to ${mine}`);
+          kept.add(theirs);
+        } else {
+          await db.exec(`alter table r${n} add column ${mine}`);
+        }
+      }
+    }
+    // What no field holds any more is parked, under a name nothing will ask for.
+    const mark = `${Date.now().toString(36)}${(parked++).toString(36)}`;
+    for (const col of was.columns) if (!kept.has(col)) await db.exec(`alter table r${n} rename column q_${col} to z${mark}_${col}`);
+
+    // Which fields hold values their type doesn't: kept for those that kept their values;
+    // promised by none being filled (counted as they are).
+    const oldBad = new Map(
+      (await db.all("select fld, bad from _bad where n = ?", [n])).map((r) => [r.fld as number, r.bad as number] as const),
+    );
+    await db.run("delete from _bad where n = ?", [n]);
+    const refill = new Set(moves.filter((m) => m.refill).map((m) => m.k));
+    // A fill under way carries on, its fields at their new places.
+    if (pending) for (const m of moves) if (m.o !== null && pending.fields.includes(m.o)) refill.add(m.k);
+    for (const { k, o } of moves) {
+      const bad = refill.has(k) ? NEVER : (oldBad.get(o!) ?? 0);
+      if (bad !== 0) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, k, bad]);
+    }
+
+    const search = searchChanged || (pending?.search ?? false);
+    if (refill.size > 0 || search) {
+      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {} });
+      // Until the search text is made again, a search reads every row's text, and the search's own index is made after.
+      if (search) {
+        await searchUpTo(db, n);
+        await db.run("insert or replace into _fts(n, upto) values(?, -1)", [n]);
+        await db.exec(`insert into x${n}(x${n}) values('delete-all')`);
+      }
+    } else {
+      await setFill(db, n, null);
+    }
+    await db.run("update _tables set sig = ? where n = ?", [signature(to), n]);
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback").catch(() => {});
+    throw error;
+  }
+  return true;
+}
+
+/** Whether table `name`'s index has fields still being worked out after a change of fields. */
+export async function indexFilling(db: SqlDriver, name: string): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  return n !== null && (await fillOf(db, n)) !== null;
+}
+
+/**
+ * Work out the next piece of what a change of fields left (alterIndex):
+ * a batch of rows, in file order, in one short transaction, so whatever
+ * else is asked is answered between calls. Resolves true while there is
+ * more. `schema` is the table's schema now.
+ */
+export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema, batchSize = BATCH): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  if (n === null) return false;
+  const fill = await fillOf(db, n);
+  if (!fill) return false;
+  const plan = planOf(schema);
+  const sig = (await db.all("select sig from _tables where n = ?", [n]))[0]?.sig;
+  if (sig !== signature(schema)) return false;
+  const found = await db.all(`select pos, j, s from r${n} where pos > ? order by pos limit ?`, [fill.upto, batchSize]);
+  await db.exec("begin");
+  try {
+    if (found.length === 0) {
+      // Done: each filled field is promised again when what it holds fits its type.
+      for (const k of fill.fields) {
+        const counted = fill.bad[k] ?? 0;
+        // Edits made meanwhile shifted the count from where the change left it.
+        const now = ((await db.all("select bad from _bad where n = ? and fld = ?", [n, k]))[0]?.bad as number | undefined) ?? NEVER;
+        const bad = Math.max(0, counted + now - NEVER);
+        await db.run("delete from _bad where n = ? and fld = ?", [n, k]);
+        if (bad > 0) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, k, bad]);
+      }
+      await setFill(db, n, null);
+      await db.exec("commit");
+      return false;
+    }
+    const computes = fill.fields.some((k) => schema.fields[k]?.computed);
+    const stored = found.map((r) => JSON.parse(r.j as string) as Row);
+    const rows = computes ? computeRows(schema, stored).rows : stored;
+    const sets: string[] = [];
+    if (computes) sets.push("j = ?");
+    if (fill.search) sets.push("s = ?");
+    const cols: { col: string; at: number }[] = [];
+    for (const k of fill.fields) {
+      // The value's place in what `encode` gives: the fields' columns in order.
+      let at = 0;
+      for (let m = 0; m < k; m++) at += 1 + (plan.f[m] ? 1 : 0) + (plan.i[m] ? 1 : 0);
+      cols.push({ col: plan.c[k]!, at });
+      if (plan.f[k]) cols.push({ col: plan.f[k]!, at: at + 1 });
+      if (plan.i[k]) cols.push({ col: plan.i[k]!, at: at + 1 + (plan.f[k] ? 1 : 0) });
+    }
+    for (const { col } of cols) sets.push(`${col} = ?`);
+    const sql = `update r${n} set ${sets.join(", ")} where pos = ?`;
+    const lists = rows.map((row, x) => {
+      const body = bodyOf(found[x]!.s as string);
+      const e = encode(plan, row, body === "" ? undefined : body);
+      for (const k of e.bad) if (fill.fields.includes(k)) fill.bad[k] = (fill.bad[k] ?? 0) + 1;
+      const params: SqlValue[] = [];
+      if (computes) params.push(JSON.stringify(row));
+      if (fill.search) params.push(e.search);
+      for (const { at } of cols) params.push(e.values[at] ?? null);
+      params.push(found[x]!.pos as number);
+      return params;
+    });
+    if (sets.length > 0) {
+      if (db.batch) await db.batch(sql, lists);
+      else for (const params of lists) await db.run(sql, params);
+    }
+    await setFill(db, n, { ...fill, upto: found[found.length - 1]!.pos as number });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback").catch(() => {});
+    throw error;
+  }
+  return true;
+}
+
 /** The content key the index was built from, or null when there is no index of this name. */
 export async function indexKey(db: SqlDriver, name: string): Promise<string | null> {
   const n = await tableNumber(db, name, false);
@@ -398,6 +626,7 @@ export async function putRows(
   // A search index still being made holds only the rows up to here; the rest reach it as it gets to them.
   const upto = await searchUpTo(db, n);
   const searched = (pos: number) => upto === null || pos <= upto;
+  const counted = countedAt(await fillOf(db, n));
   await db.exec("begin");
   try {
     for (const raw of rows) {
@@ -408,7 +637,7 @@ export async function putRows(
       const e = encode(plan, row, body === "" ? undefined : body);
       if (old) {
         const was = encode(plan, JSON.parse(old.j as string) as Row, undefined);
-        await shiftBad(db, n, was.bad, -1);
+        await shiftBad(db, n, counted(was.bad, old.pos as number), -1);
         if (searched(old.pos as number)) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
         await db.run(
           `update r${n} set j = ?, s = ?, ${cols.map((c) => `${c} = ?`).join(", ")} where pos = ?`,
@@ -424,8 +653,10 @@ export async function putRows(
         );
         const pos = (await db.all(`select pos from r${n} where id = ?`, [String(row.id)]))[0]!.pos as number;
         if (searched(pos)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [pos, e.search]);
+        await shiftBad(db, n, counted(e.bad, pos), 1);
+        continue;
       }
-      await shiftBad(db, n, e.bad, 1);
+      await shiftBad(db, n, counted(e.bad, old.pos as number), 1);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
     await db.exec("commit");
@@ -450,6 +681,7 @@ export async function removeRows(
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
   const upto = await searchUpTo(db, n);
+  const counted = countedAt(await fillOf(db, n));
   const removed: { row: Row; at: number }[] = [];
   await db.exec("begin");
   try {
@@ -457,7 +689,7 @@ export async function removeRows(
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
       removed.push({ row: JSON.parse(old.j as string) as Row, at: num(old.pos) });
-      await shiftBad(db, n, encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, -1);
+      await shiftBad(db, n, counted(encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, old.pos as number), -1);
       if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
     }
@@ -469,6 +701,14 @@ export async function removeRows(
   }
   return removed;
 }
+
+/**
+ * Of the fields a row at `pos` holds wrongly, those its count goes by: while
+ * a fill is under way (fillIndex), its fields are counted as it reaches
+ * each row, so a row it hasn't reached yet isn't counted for them here.
+ */
+const countedAt = (fill: Fill | null) => (fields: number[], pos: number) =>
+  fill === null || pos <= fill.upto ? fields : fields.filter((k) => !fill.fields.includes(k));
 
 async function shiftBad(db: SqlDriver, n: number, fields: number[], by: 1 | -1): Promise<void> {
   for (const fld of fields) {
@@ -678,6 +918,8 @@ export async function queryIndex(
   if (sig !== signature(schema)) return null;
   const plan = planOf(schema);
   const bad = await badFields(db, n);
+  const pendingFill = await fillOf(db, n);
+  const filling = pendingFill !== null && plan.never.size === 0 && pendingFill.fields.some((k) => schema.fields[k]?.computed);
   const index = new Map(schema.fields.map((f, i) => [f.name, i]));
   const usable = (fieldName: string): number | null => {
     const i = index.get(fieldName);
@@ -699,6 +941,8 @@ export async function queryIndex(
   let narrowed = false;
   if (needle.length > 0) {
     if (needle.includes(SEP) || needle.includes("\u0002")) return null;
+    // The search text is being made again after a change of fields (alterIndex).
+    if (pendingFill?.search) return null;
     // The trigram index finds candidates (it folds a little more than lower case does); instr is the exact test.
     // (While a search index is still being made, every row's text is read instead.)
     narrowed = [...needle].length >= 3 && (await searchUpTo(db, n)) === null;
@@ -974,7 +1218,9 @@ export async function queryIndex(
     inView,
     version: options.version ?? `${(await indexKey(db, name)) ?? ""}|${JSON.stringify(query)}`,
     async rows(start, end) {
-      return (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
+      const rows = (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
+      // A formula still being filled in (alterIndex) is worked out for the rows asked, so they show it at once.
+      return filling ? computeRows(schema, rows).rows : rows;
     },
     async ids(start, end) {
       return (await windowOf("r.id", start, end)) as string[];
@@ -994,7 +1240,9 @@ export async function queryIndex(
     },
     async row(id) {
       const found = await db.all(`select r.j as j from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
-      return found[0] ? (JSON.parse(found[0].j as string) as Row) : undefined;
+      if (!found[0]) return undefined;
+      const row = JSON.parse(found[0].j as string) as Row;
+      return filling ? computeRows(schema, [row]).rows[0] : row;
     },
     totals: () => (totals ??= loadTotals()),
     groups: async () => (await loadBuckets()).map(({ key, start, count }) => ({ key, start, count })),

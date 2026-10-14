@@ -13,7 +13,7 @@ export interface WebDatabase extends SqlDriver {
   storage(): Promise<"kept" | "elsewhere" | "none">;
   /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
-  /** Make it again from the rows kept here: after a change to its fields. */
+  /** Make it again from the rows kept here: after a change to its fields it can't `alter`. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the rows out of the index to the file kept beside it
@@ -31,6 +31,10 @@ export interface WebDatabase extends SqlDriver {
   timings(): Promise<{ what: string; ms: number; waited: number }[]>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /** After a change to a table's fields from `from` to `to`: its index changed where it is (core's alterIndex). False when it can't be, and it's built again. */
+  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  /** Work out what a change of fields left to work out (core's fillIndex), a step at a time behind whatever else is asked. */
+  fill(name: string, schema: TableSchema): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -106,6 +110,8 @@ function database(bundle: string): WebDatabase {
     build: (name, schema, onProgress) => ask<number>({ op: "build", name, schema }, onProgress),
     save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
+    alter: (name, from, to) => ask<boolean>({ op: "alter", name, from, to }),
+    fill: (name, schema) => ask({ op: "fill", name, schema }),
     rows: (request) => ask({ op: "rows", request }),
     peek: (name, start, end) => ask<Row[]>({ op: "peek", name, start, end }),
     timings: () => call({ op: "timings" }),
