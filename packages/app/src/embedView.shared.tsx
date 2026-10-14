@@ -9,11 +9,11 @@
 // table-gtk's TableEmbed is the same for GTK. Each platform's frame (what
 // scrolls it) and dialogs are in embedView.tsx and embedView.web.tsx.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 import type { View } from "@workspace.sh/table-core";
 import { BoardView, BodyEditor, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
-import { boardColumns, type ViewProps } from "@workspace.sh/table-ui/shared";
+import type { ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
@@ -92,13 +92,6 @@ function Shown({
   const [opened, setOpened] = useState(false);
   const cut = shown.size.rest === "more" && count !== undefined && !opened;
   const allShown = derived.shown.rows;
-  const drawn = useMemo(() => {
-    if (!cut) return allShown;
-    if (view.layout !== "board") return allShown.slice(0, count);
-    const board = boardColumns(derived.shown.view, allShown, table.schema);
-    const kept = new Set(board.keys.flatMap((key) => (board.groups[key] ?? []).slice(0, count).map((r) => r.id)));
-    return allShown.filter((r) => kept.has(r.id));
-  }, [cut, count, allShown, view.layout, derived.shown.view, table.schema]);
   const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, allShown, table.schema) : 0;
   const rows = shown.size.rows;
   const limit =
@@ -121,7 +114,9 @@ function Shown({
           key={view.id}
           layout={view.layout}
           view={derived.shown.view}
-          rows={drawn}
+          rows={allShown}
+          // Cut, the view draws only its first rows or cards; what it counts is still the whole view's.
+          {...(cut ? { cut: count } : {})}
           schema={table.schema}
           bodies={table.bodies}
           relatedTables={related}
