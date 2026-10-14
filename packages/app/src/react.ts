@@ -174,13 +174,20 @@ export interface TableApp {
  * derive's, which each app calls with its own options.
  */
 export function useTableApp(init: () => AppState, adapter: TableAppAdapter, locale?: string): TableApp {
-  const [state, dispatch] = useReducer(tableApp, undefined, init);
+  const [state, reactDispatch] = useReducer(tableApp, undefined, init);
   const { store } = adapter;
   // The latest adapter, so a write that fires later uses it.
   const latest = useRef(adapter);
   latest.current = adapter;
   const latestState = useRef(state);
   latestState.current = state;
+  // Each action is applied to the latest state at once as well as handed to React, so what is
+  // still to write is known even when the view goes in the same moment as an edit (an editor that
+  // commits as its document closes): React drops a gone view's last update, the flush doesn't.
+  const dispatch = useCallback((action: AppAction) => {
+    latestState.current = tableApp(latestState.current, action);
+    reactDispatch(action);
+  }, []);
 
   // This viewer's own settings, kept as they change. Arrangements only of views that still exist.
   useEffect(() => saveSidebarPrefs(store, state.sidebar), [store, state.sidebar]);
