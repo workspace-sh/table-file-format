@@ -8,11 +8,11 @@
 // names; readEmbedWith finds the file over a platform's TableFs (`./node`'s
 // readEmbed is it over the disk, as Node sees it).
 
-import { parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { formatAddress, parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
-import { bundleOf, tableNameOf } from "./bundles.ts";
+import { addressTarget, bundleOf, tableNameOf } from "./bundles.ts";
 import { appendFolderHistory } from "./editHistory.ts";
 import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 
@@ -226,4 +226,21 @@ export function embedFilesWith(fs: TableFs): EmbeddedTableFiles {
     write: (library, tables, metas, bundle) => writeLibraryBundle(fs, library, tables, metas, bundle),
     appendHistory: (library, key, events) => appendFolderHistory(fs, joinPath(library.paths[bundleOf(key)]!, "tables", tableNameOf(key)), events),
   };
+}
+
+/**
+ * A linked row clicked in a `.table` a drop-in draws (an embed, or a file
+ * opened as a document), as an address an app can open: the `.table`'s path
+ * as it was read, the table, and the row (`/notes/projects.table#table=projects&row=p2`).
+ * The cell's own address names the row's table as the file does (`projects#row=p2`),
+ * which means nothing outside it. Null when the table isn't one this file
+ * holds (a link to another `.table`, not followed from here yet), or the file
+ * has no path (read from a `.table.zip`).
+ */
+export function linkedRowAddress(address: string, library: Library, held: { tables: Record<string, ParsedTable>; bundles: Record<string, BundleMeta> }, fromBundle: string): string | null {
+  const target = addressTarget(address, held.tables, held.bundles, fromBundle);
+  const path = target ? library.paths[bundleOf(target.key)] : undefined;
+  if (!target || path === undefined) return null;
+  const rowId = parseAddress(address)?.rowId;
+  return formatAddress({ tablePath: path, tableName: tableNameOf(target.key), ...(target.viewId ? { viewId: target.viewId } : {}), ...(rowId ? { rowId } : {}) });
 }
