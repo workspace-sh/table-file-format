@@ -340,13 +340,21 @@ describe("an embed cut to its count", () => {
     expect((await screen.findAllByText("8")).length).toBeGreaterThan(0);
   });
 
-  it("a row added shows the rest first, so it is seen", async () => {
+  it("with rows left out, offers no place to add a row, nor an empty totals row, until the rest is shown", async () => {
     await draw("table=tasks&view=v1&rows=3&rest=more");
-    await userEvent.click(await screen.findByText("+ New row"));
-    expect(await screen.findByText("OG images")).toBeDefined();
-    expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
-    const entry = (await screen.findAllByDisplayValue("")).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
-    expect(entry).toBeDefined();
+    const scroller = await scrollerOf();
+    await screen.findByText("Wire RSD + StyleX");
+    expect(screen.queryByText("+ New row")).toBeNull();
+    // The frame ends with its third row: the header and its rule, three rows of 44 with theirs, and the frame's two borders.
+    await waitFor(() => expect(scroller.getVadjustment().getUpper()).toBe(36 + 1 + 3 * 45 + 2));
+
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 5 more rows" }));
+    expect(await screen.findByText("+ New row")).toBeDefined();
+  });
+
+  it("with no rows left out, a cut table still offers a new row", async () => {
+    await draw("table=tasks&view=v1&rows=8&rest=more");
+    expect(await screen.findByText("+ New row")).toBeDefined();
   });
 
   it("a list draws only its first rows", async () => {

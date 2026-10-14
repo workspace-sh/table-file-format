@@ -68,7 +68,9 @@ With `rest=more` beside the count, only those rows or cards are drawn
 and nothing scrolls. A line beneath says how many more there are ("Show
 12 more rows") and shows them when pressed; a board's column that has
 more says so too ("+2 more"). Totals and counts are still the whole
-view's. Adding a row shows the rest first.
+view's. While rows are left out there is no "+ New row" (a new row
+would go after rows that aren't shown) and no empty totals row; both
+are back once the rest is shown.
 
 It is the table, not a picture of it. The state is table-app's reducer
 (`useEmbeddedTable`, in `table-app/react`), as in an app of its own: cells

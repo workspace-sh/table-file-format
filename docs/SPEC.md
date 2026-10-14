@@ -1158,8 +1158,10 @@ With `rest=more` the view draws the first n in its own order: rows of a
 table or a list, cards of a gallery, and the first n cards of each
 column of a board, where a column that has more says how many
 ("+2 more"). What is counted from the whole view stays whole: a
-table's totals, a group's count, a board column's count. Adding a row
-shows the rest first, so the new row is seen. `rest=more` without a
+table's totals, a group's count, a board column's count. Where rows are left
+out the view offers no place to add one, since a new row would go
+after rows that aren't shown; it is offered again once the rest is
+shown. `rest=more` without a
 count that the layout shows does nothing; any other value is read as
 `scroll`.
 
