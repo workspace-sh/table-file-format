@@ -25,6 +25,13 @@ export interface SqlDriver {
   all(sql: string, params?: SqlValue[]): Promise<Record<string, SqlValue>[]>;
   /** Runs one statement for many parameter lists, if the binding can do that faster than `run` in a loop. */
   batch?(sql: string, params: SqlValue[][]): Promise<void>;
+  /**
+   * True when every statement runs in this process, so a statement a row
+   * costs only SQLite's own work (node:sqlite, SQLite WASM). Unset, each
+   * statement crosses to native code (op-sqlite, expo-sqlite), and the
+   * indexer sends a batch of rows as one statement where it can.
+   */
+  inProcess?: boolean;
 }
 
 /** Structured query: the view's filter and sort, a manual order, and free text (SPEC section 8). Never raw SQL. */
@@ -564,9 +571,6 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
     const rows = computes ? computeRows(schema, stored).rows : stored;
     // Each row's JSON is written again when its formulas' results or the fields it loses change it.
     const rewrite = computes || fill.drop.length > 0;
-    const sets: string[] = [];
-    if (rewrite) sets.push("j = ?");
-    if (fill.search) sets.push("s = ?");
     const cols: { col: string; at: number }[] = [];
     for (const k of fill.fields) {
       // The value's place in what `encode` gives: the fields' columns in order.
@@ -576,22 +580,29 @@ export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema
       if (plan.f[k]) cols.push({ col: plan.f[k]!, at: at + 1 });
       if (plan.i[k]) cols.push({ col: plan.i[k]!, at: at + 1 + (plan.f[k] ? 1 : 0) });
     }
-    for (const { col } of cols) sets.push(`${col} = ?`);
-    const sql = `update r${n} set ${sets.join(", ")} where pos = ?`;
+    // What each row is set to, after its place: the JSON, the search text, then the columns.
+    const sets = [...(rewrite ? ["j"] : []), ...(fill.search ? ["s"] : []), ...cols.map((c) => c.col)];
     const lists = rows.map((row, x) => {
       const body = bodyOf(found[x]!.s as string);
       const e = encode(plan, row, body === "" ? undefined : body);
       for (const k of e.bad) if (fill.fields.includes(k)) fill.bad[k] = (fill.bad[k] ?? 0) + 1;
-      const params: SqlValue[] = [];
-      if (rewrite) params.push(JSON.stringify(row));
-      if (fill.search) params.push(e.search);
-      for (const { at } of cols) params.push(e.values[at] ?? null);
-      params.push(found[x]!.pos as number);
-      return params;
+      const values: SqlValue[] = [found[x]!.pos as number];
+      if (rewrite) values.push(JSON.stringify(row));
+      if (fill.search) values.push(e.search);
+      for (const { at } of cols) values.push(e.values[at] ?? null);
+      return values;
     });
-    if (sets.length > 0) {
-      if (db.batch) await db.batch(sql, lists);
-      else for (const params of lists) await db.run(sql, params);
+    if (sets.length > 0 && db.inProcess && db.batch) {
+      // A statement a row, prepared once: the fastest where nothing crosses.
+      await db.batch(`update r${n} set ${sets.map((col) => `${col} = ?`).join(", ")} where pos = ?`, lists.map(([pos, ...set]) => [...set, pos!]));
+    } else if (sets.length > 0) {
+      // The whole batch in one statement, its rows as one JSON array: a driver whose every
+      // statement crosses to native code (the Mac's and the phone's) crosses once a batch, not once a row.
+      const value = (i: number) => `json_extract(u.value, '$[${i}]')`;
+      await db.run(
+        `update r${n} set ${sets.map((col, i) => `${col} = ${value(i + 1)}`).join(", ")} from json_each(?) as u where r${n}.pos = ${value(0)}`,
+        [JSON.stringify(lists)],
+      );
     }
     await setFill(db, n, { ...fill, upto: found[found.length - 1]!.pos as number });
     await db.exec("commit");

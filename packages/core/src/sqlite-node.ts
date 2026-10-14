@@ -51,6 +51,7 @@ export function openNodeDatabase(path: string): NodeDatabase {
       const statement = prepared(sql);
       for (const p of params) statement.run(...p);
     },
+    inProcess: true,
     close() {
       cache.clear();
       db.close();

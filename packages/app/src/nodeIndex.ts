@@ -289,6 +289,7 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
     run: whole.run,
     all: whole.all,
     batch: whole.batch!,
+    inProcess: true,
     async ensure(name, tableDir, onProgress) {
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const fresh = !(await isIndexStale(db, name, await tableContentKey(tableDir)));
