@@ -78,7 +78,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
 import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
-import { useIndexedTables } from "./useIndexedTables.js";
+import { useIndexedTables } from "@workspace.sh/table-gtk/embed";
 import {
   AttachmentsProvider,
   DisplayControls,

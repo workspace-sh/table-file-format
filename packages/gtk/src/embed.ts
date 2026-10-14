@@ -6,3 +6,7 @@ export { TableEmbed, EMBED_MAX_HEIGHT, type TableEmbedProps } from "./TableEmbed
 export { TableFile, type TableFileProps } from "./TableFile.js";
 export { readEmbed, readTableFile, type EmbedTarget } from "@workspace.sh/table-app/node";
 export type { EmbedProblem, EmbedRead, EmbedShown } from "@workspace.sh/table-app";
+// A table too large to hold in memory, read through its bundle's index (SPEC section 8) by an app on
+// Node: the hook over table-app's state, and the index in a worker of its own.
+export { useIndexedTables, type IndexedTables } from "./indexed/useIndexedTables.js";
+export { openWorkerIndexHost } from "./indexed/indexClient.js";

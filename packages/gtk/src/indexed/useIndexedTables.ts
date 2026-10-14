@@ -1,8 +1,10 @@
-// Tables held in their bundle's index (SPEC section 8): the Linux app's
-// side of it. Each bundle with a large table gets an index host (a worker
-// over node:sqlite); a table's index is made fresh when it opens, with its
-// progress shown; the view on screen reads its rows from it; queued edits
-// are made in it; and a save writes its rows back to rows.ndjson.
+// Tables held in their bundle's index (SPEC section 8), for an app on Node
+// that holds them in table-app's state: the Linux table app, and a .table
+// opened or embedded in a document. Each bundle with a large table gets an
+// index host (a worker over node:sqlite); a table's index is made fresh when
+// it opens, with its progress shown; the view on screen reads its rows from
+// it; queued edits are made in it; and a save writes its rows back to
+// rows.ndjson.
 
 import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import { computeRows, queryIndex } from "@workspace.sh/table-core";
