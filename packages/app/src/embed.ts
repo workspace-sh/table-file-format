@@ -106,7 +106,7 @@ const listed = (names: string[]) => names.map((n) => `“${n}”`).join(", ");
  * large tables without their rows: `indexed`). `file` is what the file is
  * called, for the words.
  */
-export function embedIn(library: Library, address: Pick<Address, "tableName" | "viewId" | "extra">, file: string): EmbedRead {
+export function embedIn(library: Library, address: Pick<Address, "tableName" | "viewId" | "extra">, file: string, options: { readsIndex?: boolean } = {}): EmbedRead {
   const keys = Object.keys(library.tables);
   if (keys.length === 0) {
     const why = Object.values(library.problems).flat()[0];
@@ -122,7 +122,8 @@ export function embedIn(library: Library, address: Pick<Address, "tableName" | "
   const table = key === undefined ? undefined : library.tables[key];
   if (key === undefined || !table) return embedProblem(`“${file}” has no table named “${name}”. It has ${listed(names)}.`);
   // A table of many rows is read through an index, in an app of its own (SPEC section 8).
-  if (table.indexed) return embedProblem(`“${name}” in “${file}” has too many rows to show in a document yet.`);
+  // A drop-in that reads a large table through its index (readsIndex) draws it; one that can't says so.
+  if (table.indexed && !options.readsIndex) return embedProblem(`“${name}” in “${file}” has too many rows to show in a document yet.`);
 
   if (address.viewId !== undefined && !table.views.some((v) => v.id === address.viewId)) {
     const has = table.views.length > 0 ? ` It has ${listed(table.views.map((v) => v.id))}.` : " It has no views of its own.";
@@ -171,6 +172,8 @@ export interface EmbedReading {
   rowsElsewhere?: ReadOptions["rowsElsewhere"];
   /** A path with its symbolic links followed, where the platform can; the folder check is then of where it really is. */
   real?: (path: string) => string | Promise<string>;
+  /** The drop-in reads a large table (one with its rows elsewhere) through its index: it is drawn, not refused. */
+  readsIndex?: boolean;
 }
 
 /** A path as a link writes it: percent-encoded where Markdown needs it. */
@@ -232,7 +235,7 @@ export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: E
   // After any write of it another view has under way.
   await settled(path);
   const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
-  return embedIn(await withOtherFiles(fs, library, reading), parsed, lastPart(path));
+  return embedIn(await withOtherFiles(fs, library, reading), parsed, lastPart(path), { readsIndex: reading.readsIndex === true });
 }
 
 /** An embedded table's files over a platform's TableFs: edits written where the file was read from, and each to its table's history. */

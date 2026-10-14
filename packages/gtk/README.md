@@ -88,11 +88,12 @@ edit in place, rows are added and deleted, a view's settings change from
 its headers, a row's page opens, Ctrl+Z and Ctrl+Shift+Z undo and redo,
 and each edit is written to the file and to the table's history.
 
-What can't be drawn says why in the table's place: no file there, a file
-that isn't a `.table`, a table or view the file doesn't have (with the
-ones it has), a path outside `within`, and a table of 50,000 rows or
-more (those are read through an index, which a document doesn't have
-yet). The words are `table-app`'s (`embedIn`), so every platform's
+A table of 50,000 rows or more is read through its bundle's index, as the
+table app reads it, with one index per folder shared by every view of the
+file (an embed and the file opened as a document): `openIndex`, a worker
+unless a test gives one. What can't be drawn says why in the table's place:
+no file there, a file that isn't a `.table`, a table or view the file
+doesn't have (with the ones it has), and a path outside `within`. The words are `table-app`'s (`embedIn`), so every platform's
 drop-in says the same.
 
 In an embedded view (`EmbeddedContext`), `TableView` and the card views

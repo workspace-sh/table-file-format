@@ -10,8 +10,8 @@ import { css } from "@gtkx/css";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkButton, GtkCenterBox, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
-import { bundleOf, embedFileAddress, embedLeftOut, embedMoreText, linkedRowAddress, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
-import { embedFiles, readEmbed, type EmbedTarget } from "@workspace.sh/table-app/node";
+import { bundleOf, derive, embedCount, embedFileAddress, embedLeftOut, embedMoreText, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { embedFiles, readEmbed, type EmbedTarget, type IndexHost } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
 import { basename } from "node:path";
@@ -20,6 +20,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EmbeddedContext } from "./embedded.js";
 import { LayoutView } from "./LayoutView.js";
 import { TableDialogs } from "./TableDialogs.js";
+import { openWorkerIndexHost } from "./indexed/indexClient.js";
+import { IndexedView } from "./indexed/IndexedView.js";
+import { sharedIndexHosts } from "./indexed/sharedHosts.js";
+import { useIndexedTables } from "./indexed/useIndexedTables.js";
+import type { ParsedTable } from "@workspace.sh/table-core";
 import { styles } from "./theme.js";
 
 const overs = new Map<number, string>();
@@ -65,6 +70,8 @@ export interface TableEmbedProps extends EmbedTarget {
    * it beside its caption (Open). Absent: it offers nothing.
    */
   onOpen?: (address: string) => void;
+  /** A bundle's index, for a table too large to hold in memory: in a worker of its own unless given (a test's, in this thread). */
+  openIndex?: (bundleDir: string) => IndexHost;
 }
 
 /** The table, held and edited as an app of its own holds it (table-app's useEmbeddedTable), and written where it was read from. */
@@ -74,16 +81,39 @@ function Shown({
   locale,
   readOnly,
   gutter,
+  openIndex,
   onOpenLink,
 }: {
   shown: EmbedShown;
   gutter: number;
+  openIndex: (bundleDir: string) => IndexHost;
   maxHeight: number;
   locale: string | undefined;
   readOnly: boolean;
   onOpenLink: ((address: string) => void) | undefined;
 }) {
-  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, embedFiles, locale);
+  // A large table's rows are in its bundle's index: written back after the rest of the bundle is.
+  const saveIndexed = useRef<(bundles: string[], tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const files: EmbeddedTableFiles = {
+    ...embedFiles,
+    write: async (library, tables, metas, bundle) => {
+      await embedFiles.write(library, tables, metas, bundle);
+      await saveIndexed.current([bundle], tables);
+    },
+  };
+  const { state, dispatch, derived: drawn, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
+  // One index per folder, shared with every other view of this file (the file opened as a document, another embed).
+  const sharedOpen = useMemo(() => sharedIndexHosts(openIndex), [openIndex]);
+  const indexed = useIndexedTables({
+    state,
+    dispatch,
+    view: drawn.shown.view,
+    pathOf: (bundle) => shown.library.paths[bundle],
+    openIndex: sharedOpen,
+    tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
+  });
+  saveIndexed.current = indexed.save;
+  const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
   const { table } = derived;
   // How much to show at once: the link's own count of rows or cards, else the limit. Cut to
   // that count (`rest=more`), the rest isn't drawn until the line beneath is pressed; from
@@ -92,7 +122,15 @@ function Shown({
   const [opened, setOpened] = useState(false);
   const cut = rest === "more" && !opened;
   const embedded = useMemo(() => (opened ? { maxHeight, gutter } : { maxHeight, gutter, rows, cards, cut }), [maxHeight, gutter, rows, cards, cut, opened]);
-  const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, derived.shown.rows, table.schema) : 0;
+  // Read through the index, a table or a list leaves out what is past the count of all its rows; a board isn't cut there.
+  const counted = embedCount(shown.size, derived.view.layout);
+  const leftOut = !cut
+    ? 0
+    : table.indexed
+      ? indexed.source && counted !== undefined && derived.view.layout !== "board"
+        ? Math.max(0, indexed.source.count - counted)
+        : 0
+      : embedLeftOut(shown.size, derived.shown.view, derived.shown.rows, table.schema);
   // What holds the table (a document's text) gives it the least height it asks for, and a
   // scroller asks for almost none: so the height it would like (its rows, up to the limit)
   // is asked for outright, and again whenever what it holds grows or shrinks.
@@ -117,7 +155,12 @@ function Shown({
     };
     // A view of another layout is another scroller.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derived.view.layout, maxHeight]);
+  }, [derived.view.layout, maxHeight, table.indexed && !!indexed.source]);
+  /** A linked row, said as the file's address, for the app to open there. */
+  const followLink = (address: string) => {
+    const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
+    if (link) onOpenLink?.(link);
+  };
   const undoKeys = (keyval: number, mods: Gdk.ModifierType): boolean => {
     if (readOnly || !(mods & Gdk.ModifierType.CONTROL_MASK)) return false;
     const key = Gdk.keyvalToLower(keyval);
@@ -133,30 +176,45 @@ function Shown({
       <EmbeddedContext.Provider value={embedded}>
         {/* Undo and redo here are the table's own: the keys don't reach the document around it. */}
         <GtkBox ref={frame} heightRequest={height} cssClasses={gutter > 0 ? [overMargins(gutter)] : []} controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, mods) => undoKeys(keyval, mods)} />}>
-          <LayoutView
-            key={derived.view.id}
-            layout={derived.view.layout}
-            view={derived.shown.view}
-            rows={derived.shown.rows}
-            schema={table.schema}
-            bodies={table.bodies}
-            relatedTables={related}
-            allRows={table.rows}
-            tableKey={tableName}
-            sheet={derived.shown.sheet}
-            {...(readOnly ? {} : callbacks)}
-            // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
-            {...(leftOut > 0 ? { onAddRow: undefined } : {})}
-            // A linked row, said as the file's address, for the app to open there.
-            onOpenRelation={
-              onOpenLink
-                ? (address) => {
-                    const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
-                    if (link) onOpenLink(link);
-                  }
-                : undefined
-            }
-          />
+          {table.indexed ? (
+            // A table this large is read through its bundle's index, shared with the file opened as a document.
+            <IndexedView
+              indexed={indexed}
+              view={derived.shown.view}
+              table={table}
+              tableName={tableName}
+              related={related}
+              sheet={derived.shown.sheet}
+              viewKey={derived.view.id}
+              edits={readOnly ? {} : leftOut > 0 ? { ...callbacks, onAddRow: undefined } : callbacks}
+              onOpenRelation={onOpenLink ? followLink : undefined}
+            />
+          ) : (
+            <LayoutView
+              key={derived.view.id}
+              layout={derived.view.layout}
+              view={derived.shown.view}
+              rows={derived.shown.rows}
+              schema={table.schema}
+              bodies={table.bodies}
+              relatedTables={related}
+              allRows={table.rows}
+              tableKey={tableName}
+              sheet={derived.shown.sheet}
+              {...(readOnly ? {} : callbacks)}
+              // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
+              {...(leftOut > 0 ? { onAddRow: undefined } : {})}
+              // A linked row, said as the file's address, for the app to open there.
+              onOpenRelation={
+                onOpenLink
+                  ? (address) => {
+                      const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
+                      if (link) onOpenLink(link);
+                    }
+                  : undefined
+              }
+            />
+          )}
         </GtkBox>
       </EmbeddedContext.Provider>
       {leftOut > 0 ? (
@@ -167,7 +225,7 @@ function Shown({
   );
 }
 
-export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, gutter = 0, onOpenLink, onOpen }: TableEmbedProps) {
+export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, gutter = 0, onOpenLink, onOpen, openIndex = openWorkerIndexHost }: TableEmbedProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -183,7 +241,7 @@ export function TableEmbed({ address, baseDir, within, caption, maxHeight = EMBE
   const openAt = onOpen && read?.kind === "shown" ? embedFileAddress(read) : null;
   return (
     <GtkBox name="table-embed" orientation={Gtk.Orientation.VERTICAL} spacing={6} hexpand>
-      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} gutter={gutter} onOpenLink={onOpenLink} /> : null}
+      {read?.kind === "shown" ? <Shown key={`${read.library.paths[bundleOf(read.key)]}\u0000${read.key}\u0000${read.viewId}`} shown={read} maxHeight={maxHeight} locale={locale} readOnly={readOnly} gutter={gutter} openIndex={openIndex} onOpenLink={onOpenLink} /> : null}
       {read?.kind === "problem" ? (
         <GtkBox name="table-embed-problem" cssClasses={[styles.embedProblem]}>
           <GtkLabel label={read.text} xalign={0} wrap hexpand cssClasses={["dim-label"]} />
