@@ -718,7 +718,8 @@ const styles = css.create({
     paddingInlineStart: 4,
     fontSize: 11,
     fontWeight: "400",
-    opacity: 0.6,
+    // Said outright, as a card's labels are: text on native takes no colour from what holds it, so it was black on the dark column.
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
 
   // Gallery
