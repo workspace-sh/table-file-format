@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { SQUEEZED_CELL_WIDTH, columnWidths, describeCell, relationLabel, totalFor } from "./display.ts";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -109,4 +109,16 @@ test("a squeezed table's columns stay squeezed when one is widened: they don't j
   // Too many to squeeze in: comfortable and scrolling, resized or not.
   const many = columnWidths(["a", "b", "c", "d", "e", "f", "g"], { a: 300 }, 762, 2, 140);
   assert.deepEqual(["a", "b", "c", "d", "e", "f", "g"].map(many), [300, 180, 180, 180, 180, 180, 180]);
+});
+
+test("a sheet's row numbers fit on one line: the gutter is as wide as the largest, and no narrower than it was", () => {
+  // Up to three digits: the gutter as it always was.
+  for (const n of [1, 9, 99, 999]) assert.equal(rowNumberWidth(n), ROW_NUMBER_WIDTH, String(n));
+  // Wider with each digit, and never narrower for a larger number.
+  const widths = [1_000, 10_000, 100_000, 1_000_000, 10_000_000].map(rowNumberWidth);
+  assert.deepEqual(widths, [...widths].sort((a, b) => a - b));
+  assert.ok(widths[0]! > ROW_NUMBER_WIDTH);
+  // 1,000,001 has seven digits: room for seven tabular figures at 11 points, with the padding.
+  assert.ok(rowNumberWidth(1_000_001) >= 7 * 6.6 + 12);
+  assert.equal(rowNumberWidth(1_000_001), rowNumberWidth(9_999_999));
 });
