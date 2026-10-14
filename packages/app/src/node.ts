@@ -10,7 +10,7 @@ import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
 import { bundleOf, fromBundle, tableNameOf } from "./bundles.ts";
-import { firstTableKey } from "./starting.ts";
+import { firstTableOfFile } from "./tableFile.ts";
 import { openArchive } from "./tableFiles.ts";
 import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
@@ -213,7 +213,8 @@ export async function readTableFile(path: string): Promise<EmbedRead> {
       return embedProblem(`“${file}” couldn’t be read: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  const key = firstTableKey(library.tables);
+  // The file's first table, in the order its manifest gives.
+  const key = firstTableOfFile(library);
   if (key === undefined) {
     const why = Object.values(library.problems).flat()[0];
     return embedProblem(why ? `“${file}” couldn’t be read: ${why}` : `“${file}” isn’t a .table, or it holds no tables.`);
