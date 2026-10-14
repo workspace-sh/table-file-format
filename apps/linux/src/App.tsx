@@ -78,7 +78,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
 import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
-import { useIndexedTables } from "@workspace.sh/table-gtk/embed";
+import { FewRows, useIndexedTables } from "@workspace.sh/table-gtk/embed";
 import {
   AttachmentsProvider,
   DisplayControls,
@@ -428,37 +428,6 @@ function TablePane({
       ) : null}
     </AdwToolbarView>
   );
-}
-
-/** The most rows a layout that draws every row it's given is handed, of a table held in the index. */
-const LAYOUT_ROWS = 5000;
-
-/**
- * A view's rows out of the index, all of them, for a layout that isn't the
- * table's: when there are few enough. Otherwise it says how to get there.
- */
-function FewRows({ source, children }: { source: ViewRows; children: (rows: Row[]) => ReactNode }) {
-  const [read, setRead] = useState<{ version: string; rows: Row[] } | null>(null);
-  const few = source.count <= LAYOUT_ROWS;
-  useEffect(() => {
-    if (!few) return;
-    let current = true;
-    void Promise.resolve(source.rows(0, source.count)).then((rows) => current && setRead({ version: source.version, rows }));
-    return () => {
-      current = false;
-    };
-  }, [source, few]);
-  if (!few) {
-    return (
-      <AdwStatusPage
-        vexpand
-        title="Too Many Rows for This Layout"
-        description={`This view shows ${source.count.toLocaleString()} rows. Layouts other than Table show up to ${LAYOUT_ROWS.toLocaleString()}: add a filter in View Settings, search, or change the layout to Table.`}
-      />
-    );
-  }
-  // The last rows read stay until the next arrive, so an edit doesn't blank the view.
-  return read ? <>{children(read.rows)}</> : <GtkBox vexpand />;
 }
 
 /** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
