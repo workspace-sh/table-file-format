@@ -1,6 +1,6 @@
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkScrolledWindow, GtkWindow } from "@gtkx/jsx/gtk";
-import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
+import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { EMBED_MAX_HEIGHT, readEmbed, TableEmbed } from "@workspace.sh/table-gtk/embed";
@@ -423,6 +423,114 @@ describe("an embed cut to its count", () => {
     await draw("table=tasks&view=v1&cards=2&rest=more");
     expect(await screen.findByText("OG images")).toBeDefined();
     expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
+  });
+});
+
+// A view that scrolls sideways runs over the page's side margins to the window's edges (`gutter`).
+describe("an embed in a page with margins", () => {
+  const GUTTER = 32;
+  // A page: its text, and so the embed, a margin in from the window's edges.
+  const page = (address: string, gutter: number | "none" = GUTTER) => (
+    <GtkWindow defaultWidth={1000} defaultHeight={700}>
+      <GtkScrolledWindow name="page">
+        <GtkBox orientation={Gtk.Orientation.VERTICAL} valign={Gtk.Align.START} marginStart={GUTTER} marginEnd={GUTTER}>
+          <TableEmbed address={address} baseDir={docs} within={root} {...(gutter === "none" ? {} : { gutter })} />
+        </GtkBox>
+      </GtkScrolledWindow>
+    </GtkWindow>
+  );
+  const parts = async () => {
+    const embed = (await screen.findAllByName("table-embed"))[0]!;
+    await waitFor(() => expect(embed.getFirstChild()?.getFirstChild()).toBeInstanceOf(Gtk.ScrolledWindow));
+    const scroller = embed.getFirstChild()!.getFirstChild() as Gtk.ScrolledWindow;
+    // What the scroller holds: the table's frame, or the board's columns.
+    const held = scroller.getFirstChild()!.getFirstChild()!;
+    /** A widget's left and right, measured from the text's left edge (the embed's own). */
+    const across = (widget: Gtk.Widget) => {
+      const [, bounds] = widget.computeBounds(embed);
+      return { left: Math.round(bounds.getX()), right: Math.round(bounds.getX() + bounds.getWidth()) };
+    };
+    return { embed, scroller, held, across };
+  };
+  const scrollTo = (scroller: Gtk.ScrolledWindow, value: number) =>
+    act(() => {
+      scroller.getHadjustment().setValue(value);
+    });
+  const DEALS = "../tables/crm.table#table=deals&view=all&rows=3&embed=1";
+  const PIPELINE = "../tables/crm.table#table=deals&view=pipeline&cards=1&embed=1";
+
+  it("a table's scroller reaches both edges of the window, and the table rests in line with the text", async () => {
+    await render(page(DEALS));
+    await screen.findByText("Atlas: 3-year renewal");
+    const { embed, scroller, held, across } = await parts();
+    await waitFor(() => {
+      const text = embed.getWidth();
+      expect(text).toBeGreaterThan(800);
+      // A margin wider than the text on each side.
+      expect(across(scroller)).toEqual({ left: -GUTTER, right: text + GUTTER });
+      // The frame starts where the text does, and is wider than the window: there is something to scroll to.
+      expect(across(held).left).toBe(0);
+      expect(across(held).right).toBeGreaterThan(text + GUTTER);
+    });
+  });
+
+  it("scrolled to its end, a table stops on the far margin", async () => {
+    await render(page(DEALS));
+    await screen.findByText("Atlas: 3-year renewal");
+    const { embed, scroller, held, across } = await parts();
+    await waitFor(() => expect(scroller.getHadjustment().getUpper()).toBeGreaterThan(scroller.getHadjustment().getPageSize()));
+    await scrollTo(scroller, scroller.getHadjustment().getUpper());
+    await waitFor(() => expect(across(held).right).toBe(embed.getWidth()));
+    // And it began well to the left of the window by then.
+    expect(across(held).left).toBeLessThan(-GUTTER);
+  });
+
+  it("a first column that stays put stays on the margin, with the page's ground over the margin beside it", async () => {
+    await render(page(DEALS));
+    const first = await screen.findByText("Atlas: 3-year renewal");
+    const { scroller, across } = await parts();
+    await waitFor(() => expect(scroller.getHadjustment().getUpper()).toBeGreaterThan(scroller.getHadjustment().getPageSize()));
+    const atRest = across(first).left;
+    expect(atRest).toBeGreaterThanOrEqual(0);
+    expect(screen.queryAllByName("pinned-skirt").filter((skirt) => skirt.getVisible())).toHaveLength(0);
+
+    await scrollTo(scroller, 300);
+    // Where it was, to within the frame's own line; the next column has gone under it.
+    await waitFor(() => expect(Math.abs(across(first).left - atRest)).toBeLessThanOrEqual(1));
+    const skirts = screen.queryAllByName("pinned-skirt").filter((skirt) => skirt.getVisible());
+    expect(skirts.length).toBeGreaterThan(3);
+    // Each covers the margin, from the window's edge to the column.
+    for (const skirt of skirts) {
+      expect(across(skirt).left).toBeLessThanOrEqual(-GUTTER + 1);
+      expect(skirt.getWidth()).toBe(GUTTER);
+    }
+  });
+
+  it("a board's columns rest in line with the text, pass under the margin, and stop on the far margin", async () => {
+    await render(page(PIPELINE));
+    await screen.findByText("Fern: studio plan");
+    const { embed, scroller, held, across } = await parts();
+    const firstColumn = held.getFirstChild()!;
+    await waitFor(() => {
+      expect(across(scroller)).toEqual({ left: -GUTTER, right: embed.getWidth() + GUTTER });
+      expect(across(firstColumn).left).toBe(0);
+    });
+    await scrollTo(scroller, 20);
+    // In the margin now, and still drawn: the scroller is there too.
+    await waitFor(() => expect(across(firstColumn).left).toBe(-20));
+    await scrollTo(scroller, scroller.getHadjustment().getUpper());
+    await waitFor(() => expect(across(held.getLastChild()!).right).toBe(embed.getWidth()));
+  });
+
+  it("with no margin given, is kept to the width it has", async () => {
+    await render(page(DEALS, "none"));
+    await screen.findByText("Atlas: 3-year renewal");
+    const { embed, scroller, held, across } = await parts();
+    await waitFor(() => {
+      expect(embed.getWidth()).toBeGreaterThan(800);
+      expect(across(scroller)).toEqual({ left: 0, right: embed.getWidth() });
+      expect(across(held).left).toBe(0);
+    });
   });
 });
 

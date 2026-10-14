@@ -34,6 +34,12 @@ export const styles = {
    * table's own ground behind it, so nothing shows through.
    */
   frozen: css({ backgroundColor: "@view_bg_color" }),
+  /**
+   * Beside a first column that stays put on a page's margin (an embedded table): the page's own ground
+   * out to the window's edge, so the cells that scroll under the column don't show again in the margin.
+   * A line taller than the cells, to cover the row's rule there too.
+   */
+  pinnedSkirt: css({ backgroundColor: "@view_bg_color", marginBottom: "-1px", minHeight: "1px" }),
   frozenHeader: css({ backgroundColor: "mix(@view_bg_color, currentColor, 0.04)" }),
   /** A place where something could be added (a field): faint at rest, full strength when pointed at or focused. */
   addPlace: css({ opacity: 0.5, "&:hover, &:focus-visible": { opacity: 1 } }),
