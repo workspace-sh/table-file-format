@@ -9,8 +9,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
-import { bundleOf, tableNameOf } from "./bundles.ts";
-import { readEmbedWith, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
+import { bundleOf, fromBundle, tableNameOf } from "./bundles.ts";
+import { firstTableKey } from "./starting.ts";
+import { openArchive } from "./tableFiles.ts";
+import { embedProblem, readEmbedWith, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
@@ -183,3 +185,37 @@ export const embedFiles: EmbeddedTableFiles = {
   write: saveBundle,
   appendHistory: (library, key, events) => appendHistory(join(library.paths[bundleOf(key)]!, "tables", tableNameOf(key)), events),
 };
+
+/**
+ * A `.table` opened as a document of its own (a folder, or a `.table.zip`):
+ * the file as an app holds it, on its first table in its first view. A
+ * folder is written back where it is. A `.table.zip` is read into memory
+ * and has nowhere to be written (`library.paths` is empty), so it is to look
+ * at. A large table comes back without its rows, as an embed's does.
+ */
+export async function readTableFile(path: string): Promise<EmbedRead> {
+  const file = basename(path);
+  let isFolder: boolean;
+  try {
+    isFolder = statSync(path).isDirectory();
+  } catch {
+    return embedProblem(`“${file}” isn’t there any more.`);
+  }
+  let library: Library;
+  if (isFolder) {
+    library = await loadLibrary([path], [], { indexedFrom: INDEXED_FROM });
+  } else {
+    try {
+      const opened = await openArchive(new Uint8Array(readFileSync(path)), []);
+      library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+    } catch (error) {
+      return embedProblem(`“${file}” couldn’t be read: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const key = firstTableKey(library.tables);
+  if (key === undefined) {
+    const why = Object.values(library.problems).flat()[0];
+    return embedProblem(why ? `“${file}” couldn’t be read: ${why}` : `“${file}” isn’t a .table, or it holds no tables.`);
+  }
+  return { kind: "shown", library, key, viewId: library.tables[key]!.views[0]?.id ?? "", size: {} };
+}
