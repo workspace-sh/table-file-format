@@ -10,7 +10,7 @@
 // hold still too (PageScroll.lock), and fades in once it has its size.
 
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Alert, Animated, ScrollView } from "react-native";
+import { Alert, Animated, Platform, ScrollView } from "react-native";
 import { PageGutter, PageScrollContext, notifyLayoutChanged, pageScrollOver } from "@workspace.sh/table-ui";
 
 import type { Confirm } from "./confirm.ts";
@@ -20,6 +20,11 @@ export { EMBED_MAX_HEIGHT, type TableEmbedProps };
 
 /** How long what the frame holds keeps the same size before it's shown: its columns are measured after it first lays out. */
 const SETTLE_MS = 120;
+
+// React Native for macOS doesn't run an opacity animation on the native
+// driver: the view stays at 0, and the table is never seen. There the fade
+// runs in JS, once per embed, which costs nothing that matters.
+const NATIVE_FADE = Platform.OS !== "macos";
 
 function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   const scroller = useRef<ScrollView>(null);
@@ -85,7 +90,7 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
         if (settling.current) clearTimeout(settling.current);
         settling.current = setTimeout(() => {
           setSettled(true);
-          Animated.timing(shown, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+          Animated.timing(shown, { toValue: 1, duration: 180, useNativeDriver: NATIVE_FADE }).start();
         }, SETTLE_MS);
       }}
     >
