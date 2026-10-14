@@ -28,6 +28,14 @@ because they run the same code. Only the drawing is here.
 | `ListView` | Read-only: titles, the view's other fields, group headings, page badges |
 | `CalendarView` | Read-only: the month in the locale's week, `calendar_range` kept, a day's rows in a dialog |
 
+## A .table opened as a document: `TableFile`
+
+`TableFile` (also from `@workspace.sh/table-gtk/embed`) is a `.table` opened as a document of its own, for an app that opens files: a `.table` folder, or a `.table.zip`. It opens on the file's first table in its first view, with the file's tables and that table's views to choose between, the row count, a search, New View and View Settings, and the view filling what it is given. Edits are written to the folder and its history and can be undone (Ctrl+Z, Ctrl+Shift+Z). A `.table.zip` is read into memory, has nowhere to be written, and is to look at: it says so. `readOnly` makes a folder the same. A file that can't be opened says why.
+
+```tsx
+<TableFile path="/home/me/notes/projects.table" onOpenLink={(address) => open(address)} />
+```
+
 ## A table inside something else: `@workspace.sh/table-gtk/embed`
 
 `TableEmbed` is the drop-in for an app that shows a `.table` inside a

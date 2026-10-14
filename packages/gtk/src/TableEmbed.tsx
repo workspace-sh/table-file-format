@@ -7,12 +7,10 @@
 // What can't be drawn says why, in the table's place.
 
 import { css } from "@gtkx/css";
-import * as Adw from "@gtkx/gi/adw";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
-import { AdwAlertDialog } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
-import { bundleOf, embedLeftOut, embedMoreText, rowTitleFor, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { bundleOf, embedLeftOut, embedMoreText, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
 import { embedFiles, readEmbed, type EmbedTarget } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
@@ -20,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EmbeddedContext } from "./embedded.js";
 import { LayoutView } from "./LayoutView.js";
-import { RowPage } from "./RowPage.js";
+import { TableDialogs } from "./TableDialogs.js";
 import { styles } from "./theme.js";
 
 const overs = new Map<number, string>();
@@ -112,7 +110,6 @@ function Shown({
     // A view of another layout is another scroller.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derived.view.layout, maxHeight]);
-  const asking = state.asking;
   const undoKeys = (keyval: number, mods: Gdk.ModifierType): boolean => {
     if (readOnly || !(mods & Gdk.ModifierType.CONTROL_MASK)) return false;
     const key = Gdk.keyvalToLower(keyval);
@@ -149,40 +146,7 @@ function Shown({
       {leftOut > 0 ? (
         <GtkButton name="table-embed-more" label={embedMoreText(leftOut, derived.view.layout)} halign={Gtk.Align.START} cssClasses={["flat"]} onClicked={() => setOpened(true)} />
       ) : null}
-      {state.openPage !== null ? (
-        <RowPage
-          key={`${state.active}#${state.openPage}`}
-          rowId={state.openPage}
-          rowTitle={rowTitleFor(table, state.openPage)}
-          content={table.bodies?.[state.openPage] ?? ""}
-          onSave={(content) => dispatch({ type: "updateBody", rowId: state.openPage!, content, table: state.active })}
-          onClose={() => dispatch({ type: "openPage", rowId: null })}
-        />
-      ) : null}
-      {asking?.kind === "confirm" ? (
-        <AdwAlertDialog
-          heading={asking.confirm.heading}
-          body={asking.confirm.body}
-          closeResponse="cancel"
-          defaultResponse="cancel"
-          responses={asking.confirm.responses.map((r) => ({
-            id: r.id,
-            label: r.label,
-            ...(r.destructive ? { appearance: Adw.ResponseAppearance.DESTRUCTIVE } : {}),
-          }))}
-          onResponse={(response) => dispatch({ type: "answer", response })}
-        />
-      ) : null}
-      {state.telling ? (
-        <AdwAlertDialog
-          heading={state.telling.heading}
-          body={state.telling.body}
-          closeResponse="ok"
-          defaultResponse="ok"
-          responses={[{ id: "ok", label: "OK" }]}
-          onResponse={() => dispatch({ type: "told" })}
-        />
-      ) : null}
+      <TableDialogs state={state} dispatch={dispatch} table={table} />
     </DisplaySettingsProvider>
   );
 }
