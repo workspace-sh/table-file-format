@@ -4,8 +4,8 @@ import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing"
 import { TableFile } from "@workspace.sh/table-gtk/embed";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { bundleToArchive } from "@workspace.sh/table-app";
-import { readBundle } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
+import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -193,6 +193,36 @@ describe("a .table opened as a document", () => {
     // The file's other table is drawn as ever.
     await pick(await picker("table-file-tables"), 0);
     expect(await screen.findByText("Workspace v1")).toBeDefined();
+  });
+
+  it("a linked row in another .table beside it shows its name, and is handed to the app as that file's address (D47)", async () => {
+    // orders.table's orders name a supplier; suppliers.table, beside it, holds them.
+    await writeBundleTo(nodeFs, join(root, "suppliers.table"), {
+      meta: {},
+      tables: { suppliers: { schema: { fields: [{ name: "name", type: "string" }] }, rows: [{ id: "s1", name: "Acme Supplies" }], views: [{ id: "all", name: "All", layout: "table" }], meta: {} } },
+    } as never);
+    await writeBundleTo(nodeFs, join(root, "orders.table"), {
+      meta: {},
+      tables: {
+        orders: {
+          schema: { fields: [{ name: "title", type: "string" }, { name: "supplier", type: "string", relation: { table: "suppliers", field: "id" } }] },
+          rows: [{ id: "o1", title: "First order", supplier: "s1" }],
+          views: [{ id: "all", name: "All", layout: "table" }],
+          meta: {},
+        },
+      },
+    } as never);
+    const opened: string[] = [];
+    await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={join(root, "orders.table")} onOpenLink={(to) => opened.push(to)} />
+      </GtkWindow>,
+    );
+    // The supplier by its name, read from the file beside it.
+    await userEvent.click(await cell("Acme Supplies"));
+    expect(opened).toEqual([`${join(root, "suppliers.table")}#table=suppliers&row=s1`]);
+    // The file beside it is read, not shown as one of this file's tables.
+    expect(screen.queryAllByName("table-file-tables")).toHaveLength(0);
   });
 
   it("says why when it can't be opened", async () => {

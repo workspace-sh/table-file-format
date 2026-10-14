@@ -63,7 +63,7 @@ import {
   displayChoices,
   loadDisplay,
   type KeyValueStore,
-  bundleTables,
+  relatedTables,
   rowTitleFor,
   tableNameOf,
   loadArrangements,
@@ -278,7 +278,7 @@ function TablePane({
   }, [findRequest]);
   // The rows of a large table still being read, shown until its own view's rows are here.
   const showReading = view.layout === "table" && !source && !!reading;
-  const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
+  const related = useMemo(() => relatedTables(tables, bundleOf(tableKey)), [tables, tableKey]);
 
   return (
     <AdwToolbarView
