@@ -23,10 +23,11 @@
  * parity with the web variant. RNGH calls these `absoluteX` /
  * `absoluteY`.
  */
-import { useMemo, useRef, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, State } from "react-native-gesture-handler";
+import { PageScrollContext } from "../pageScroll";
 
 export interface DragEvent {
   pageX: number;
@@ -119,6 +120,12 @@ export function DragHandle({
   const [held, setHeld] = useState(false);
   const callbacksRef = useRef({ onDragStart, onDragMove, onDragEnd, onDoubleTap });
   callbacksRef.current = { onDragStart, onDragMove, onDragEnd, onDoubleTap };
+  // The page holds still while this is dragged, where its host can hold it
+  // (PageScroll.lock): a table inside a document inside a scroll view would
+  // otherwise scroll as a row is resized.
+  const page = useContext(PageScrollContext);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const doubleTaps = onDoubleTap !== undefined;
 
   const gesture = useMemo(() => {
@@ -147,6 +154,7 @@ export function DragHandle({
         })
         .onStart(() => {
           active.on = true;
+          pageRef.current?.lock?.(true);
           if (edge) setDragged(true);
           callbacksRef.current.onDragStart?.({ pageX: from.x, pageY: from.y });
         })
@@ -155,6 +163,7 @@ export function DragHandle({
         })
         .onFinalize((e) => {
           setDragged(false);
+          if (active.on) pageRef.current?.lock?.(false);
           if (active.on) callbacksRef.current.onDragEnd?.({ pageX: e.absoluteX, pageY: e.absoluteY });
           active.on = false;
           // A touch the system took back (a call, another view) isn't a tap.
@@ -188,6 +197,7 @@ export function DragHandle({
       })
       .onStart((e) => {
         if (edge) setDragged(true);
+        pageRef.current?.lock?.(true);
         callbacksRef.current.onDragStart?.({
           pageX: e.absoluteX,
           pageY: e.absoluteY,
@@ -210,6 +220,8 @@ export function DragHandle({
       .onFinalize((e, success) => {
         setDragged(false);
         setHeld(false);
+        // Let go whether it ended or was taken back (unlocking an unlocked page is nothing).
+        pageRef.current?.lock?.(false);
         if (!success) {
           callbacksRef.current.onDragEnd?.({
             pageX: e.absoluteX,

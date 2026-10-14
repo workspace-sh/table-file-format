@@ -69,6 +69,8 @@ export interface GlassEditorOptions {
    * takes every edit (a phone has no better place).
    */
   formulasOnly?: boolean;
+  /** No search at rest: the host has nothing to search yet (a document). */
+  noSearch?: boolean;
 }
 
 /** Roughly how tall the editor stands above the keyboard, by what it shows. */
@@ -86,7 +88,7 @@ const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly }: GlassEditorOptions) {
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, noSearch }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
   const [status, setStatus] = useState<CellEditStatus>({});
@@ -267,7 +269,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     },
     // Grown or shrunk: once it has, put the edited cell just above it again.
     onExpandChange: () => setTimeout(() => commands.current?.revealSelected?.(), 120),
-    onSearch: () => setSearching(true),
+    onSearch: noSearch ? undefined : () => setSearching(true),
     onQueryChange: onQuery,
     onSearchEnd: () => {
       setSearching(false);
