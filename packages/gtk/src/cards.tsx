@@ -337,7 +337,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
   const fieldMap = fieldsByName(schema);
   // The gallery's width, less its margins, from the scroller's own page.
   const [width, setWidth] = useState(0);
-  const { perRow } = galleryLayout(Math.max(0, width - (embedded ? 0 : 24)));
+  const { perRow } = galleryLayout(Math.max(0, width - (embedded ? 2 * (embedded.gutter ?? 0) : 24)));
   // Embedded and cut to a count, only the first cards are drawn.
   const drawn = rows.slice(0, drawnOf(embedded, embedded?.cards, rows.length));
   const lines: Row[][] = [];
