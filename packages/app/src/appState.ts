@@ -420,9 +420,8 @@ function placeOf(state: AppState): Place {
  * (each save of the same page while it's typed in).
  *
  * A table held in the index has its rows there, not here: an edit to its
- * views is kept here, one to its rows as it's queued for the index
- * (`queued`), and an edit to its fields changes what the index holds, so
- * what was kept before it is let go.
+ * views or its fields is kept here (the index is changed back in place on
+ * undo), and one to its rows as it's queued for the index (`queued`).
  */
 function edit(state: AppState, name: string, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
   const tables = onTable(state.tables, key, change);
@@ -431,8 +430,13 @@ function edit(state: AppState, name: string, change: (table: ParsedTable) => Par
   const before = state.tables[key]!;
   if (before.indexed) {
     const after = tables[key]!;
-    if (after.schema !== before.schema) return { ...next, undo: without(state.undo, [key]) };
-    if (after.views === before.views) return next;
+    // A change of fields is made in the index where it is, so undo can make it the other way (#562).
+    // What an undo had brought back is the index's now: a field added later is new.
+    if (after.schema !== before.schema && after.indexed?.restore) {
+      const { restore: _, ...indexed } = after.indexed;
+      next.tables = { ...tables, [key]: { ...after, indexed } };
+    }
+    if (after.schema === before.schema && after.views === before.views) return next;
   }
   const stack = state.undo[key] ?? { past: [], future: [] };
   const last = stack.past.at(-1);
@@ -486,8 +490,12 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
     const held = tables === state.tables ? state : { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
     return { ...queued(held, key, made), undo: moved(step) };
   }
-  // A table held in the index: its views go back, and the rest stays what the index holds.
-  const table = now.indexed ? { ...now, views: step.table.views } : step.table;
+  // A table held in the index: its views and fields go back, its rows stay what the index holds.
+  // Fields that come back come back with their values, which the index kept hidden (#562).
+  const restore = step.table.schema.fields.filter((f) => !now.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
+  const table = now.indexed
+    ? { ...now, views: step.table.views, schema: step.table.schema, indexed: { count: now.indexed.count, version: now.indexed.version, ...(restore.length > 0 ? { restore } : {}) } }
+    : step.table;
   return {
     ...state,
     tables: { ...state.tables, [key]: table },
@@ -840,7 +848,8 @@ function step(state: AppState, action: AppAction): AppState {
     case "indexed": {
       const table = state.tables[action.key];
       if (!table) return state;
-      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1 };
+      // What an undo brought back stays said until the app has changed the index for it (a later edit to the fields clears it).
+      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1, ...(table.indexed?.restore ? { restore: table.indexed.restore } : {}) };
       const tables = { ...state.tables, [action.key]: { ...table, indexed } };
       // Its rows have just gone to the index: the steps kept list them as they were here.
       if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };

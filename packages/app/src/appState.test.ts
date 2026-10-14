@@ -936,11 +936,15 @@ test("undo on an indexed table: edits to its views and its rows go back in the o
   assert.deepEqual(workOf(run(once, { type: "undo" })), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
 });
 
-test("undo on an indexed table: a change to its fields changes what the index holds, so earlier steps are let go", () => {
+test("undo on an indexed table: a change to its fields is a step, and earlier steps are kept (#562)", () => {
   const key = indexedStart().active;
   const s = run(indexedStart(), { type: "updateView", patch: { title: "Renamed view" } }, { type: "addField", field: { name: "extra", type: "string" } });
-  assert.equal(s.undo[key], undefined);
-  assert.equal(derive(s).canUndo, false);
+  assert.equal(s.undo[key]?.past.length, 2);
+  assert.equal(derive(s).undoName, "Add Field");
+  // Undone in turn: the field goes, then the view's title.
+  const once = run(s, { type: "undo" });
+  assert.equal(once.tables[key]!.schema.fields.some((f) => f.name === "extra"), false);
+  assert.equal(derive(once).undoName, "Rename View");
 });
 
 test("undo says what it would take back: the step's name, and the commands' labels", () => {
@@ -992,4 +996,28 @@ test("undo names on an indexed table: its rows' edits are named as any are", () 
   assert.equal(derive(removed).undoName, "Delete Row");
   const heard = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row: { id: "p3" }, at: 3 } } });
   assert.equal(derive(run(heard, { type: "undo" })).redoName, "Delete Row");
+});
+
+test("undo on an indexed table: a change of fields is a step, and a field deleted comes back said to be restored (#562)", () => {
+  const before = indexedStart();
+  const key = before.active;
+  const fields = (s: AppState) => s.tables[key]!.schema.fields.map((f) => f.name);
+  const gone = fields(before)[1]!;
+  const deleted = run(before, { type: "deleteField", name: gone }, { type: "answer", response: "delete" });
+  assert.equal(fields(deleted).includes(gone), false);
+  assert.equal(derive(deleted).canUndo, true, "a step to undo");
+  // Undone: the field is back where it was, and the index is to restore its values.
+  const undone = run(deleted, { type: "undo" });
+  assert.deepEqual(fields(undone), fields(before));
+  assert.deepEqual(undone.tables[key]!.indexed?.restore, [gone]);
+  assert.equal(undone.tables[key]!.rows.length, 0, "rows stay in the index");
+  // Said until the index has changed: an edit's count doesn't clear it.
+  assert.deepEqual(run(undone, { type: "indexed", key, count: 17 }).tables[key]!.indexed?.restore, [gone]);
+  // Redone: gone again, nothing to restore.
+  const redone = run(undone, { type: "redo" });
+  assert.equal(fields(redone).includes(gone), false);
+  assert.equal(redone.tables[key]!.indexed?.restore, undefined);
+  // A later change of fields clears it: a field added then is new.
+  const later = run(undone, { type: "addField", field: { name: "extra", type: "string" } });
+  assert.equal(later.tables[key]!.indexed?.restore, undefined);
 });

@@ -52,9 +52,10 @@ export interface IndexHost extends SqlDriver {
   /**
    * After a change to table `name`'s fields from `from` to `to`: change its
    * index where it is (core's alterIndex), answering for `to` at once.
-   * False when it can't, and it's to be built again.
+   * False when it can't, and it's to be built again. `restore`: fields an
+   * undo brings back, with the values the index kept hidden.
    */
-  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
   /**
    * Work out what a change of fields left to work out (core's fillIndex),
    * a step at a time behind whatever else is asked: until it's done, a
@@ -327,7 +328,7 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
       return turn ? turn(stamp) : stamp();
     },
     // One transaction each, in one turn: nothing else asked comes between its statements.
-    alter: (name, from, to) => (turn ? turn(() => alterIndex(whole, name, from, to)) : alterIndex(whole, name, from, to)),
+    alter: (name, from, to, options = {}) => (turn ? turn(() => alterIndex(whole, name, from, to, options)) : alterIndex(whole, name, from, to, options)),
     async fill(name, schema) {
       const step = () => fillIndex(whole, name, schema);
       while (await (turn ? turn(step) : step())) {

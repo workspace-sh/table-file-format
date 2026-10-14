@@ -32,7 +32,7 @@ export interface WebDatabase extends SqlDriver {
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
   /** After a change to a table's fields from `from` to `to`: its index changed where it is (core's alterIndex). False when it can't be, and it's built again. */
-  alter(name: string, from: TableSchema, to: TableSchema): Promise<boolean>;
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
   /** Work out what a change of fields left to work out (core's fillIndex), a step at a time behind whatever else is asked. */
   fill(name: string, schema: TableSchema): Promise<void>;
   close(): Promise<void>;
@@ -110,7 +110,7 @@ function database(bundle: string): WebDatabase {
     build: (name, schema, onProgress) => ask<number>({ op: "build", name, schema }, onProgress),
     save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
-    alter: (name, from, to) => ask<boolean>({ op: "alter", name, from, to }),
+    alter: (name, from, to, options) => ask<boolean>({ op: "alter", name, from, to, ...(options?.restore ? { restore: options.restore } : {}) }),
     fill: (name, schema) => ask({ op: "fill", name, schema }),
     rows: (request) => ask({ op: "rows", request }),
     peek: (name, start, end) => ask<Row[]>({ op: "peek", name, start, end }),

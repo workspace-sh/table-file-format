@@ -263,7 +263,7 @@ Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows wh
   | A field retyped | 36 ms | 8.2 s |
   | A field removed | 14 ms | 10.2 s |
 
-  A field removed is left out of every row read at once, and its values are taken out of each row's stored JSON as the fill reaches it (#556). A field added back under its name before then is built instead.
+  A field removed is left out of every row read and saved at once, and its values stay in the index, hidden (#556, #562). A change of fields is an undo step, as on a small table: undo changes the index back in place, and a field deleted comes back with its values (the app says which fields an undo restores), written to `rows.ndjson` again. A new field that only reuses a deleted field's name starts empty.
 - **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
 - **Export.** A `.table.zip` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
 

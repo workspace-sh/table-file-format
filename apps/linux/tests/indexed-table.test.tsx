@@ -265,7 +265,40 @@ describe("a table held in the index on Linux", () => {
     await waitFor(async () => expect((await queryIndex(host, { name: "tasks", schema: schemaOnDisk() as never }))?.count).toBe(ROWS + 8), { timeout: 20000 });
     await host.close();
     expect(rowsOnDisk()).toHaveLength(ROWS + 8);
-  });
+    // A save of every row and a change to the index: longer than a test is given, with the whole suite running.
+  }, 90_000);
+
+  it("a field deleted can be undone: it comes back with its values, on screen and in the file (#562)", async () => {
+    await openTasks();
+    const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow;
+    const fieldsOnDisk = () => (JSON.parse(readFileSync(join(bundle, "tables", "tasks", "schema.json"), "utf8")) as { fields: { name: string }[] }).fields.map((f) => f.name);
+    const assignees = () => rowsOnDisk().filter((r) => r.assignee !== undefined).length;
+    expect(assignees()).toBe(ROWS + 8);
+    // Its column header's menu: Delete Field, asked first.
+    let overlay: Gtk.Widget | null = (await screen.findAllByText("assignee"))[0]!;
+    while (overlay && !(overlay instanceof Gtk.Overlay)) overlay = overlay.getParent();
+    let menu: Gtk.MenuButton | undefined;
+    for (let c = overlay!.getFirstChild(); c; c = c.getNextSibling()) if (c instanceof Gtk.MenuButton) menu = c;
+    menu!.activateAction("field.delete-field", null);
+    // Asked first, and answered Delete. (Its buttons can be laid out late with the whole suite
+    // running, so the answer is given as the dialog gives it, by its response.)
+    let asked: Adw.AlertDialog | undefined;
+    await waitFor(async () => {
+      asked = (await screen.findAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
+      expect(asked?.getHeading()).toBe("Delete “assignee”?");
+    }, { timeout: 15000 });
+    asked!.emit("response", "delete");
+    await waitFor(() => expect(fieldsOnDisk()).not.toContain("assignee"), { timeout: 10000 });
+    await waitFor(() => expect(assignees()).toBe(0), { timeout: 20000 });
+    // Undone: back where it was, its values in the file again, not one of them lost.
+    await waitFor(() => expect(window.getActionEnabled("undo")).toBe(true));
+    window.activateAction("win.undo", null);
+    await waitFor(() => expect(fieldsOnDisk()).toContain("assignee"), { timeout: 10000 });
+    await waitFor(() => expect(assignees()).toBe(ROWS + 8), { timeout: 20000 });
+    expect(rowsOnDisk().find((r) => r.id === "b42")?.assignee).toBe("sam");
+    await screen.findAllByText("sam");
+    // Two saves of every row and two changes to the index: longer than a test is given, with the whole suite running.
+  }, 120_000);
 
   it("a layout that isn't the table's says so until a search narrows the rows, then shows them", async () => {
     // Past what such a layout is given at once.
