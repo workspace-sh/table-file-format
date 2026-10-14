@@ -8,6 +8,7 @@ import type { TableFs } from "@workspace.sh/table-core/io";
 
 import { fromBundle, tableKeysIn } from "./bundles.ts";
 import { embedProblem, withOtherFiles, type EmbedRead } from "./embed.ts";
+import { settled } from "./heldFiles.ts";
 import { openLibrary, type Library } from "./library.ts";
 import { openArchive } from "./tableFiles.ts";
 
@@ -45,6 +46,8 @@ function opened(library: Library, file: string): EmbedRead {
 export async function readTableFileWith(fs: TableFs, path: string): Promise<EmbedRead> {
   const file = fileName(path);
   if ((await fs.list(path)) === null) return embedProblem(`“${file}” isn’t there any more.`);
+  // After any write of it another view has under way.
+  await settled(path);
   return opened(await withOtherFiles(fs, await openLibrary(fs, [path], [])), file);
 }
 
