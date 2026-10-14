@@ -45,6 +45,13 @@ const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const WORD = /^[^\s()"]+/;
 
 /** Read a stored `expr`. Anything but one complete expression is refused. */
+/**
+ * Names a form had before (D48), read as the name it has now: a stored
+ * formula written with one is the same formula, and is stored under the
+ * new name when it is next saved.
+ */
+export const FORMER_NAMES: Readonly<Record<string, string>> = Object.freeze({ column: "values", lookup: "related", concat: "concatenate" });
+
 export function parseExpr(src: string): ParseResult {
   let pos = 0;
   const skip = () => {
@@ -73,7 +80,8 @@ export function parseExpr(src: string): ParseResult {
         }
         args.push(read());
       }
-      return { kind: "call", fn: head![0].toLowerCase(), args };
+      const lower = head![0].toLowerCase();
+      return { kind: "call", fn: FORMER_NAMES[lower] ?? lower, args };
     }
     if (c === ")") fail("unexpected )");
     if (c === '"') {
@@ -133,9 +141,9 @@ export interface Scope {
   /** A field of another row, by its system id (D34). */
   fieldOf(rowId: string, name: string): Value;
   /** Every row's value of a field of this table, in file order (D36). */
-  column(name: string): Value;
+  values(name: string): Value;
   /** Follow this row's relation field to its target row(s) and read a field there (D36). */
-  lookup(relation: string, name: string): Value;
+  related(relation: string, name: string): Value;
   /** A field of every row in `table` whose `relation` field points at this row (D36). */
   linked(table: string, relation: string, name: string): Value;
   /** The cells a place names in its Sheet view (D41): one value for `at`, a list for `range`. */
@@ -364,7 +372,7 @@ const FUNCTIONS: Record<string, Fn> = {
     const v = evaluate(args[0]!, scope);
     return v instanceof FormulaError ? v : isEmpty(v);
   },
-  concat: (args, scope) => {
+  concatenate: (args, scope) => {
     const vs = values(args, scope);
     if (vs instanceof FormulaError) return vs;
     return vs.map((v) => (isEmpty(v) ? "" : String(v))).join("");
@@ -382,17 +390,17 @@ const FUNCTIONS: Record<string, Fn> = {
     return n;
   },
   // Reading across rows (D36). Each names what it reads; nothing is stored.
-  column: (args, scope) => {
+  values: (args, scope) => {
     const [a] = args;
-    if (args.length !== 1 || a?.kind !== "string") return new FormulaError("#VALUE!", 'column takes a field name: (column "quarter")');
-    return scope.column(a.value);
+    if (args.length !== 1 || a?.kind !== "string") return new FormulaError("#VALUE!", 'values takes a field name: (values "quarter")');
+    return scope.values(a.value);
   },
-  lookup: (args, scope) => {
+  related: (args, scope) => {
     const [a, b] = args;
     if (args.length !== 2 || a?.kind !== "string" || b?.kind !== "string") {
-      return new FormulaError("#VALUE!", 'lookup takes a relation field and a field there: (lookup "company" "industry")');
+      return new FormulaError("#VALUE!", 'related takes a relation field and a field there: (related "company" "industry")');
     }
-    return scope.lookup(a.value, b.value);
+    return scope.related(a.value, b.value);
   },
   linked: (args, scope) => {
     const [t, r, f] = args;

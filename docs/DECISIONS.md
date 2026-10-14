@@ -850,20 +850,22 @@ separate `multiselect` type would duplicate `array` for one use.
 **Empty.** An empty array is empty (SPEC "Empty values"): `required`
 rejects it, and a row with no items is none of any list.
 
-## D36: Reading across rows: `column`, `lookup`, `linked`, and lists
+## D36: Reading across rows: `values`, `related`, `linked`, and lists
+
+(`values` and `related` were `column` and `lookup` until D48.)
 
 Totals, rollups and lookups are what Notion, Airtable and spreadsheets do
 across rows, and D29 deferred them because a naive version rebuilds a
 dependency graph over the whole grid. They are now three forms that each
 name what they read, plus lists:
 
-- `(column "q1")` is every row's `q1`.
-- `(lookup "company" "industry")` follows this row's relation to its row.
+- `(values "q1")` is every row's `q1`.
+- `(related "company" "industry")` follows this row's relation to its row.
 - `(linked "deals" "company" "value")` is the `value` of every `deals`
   row whose `company` points at this row: the input of a rollup.
 
 `sum`, `min`, `max`, `average` and `count` take lists, as spreadsheet
-functions take ranges, so a column total is `(sum (column "value"))` and
+functions take ranges, so a column total is `(sum (values "value"))` and
 a rollup is `(sum (linked "deals" "company" "open_value"))`. Arithmetic
 on a list is `#VALUE!`: a list is an input to an aggregate, not a cell
 value.
@@ -1211,4 +1213,26 @@ It keeps D3's promise (no paths in the format, so moving a folder of files toget
 **Considered:** a path in the relation (`"table": "../suppliers.table#table=suppliers"`): against it, D3, and a folder renamed breaks every link into it. Searching the whole workspace by name: against it, two files of one name in different folders give different answers in different apps, and a search costs a walk of every folder.
 
 **To revisit when** a workspace wants one table shared by files in different folders.
+
+## D48: `.table`'s own forms never take an OpenFormula function's name: `column` is `values`, `lookup` is `related`, `concat` is `concatenate`
+
+**Decided by Leslie (14 Oct 2026). Open to revisit.**
+
+**Builds on** D36 (reading across rows) and D38 (functions come from OpenFormula, layer by layer).
+
+Formula meaning is OpenFormula's (D38), so every one of its 393 function names is spoken for. Two of `.table`'s own forms had taken names that mean something else there: `column` (OpenFormula's `COLUMN` is a cell's column number) and `lookup` (`LOOKUP` searches a range). Filling in OpenFormula on top of them would have broken both. They are renamed, and `concat` with them, before anyone depends on the old names:
+
+| Was | Now | Why this name |
+| --- | --- | --- |
+| `(column "spend")` | `(values "spend")` | The word Airtable uses in a rollup for the list of a field's values, summed or counted after. "Sum the values of spend" reads as English. |
+| `(lookup "company" "industry")` | `(related "company" "industry")` | DAX's `RELATED()` (Excel's Power Pivot and Power BI) does exactly this: from the current row, follow the relationship to the one row it points at and read a column there. DAX's `RELATEDTABLE()` is the rows pointing back, which is `.table`'s `linked`, so the pair keeps the same two directions. |
+| `(concat a b)` | `(concatenate a b)` | OpenFormula's own name for this, so it can never clash. Excel's later `CONCAT` joins whole ranges, which ours doesn't. Typed formulas still use `&`. |
+
+`field`, `linked`, `at` and `range` aren't OpenFormula names and stay. `row` and `rows` already mean what OpenFormula's `ROW` and `ROWS` mean (a position and a count) and stay.
+
+**Reading and writing.** A reader takes the former names as the new ones (`FORMER_NAMES` in the reference reader), so files written before this read unchanged; the next save of such a formula stores the new name. The typed form accepts the old names too and compiles them to the new. Nothing in the format version changes: no one depends on the old names yet.
+
+**Considered:** a prefix for every `.table` form (`table.column`, as OpenFormula's `com.microsoft.` names do): can never clash, but it lengthens every formula and keeps a misleading word. `each`, `all`, `every`, `list` for `values`: each has another meaning in common use ("are all true?"), or sounds like making a list rather than reading one. `follow` and `via` for `related`: `follow` is a verb among nouns; `via` reads in the opposite order to its arguments. Airtable, Coda and AppSheet call this field a "Lookup", which is why `lookup` felt natural and why it clashed.
+
+**To revisit when** a later layer (D38) brings a function whose name collides with `values`, `related`, `linked`, `field`, `at` or `range`; none of OpenFormula's or ECMA-376's does.
 

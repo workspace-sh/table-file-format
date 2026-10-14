@@ -23,7 +23,7 @@
  * wherever table-core does and any app's formula bar can share it.
  */
 
-import { FUNCTION_NAMES, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
+import { FORMER_NAMES, FUNCTION_NAMES, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
 import type { FieldType } from "./types.js";
 
 export type CompileResult =
@@ -240,7 +240,7 @@ const BINARY: Record<string, { prec: number; fn: string; flat: boolean }> = {
   "<=": { prec: 1, fn: "<=", flat: false },
   ">": { prec: 1, fn: ">", flat: false },
   ">=": { prec: 1, fn: ">=", flat: false },
-  "&": { prec: 2, fn: "concat", flat: true },
+  "&": { prec: 2, fn: "concatenate", flat: true },
   "+": { prec: 3, fn: "+", flat: true },
   "-": { prec: 3, fn: "-", flat: false },
   "*": { prec: 4, fn: "*", flat: true },
@@ -532,7 +532,9 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         }
       });
     }
-    if (!CALLABLE.has(fn)) {
+    // A name a form had before (D48) is taken as the name it has now.
+    const known = FORMER_NAMES[fn] ?? fn;
+    if (!CALLABLE.has(known)) {
       throw new CompileError(
         `${name} isn't a function .table formulas have. They can use: ${[...CALLABLE]
           .filter((n) => n !== "field")
@@ -540,7 +542,7 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         at,
       );
     }
-    return { kind: "call", fn, args };
+    return { kind: "call", fn: known, args };
   };
 
   const primary = (): Expr => {
@@ -866,17 +868,17 @@ export function printFormula(
 
 const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len", "count", "average", "row", "rows"]);
 /** What reads across rows as a list (D36). */
-const LIST_FNS = new Set(["column", "linked"]);
-const TEXT_FNS = new Set(["concat", "upper", "lower"]);
+const LIST_FNS = new Set(["values", "linked"]);
+const TEXT_FNS = new Set(["concatenate", "upper", "lower"]);
 const BOOLEAN_FNS = new Set(["=", "<>", "<", "<=", ">", ">=", "and", "or", "not", "isblank"]);
 
 export interface FormulaTypeOptions {
   /**
-   * The type of the field a lookup reads: `relation` is this table's field
+   * The type of the field `related` reads: `relation` is this table's field
    * that points at the other table, `target` the field read there.
    * Undefined when it can't be told (no such table at hand).
    */
-  lookup?: (relation: string, target: string) => FieldType | undefined;
+  related?: (relation: string, target: string) => FieldType | undefined;
 }
 
 /** A formula's type, and whether it was worked out or is only the likeliest. */
@@ -903,10 +905,10 @@ function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: Formula
       if (LIST_FNS.has(expr.fn) || expr.fn === "range") return { type: "array", known: true };
       // A place reads one cell of a field, of whatever type it is (D41).
       if (expr.fn === "at" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
-      // A lookup is whatever it reads in the other table; not knowing, text is the safe guess.
-      if (expr.fn === "lookup") {
+      // `related` is whatever it reads in the other table; not knowing, text is the safe guess.
+      if (expr.fn === "related") {
         const [relation, target] = expr.args;
-        const read = relation?.kind === "string" && target?.kind === "string" ? options.lookup?.(relation.value, target.value) : undefined;
+        const read = relation?.kind === "string" && target?.kind === "string" ? options.related?.(relation.value, target.value) : undefined;
         return read === undefined ? { type: "string", known: false } : { type: read, known: true };
       }
       if (expr.fn === "field" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
@@ -919,7 +921,7 @@ function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: Formula
 /**
  * The field type a formula produces, for declaring a new computed field.
  * `fieldTypes` resolves references to other fields; anything unknown is
- * taken as a number, which is what most formulas make, and a lookup whose
+ * taken as a number, which is what most formulas make, and a `related` whose
  * target isn't known as text.
  */
 export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new Map(), options: FormulaTypeOptions = {}): FieldType {

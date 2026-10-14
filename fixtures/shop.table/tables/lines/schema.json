@@ -39,7 +39,7 @@
       "format": "currency:GBP",
       "description": "Looked up from the product (D36).",
       "computed": {
-        "expr": "(lookup \"product\" \"price\")",
+        "expr": "(related \"product\" \"price\")",
         "dialect": "table-expr-v1"
       }
     },

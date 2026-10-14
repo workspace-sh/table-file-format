@@ -308,7 +308,7 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     const lookup: TableSchema = {
       fields: [
         { name: "n", type: "number" },
-        { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: "(sum (column n))" } },
+        { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: "(sum (values n))" } },
       ],
     };
     const rows: Row[] = [{ id: "a", n: 1 }, { id: "b", n: 2 }];
@@ -661,7 +661,7 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
 
   test("a searched field's values worked out again are searched as they now are", async () => {
     // `name` becomes a formula: the search finds what it gives, not what the rows held.
-    const to: TableSchema = { fields: schema.fields.map((f) => (f.name === "name" ? { ...f, computed: formula('(concat "row " level)') } : f)) };
+    const to: TableSchema = { fields: schema.fields.map((f) => (f.name === "name" ? { ...f, computed: formula('(concatenate "row " level)') } : f)) };
     await changedInPlace("searched formula", to, { seed: 39, edits: true });
   });
 
@@ -762,7 +762,7 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     // Not the schema it was built for.
     assert.equal(await alterIndex(db, "t", added, schema), false);
     // A formula over other rows.
-    const across: TableSchema = { fields: [...schema.fields, { name: "rank", type: "number", computed: formula("(sum (column n))") }] };
+    const across: TableSchema = { fields: [...schema.fields, { name: "rank", type: "number", computed: formula("(sum (values n))") }] };
     assert.equal(await alterIndex(db, "t", schema, across), false);
     assert.equal(await alterIndex(driver(), "t", schema, added), false, "no index");
     assert.equal((await queryIndex(db, { name: "t", schema }))?.count, 50);

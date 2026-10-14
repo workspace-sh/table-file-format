@@ -80,7 +80,7 @@ test("a changed formula saves, with a new type when its family changes; the same
   const quarter = f(budget, "quarter");
   assert.equal(fieldFormula(quarter, budget, "(+ jan feb mar)").save, undefined);
   assert.deepEqual(fieldFormula(quarter, budget, "=jan*2").save, { computed: { expr: "(* jan 2)", dialect: "table-expr-v1" } });
-  assert.equal(fieldFormula(quarter, budget, '(concat item "!")').save?.type, "string");
+  assert.equal(fieldFormula(quarter, budget, '(concatenate item "!")').save?.type, "string");
   assert.equal(fieldFormula(quarter, budget, "(+ jan").compiled.ok, false);
 });
 

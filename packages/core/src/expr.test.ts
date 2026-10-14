@@ -48,7 +48,7 @@ test("round, min, max, abs behave like their spreadsheet namesakes", () => {
 });
 
 test("text functions", () => {
-  assert.equal(run('(concat status ": " price)', { status: "active", price: 5 }), "active: 5");
+  assert.equal(run('(concatenate status ": " price)', { status: "active", price: 5 }), "active: 5");
   assert.equal(run("(upper status)", { status: "done" }), "DONE");
   assert.equal(run("(lower status)", { status: "DONE" }), "done");
   assert.equal(run("(len status)", { status: "done" }), 4);
@@ -69,7 +69,7 @@ test("an empty cell makes arithmetic empty; sum, min and max skip it", () => {
   assert.equal(run("(isblank price)"), true);
   assert.equal(run("(isblank price)", { price: 0 }), false);
   assert.equal(run('(if (isblank status) "none" status)'), "none");
-  assert.equal(run('(concat "a" status "b")'), "ab");
+  assert.equal(run('(concatenate "a" status "b")'), "ab");
 });
 
 test("errors are values that show their code and pass through", () => {

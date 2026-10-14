@@ -619,7 +619,7 @@ export const crmBundle: ParsedBundle = {
             "title": "Industry",
             "description": "Looked up from the deal's company (D36).",
             "computed": {
-              "expr": "(lookup \"company\" \"industry\")",
+              "expr": "(related \"company\" \"industry\")",
               "dialect": "table-expr-v1"
             }
           },
@@ -630,7 +630,7 @@ export const crmBundle: ParsedBundle = {
             "description": "The company's whole open pipeline: its rollup of every open deal, this one included (#123).",
             "format": "currency:USD",
             "computed": {
-              "expr": "(lookup \"company\" \"open_pipeline\")",
+              "expr": "(related \"company\" \"open_pipeline\")",
               "dialect": "table-expr-v1"
             }
           }
