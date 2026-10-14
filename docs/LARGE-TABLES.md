@@ -436,7 +436,26 @@ Both of these made the app look far worse than it is, and the second looked like
 - **`sample` attached during the run.** `sample <pid> 1` stops the app a thousand times a second. With it attached, eight flicks never caught up (96 to 99% empty); without it they do. `sample` says where the time goes, in a run of its own; what's felt is measured with nothing attached.
 - **App Nap.** The Mac was driven with its screen locked, so the app's window couldn't be seen, and about 25 seconds after each launch macOS napped the app: timers came late and it was given little processor time. A brisk scroll then left 70% of the table empty with the main thread 79% idle and the JavaScript thread 46% idle. It looked like something building up as the page was scrolled (a run after a long scroll started later after launch than one after a jump), and wasn't: the same jump, run 40 seconds after launch and not 17, was as bad, and with the app kept awake both were good. The run now holds an activity (`NSProcessInfo beginActivityWithOptions:`) for as long as it is armed.
 
-Tried while the measurements were wrong, and so to be measured again before anything is concluded from them: more rows kept drawn past the screen (1,200 and 2,400 points); recycling that gives a row coming on the slot of one just gone off (`RowList` keys a row by its place modulo a number of slots, which reuses a row only when exactly that many are drawn); rows drawn where the page will be, from its speed; reading further ahead from the index. A first JavaScript profile, taken while napped, put about a third of the thread's busy time under React Strict DOM's element (`useNativeProps`, `useStyleProps`); that too is to be taken again.
+#### What was tried next, measured properly (14 Oct 2026)
+
+Each of these was built and measured in the same sitting as the build it is compared with, on the same Mac, two runs or more where a figure decided anything. The same commit measured hours apart differs (eight flicks left 1 to 4% of the table empty one afternoon and 7 to 9% that night), so a figure here is only to be read against the one beside it.
+
+| | As it is (600 points kept drawn) | 1,200 points | 1,200 points and any-slot recycling |
+|---|---|---|---|
+| Slow scroll: refreshes answered, of 240 | 226 to 228, every run | 227 to 232 in six runs, 152 to 210 in five | 156 |
+| Brisk scroll: refreshes answered, of 240 | 168 to 171 | 197 to 199 | 172 |
+| One flick: empty | 4.5 to 5.4% | 2.4 to 2.5% | 4.7% |
+| Eight flicks: empty | 6.8 to 8.7% | 2.6 to 4.0% | 8.8% |
+| A hard flick: empty | 26 to 29% | 19 to 30% | 12 to 26% |
+| Four hard flicks: empty | 37 to 38% | 33 to 35% | 30% |
+| A hard flick: the main thread's longest gap | 83 to 133 ms | 149 to 183 ms | 142 to 201 ms |
+
+- **More rows kept drawn (1,200 points past the screen, not 600) isn't taken.** It halves what a flick leaves empty, and in about half its runs a slow scroll then ran at 30 frames a second, not 60: most frames came 33 ms apart, with no more mounted or drawn than in the runs at 60. What differs from 600 points is how much is in the scrolled area at all: 3,033 views and 4,565 layers against 2,034 and 3,080. Each step of a scroll costs something for every layer there, and on this Mac half as many again puts a step at the edge of one refresh. A slow scroll is what a table is mostly doing, so it isn't traded for a flick.
+- **Any-slot recycling isn't taken.** A row coming on was given the slot of one just gone off (`RowList` today keys a row by its place modulo a number of slots, which reuses a row only when exactly that many are drawn). With 1,200 points it took a little more off repeated hard flicks and gave back what 1,200 points had gained on ordinary ones. It wasn't measured again on its own at 600 points.
+- **Rows drawn where the page will be, from its speed, aren't taken.** One flick left 21% empty and eight left 20%, against about 3% without, measured the afternoon before.
+- **What this points to is fewer views and layers in a row.** About 37 views and 56 layers are kept for each row drawn (the 27 more rows of 1,200 points are a thousand more views and fifteen hundred more layers). Fewer would cut both what a hard flick waits for (rows to mount) and what every step of every scroll costs, and would make keeping more rows drawn affordable. That is next: a lighter cell where nothing is being edited, column lines drawn once behind the rows, and only the columns in view.
+
+A first JavaScript profile, taken while napped, put about a third of the thread's busy time under React Strict DOM's element (`useNativeProps`, `useStyleProps`); that is still to be taken again.
 
 Ruled out along the way, for a table that scrolls worse after a while: rows on their way from the index (every row drawn was already read), the kept text drawings filling up, views or layers left in the window (their number doesn't change), and the window's Auto Layout engine growing (about 7,300 constraints throughout: every React view has its frame in it as constraints, since the window's split view and SwiftUI panes use Auto Layout, and that is a cost for each view put in or taken out, but a steady one).
 
