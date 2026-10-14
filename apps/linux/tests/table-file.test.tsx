@@ -115,6 +115,35 @@ describe("a .table opened as a document", () => {
     expect(Buffer.compare(readFileSync(zip), before)).toBe(0);
   });
 
+  it("goes where the app says: a table, a view", async () => {
+    const path = join(root, "projects.table");
+    await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={path} at={{ address: `${path}#table=tasks&view=v2`, n: 1 }} />
+      </GtkWindow>,
+    );
+    await waitFor(async () => {
+      expect((await picker("table-file-tables")).getSelected()).toBe(1);
+      expect((await picker("table-file-views")).getSelected()).toBe(1);
+    });
+  });
+
+  it("goes to a linked row of the same file in place, its page open when it has one", async () => {
+    const opened: string[] = [];
+    const path = join(root, "projects.table");
+    await render(
+      <GtkWindow defaultWidth={1000} defaultHeight={700}>
+        <TableFile path={path} at={{ address: `${path}#table=tasks`, n: 1 }} onOpenLink={(to) => opened.push(to)} />
+      </GtkWindow>,
+    );
+    // A task's project is a linked row of the projects table: this one has a page.
+    await userEvent.click(await cell("Table file format spike"));
+    await waitFor(async () => expect((await picker("table-file-tables")).getSelected()).toBe(0));
+    expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" })).toBeDefined();
+    // Not handed to the app: it was in this file.
+    expect(opened).toEqual([]);
+  });
+
   it("says why when it can't be opened", async () => {
     await open(join(root, "nowhere.table"));
     expect(await screen.findByText("“nowhere.table” isn’t there any more.")).toBeDefined();

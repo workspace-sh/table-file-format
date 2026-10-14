@@ -10,7 +10,7 @@ import { css } from "@gtkx/css";
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkButton, GtkEventControllerKey, GtkLabel } from "@gtkx/jsx/gtk";
-import { bundleOf, embedLeftOut, embedMoreText, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
+import { bundleOf, embedLeftOut, embedMoreText, linkedRowAddress, type EmbedRead, type EmbedShown } from "@workspace.sh/table-app";
 import { embedFiles, readEmbed, type EmbedTarget } from "@workspace.sh/table-app/node";
 import { useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
@@ -53,8 +53,9 @@ export interface TableEmbedProps extends EmbedTarget {
   /** The table is to look at: nothing in it can be changed, and nothing is written. For a reader who can't write where it is. */
   readOnly?: boolean;
   /**
-   * A linked row was clicked: its address (`projects.table#table=projects&row=p2`),
-   * for the app to go to. Absent: a linked row is its name, and goes nowhere.
+   * A linked row was clicked: its address as the file's (the `.table`'s path as
+   * it was read, the table and the row: `/notes/projects.table#table=projects&row=p2`),
+   * for the app to open there. Absent: a linked row is its name, and goes nowhere.
    */
   onOpenLink?: (address: string) => void;
 }
@@ -139,7 +140,15 @@ function Shown({
             {...(readOnly ? {} : callbacks)}
             // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
             {...(leftOut > 0 ? { onAddRow: undefined } : {})}
-            onOpenRelation={onOpenLink}
+            // A linked row, said as the file's address, for the app to open there.
+            onOpenRelation={
+              onOpenLink
+                ? (address) => {
+                    const link = linkedRowAddress(address, shown.library, state, bundleOf(state.active));
+                    if (link) onOpenLink(link);
+                  }
+                : undefined
+            }
           />
         </GtkBox>
       </EmbeddedContext.Provider>
