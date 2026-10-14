@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dis
 import { newId, stampEdits, textDirection, type BundleMeta, type EditChange, type EditEvent, type ParsedTable, type TextDirection } from "@workspace.sh/table-core";
 import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
-import { forViews, saveArrangements } from "./arrangements.ts";
+import { forViews, loadArrangements, saveArrangements } from "./arrangements.ts";
 import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type AppState, type Derived, type ViewCallbacks } from "./appState.ts";
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
@@ -248,9 +248,21 @@ export interface EmbeddedTable {
  * its own holds it: the same state and the same actions, so a cell edited
  * in a document is written to the file, goes to its history and can be
  * undone. What is still to write is written when the drop-in goes.
- * Mount it anew (a `key`) for another table or view.
+ * Mount it anew (a `key`) for another table or view. `store` keeps this
+ * reader's own arrangement of each view (D4) from one opening to the next;
+ * absent, it lasts while the table is open.
  */
-export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, locale?: string): EmbeddedTable {
+/**
+ * A store kept for one file: every key it is asked for is kept under the
+ * file's path, so a reader's arrangements of one `projects.table` aren't
+ * another's of the same name elsewhere.
+ */
+export function storeFor(store: KeyValueStore, path: string): KeyValueStore {
+  const at = (key: string) => `${path}\u0000${key}`;
+  return { getItem: (key) => store.getItem(at(key)), setItem: (key, value) => store.setItem(at(key), value), removeItem: (key) => store.removeItem(at(key)) };
+}
+
+export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, locale?: string, store: KeyValueStore | null = null): EmbeddedTable {
   const { library } = shown;
   const { state, dispatch, display, flush } = useTableApp(
     () =>
@@ -260,9 +272,11 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
         opened: library.paths,
         start: { tablePath: shown.key, ...(shown.viewId ? { viewId: shown.viewId } : {}) },
         writesHistory: !!files.appendHistory,
+        // This reader's own sorts, filters and groupings of each view (D4), as kept from before.
+        ...(store ? { stored: { arrangements: loadArrangements(store) } } : {}),
       }),
     {
-      store: null,
+      store,
       write: async (bundles, tables, metas) => {
         await Promise.all(bundles.map((bundle) => files.write(library, tables, metas, bundle)));
       },
