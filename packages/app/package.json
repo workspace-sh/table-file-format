@@ -25,6 +25,11 @@
       "react-native": "./src/embedView.ts",
       "default": "./src/embedView.ts"
     },
+    "./file-view": {
+      "source": "./src/tableFileView.tsx",
+      "react-native": "./src/tableFileView.tsx",
+      "default": "./src/tableFileView.tsx"
+    },
     "./package.json": "./package.json"
   },
   "files": [

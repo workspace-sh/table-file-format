@@ -12,13 +12,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 import type { View } from "@workspace.sh/table-core";
-import { BoardView, BodyEditor, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView } from "@workspace.sh/table-ui";
-import type { ViewProps } from "@workspace.sh/table-ui/shared";
+import { BodyEditor, DisplaySettingsProvider } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { embedCount, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
+import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
 
 /** The tallest an embedded view is before it scrolls within itself, as on GTK. */
@@ -59,20 +59,6 @@ export interface TableEmbedProps {
 /** What scrolls an embedded view, as tall as what it holds up to `limit`. */
 export type EmbedFrame = (props: { limit: number; children: ReactNode }) => ReactNode;
 
-function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {
-  switch (layout) {
-    case "board":
-      return <BoardView {...props} />;
-    case "gallery":
-      return <GalleryView {...props} />;
-    case "list":
-      return <ListView {...props} />;
-    case "calendar":
-      return <CalendarView {...props} />;
-    default:
-      return <TableView {...props} />;
-  }
-}
 
 function Shown({
   shown,
