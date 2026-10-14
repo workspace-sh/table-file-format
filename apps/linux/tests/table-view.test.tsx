@@ -1,7 +1,7 @@
 import * as Gtk from "@gtkx/gi/gtk";
-import { render, screen } from "@gtkx/testing";
+import { render, screen, waitFor } from "@gtkx/testing";
 import { fromBundle, showView } from "@workspace.sh/table-app";
-import type { ParsedTable, Row, ViewRows } from "@workspace.sh/table-core";
+import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles } from "@workspace.sh/table-fixtures";
 import { BoardView, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView, type ViewProps } from "@workspace.sh/table-gtk";
 import { describe, expect, it } from "vitest";
@@ -25,6 +25,44 @@ function renderView(key: string, viewId: string, View: (props: ViewProps) => Rea
     </DisplaySettingsProvider>,
   );
 }
+
+// A sheet's row numbers: the gutter is as wide as the largest number (table-ui's rowNumberWidth).
+describe("a sheet's row numbers on GTK", () => {
+  const schema: TableSchema = { fields: [{ name: "title", type: "string" }] };
+  const view: View = { id: "v", name: "Numbered", layout: "table", coordinates: true };
+  const rowsOf = (n: number): Row[] => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, title: `Row ${i}` }));
+  const numbers = async () => (await screen.findAllByName("row-number")) as Gtk.Label[];
+  const numbered = async (text: string) => (await numbers()).find((label) => label.getLabel() === text)!;
+  /** The gutter's width with its line (a widget's own width leaves its border out). */
+  const widthOf = (label: Gtk.Label) => label.computeBounds(label)[1].getWidth();
+
+  it("is the narrow gutter up to three digits", async () => {
+    await render(<TableView view={view} rows={rowsOf(999)} schema={schema} relatedTables={{}} />);
+    const first = await numbered("1");
+    await waitFor(() => expect(widthOf(first)).toBe(32));
+  });
+
+  it("is wider for a fourth digit, from the first row down, though only the first rows are built", async () => {
+    await render(<TableView view={view} rows={rowsOf(1200)} schema={schema} relatedTables={{}} />);
+    const first = await numbered("1");
+    // Four figures of 6.6 at 11 points, the padding and the line: 41.
+    await waitFor(() => expect(widthOf(first)).toBe(41));
+    for (const label of await numbers()) expect(widthOf(label)).toBe(41);
+  });
+
+  it("holds the largest number of a sheet's own numbering on one line", async () => {
+    // The sheet numbers its rows itself (D41): here, into the millions.
+    const rows = rowsOf(3);
+    const sheet = { order: rows.map((r) => r.id), position: new Map(rows.map((r, i) => [r.id, 8_888_886 + i])), sheets: [] };
+    await render(<TableView view={view} rows={rows} schema={schema} relatedTables={{}} sheet={sheet} />);
+    const last = await numbered("8888888");
+    await waitFor(() => expect(widthOf(last)).toBe(Math.ceil(7 * 6.6) + 14));
+    // Its text needs no more room than the gutter gives it, and isn't cut short or wrapped.
+    expect(last.getLayout().getPixelSize()[0]).toBeLessThanOrEqual(last.getWidth());
+    expect(last.getLayout().getLineCount()).toBe(1);
+    expect(last.getLayout().isEllipsized()).toBe(false);
+  });
+});
 
 describe("TableView on GTK", () => {
   it("shows each row's values, and a choice as its label", async () => {
