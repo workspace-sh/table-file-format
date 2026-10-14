@@ -18,7 +18,7 @@
  * its native build can't do: it windows only what it scrolls itself.
  */
 import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
 import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
@@ -325,8 +325,16 @@ function WindowedRows<T>({
   // box has its rows' height: AppKit draws a view's text only when its
   // frame is on screen, and a box of no height at the top left the Mac's
   // rows farther down with their colours but no words.
+  //
+  // A size is rounded too, as the difference of its two edges where they
+  // are: laid out 45 million points down, a row's height and a cell's
+  // line came out a multiple of 4 (#518). The Mac's layout engine is
+  // patched to take the difference first (apps/desktop's react-native-macos
+  // patch); iOS and Android link React Native prebuilt, where it can't be.
+  // They draw a view whatever its frame, so there the box stays at the
+  // top, moved all the way by the transform, and nothing is laid out far down.
   const base = count && lastDrawn >= first ? Math.max(0, layout.itemTop(first) - drawn.shift) : 0;
-  const laidAt = Math.floor(base / 4) * 4;
+  const laidAt = Platform.OS === "macos" ? Math.floor(base / 4) * 4 : 0;
   const span = count && lastDrawn >= first ? (lastDrawn + 1 < count ? layout.itemTop(lastDrawn + 1) : layout.height) - drawn.shift - base : 0;
   // Rows are recycled: each is keyed by a slot, its place modulo how many
   // slots there are, so a row scrolled off one end and the row coming on at
