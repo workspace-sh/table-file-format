@@ -1,0 +1,180 @@
+{"id":"b1","title":"Machine of the Quiet Harbour","author":"Dev Mensah","genre":"science","year":2003,"pages":100,"price":29.15,"read":true,"added":"2025-08-18","rating":2}
+{"id":"b2","title":"The Burning Atlas","author":"Oona Eriksen","genre":"science","year":1992,"pages":516,"price":14.79,"read":true,"added":"2025-01-22","rating":3}
+{"id":"b3","title":"Lantern of the Wild Lantern","author":"Dev Dube","genre":"fiction","year":1936,"pages":173,"price":17.1,"read":true,"added":"2025-11-16","rating":3}
+{"id":"b4","title":"Wild Librarys","author":"Hiro Okafor","genre":"philosophy","year":1954,"pages":847,"price":32.49,"read":true,"added":"2024-08-19","rating":5}
+{"id":"b5","title":"Bridge of the Golden Lantern","author":"Maya Quist","genre":"fiction","year":1945,"pages":432,"price":17.04,"read":false,"added":"2024-04-28","rating":2}
+{"id":"b6","title":"Tide of the Distant Machine","author":"Ines Eriksen","genre":"design","year":1975,"pages":728,"price":23.46,"read":false,"added":"2024-06-09","rating":4}
+{"id":"b7","title":"Silver Archives","author":"Tomas Laine","genre":"design","year":1954,"pages":443,"price":35.3,"read":false,"added":"2025-06-13","rating":5}
+{"id":"b8","title":"Patient Orchards","author":"Priya Kovac","genre":"poetry","year":2020,"pages":409,"price":35.01,"read":true,"added":"2024-09-21","rating":3}
+{"id":"b9","title":"Engine of the Quiet Letter","author":"Rosa Petrov","genre":"science","year":1982,"pages":233,"price":29.62,"read":false,"added":"2024-02-11"}
+{"id":"b10","title":"The Salt Garden","author":"Elif Petrov","genre":"history","year":1982,"pages":820,"price":35.5,"read":false,"added":"2025-01-09","rating":1}
+{"id":"b11","title":"Workshop of the Wild Workshop","author":"Chloe Novak","genre":"design","year":1957,"pages":760,"price":22,"read":false,"added":"2025-03-03"}
+{"id":"b12","title":"The Second Library","author":"Ada Jensen","genre":"history","year":1933,"pages":575,"price":32.62,"read":false,"added":"2026-04-12","rating":1}
+{"id":"b13","title":"Map of the Last River","author":"Tomas Kovac","genre":"philosophy","year":2016,"pages":245,"price":21.03,"read":true,"added":"2024-03-22","rating":4}
+{"id":"b14","title":"The Patient Archive","author":"Femi Okafor","genre":"fiction","year":1974,"pages":318,"price":24.89,"read":false,"added":"2026-04-09"}
+{"id":"b15","title":"Atlas of the Common Bridge","author":"Grace Fong","genre":"design","year":1967,"pages":220,"price":25.9,"read":false,"added":"2025-12-11","rating":3}
+{"id":"b16","title":"Quiet Fields","author":"Kemi Abara","genre":"philosophy","year":1926,"pages":794,"price":17.2,"read":true,"added":"2026-07-17","rating":4}
+{"id":"b17","title":"Field of the Paper Workshop","author":"Ines Brandt","genre":"science","year":1988,"pages":878,"price":24.44,"read":false,"added":"2026-02-04"}
+{"id":"b18","title":"Lantern of the Salt Tide","author":"Dev Fong","genre":"philosophy","year":1961,"pages":255,"price":18.38,"read":false,"added":"2025-05-07","rating":1}
+{"id":"b19","title":"The Long Tide","author":"Rosa Laine","genre":"philosophy","year":1977,"pages":219,"price":30.73,"read":false,"added":"2024-09-14"}
+{"id":"b20","title":"Golden Letters","author":"Ines Jensen","genre":"travel","year":1964,"pages":743,"price":38.72,"read":false,"added":"2025-11-27","rating":3}
+{"id":"b21","title":"The Open Map","author":"Chloe Petrov","genre":"philosophy","year":1960,"pages":670,"price":30.36,"read":true,"added":"2025-07-25"}
+{"id":"b22","title":"Field of the Second Island","author":"Ada Kovac","genre":"travel","year":1968,"pages":100,"price":7.34,"read":false,"added":"2024-04-23"}
+{"id":"b23","title":"The Second Garden","author":"Femi Abara","genre":"poetry","year":2004,"pages":657,"price":33.65,"read":false,"added":"2026-08-27","rating":3}
+{"id":"b24","title":"Golden Signals","author":"Ben Okafor","genre":"science","year":1941,"pages":138,"price":10.25,"read":true,"added":"2024-01-24","rating":5}
+{"id":"b25","title":"The Winter Workshop","author":"Hiro Costa","genre":"science","year":1951,"pages":440,"price":20.04,"read":true,"added":"2026-04-14","rating":3}
+{"id":"b26","title":"Small Islands","author":"Maya Fong","genre":"history","year":1927,"pages":487,"price":36.27,"read":true,"added":"2026-07-18","rating":5}
+{"id":"b27","title":"River of the Burning Letter","author":"Grace Costa","genre":"travel","year":1998,"pages":747,"price":14.28,"read":false,"added":"2026-04-20"}
+{"id":"b28","title":"The Patient River","author":"Sami Eriksen","genre":"history","year":1993,"pages":567,"price":20.04,"read":true,"added":"2024-11-19","rating":4}
+{"id":"b29","title":"The Long Tide, volume 2","author":"Ines Costa","genre":"history","year":1985,"pages":486,"price":7.95,"read":true,"added":"2024-09-16","rating":3}
+{"id":"b30","title":"Long Fields","author":"Chloe Tan","genre":"biography","year":1956,"pages":638,"price":39.52,"read":false,"added":"2024-03-27","rating":2}
+{"id":"b31","title":"The Burning Map","author":"Quinn Haddad","genre":"design","year":1942,"pages":855,"price":24.34,"read":false,"added":"2026-05-06","rating":5}
+{"id":"b32","title":"The Open Machine","author":"Dev Novak","genre":"biography","year":1925,"pages":702,"price":31.31,"read":false,"added":"2024-08-05","rating":4}
+{"id":"b33","title":"The Northern Garden","author":"Dev Costa","genre":"poetry","year":2024,"pages":145,"price":28.49,"read":true,"added":"2026-09-03","rating":2}
+{"id":"b34","title":"Paper Orchards","author":"Luca Dube","genre":"biography","year":1927,"pages":509,"price":19.19,"read":true,"added":"2025-03-21","rating":4}
+{"id":"b35","title":"The Wild Letter","author":"Ben Mensah","genre":"philosophy","year":1929,"pages":569,"price":20.12,"read":true,"added":"2025-04-13","rating":3}
+{"id":"b36","title":"Glass Workshops","author":"Dev Kovac","genre":"fiction","year":1958,"pages":253,"price":12.98,"read":false,"added":"2024-05-08","rating":1}
+{"id":"b37","title":"The Distant River","author":"Ines Kovac","genre":"fiction","year":1999,"pages":257,"price":20.79,"read":false,"added":"2025-10-28"}
+{"id":"b38","title":"The Common Letter","author":"Sami Kovac","genre":"design","year":1952,"pages":115,"price":37.89,"read":true,"added":"2024-01-04","rating":5}
+{"id":"b39","title":"The Common Atlas","author":"Femi Reyes","genre":"fiction","year":2009,"pages":281,"price":26.33,"read":true,"added":"2025-01-16"}
+{"id":"b40","title":"Silver Tides","author":"Ines Brandt","genre":"biography","year":1946,"pages":534,"price":33.7,"read":true,"added":"2026-05-07","rating":2}
+{"id":"b41","title":"Patient Archives","author":"Femi Mensah","genre":"science","year":1959,"pages":723,"price":29.5,"read":true,"added":"2025-01-29","rating":1}
+{"id":"b42","title":"The Patient Machine","author":"Dev Okafor","genre":"history","year":1983,"pages":603,"price":32.88,"read":false,"added":"2026-08-16","rating":1}
+{"id":"b43","title":"Engine of the Late Island","author":"Dev Brandt","genre":"poetry","year":1956,"pages":658,"price":16.51,"read":true,"added":"2024-09-02"}
+{"id":"b44","title":"Harbour of the Late Signal","author":"Hiro Mensah","genre":"travel","year":1945,"pages":711,"price":8.45,"read":false,"added":"2025-03-13","rating":4}
+{"id":"b45","title":"The Quiet Atlas","author":"Ines Haddad","genre":"science","year":1947,"pages":391,"price":18.86,"read":true,"added":"2024-08-02","rating":3}
+{"id":"b46","title":"The Hidden Letter","author":"Oona Ito","genre":"science","year":1936,"pages":807,"price":32.63,"read":true,"added":"2026-04-27"}
+{"id":"b47","title":"The Open Library","author":"Kemi Reyes","genre":"design","year":1948,"pages":656,"price":26.02,"read":false,"added":"2024-03-12","rating":4}
+{"id":"b48","title":"The Second Field","author":"Ben Reyes","genre":"history","year":1990,"pages":538,"price":19.01,"read":true,"added":"2026-06-03"}
+{"id":"b49","title":"Harbour of the Small Garden","author":"Femi Quist","genre":"fiction","year":1947,"pages":683,"price":16.24,"read":true,"added":"2025-01-08","rating":3}
+{"id":"b50","title":"The Northern Orchard","author":"Nils Mensah","genre":"fiction","year":2011,"pages":147,"price":6.61,"read":false,"added":"2025-05-01","rating":5}
+{"id":"b51","title":"Bridge of the Salt Island","author":"Hiro Costa","genre":"fiction","year":1979,"pages":626,"price":31.39,"read":false,"added":"2025-10-03","rating":3}
+{"id":"b52","title":"The Salt Machine","author":"Hiro Brandt","genre":"design","year":1926,"pages":386,"price":25.19,"read":true,"added":"2025-05-04","rating":1}
+{"id":"b53","title":"The Quiet Letter","author":"Oona Mensah","genre":"science","year":1956,"pages":102,"price":25.84,"read":false,"added":"2024-07-13","rating":4}
+{"id":"b54","title":"Northern Harbours","author":"Dev Kovac","genre":"biography","year":2011,"pages":125,"price":16.23,"read":true,"added":"2024-08-31","rating":3}
+{"id":"b55","title":"Late Seasons","author":"Dev Novak","genre":"design","year":1988,"pages":669,"price":39.3,"read":true,"added":"2024-05-20","rating":1}
+{"id":"b56","title":"Engine of the Hidden Harbour","author":"Maya Fong","genre":"fiction","year":1957,"pages":660,"price":39.13,"read":false,"added":"2024-11-01","rating":1}
+{"id":"b57","title":"Small Machines","author":"Nils Jensen","genre":"science","year":1993,"pages":666,"price":16.54,"read":true,"added":"2025-03-09","rating":3}
+{"id":"b58","title":"Common Tides","author":"Sami Novak","genre":"philosophy","year":1964,"pages":412,"price":29.64,"read":true,"added":"2025-08-10","rating":5}
+{"id":"b59","title":"Signal of the Golden Island","author":"Grace Costa","genre":"fiction","year":1946,"pages":341,"price":35.07,"read":false,"added":"2025-10-16","rating":2}
+{"id":"b60","title":"Golden Gardens","author":"Dev Mensah","genre":"biography","year":1983,"pages":855,"price":24.19,"read":false,"added":"2025-07-30","rating":1}
+{"id":"b61","title":"The Distant Engine","author":"Ada Eriksen","genre":"biography","year":1958,"pages":278,"price":37.56,"read":true,"added":"2025-02-11"}
+{"id":"b62","title":"Last Orchards","author":"Hiro Novak","genre":"science","year":2020,"pages":683,"price":9.87,"read":false,"added":"2024-01-03","rating":2}
+{"id":"b63","title":"Wild Orchards","author":"Tomas Laine","genre":"history","year":1948,"pages":698,"price":27,"read":false,"added":"2024-08-20"}
+{"id":"b64","title":"Silver Letters","author":"Jonah Okafor","genre":"philosophy","year":1991,"pages":465,"price":34.5,"read":true,"added":"2026-09-15"}
+{"id":"b65","title":"Mountain of the Open Bridge","author":"Ada Quist","genre":"fiction","year":1973,"pages":806,"price":22.46,"read":false,"added":"2024-09-04","rating":3}
+{"id":"b66","title":"Second Archives","author":"Oona Sato","genre":"philosophy","year":1960,"pages":707,"price":38.91,"read":false,"added":"2024-11-29","rating":2}
+{"id":"b67","title":"The Late Field","author":"Grace Brandt","genre":"biography","year":2026,"pages":216,"price":16.19,"read":false,"added":"2024-04-22","rating":2}
+{"id":"b68","title":"Mountain of the Last Garden","author":"Rosa Tan","genre":"science","year":2019,"pages":533,"price":20.98,"read":true,"added":"2026-03-15","rating":5}
+{"id":"b69","title":"The Glass Machine","author":"Kemi Ito","genre":"design","year":1963,"pages":130,"price":19.02,"read":true,"added":"2026-02-15"}
+{"id":"b70","title":"Long Signals","author":"Sami Novak","genre":"philosophy","year":1963,"pages":758,"price":18.87,"read":false,"added":"2024-11-20","rating":1}
+{"id":"b71","title":"The Long Island","author":"Sami Jensen","genre":"fiction","year":1978,"pages":728,"price":14.75,"read":false,"added":"2024-03-02","rating":4}
+{"id":"b72","title":"The Second Map","author":"Ada Kovac","genre":"science","year":1970,"pages":555,"price":22.36,"read":false,"added":"2024-11-25","rating":5}
+{"id":"b73","title":"The Burning Archive","author":"Ines Reyes","genre":"fiction","year":1997,"pages":685,"price":21.23,"read":true,"added":"2026-01-28","rating":3}
+{"id":"b74","title":"Tide of the Salt Island","author":"Ines Reyes","genre":"science","year":2006,"pages":384,"price":39.92,"read":false,"added":"2026-08-23","rating":3}
+{"id":"b75","title":"The Winter Lantern","author":"Maya Kovac","genre":"fiction","year":1955,"pages":309,"price":17.5,"read":false,"added":"2024-01-30","rating":4}
+{"id":"b76","title":"Burning Fields","author":"Ben Costa","genre":"design","year":2017,"pages":800,"price":25.43,"read":true,"added":"2024-08-05","rating":1}
+{"id":"b77","title":"Long Orchards","author":"Luca Tan","genre":"biography","year":1943,"pages":306,"price":13.56,"read":false,"added":"2024-06-08","rating":1}
+{"id":"b78","title":"The Salt Season","author":"Jonah Fong","genre":"travel","year":1980,"pages":491,"price":30.77,"read":true,"added":"2025-04-07","rating":4}
+{"id":"b79","title":"The Northern Field","author":"Oona Laine","genre":"biography","year":1956,"pages":356,"price":24.88,"read":false,"added":"2026-06-06","rating":1}
+{"id":"b80","title":"Atlas of the Salt Island","author":"Sami Costa","genre":"biography","year":1984,"pages":809,"price":11.25,"read":true,"added":"2025-11-03","rating":2}
+{"id":"b81","title":"Distant Harbours","author":"Ben Kovac","genre":"philosophy","year":1977,"pages":800,"price":9.08,"read":true,"added":"2024-12-23","rating":4}
+{"id":"b82","title":"The Common Orchard","author":"Elif Costa","genre":"biography","year":1962,"pages":218,"price":12.86,"read":false,"added":"2025-03-21","rating":4}
+{"id":"b83","title":"Atlas of the Northern Bridge","author":"Luca Quist","genre":"fiction","year":1956,"pages":128,"price":21.9,"read":true,"added":"2024-09-27","rating":5}
+{"id":"b84","title":"Long Archives","author":"Tomas Okafor","genre":"history","year":2005,"pages":201,"price":31.63,"read":true,"added":"2025-06-18","rating":2}
+{"id":"b85","title":"Island of the Second Archive","author":"Elif Ito","genre":"history","year":1994,"pages":113,"price":7.38,"read":true,"added":"2025-02-24"}
+{"id":"b86","title":"Atlas of the Last Tide","author":"Sami Novak","genre":"history","year":2001,"pages":428,"price":8.87,"read":false,"added":"2024-11-04","rating":3}
+{"id":"b87","title":"Long Mountains","author":"Rosa Okafor","genre":"history","year":1997,"pages":487,"price":18.08,"read":true,"added":"2026-01-27","rating":3}
+{"id":"b88","title":"Wild Rivers","author":"Sami Garcia","genre":"fiction","year":2016,"pages":281,"price":9.87,"read":false,"added":"2026-01-13"}
+{"id":"b89","title":"Letter of the Winter Garden","author":"Ines Jensen","genre":"biography","year":1944,"pages":239,"price":12.37,"read":true,"added":"2024-03-04","rating":1}
+{"id":"b90","title":"Paper Tides","author":"Femi Abara","genre":"science","year":1992,"pages":336,"price":36.01,"read":false,"added":"2026-08-07","rating":3}
+{"id":"b91","title":"Common Letters","author":"Grace Costa","genre":"design","year":1985,"pages":114,"price":27.95,"read":true,"added":"2025-09-14"}
+{"id":"b92","title":"Bridge of the Second Machine","author":"Dev Petrov","genre":"poetry","year":1979,"pages":673,"price":29.21,"read":false,"added":"2026-05-04","rating":4}
+{"id":"b93","title":"The Burning Season","author":"Elif Dube","genre":"science","year":1966,"pages":706,"price":23.87,"read":true,"added":"2025-06-17","rating":5}
+{"id":"b94","title":"The Golden Engine","author":"Nils Fong","genre":"philosophy","year":2026,"pages":137,"price":36.01,"read":true,"added":"2024-01-24"}
+{"id":"b95","title":"The Burning River","author":"Nils Fong","genre":"biography","year":1971,"pages":364,"price":13.27,"read":false,"added":"2024-11-04","rating":3}
+{"id":"b96","title":"Common Lanterns","author":"Priya Okafor","genre":"fiction","year":2009,"pages":215,"price":24.63,"read":true,"added":"2026-04-23"}
+{"id":"b97","title":"Glass Librarys","author":"Chloe Fong","genre":"biography","year":1972,"pages":518,"price":30.51,"read":true,"added":"2025-05-17","rating":4}
+{"id":"b98","title":"The Glass Garden","author":"Oona Garcia","genre":"biography","year":1939,"pages":621,"price":16.37,"read":false,"added":"2025-07-19","rating":5}
+{"id":"b99","title":"Paper Lanterns","author":"Chloe Garcia","genre":"biography","year":1932,"pages":631,"price":19.23,"read":true,"added":"2025-11-30","rating":1}
+{"id":"b100","title":"The Quiet Island","author":"Grace Petrov","genre":"design","year":1999,"pages":310,"price":7.5,"read":false,"added":"2025-02-14"}
+{"id":"b101","title":"Second Letters","author":"Oona Mensah","genre":"poetry","year":1953,"pages":446,"price":19.33,"read":false,"added":"2025-10-14","rating":3}
+{"id":"b102","title":"The Late Letter","author":"Rosa Tan","genre":"travel","year":2003,"pages":245,"price":13.45,"read":false,"added":"2025-06-04","rating":1}
+{"id":"b103","title":"The Wild Field","author":"Femi Tan","genre":"philosophy","year":1993,"pages":105,"price":26.97,"read":true,"added":"2024-06-27"}
+{"id":"b104","title":"The Open Map, volume 2","author":"Hiro Okafor","genre":"history","year":2005,"pages":628,"price":18.9,"read":false,"added":"2024-07-12","rating":3}
+{"id":"b105","title":"Golden Rivers","author":"Femi Costa","genre":"biography","year":1982,"pages":444,"price":6.47,"read":true,"added":"2026-02-26","rating":5}
+{"id":"b106","title":"Golden Machines","author":"Priya Ito","genre":"fiction","year":1967,"pages":834,"price":37.42,"read":true,"added":"2025-03-29","rating":4}
+{"id":"b107","title":"Long Machines","author":"Hiro Dube","genre":"science","year":1978,"pages":778,"price":30.51,"read":false,"added":"2024-10-15"}
+{"id":"b108","title":"Northern Gardens","author":"Oona Jensen","genre":"philosophy","year":1938,"pages":494,"price":14.1,"read":false,"added":"2026-05-22","rating":4}
+{"id":"b109","title":"The Silver Island","author":"Nils Reyes","genre":"science","year":1934,"pages":726,"price":16.53,"read":true,"added":"2024-05-21"}
+{"id":"b110","title":"The Common Tide","author":"Oona Sato","genre":"biography","year":1965,"pages":522,"price":21.98,"read":true,"added":"2025-12-20"}
+{"id":"b111","title":"The Silver Orchard","author":"Oona Laine","genre":"science","year":1968,"pages":541,"price":22.36,"read":true,"added":"2024-09-20","rating":5}
+{"id":"b112","title":"Island of the Last Archive","author":"Luca Kovac","genre":"fiction","year":2003,"pages":515,"price":27.28,"read":false,"added":"2024-07-03","rating":5}
+{"id":"b113","title":"Machine of the Patient Letter","author":"Ada Haddad","genre":"science","year":1981,"pages":569,"price":19.92,"read":true,"added":"2024-12-30","rating":2}
+{"id":"b114","title":"Library of the Quiet Engine","author":"Femi Kovac","genre":"design","year":1976,"pages":194,"price":30.63,"read":true,"added":"2025-12-28","rating":1}
+{"id":"b115","title":"Open Rivers","author":"Chloe Haddad","genre":"design","year":1960,"pages":377,"price":10.05,"read":false,"added":"2025-01-13","rating":5}
+{"id":"b116","title":"Patient Machines","author":"Ines Fong","genre":"poetry","year":1978,"pages":751,"price":10.28,"read":false,"added":"2024-03-22","rating":5}
+{"id":"b117","title":"The Golden River","author":"Ben Jensen","genre":"poetry","year":1948,"pages":515,"price":9.48,"read":true,"added":"2024-11-10","rating":4}
+{"id":"b118","title":"The Salt Garden, volume 3","author":"Ben Tan","genre":"history","year":2008,"pages":656,"price":26.86,"read":true,"added":"2025-11-30"}
+{"id":"b119","title":"The Last Archive","author":"Sami Mensah","genre":"fiction","year":1976,"pages":878,"price":38.91,"read":true,"added":"2025-11-26","rating":1}
+{"id":"b120","title":"The Burning Letter","author":"Sami Ito","genre":"history","year":1987,"pages":697,"price":22.23,"read":false,"added":"2024-06-23","rating":2}
+{"id":"b121","title":"The Hidden Field","author":"Sami Garcia","genre":"history","year":2011,"pages":559,"price":28.54,"read":true,"added":"2025-08-01","rating":2}
+{"id":"b122","title":"The Small Library","author":"Luca Brandt","genre":"science","year":1984,"pages":713,"price":25.78,"read":true,"added":"2026-03-17"}
+{"id":"b123","title":"Garden of the Open Island","author":"Sami Jensen","genre":"philosophy","year":1997,"pages":771,"price":17.15,"read":false,"added":"2026-07-29","rating":3}
+{"id":"b124","title":"Late Bridges","author":"Femi Novak","genre":"poetry","year":1993,"pages":175,"price":6.97,"read":true,"added":"2025-11-02"}
+{"id":"b125","title":"Tide of the Silver Harbour","author":"Grace Sato","genre":"philosophy","year":2011,"pages":569,"price":29.87,"read":false,"added":"2026-03-22","rating":4}
+{"id":"b126","title":"The Silver Bridge","author":"Chloe Costa","genre":"poetry","year":1949,"pages":642,"price":21.45,"read":true,"added":"2025-11-23","rating":3}
+{"id":"b127","title":"Golden Librarys","author":"Jonah Haddad","genre":"fiction","year":1947,"pages":546,"price":9.54,"read":false,"added":"2024-08-26","rating":2}
+{"id":"b128","title":"Quiet Harbours","author":"Quinn Haddad","genre":"philosophy","year":2008,"pages":786,"price":30.81,"read":true,"added":"2024-06-01","rating":1}
+{"id":"b129","title":"Atlas of the Distant Harbour","author":"Maya Fong","genre":"science","year":1944,"pages":577,"price":26.58,"read":true,"added":"2025-02-20"}
+{"id":"b130","title":"The Northern Map","author":"Quinn Jensen","genre":"history","year":1951,"pages":287,"price":38.68,"read":false,"added":"2024-04-24","rating":2}
+{"id":"b131","title":"Silver Librarys","author":"Elif Jensen","genre":"science","year":1956,"pages":761,"price":29.91,"read":false,"added":"2025-01-27","rating":1}
+{"id":"b132","title":"Island of the Small Field","author":"Sami Kovac","genre":"design","year":1929,"pages":507,"price":33.05,"read":false,"added":"2026-03-01","rating":4}
+{"id":"b133","title":"The Distant Mountain","author":"Dev Quist","genre":"philosophy","year":1968,"pages":337,"price":14.39,"read":true,"added":"2024-07-19","rating":1}
+{"id":"b134","title":"The Quiet Engine","author":"Femi Sato","genre":"science","year":1974,"pages":229,"price":35.25,"read":false,"added":"2024-01-19","rating":5}
+{"id":"b135","title":"The Salt Harbour","author":"Priya Quist","genre":"fiction","year":1961,"pages":293,"price":12.63,"read":false,"added":"2024-07-29","rating":5}
+{"id":"b136","title":"Late Fields","author":"Ada Mensah","genre":"history","year":1939,"pages":624,"price":37.65,"read":false,"added":"2025-03-20","rating":4}
+{"id":"b137","title":"Quiet Harbours, volume 4","author":"Rosa Haddad","genre":"history","year":1983,"pages":210,"price":12.73,"read":true,"added":"2026-08-29","rating":4}
+{"id":"b138","title":"Garden of the Quiet Tide","author":"Jonah Brandt","genre":"travel","year":2014,"pages":395,"price":20.97,"read":false,"added":"2024-09-08","rating":3}
+{"id":"b139","title":"Signal of the Hidden Harbour","author":"Ben Quist","genre":"science","year":1961,"pages":100,"price":23.61,"read":true,"added":"2026-06-22","rating":3}
+{"id":"b140","title":"Atlas of the Long Library","author":"Elif Mensah","genre":"biography","year":1950,"pages":698,"price":24,"read":true,"added":"2024-03-22","rating":4}
+{"id":"b141","title":"The Wild Lantern","author":"Femi Novak","genre":"biography","year":1960,"pages":456,"price":24.76,"read":false,"added":"2024-05-27","rating":5}
+{"id":"b142","title":"The Golden River, volume 2","author":"Jonah Laine","genre":"science","year":2023,"pages":695,"price":13.97,"read":true,"added":"2024-11-20","rating":4}
+{"id":"b143","title":"Burning Mountains","author":"Elif Garcia","genre":"biography","year":1942,"pages":789,"price":25.43,"read":false,"added":"2024-04-14","rating":2}
+{"id":"b144","title":"Bridge of the Wild Atlas","author":"Rosa Eriksen","genre":"science","year":1967,"pages":154,"price":20.11,"read":false,"added":"2024-04-05","rating":2}
+{"id":"b145","title":"The Paper Island","author":"Chloe Ito","genre":"science","year":1954,"pages":880,"price":21.49,"read":false,"added":"2025-09-10","rating":4}
+{"id":"b146","title":"Hidden Rivers","author":"Maya Kovac","genre":"biography","year":1985,"pages":864,"price":34.39,"read":true,"added":"2025-02-03","rating":4}
+{"id":"b147","title":"Open Orchards","author":"Nils Garcia","genre":"philosophy","year":2007,"pages":404,"price":38.3,"read":false,"added":"2024-08-29"}
+{"id":"b148","title":"Atlas of the Patient Tide","author":"Luca Fong","genre":"philosophy","year":2014,"pages":358,"price":16.16,"read":false,"added":"2026-06-18","rating":1}
+{"id":"b149","title":"Island of the Paper Season","author":"Ada Ito","genre":"biography","year":1927,"pages":866,"price":30.16,"read":false,"added":"2024-09-17","rating":5}
+{"id":"b150","title":"Atlas of the Common Engine","author":"Quinn Tan","genre":"fiction","year":1956,"pages":783,"price":13.74,"read":true,"added":"2025-08-28"}
+{"id":"b151","title":"Second Mountains","author":"Hiro Tan","genre":"history","year":1995,"pages":373,"price":28.04,"read":false,"added":"2024-02-25","rating":2}
+{"id":"b152","title":"The Quiet Map","author":"Ben Okafor","genre":"biography","year":1937,"pages":813,"price":33.87,"read":true,"added":"2024-12-22","rating":1}
+{"id":"b153","title":"Harbour of the Quiet Harbour","author":"Maya Novak","genre":"science","year":1998,"pages":157,"price":25.31,"read":false,"added":"2024-08-19","rating":4}
+{"id":"b154","title":"Season of the Northern Mountain","author":"Dev Garcia","genre":"design","year":1937,"pages":564,"price":19.39,"read":false,"added":"2025-01-13"}
+{"id":"b155","title":"Tide of the Distant Orchard","author":"Grace Eriksen","genre":"fiction","year":1948,"pages":599,"price":25.07,"read":true,"added":"2024-07-18","rating":3}
+{"id":"b156","title":"Common Orchards","author":"Luca Mensah","genre":"history","year":1962,"pages":311,"price":14.85,"read":false,"added":"2025-11-01","rating":5}
+{"id":"b157","title":"Engine of the Long Garden","author":"Femi Dube","genre":"philosophy","year":1965,"pages":626,"price":33.36,"read":false,"added":"2024-05-07"}
+{"id":"b158","title":"The Quiet Signal","author":"Rosa Costa","genre":"fiction","year":1981,"pages":597,"price":17.11,"read":false,"added":"2025-10-16","rating":1}
+{"id":"b159","title":"Distant Librarys","author":"Luca Garcia","genre":"design","year":1972,"pages":729,"price":37.82,"read":false,"added":"2026-03-05"}
+{"id":"b160","title":"Signal of the Wild Workshop","author":"Kemi Novak","genre":"science","year":1998,"pages":154,"price":36.71,"read":true,"added":"2025-10-11","rating":3}
+{"id":"b161","title":"Small Bridges","author":"Ada Fong","genre":"biography","year":2019,"pages":227,"price":37.02,"read":true,"added":"2024-11-14"}
+{"id":"b162","title":"Silver Machines","author":"Luca Garcia","genre":"poetry","year":1967,"pages":234,"price":36.35,"read":false,"added":"2024-12-26","rating":1}
+{"id":"b163","title":"Season of the Hidden Lantern","author":"Hiro Laine","genre":"history","year":1931,"pages":648,"price":35.75,"read":true,"added":"2024-01-27","rating":5}
+{"id":"b164","title":"Quiet Maps","author":"Dev Mensah","genre":"philosophy","year":2017,"pages":470,"price":17.63,"read":false,"added":"2024-11-25","rating":1}
+{"id":"b165","title":"Letter of the Silver Orchard","author":"Femi Ito","genre":"history","year":1940,"pages":726,"price":36.36,"read":true,"added":"2026-06-17","rating":1}
+{"id":"b166","title":"The Golden Workshop","author":"Oona Fong","genre":"travel","year":1992,"pages":709,"price":11.48,"read":true,"added":"2024-02-02","rating":1}
+{"id":"b167","title":"Season of the Silver Harbour","author":"Tomas Dube","genre":"poetry","year":1974,"pages":773,"price":31.9,"read":true,"added":"2025-05-09","rating":1}
+{"id":"b168","title":"The Open Mountain","author":"Ines Tan","genre":"travel","year":1985,"pages":352,"price":18.52,"read":true,"added":"2026-06-16"}
+{"id":"b169","title":"The Last Island","author":"Elif Haddad","genre":"fiction","year":1988,"pages":794,"price":11.94,"read":true,"added":"2024-05-07","rating":5}
+{"id":"b170","title":"The Glass Map","author":"Maya Laine","genre":"travel","year":1936,"pages":482,"price":37.01,"read":true,"added":"2025-05-18"}
+{"id":"b171","title":"The Silver River","author":"Oona Mensah","genre":"design","year":2012,"pages":819,"price":12.88,"read":false,"added":"2024-11-25","rating":2}
+{"id":"b172","title":"Silver Fields","author":"Jonah Okafor","genre":"travel","year":1935,"pages":503,"price":16.5,"read":true,"added":"2024-02-02","rating":3}
+{"id":"b173","title":"Mountain of the Winter Machine","author":"Rosa Sato","genre":"science","year":1927,"pages":683,"price":9.9,"read":true,"added":"2024-07-17"}
+{"id":"b174","title":"Engine of the Quiet Archive","author":"Sami Dube","genre":"science","year":1933,"pages":434,"price":18.82,"read":true,"added":"2024-05-17","rating":3}
+{"id":"b175","title":"The Second Garden, volume 4","author":"Femi Laine","genre":"fiction","year":1933,"pages":296,"price":33.56,"read":false,"added":"2024-03-02"}
+{"id":"b176","title":"Late Archives","author":"Chloe Quist","genre":"history","year":1956,"pages":712,"price":31.53,"read":false,"added":"2026-07-25","rating":3}
+{"id":"b177","title":"Northern Gardens, volume 2","author":"Luca Haddad","genre":"fiction","year":1984,"pages":348,"price":39.86,"read":true,"added":"2025-11-04","rating":2}
+{"id":"b178","title":"The Common Letter, volume 2","author":"Nils Costa","genre":"biography","year":1975,"pages":287,"price":7.62,"read":false,"added":"2025-09-25","rating":2}
+{"id":"b179","title":"Long Rivers","author":"Elif Tan","genre":"philosophy","year":1990,"pages":408,"price":24.2,"read":false,"added":"2024-05-20","rating":4}
+{"id":"b180","title":"Archive of the Wild Bridge","author":"Hiro Ito","genre":"history","year":1950,"pages":237,"price":31.38,"read":true,"added":"2024-12-29","rating":3}

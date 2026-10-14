@@ -1,0 +1,71 @@
+{
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "constraints": {
+        "required": true
+      }
+    },
+    {
+      "name": "author",
+      "type": "string"
+    },
+    {
+      "name": "genre",
+      "type": "string",
+      "constraints": {
+        "enum": [
+          "fiction",
+          "history",
+          "science",
+          "poetry",
+          "biography",
+          "philosophy",
+          "travel",
+          "design"
+        ]
+      }
+    },
+    {
+      "name": "year",
+      "type": "integer",
+      "constraints": {
+        "minimum": 1900,
+        "maximum": 2100
+      }
+    },
+    {
+      "name": "pages",
+      "type": "integer",
+      "constraints": {
+        "minimum": 1
+      }
+    },
+    {
+      "name": "price",
+      "type": "number",
+      "format": "currency:GBP"
+    },
+    {
+      "name": "rating",
+      "type": "integer",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 5
+      }
+    },
+    {
+      "name": "read",
+      "type": "boolean"
+    },
+    {
+      "name": "added",
+      "type": "date"
+    }
+  ],
+  "primaryKey": [
+    "title"
+  ],
+  "schema-version": 1
+}
