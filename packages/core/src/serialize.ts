@@ -41,6 +41,17 @@ export function serializeRows(rows: Row[], schema: TableSchema, unread: UnreadLi
   return lines.join("\n") + "\n";
 }
 
+/** A row as its line in a rows file: computed fields left out (SPEC section 2). */
+export function rowLine(schema: TableSchema): (row: Row) => string {
+  const computed = schema.fields.filter((f) => f.computed).map((f) => f.name);
+  return (row) => {
+    if (computed.length === 0) return JSON.stringify(row);
+    const out: Row = { ...row };
+    for (const name of computed) delete out[name];
+    return JSON.stringify(out);
+  };
+}
+
 /** Manifest stamping (SPEC section 5): format + formatVersion on every write. */
 export function stampMeta(meta: TableMeta | undefined): TableMeta {
   return {

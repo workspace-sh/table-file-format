@@ -13,7 +13,7 @@ import { fixturesDir } from "../src/fixtures.js";
 
 // A table large enough to be held in the bundle's index (SPEC section 8)
 // rather than in memory: its rows are read from index.sqlite a window at a
-// time, edits go to the index and are saved back to rows.ndjson.
+// time, edits go to the index and are saved back to its rows files.
 
 const ROWS = 3000;
 let dir: string;
@@ -27,7 +27,7 @@ beforeEach(() => {
   cpSync(join(fixturesDir()!, "projects.table"), bundle, { recursive: true });
   let more = "";
   for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "p1", status: "todo", priority: 9, assignee: "sam" })}\n`;
-  appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), more);
+  appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
 });
 
 afterEach(async () => {
@@ -35,7 +35,7 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const rowsOnDisk = () => parseRowsText(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8"), []);
+const rowsOnDisk = () => parseRowsText(readFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), "utf8"), []);
 
 async function openTasks(openIndex?: (bundleDir: string) => IndexHost) {
   const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
@@ -157,7 +157,7 @@ describe("a table held in the index on Linux", () => {
     expect(screen.queryAllByText("Big 0")).toHaveLength(0);
   });
 
-  it("an edit shows, and is saved to rows.ndjson with every other row", async () => {
+  it("an edit shows, and is saved to its rows file with every other row", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
     first.grabFocus();
@@ -179,7 +179,7 @@ describe("a table held in the index on Linux", () => {
   });
 
   it("with a line its rows can't read, it's held in memory instead and says so, and a save keeps the line (#567)", async () => {
-    appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
+    appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
     await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
     // Said, in a dialog of its own, then put away.
@@ -188,7 +188,7 @@ describe("a table held in the index on Linux", () => {
       told = (await screen.findAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
       expect(told?.getHeading()).toBe("Opened without its index");
     }, { timeout: 20000 });
-    expect(told!.getBody()).toMatch(/line 3009 of its rows couldn.t be read/);
+    expect(told!.getBody()).toMatch(/line 3009 of rows\/0001.ndjson couldn.t be read/);
     told!.emit("response", "ok");
     await waitFor(() => expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toHaveLength(0));
     const first = await cellOf("Land .table extension");
@@ -196,11 +196,11 @@ describe("a table held in the index on Linux", () => {
     await userEvent.keyboard(first, "Z");
     const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(() => expect(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8")).toContain('"title":"Z"'), { timeout: 10000 });
-    expect(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8")).toContain('{"id":"t9","title":"Broken because of a typo"');
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), "utf8")).toContain('"title":"Z"'), { timeout: 10000 });
+    expect(readFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), "utf8")).toContain('{"id":"t9","title":"Broken because of a typo"');
   }, 60_000);
 
-  it("an edit is undone and made again, on screen and in rows.ndjson", async () => {
+  it("an edit is undone and made again, on screen and in its rows file", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
     const window = first.getRoot() as unknown as Gtk.ApplicationWindow;
@@ -326,7 +326,7 @@ describe("a table held in the index on Linux", () => {
     // Past what such a layout is given at once.
     let more = "";
     for (let i = ROWS; i < ROWS + 3000; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, status: "todo", priority: 9 })}\n`;
-    appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), more);
+    appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
     // v2 is the board by status.
     await render(<App library={library} initialTable="projects/tasks" initialView="v2" indexedFrom={1000} />);

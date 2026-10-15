@@ -28,7 +28,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await cleanup();
-  chmodSync(join(bundle, "tables", "tasks"), 0o755);
+  chmodSync(join(bundle, "tables", "tasks", "rows"), 0o755);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -87,7 +87,7 @@ describe("closing the window on Linux", () => {
 
   it("stays open and says so when it can't write; closing again quits anyway", async () => {
     const window = await editTitle("Can't be written");
-    chmodSync(join(bundle, "tables", "tasks"), 0o555);
+    chmodSync(join(bundle, "tables", "tasks", "rows"), 0o555);
     await fireEvent(window, "close-request");
     expect(await screen.findByText("Not everything could be saved")).toBeDefined();
     expect(quit).not.toHaveBeenCalled();
@@ -98,14 +98,14 @@ describe("closing the window on Linux", () => {
   });
 
   it("a failed save can be tried again, and then it's written", async () => {
-    chmodSync(join(bundle, "tables", "tasks"), 0o555);
+    chmodSync(join(bundle, "tables", "tasks", "rows"), 0o555);
     await editTitle("Tried again");
     let retry: Gtk.Button | undefined;
     await waitFor(async () => {
       retry = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b.getTooltipText()?.startsWith("Not saved")) as Gtk.Button | undefined;
       expect(retry).toBeDefined();
     });
-    chmodSync(join(bundle, "tables", "tasks"), 0o755);
+    chmodSync(join(bundle, "tables", "tasks", "rows"), 0o755);
     await userEvent.click(retry!);
     await waitFor(async () => expect(await titleOnDisk()).toBe("Tried again"));
   });

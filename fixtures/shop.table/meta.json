@@ -1,6 +1,6 @@
 {
   "format": "table",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "title": "Shop",
   "description": "A small coffee shop: customers, products, orders and the lines on each, linked together.",
   "tables": [

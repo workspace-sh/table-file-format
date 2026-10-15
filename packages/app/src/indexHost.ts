@@ -1,14 +1,14 @@
 // A device's indexes (SPEC section 8), for the apps that keep large tables
 // as folders of their own: iOS (apps/mobile) and the Mac (apps/desktop). A
 // bundle with a large table is a real .table folder in the app's own
-// space, with `index.sqlite` at its root and the table's `rows.ndjson`
-// under `tables/<name>/`, which stays the truth. Files and SQLite are the
+// space, with `index.sqlite` at its root and the table's rows in one file,
+// `tables/<name>/rows/0001.ndjson`, which stays the truth. Files and SQLite are the
 // platform's, passed in (IndexHostPlatform); everything else is here, once.
 // (The web's worker, apps/web/src/sqlite, and Linux's do the same over
 // their own storage.)
 //
 // A large table never reaches the screen as rows. Its archive is read
-// here: the table's rows.ndjson is left compressed, inflated a piece at a
+// here: the table's rows are left compressed, inflated a piece at a
 // time into the index and into the file beside it. The screen gets the
 // first rows to show meanwhile, and how far the reading is.
 //
@@ -22,7 +22,9 @@
 import {
   BUNDLE_EXTENSION,
   BundleEntry,
-  TableEntry,
+  FIRST_ROWS_FILE,
+  LEGACY_ROWS_FILE,
+  ROWS_DIR,
   alterIndex,
   buildSearchIndex,
   fillIndex,
@@ -176,12 +178,14 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   const BATCH = platform.batchSize !== undefined ? { batchSize: platform.batchSize } : {};
   const bundleDir = (bundle: string): string => joinPath(platform.home(), `${bundle}${BUNDLE_EXTENSION}`);
   const tableDir = (bundle: string, table: string): string => joinPath(bundleDir(bundle), BundleEntry.tables, table);
-  const rowsPath = (bundle: string, table: string): string => joinPath(tableDir(bundle, table), TableEntry.rows);
+  // One rows file, however large: the folder is the app's own, and git's limits aren't its.
+  const rowsDir = (bundle: string, table: string): string => joinPath(tableDir(bundle, table), ROWS_DIR);
+  const rowsPath = (bundle: string, table: string): string => joinPath(rowsDir(bundle, table), FIRST_ROWS_FILE);
 
   const held = new Map<string, Promise<Held>>();
   // When the screen last asked for something: the search index's steps wait for a quiet moment.
   let lastAsked = 0;
-  // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows.ndjson, still compressed.
+  // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
   const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
 
   function open(bundle: string): Promise<Held> {
@@ -227,7 +231,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
 
   /** A table's rows file, emptied and open for writing to its end. */
   async function emptied(bundle: string, table: string): Promise<FileWriter> {
-    await fs.mkdir(tableDir(bundle, table));
+    await fs.mkdir(rowsDir(bundle, table));
     return platform.writer(rowsPath(bundle, table));
   }
 
@@ -235,6 +239,12 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   async function keptRows(db: SqlDriver, bundle: string, table: string): Promise<{ chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>; size: number } | null> {
     await db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
     const whole = (await db.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
+    // Kept before D51 as the table's rows.ndjson: moved into rows/.
+    const legacy = joinPath(tableDir(bundle, table), LEGACY_ROWS_FILE);
+    if ((await platform.size(rowsPath(bundle, table))) === null && (await platform.size(legacy)) !== null) {
+      await fs.mkdir(rowsDir(bundle, table));
+      await fs.rename(legacy, rowsPath(bundle, table));
+    }
     const size = await platform.size(rowsPath(bundle, table));
     if (whole === undefined || size === null || size !== Number(whole)) return null;
     return { chunks: platform.pieces(rowsPath(bundle, table), size, READ_STEP), size };
@@ -365,7 +375,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     omit: string[] | undefined,
     stop: () => boolean,
   ): Promise<{ bytes: number; key: string | null } | null> {
-    await fs.mkdir(tableDir(bundle, name));
+    await fs.mkdir(rowsDir(bundle, name));
     const stagedPath = `${rowsPath(bundle, name)}.tmp`;
     const out = await platform.writer(stagedPath);
     const encoder = new TextEncoder();

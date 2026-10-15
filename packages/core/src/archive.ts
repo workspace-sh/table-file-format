@@ -3,6 +3,7 @@ import type {
   BundleMeta,
   ParsedBundle,
   ParsedTable,
+  Row,
   TableMeta,
   TableSchema,
   UnreadLine,
@@ -11,7 +12,8 @@ import type {
 } from "./types.js";
 import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
-import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
+import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
+import { FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layoutRows, ROWS_DIR, rowsFileOrder } from "./rowFiles.js";
 import { isTableName, tableOrder } from "./bundle.js";
 import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
 import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
@@ -59,7 +61,7 @@ export interface ReadArchiveOptions {
    */
   rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: Uint8Array) => boolean | Promise<boolean>;
   /**
-   * The same question, asked before a large `rows.ndjson` (of `lazyFrom`
+   * The same question, asked before a table with a large rows file (of `lazyFrom`
    * bytes or more, 1 MB when left out) is inflated at all: it is handed
    * still compressed, to be read a piece at a time, so its start can be
    * shown while the rest is read. False inflates and parses it as usual.
@@ -130,14 +132,26 @@ export async function readTableArchive(
   for (const name of [...names].sort()) {
     const prefix = `${tablePath(name)}/`;
     const schemaRaw = text(`${prefix}${TableEntry.schema}`);
-    const lazyRows = compressed.get(`${prefix}${TableEntry.rows}`);
-    if (schemaRaw === undefined || (text(`${prefix}${TableEntry.rows}`) === undefined && !lazyRows)) {
+    // Its rows files in order (D51), or formatVersion 1's rows.ndjson as 0001.
+    const inRows = `${prefix}${TableEntry.rowsDir}/`;
+    const shards = rowsFileOrder([...files.keys(), ...compressed.keys()].filter((p) => p.startsWith(inRows)).map((p) => p.slice(inRows.length)));
+    const rowsFiles =
+      shards.length > 0
+        ? shards.map((n) => ({ name: n, path: `${inRows}${n}` }))
+        : files.has(`${prefix}${TableEntry.rows}`) || compressed.has(`${prefix}${TableEntry.rows}`)
+          ? [{ name: FIRST_ROWS_FILE, path: `${prefix}${TableEntry.rows}` }]
+          : [];
+    if (schemaRaw === undefined || rowsFiles.length === 0) {
       diagnostics.push({
         rowIndex: -1,
-        message: `${tablePath(name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rows}`,
+        message: `${tablePath(name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rowsDir}/`,
       });
       continue;
     }
+    // Large rows, still compressed, handed over as they are: several files as one, in file order.
+    const lazyRows = rowsFiles.some((f) => compressed.has(f.path))
+      ? chained(rowsFiles.map((f) => compressed.get(f.path) ?? inflated(f.path, files.get(f.path)!)))
+      : undefined;
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
     const schema = JSON.parse(schemaRaw) as TableSchema;
@@ -159,12 +173,21 @@ export async function readTableArchive(
     if (lazyRows) {
       elsewhere = (await options.rowsLazily!(name, { schema, views, bodies }, lazyRows)) === true;
       // Not taken: read as any other.
-      if (!elsewhere) files.set(`${prefix}${TableEntry.rows}`, whole(lazyRows));
+      if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
     }
-    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}${TableEntry.rows}`)!)) === true;
+    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
     const unread: UnreadLine[] = [];
-    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}${TableEntry.rows}`) ?? "", tableDiagnostics, unread);
+    const rows: Row[] = [];
+    const rowFiles: { name: string; ids: string[] }[] = [];
+    if (!elsewhere) {
+      for (const f of rowsFiles) {
+        const these = parseRowsText(text(f.path) ?? "", tableDiagnostics, unread, { file: f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`, after: rows.at(-1)?.id ?? null });
+        for (const r of these) rows.push(r);
+        rowFiles.push({ name: f.name, ids: these.map((r) => r.id) });
+      }
+    }
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
+    if (rowFiles.length > 0) table.rowFiles = rowFiles;
     if (unread.length > 0) table.unread = unread;
     if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
@@ -189,6 +212,61 @@ export async function readTableArchive(
  * pages), so a writer writes it from that and not as a file. The index
  * is neither: it's never carried (section 13).
  */
+/** Byte arrays one after another, as one (one is returned as it is). */
+/** Whether a file's bytes need a line end before the next file's: they don't end in one. */
+const unended = (bytes: Uint8Array): boolean => bytes.length > 0 && bytes[bytes.length - 1] !== 10;
+
+/** A table's rows files' bytes as one, a line end between where a file had none. */
+function joined(parts: Uint8Array[]): Uint8Array {
+  if (parts.length === 1) return parts[0]!;
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length + 1, 0));
+  let at = 0;
+  parts.forEach((p, i) => {
+    out.set(p, at);
+    at += p.length;
+    if (i < parts.length - 1 && unended(p)) out[at++] = 10;
+  });
+  return out.subarray(0, at);
+}
+
+/** A rows file already inflated (a small one), as an entry still to be read. */
+function inflated(name: string, data: Uint8Array): LazyZipEntry {
+  return { name, size: data.length, head: () => data, chunks: () => [data] };
+}
+
+/** A table's rows files as one entry: their bytes in file order, a line end between where a file had none. */
+function chained(entries: LazyZipEntry[]): LazyZipEntry {
+  if (entries.length === 1) return entries[0]!;
+  return {
+    name: entries[0]!.name,
+    size: entries.reduce((n, e) => n + e.size, 0),
+    head(bytes) {
+      const parts: Uint8Array[] = [];
+      let have = 0;
+      for (const e of entries) {
+        if (have >= bytes) break;
+        const part = e.head(bytes - have);
+        parts.push(part);
+        have += part.length;
+        // Shorter than asked: that file is all there, and the next one follows it.
+        if (part.length >= e.size) continue;
+        break;
+      }
+      return joined(parts);
+    },
+    *chunks() {
+      for (const e of entries) {
+        let last: Uint8Array | null = null;
+        for (const piece of e.chunks()) {
+          if (piece.length > 0) last = piece;
+          yield piece;
+        }
+        if (last && unended(last)) yield new Uint8Array([10]);
+      }
+    },
+  };
+}
+
 function parsedHere(path: string, tables: Record<string, unknown>): boolean {
   if (path === BundleEntry.meta) return true;
   if (/(^|\/)index\.sqlite[^/]*$/.test(path)) return true;
@@ -196,6 +274,7 @@ function parsedHere(path: string, tables: Record<string, unknown>): boolean {
   if (table === null || !(table in tables)) return false;
   const inside = path.slice(`${tablePath(table)}/`.length);
   if (([TableEntry.schema, TableEntry.rows, TableEntry.views, TableEntry.meta, TableEntry.history] as string[]).includes(inside)) return true;
+  if (inside.startsWith(`${TableEntry.rowsDir}/`) && isRowsFileName(inside.slice(TableEntry.rowsDir.length + 1))) return true;
   return inside.startsWith(`${TableEntry.bodies}/`) && inside.endsWith(BODY_EXTENSION) && !inside.slice(`${TableEntry.bodies}/`.length).includes("/");
 }
 
@@ -257,7 +336,11 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
     const at = `${tablePath(tableName)}/`;
     files.push(
       { path: `${at}${TableEntry.schema}`, content: pretty(t.schema) },
-      { path: `${at}${TableEntry.rows}`, content: serializeRows(t.rows, t.schema, t.unread) },
+      // Its rows, each in its file (D51).
+      ...layoutRows(t.rows, rowLine(t.schema), { ...(t.rowFiles ? { files: t.rowFiles } : {}), ...(t.unread ? { unread: t.unread } : {}) }).map((f) => ({
+        path: `${at}${TableEntry.rowsDir}/${f.name}`,
+        content: f.text,
+      })),
       { path: `${at}${TableEntry.views}`, content: pretty(t.views ?? []) },
       { path: `${at}${TableEntry.meta}`, content: pretty(tableMetaOnly(t.meta)) },
     );
