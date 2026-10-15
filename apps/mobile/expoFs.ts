@@ -35,6 +35,21 @@ export const expoFs: TableFs = {
     if (!file.exists) file.create();
     file.write(bytes);
   },
+  // For judging how many rows a table has before reading them (core's shape-first read).
+  async size(path) {
+    const file = new File(path);
+    return file.exists ? file.size : null;
+  },
+  async readHead(path, bytes) {
+    const file = new File(path);
+    if (!file.exists) return null;
+    const handle = file.open();
+    try {
+      return handle.readBytes(Math.min(bytes, file.size));
+    } finally {
+      handle.close();
+    }
+  },
   async rename(from, to) {
     renameOver(pathOfUri(from), pathOfUri(to));
   },
