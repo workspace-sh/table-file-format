@@ -9,12 +9,12 @@ import type { BundleMeta } from "@workspace.sh/table-core";
 
 import { CANCEL, type Confirm } from "./confirm.ts";
 
-/** The question before closing `title`: `fromFolder` when it was read from a folder on disk. */
+/** The question before closing `title`: `fromFolder` when it was opened where it is on disk, as a folder or a single file. */
 export function closePrompt(title: string, fromFolder: boolean): Confirm {
   return {
     heading: `Close “${title}”?`,
     body: fromFolder
-      ? "The folder stays where it is, and can be opened again."
+      ? "It stays where it is on disk, and can be opened again."
       : "This app's copy is removed. A file you opened it from isn't touched.",
     responses: [CANCEL, { id: "close", label: "Close", destructive: true }],
   };

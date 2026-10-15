@@ -140,11 +140,14 @@ test("formatVersion 1's rows.ndjson is read as the table's rows, and the next sa
   await fs.mkdir("/b/tables/t");
   await fs.writeText("/b/tables/t/schema.json", JSON.stringify({ fields: [{ name: "title", type: "string" }] }));
   await fs.writeText("/b/tables/t/rows.ndjson", '{"id":"a","title":"A"}\n');
+  await fs.writeText("/b/meta.json", JSON.stringify({ format: "table", formatVersion: 1, title: "B", tables: ["t"] }));
   const read = await readBundle(fs, "/b");
   assert.deepEqual(read.tables.t!.rows.map((r) => r.id), ["a"]);
   await writeBundleTo(fs, "/b", read);
   assert.equal(await fs.readText("/b/tables/t/rows.ndjson"), null);
   assert.equal(await fs.readText("/b/tables/t/rows/0001.ndjson"), '{"id":"a","title":"A"}\n');
+  // Written in this version's layout, the manifest says this version, whatever it was read with.
+  assert.deepEqual(JSON.parse((await fs.readText("/b/meta.json"))!), { format: "table", formatVersion: 2, title: "B", tables: ["t"] });
 });
 
 test("a table with no rows keeps its rows/ folder, with one empty file (git keeps no empty folder)", async () => {
