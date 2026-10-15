@@ -1,7 +1,7 @@
-// Download and open real `.table.zip` files (#86 step 4), through core's
-// archive reader and writer (D27, D28). An archive carries a whole bundle,
-// every table in it (D37). The DOM parts stay in App; this is what can be
-// tested without a browser.
+// Download and open single-file `.table`s (SPEC section 13, D49, D50),
+// through core's archive reader and writer (D27, D28). A single file
+// carries a whole bundle, every table in it (D37), with its attachments.
+// The DOM parts stay in App; this is what can be tested without a browser.
 
 import { TextDecoder } from "@exodus/bytes/encoding-lite.js";
 import { newBundle, orderedTables, readTableArchive, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
@@ -10,17 +10,18 @@ import type { ParsedBundle, ValidationError } from "@workspace.sh/table-core";
 
 import { tableKeyFor } from "./tableKey.ts";
 
-/** The file a bundle downloads as. */
-export function archiveFileName(key: string): string {
-  return `${key}.table.zip`;
+/** The single file a bundle is saved or downloaded as: `<key>.table` (D50). */
+export function singleFileName(key: string): string {
+  return `${key}.table`;
 }
 
+/** A bundle as a single file's bytes: every table, and its other files (attachments, files no reader knows). */
 export async function bundleToArchive(key: string, bundle: ParsedBundle): Promise<Uint8Array> {
   // Diagnostics describe how a file was read, not the table: never written back.
   const tables = Object.fromEntries(
     orderedTables(bundle).map(([name, { diagnostics: _read, ...clean }]) => [name, clean]),
   );
-  return writeTableArchive(key, { meta: bundle.meta, tables });
+  return writeTableArchive(key, { meta: bundle.meta, tables, ...(bundle.files ? { files: bundle.files } : {}) });
 }
 
 export interface OpenedBundle {
@@ -150,17 +151,17 @@ export function openFailedText(fileName: string, error: unknown): string {
 }
 
 
-/** The most rows of a table held in the index that an archive is made of: it is put together in memory. */
+/** The most rows of a table held in the index that a single file is made of: it is put together in memory. */
 export const ARCHIVE_ROWS = 250_000;
 
 /**
- * What an app says when asked to make a `.table.zip` of a file with a table
- * too large for that. It makes none: an archive missing a table's rows
- * would look like a copy of the file and not be one.
+ * What an app says when asked to save a file with a table too large for
+ * that as a single file. It makes none: a single file missing a table's
+ * rows would look like a copy of the file and not be one.
  */
 export function tooLargeToArchiveText(tableName: string, rows: number): { heading: string; body: string } {
   return {
-    heading: "Can't make a .table.zip of this file yet",
-    body: `${tableName} has ${rows.toLocaleString()} rows, and a .table.zip can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now.`,
+    heading: "Can't save this as a single file yet",
+    body: `${tableName} has ${rows.toLocaleString()} rows, and a single-file .table can be made of a table of up to ${ARCHIVE_ROWS.toLocaleString()} for now.`,
   };
 }

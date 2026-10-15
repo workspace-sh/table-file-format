@@ -54,7 +54,7 @@ import {
   STORAGE_KEY,
   TOOLBAR_HINTS,
   appCommands,
-  archiveFileName,
+  singleFileName,
   asStored,
   attachmentAt,
   attachmentName,
@@ -618,7 +618,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   const exportZip = useCallback(
     async (path?: string) => {
       const bundle = bundleOf(activeTablePath);
-      const where = path ?? (await choosePath("Export as a .table.zip", archiveFileName(bundle)));
+      const where = path ?? (await choosePath("Export as a .table.zip", singleFileName(bundle)));
       if (!where) return;
       try {
         // A table held in the index has its rows read out of it for the archive, which is made in
@@ -644,7 +644,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         });
         await writeBytes(where, await bundleToArchive(bundle, toBundle(going, bundles, bundle)));
       } catch (error) {
-        dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+        dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       }
     },
     [activeTablePath, tables, bundles, flush, store],
@@ -1067,7 +1067,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     // The toolbar's "+" is a menu of both.
     setToolbarLabel("new", "New");
     setToolbarLabel("view-settings", "View Settings");
-    setToolbarLabel("export-zip", commandOf("export-zip").label);
+    setToolbarLabel("export-zip", commandOf("export-file").label);
   }, [settingsOpen]);
   useEffect(() => setToolbarFilesMode(filesMode), [filesMode]);
   // The toolbar's search field: what's typed in it searches the view, and
@@ -1085,9 +1085,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     find: focusSearch,
     "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
-    "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
-    "open-zip": () => void importZip(),
-    "export-zip": () => void exportZip(),
+    // Open for either form, decided by what is on disk, comes with #571; until then it opens a folder.
+    open: () => void chooseFolder("Choose a .table folder to open").then(openFolder),
+    "export-file": () => void exportZip(),
     "toggle-sidebar": toggleSidebar,
     "tables-mode": () => chooseFilesMode(false),
     "files-mode": () => chooseFilesMode(true),

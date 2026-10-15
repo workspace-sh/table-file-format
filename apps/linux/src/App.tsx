@@ -36,7 +36,7 @@ import {
   tooLargeToArchiveText,
   type Derived,
   type ViewCallbacks,
-  archiveFileName,
+  singleFileName,
   bundleToArchive,
   canClose,
   closedIn,
@@ -74,7 +74,7 @@ import {
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
 import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
 import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
@@ -457,18 +457,30 @@ async function choosePath(ask: (dialog: Gtk.FileDialog) => Promise<Gio.File>): P
   }
 }
 
-/** A .table.zip file to choose, and no other kind. */
-function zipFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
+/**
+ * What Open… offers: a single-file `.table`, a `.table` folder (by its
+ * manifest: a file dialog picks files or folders, never both, so a folder is
+ * opened by picking anything in it), and spreadsheets.
+ */
+function openFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
   const filter = Gtk.FileFilter.new();
-  filter.setName(".table.zip");
-  filter.addPattern("*.zip");
+  filter.setName("Tables and spreadsheets");
+  for (const pattern of ["*.table", "meta.json", "*.csv", "*.tsv", "*.tab", "*.txt"]) filter.addPattern(pattern);
+  dialog.setDefaultFilter(filter);
+  return dialog;
+}
+
+/** A single-file `.table` to save as (D50). */
+function tableFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
+  const filter = Gtk.FileFilter.new();
+  filter.setName("Table");
+  filter.addPattern("*.table");
   dialog.setDefaultFilter(filter);
   return dialog;
 }
 
 const chooseFileToAttach = () => choosePath((d) => d.open(null, null));
-const chooseFolderToOpen = () => choosePath((d) => d.selectFolder(null, null));
-const chooseZipToOpen = () => choosePath((d) => zipFilter(d).open(null, null));
+const chooseToOpenFile = () => choosePath((d) => openFilter(d).open(null, null));
 /** A spreadsheet kept as text: comma, tab or otherwise separated. */
 const chooseSpreadsheetToOpen = () =>
   choosePath((d) => {
@@ -478,11 +490,20 @@ const chooseSpreadsheetToOpen = () =>
     d.setDefaultFilter(filter);
     return d.open(null, null);
   });
-const chooseZipToSave = (name: string) =>
+const chooseFileToSave = (name: string) =>
   choosePath((d) => {
     d.setInitialName(name);
-    return zipFilter(d).save(null, null);
+    return tableFilter(d).save(null, null);
   });
+
+/** The `.table` folder a picked path is in (its manifest, or anything deeper), or the path itself. */
+export function tableFolderOf(path: string): string {
+  const parts = path.split("/");
+  for (let i = parts.length - 1; i > 0; i--) {
+    if (parts[i - 1]!.endsWith(".table") && existsSync(parts.slice(0, i).join("/")) && statSync(parts.slice(0, i).join("/")).isDirectory()) return parts.slice(0, i).join("/");
+  }
+  return path;
+}
 
 /** A question from table-app (a Confirm), asked as an alert; closing it is Cancel. */
 function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (response: string) => void }) {
@@ -556,10 +577,9 @@ export function App({
   newFilesIn,
   pageStillMs,
   chooseFile = chooseFileToAttach,
-  chooseFolder = chooseFolderToOpen,
-  chooseZip = chooseZipToOpen,
+  chooseToOpen = chooseToOpenFile,
   chooseSpreadsheet = chooseSpreadsheetToOpen,
-  chooseZipSaveAs = chooseZipToSave,
+  chooseSaveAs = chooseFileToSave,
   resetExamples,
   openIndex = openIndexHost,
   indexedFrom,
@@ -579,14 +599,12 @@ export function App({
   pageStillMs?: number;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
-  /** Ask for a .table folder to open. */
-  chooseFolder?: () => Promise<string | null>;
-  /** Ask for a .table.zip to open. */
-  chooseZip?: () => Promise<string | null>;
+  /** Ask for something to open: a single-file `.table`, anything in a `.table` folder, or a spreadsheet. */
+  chooseToOpen?: () => Promise<string | null>;
   /** Ask for a spreadsheet (CSV, TSV and the like) to open as a new .table. */
   chooseSpreadsheet?: () => Promise<string | null>;
-  /** Ask where to save a .table.zip, suggesting `name`. */
-  chooseZipSaveAs?: (name: string) => Promise<string | null>;
+  /** Ask where to save a single-file `.table`, suggesting `name`. */
+  chooseSaveAs?: (name: string) => Promise<string | null>;
   /**
    * Put the examples back as they shipped, in `newFilesIn`, and read them,
    * keyed apart from `held`. Absent: there's no demo data to reset.
@@ -748,19 +766,24 @@ export function App({
     onReset: () => dispatch({ type: "resetArrangement" }),
   };
 
+  // Open…: a .table folder is edited where it is; a single-file .table or a spreadsheet becomes a .table folder beside the new files.
+  const open = async () => {
+    const picked = await chooseToOpen();
+    if (!picked) return;
+    const path = tableFolderOf(picked);
+    if (statSync(path).isDirectory()) return openFolder(path);
+    return openFile(path);
+  };
   // A .table folder from disk, edited where it is.
-  const openFolder = async () => {
-    const path = await chooseFolder();
-    if (!path) return;
+  const openFolder = async (path: string) => {
     const opened = await loadLibrary([path], Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
     const problems = Object.values(opened.problems).flat();
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
   };
-  // A .table.zip, or a spreadsheet someone already has, becomes a .table folder beside the new files, written as it opens.
-  const openFile = async (choose: () => Promise<string | null>) => {
-    const path = await choose();
-    if (!path || !filesIn) return;
+  // A single-file .table, or a spreadsheet someone already has, becomes a .table folder beside the new files, written as it opens.
+  const openFile = async (path: string) => {
+    if (!filesIn) return tell(openFailedText(basename(path), "this app was started on its own folders, with nowhere to put a new .table"));
     try {
       // Named apart from the tables held and from any folder already there.
       const onDisk = bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
@@ -773,10 +796,10 @@ export function App({
       tell(openFailedText(basename(path), error));
     }
   };
-  // The open table's .table, every table in it, as one .table.zip.
-  const exportZip = async () => {
+  // The open table's .table, every table in it, as one single-file .table (D50).
+  const exportFile = async () => {
     const key = bundleOf(state.active);
-    const path = await chooseZipSaveAs(archiveFileName(key));
+    const path = await chooseSaveAs(singleFileName(key));
     if (!path) return;
     try {
       // A table held in the index has its rows read out of it for the archive, which is made in memory.
@@ -834,11 +857,10 @@ export function App({
           // Named apart from every .table folder already there, held or not: a new file never lands in another's folder.
           "new-file": () =>
             dispatch({ type: "create", making: { kind: "file", taken: bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, "")) } }),
-          "open-zip": () => void openFile(chooseZip),
         }
       : {}),
-    "open-folder": () => void openFolder(),
-    "export-zip": () => void exportZip(),
+    open: () => void open(),
+    "export-file": () => void exportFile(),
     // With the open page's row, as the web's address and the Mac's link have it.
     "copy-link": () => Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(derived.address)),
     "tables-mode": () => dispatch({ type: "setFilesSide", files: false }),
@@ -940,7 +962,7 @@ export function App({
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
           <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
           <GSimpleAction key="close-file" name="close-file" enabled={canCloseFile} onActivate={() => closeFile(bundleOf(state.active))} />,
-          <GSimpleAction key="open-spreadsheet" name="open-spreadsheet" enabled={!!filesIn} onActivate={() => void openFile(chooseSpreadsheet)} />,
+          <GSimpleAction key="open-spreadsheet" name="open-spreadsheet" enabled={!!filesIn} onActivate={() => void chooseSpreadsheet().then((path) => (path ? openFile(path) : undefined))} />,
           <GSimpleAction key="new-row" name="new-row" enabled={canAddField} onActivate={() => void callbacks.onAddRow()} />,
           <GSimpleAction key="find" name="find" enabled={onTables} onActivate={() => setFindRequest((n) => n + 1)} />,
           <GSimpleAction key="view-settings" name="view-settings" enabled={onTables} onActivate={() => dispatch({ type: "settings", open: !state.settingsOpen })} />,
