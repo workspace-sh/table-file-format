@@ -301,7 +301,16 @@ export async function buildIndexFromBytes(
     name: string;
     schema: TableSchema;
     // `chunks` may come as they're read (an async iterable); `keep` may write them away asynchronously, and each is waited for.
-    rows: Uint8Array | { chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>; size: number; keep?: (chunk: Uint8Array) => unknown };
+    // `files`, in place of `chunks`: a table's rows files (D51), each said to `onFile` with the place its first row takes, as it's begun.
+    rows:
+      | Uint8Array
+      | {
+          chunks?: Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
+          files?: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[];
+          size: number;
+          keep?: (chunk: Uint8Array, file: string) => unknown;
+          onFile?: (file: string, first: number) => unknown;
+        };
     bodies?: Record<string, string>;
     key: string;
     onProgress?: (done: number, total: number) => void;
@@ -318,9 +327,17 @@ export async function buildIndexFromBytes(
   const total = () => (pieces ? (read > 0 ? Math.max(done, Math.round((done / read) * pieces.size)) : 0) : counted);
   options.onProgress?.(0, total());
   async function* taken(): AsyncIterable<Uint8Array> {
-    for await (const chunk of pieces!.chunks) {
-      await pieces!.keep?.(chunk);
-      yield chunk;
+    for (const file of pieces!.files ?? [{ name: "", chunks: pieces!.chunks ?? [] }]) {
+      // Every row of the files before has been taken by now: a piece is asked for only once the last one's rows are.
+      await pieces!.onFile?.(file.name, done + 1);
+      let last = NEWLINE;
+      for await (const chunk of file.chunks) {
+        await pieces!.keep?.(chunk, file.name);
+        if (chunk.length > 0) last = chunk[chunk.length - 1]!;
+        yield chunk;
+      }
+      // A file whose last line has no end: its row is its own, not the start of the next file's first.
+      if (last !== NEWLINE) yield new Uint8Array([NEWLINE]);
     }
   }
   async function* streamed(): AsyncIterable<Row> {

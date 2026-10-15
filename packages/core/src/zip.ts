@@ -83,6 +83,8 @@ export interface LazyZipEntry {
   head(bytes: number): Uint8Array;
   /** All of it, in order, in pieces. Throws at the end if its size or CRC-32 isn't what the archive declares. */
   chunks(): Iterable<Uint8Array>;
+  /** A table's rows handed over as one entry (D51): the rows files it is, by name, in file order. */
+  parts?: { name: string; entry: LazyZipEntry }[];
 }
 
 /** How much compressed data is inflated at a time. */
