@@ -55,7 +55,7 @@ import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZip } from "./files";
-import { OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
+import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
 import { pickDocument, releaseDocument, type HeldDocument } from "./modules/table-files";
 import { File } from "expo-file-system";
 import { useIndexedTables, type IndexedTables } from "@workspace.sh/table-app/react";
@@ -134,7 +134,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved. The documents
     // opened last time are held open again and read before the first screen.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY])
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, reopened: await reopenDocuments(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
@@ -197,6 +197,8 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
         for (const bundle of closedIn(edited, bundles)) {
           forgetStoredHistories(store, bundle);
           await removeFolder(bundle);
+          // And a large single file's stamp beside its folder (documents.ts).
+          await expoFs.remove(`${bundleDir(bundle)}.stamp`);
         }
         await documentsRef.current?.write(edited.filter((b) => opened.has(b)), tables, bundles);
         await saveIndexed.current(tables);
@@ -258,6 +260,11 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
   // Tables held in the index (large ones): read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
+  // The first rows of large documents reopened at launch, shown while the rest is read (documents.ts).
+  useEffect(() => {
+    indexed.hold(reopened.first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const derived = derive(state, {
     locale: systemLocale,
     hasHistory: (key) => historyText(key) !== undefined,
@@ -353,17 +360,11 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
         if (first) dispatch({ type: "showTable", key: first });
         return;
       }
-      const { library, large } = await documents.open([held]);
+      const { library, first } = await documents.open([held]);
       for (const [key, messages] of Object.entries(library.problems)) tell(`Problems reading ${key}.table`, messages.join("\n"));
+      // A large table's first rows, shown while the rest is read into the index (documents.ts).
+      indexed.hold(first);
       if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
-      // A single file with a large table: taken in as a copy, through the index (documents.ts).
-      for (const file of large) {
-        try {
-          take(await readZip(file.bytes, Object.keys(state.bundles), file.name));
-        } catch (error) {
-          dispatch({ type: "tell", message: { heading: error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(file.name, error) } });
-        }
-      }
     },
     openBytes: async (bytes, name) =>
       take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
