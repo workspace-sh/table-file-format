@@ -44,6 +44,27 @@ static NSView *ReactRootAt(NSWindow *window, NSPoint point)
   return found;
 }
 
+/// The view React marked with `nativeID` `anchor` in `window`, for what opens pointing at it: its
+/// place comes from AppKit, so it's right however the views around it have scrolled (an embed in
+/// a document is inside its native scroll view, which React's measurements don't count).
+static NSView *AnchorIn(NSWindow *window, NSString *anchor)
+{
+  if (anchor.length == 0 || window == nil) return nil;
+  SEL nativeId = NSSelectorFromString(@"nativeId");
+  __block NSView *found = nil;
+  __block void (^walk)(NSView *) = ^(NSView *view) {
+    if (found != nil) return;
+    if ([view respondsToSelector:nativeId] && [[view valueForKey:@"nativeId"] isEqual:anchor]) {
+      found = view;
+      return;
+    }
+    for (NSView *child in view.subviews) walk(child);
+  };
+  walk(window.contentView);
+  walk = nil;
+  return found;
+}
+
 /// The first React surface in `window`, for a control opened from the keyboard.
 static NSView *FirstReactRoot(NSWindow *window)
 {
@@ -257,16 +278,26 @@ RCT_EXPORT_METHOD(popUp:(NSArray<NSDictionary *> *)items
   _popUpChoice = item.representedObject;
 }
 
-/// The system's date picker in a popover pointing at `rect` (a cell, as
-/// React measures: x, y, width, height in its surface). `kind` is "date",
+/// The system's date picker in a popover pointing at the view React marked
+/// with `nativeID` `anchor`, else at `rect` (a cell, as React measures: x,
+/// y, width, height in its surface). `kind` is "date",
 /// "time" or "datetime"; `date` is milliseconds since 1970, or null for
 /// none yet. Resolves with the date chosen, or null when nothing changed.
 RCT_EXPORT_METHOD(pickDate:(NSString *)kind
                   date:(nullable NSNumber *)date
                   rect:(NSDictionary *)rect
+                  anchor:(nullable NSString *)anchor
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
+  // The cell's own view, when it's marked: pointing at it needs no measuring.
+  NSView *anchored = AnchorIn(CurrentWindow(), anchor);
+  if (anchored != nil) {
+    [TableDatePicker.shared showWithKind:kind date:date rect:anchored.bounds in:anchored done:^(NSNumber *chosen) {
+      resolve(chosen ?: [NSNull null]);
+    }];
+    return;
+  }
   NSView *root = CurrentReactRoot();
   if (root == nil) {
     resolve([NSNull null]);

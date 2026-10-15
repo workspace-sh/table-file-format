@@ -85,16 +85,18 @@ export const MacSelect = Object.assign(SelectView, { opensFromTrigger: true }) a
  */
 function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps): ReactElement {
   const anchor = useRef<View | null>(null);
+  // The cell's view, found by this id: the popover points at it wherever it has scrolled.
+  const id = `date-${useId()}`;
   const open = () =>
     anchor.current?.measure((_x, _y, width, height, x, y) => {
-      void pickDate(kind, dateOfStored(kind, value)?.getTime() ?? null, { x, y, width, height }).then((chosen) => {
+      void pickDate(kind, dateOfStored(kind, value)?.getTime() ?? null, { x, y, width, height }, id).then((chosen) => {
         if (chosen === null) return;
         const next = storedOfDate(kind, new Date(chosen));
         if (next !== value) onChange(next);
       });
     });
   return (
-    <Pressable ref={anchor} onPress={open} accessibilityRole="button" accessibilityLabel={label} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
+    <Pressable ref={anchor} nativeID={id} onPress={open} accessibilityRole="button" accessibilityLabel={label} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
       {trigger}
     </Pressable>
   );

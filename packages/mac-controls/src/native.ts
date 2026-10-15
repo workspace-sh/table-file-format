@@ -10,7 +10,7 @@ export type PopUpItem =
 
 interface TableMacControlsModule {
   popUp(items: PopUpItem[], at: { x: number; y: number } | null): Promise<string | null>;
-  pickDate(kind: string, date: number | null, rect: { x: number; y: number; width: number; height: number }): Promise<number | null>;
+  pickDate(kind: string, date: number | null, rect: { x: number; y: number; width: number; height: number }, anchor: string | null): Promise<number | null>;
   datePickerShown(): Promise<boolean>;
   datePickerSet(date: number): void;
   datePickerClose(): void;
@@ -33,17 +33,21 @@ export function popUpMenu(items: PopUpItem[], at: { x: number; y: number } | nul
 }
 
 /**
- * The system's date picker in a popover pointing at `rect` (a cell, as
- * React measures it in its surface): a calendar for a date, a field with
- * a stepper for a time, both for a date and time. Resolves with the date
- * chosen in milliseconds since 1970, or null when nothing changed.
+ * The system's date picker in a popover pointing at the view whose
+ * `nativeID` is `anchor`, else at `rect` (a cell, as React measures it in
+ * its surface): a calendar for a date, a field with a stepper for a time,
+ * both for a date and time. Resolves with the date chosen in milliseconds
+ * since 1970, or null when nothing changed. Prefer an anchor: React's
+ * measurements don't count a native scroll view's offset (a table embedded
+ * in a document).
  */
 export function pickDate(
   kind: "date" | "time" | "datetime",
   date: number | null,
   rect: { x: number; y: number; width: number; height: number },
+  anchor: string | null = null,
 ): Promise<number | null> {
-  return native?.pickDate(kind, date, rect) ?? Promise.resolve(null);
+  return native?.pickDate(kind, date, rect, anchor) ?? Promise.resolve(null);
 }
 
 /**
