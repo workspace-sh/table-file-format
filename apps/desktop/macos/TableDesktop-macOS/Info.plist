@@ -50,7 +50,9 @@
 	<!-- A .table is one document in either of two forms (SPEC section 13,
 	     D49): a folder, a package, or a single file. One extension, one
 	     name, so both show as "Table"; the system types a .table by
-	     whether it is a folder. Imported: the Workspace app exports them. -->
+	     whether it is a folder. Imported: the Workspace app exports them.
+	     Both with the file icon (design/file-icon), as Workspace's are, so a
+	     .table looks the same whichever app this Mac has. -->
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -70,6 +72,8 @@
 					<string>table</string>
 				</array>
 			</dict>
+			<key>UTTypeIconFile</key>
+			<string>table-file</string>
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
@@ -88,6 +92,8 @@
 					<string>table</string>
 				</array>
 			</dict>
+			<key>UTTypeIconFile</key>
+			<string>table-file</string>
 		</dict>
 	</array>
 </dict>

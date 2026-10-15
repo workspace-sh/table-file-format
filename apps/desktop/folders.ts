@@ -77,6 +77,10 @@ async function openDocuments(paths: string[], held: Iterable<string>): Promise<O
   }
   const library = await openLibrary(desktopFs, folders, held);
   Object.assign(library.problems, problems);
+  // Which bundles are single files, and where each file is (table-app's Library.singleFiles):
+  // Export as a Single File is for folders only.
+  const singleFiles = Object.fromEntries(Object.entries(library.paths).flatMap(([key, folder]) => (documents.has(folder) ? [[key, documents.get(folder)!]] : [])));
+  if (Object.keys(singleFiles).length > 0) library.singleFiles = singleFiles;
   return { library, documents };
 }
 

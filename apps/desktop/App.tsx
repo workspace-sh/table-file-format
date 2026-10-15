@@ -483,6 +483,7 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
         tables: { ...initial.tables, ...reopened.tables },
         bundles: { ...initial.bundles, ...reopened.bundles },
         opened: reopened.paths,
+        ...(reopened.singleFiles ? { singleFiles: reopened.singleFiles } : {}),
         stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
         // Each edit goes to its table's history (SPEC section 14).
         writesHistory: true,
