@@ -1,0 +1,30 @@
+{
+  "name": "@workspace.sh/table-mac-controls",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Mac's own controls for table-ui's slots: a choice in the system's pop-up menu, a date in the system's date picker, a row's actions in its context menu.",
+  "main": "./src/index.tsx",
+  "types": "./src/index.tsx",
+  "exports": {
+    ".": {
+      "source": "./src/index.tsx",
+      "react-native": "./src/index.tsx",
+      "default": "./src/index.tsx"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "macos"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@workspace.sh/table-ui": "*",
+    "react": ">=19.0.0",
+    "react-native": ">=0.81.0",
+    "react-strict-dom": "*"
+  }
+}

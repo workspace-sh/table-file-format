@@ -108,7 +108,7 @@ describe("the File menu on Linux", () => {
     await screen.findAllByText("2026-12-15");
     // And a .table folder on disk, beside the examples, that reads back as a table.
     const made = join(examples, "q4-invoices.table", "tables", "q4-invoices");
-    await waitFor(() => expect(existsSync(join(made, "rows.ndjson"))).toBe(true));
+    await waitFor(() => expect(existsSync(join(made, "rows", "0001.ndjson"))).toBe(true));
     const table = await parseTable(made);
     expect(table.schema.fields.map((f) => [f.name, f.title, f.type])).toEqual([
       ["client_name", "Client Name", "string"],
@@ -140,7 +140,7 @@ describe("the File menu on Linux", () => {
     await screen.findAllByText("Café Müller");
     await screen.findAllByText("Köln");
     const made = join(examples, "kunden.table", "tables", "kunden");
-    await waitFor(() => expect(existsSync(join(made, "rows.ndjson"))).toBe(true));
+    await waitFor(() => expect(existsSync(join(made, "rows", "0001.ndjson"))).toBe(true));
     expect((await parseTable(made)).rows.map((r) => [r.name, r.stadt, r.betrag])).toEqual([["Café Müller", "Köln", 12]]);
     const empty = join(dir, "empty.csv");
     writeFileSync(empty, "\n");
@@ -272,7 +272,7 @@ describe("the File menu on Linux", () => {
     await waitFor(() => expect(existsSync(copy)).toBe(false));
     // The other file is as it was, on screen and on disk.
     await screen.findAllByText("Land .table extension");
-    expect(existsSync(join(examples, "projects.table", "tables", "tasks", "rows.ndjson"))).toBe(true);
+    expect(existsSync(join(examples, "projects.table", "tables", "tasks", "rows", "0001.ndjson"))).toBe(true);
     // Kept with the viewer's settings, so the next launch doesn't copy the example back.
     await waitFor(() => expect(loadClosed(jsonFileStore(join(dir, "settings.json")))).toEqual(["crm"]));
     copiesOf(fixturesDir()!, examples, loadClosed(jsonFileStore(join(dir, "settings.json"))));
@@ -283,7 +283,7 @@ describe("the File menu on Linux", () => {
   it("closing a folder of your own leaves the folder where it is, and says so", async () => {
     const own = join(dir, "mine", "crm.table");
     cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
-    const before = readFileSync(join(own, "tables", "companies", "rows.ndjson"), "utf8");
+    const before = readFileSync(join(own, "tables", "companies", "rows", "0001.ndjson"), "utf8");
     const library = await loadLibrary([join(examples, "projects.table"), own]);
     await render(<App library={library} initialTable="crm/companies" newFilesIn={examples} />);
     // From the main menu: the file on screen.
@@ -297,7 +297,7 @@ describe("the File menu on Linux", () => {
     // Another file is on screen now.
     await screen.findAllByText("Projects");
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect(readFileSync(join(own, "tables", "companies", "rows.ndjson"), "utf8")).toBe(before);
+    expect(readFileSync(join(own, "tables", "companies", "rows", "0001.ndjson"), "utf8")).toBe(before);
     expect(existsSync(join(own, "meta.json"))).toBe(true);
   });
 

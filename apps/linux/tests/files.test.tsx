@@ -35,15 +35,15 @@ describe("the Files side on Linux", () => {
     await openFiles();
     expect(await screen.findByText("crm.table/")).toBeDefined();
     expect(await screen.findByText("6 rows")).toBeDefined();
-    // The companies folder is open (the table on screen), its rows.ndjson listed.
-    const rows = (await screen.findAllByText("rows.ndjson"))[0]!;
+    // The companies folder is open (the table on screen), its rows file listed in rows/.
+    const rows = (await screen.findAllByText("0001.ndjson"))[0]!;
     await userEvent.click(rows);
     let view: Gtk.TextView | undefined;
     await waitFor(async () => {
       view = (await screen.findAllByRole(Gtk.AccessibleRole.TEXT_BOX)).find((w) => w instanceof Gtk.TextView) as Gtk.TextView | undefined;
       expect(view).toBeDefined();
     });
-    expect(view!.getBuffer().text).toBe(readFileSync(join(bundle, "tables", "companies", "rows.ndjson"), "utf8"));
+    expect(view!.getBuffer().text).toBe(readFileSync(join(bundle, "tables", "companies", "rows", "0001.ndjson"), "utf8"));
     expect(view!.getEditable()).toBe(false);
   });
 
@@ -54,7 +54,7 @@ describe("the Files side on Linux", () => {
     const files = await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Files" });
     const tablesSide = await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Tables" });
     await userEvent.click(files);
-    await screen.findAllByText("rows.ndjson");
+    await screen.findAllByText("0001.ndjson");
     expect(screen.queryAllByText("history.ndjson")).toHaveLength(0);
     // An edit, on the Tables side.
     await userEvent.click(tablesSide);

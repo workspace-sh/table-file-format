@@ -4,13 +4,14 @@
 //
 //   npx tsx scripts/big-table-index.mts <folder.table> <index.sqlite>
 
-import { createReadStream } from "node:fs";
+import { createReadStream, readdirSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 import { buildIndex, putRows, queryIndex, type IndexQuery, type SqlDriver } from "../packages/core/src/indexer.ts";
 import type { Row, TableSchema } from "../packages/core/src/types.ts";
+import { rowsFileOrder } from "../packages/core/src/rowFiles.ts";
 
 const [folder, file] = process.argv.slice(2) as [string, string];
 const dir = join(folder, "tables", "deals");
@@ -27,7 +28,9 @@ const driver: SqlDriver = {
 };
 
 async function* rows(): AsyncIterable<Row> {
-  for await (const line of createInterface({ input: createReadStream(join(dir, "rows.ndjson")) })) if (line) yield JSON.parse(line) as Row;
+  // Its rows files in order (D51).
+  for (const name of rowsFileOrder(readdirSync(join(dir, "rows"))))
+    for await (const line of createInterface({ input: createReadStream(join(dir, "rows", name)) })) if (line) yield JSON.parse(line) as Row;
 }
 const ms = async <T,>(run: () => Promise<T>): Promise<[number, T]> => {
   const t = performance.now();

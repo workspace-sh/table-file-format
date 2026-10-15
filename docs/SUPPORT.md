@@ -31,7 +31,7 @@ Apple's only. What it lacks is listed in #429.
 | Open a CSV as a new table | Yes | Yes | Yes | Yes | |
 | Export a CSV | No | No | No | No | #574 |
 | Import a CSV into a table | No | No | No | No | #519 |
-| Lines of `rows.ndjson` that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569). Said on opening by the Mac and Linux (#574). Large tables from a zip: #567. |
+| Lines of a table's rows files that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569). Said on opening by the Mac and Linux (#574). Large tables from a zip: #567. |
 | Warn about a newer `formatVersion` | No | No | No | No | #574 |
 | Edit history (`history.ndjson`) | Partly | Partly | Partly | Yes | Web, iOS and the Mac keep it in the app's own storage except for folders and large tables. |
 

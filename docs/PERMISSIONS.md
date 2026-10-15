@@ -145,7 +145,7 @@ Within a tier, every key-holder sees identical data — `x-tier` scopes
 "no private layer" stance (docs/PRIOR-ART.md): the format carries no
 hidden per-user state, only per-field access.
 
-A row in `rows.ndjson` is written as a single JSON object, but each
+A row in a table's rows files is written as a single JSON object, but each
 field's value is encrypted with its tier's key before being written to
 the Hypercore log. A peer without `K2` replicates all blocks — the
 Hypercore log is fully distributed — but decrypts only the fields their
@@ -375,7 +375,7 @@ never shared with the wider org.
 - **ucanto delegation for `K_n` keys** — does ucanto's capability model
   handle scoped key delivery cleanly, or does it need a custom capability
   type? ([workspace-p2p-spike #5](https://github.com/workspace-sh/workspace-p2p-spike/issues/5))
-- **Autobase merge semantics for `rows.ndjson`** — how do concurrent
+- **Autobase merge semantics for the rows files** — how do concurrent
   edits to the same field across writer logs resolve? Last-write-wins
   by timestamp, custom rules, or CRDTs on top? The format defers this
   (D14); the P2P spike has not yet validated Autobase as the answer.

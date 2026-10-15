@@ -1,15 +1,15 @@
 // A bundle's index on disk, for a Node app (Linux): `index.sqlite` at the
 // bundle's root (SPEC section 8), built from a table's files without ever
 // holding its rows, kept fresh as rows are edited, and saved back to
-// `rows.ndjson`. Nothing here draws: an app runs it off the thread that
+// its rows files. Nothing here draws: an app runs it off the thread that
 // does (apps/linux's index worker), or in place for a test.
 
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, buildIndex, buildSearchIndex, fillIndex, rowsBeingBuilt, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, buildIndex, buildSearchIndex, fillIndex, FIRST_ROWS_FILE, LEGACY_ROWS_FILE, nameAfter, nameBetween, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -38,7 +38,7 @@ export interface IndexHost extends SqlDriver {
   build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the table's rows out of the index to its
-   * `rows.ndjson` (when `rows` is true), without the keys in `omit`
+   * rows files (when `rows` is true), without the keys in `omit`
    * (fields the table no longer has), and say the index is fresh for the
    * files as they now are.
    *
@@ -69,26 +69,37 @@ export interface IndexHost extends SqlDriver {
 /** Rows a build commits at a time (buildIndex's `commitEvery`). */
 const BUILD_STEP = 20_000;
 
-/** How many rows a table's `rows.ndjson` holds: its lines that aren't blank. */
-export async function countRows(tableDir: string): Promise<number> {
-  let count = 0;
-  let blank = true;
-  for await (const chunk of createReadStream(join(tableDir, "rows.ndjson"))) {
-    for (const byte of chunk as Buffer) {
-      if (byte === 10) {
-        if (!blank) count++;
-        blank = true;
-      } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
-    }
-  }
-  return blank ? count : count + 1;
+/** A table's rows files on disk, in file order (SPEC section 3, D51): its `rows/` files, or formatVersion 1's `rows.ndjson`. */
+export function rowsFilesIn(tableDir: string): { name: string; path: string }[] {
+  const dir = join(tableDir, ROWS_DIR);
+  if (existsSync(dir) && statSync(dir).isDirectory()) return rowsFileOrder(readdirSync(dir)).map((name) => ({ name, path: join(dir, name) }));
+  const legacy = join(tableDir, LEGACY_ROWS_FILE);
+  return existsSync(legacy) ? [{ name: FIRST_ROWS_FILE, path: legacy }] : [];
 }
 
-/** Whether a table's rows file is large enough to be worth counting: under this many bytes it can't hold `rows` rows. */
+/** How many rows a table's rows files hold: their lines that aren't blank. */
+export async function countRows(tableDir: string): Promise<number> {
+  let count = 0;
+  for (const file of rowsFilesIn(tableDir)) {
+    let blank = true;
+    for await (const chunk of createReadStream(file.path)) {
+      for (const byte of chunk as Buffer) {
+        if (byte === 10) {
+          if (!blank) count++;
+          blank = true;
+        } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
+      }
+    }
+    if (!blank) count++;
+  }
+  return count;
+}
+
+/** Whether a table's rows are large enough to be worth counting: under this many bytes they can't hold `rows` rows. */
 export function mayHoldRows(tableDir: string, rows: number): boolean {
   try {
     // A row is at least `{"id":"x"}` and a newline.
-    return statSync(join(tableDir, "rows.ndjson")).size >= rows * 11;
+    return rowsFilesIn(tableDir).reduce((n, f) => n + statSync(f.path).size, 0) >= rows * 11;
   } catch {
     return false;
   }
@@ -108,8 +119,10 @@ const bodyFiles = (tableDir: string): string[] => {
 export async function tableContentKey(tableDir: string): Promise<string> {
   const hash = createHash("sha256");
   hash.update(readFileSync(join(tableDir, "schema.json")));
-  hash.update("\0");
-  for await (const chunk of createReadStream(join(tableDir, "rows.ndjson"))) hash.update(chunk as Buffer);
+  for (const file of rowsFilesIn(tableDir)) {
+    hash.update(`\0${file.name}\0`);
+    for await (const chunk of createReadStream(file.path)) hash.update(chunk as Buffer);
+  }
   for (const name of bodyFiles(tableDir)) {
     hash.update(`\0${name}\0`);
     hash.update(readFileSync(join(tableDir, "bodies", name)));
@@ -122,11 +135,14 @@ export async function tableContentKey(tableDir: string): Promise<string> {
  * index writes the rows back out, and would leave that line out of the file
  * (#567), so such a table is held in memory instead, where it's kept.
  */
-function rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> {
-  return rowsFrom(createReadStream(join(tableDir, "rows.ndjson")), onRow, true);
+async function* rowsOf(tableDir: string, onRow: () => void, onFile: (name: string) => void = () => {}): AsyncIterable<Row> {
+  for (const file of rowsFilesIn(tableDir)) {
+    onFile(file.name);
+    yield* rowsFrom(createReadStream(file.path), onRow, file.path.endsWith(LEGACY_ROWS_FILE) ? "its rows" : `${ROWS_DIR}/${file.name}`);
+  }
 }
 
-async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}, strict = false): AsyncIterable<Row> {
+async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}, strict: string | false = false): AsyncIterable<Row> {
   let at = 0;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
     at++;
@@ -138,7 +154,7 @@ async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () =>
       row = null;
     }
     if (row === null || typeof row !== "object" || Array.isArray(row) || typeof (row as Row).id !== "string" || (row as Row).id === "") {
-      if (strict) throw new Error(`line ${at} of its rows couldn't be read`);
+      if (strict) throw new Error(`line ${at} of ${strict} couldn't be read`);
       // Shown meanwhile, it's skipped, as the reader skips it (SPEC section 3).
       continue;
     }
@@ -153,14 +169,16 @@ async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () =>
  */
 export async function firstRows(tableDir: string, count: number): Promise<Row[]> {
   const rows: Row[] = [];
-  const input = createReadStream(join(tableDir, "rows.ndjson"));
-  try {
-    for await (const row of rowsFrom(input)) {
-      rows.push(row);
-      if (rows.length >= count) break;
+  for (const file of rowsFilesIn(tableDir)) {
+    const input = createReadStream(file.path);
+    try {
+      for await (const row of rowsFrom(input)) {
+        rows.push(row);
+        if (rows.length >= count) return rows;
+      }
+    } finally {
+      input.destroy();
     }
-  } finally {
-    input.destroy();
   }
   return rows;
 }
@@ -173,14 +191,20 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
   const bodies: Record<string, string> = {};
   for (const file of bodyFiles(tableDir)) bodies[file.slice(0, -".md".length)] = readFileSync(join(tableDir, "bodies", file), "utf8");
   let done = 0;
+  // Where each rows file starts, by the place its first row takes in the index (positions run from 1).
+  const files: { name: string; first: number }[] = [];
   onProgress?.(0, total);
   await buildIndex(db, {
     name,
     schema,
-    rows: rowsOf(tableDir, () => {
-      done++;
-      if (done % 5000 === 0) onProgress?.(done, total);
-    }),
+    rows: rowsOf(
+      tableDir,
+      () => {
+        done++;
+        if (done % 5000 === 0) onProgress?.(done, total);
+      },
+      (file) => files.push({ name: file, first: done + 1 }),
+    ),
     bodies,
     key,
     // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
@@ -188,45 +212,106 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     // In steps: as one transaction the log beside the index grows as large as the index itself.
     commitEvery: BUILD_STEP,
   });
+  await setRowFiles(db, name, files);
   onProgress?.(done, total);
   return done;
 }
 
+/** Which rows file each run of a table's index positions goes back to (D51): each file and the place of its first row. */
+async function rowFilesOf(db: SqlDriver, name: string): Promise<{ name: string; first: number }[]> {
+  await db.exec("create table if not exists _rowfiles(tbl text not null, name text not null, first integer not null, primary key(tbl, name))");
+  return (await db.all("select name, first from _rowfiles where tbl = ? order by first, name", [name])).map((r) => ({ name: r.name as string, first: r.first as number }));
+}
+
+async function setRowFiles(db: SqlDriver, name: string, files: { name: string; first: number }[]): Promise<void> {
+  await db.exec("create table if not exists _rowfiles(tbl text not null, name text not null, first integer not null, primary key(tbl, name))");
+  await db.run("delete from _rowfiles where tbl = ?", [name]);
+  for (const f of files) await db.run("insert into _rowfiles(tbl, name, first) values(?, ?, ?)", [name, f.name, f.first]);
+}
+
 /**
- * Write table `name`'s rows out of the index to `tableDir`'s `rows.ndjson`,
- * replacing it in one rename. `stop` is asked before each piece is written:
- * true leaves the file as it was, and gives false.
+ * Write table `name`'s rows out of the index to `tableDir`'s rows files
+ * (SPEC section 3, D51): each row back in the file it came from, new rows
+ * in the last, a file past about 25 MB split (by number at the end, by
+ * letters in the middle), and a file left without rows removed. Each file
+ * is written beside itself and renamed over it, and only once every file
+ * is written. `stop` is asked before each piece: true leaves the files as
+ * they were, and gives false.
  */
 export async function saveTableRows(
   db: SqlDriver,
   name: string,
   tableDir: string,
   omit: string[] = [],
-  options: { stop?: () => boolean; batchSize?: number } = {},
+  options: { stop?: () => boolean; batchSize?: number; limit?: number } = {},
 ): Promise<boolean> {
+  const limit = options.limit ?? ROWS_FILE_BYTES;
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
-  const target = join(tableDir, "rows.ndjson");
-  const out = createWriteStream(`${target}.tmp`);
+  const dir = join(tableDir, ROWS_DIR);
+  mkdirSync(dir, { recursive: true });
+  const known = await rowFilesOf(db, name);
+  const bounds = known.length > 0 ? known : [{ name: FIRST_ROWS_FILE, first: -Infinity }];
+  const written: { name: string; first: number }[] = [];
+  let out: ReturnType<typeof createWriteStream> | null = null;
+  let file = -1;
+  let piece = "";
+  let bytes = 0;
+  const close = async () => {
+    if (!out) return;
+    out.end();
+    await once(out, "finish");
+    out = null;
+  };
+  const open = (pieceName: string, first: number) => {
+    piece = pieceName;
+    bytes = 0;
+    written.push({ name: pieceName, first });
+    out = createWriteStream(join(dir, `${pieceName}.tmp`));
+  };
   let stopped = false;
   try {
-    for await (const text of storedRows(db, { name, schema, omit, ...(options.batchSize ? { batchSize: options.batchSize } : {}) })) {
+    for await (const batch of storedRowLines(db, { name, schema, omit, ...(options.batchSize ? { batchSize: options.batchSize } : {}) })) {
       if (options.stop?.()) {
         stopped = true;
         break;
       }
-      if (!out.write(text)) await once(out, "drain");
+      for (const { pos, line } of batch) {
+        // The file this row's place is in: the last whose first row is at or before it.
+        let k = file < 0 ? 0 : file;
+        while (k + 1 < bounds.length && bounds[k + 1]!.first <= pos) k++;
+        if (k !== file) {
+          await close();
+          file = k;
+          open(bounds[k]!.name, pos);
+        } else if (bytes >= limit) {
+          // Past the limit: the next file, by number after the last file, by letters before another.
+          await close();
+          open(k === bounds.length - 1 ? nameAfter(piece) : nameBetween(piece, bounds[k + 1]!.name), pos);
+        }
+        const text = `${line}\n`;
+        bytes += Buffer.byteLength(text);
+        const stream = out as unknown as ReturnType<typeof createWriteStream>;
+        if (!stream.write(text)) await once(stream, "drain");
+      }
     }
-    out.end();
-    await once(out, "finish");
+    // No rows at all: one empty file, so the folder is kept.
+    if (written.length === 0 && !stopped) open(bounds[0]!.name, 1);
+    await close();
   } catch (error) {
-    out.destroy();
+    (out as ReturnType<typeof createWriteStream> | null)?.destroy();
+    for (const w of written) rmSync(join(dir, `${w.name}.tmp`), { force: true });
     throw error;
   }
   if (stopped) {
-    rmSync(`${target}.tmp`, { force: true });
+    for (const w of written) rmSync(join(dir, `${w.name}.tmp`), { force: true });
     return false;
   }
-  renameSync(`${target}.tmp`, target);
+  for (const w of written) renameSync(join(dir, `${w.name}.tmp`), join(dir, w.name));
+  // Files left without rows, and formatVersion 1's rows.ndjson, now in rows/.
+  const kept = new Set(written.map((w) => w.name));
+  for (const old of rowsFileOrder(readdirSync(dir))) if (!kept.has(old)) rmSync(join(dir, old), { force: true });
+  rmSync(join(tableDir, LEGACY_ROWS_FILE), { force: true });
+  await setRowFiles(db, name, written);
   return true;
 }
 

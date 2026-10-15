@@ -39,7 +39,9 @@ crm.table/
 ├── tables/                   REQUIRED: one directory per table
 │   ├── companies/
 │   │   ├── schema.json       REQUIRED
-│   │   ├── rows.ndjson       REQUIRED
+│   │   ├── rows/             REQUIRED: the rows, in one or more files (section 3)
+│   │   │   ├── 0001.ndjson
+│   │   │   └── …
 │   │   ├── views.json        OPTIONAL
 │   │   ├── meta.json         OPTIONAL: the table's own title and description
 │   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
@@ -71,7 +73,7 @@ are relative to that table's directory, `tables/<name>/`.
 Readers MUST tolerate any of the optional members being absent. Readers
 MUST ignore unknown files at the bundle root and in each table's
 directory. A directory under `tables/` without both `schema.json` and
-`rows.ndjson` is not a table: readers SHOULD report it and otherwise
+`rows/` (or, from `formatVersion` 1, `rows.ndjson`) is not a table: readers SHOULD report it and otherwise
 ignore it. Writers SHOULD preserve unknown files on round-trip (treat
 them as the user's domain).
 
@@ -131,7 +133,7 @@ borrowing the names is for readability, not compatibility.
 
 #### Value encodings
 
-Each type has exactly one JSON encoding in `rows.ndjson`. Two readers
+Each type has exactly one JSON encoding in the rows files. Two readers
 given the same file MUST see the same values, so the encoding is part
 of the format, not a reader's choice (DECISIONS D30).
 
@@ -349,7 +351,7 @@ is derived, never stored:
 The expression lives in the schema (one definition for every row);
 the result is **never persisted** — recomputed on read, so there is
 no "stored 100 but recomputes to 110" staleness class. Writers drop
-computed fields from `rows.ndjson`, and validation skips them. The
+computed fields from the rows files, and validation skips them. The
 optional `index.sqlite` cache MAY materialise results for query speed.
 
 `expr` holds only the canonical `table-expr-v1` form (DECISIONS D29):
@@ -564,14 +566,56 @@ Schema files MAY include third-party extension keys with the `x-`
 prefix. Readers MUST ignore unknown keys; writers MUST preserve them
 on round-trip.
 
-## 3. `rows.ndjson`
+## 3. Rows (`rows/`)
 
-One JSON object per line. Each row is independently parseable. Blank
-lines are skipped. The file ends with a trailing `\n` (POSIX-correct).
+A table's rows are NDJSON files in its `rows/` folder: one JSON object
+per line. Each row is independently parseable. Blank lines are
+skipped. Each file ends with a trailing `\n` (POSIX-correct).
 
 ```ndjson
 {"id":"p1","title":"Workspace v1","status":"active","priority":1}
 {"id":"p2","title":"Table file format spike","status":"done","priority":2}
+```
+
+### The rows files (DECISIONS D51)
+
+The rows are split across files so that no file grows too large for
+version control without a large-file extension: GitHub warns at 50 MB
+and refuses 100 MB. Every table has the folder, however small; a small
+table's is one file, `rows/0001.ndjson`.
+
+- **Order.** The table's rows are the files' lines read in the files'
+  name order, as UTF-8 bytes compare: that is the table's file order.
+- **Size.** A writer starts a new file when the one it's writing has
+  passed **about 25 MB** (25,000,000 bytes): no file nears the 50 MB
+  warning, and the limit costs nothing to keep, since a writer counts
+  the bytes it writes. A single row larger than that has a file to
+  itself. Files are never rebalanced or merged, so their sizes vary:
+  where the files split depends on how the table was edited, and isn't
+  part of the canonical serialisation (below). A file emptied of rows
+  is removed.
+- **Names.** A file's name is a number of four digits, then any
+  lowercase letters, then `.ndjson`. New rows at the end go in the last
+  file, and a new file there takes the next number (`0002` after
+  `0001`, `10000` after `9999`). A file that passes the limit in the
+  middle of the table (rows inserted there) splits: its second half
+  goes to a new file whose name sorts between its own and the next,
+  made by adding letters (`0002m` between `0002` and `0003`; then
+  `0002g` before it, `0002t` after it, `0002am` between `0002a` and
+  `0002b`). Digits for files added at the end and letters for splits
+  sort the same as bytes compare and as file browsers sort numbers by
+  value, so the folder lists in file order everywhere. No file but the
+  new one is renamed.
+- **Before this** (`formatVersion` 1), a table's rows were one file,
+  `rows.ndjson`. A reader reads it as the table's only rows file; a
+  writer writes `rows/` and removes `rows.ndjson`.
+
+```
+tables/deals/rows/
+├── 0001.ndjson        ~25 MB
+├── 0002.ndjson
+├── 0002m.ndjson       the second half of 0002, after rows were inserted there
+└── 0003.ndjson        new rows go here, at the end
 ```
 
 ### System `id`
@@ -602,7 +646,8 @@ constraint over user-facing fields, not row identity.
 
 ### Row ordering
 
-Row order in `rows.ndjson` is the table's **file order**. It means
+Row order across the rows files (in their name order, then line
+order) is the table's **file order**. It means
 something: `(values "x")` reads in it, and a Sheet view with no saved
 sort numbers its rows in it (DECISIONS D41). How rows are shown is
 still each view's business (`sort`, `group`, `order`). Appending a new
@@ -633,8 +678,8 @@ without a readable schema is not a table; there is nothing sound to
 degrade to.
 
 Reference shape: `parseTable` returns `diagnostics` (same structure
-as validation errors; `rowIndex` is the zero-based line number in
-`rows.ndjson`, or −1 for file-level problems). Strict consumers MAY
+as validation errors; `rowIndex` is the zero-based line number in its
+rows file, which the message names, or −1 for file-level problems). Strict consumers MAY
 treat any diagnostic as an error — the contract is that the *reader*
 does not have to.
 
@@ -874,7 +919,7 @@ For shorter inline markdown content (a description, a one-paragraph
 summary), use a string field with `format: "markdown"` instead.
 
 Rules:
-- A body file MUST have a corresponding row in `rows.ndjson`. Orphan
+- A body file MUST have a corresponding row in the table. Orphan
   body files (file present, no row) are a validator warning.
 - A row WITHOUT a body file is valid; bodies are optional per row.
 - Writers wholesale-replace `bodies/` on `writeTable`: bodies not
@@ -888,12 +933,12 @@ OPTIONAL rebuildable cache for filtered queries and full-text search.
 Never the source of truth. There is one per bundle, at its root,
 covering every table in it, so relations between those tables are
 joins inside one database. Where this section says `schema.json` and
-`rows.ndjson`, read every table's.
+the rows files, read every table's.
 
 - Excluded from git via `.gitignore`.
 - When present and fresh, readers SHOULD use it for fast queries.
-- When absent or stale, readers MUST fall back to scanning
-  `rows.ndjson`.
+- When absent or stale, readers MUST fall back to scanning the rows
+  files.
 - Apps decide their own caching strategy; the format prescribes only
   the fallback rule.
 
@@ -908,7 +953,7 @@ is always sufficient.
 
 ### When to index
 
-The text is the table. A reader that parses `rows.ndjson` and holds its
+The text is the table. A reader that parses the rows files and holds its
 rows in memory is a complete reader, and for a small table it is the
 fast one: nothing to build, and every read immediate. An index earns
 its place when a table is large enough that holding and re-reading
@@ -932,7 +977,7 @@ How a reader gets from the files to rows on screen is its own choice.
 None of these changes what is on disk, and a `.table` written by one is
 read by any other. Three that work, from least to most machinery:
 
-1. **Hold it in memory.** Parse `rows.ndjson`, keep the rows, and
+1. **Hold it in memory.** Parse the rows files, keep the rows, and
    filter, sort and search them in place (`applyView`, `searchRows`).
    Nothing to build and nothing beside the files. This is the whole of a
    correct reader, and the right one for small tables, scripts,
@@ -950,7 +995,7 @@ read by any other. Three that work, from least to most machinery:
 
 3. **Show at once, index behind.** What the reference apps do for a
    table past their line (see "When to index"):
-   - show the first rows straight from the head of `rows.ndjson`, in
+   - show the first rows straight from the head of the first rows file, in
      file order, while the index is built off the thread that draws,
      with how far it has got;
    - make the table usable as soon as its rows are in the index, and
@@ -960,7 +1005,7 @@ read by any other. Three that work, from least to most machinery:
    - read a window of rows at a time, drawing an empty row of the right
      height for one that hasn't arrived;
    - make edits in the index (`putRows`, `removeRows`), write them back
-     to `rows.ndjson` (`storedRows`), and stamp the index fresh
+     to the rows files (`storedRows`), and stamp the index fresh
      (`setIndexKey`);
    - open from memory instead when the index can't be made, and say so.
 
@@ -1025,7 +1070,7 @@ search, with the same rows.
 
 The index stores the table's schema signature and an opaque `key` the
 caller chooses when it builds (a content hash of `schema.json` +
-`rows.ndjson` + bodies is the natural one). `isIndexStale(db, name,
+the rows files + bodies is the natural one). `isIndexStale(db, name,
 key)` compares it. A key from another content version, a missing
 index and an index of another format all read as stale.
 
@@ -1078,9 +1123,9 @@ is rebuilt instead.
 ### A table held in the index
 
 An app MAY hold a large table's rows in the index alone, not in memory,
-reading `rows.ndjson` only to build it. `rows.ndjson` stays the truth:
+reading the rows files only to build it. They stay the truth:
 after edits the app writes the rows back out of the index in file order
-(`storedRows`), replaces `rows.ndjson` in one rename, and stamps the
+(`storedRows`), replaces each rows file it writes in one rename, and stamps the
 index with the new content's key (`setIndexKey`), so it is fresh for
 what was written. An index whose edits were never written is stale on
 the next open and is rebuilt from the file. The index file's journal
@@ -1304,7 +1349,8 @@ docs/DECISIONS.md D14).
 
 The spec itself is versioned by `formatVersion` in the bundle's
 `meta.json` (section 5). The
-current value is `1`. Breaking changes bump the major; additive
+current value is `2` (D51: rows in `rows/`; `1` had one
+`rows.ndjson`). Breaking changes bump the major; additive
 changes do not. Readers SHOULD warn on `formatVersion` higher than
 they recognise but MAY still attempt to read.
 
@@ -1383,9 +1429,9 @@ same document as the folder it unzips to.
   that document. It is a cache like any `index.sqlite`: rebuildable
   from the archive, never part of it.
 - **Size.** Rows compress well: the 1,000,000-row example's 165 MB
-  `rows.ndjson` is a 19.6 MB archive. A writer for a large table
+  of rows is a 19.6 MB archive. A writer for a large table
   SHOULD stream rows into the archive rather than build it in memory,
-  and a reader SHOULD inflate a large `rows.ndjson` as a stream. The
+  and a reader SHOULD inflate a large rows file as a stream. The
   archive has no zip64 (below), so no file in it, and not the archive
   itself, can pass 4 GiB, and it can't hold more than 65,535 files
   (each row page is one): a document that would is kept in the folder
@@ -1432,7 +1478,7 @@ crm.table              (a single file)
     └── tables/
         ├── companies/
         │   ├── schema.json
-        │   ├── rows.ndjson
+        │   ├── rows/0001.ndjson
         │   ├── views.json
         │   ├── meta.json
         │   └── bodies/…
@@ -1500,7 +1546,7 @@ beyond 4 GiB).
 
 An optional, append-only log of a table's edits, so a plain `.table`
 carries its own history without git (DECISIONS D44). It is **purely
-additive**: `rows.ndjson`, `bodies/` and the rest stay canonical, and a
+additive**: the rows files, `bodies/` and the rest stay canonical, and a
 reader that ignores this file loses nothing it needs to read the table.
 
 ```
@@ -1526,7 +1572,7 @@ Ops:
 
 - `set`: one cell changed. `field` is the field key; `from` and `to`
   are the stored values. Only stored values are recorded: a formula,
-  lookup or rollup's result isn't in `rows.ndjson`, so it isn't here. As in `rows.ndjson`, an absent value means
+  lookup or rollup's result isn't in the rows files, so it isn't here. As in the rows files, an absent value means
   empty (section 3), so `from` is absent for a cell that was empty and
   `to` is absent for one that was cleared.
 - `insert`: a row was added. `values` is the row as written.

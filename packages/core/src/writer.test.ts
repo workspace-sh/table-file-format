@@ -37,7 +37,7 @@ test("writeTable round-trips through parseTable", async () => {
   }
 });
 
-test("writeTable terminates rows.ndjson with a trailing newline (POSIX)", async () => {
+test("writeTable writes rows/0001.ndjson, ending with a newline (POSIX)", async () => {
   const dir = await mkdtemp(join(tmpdir(), "table-test-"));
   try {
     const target = join(dir, "out.table");
@@ -45,8 +45,8 @@ test("writeTable terminates rows.ndjson with a trailing newline (POSIX)", async 
       schema: { fields: [{ name: "x", type: "string" }] },
       rows: [{ id: "r1", x: "hello" }],
     });
-    const ndjson = await readFile(join(target, "rows.ndjson"), "utf8");
-    assert.ok(ndjson.endsWith("\n"), "rows.ndjson must end with \\n");
+    const ndjson = await readFile(join(target, "rows", "0001.ndjson"), "utf8");
+    assert.ok(ndjson.endsWith("\n"), "a rows file must end with \\n");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -81,12 +81,12 @@ test("writeBundle writes every table under tables/ and stamps the manifest (D37)
     });
     const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
     assert.equal(meta.format, "table");
-    assert.equal(meta.formatVersion, 1);
+    assert.equal(meta.formatVersion, 2);
     assert.deepEqual(meta.tables, ["deals", "companies"], "the given order is kept");
     const back = await parseBundle(target);
     assert.equal(back.tables.companies!.rows[0]!.name, "Atlas");
     assert.equal(back.tables.deals!.rows[0]!.title, "Renewal");
-    assert.ok(existsSync(join(target, "tables", "deals", "rows.ndjson")));
+    assert.ok(existsSync(join(target, "tables", "deals", "rows", "0001.ndjson")));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
