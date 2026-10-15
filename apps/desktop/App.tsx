@@ -472,6 +472,8 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
   const rereadHistory = useRef<(key: string) => void>(() => {});
   // The large tables' save, set once their hook is made below.
   const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  // A single file's working folder packed back into it after a write (folders.ts), set once its hook is made below.
+  const packDocuments = useRef<(bundles: string[]) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
     () => {
       const fixtures = { tables: initialTables, bundles: bundleMetas };
@@ -499,6 +501,7 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
         const folder = now.opened[bundle] ?? (now.tables[key]?.indexed ? bundleDir(bundle) : undefined);
         if (folder) {
           await appendFolderHistory(desktopFs, joinPath(folder, BundleEntry.tables, tableNameOf(key)), events);
+          await packDocuments.current([bundle]);
           rereadHistory.current(key);
           return;
         }
@@ -526,6 +529,7 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
   }, [dispatch]);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
   const folders = useFolders({ store, bundles, paths: folderPaths, documents });
+  packDocuments.current = folders.pack;
   // A quit that couldn't write: the next quits whatever happens, until a write succeeds.
   const quitFailed = useRef(false);
   // A write that failed: said once, with Try Again, which writes what's left now.
@@ -571,6 +575,8 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
     // folder for one (its index's), so the folder is the whole .table. The writer leaves an
     // indexed table's rows file to the index.
     await saveIndexed.current(all);
+    // An opened single file holding a large table: its rows, saved above, packed back into it too.
+    await folders.pack([...new Set(Object.entries(all).flatMap(([key, table]) => (table.indexed && opened.has(bundleOf(key)) ? [bundleOf(key)] : [])))]);
     const kept = new Set(Object.entries(all).flatMap(([key, table]) => (table.indexed && !opened.has(bundleOf(key)) ? [bundleOf(key)] : [])));
     for (const bundle of kept) await writeBundleTo(desktopFs, bundleDir(bundle), toBundle(all, metas, bundle));
   };

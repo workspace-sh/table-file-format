@@ -100,6 +100,11 @@ export interface Folders {
   write: (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void>;
   /** The document an opened bundle's folder stands for: the single file for its working folder, else the folder itself. */
   documentOf: (folder: string) => string;
+  /**
+   * Pack these opened bundles' working folders back into their single files, after anything
+   * else wrote to them (a history appended, a large table's rows saved). Nothing for a folder.
+   */
+  pack: (bundles: string[]) => Promise<void>;
 }
 
 /**
@@ -131,6 +136,35 @@ export function useFolders({
 
   const documentOf = useCallback((folder: string) => documents.current.get(folder) ?? folder, []);
 
+  // One pack at a time per single file. Asked again while one runs, it runs once more after,
+  // and everyone asking meanwhile waits for that last one.
+  const packing = useRef<Record<string, { done: Promise<void>; again: boolean }>>({});
+  const packOne = useCallback((bundle: string): Promise<void> => {
+    const workDir = latest.current.paths[bundle];
+    const file = workDir ? documents.current.get(workDir) : undefined;
+    if (!workDir || !file) return Promise.resolve();
+    const running = packing.current[file];
+    if (running) {
+      running.again = true;
+      return running.done;
+    }
+    const entry = { done: Promise.resolve(), again: false };
+    entry.done = (async () => {
+      do {
+        entry.again = false;
+        await packTableFile(desktopFs, workDir, file);
+        await restampTableFile(desktopFs, workDir, await stampOf(file));
+      } while (entry.again);
+    })().finally(() => {
+      delete packing.current[file];
+    });
+    packing.current[file] = entry;
+    return entry.done;
+  }, []);
+  const pack = useCallback(async (keys: string[]) => {
+    await Promise.all(keys.map(packOne));
+  }, [packOne]);
+
   const open = useCallback(async (wanted: string[]) => {
     const already = new Set(Object.values(latest.current.paths).map((p) => documents.current.get(p) ?? p));
     const opened = await openDocuments(
@@ -151,11 +185,7 @@ export function useFolders({
             .then(async () => {
               await writeLibraryBundle(desktopFs, library, tables, metas, key);
               // A single file: its working folder packed back into it.
-              const workDir = library.paths[key];
-              const file = workDir ? documents.current.get(workDir) : undefined;
-              if (!workDir || !file) return;
-              await packTableFile(desktopFs, workDir, file);
-              await restampTableFile(desktopFs, workDir, await stampOf(file));
+              await packOne(key);
             })
             .catch((error: unknown) => {
               // Shown by the app, from useTableApp's `saving`, with Try Again.
@@ -166,7 +196,7 @@ export function useFolders({
         }),
       );
     },
-    [],
+    [packOne],
   );
 
   useEffect(() => {
@@ -177,5 +207,5 @@ export function useFolders({
     }
   }, [store, paths]);
 
-  return { open, write, documentOf };
+  return { open, write, documentOf, pack };
 }
