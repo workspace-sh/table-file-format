@@ -67,9 +67,11 @@ it), an app places one drop-in and gives it the link:
   `table-app/node` are those two over node:fs: the path resolved against
   the document's folder and kept inside `within`.
 - **`TableEmbed`** in `@workspace.sh/table-gtk/embed` is the GTK drop-in
-  over them (see that package's README). A drop-in for `table-ui`'s
-  views (web, iOS, Android, macOS) is the same hook with those views and
-  the platform's own files; it is not written yet.
+  over them (see that package's README). **`TableEmbed`** in
+  `@workspace.sh/table-app/embed-view` is the drop-in for `table-ui`'s
+  views (web, iOS, Android, macOS): the same hook with those views and
+  the platform's own files. It holds a table of 50,000 rows or more in
+  memory, not through the index (#515).
 
 Resolution is verified on all three loaders: **Node ESM** (`default`
 condition → `dist/`, explicit `.js` specifiers), **Vite** (`source`

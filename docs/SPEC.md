@@ -1464,7 +1464,7 @@ comes from `fflate` (pure JS; DECISIONS D28). Callers pass archive
 BYTES — obtaining them from a path, fetch, or document picker is the
 platform's one line:
 
-- `readTableArchive(source: Uint8Array): Promise<ParsedTable>`
+- `readTableArchive(source: Uint8Array): Promise<ParsedBundle>`
   — same shape and skip-and-collect diagnostics contract as
   `parseTable` (section 3); missing/malformed `schema.json` is
   fatal. Reads entirely **in memory** — nothing is extracted to
