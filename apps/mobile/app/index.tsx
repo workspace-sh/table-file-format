@@ -20,6 +20,8 @@ import { EmbedTest } from "../EmbedTest";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
+import { pathOfUri } from "../expoFs";
+import { holdDocument } from "../modules/table-files";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 import { useGlassEditor } from "../useGlassEditor";
 import { AppSettings } from "../AppSettings";
@@ -127,6 +129,8 @@ export default function TableScreen() {
       state: () => app.state,
       // Measuring large tables (#126): see measure.ts.
       openZipFrom: (url: string) => openZipFrom(url, app.openBytes),
+      // A .table (a folder or a single file) at this `file://` URL, opened where it is, as Open… does after the picker.
+      openDocumentAt: (uri: string) => app.openHeld(holdDocument(pathOfUri(uri))),
       timeEdit: () => timeEdit(app.state, app.dispatch),
       // The page's scroll, as a finger or the scroll indicator would move it.
       scrollTo: (y: number, animated = false) => scroller.current?.scrollTo({ y, animated }),
@@ -198,7 +202,7 @@ export default function TableScreen() {
       onPress: () => dispatch({ type: "create", making: { kind: "table", bundle } }),
     },
     { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
-    { label: labelOf("open"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
+    { label: labelOf("open"), sf: "folder", material: "folder_open", onPress: () => void app.open() },
     { label: labelOf("export-file"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
     { label: "Files", sf: "folder.badge.gearshape", material: "folder_open", onPress: () => router.push("/files") },
     { label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
