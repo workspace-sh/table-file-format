@@ -807,7 +807,7 @@ const blank = (col: string) => `(${col} is null or ${col} = '')`;
 const items = (col: string) => `json_each(case when ${col} = '' then '[]' else ${col} end)`;
 
 /** A filter as SQL over the column `col`, exactly as matchesFilter answers it, or null when it can't promise that. */
-function filterSql(kind: Kind, col: string, f: ViewFilter): Compiled {
+function filterSql(kind: Kind, col: string, f: ViewFilter, instantCol?: string): Compiled {
   const value = f.value;
   if (kind === "opaque" && f.operator !== "empty" && f.operator !== "not_empty") return null;
   const text = kind === "text" || kind === "datetime";
@@ -836,8 +836,12 @@ function filterSql(kind: Kind, col: string, f: ViewFilter): Compiled {
     case "lte": {
       // Empty cells match none of these (SPEC "Empty values"). Anything but one kind of value on both sides is JS coercion.
       if (!same || kind === "boolean") return null;
-      if (typeof value === "string" && WIDE.test(value)) return null;
       const op = { gt: ">", gte: ">=", lt: "<", lte: "<=" }[f.operator];
+      // A datetime against a datetime: the instants, as applyFilters compares them.
+      if (kind === "datetime" && instantCol && typeof value === "string" && !Number.isNaN(instantOf(value))) {
+        return { sql: `(${instantCol} is not null and ${instantCol} ${op} ?)`, params: [instantOf(value)] };
+      }
+      if (typeof value === "string" && WIDE.test(value)) return null;
       return { sql: `(${col} is not null and ${col} <> '' and ${col} ${op} ?)`, params: [value as SqlValue] };
     }
     case "contains":
@@ -1006,7 +1010,7 @@ export async function queryIndex(
   for (const f of query.filter ?? []) {
     const i = usable(f.field);
     if (i === null) return null;
-    const compiled = filterSql(plan.kinds[i]!, `r.${plan.c[i]}`, f);
+    const compiled = filterSql(plan.kinds[i]!, `r.${plan.c[i]}`, f, plan.i[i] ? `r.${plan.i[i]}` : undefined);
     if (!compiled) return null;
     where.push(compiled.sql);
     whereParams.push(...compiled.params);
@@ -1168,10 +1172,7 @@ export async function queryIndex(
         bucket.count += row.n as number;
       }
       const declared = enumValues(schema.fields[groupAt!]);
-      // applyGroup hands its groups back as an object's keys, and those come
-      // out with whole numbers first, smallest first, whatever went in.
-      const whole = (key: string) => /^(0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295;
-      const rank = (b: Bucket) => (whole(b.key) ? 0 : b.key === "(empty)" ? 3 : declared.includes(b.key) ? 1 : 2);
+      const rank = (b: Bucket) => (b.key === "(empty)" ? 3 : declared.includes(b.key) ? 1 : 2);
       // The rest come as they first appear in the view's order.
       const rest = [...byKey.values()].filter((b) => rank(b) === 2);
       if (rest.length > MAX_FIRSTS) {
@@ -1204,7 +1205,6 @@ export async function queryIndex(
       const ordered = [...byKey.values()].sort((a, b) => {
         const by = rank(a) - rank(b);
         if (by !== 0) return by;
-        if (rank(a) === 0) return Number(a.key) - Number(b.key);
         return rank(a) === 1 ? declared.indexOf(a.key) - declared.indexOf(b.key) : a.first - b.first;
       });
       let start = 0;

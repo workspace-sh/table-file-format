@@ -624,7 +624,7 @@ export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOp
   const hidden = new Set<string>();
   const filters = grid.view.filter ?? [];
   if (filters.length > 0) {
-    const shown = new Set(applyFilters(rows, filters));
+    const shown = new Set(applyFilters(rows, filters, table.schema));
     for (const r of rows) if (!shown.has(r)) hidden.add(r.id);
   }
   return { view: viewId, columns: grid.columns, rows, position, hidden, groups: grid.groups, loop: grid.looped };

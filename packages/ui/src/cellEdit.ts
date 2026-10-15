@@ -43,9 +43,11 @@ export function inputKind(field: Field | undefined): InputKind {
   }
 }
 
-/** The text an edit starts from: the stored value, or nothing. */
+/** The text an edit starts from: the stored value (an object as its JSON), or nothing. */
 export function draftOf(value: unknown): string {
-  return value === undefined || value === null ? "" : String(value);
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object" && !Array.isArray(value)) return JSON.stringify(value);
+  return String(value);
 }
 
 /**

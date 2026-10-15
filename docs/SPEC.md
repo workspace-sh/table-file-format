@@ -216,6 +216,10 @@ not yet provided by the format. Until it is, store amounts as an
 `required`, `unique`, `enum`, `minimum`, `maximum`, `minLength`,
 `maxLength`, `pattern`.
 
+`unique`: no two rows hold the same value in the field. Empty values
+(absent, `null`, `""`) don't count, so a field that isn't `required`
+can be empty in any number of rows. Values compare as their JSON.
+
 #### Enum entries — string or object
 
 Each `enum` entry is **either** a bare string **or** an object
@@ -691,6 +695,9 @@ two `"table"` views named "Active" and "Done").
 On an `array` value, `contains` and `not_contains` ask whether it has
 the given item, and `in` / `not_in` whether any of its items is in the
 given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
+On a `datetime` field those four compare the instants the values name,
+as sorting does, so values with different offsets compare rightly; a
+value that isn't a datetime compares as text.
 
 ### Sort behaviour
 

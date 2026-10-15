@@ -9,9 +9,24 @@ import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
 import { byCodePoint, type TextOrder } from "./collate.js";
 
-export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
+export function applyFilters(rows: Row[], filters: ViewFilter[], schema?: TableSchema): Row[] {
   if (!filters.length) return rows;
-  return rows.filter((row) => filters.every((f) => matchesFilter(row, f)));
+  // Which filters are on a datetime field: those compare instants, as a sort does.
+  const datetime = new Set(schema?.fields.filter((f) => f.type === "datetime").map((f) => f.name) ?? []);
+  return rows.filter((row) => filters.every((f) => matchesFilter(row, f, datetime.has(f.field))));
+}
+
+/**
+ * `a` against `b` for gt, gte, lt and lte. Two datetimes are compared as
+ * the instants they name (SPEC "Filter operators"), as a sort compares
+ * them: as text, values with different offsets misorder. Anything else, as
+ * JavaScript compares it.
+ */
+function ordered(a: unknown, b: unknown, datetime: boolean): [unknown, unknown] {
+  if (!datetime || typeof a !== "string" || typeof b !== "string") return [a, b];
+  const x = instantOf(a);
+  const y = instantOf(b);
+  return Number.isNaN(x) || Number.isNaN(y) ? [a, b] : [x, y];
 }
 
 /**
@@ -193,7 +208,7 @@ export function applyGroup(
   rows: Row[],
   field: string,
   schema?: TableSchema,
-): Record<string, Row[]> {
+): Map<string, Row[]> {
   const buckets = new Map<string, Row[]>();
   for (const row of rows) {
     const value = row[field];
@@ -204,25 +219,22 @@ export function applyGroup(
     else buckets.set(key, [row]);
   }
 
+  // A Map, so its order is the one made here: an object would put keys
+  // like "3" first, smallest first, whatever came in (#568).
   const fieldDef = schema?.fields.find((f) => f.name === field);
   const order = enumValues(fieldDef);
-  const result: Record<string, Row[]> = {};
-
-  if (order.length > 0) {
-    for (const e of order) {
-      if (buckets.has(e)) {
-        result[e] = buckets.get(e)!;
-        buckets.delete(e);
-      }
+  const result = new Map<string, Row[]>();
+  for (const e of order) {
+    if (buckets.has(e)) {
+      result.set(e, buckets.get(e)!);
+      buckets.delete(e);
     }
   }
   for (const [k, v] of buckets) {
     if (k === "(empty)") continue;
-    result[k] = v;
+    result.set(k, v);
   }
-  if (buckets.has("(empty)")) {
-    result["(empty)"] = buckets.get("(empty)")!;
-  }
+  if (buckets.has("(empty)")) result.set("(empty)", buckets.get("(empty)")!);
   return result;
 }
 
@@ -252,16 +264,17 @@ export function inOrder<T>(items: T[], order: string[] | undefined, id: (item: T
 
 const isEmpty = (v: unknown) => v === undefined || v === null || v === "";
 
-export function matchesFilter(row: Row, f: ViewFilter): boolean {
+export function matchesFilter(row: Row, f: ViewFilter, datetime = false): boolean {
   const v = row[f.field];
+  const [x, y] = ordered(v, f.value, datetime) as [number, number];
   switch (f.operator) {
     case "eq": return v === f.value;
     case "neq": return v !== f.value;
     // An empty cell is greater or less than nothing (SPEC "Empty values"), not 0 by coercion.
-    case "gt": return !isEmpty(v) && (v as number) > (f.value as number);
-    case "gte": return !isEmpty(v) && (v as number) >= (f.value as number);
-    case "lt": return !isEmpty(v) && (v as number) < (f.value as number);
-    case "lte": return !isEmpty(v) && (v as number) <= (f.value as number);
+    case "gt": return !isEmpty(v) && x > y;
+    case "gte": return !isEmpty(v) && x >= y;
+    case "lt": return !isEmpty(v) && x < y;
+    case "lte": return !isEmpty(v) && x <= y;
     // On an array (a multi-select, say) these ask about its items (D35).
     case "contains": return Array.isArray(v) ? v.includes(f.value) : typeof v === "string" && v.includes(String(f.value));
     case "not_contains": return Array.isArray(v) ? !v.includes(f.value) : typeof v === "string" && !v.includes(String(f.value));

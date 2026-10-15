@@ -6,6 +6,8 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
   const errors: ValidationError[] = [];
   const seenIds = new Set<string>();
   const pkSeen = new Map<string, number>();
+  // `unique` fields: each value held, and the first row that held it. Empty values don't count (SPEC section 2).
+  const uniques = schema.fields.filter((f) => f.constraints?.unique && !f.computed).map((f) => ({ name: f.name, seen: new Map<string, number>() }));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -20,6 +22,15 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
 
     for (const e of fieldErrorsOf(schema, row)) {
       errors.push({ rowIndex: i, rowId: row.id, field: e.field, message: e.message });
+    }
+
+    for (const u of uniques) {
+      const value = row[u.name];
+      if (value === undefined || value === null || value === "") continue;
+      const key = JSON.stringify(value);
+      const prior = u.seen.get(key);
+      if (prior !== undefined) errors.push({ rowIndex: i, rowId: row.id, field: u.name, message: `${u.name} must be unique: row ${prior} has the same value` });
+      else u.seen.set(key, i);
     }
 
     if (schema.primaryKey && schema.primaryKey.length > 0) {
@@ -150,7 +161,8 @@ function typeMatches(type: Field["type"], value: unknown): boolean {
     case "geojson":
       return isGeoJSON(value);
     case "number":
-      return typeof value === "number";
+      // Infinity and NaN have no JSON form: written, they'd become null.
+      return typeof value === "number" && Number.isFinite(value);
     case "integer":
     case "year":
       // Beyond ±(2^53 − 1) JSON parsers round silently (SPEC "Numbers").
