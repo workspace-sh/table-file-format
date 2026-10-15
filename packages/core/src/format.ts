@@ -45,7 +45,7 @@ export function formatValue(field: Field | undefined, value: unknown, options: D
       return formatNumber(format, value, options.locale);
     case "date":
     case "datetime":
-      return formatDate(format, value, options);
+      return formatDate(format, value, options, field!.type === "datetime");
     default:
       // string + everything else: raw text (see stringFormatKind).
       return String(value);
@@ -114,25 +114,34 @@ function formatNumber(format: string, value: unknown, locale: string | undefined
   return shown();
 }
 
-function formatDate(format: string, value: unknown, { locale, now }: DisplayOptions): string {
+/**
+ * A date, or a date and time, in a date format. A date and time keeps its
+ * time (#568), in the viewer's own clock: `iso` as `2026-04-01 14:45`, the
+ * others in their language's way of writing it.
+ */
+function formatDate(format: string, value: unknown, { locale, now }: DisplayOptions, withTime = false): string {
   // Accept YYYY-MM-DD and full ISO datetime strings.
   const raw = String(value);
   const d = new Date(raw.length === 10 ? raw + "T00:00:00" : raw);
   if (Number.isNaN(d.getTime())) return raw;
+  const timed = withTime && raw.length > 10;
 
-  // Where the platform can't say it the asked-for way, the plain date.
-  const plain = raw.slice(0, 10);
+  // Where the platform can't say it the asked-for way, the plain date (and, local, its time).
+  const two = (n: number) => String(n).padStart(2, "0");
+  const plain = timed ? `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}` : raw.slice(0, 10);
+  const time = timed ? (tryIntl(() => d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })) ?? null) : null;
+  const withClock = (date: string | null) => (date === null ? plain : time ? `${date}, ${time}` : date);
   switch (format) {
     case "iso":
       return plain;
     case "short":
-      return tryIntl(() => d.toLocaleDateString(locale, { year: "2-digit", month: "numeric", day: "numeric" })) ?? plain;
+      return withClock(tryIntl(() => d.toLocaleDateString(locale, { year: "2-digit", month: "numeric", day: "numeric" })));
     case "long":
-      return tryIntl(() => d.toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" })) ?? plain;
+      return withClock(tryIntl(() => d.toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" })));
     case "weekday":
-      return tryIntl(() => d.toLocaleDateString(locale, { weekday: "long" })) ?? plain;
+      return withClock(tryIntl(() => d.toLocaleDateString(locale, { weekday: "long" })));
     case "relative":
-      return formatRelativeDate(d, locale, now ?? new Date()) ?? plain;
+      return withClock(formatRelativeDate(d, locale, now ?? new Date()));
     default:
       return plain;
   }

@@ -118,7 +118,7 @@ async function picker(tooltip: string) {
 }
 
 /** Open the first row's cell that shows `text` (or the first empty one), and give its entry. */
-async function openCell(text: string): Promise<Gtk.Entry> {
+async function openCell(text: string | RegExp): Promise<Gtk.Entry> {
   const label = (await screen.findAllByText(text))[0]!;
   let cell: Gtk.Widget | null = label;
   while (cell && !cell.getFocusable()) cell = cell.getParent();
@@ -161,7 +161,8 @@ describe("a time on Linux", () => {
     withTimes();
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/projects" initialView="v1" />);
-    const entry = await openCell("2026-09-22");
+    // Shown with its time, in the viewer's clock (#568).
+    const entry = await openCell(/^2026-09-2[123] \d\d:30$/);
     expect(entry.getText()).toBe(KICKOFF);
     const { button, calendar, hour, minute } = await picker("Choose a Date and Time");
     const local = new Date(KICKOFF);
