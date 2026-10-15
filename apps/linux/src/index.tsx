@@ -34,7 +34,8 @@ const examplesNow = () => {
 };
 const paths = named.length > 0 ? named : examplesNow();
 
-const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM });
+// Drawn from each table's small files at once; their rows are read after (the window is up meanwhile).
+const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM, rowsLater: true });
 for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
