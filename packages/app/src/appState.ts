@@ -100,6 +100,12 @@ export interface AppState {
   openPage: string | null;
   /** Each bundle opened from a folder, and where: opaque here, the app's to use. A reset keeps these. */
   opened: Record<string, string>;
+  /**
+   * The bundles that are single-file `.table`s, and where each file is
+   * (Library.singleFiles): `opened` then names its working folder. Such a
+   * file isn't offered as a single-file export: it is one already.
+   */
+  singleFiles?: Record<string, string>;
   /** Each table's schema-version when it was opened, for "schema changed" (D22). */
   openedAt: Record<string, number>;
   /** The file shown from the Files side (`sidebar.files`). */
@@ -273,6 +279,8 @@ export interface AppStart {
   bundles: Record<string, BundleMeta>;
   /** Bundles opened from folders, and where. */
   opened?: Record<string, string>;
+  /** Of those, the single files, and where each file is. */
+  singleFiles?: Record<string, string>;
   stored?: StoredPrefs;
   /** Where to open: an address, as a link or the page's own address gives it. */
   start?: Address | string;
@@ -291,6 +299,7 @@ export function initialAppState(input: AppStart): AppState {
     viewIds: firstViews(tables),
     openPage: null,
     opened: input.opened ?? {},
+    ...(input.singleFiles ? { singleFiles: input.singleFiles } : {}),
     openedAt: schemaVersions(tables),
     shownFile: null,
     openedDirs: {},
@@ -788,6 +797,7 @@ function step(state: AppState, action: AppAction): AppState {
           undo: without(state.undo, Object.keys(library.tables)),
           bundles: { ...state.bundles, ...library.bundles },
           opened: { ...state.opened, ...library.paths },
+          ...(library.singleFiles || state.singleFiles ? { singleFiles: { ...without(state.singleFiles ?? {}, keys), ...library.singleFiles } } : {}),
           openedAt: { ...state.openedAt, ...schemaVersions(library.tables) },
           viewIds: { ...firstViews(library.tables), ...state.viewIds },
           dirty: unkept.reduce(marked, state.dirty),
@@ -936,6 +946,7 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
         tables,
         bundles,
         opened: without(state.opened, [bundle]),
+        ...(state.singleFiles ? { singleFiles: without(state.singleFiles, [bundle]) } : {}),
         openedAt: without(state.openedAt, gone),
         viewIds: without(state.viewIds, gone),
         undo: without(state.undo, gone),
@@ -1112,7 +1123,17 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     canRedo,
     undoName,
     redoName,
-    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward, canUndo, canRedo, undoName, redoName }),
+    commands: appCommands({
+      sidebarCollapsed: state.sidebar.collapsed === true,
+      filesMode: mode === "files",
+      canGoBack,
+      canGoForward,
+      canUndo,
+      canRedo,
+      undoName,
+      redoName,
+      singleFile: state.singleFiles?.[bundleOf(state.active)] !== undefined,
+    }),
     address: viewAddress(state.active, view.id, state.openPage ?? undefined),
   };
 }

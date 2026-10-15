@@ -1021,3 +1021,20 @@ test("undo on an indexed table: a change of fields is a step, and a field delete
   const later = run(undone, { type: "addField", field: { name: "extra", type: "string" } });
   assert.equal(later.tables[key]!.indexed?.restore, undefined);
 });
+
+test("a single file opened is said to be one: Export as a Single File is off for it, on for a folder, and closing it forgets it", () => {
+  const { tables, bundles } = examples();
+  const s = initialAppState({ tables, bundles });
+  const exportOn = (state: AppState) => derive(state).commands.find((c) => c.id === "export-file")!.enabled;
+  assert.equal(exportOn(s), true);
+  const one = { tables: { "sent/tasks": { ...tables["projects/tasks"]! } }, bundles: { sent: bundles.projects! }, paths: { sent: "/cache/x/sent.table" }, problems: {}, singleFiles: { sent: "/docs/sent.table" } };
+  const opened = run(s, { type: "opened", library: one });
+  assert.equal(opened.active.startsWith("sent/"), true);
+  assert.deepEqual(opened.singleFiles, { sent: "/docs/sent.table" });
+  assert.equal(exportOn(opened), false);
+  // Another table, from a folder: on again.
+  assert.equal(exportOn(run(opened, { type: "showTable", key: "projects/tasks" })), true);
+  // Closed: forgotten.
+  const closed = run(opened, { type: "close", bundle: "sent" }, { type: "answer", response: "close" });
+  assert.deepEqual(closed.singleFiles, {});
+});

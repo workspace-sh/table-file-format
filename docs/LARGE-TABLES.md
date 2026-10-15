@@ -32,8 +32,8 @@ The plan that follows from these numbers, for views reading through the index an
 
 The limits are around SQLite, not in it.
 
-1. **Edits.** SPEC section 8 and D15 rebuild the whole index. That's under 1 s to about 100k rows and 11 s at 1M, so beyond about 200k rows an edit has to update the index in place. That means applying new log entries from a cursor rather than rebuilding.
-2. **The file.** A 1M-row `rows.ndjson` is 442 MB. GitHub blocks files over 100 MB, warns above 50 MB, and recommends objects under 1 MB. At 442 bytes a row, that's about 226k rows per file at most, or about 2,260 rows for a 1 MB shard. Very large tables need their rows split across files.
+1. **Edits.** Rebuilding the whole index on each edit (as SPEC section 8 and D15 first had it) takes under 1 s to about 100k rows and 11 s at 1M, so edits are made in the index in place: a row edit is a statement (`putRows`, `removeRows`), and a change of fields is changed in place and filled in behind (#551, #556, #562).
+2. **The file.** A 1M-row `rows.ndjson` is 442 MB. GitHub blocks files over 100 MB, warns above 50 MB, and recommends objects under 1 MB. At 442 bytes a row, that's about 226k rows per file at most, or about 2,260 rows for a 1 MB shard. Very large tables need their rows split across files. Splitting rows into shards isn't decided or built yet: #582.
 3. **Memory.** Parsing everything into objects first peaked at 2.5 GB at 1M rows. Streaming the text straight into SQLite avoids this.
 
 ## Engines

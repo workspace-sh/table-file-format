@@ -4,19 +4,20 @@
 // as core keeps its node:fs adapter apart.
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { appendFile, mkdir, open } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
-import { bundleOf, fromBundle, tableNameOf } from "./bundles.ts";
+import { bundleOf, tableNameOf } from "./bundles.ts";
 import { firstTableOfFile } from "./tableFile.ts";
 import { settled } from "./heldFiles.ts";
-import { openArchive } from "./tableFiles.ts";
 import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, type EmbedRead, type EmbedTarget } from "./embed.ts";
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
+import { packTableFile, restampTableFile, unpackTableFile, workDirFor } from "./singleFile.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
@@ -46,13 +47,85 @@ export function loadLibrary(paths: string[], held: Iterable<string> = [], option
   );
 }
 
+// -- Single files ------------------------------------------------------------
+//
+// A single-file `.table` (SPEC section 13, D49) is edited as a working folder
+// in this user's cache (singleFile.ts), and packed back into the file after
+// each write to it: a bundle saved, a history appended, a large table's rows
+// saved out of its index. Packs of one file run one after another, and those
+// asked for while one runs are made once after it.
+
+/** Where single files are unpacked to be edited: the XDG cache, as Linux keeps rebuildable things. */
+export function singleFilesHome(): string {
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "workspace-table", "single-files");
+}
+
+const singleFiles = new Map<string, { target: string; running: Promise<void> | null; again: boolean }>();
+
+/** A file's size and time, for knowing a working folder was made from it as it now is. */
+const stampOf = (path: string) => {
+  const s = statSync(path);
+  return `${s.size}:${s.mtimeMs}`;
+};
+
+/**
+ * Open the single-file `.table` at `path` to edit: unpacked to its working
+ * folder (kept from before when the file hasn't changed since, its index
+ * with it), and read from there as any folder. Writes to it are packed back
+ * into the file.
+ */
+export async function openSingleFile(path: string, held: Iterable<string> = [], options: { indexedFrom?: number; home?: string } = {}): Promise<Library> {
+  const file = resolve(path);
+  const workDir = workDirFor(options.home ?? singleFilesHome(), file);
+  await unpackTableFile(nodeFs, new Uint8Array(readFileSync(file)), workDir, stampOf(file));
+  singleFiles.set(workDir, { target: file, running: null, again: false });
+  const library = await loadLibrary([workDir], held, options);
+  const key = Object.keys(library.bundles)[0];
+  if (key !== undefined) library.singleFiles = { [key]: file };
+  return library;
+}
+
+/** The working folder of a single file `path` is in (a table's folder, say), if it's one. */
+function workDirOf(path: string): string | undefined {
+  for (const dir of singleFiles.keys()) if (path === dir || path.startsWith(`${dir}/`)) return dir;
+  return undefined;
+}
+
+/**
+ * Pack the single file whose working folder `path` is in back into it, once
+ * what's being written has been: after a write to it. Nothing for a folder.
+ */
+export function packSingleFile(path: string): Promise<void> {
+  const dir = workDirOf(path);
+  const held = dir === undefined ? undefined : singleFiles.get(dir);
+  if (!held || dir === undefined) return Promise.resolve();
+  if (held.running) {
+    held.again = true;
+    return held.running;
+  }
+  const run = async (): Promise<void> => {
+    do {
+      held.again = false;
+      await packTableFile(nodeFs, dir, held.target);
+      await restampTableFile(nodeFs, dir, stampOf(held.target));
+    } while (held.again);
+  };
+  held.running = run().finally(() => {
+    held.running = null;
+  });
+  return held.running;
+}
+
 /**
  * Write one bundle of an app's tables back to where it was read from, by
  * core's writer (atomic per file, SPEC section 1). An app calls it after
  * edits; which bundles changed, and when to write, are the app's to say.
  */
-export function saveBundle(library: Library, tables: Record<string, ParsedTable>, bundles: Record<string, BundleMeta>, key: string): Promise<void> {
-  return writeLibraryBundle(nodeFs, library, tables, bundles, key);
+export async function saveBundle(library: Library, tables: Record<string, ParsedTable>, bundles: Record<string, BundleMeta>, key: string): Promise<void> {
+  await writeLibraryBundle(nodeFs, library, tables, bundles, key);
+  // A single file's working folder: packed back into the file.
+  const path = library.paths[key];
+  if (path !== undefined) await packSingleFile(path);
 }
 
 /**
@@ -81,6 +154,8 @@ export async function appendHistory(tableDir: string, events: readonly EditEvent
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   await appendFile(path, (unended ? "\n" : "") + serializeEditEvents(events), "utf8");
+  // A single file's: packed back into it.
+  await packSingleFile(tableDir);
 }
 
 /**
@@ -190,11 +265,11 @@ export const embedFiles: EmbeddedTableFiles = {
 };
 
 /**
- * A `.table` opened as a document of its own (a folder, or a single-file `.table`):
+ * A `.table` opened as a document of its own (a folder, or a single file):
  * the file as an app holds it, on its first table in its first view. A
- * folder is written back where it is. A single-file `.table` is read into memory
- * and has nowhere to be written (`library.paths` is empty), so it is to look
- * at. A large table comes back without its rows, as an embed's does.
+ * folder is written back where it is; a single file is edited as its working
+ * folder and packed back into it (`openSingleFile`). A large table comes
+ * back without its rows, as an embed's does.
  */
 export async function readTableFile(path: string): Promise<EmbedRead> {
   const file = basename(path);
@@ -212,8 +287,8 @@ export async function readTableFile(path: string): Promise<EmbedRead> {
     library = await withOtherFiles(nodeFs, await loadLibrary([path], [], { indexedFrom: INDEXED_FROM }), { rowsElsewhere: largeTables(INDEXED_FROM) });
   } else {
     try {
-      const opened = await openArchive(new Uint8Array(readFileSync(path)), []);
-      library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      // A single file: edited as its working folder, and packed back into it after each write.
+      library = await openSingleFile(path, [], { indexedFrom: INDEXED_FROM });
     } catch (error) {
       return embedProblem(`“${file}” couldn’t be read: ${error instanceof Error ? error.message : String(error)}`);
     }
