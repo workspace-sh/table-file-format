@@ -5,13 +5,18 @@
 
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useColorScheme } from "react-native";
+import { LogBox, useColorScheme } from "react-native";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 import * as ExpoHaptics from "expo-haptics";
 import { AttachmentsProvider, DisplaySettingsProvider, HapticsProvider, type Haptics } from "@workspace.sh/table-ui";
 import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
 import { TableAppProvider, useTableAppContext } from "../TableAppContext";
+
+// No warning banner over the app in development: warnings still go to the
+// console and the debugger, and a crash still shows its red screen. The
+// banner sat over the UI being refined, and it's read where it's logged.
+LogBox.ignoreAllLogs();
 
 export default function Layout() {
   // The navigation follows the system's appearance, as the views do: a
