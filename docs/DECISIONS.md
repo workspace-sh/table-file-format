@@ -1236,3 +1236,27 @@ Formula meaning is OpenFormula's (D38), so every one of its 393 function names i
 
 **To revisit when** a later layer (D38) brings a function whose name collides with `values`, `related`, `linked`, `field`, `at` or `range`; none of OpenFormula's or ECMA-376's does.
 
+## D49: a `.table` is a folder or a single file, the same document either way
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.**
+
+**Builds on** D26 (frozen format, additive changes), D27 and D28 (the archive's layout and reference reader and writer).
+
+A `.table` has two forms with the one extension: the **folder form** (the directory every other section describes) and the **file form**, a regular file holding that directory as an archive in section 13's canonical layout. Apps open both, show both as one "Table" item where the platform allows, and save a document in the form it was opened in. A new document is a folder unless the user chooses a file. `.table.zip` is the file form with `.zip` added for sending: the same bytes.
+
+This is how Apple's iWork documents work: a `.numbers` is a package or a single zipped file. Numbers exports two types for the `numbers` extension under one description, `com.apple.iwork.numbers.numbers` (conforming to `com.apple.package`) and `com.apple.iwork.numbers.sffnumbers` (conforming to `public.data`, not to a zip type), and opens both as an editor. The system typed every `.numbers` file looked at (seven folders, one zip) as the package type, so the form is decided by what is on disk, never by the type the system reports.
+
+**Why both forms.**
+- The folder is the format's point: plain files that git diffs and merges, and that sync moves one file at a time (STORAGE-AND-SYNC.md). It stays the default.
+- A single file travels and is kept as people expect a document to be: mail, upload, the web's file inputs, and systems without packages (on Linux and Windows a folder form is always a folder). It is also smaller: the 1,000,000-row example is 165 MB of rows and a 19.6 MB archive.
+- One extension for both means a document keeps its name whichever form it is in, and nobody has to know the difference to open it.
+
+**What changes.** It answers #552 (editing a `.table.zip` in place): a file-form document is edited in the app and saved whole, atomically, never patched entry by entry. Nothing in the bundle changes: a file-form `.table` holds exactly a folder form's files, so `formatVersion` stays 1. Section 13 gains the file form's rules: readers decide by what is on disk; a file-form save carries everything (attachments included, which transport may leave out) except the index; it replaces the file atomically; an app's index of a file-form document lives in the app's own storage. The Apple types are named in section 13 so that every app declares the same ones.
+
+**Considered.**
+- **`.table.zip` only, and keep it for transport** (D27 as it was): a document kept as a file would always show as an archive and open in the archive utility, and its name would carry `.zip`.
+- **The file form as the default**, as iWork's is: it would give up git and per-file sync for every new document, which is what the format is for.
+- **A second extension for the file form** (`.tablez`, as some formats do): one document would have two names, and a renamed file would change what it is.
+- **The file form conforming to `public.zip-archive`**: the system would offer to expand it and show it as an archive; Numbers' single-file type conforms to `public.data` for this reason.
+
+**To revisit when** sync or git needs to work on a file-form document, or a platform's file type for `.table` can't tell the forms apart.
