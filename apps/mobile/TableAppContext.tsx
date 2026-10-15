@@ -42,6 +42,7 @@ import {
   toBundle,
   tooLargeToArchiveText,
   withNewFixtures,
+  savedFrom,
   type AppAction,
   type AppCommandId,
   type AppState as TableAppState,
@@ -72,6 +73,8 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
+/** The examples as the app ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: bundleMetas };
 // How long after the last edit the phone saves (the Mac and Linux apps use 400 ms): typing is one write, not one a key.
 const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
@@ -159,9 +162,8 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
   const openedNow = useRef<Record<string, string>>({});
   const { state, dispatch, display, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: bundleMetas };
       const saved = loadSaved(store);
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const s = initialAppState({
         tables: { ...initial.tables, ...reopened.library.tables },
         bundles: { ...initial.bundles, ...reopened.library.bundles },
@@ -174,19 +176,24 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    // Saved on the phone a moment after the last edit. The fixtures themselves are
-    // never saved, so an untouched app keeps following them as they change.
+    // Saved on the phone a moment after the last edit. An example is saved only once
+    // it's edited, so the app follows the examples as they change until then.
     {
       store,
       write: async (edited, tables, bundles, closed) => {
         // An opened document's tables live in the document: the rest are kept in this store.
         const opened = new Set(Object.keys(openedNow.current));
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(store, {
-          tables: Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
-          bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
-          closed,
-        });
+        // An example is kept only once it's edited (savedFrom).
+        save(
+          store,
+          savedFrom(
+            Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
+            Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
+            closed,
+            EXAMPLES,
+          ),
+        );
         // A file closed: its history kept here and a large table's folder go (an opened document stays where it is).
         for (const bundle of closedIn(edited, bundles)) {
           forgetStoredHistories(store, bundle);

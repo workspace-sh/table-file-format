@@ -90,6 +90,7 @@ import {
   tooLargeToArchiveText,
   viewCallbacks,
   withNewFixtures,
+  savedFrom,
   type AppCommand,
   type AppAction,
   type AppCommandId,
@@ -127,6 +128,8 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
+/** The examples as the app ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: bundleMetas };
 /** The content's side margin, which what scrolls sideways runs over (PageGutter). */
 const CONTENT_GUTTER = 24;
 /** The line under the toolbar that "how far down" is measured at, in window points. */
@@ -476,9 +479,8 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
   const packDocuments = useRef<(bundles: string[]) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: bundleMetas };
       const saved = loadSaved(store);
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const s = initialAppState({
         tables: { ...initial.tables, ...reopened.tables },
         bundles: { ...initial.bundles, ...reopened.bundles },
@@ -556,16 +558,21 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
       }),
     [flush],
   );
-  // The fixtures themselves are never saved, so an untouched app keeps
-  // following them as they change; an opened folder's tables live in the folder.
+  // An example is saved only once it's edited, so the app follows the examples
+  // as they change until then; an opened folder's tables live in the folder.
   writeRef.current = async (edited, all, metas, closed) => {
     const opened = new Set(Object.keys(stateRef.current.opened));
     // A table held in the index has no rows here: only what's left of it is kept in this store.
-    save(store, {
-      tables: Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
-      bundles: Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
-      closed,
-    });
+    // An example is kept only once it's edited (savedFrom).
+    save(
+      store,
+      savedFrom(
+        Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
+        Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
+        closed,
+        EXAMPLES,
+      ),
+    );
     // A file closed: its history kept here and a large table's folder go (an opened folder stays on disk).
     for (const bundle of closedIn(edited, metas)) {
       forgetStoredHistories(store, bundle);

@@ -60,9 +60,20 @@ npm run app:test
 
 # Fixtures and formula conformance
 npm run fixtures:test
+npm run fixtures:generate         # fixtures/ → the modules the apps build in (-- --check: fail if stale)
+npm run fixtures:export -- <dir>  # fixtures/ → <dir>: each example as a folder and a single file (-- <dir> --check: fail if <dir> differs)
 npm run conformance:run           # measures formula engines against the OpenFormula cases
 npm run conformance:test
 ```
+
+### The example tables
+
+`fixtures/` is the only place an example table is edited. Everything else is made from it:
+
+- the modules the apps build in, by `fixtures:generate`;
+- a copy for testing anywhere else, by `fixtures:export`, which writes each example as a folder and as a single file, with a `CHECKSUMS` list, into any folder. That includes the test-files repository's `Fixtures/table` and a device's documents. Its `--check` names each file that differs.
+
+An app saves an example only once it is edited (`savedFrom` in `packages/app/src/savedTables.ts`). So an app follows the examples as they change, and keeps what was edited. Reset Demo Data goes back to the examples as they are.
 
 > **Heads-up on npm 11 + workspaces:** lifecycle script names (`test`,
 > `build`, `start`) propagate to every workspace by default, which fails
