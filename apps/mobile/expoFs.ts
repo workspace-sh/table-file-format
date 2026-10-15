@@ -25,6 +25,16 @@ export const expoFs: TableFs = {
     if (!file.exists) file.create();
     file.write(content);
   },
+  // A single-file .table, and the files a folder holds besides its text (D49).
+  async readBytes(path) {
+    const file = new File(path);
+    return file.exists ? file.bytes() : null;
+  },
+  async writeBytes(path, bytes) {
+    const file = new File(path);
+    if (!file.exists) file.create();
+    file.write(bytes);
+  },
   async rename(from, to) {
     renameOver(pathOfUri(from), pathOfUri(to));
   },
