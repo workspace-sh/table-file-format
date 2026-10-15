@@ -178,6 +178,28 @@ describe("a table held in the index on Linux", () => {
     expect(built).toBe(false);
   });
 
+  it("with a line its rows can't read, it's held in memory instead and says so, and a save keeps the line (#567)", async () => {
+    appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
+    const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
+    // Said, in a dialog of its own, then put away.
+    let told: Adw.AlertDialog | undefined;
+    await waitFor(async () => {
+      told = (await screen.findAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
+      expect(told?.getHeading()).toBe("Opened without its index");
+    }, { timeout: 20000 });
+    expect(told!.getBody()).toMatch(/line 3009 of its rows couldn.t be read/);
+    told!.emit("response", "ok");
+    await waitFor(() => expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toHaveLength(0));
+    const first = await cellOf("Land .table extension");
+    first.grabFocus();
+    await userEvent.keyboard(first, "Z");
+    const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8")).toContain('"title":"Z"'), { timeout: 10000 });
+    expect(readFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), "utf8")).toContain('{"id":"t9","title":"Broken because of a typo"');
+  }, 60_000);
+
   it("an edit is undone and made again, on screen and in rows.ndjson", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");
