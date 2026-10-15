@@ -65,6 +65,7 @@ import {
   toBundle,
   viewCallbacks,
   withNewFixtures,
+  savedFrom,
   type AppCommandId,
   type AttachmentShown,
   type ShownFile,
@@ -81,6 +82,8 @@ const PLACE_LINE = 60;
 // How long after the last edit the demo saves, as the Mac and Linux apps do (400 ms): typing is one write, not one a key.
 const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
+/** The examples as the demo ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: initialBundles };
 
 // What the Files side of the sidebar lists and opens: each bundle's files
 // as saving writes them, and fixture tables' attachments.
@@ -491,10 +494,9 @@ export function App() {
   const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: initialBundles };
       const saved = loadSaved(browserStore());
-      // Fixture tables added since this browser saved its edits still appear.
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      // The examples, with this browser's edits to them, and its own files.
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const store = browserStore();
       const start = addressInHash();
       const sidebar = loadSidebarPrefs(store);
@@ -514,13 +516,14 @@ export function App() {
         openedAt: INITIAL_SCHEMA_VERSIONS,
       };
     },
-    // Saved a moment after the last edit, in this browser. The fixtures themselves are
-    // never saved, so an untouched demo keeps following them as they change.
+    // Saved a moment after the last edit, in this browser. An example is saved only once
+    // it's edited, so the demo follows the examples as they change until then.
     {
       store: browserStore(),
       write: async (edited, tables, bundles, closed) => {
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(browserStore(), { tables, bundles, closed });
+        // An example is kept only once it's edited (savedFrom).
+        save(browserStore(), savedFrom(tables, bundles, closed, EXAMPLES));
         // A file closed: its history kept here goes. (Its index stays in the browser's storage,
         // as after Reset Demo Data, and is made again if a file of the same name is opened.)
         for (const bundle of closedIn(edited, bundles)) forgetStoredHistories(browserStore(), bundle);
