@@ -6,7 +6,7 @@ import { ScrollView, Settings } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { BundleEntry, HISTORY_FILE, newId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, filesOfFolder, newId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -103,10 +103,10 @@ import {
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
-import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
+import { OPENED_KEY, reopenFolders, useFolders, type OpenedDocuments } from "./folders";
 import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
-import { chooseFile, chooseFolder, choosePath } from "./panels";
+import { chooseFile, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
 import { EmbedTest } from "./EmbedTest";
 import { desktopFs } from "./desktopFs";
@@ -447,7 +447,7 @@ function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () =>
  * from a local database and the disk).
  */
 export default function App() {
-  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: Library } | undefined>(undefined);
+  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: OpenedDocuments } | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
     void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY])
@@ -455,10 +455,10 @@ export default function App() {
       .then(async (store) => ({ store, folders: await reopenFolders(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
   }, []);
-  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders} />;
+  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders.library} documents={loaded.folders.documents} />;
 }
 
-function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: Library }) {
+function TableApp({ store, reopened, documents }: { store: KeyValueStore | null; reopened: Library; documents: Map<string, string> }) {
   // Everything the app holds is table-app's state (docs/APP-STATE.md): what
   // was saved, or the fixtures when nothing usable was (fixture tables
   // added since the last save still appear), the folders opened last time,
@@ -525,7 +525,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     dispatch(viewId ? { type: "showView", key, viewId } : { type: "showTable", key });
   }, [dispatch]);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
-  const folders = useFolders({ store, bundles, paths: folderPaths });
+  const folders = useFolders({ store, bundles, paths: folderPaths, documents });
   // A quit that couldn't write: the next quits whatever happens, until a write succeeds.
   const quitFailed = useRef(false);
   // A write that failed: said once, with Try Again, which writes what's left now.
@@ -642,7 +642,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
           if (folder) return (await desktopFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
           return (store && storedHistory(store, key)) || undefined;
         });
-        await writeBytes(where, await bundleToArchive(bundle, toBundle(going, bundles, bundle)));
+        // An opened document's attachments, and files no reader knows, go with it (SPEC section 13).
+        const folder = now.opened[bundle];
+        const files = folder ? await filesOfFolder(desktopFs, folder) : {};
+        if (files[".gitignore"] && new TextDecoder().decode(files[".gitignore"]).trim() === "index.sqlite*") delete files[".gitignore"];
+        await writeBytes(where, await bundleToArchive(bundle, { ...toBundle(going, bundles, bundle), files }));
       } catch (error) {
         dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       }
@@ -683,12 +687,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }
   }, []);
 
-  // Open a .table folder and show its first table; one already open is shown again.
+  // Open a .table (a folder or a single file) and show its first table; one already open is shown again.
   const openFolder = useCallback(
     async (path: string | null) => {
       if (!path) return;
       const { opened, tables: held } = stateRef.current;
-      const heldKey = Object.entries(opened).find(([, p]) => p === path)?.[0];
+      const heldKey = Object.entries(opened).find(([, p]) => folders.documentOf(p) === path)?.[0];
       if (heldKey) {
         const first = Object.keys(held).find((t) => bundleOf(t) === heldKey);
         if (first) dispatch({ type: "showTable", key: first });
@@ -1085,8 +1089,13 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     find: focusSearch,
     "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
-    // Open for either form, decided by what is on disk, comes with #571; until then it opens a folder.
-    open: () => void chooseFolder("Choose a .table folder to open").then(openFolder),
+    // A .table in either form (the panel offers a folder one as one item, a package), or a
+    // spreadsheet someone already has, which becomes a new .table.
+    open: () =>
+      void chooseFile("Open a .table, or a spreadsheet to make one from", ["sh.workspace.table", "sh.workspace.table.file", "csv", "tsv", "tab", "txt"]).then((path) => {
+        if (path && isSpreadsheetFile(path.split("/").pop() ?? path)) return importZip(path);
+        return openFolder(path);
+      }),
     "export-file": () => void exportZip(),
     "toggle-sidebar": toggleSidebar,
     "tables-mode": () => chooseFilesMode(false),
@@ -1465,7 +1474,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
 
               <CellEditorContext.Provider value={glass.editor}>
               {indexed.lost ? (
-                <html.span style={styles.indexedNote}>This table's rows are no longer on this Mac. Open its .table.zip again to bring them back.</html.span>
+                <html.span style={styles.indexedNote}>This table's rows are no longer on this Mac. Open its .table again to bring them back.</html.span>
               ) : table.indexed && view.layout !== "table" ? (
                 <html.span style={styles.indexedNote}>This layout isn't shown for a table this large yet. Change the view's layout to Table in its settings.</html.span>
               ) : table.indexed && !indexed.source && !reading ? null : (

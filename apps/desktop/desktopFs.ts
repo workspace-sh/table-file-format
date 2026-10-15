@@ -43,7 +43,8 @@ export const desktopFs: TableFs = {
         .map((e) => ({ name: e.filename, directory: e.type === "directory" }))
         .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     } catch (error) {
-      if (!(await FileSystem.exists(path))) return null;
+      // Nothing there, or a file (a single-file .table): no folder to list.
+      if (!(await FileSystem.exists(path)) || !(await FileSystem.isDir(path))) return null;
       throw error;
     }
   },
