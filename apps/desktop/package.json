@@ -18,6 +18,7 @@
     "@workspace.sh/table-app": "file:../../packages/app",
     "@workspace.sh/table-core": "file:../../packages/core",
     "@workspace.sh/table-fixtures": "file:../../packages/table-fixtures",
+    "@workspace.sh/table-mac-controls": "file:../../packages/mac-controls",
     "@workspace.sh/table-ui": "file:../../packages/ui",
     "fast-text-encoding": "1.0.6",
     "react": "19.1.4",

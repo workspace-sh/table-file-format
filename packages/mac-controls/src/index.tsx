@@ -1,15 +1,20 @@
 // The Mac's own controls for table-ui's slots (PlatformControlsProvider):
 // where the views offer a list of choices or a row's actions, the system's
-// menu shows them (native/TablePanels/TableMenu.m), as the system's menus
-// do on iOS. table-ui's pointer defaults draw a menu of their own, which
-// suits a browser and is what this replaces.
+// menu shows them, and a date the system's date picker (macos/), as the
+// system's controls do on iOS. table-ui's pointer defaults draw a menu of
+// their own, which suits a browser and is what this replaces. Any
+// react-native-macos app drawing the .table library's views uses these:
+// give `macControls` to PlatformControlsProvider, call `watchRowMenus()`
+// once, and link the TableMacControls pod.
 
 import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef, type ReactElement } from "react";
 import { Pressable, type View } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
 import type { DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
-import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./menu";
+import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
+
+export { datePickerClose, datePickerSet, datePickerShown, onContextMenu, pickDate, popUpChoose, popUpMenu, popUpTitles, type PopUpItem } from "./native";
 
 /** No choice: an id of its own, as a menu item needs one. */
 const NONE = "\u0000none";

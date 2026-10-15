@@ -20,6 +20,8 @@ target 'TableDesktop-macOS' do
   use_native_modules!
   # The app's own native module (native/TablePanels): the system Open panel.
   pod 'TablePanels', :path => '../native/TablePanels'
+  # The system's menus and date picker for the .table library's views.
+  pod 'TableMacControls', :path => '../../../packages/mac-controls/macos'
 
   use_react_native!(
     :path => rn_macos_rel_path,
