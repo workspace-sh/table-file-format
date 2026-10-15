@@ -49,7 +49,6 @@ import {
   type Confirm,
   type Derived,
   type KeyValueStore,
-  type Library,
 } from "@workspace.sh/table-app";
 import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
@@ -354,9 +353,17 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
         if (first) dispatch({ type: "showTable", key: first });
         return;
       }
-      const library: Library = await documents.open([held]);
+      const { library, large } = await documents.open([held]);
       for (const [key, messages] of Object.entries(library.problems)) tell(`Problems reading ${key}.table`, messages.join("\n"));
       if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
+      // A single file with a large table: taken in as a copy, through the index (documents.ts).
+      for (const file of large) {
+        try {
+          take(await readZip(file.bytes, Object.keys(state.bundles), file.name));
+        } catch (error) {
+          dispatch({ type: "tell", message: { heading: error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(file.name, error) } });
+        }
+      }
     },
     openBytes: async (bytes, name) =>
       take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),

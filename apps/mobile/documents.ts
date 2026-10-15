@@ -14,12 +14,20 @@
 // The documents are kept for the next launch as bookmarks, and opened again
 // then; their tables aren't kept in the app's own store, since the document
 // is where they live.
+//
+// A single file holding a large table (INDEXED_FROM rows or more) isn't
+// unpacked: reading every row before the first is shown would hold the
+// screen for minutes. It's taken in as a copy instead, through the index,
+// as a .table.zip was: its first rows at once, the rest read meanwhile.
+// Packing back into the file waits for a pack that doesn't read every row.
 
 import { useCallback, useEffect, useRef } from "react";
 import { Directory, File, Paths } from "expo-file-system";
-import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import { readTableArchive, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
 import type { TableFs } from "@workspace.sh/table-core/io";
 import {
+  INDEXED_FROM,
+  linesInBytes,
   openLibrary,
   packTableFile,
   restampTableFile,
@@ -71,9 +79,38 @@ function coordinatedFs(target: string): TableFs {
   };
 }
 
+/** How much of a large rows file is read to judge how many rows it holds. */
+const JUDGED_FROM_BYTES = 256 * 1024;
+
+/**
+ * Whether a single file holds a table of INDEXED_FROM rows or more: judged
+ * from the start of each large rows file, the rest left compressed.
+ */
+async function holdsLargeTable(bytes: Uint8Array): Promise<boolean> {
+  let large = false;
+  await readTableArchive(bytes, {
+    rowsLazily: (_name, _table, rows) => {
+      const head = rows.head(JUDGED_FROM_BYTES);
+      const count = head.length >= rows.size ? linesInBytes(head) : (linesInBytes(head) / Math.max(1, head.length)) * rows.size;
+      if (count >= INDEXED_FROM) large = true;
+      // Never parsed here: this is only a look.
+      return true;
+    },
+  });
+  return large;
+}
+
+/** A single file too large to unpack: its bytes, to be taken in as a copy through the index. */
+export interface LargeFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
 /** Read documents, which single file each working folder among them stands for, and each document's bookmark. */
 export interface OpenedDocuments {
   library: Library;
+  /** Single files holding a large table, not opened where they are (see the top of this file). */
+  large: LargeFile[];
   /** Each single file (its URL), by its working folder. */
   documents: Map<string, string>;
   /** Each document's bookmark, by its URL. */
@@ -91,6 +128,7 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>): Pro
   const documents = new Map<string, string>();
   const bookmarks = new Map<string, string>();
   const problems: Record<string, string[]> = {};
+  const large: LargeFile[] = [];
   for (const doc of held) {
     const uri = doc.uri.replace(/\/+$/, "");
     bookmarks.set(uri, doc.bookmark);
@@ -102,6 +140,12 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>): Pro
       const workDir = workDirFor(singleFilesHome(), uri);
       const bytes = await expoFs.readBytes!(uri);
       if (!bytes) throw new Error("it isn't there");
+      if (await holdsLargeTable(bytes)) {
+        large.push({ name: doc.name, bytes });
+        bookmarks.delete(uri);
+        releaseDocument(pathOfUri(uri));
+        continue;
+      }
       await unpackTableFile(expoFs, bytes, workDir, stampOf(uri));
       folders.push(workDir);
       documents.set(workDir, uri);
@@ -114,10 +158,14 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>): Pro
   // Which bundles are single files, and where each file is: Export as a Single File is for folders only.
   const singleFiles = Object.fromEntries(Object.entries(library.paths).flatMap(([key, folder]) => (documents.has(folder) ? [[key, documents.get(folder)!]] : [])));
   if (Object.keys(singleFiles).length > 0) library.singleFiles = singleFiles;
-  return { library, documents, bookmarks };
+  return { library, large, documents, bookmarks };
 }
 
-/** The documents opened last time, held open again from their bookmarks and read: what the app starts with, beside the fixtures. */
+/**
+ * The documents opened last time, held open again from their bookmarks and
+ * read: what the app starts with, beside the fixtures. A large single file
+ * isn't among them (it was taken in as a copy, kept with the app's own).
+ */
 export async function reopenDocuments(store: KeyValueStore | null, taken: Iterable<string>): Promise<OpenedDocuments> {
   let remembered: string[] = [];
   try {
@@ -135,8 +183,8 @@ export async function reopenDocuments(store: KeyValueStore | null, taken: Iterab
 }
 
 export interface Documents {
-  /** Read these picked documents, named apart from what's held; the app takes in what comes back. */
-  open: (held: HeldDocument[]) => Promise<Library>;
+  /** Read these picked documents, named apart from what's held; the app takes in what comes back, and the large single files as copies. */
+  open: (held: HeldDocument[]) => Promise<Pick<OpenedDocuments, "library" | "large">>;
   /** Write these opened documents' bundles, one write at a time per document. Rejects with the first that couldn't be written, named. */
   write: (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void>;
   /** Pack these opened bundles' working folders back into their single files, after anything else wrote to them. Nothing for a folder. */
@@ -210,7 +258,7 @@ export function useDocuments({
     );
     for (const [workDir, uri] of opened.documents) documents.current.set(workDir, uri);
     for (const [uri, bookmark] of opened.bookmarks) bookmarks.current.set(uri, bookmark);
-    return opened.library;
+    return { library: opened.library, large: opened.large };
   }, []);
 
   const write = useCallback(
