@@ -132,7 +132,9 @@ smallest reader worth writing in another language.
 ## The apps
 
 Each app opens the same files and shows the same views. They exist to
-prove the format and the libraries, and to be read as examples.
+prove the format and the libraries, and to be read as examples. What
+each one does with every part of the spec, and what's still to come,
+is in [docs/SUPPORT.md](docs/SUPPORT.md).
 
 | Platform | Where | Built with |
 |---|---|---|
@@ -192,6 +194,7 @@ docs/                       the specification and everything behind it
 | | |
 |---|---|
 | [SPEC](docs/SPEC.md) | The format, in full. |
+| [SUPPORT](docs/SUPPORT.md) | What each app does with every part of the spec, and what is still to come. |
 | [DECISIONS](docs/DECISIONS.md) | Each choice in the format, numbered, with its reasons. |
 | [INTEGRATION](docs/INTEGRATION.md) | Using `.table` from your own app. |
 | [PRIOR-ART](docs/PRIOR-ART.md) | The formats this was compared against. |
