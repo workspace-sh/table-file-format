@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { bundles as fixtures } from "@workspace.sh/table-fixtures";
 
-import { derive, initialAppState, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
+import { derive, initialAppState, isEditable, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
 import { fromBundle } from "./bundles.ts";
 import { newView } from "./creating.ts";
 import { viewAddress } from "./history.ts";
@@ -1037,4 +1037,29 @@ test("a single file opened is said to be one: Export as a Single File is off for
   // Closed: forgotten.
   const closed = run(opened, { type: "close", bundle: "sent" }, { type: "answer", response: "close" });
   assert.deepEqual(closed.singleFiles, {});
+});
+
+// Opened without its rows (a reader's rows: "later")
+
+test("a table opened without its rows can't be edited until they're read; then it has them, as the reader read them", () => {
+  const s0 = start();
+  const key = s0.active;
+  const table = s0.tables[key]!;
+  const loading = { ...s0, tables: { ...s0.tables, [key]: { ...table, rows: [], loading: { estimate: table.rows.length } } } };
+  assert.equal(isEditable(loading.tables[key]), false);
+  // An edit asked meanwhile changes nothing: not its fields, not its views.
+  const asked = run(loading, { type: "addField", field: { name: "extra", type: "string" } }, { type: "updateView", patch: { name: "Renamed" } });
+  assert.equal(asked.tables[key], loading.tables[key]);
+  assert.equal(asked.undo[key], undefined);
+  const read = run(loading, { type: "rowsRead", key, rows: table.rows, rowFiles: [{ name: "0001.ndjson", ids: table.rows.map((r) => r.id) }], unread: [], diagnostics: [] });
+  assert.equal(read.tables[key]!.loading, undefined);
+  assert.deepEqual(read.tables[key]!.rows, table.rows);
+  assert.deepEqual(read.tables[key]!.rowFiles, [{ name: "0001.ndjson", ids: table.rows.map((r) => r.id) }]);
+  assert.equal(isEditable(read.tables[key]), true);
+  // Now an edit is made, and reading its rows again changes nothing.
+  assert.ok(run(read, { type: "addField", field: { name: "extra", type: "string" } }).tables[key]!.schema.fields.some((f) => f.name === "extra"));
+  assert.equal(run(read, { type: "rowsRead", key, rows: [], rowFiles: [], unread: [], diagnostics: [] }), read);
+  // A table whose rows are being read into its index can't be edited yet either.
+  assert.equal(isEditable(read.tables[key], true), false);
+  assert.equal(isEditable(undefined), false);
 });
