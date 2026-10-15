@@ -67,6 +67,25 @@ export function nameBetween(before: string, after: string | null): string {
   return `${digits}${lettersBetween(letters!, hi)}.ndjson`;
 }
 
+/**
+ * About how many rows `total` bytes of rows files hold, judged from the
+ * first bytes of the first (`head`): its lines that hold something, as a
+ * share of its bytes. Exact when `head` is all of them.
+ */
+export function estimateRows(total: number, head: Uint8Array): number {
+  let lines = 0;
+  let blank = true;
+  for (let i = 0; i < head.length; i++) {
+    const byte = head[i]!;
+    if (byte === 10) {
+      if (!blank) lines++;
+      blank = true;
+    } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
+  }
+  if (head.length >= total) return blank ? lines : lines + 1;
+  return head.length === 0 ? 0 : Math.round((lines / head.length) * total);
+}
+
 /** How many bytes `text` takes as UTF-8, without encoding it. */
 export function utf8Length(text: string): number {
   let n = 0;
