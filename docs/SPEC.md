@@ -1349,8 +1349,9 @@ same document as the folder it unzips to.
 
 - **Telling the forms apart.** Readers MUST decide by what is on
   disk: a directory is the folder form, a regular file the file form.
-  They MUST NOT rely on a platform's type for the name, which can
-  report one form's type for the other.
+  They MUST NOT rely on a type looked up from the name alone (an
+  extension lookup, a search index's metadata), which can report one
+  form's type for the other.
 - **`.table.zip` is the file form for sending.** `<name>.table.zip`
   is a file-form `<name>.table` with `.zip` added, so that it travels
   as a zip and unzips anywhere. The bytes are the same; readers treat
