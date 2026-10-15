@@ -113,8 +113,9 @@ the SQLite `indexer`.
 
 The archive transport (`readTableArchive` / `writeTableArchive`) is
 in the barrel too — it is deliberately platform-free (bytes in,
-bytes out; codec via `fflate`) so mailed/shared `.table.zip` files
-open on web and React Native, not just under Node.
+bytes out; codec via `fflate`) so a single-file `.table` (SPEC
+section 13), mailed or shared, opens on web and React Native, not just
+under Node.
 
 `parser.ts` and `writer.ts` are **deliberately omitted from the
 barrel**. They import `node:fs` and would break in the browser. Node
@@ -335,8 +336,8 @@ platform caveats consumers should plan for rather than discover:
   paths — readers must be written against SAF documents, not `fs`.
 - **Transport and the file form**: email/upload flows flatten or
   reject directories, and some people want one file. A `.table` can
-  be kept as a single file (the file form), and `projects.table.zip`
-  is that file with `.zip` added for sending — canonical layout,
+  be kept as a single file (the file form), named `.table` like the
+  folder (D50), and that is how it's sent — canonical layout,
   security rules, and the reference reader/writer are in SPEC
   section 13 (`@workspace.sh/table-core/archive`). Linux and Windows
   have no packages, so there the file form is the one that shows as
