@@ -8,6 +8,8 @@ import { homedir } from "node:os";
 import { appendFile, mkdir, open } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
+import { readTableRows } from "@workspace.sh/table-core/io";
+import type { AppAction } from "./appState.ts";
 import { HISTORY_FILE, parseAddress, serializeEditEvents, type BundleMeta, type EditEvent, type ParsedTable } from "@workspace.sh/table-core";
 
 import { bundleOf, tableNameOf } from "./bundles.ts";
@@ -36,15 +38,30 @@ export function bundlesIn(dir: string): string[] {
  * Read each `.table` folder in `paths` from disk (relative to the working
  * directory). `held`: see openLibrary. With `indexedFrom`, a table of that
  * many rows or more comes back without them (`ParsedTable.indexed`), for
- * the app to read through the bundle's index.
+ * the app to read through the bundle's index. With `rowsLater`, no table's
+ * rows are read: each comes back `loading`, about how many it has, for
+ * the app to draw at once and read them after (readRows); with
+ * `indexedFrom` too, one judged to have that many or more is indexed.
  */
-export function loadLibrary(paths: string[], held: Iterable<string> = [], options: { indexedFrom?: number } = {}): Promise<Library> {
-  return openLibrary(
-    nodeFs,
-    paths.map((p) => resolve(p)),
-    held,
-    options.indexedFrom === undefined ? {} : { rowsElsewhere: largeTables(options.indexedFrom) },
-  );
+export async function loadLibrary(paths: string[], held: Iterable<string> = [], options: { indexedFrom?: number; rowsLater?: boolean } = {}): Promise<Library> {
+  const resolved = paths.map((p) => resolve(p));
+  if (!options.rowsLater) return openLibrary(nodeFs, resolved, held, options.indexedFrom === undefined ? {} : { rowsElsewhere: largeTables(options.indexedFrom) });
+  const library = await openLibrary(nodeFs, resolved, held, { rows: "later" });
+  if (options.indexedFrom !== undefined) {
+    for (const [key, table] of Object.entries(library.tables)) {
+      if (!table.loading || table.loading.estimate < options.indexedFrom) continue;
+      const { loading: _, ...rest } = table;
+      library.tables[key] = { ...rest, indexed: { count: 0, version: 0 } };
+    }
+  }
+  return library;
+}
+
+/** A table opened without its rows (`loading`), read: the action that gives it them. */
+export async function readRows(key: string, table: ParsedTable): Promise<Extract<AppAction, { type: "rowsRead" }>> {
+  if (!table.path) throw new Error(`${key} has no folder to read its rows from`);
+  const read = await readTableRows(nodeFs, table.path);
+  return { type: "rowsRead", key, rows: read.rows, rowFiles: read.rowFiles, unread: read.unread, diagnostics: read.diagnostics };
 }
 
 // -- Single files ------------------------------------------------------------
@@ -74,7 +91,7 @@ const stampOf = (path: string) => {
  * with it), and read from there as any folder. Writes to it are packed back
  * into the file.
  */
-export async function openSingleFile(path: string, held: Iterable<string> = [], options: { indexedFrom?: number; home?: string } = {}): Promise<Library> {
+export async function openSingleFile(path: string, held: Iterable<string> = [], options: { indexedFrom?: number; rowsLater?: boolean; home?: string } = {}): Promise<Library> {
   const file = resolve(path);
   const workDir = workDirFor(options.home ?? singleFilesHome(), file);
   await unpackTableFile(nodeFs, new Uint8Array(readFileSync(file)), workDir, stampOf(file));

@@ -70,10 +70,11 @@ import {
   type Confirm,
   type NamePrompt,
   type Place,
+  loadingViewRows,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
-import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, openSingleFile, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
@@ -331,7 +332,9 @@ function TablePane({
             vexpand
             title="Getting This Table Ready"
             description={
-              building.total > 0
+              table.loading
+                ? "Reading its rows."
+                : building.total > 0
                 ? `${building.done.toLocaleString()} of ${building.total.toLocaleString()} rows read. This happens once; it opens straight away after.`
                 : "Reading its rows. This happens once; it opens straight away after."
             }
@@ -717,6 +720,19 @@ export function App({
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
   saveIndexed.current = indexed.save;
   closeIndexed.current = indexed.closeBundle;
+  // Tables opened without their rows (loadLibrary's rowsLater): drawn at once, their rows read after, the one on screen first.
+  const readingRows = useRef(new Set<string>());
+  useEffect(() => {
+    const waiting = Object.keys(state.tables).filter((k) => state.tables[k]!.loading && !readingRows.current.has(k));
+    waiting.sort((a, b) => (a === state.active ? -1 : b === state.active ? 1 : 0));
+    for (const key of waiting) {
+      readingRows.current.add(key);
+      readRows(key, state.tables[key]!).then(dispatch, (error: unknown) => tell(`Couldn't read the rows of ${tableNameOf(key)}`, error instanceof Error ? error.message : String(error)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tables, state.active]);
+  const loadingTable = state.tables[state.active]?.loading;
+  const loadingRows = useMemo(() => (loadingTable ? loadingViewRows(state.active, loadingTable.estimate) : undefined), [state.active, loadingTable]);
   const derived = derive(state, {
     ...deriveOptions,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
@@ -779,7 +795,7 @@ export function App({
   // A single-file .table, edited as its working folder in this user's cache and packed back into it after each write (D49).
   const openSingle = async (path: string) => {
     try {
-      const opened = await openSingleFile(path, Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
+      const opened = await openSingleFile(path, Object.keys(bundles), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
       const problems = Object.values(opened.problems).flat();
       if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
       dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
@@ -789,7 +805,7 @@ export function App({
   };
   // A .table folder from disk, edited where it is.
   const openFolder = async (path: string) => {
-    const opened = await loadLibrary([path], Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
+    const opened = await loadLibrary([path], Object.keys(bundles), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
     const problems = Object.values(opened.problems).flat();
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
@@ -1061,8 +1077,8 @@ export function App({
                 navigation={navigation}
                 menu={primaryMenu}
                 source={indexed.source}
-                building={indexed.building}
-                reading={indexed.reading}
+                building={indexed.building ?? (loadingTable ? { done: 0, total: loadingTable.estimate } : null)}
+                reading={indexed.reading ?? loadingRows}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />

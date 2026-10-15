@@ -11,7 +11,7 @@ import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewPr
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
-import { addressTarget, applyTarget, bundleOf, type AddressTarget } from "./bundles.ts";
+import { addressTarget, applyTarget, bundleOf, tableNameOf, type AddressTarget } from "./bundles.ts";
 import { appCommands, type AppCommand } from "./commands.ts";
 import { canClose, closePrompt, withClosed } from "./closing.ts";
 import { CANCEL, type Confirm } from "./confirm.ts";
@@ -858,7 +858,10 @@ function step(state: AppState, action: AppAction): AppState {
       if (action.rowFiles.length > 0) read.rowFiles = action.rowFiles;
       if (action.unread.length > 0) read.unread = action.unread;
       if (action.diagnostics.length > 0) read.diagnostics = [...(table.diagnostics ?? []), ...action.diagnostics];
-      return { ...state, tables: { ...state.tables, [action.key]: read } };
+      // What it couldn't read is said, as opening says it when the rows come with the rest.
+      const bundle = bundleOf(action.key);
+      const told = state.telling ? null : skippedText(state.bundles[bundle]?.title ?? bundle, action.diagnostics.map((d) => `${tableNameOf(action.key)}: ${d.message}`));
+      return { ...state, tables: { ...state.tables, [action.key]: read }, ...(told ? { telling: told } : {}) };
     }
     case "editsWritten": {
       const editLog = written(state.editLog, action.key, action.count);
