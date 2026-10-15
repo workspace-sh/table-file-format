@@ -1242,7 +1242,7 @@ Formula meaning is OpenFormula's (D38), so every one of its 393 function names i
 
 **Builds on** D26 (frozen format, additive changes), D27 and D28 (the archive's layout and reference reader and writer).
 
-A `.table` has two forms with the one extension: the **folder form** (the directory every other section describes) and the **file form**, a regular file holding that directory as an archive in section 13's canonical layout. Apps open both, show both as one "Table" item where the platform allows, and save a document in the form it was opened in. A new document is a folder unless the user chooses a file. `.table.zip` is the file form with `.zip` added for sending: the same bytes.
+A `.table` has two forms with the one extension: the **folder form** (the directory every other section describes) and the **file form**, a regular file holding that directory as an archive in section 13's canonical layout. Apps open both, show both as one "Table" item where the platform allows, and save a document in the form it was opened in. A new document is a folder unless the user chooses a file. `.table.zip` is the file form with `.zip` added for sending: the same bytes. (Amended by D50: there is no `.table.zip`; the file form is sent as it is.)
 
 This is how Apple's iWork documents work: a `.numbers` is a package or a single zipped file. Numbers exports two types for the `numbers` extension under one description, `com.apple.iwork.numbers.numbers` (conforming to `com.apple.package`) and `com.apple.iwork.numbers.sffnumbers` (conforming to `public.data`, not to a zip type), and opens both as an editor. Asked about a file itself, macOS gives each form its own type (`sffnumbers` for the zip, `isPackage` false; `numbers` for the folder, `isPackage` true), with the same kind, "Numbers Spreadsheet", and the same icon. A type looked up from the name alone can't tell the forms apart, and Spotlight's metadata reported the zip as the package type, so readers decide by what is on disk.
 
@@ -1260,3 +1260,19 @@ This is how Apple's iWork documents work: a `.numbers` is a package or a single 
 - **The file form conforming to `public.zip-archive`**: the system would offer to expand it and show it as an archive; Numbers' single-file type conforms to `public.data` for this reason.
 
 **To revisit when** sync or git needs to work on a file-form document, or a platform's file type for `.table` can't tell the forms apart.
+
+## D50: there is no `.table.zip`: a single-file `.table` is sent as it is
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.** Amends D49, and with it D27's transport name.
+
+D49 kept `.table.zip` as the file form with `.zip` added for sending. Leslie dropped it: "Let's drop the .zip entirely." Both forms of a `.table` are named `<name>.table`, as both forms of a `.numbers` are. A single file is how a `.table` travels and how it's kept by anyone who wants one file; there's no second name for either. Folders stay the default for a new document, and saving as a single file is to be there on every platform an app supports.
+
+**Why.**
+- One name: a document is called the same whether it's a folder, a file, an attachment or a download, and nobody has to choose between two names that mean the same bytes.
+- The case for `.zip` was that it "unzips anywhere". A person who wants the folder from a single-file `.table` can rename it to end `.zip` and unzip it; the layout (section 13) still gives the `.table/` folder directly. Apps open a single-file `.table` without that step.
+
+**What changes.** Apps stop offering and writing `.table.zip`: export and "save a copy" write a single-file `.table`, and open dialogs accept `.table` as either form, told apart by what is on disk (D49). Nothing in the bundle or the archive's layout changes, so `formatVersion` stays 1. A `.table.zip` someone still has is a single-file `.table` under another name: renamed, it opens.
+
+**Considered:** keeping `.table.zip` alongside for sending (D49 as it was): two names for the same bytes, and a sent file opening in an archive utility on many systems rather than in an app that reads it.
+
+**To revisit when** a channel a `.table` must travel through refuses or mangles a file not named `.zip`.
