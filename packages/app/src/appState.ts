@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
 import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
@@ -262,6 +262,11 @@ export type AppAction =
   | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
   /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
   | { type: "reloaded"; key: string; table: ParsedTable }
+  /**
+   * A table opened without its rows (`loading`, a reader's rows: "later")
+   * has them now, with what the reader said of them: it can be edited.
+   */
+  | { type: "rowsRead"; key: string; rows: Row[]; rowFiles: { name: string; ids: string[] }[]; unread: UnreadLine[]; diagnostics: ValidationError[] }
   /** The app has appended the first `count` of a table's kept edits to its history. */
   | { type: "editsWritten"; key: string; count: number }
   /** Every page's stretch of changes is over (typing has been still a while, or the app is about to close): each is said, the open one too. */
@@ -433,6 +438,8 @@ function placeOf(state: AppState): Place {
  * undo), and one to its rows as it's queued for the index (`queued`).
  */
 function edit(state: AppState, name: string, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
+  // Its rows not read yet: nothing of it is changed until they are (isEditable).
+  if (state.tables[key]?.loading) return state;
   const tables = onTable(state.tables, key, change);
   if (tables === state.tables) return state;
   const next = { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
@@ -843,6 +850,16 @@ function step(state: AppState, action: AppAction): AppState {
         indexWork: state.indexWork.filter((w) => w.key !== action.key),
         undo: without(state.undo, [action.key]),
       };
+    case "rowsRead": {
+      const table = state.tables[action.key];
+      if (!table?.loading) return state;
+      const { loading: _, ...rest } = table;
+      const read: ParsedTable = { ...rest, rows: action.rows };
+      if (action.rowFiles.length > 0) read.rowFiles = action.rowFiles;
+      if (action.unread.length > 0) read.unread = action.unread;
+      if (action.diagnostics.length > 0) read.diagnostics = [...(table.diagnostics ?? []), ...action.diagnostics];
+      return { ...state, tables: { ...state.tables, [action.key]: read } };
+    }
     case "editsWritten": {
       const editLog = written(state.editLog, action.key, action.count);
       return editLog === state.editLog ? state : { ...state, editLog };
@@ -1188,4 +1205,13 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     },
     onInsertRow: (anchor, where) => dispatch({ type: "insertRow", anchor, where, id: newId() }),
   };
+}
+
+/**
+ * Whether a table can be edited yet: not while its rows are still being
+ * read, whether into memory (`loading`) or into its index (`reading`, the
+ * indexed tables' build). The one flag every screen greys out its editing by.
+ */
+export function isEditable(table: ParsedTable | undefined, reading = false): boolean {
+  return !!table && !table.loading && !reading;
 }

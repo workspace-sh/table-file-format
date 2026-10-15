@@ -12,7 +12,7 @@
 // node:sqlite in apps/linux/src/useIndexedTables.ts. What differs is where
 // a host comes from and what it's made from.)
 
-import type { AppAction, AppState, IndexWork } from "./appState.ts";
+import { isEditable, type AppAction, type AppState, type IndexWork } from "./appState.ts";
 import { bundleOf, tableNameOf } from "./bundles.ts";
 import { remoteEdits, remoteViewRows, type RemoteViewRows } from "./remoteRows.ts";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
@@ -33,6 +33,8 @@ export interface IndexedTables {
   stale: boolean;
   /** The table on screen was held in the index, and this device no longer has it. */
   lost: boolean;
+  /** Whether the table on screen can be edited yet: its rows read, into memory or into its index (isEditable). */
+  editable: boolean;
   /** A bundle just read from an archive: its large tables' first rows by `bundle/table` key. */
   hold(first: Record<string, Row[]>): void;
   /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
@@ -343,11 +345,13 @@ export function useIndexedTables(input: {
     [hostOf],
   );
 
+  const building = active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null;
   return {
     hold,
     save,
     everyRow,
-    building: active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null,
+    building,
+    editable: isEditable(active, building !== null || state_ === "lost"),
     reading,
     source: isReady && source?.key === state.active ? source.rows : undefined,
     lost: state_ === "lost",
