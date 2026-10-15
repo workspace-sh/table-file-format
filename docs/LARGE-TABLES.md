@@ -303,7 +303,7 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 - **At a million rows the wait to be ready is the build**, slower in the browser than in Node (15 s with `node:sqlite`) and slower in Chrome than in Firefox. First rows are on screen for all of it. A search in that time, and until its own index is whole some tens of seconds after, reads every row's text: about a second.
 - Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
 
-`Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice or a field. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
+`Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
 ### What iOS does (I2, 10 Oct 2026)
 
@@ -342,7 +342,7 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that i
 - **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, until a phone says otherwise. A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`. In sync mode the host builds in batches of 1,000 rows, since there the batch is the longest the screen waits.
 - **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
 
-Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
 
