@@ -33,6 +33,7 @@
 
     "fixtures:typecheck": "npm run typecheck -w @workspace.sh/table-fixtures",
     "fixtures:generate": "npm run generate -w @workspace.sh/table-fixtures",
+    "fixtures:export": "node --conditions=source --import tsx scripts/fixtures-export.mts",
     "fixtures:test": "npm run test -w @workspace.sh/table-fixtures",
 
     "web:dev": "npm run dev -w @workspace.sh/table-web",

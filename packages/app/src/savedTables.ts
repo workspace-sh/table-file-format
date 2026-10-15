@@ -1,6 +1,9 @@
 // The demo's bundles, kept in the browser so a reload doesn't lose edits
 // (#86, step 1): every table under its `bundle/table` key, and each
 // bundle's manifest (D37). Both are plain JSON, so they're stored as they are.
+// An example is kept only once it differs from the app's own copy
+// (savedFrom), so an app follows the examples as they change until one is
+// edited (#592).
 //
 // Pre-alpha: the stored shape has no version. Anything that doesn't read
 // back as bundles (including what earlier demos saved) is discarded, and
@@ -58,6 +61,40 @@ export function save(store: KeyValueStore | null, saved: Saved): void {
   }
 }
 
+/**
+ * What an app keeps of `tables` and `bundles`: each that differs from the
+ * example of the same key in `fixtures`, and everything that isn't an
+ * example. An example left as it is isn't kept, so the next launch shows the
+ * example as it is then; one edited is kept as edited, whatever the example
+ * becomes. An edit undone back to the example is the example again.
+ */
+export function savedFrom(
+  tables: Record<string, ParsedTable>,
+  bundles: Record<string, BundleMeta>,
+  closed: string[],
+  fixtures: Saved,
+): Saved {
+  return {
+    tables: Object.fromEntries(Object.entries(tables).filter(([key, t]) => !same(t, fixtures.tables[key]))),
+    bundles: Object.fromEntries(Object.entries(bundles).filter(([key, b]) => !same(b, fixtures.bundles[key]))),
+    closed,
+  };
+}
+
+// The examples' JSON, made once each: they're compared on every write.
+const json = new WeakMap<object, string>();
+function jsonOf(value: object): string {
+  let s = json.get(value);
+  if (s === undefined) json.set(value, (s = JSON.stringify(value)));
+  return s;
+}
+
+/** Whether `value` is the example `fixture`: the same object, as it is until edited, or the same JSON. */
+function same(value: object, fixture: object | undefined): boolean {
+  if (fixture === undefined) return false;
+  return value === fixture || JSON.stringify(value) === jsonOf(fixture);
+}
+
 export function clearSaved(store: KeyValueStore | null): void {
   try {
     store?.removeItem(STORAGE_KEY);
@@ -67,18 +104,27 @@ export function clearSaved(store: KeyValueStore | null): void {
 }
 
 /**
- * What was saved, plus any fixture table or bundle added to the demo
- * since: a table added to a fixture (the household budget's ledger, say)
- * appears in a browser that saved its edits before it existed. Saved
- * tables and edits are kept as they are; the demo can't delete a table,
- * so a fixture table missing from what's saved is always a new one. A
- * fixture file closed here (`saved.closed`) stays closed.
+ * What was saved, with the examples it doesn't hold: an example left as it
+ * is isn't saved (savedFrom), so it comes from `fixtures` as it is now, and a
+ * table added to an example (the household budget's ledger, say) appears
+ * beside saved edits from before it existed. A saved table whose manifest
+ * wasn't saved takes the example's; one with neither is dropped. Saved tables
+ * and edits are kept as they are. A file closed here (`saved.closed`) stays
+ * closed.
  */
 export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
   const tables = { ...saved.tables };
   const bundles = { ...saved.bundles };
   const closed = new Set(saved.closed ?? []);
   let changed = false;
+  for (const key of Object.keys(tables)) {
+    const bundle = key.slice(0, key.indexOf("/"));
+    if (bundles[bundle]) continue;
+    const manifest = fixtures.bundles[bundle];
+    if (manifest) bundles[bundle] = manifest;
+    else delete tables[key];
+    changed = true;
+  }
   for (const [key, table] of Object.entries(fixtures.tables)) {
     if (key in tables) continue;
     const bundle = key.slice(0, key.indexOf("/"));
@@ -99,30 +145,30 @@ export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
       bundles[bundle] = { ...manifest, tables: next };
     }
   }
-  return changed ? { tables, bundles } : saved;
+  return changed ? { tables, bundles, ...(saved.closed ? { closed: saved.closed } : {}) } : saved;
 }
 
-/** Bundles, and tables that each belong to one of them. */
+/**
+ * Bundles, and tables under `bundle/table` keys. A table's manifest may be
+ * missing, as an example's isn't saved while it's left as it is
+ * (withNewFixtures takes it from the examples).
+ */
 function isSaved(value: unknown): value is Saved {
   if (!isObject(value) || !isObject(value.bundles) || !isTables(value.tables)) return false;
   if (value.closed !== undefined && !(Array.isArray(value.closed) && value.closed.every((b) => typeof b === "string"))) return false;
-  const bundles = value.bundles as Record<string, unknown>;
-  return Object.keys(value.tables).every((key) => {
-    const slash = key.indexOf("/");
-    return slash > 0 && isObject(bundles[key.slice(0, slash)]);
-  });
+  if (!Object.values(value.bundles).every(isObject)) return false;
+  return Object.keys(value.tables).every((key) => key.indexOf("/") > 0);
 }
 
 /**
  * Enough of a table for the demo to render: a schema with fields, rows and
  * at least one view. What each holds is left to the demo's own validation,
- * which already reports a bad row rather than refusing the table.
+ * which already reports a bad row rather than refusing the table. None at
+ * all is an app whose examples are all as they were.
  */
 function isTables(value: unknown): value is Record<string, ParsedTable> {
   if (!isObject(value)) return false;
-  const tables = Object.values(value);
-  if (tables.length === 0) return false;
-  return tables.every(
+  return Object.values(value).every(
     (t) =>
       isObject(t) &&
       isObject(t.schema) &&

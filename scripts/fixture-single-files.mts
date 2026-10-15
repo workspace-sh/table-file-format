@@ -1,42 +1,22 @@
-// The example tables as single-file .tables (SPEC section 13, D49, D50), for the fixtures repository
-// (workspace-sh/workspace-fixtures, Fixtures/table/single-file/) and anyone who wants to open one as a file:
+// Any folder's .tables as single files (SPEC section 13, D49, D50):
 //
-//   npx tsx scripts/fixture-single-files.mts <folder holding .table folders, such as fixtures/>
+//   node --conditions=source --import tsx scripts/fixture-single-files.mts <folder holding .table folders>
 //
 // Writes single-file/<name>.table for each <name>.table folder in it (a folder and a file can't share a
-// name in one folder). Each is the whole folder, attachments included (the CRM's logos are attachments), under
-// one <name>.table/ root, entries in a fixed order (the manifest first) with a fixed time: the same
-// folder always gives the same bytes. Each is then read back two ways, and says so: unzipped it is the
-// folder byte for byte, and opened as an app opens a single file it is the same tables as the folder.
-import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
-import { zipSync, unzipSync } from "fflate";
-import { readBundle } from "../packages/core/src/io.ts";
-import { nodeFs } from "../packages/core/src/node-fs.ts";
-import { openArchive } from "../packages/app/src/tableFiles.ts";
+// name in one folder), packed by single-file.mts: the same folder always gives the same bytes, and each
+// says it unzips to its folder and opens as the folder reads. For this repository's own examples, use
+// `npm run fixtures:export`, which writes the folders and their single files together.
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { packFolder } from "./single-file.mts";
 
 const dir = process.argv[2]!;
 const names = readdirSync(dir).filter((n) => n.endsWith(".table") && statSync(join(dir, n)).isDirectory()).map((n) => n.slice(0, -".table".length)).sort();
-const FIXED = new Date(Date.UTC(2026, 9, 14, 0, 0, 0));
-const walk = (at: string): string[] => readdirSync(at).flatMap((n) => (statSync(join(at, n)).isDirectory() ? walk(join(at, n)) : [join(at, n)]));
 for (const name of names) {
-  const folder = join(dir, `${name}.table`);
-  const files = walk(folder).map((f) => relative(folder, f)).filter((p) => !p.endsWith("index.sqlite")).sort((a, b) => (a === "meta.json" ? -1 : b === "meta.json" ? 1 : a < b ? -1 : 1));
-  const entries: Record<string, [Uint8Array, { mtime: Date }]> = {};
-  for (const p of files) entries[`${name}.table/${p}`] = [new Uint8Array(readFileSync(join(folder, p))), { mtime: FIXED }];
-  const zip = zipSync(entries, { level: 9 });
+  const packed = await packFolder(join(dir, `${name}.table`), name);
   mkdirSync(join(dir, "single-file"), { recursive: true });
-  const out = join(dir, "single-file", `${name}.table`);
-  writeFileSync(out, zip);
-  // 1. Unzipped, it is the folder, byte for byte.
-  const back = unzipSync(zip);
-  const same = files.every((p) => Buffer.compare(Buffer.from(back[`${name}.table/${p}`]!), readFileSync(join(folder, p))) === 0) && Object.keys(back).length === files.length;
-  // 2. Opened as an app opens a single file, it is the same tables as the folder read from disk.
-  const fromDisk = await readBundle(nodeFs, folder);
-  const opened = (await openArchive(zip, [])).bundle;
-  const tablesOf = (b: { tables: Record<string, { rows: unknown[]; views: unknown[]; schema: unknown; bodies?: unknown }> }) =>
-    JSON.stringify(Object.fromEntries(Object.entries(b.tables).sort().map(([k, t]) => [k, { rows: t.rows, views: t.views, schema: t.schema, bodies: t.bodies ?? {} }])));
-  const agree = tablesOf(fromDisk as never) === tablesOf(opened as never);
-  console.log(`single-file/${name}.table ${zip.length} bytes, ${files.length} files, unzips to the folder: ${same}, opens as the folder reads: ${agree}, sha256 ${createHash("sha256").update(zip).digest("hex")}`);
+  writeFileSync(join(dir, "single-file", `${name}.table`), packed.bytes);
+  console.log(
+    `single-file/${name}.table ${packed.bytes.length} bytes, ${packed.files} files, unzips to the folder: ${packed.unzipsToFolder}, opens as the folder reads: ${packed.opensAsFolder}, sha256 ${packed.sha256}`,
+  );
 }
