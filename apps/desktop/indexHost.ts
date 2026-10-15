@@ -22,7 +22,7 @@ export type { IndexDatabase, OpenedLarge } from "@workspace.sh/table-app";
  * folder in Application Support, apart from anything of the person's (the
  * app isn't sandboxed, so Documents would be their own Documents).
  */
-const tablesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentDir, "Application Support", "sh.workspace.table.desktop", "tables");
+export const tablesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentDir, "Application Support", "sh.workspace.table.desktop", "tables");
 
 export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders } = createIndexHost({
   fs: desktopFs,
