@@ -71,7 +71,9 @@ test("skip-and-collect applies inside archives, per table", async () => {
   const b = await readTableArchive(zipped);
   assert.equal(b.tables.t!.rows.length, 1);
   assert.equal(b.tables.t!.diagnostics?.length, 1);
-  assert.match(b.tables.t!.diagnostics![0]!.message, /malformed line/);
+  assert.match(b.tables.t!.diagnostics![0]!.message, /line 2 isn't JSON/);
+  // Kept, and written back where it was.
+  assert.deepEqual(b.tables.t!.unread, [{ after: "r1", text: "{broken" }]);
 });
 
 test("a table without schema.json is reported, not read; a malformed one is fatal", async () => {

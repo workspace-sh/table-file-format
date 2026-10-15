@@ -4,7 +4,7 @@
 // run them over node:fs; a React Native app passes its own `TableFs`. Nothing
 // here imports Node, so Metro and browsers can load it.
 
-import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, ValidationError, View } from "./types.js";
+import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
 import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
@@ -158,7 +158,8 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
   const elsewhere = (await options.rowsElsewhere?.(dir)) === true;
-  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, TableEntry.rows))) ?? "", diagnostics);
+  const unread: UnreadLine[] = [];
+  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, TableEntry.rows))) ?? "", diagnostics, unread);
   const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
   const bodies = await readBodies(fs, joinPath(dir, TableEntry.bodies));
@@ -166,6 +167,7 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };
   if (bodies) parsed.bodies = bodies;
+  if (unread.length > 0) parsed.unread = unread;
   if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
   return parsed;
 }
@@ -199,6 +201,8 @@ export interface WriteTableInput {
    * writeBody API for partial updates.
    */
   bodies?: Record<string, string>;
+  /** Lines of `rows.ndjson` that couldn't be read as rows, put back where they were (ParsedTable.unread). */
+  unread?: UnreadLine[];
   /**
    * The table's edit history as text (SPEC section 14), for a table that
    * arrived with one (from an archive). Written only when the table has
@@ -266,7 +270,7 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   try {
     await stage(joinPath(dir, TableEntry.schema), pretty(input.schema));
     // Rows held in the index aren't here to write: whoever holds them saves them.
-    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, TableEntry.rows), serializeRows(input.rows, input.schema));
+    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, TableEntry.rows), serializeRows(input.rows, input.schema, input.unread));
     await stage(joinPath(dir, TableEntry.views), pretty(input.views ?? []));
     await stage(joinPath(dir, TableEntry.meta), pretty(meta));
     // A history that came with the table (an archive opened into a folder) is put there once. The file is

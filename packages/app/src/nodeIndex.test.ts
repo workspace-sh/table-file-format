@@ -445,3 +445,15 @@ test("rows read a piece at a time as they come are the rows read whole", async (
     assert.deepEqual(out, many, `pieces of ${size}`);
   }
 });
+
+test("a table with a line its rows can't read isn't indexed: held in memory, the line is kept (#567)", async () => {
+  const s = scratch();
+  try {
+    appendFileSync(join(s.tasks, "rows.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
+    const host = openIndexHost(s.bundle);
+    await assert.rejects(host.ensure("tasks", s.tasks), /line 9 of its rows couldn't be read/);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
