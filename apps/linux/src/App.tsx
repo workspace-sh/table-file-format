@@ -19,6 +19,7 @@ import {
   AdwPreferencesPage,
   AdwHeaderBar,
   AdwOverlaySplitView,
+  AdwToastOverlay,
   AdwSpinner,
   AdwStatusPage,
   AdwToolbarView,
@@ -71,6 +72,7 @@ import {
   type NamePrompt,
   type Place,
   loadingViewRows,
+  departedText,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
@@ -731,6 +733,46 @@ export function App({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tables, state.active]);
+  // Rows a checkbox or a choice took out of the view (#598): one toast counts them, Undo puts them back.
+  // GNOME's own toast, kept while it's up and retitled as the count goes on; it goes 3.5 s after the last.
+  const toastOverlay = useRef<Adw.ToastOverlay | null>(null);
+  const departedToast = useRef<Adw.Toast | null>(null);
+  useEffect(() => {
+    const departed = state.departed;
+    if (!departed) {
+      const shown = departedToast.current;
+      departedToast.current = null;
+      shown?.dismiss();
+      return;
+    }
+    const table = state.tables[departed.key];
+    if (!table || !toastOverlay.current) return;
+    const view = table.views.find((v) => v.id === departed.viewId);
+    const { label } = departedText(departed, table, view?.name ?? "the view");
+    let toast = departedToast.current;
+    if (toast) toast.setTitle(label);
+    else {
+      toast = Adw.Toast.new(label);
+      toast.setUseMarkup(false);
+      toast.setButtonLabel("_Undo");
+      toast.setPriority(Adw.ToastPriority.HIGH);
+      // Gone when the app says, not on GNOME's own clock: the count restarts it.
+      toast.setTimeout(0);
+      const made = toast;
+      made.connect("button-clicked", () => dispatch({ type: "putBackDeparted" }));
+      made.connect("dismissed", () => {
+        if (departedToast.current !== made) return;
+        departedToast.current = null;
+        dispatch({ type: "departedDone" });
+      });
+      departedToast.current = made;
+      toastOverlay.current.addToast(made);
+    }
+    const shown = toast;
+    const timer = setTimeout(() => shown.dismiss(), 3500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.departed]);
   const loadingTable = state.tables[state.active]?.loading;
   const loadingRows = useMemo(() => (loadingTable ? loadingViewRows(state.active, loadingTable.estimate) : undefined), [state.active, loadingTable]);
   const derived = derive(state, {
@@ -1003,6 +1045,7 @@ export function App({
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
           <AttachmentsProvider value={(file) => (held ? attachmentPath({ ...tables[state.active]!, path: tableDir(state.active) }, file) : undefined)}>
+          <AdwToastOverlay ref={toastOverlay}>
           <AdwOverlaySplitView
             collapsed={narrow}
             showSidebar={sidebarShown}
@@ -1084,6 +1127,7 @@ export function App({
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          </AdwToastOverlay>
           {aboutOpen ? (
             // Which build this is (docs/VERSIONING.md): what a person testing it quotes.
             <AdwAboutDialog
