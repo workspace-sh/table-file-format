@@ -2,7 +2,7 @@
   "format": "table",
   "formatVersion": 1,
   "title": "Library",
-  "description": "A long list: 180 books, for scrolling a long table and its header.",
+  "description": "A long list: 1,000 books, for scrolling a long table and its header.",
   "tables": [
     "books"
   ],
