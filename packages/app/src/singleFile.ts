@@ -5,10 +5,12 @@
 // outside the document as section 13 asks), and packed back into the file
 // after each write. Over any platform's files (a TableFs with readBytes and
 // writeBytes); the platform gives the folder its storage, and the file's
-// own access.
+// own access. Neither way parses the document: unpacking inflates each
+// file to its own, and packing copies the files that didn't change as they
+// are, so a table of a million rows opens and saves for what its bytes cost.
 
-import { filesOfFolder, readTableArchive, writeTableFileTo } from "@workspace.sh/table-core";
-import { joinPath, readBundle, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
+import { packTableFileFrom, unpackTableFileTo } from "@workspace.sh/table-core";
+import { joinPath, type TableFs } from "@workspace.sh/table-core/io";
 
 /** A short, stable name for a path, for its working folder: FNV-1a, 32 bits, as hex. */
 function hashOf(text: string): string {
@@ -40,34 +42,19 @@ const stampOf = (workDir: string) => `${workDir}.stamp`;
  */
 export async function unpackTableFile(fs: TableFs, bytes: Uint8Array, workDir: string, stamp: string): Promise<void> {
   if ((await fs.readText(stampOf(workDir))) === stamp && (await fs.list(workDir)) !== null) return;
-  if (!fs.writeBytes) throw new Error("this file system can't write a single-file .table's files (no writeBytes)");
   await fs.remove(workDir);
-  await fs.mkdir(workDir);
-  const bundle = await readTableArchive(bytes);
-  await writeBundleTo(fs, workDir, bundle);
-  // Its attachments, and files no reader knows, as they are.
-  for (const [path, data] of Object.entries(bundle.files ?? {})) {
-    const at = joinPath(workDir, path);
-    await fs.mkdir(at.slice(0, at.lastIndexOf("/")));
-    await fs.writeBytes(at, data);
-  }
+  await unpackTableFileTo(fs, bytes, workDir);
   await fs.writeText(stampOf(workDir), stamp);
 }
 
-/** A `.gitignore` the index host wrote to keep its index out of git, which isn't the document's. */
-const indexIgnore = (text: string) => text.split(/\r?\n/).every((line) => line.trim() === "" || line.trim() === "index.sqlite*");
-
 /**
- * Pack a working folder back into the single file at `target`: the whole
- * bundle (its tables, histories, attachments and files no reader knows,
- * never the index), written beside the file and renamed over it.
+ * Pack a working folder back into the single file at `target`: every file
+ * of the document's (its tables, histories, attachments and files no reader
+ * knows, never the index), those unchanged since the file was written
+ * copied from it as they are; written beside the file and renamed over it.
  */
 export async function packTableFile(fs: TableFs, workDir: string, target: string): Promise<void> {
-  const bundle = await readBundle(fs, workDir);
-  const files = await filesOfFolder(fs, workDir);
-  const ignore = files[".gitignore"];
-  if (ignore && indexIgnore(new TextDecoder().decode(ignore))) delete files[".gitignore"];
-  await writeTableFileTo(fs, target, { ...bundle, files });
+  await packTableFileFrom(fs, workDir, target);
 }
 
 /** After a pack, the stamp of the file as it now is: so the next open keeps the working folder. */

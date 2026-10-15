@@ -8,6 +8,7 @@ import { readTableArchive, writeTableArchive, type ReadArchiveOptions } from "./
 import { joinPath, readBundle, type ReadOptions, type TableFs, type WriteBundleInput } from "./io.js";
 import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry } from "./layout.js";
 import { isRowsFileName } from "./rowFiles.js";
+import { crc32, rawChunks, readZipRaw, writeZipEntries, type RawZipEntry, type ZipEntry } from "./zip.js";
 import type { ParsedBundle } from "./types.js";
 
 /** A `.table` on disk: the directory (`folder`), or a single file holding it (`file`). */
@@ -91,4 +92,104 @@ export async function writeTableFileTo(fs: TableFs, path: string, input: WriteBu
     await fs.remove(staged).catch(() => {});
     throw error;
   }
+}
+
+/** Paths in a document's folder that aren't the document's: its index, files being written, Finder's leftovers. */
+const notTheDocument = (name: string): boolean => /^index\.sqlite/.test(name) || name.endsWith(".tmp") || name === ".DS_Store";
+
+/** A `.gitignore` the index host wrote to keep its index out of git, which isn't the document's either. */
+const indexIgnore = (text: string): boolean => text.split(/\r?\n/).every((line) => line.trim() === "" || line.trim() === "index.sqlite*");
+
+/**
+ * Unpack the single-file `.table` in `bytes` into the folder `dir`, each
+ * file inflated straight to its own file: nothing is parsed, so a table of
+ * a million rows costs what its bytes cost. The folder is the document as
+ * its file holds it; reading it is the reader's work, as for any folder.
+ * Throws for a file that isn't one `<name>.table/` root.
+ */
+export async function unpackTableFileTo(fs: TableFs, bytes: Uint8Array, dir: string): Promise<void> {
+  if (!fs.writeBytes) throw new Error("this file system can't write a single-file .table's files (no writeBytes)");
+  const entries = readZipRaw(bytes).filter((e) => !isJunkEntry(e.name));
+  const roots = new Set(entries.map((e) => e.name.split("/")[0]!));
+  const root = [...roots][0];
+  if (roots.size !== 1 || !root?.endsWith(BUNDLE_EXTENSION) || entries.some((e) => !e.name.includes("/"))) {
+    throw new Error(`a single-file .table holds one <name>${BUNDLE_EXTENSION} folder`);
+  }
+  await fs.mkdir(dir);
+  for (const entry of entries) {
+    const inside = entry.name.slice(root.length + 1);
+    if (notTheDocument(inside.slice(inside.lastIndexOf("/") + 1))) continue;
+    const at = joinPath(dir, inside);
+    await fs.mkdir(at.slice(0, at.lastIndexOf("/")));
+    await fs.writeBytes(at, joined([...rawChunks(entry)], entry.size));
+  }
+}
+
+/**
+ * Pack the folder `dir` into the single file at `target`, as unpacked into
+ * it: every file of the document's (never its index), read one at a time.
+ * A file the target already holds with the same size and CRC-32 is copied
+ * from it as it is, compressed bytes and all; only files that changed are
+ * compressed again (with D51 that is usually one rows file). Written beside
+ * the target and renamed over it.
+ */
+export async function packTableFileFrom(fs: TableFs, dir: string, target: string): Promise<void> {
+  if (!fs.readBytes || !fs.writeBytes) throw new Error("this file system can't read and write files as bytes");
+  const name = target.slice(target.lastIndexOf("/") + 1);
+  if (!name.endsWith(BUNDLE_EXTENSION)) throw new Error(`a .table's name ends ${BUNDLE_EXTENSION}: ${name}`);
+  const before = await fs.readBytes(target);
+  const held = new Map<string, RawZipEntry>();
+  if (before) {
+    try {
+      for (const e of readZipRaw(before)) held.set(e.name, e);
+    } catch {
+      // Not an archive we can read: everything is compressed again.
+    }
+  }
+  const paths: string[] = [];
+  const walk = async (inside: string): Promise<void> => {
+    for (const entry of (await fs.list(joinPath(dir, inside))) ?? []) {
+      const path = inside === "" ? entry.name : `${inside}/${entry.name}`;
+      if (entry.directory) await walk(path);
+      else if (!notTheDocument(entry.name)) paths.push(path);
+    }
+  };
+  await walk("");
+  // The manifest first, then the rest in byte order: the same folder packs in the same order.
+  paths.sort((a, b) => (a === BundleEntry.meta ? -1 : b === BundleEntry.meta ? 1 : a < b ? -1 : a > b ? 1 : 0));
+  const entries: (ZipEntry | RawZipEntry)[] = [];
+  for (const path of paths) {
+    const data = await fs.readBytes(joinPath(dir, path));
+    if (!data) continue;
+    if (path === ".gitignore" && indexIgnore(new TextDecoder().decode(data))) continue;
+    const entryName = `${name}/${path}`;
+    const old = held.get(entryName);
+    entries.push(old && old.size === data.length && old.crc === crc32(data) ? old : { name: entryName, data });
+  }
+  const staged = `${target}.tmp`;
+  await fs.writeBytes(staged, writeZipEntries(entries));
+  try {
+    await fs.rename(staged, target);
+  } catch (error) {
+    await fs.remove(staged).catch(() => {});
+    throw error;
+  }
+}
+
+function joined(parts: Uint8Array[], size: number): Uint8Array {
+  if (parts.length === 1) return parts[0]!;
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** What zip tools add that isn't a document's: macOS's resource forks and Finder and Explorer's leftovers. */
+function isJunkEntry(name: string): boolean {
+  if (name.startsWith("__MACOSX/")) return true;
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  return base === ".DS_Store" || base === "Thumbs.db";
 }
