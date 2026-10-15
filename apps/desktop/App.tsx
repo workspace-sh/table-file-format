@@ -104,7 +104,7 @@ import {
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
-import { OPENED_KEY, reopenFolders, useFolders, type OpenedDocuments } from "./folders";
+import { LARGE_KEY, OPENED_KEY, reopenFolders, useFolders, type OpenedDocuments } from "./folders";
 import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
 import { chooseFile, choosePath } from "./panels";
@@ -453,15 +453,15 @@ export default function App() {
   const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: OpenedDocuments } | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY])
+    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, LARGE_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, folders: await reopenFolders(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
   }, []);
-  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders.library} documents={loaded.folders.documents} />;
+  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders.library} documents={loaded.folders.documents} first={loaded.folders.first} />;
 }
 
-function TableApp({ store, reopened, documents }: { store: KeyValueStore | null; reopened: Library; documents: Map<string, string> }) {
+function TableApp({ store, reopened, documents, first }: { store: KeyValueStore | null; reopened: Library; documents: Map<string, string>; first: Record<string, Row[]> }) {
   // Everything the app holds is table-app's state (docs/APP-STATE.md): what
   // was saved, or the fixtures when nothing usable was (fixture tables
   // added since the last save still appear), the folders opened last time,
@@ -577,6 +577,8 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
     for (const bundle of closedIn(edited, metas)) {
       forgetStoredHistories(store, bundle);
       await removeFolder(bundle);
+      // And a large single file's stamp beside its folder (folders.ts).
+      await desktopFs.remove(`${bundleDir(bundle)}.stamp`);
     }
     await folders.write(edited.filter((b) => opened.has(b)), all, metas);
     // A large table's rows, to the file beside its index; and the rest of a bundle kept as a
@@ -712,13 +714,13 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
         if (first) dispatch({ type: "showTable", key: first });
         return;
       }
-      const { library, large } = await folders.open([path]);
+      const { library, first } = await folders.open([path]);
       for (const [key, messages] of Object.entries(library.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
+      // A large table's first rows, shown while the rest is read into the index (folders.ts).
+      holdFirst.current(first);
       if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
-      // A single file with a large table: taken in as a copy, through the index (folders.ts).
-      for (const file of large) await importZip(file);
     },
-    [folders, showProblem, importZip],
+    [folders, showProblem],
   );
 
   // The Display panel, open or not, kept with the sidebar prefs as the web keeps
@@ -783,6 +785,11 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
   holdFirst.current = indexed.hold;
+  // The first rows of large documents reopened at launch, shown while the rest is read (folders.ts).
+  useEffect(() => {
+    indexed.hold(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   everyRow.current = indexed.everyRow;
   // A table's folder, where its history is: one opened from disk, or a large table's.
   const historyFolder = (key: string): string | undefined =>
@@ -1355,6 +1362,7 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
         clearSaved(store);
         clearStoredHistory(store);
         store?.removeItem(OPENED_KEY);
+        store?.removeItem(LARGE_KEY);
         store?.removeItem(ARRANGEMENTS_KEY);
         store?.removeItem(SIDEBAR_KEY);
         return "saved edits, opened folders, arrangements and sidebar forgotten";

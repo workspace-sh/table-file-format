@@ -14,18 +14,18 @@
 // again at launch; their tables aren't kept in the app's own store, since
 // the document is where they live.
 //
-// A single file holding a large table (INDEXED_FROM rows or more) isn't
-// unpacked: reading every row before the first is shown would hold the
-// window for minutes. It's taken in as a copy instead, through the index,
-// as a .table.zip is: its first rows at once, the rest read meanwhile.
-// Packing back into the file waits for a pack that doesn't read every row.
+// A single file holding a large table (INDEXED_FROM rows or more) is read
+// through the index instead (indexHost.ts): its first rows at once, the
+// rest read meanwhile into the index and into the host's folder for it,
+// which is then its working folder, packed back into the file like any.
 
 import { useCallback, useEffect, useRef } from "react";
 import { Dirs, FileSystem } from "react-native-file-access";
-import { readTableArchive, tableFormOf, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { readTableArchive, tableFormOf, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import {
   INDEXED_FROM,
+  fromBundle,
   linesInBytes,
   openLibrary,
   packTableFile,
@@ -37,8 +37,11 @@ import {
   type Library,
 } from "@workspace.sh/table-app";
 import { desktopFs } from "./desktopFs";
+import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
 
 export const OPENED_KEY = "table-desktop:opened";
+/** Each large single file's bundle key last time (its folder in the index host's home), by its path. */
+export const LARGE_KEY = "table-desktop:large-documents";
 
 /** Where single files' working folders are kept: this Mac's own, beside the large tables' folders. */
 const singleFilesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentDir, "Application Support", "sh.workspace.table.desktop", "single-files");
@@ -70,11 +73,25 @@ async function holdsLargeTable(bytes: Uint8Array): Promise<boolean> {
   return large;
 }
 
+/** The names the index host's folders have: a large single file's bundle is named apart from them, so its folder starts empty. */
+async function hostFolders(): Promise<string[]> {
+  return ((await desktopFs.list(tablesHome())) ?? []).flatMap((e) => (e.directory && e.name.endsWith(".table") ? [e.name.slice(0, -".table".length)] : []));
+}
+
+function largeKeys(store: KeyValueStore | null): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(store?.getItem(LARGE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Read documents, and which single file each working folder among them stands for. */
 export interface OpenedDocuments {
   library: Library;
-  /** Single files holding a large table, by path: not opened where they are, but taken in as copies (see the top of this file). */
-  large: string[];
+  /** A large table's first rows, by table key, to show while the rest is read into the index. */
+  first: Record<string, Row[]>;
   /** Each single file, by its working folder. */
   documents: Map<string, string>;
 }
@@ -85,11 +102,14 @@ export interface OpenedDocuments {
  * it is when it was made from the file as it is now (its index with it). A
  * document that can't be read is a problem, under its name.
  */
-async function openDocuments(paths: string[], held: Iterable<string>): Promise<OpenedDocuments> {
+async function openDocuments(paths: string[], held: Iterable<string>, store: KeyValueStore | null): Promise<OpenedDocuments> {
   const folders: string[] = [];
   const documents = new Map<string, string>();
   const problems: Record<string, string[]> = {};
-  const large: string[] = [];
+  const names = new Set(held);
+  const read: Library = { tables: {}, bundles: {}, paths: {}, problems: {} };
+  const first: Record<string, Row[]> = {};
+  const keys = largeKeys(store);
   for (const path of paths) {
     try {
       if ((await tableFormOf(desktopFs, path)) !== "file") {
@@ -100,8 +120,24 @@ async function openDocuments(paths: string[], held: Iterable<string>): Promise<O
       const bytes = await desktopFs.readBytes!(path);
       if (!bytes) throw new Error("it isn't there");
       if (await holdsLargeTable(bytes)) {
-        large.push(path);
-        continue;
+        // Its folder from last time goes: it's read again from the file, which holds every saved edit.
+        if (keys[path]) {
+          await removeFolder(keys[path]);
+          await desktopFs.remove(`${bundleDir(keys[path])}.stamp`);
+        }
+        const { opened, first: shown } = await openZip(bytes, [...names, ...(await hostFolders())]);
+        if (Object.values(opened.bundle.tables).some((t) => t.indexed)) {
+          const dir = bundleDir(opened.key);
+          names.add(opened.key);
+          Object.assign(read.tables, fromBundle(opened.key, opened.bundle));
+          read.bundles[opened.key] = opened.bundle.meta;
+          read.paths[opened.key] = dir;
+          for (const [table, rows] of Object.entries(shown)) first[`${opened.key}/${table}`] = rows;
+          documents.set(dir, path);
+          keys[path] = opened.key;
+          continue;
+        }
+        // Judged large, read as not: unpacked as any.
       }
       await unpackTableFile(desktopFs, bytes, workDir, await stampOf(path));
       folders.push(workDir);
@@ -111,16 +147,24 @@ async function openDocuments(paths: string[], held: Iterable<string>): Promise<O
       problems[name] = [error instanceof Error ? error.message : String(error)];
     }
   }
-  const library = await openLibrary(desktopFs, folders, held);
+  const library = await openLibrary(desktopFs, folders, names);
+  Object.assign(library.tables, read.tables);
+  Object.assign(library.bundles, read.bundles);
+  Object.assign(library.paths, read.paths);
   Object.assign(library.problems, problems);
+  try {
+    store?.setItem(LARGE_KEY, JSON.stringify(keys));
+  } catch {
+    // Full or refused: next time its old folder is left, and a new one made.
+  }
   // Which bundles are single files, and where each file is (table-app's Library.singleFiles):
   // Export as a Single File is for folders only.
   const singleFiles = Object.fromEntries(Object.entries(library.paths).flatMap(([key, folder]) => (documents.has(folder) ? [[key, documents.get(folder)!]] : [])));
   if (Object.keys(singleFiles).length > 0) library.singleFiles = singleFiles;
-  return { library, large, documents };
+  return { library, first, documents };
 }
 
-/** The documents opened last time, read again: what the app starts with, beside the fixtures. A large single file isn't among them (it was taken in as a copy, kept with the app's own). */
+/** The documents opened last time, read again: what the app starts with, beside the fixtures. */
 export async function reopenFolders(store: KeyValueStore | null, held: Iterable<string>): Promise<OpenedDocuments> {
   let remembered: string[] = [];
   try {
@@ -130,12 +174,12 @@ export async function reopenFolders(store: KeyValueStore | null, held: Iterable<
   } catch {
     // Unreadable: start with none.
   }
-  return openDocuments(remembered, held);
+  return openDocuments(remembered, held, store);
 }
 
 export interface Folders {
-  /** Read these documents (folders or single files), named apart from what's held; the app takes in what comes back, and the large single files as copies. */
-  open: (paths: string[]) => Promise<Pick<OpenedDocuments, "library" | "large">>;
+  /** Read these documents (folders or single files), named apart from what's held; the app takes in what comes back, and holds the first rows to show. */
+  open: (paths: string[]) => Promise<Pick<OpenedDocuments, "library" | "first">>;
   /** Write these opened documents' bundles, one write at a time per document. Rejects with the first that couldn't be written, named. */
   write: (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void>;
   /** The document an opened bundle's folder stands for: the single file for its working folder, else the folder itself. */
@@ -210,10 +254,11 @@ export function useFolders({
     const opened = await openDocuments(
       wanted.filter((p) => !already.has(p)),
       Object.keys(latest.current.bundles),
+      store,
     );
     for (const [workDir, path] of opened.documents) documents.current.set(workDir, path);
-    return { library: opened.library, large: opened.large };
-  }, []);
+    return { library: opened.library, first: opened.first };
+  }, [store]);
 
   const write = useCallback(
     async (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => {
