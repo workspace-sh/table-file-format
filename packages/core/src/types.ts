@@ -368,6 +368,13 @@ export interface ParsedTable {
    * how many there are, and a number that changes with every edit to
    * them. A writer leaves such a table's `rows.ndjson` alone.
    */
+  /**
+   * Set when the table was read without its rows (a reader's `rows:
+   * "later"`): `rows` is empty until they're read, and `estimate` is about
+   * how many there are, judged from the rows files' sizes and the start of
+   * the first. A writer leaves such a table's rows files alone.
+   */
+  loading?: { estimate: number };
   indexed?: {
     count: number;
     version: number;

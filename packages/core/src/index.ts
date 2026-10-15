@@ -16,7 +16,7 @@ export {
   tableNameIn,
   tablePath,
 } from "./layout.js";
-export { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, ROWS_FILE_BYTES, isRowsFileName, layoutRows, nameAfter, nameBetween, rowsFileOrder, utf8Length, type RowFile } from "./rowFiles.js";
+export { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, ROWS_FILE_BYTES, estimateRows, isRowsFileName, layoutRows, nameAfter, nameBetween, rowsFileOrder, utf8Length, type RowFile } from "./rowFiles.js";
 export { validate, validateBodies } from "./validator.js";
 export {
   isDate,

@@ -6,7 +6,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { filesOfFolder, packTableFileFrom, readTableDocument, tableFormOf, unpackTableFileTo, writeTableFileTo } from "./document.js";
-import { memoryFs, writeBundleTo } from "./io.js";
+import { memoryFs, readBundle, readTableRows, writeBundleTo } from "./io.js";
+import { bundleFiles, readTableArchive } from "./archive.js";
+import { estimateRows } from "./rowFiles.js";
 import { nodeFs } from "./node-fs.js";
 import { crc32, rawChunks, readZip, readZipRaw, writeZip, writeZipEntries, type RawZipEntry } from "./zip.js";
 
@@ -182,3 +184,52 @@ function inflated(entry: RawZipEntry): Uint8Array {
   }
   return out;
 }
+
+test("a document is read without its rows first, each table saying about how many it has; the rows come after, as the reader reads them", async () => {
+  const s = scratch();
+  try {
+    const folder = join(s.dir, "library.table");
+    cpSync(join(fixtures, "library.table"), folder, { recursive: true });
+    const whole = await readBundle(nodeFs, folder);
+    const shape = await readBundle(nodeFs, folder, { rows: "later" });
+    const books = shape.tables.books!;
+    assert.deepEqual(books.rows, []);
+    // Judged from its first 64 KB: near enough to size a scroll bar.
+    assert.ok(Math.abs(books.loading!.estimate - 1000) < 50, `estimated ${books.loading!.estimate}`);
+    assert.deepEqual(books.schema, whole.tables.books!.schema);
+    assert.deepEqual(books.views, whole.tables.books!.views);
+    // Its rows, after, as the reader reads them.
+    const batches: number[] = [];
+    const rows = await readTableRows(nodeFs, join(folder, "tables", "books"), { onRows: (batch) => batches.push(batch.length) });
+    assert.deepEqual(rows.rows, whole.tables.books!.rows);
+    assert.deepEqual(rows.rowFiles, whole.tables.books!.rowFiles);
+    assert.deepEqual(batches, [1000]);
+    // A loading table is written without touching its rows: they aren't here to write.
+    const before = readFileSync(join(folder, "tables", "books", "rows", "0001.ndjson"), "utf8");
+    await writeBundleTo(nodeFs, folder, { ...shape, tables: { books: { ...books, meta: { title: "Renamed" } } } });
+    assert.equal(readFileSync(join(folder, "tables", "books", "rows", "0001.ndjson"), "utf8"), before);
+    assert.throws(() => bundleFiles(shape), /rows haven't been read yet/);
+
+    // From a single file: nothing of its rows inflated but the start of the first.
+    const file = join(s.dir, "single", "library.table");
+    mkdirSync(join(s.dir, "single"));
+    await packTableFileFrom(nodeFs, folder, file);
+    const fromFile = await readTableArchive(new Uint8Array(readFileSync(file)), { rows: "later" });
+    assert.deepEqual(fromFile.tables.books!.rows, []);
+    assert.ok(Math.abs(fromFile.tables.books!.loading!.estimate - 1000) < 50);
+  } finally {
+    s.done();
+  }
+});
+
+test("how many rows a table has is judged from its files' sizes and the start of the first", () => {
+  const line = (i: number) => `{"id":"r${i}","title":"Row ${i}"}\n`;
+  const all = new TextEncoder().encode(Array.from({ length: 10_000 }, (_, i) => line(i)).join(""));
+  assert.equal(estimateRows(all.length, all), 10_000);
+  // Its first lines are shorter than its last (r1 against r9999): judged from them, it's over, not far.
+  const judged = estimateRows(all.length, all.subarray(0, 4096));
+  assert.ok(Math.abs(judged - 10_000) < 1500, `judged ${judged}`);
+  assert.equal(estimateRows(0, new Uint8Array(0)), 0);
+  // A last line without its end is a row.
+  assert.equal(estimateRows(5, new TextEncoder().encode('{"a"}')), 1);
+});

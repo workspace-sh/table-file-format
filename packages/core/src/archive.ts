@@ -13,7 +13,10 @@ import type {
 import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
-import { FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layoutRows, ROWS_DIR, rowsFileOrder } from "./rowFiles.js";
+import { estimateRows, FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layoutRows, ROWS_DIR, rowsFileOrder } from "./rowFiles.js";
+
+/** How much of a table's first rows file is read to judge how many rows it has. */
+const ESTIMATE_HEAD = 64 * 1024;
 import { isTableName, tableOrder } from "./bundle.js";
 import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
 import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
@@ -68,6 +71,13 @@ export interface ReadArchiveOptions {
    */
   rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: LazyZipEntry) => boolean | Promise<boolean>;
   lazyFrom?: number;
+  /**
+   * "later": every table without its rows, none of them inflated, for
+   * drawing the document at once (as readBundle's `rows: "later"`): each
+   * comes back with `loading` set, about how many rows it has. Its rows are
+   * read after, from the folder the file is unpacked into.
+   */
+  rows?: "later";
 }
 
 function whole(entry: LazyZipEntry): Uint8Array {
@@ -86,7 +96,7 @@ export async function readTableArchive(
 ): Promise<ParsedBundle> {
   const lazyFrom = options.lazyFrom ?? 1 << 20;
   const entries = readZip(source, {
-    lazy: (name, size) => !!options.rowsLazily && size >= lazyFrom && isArchivedRowsFile(name),
+    lazy: (name, size) => (options.rows === "later" || (!!options.rowsLazily && size >= lazyFrom)) && isArchivedRowsFile(name),
   }).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
@@ -170,16 +180,17 @@ export async function readTableArchive(
     }
 
     let elsewhere = false;
-    if (lazyRows) {
+    const later = options.rows === "later";
+    if (lazyRows && !later) {
       elsewhere = (await options.rowsLazily!(name, { schema, views, bodies }, lazyRows)) === true;
       // Not taken: read as any other.
       if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
     }
-    if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
+    if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
     const unread: UnreadLine[] = [];
     const rows: Row[] = [];
     const rowFiles: { name: string; ids: string[] }[] = [];
-    if (!elsewhere) {
+    if (!elsewhere && !later) {
       for (const f of rowsFiles) {
         const these = parseRowsText(text(f.path) ?? "", tableDiagnostics, unread, { file: f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`, after: rows.at(-1)?.id ?? null });
         for (const r of these) rows.push(r);
@@ -190,6 +201,7 @@ export async function readTableArchive(
     if (rowFiles.length > 0) table.rowFiles = rowFiles;
     if (unread.length > 0) table.unread = unread;
     if (elsewhere) table.indexed = { count: 0, version: 0 };
+    if (later) table.loading = { estimate: lazyRows ? estimateRows(lazyRows.size, lazyRows.head(ESTIMATE_HEAD)) : 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
     // Its edit history travels with it, as it is: this reader doesn't judge its lines (section 14).
     const history = text(`${prefix}${TableEntry.history}`);
@@ -330,6 +342,9 @@ export interface BundleFile {
  */
 export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[] {
   const names = tableOrder(input);
+  // A table whose rows haven't been read would be written without them.
+  const loading = names.find((n) => "loading" in input.tables[n]! && (input.tables[n] as ParsedTable).loading);
+  if (loading) throw new Error(`${loading}'s rows haven't been read yet, so it can't be written as an archive`);
   const files: BundleFile[] = [{ path: BundleEntry.meta, content: pretty(stampMeta({ ...(input.meta ?? {}), tables: names })) }];
   for (const tableName of names) {
     if (!isTableName(tableName)) throw new Error(`invalid table name: ${JSON.stringify(tableName)}`);
