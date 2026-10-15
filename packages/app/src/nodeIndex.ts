@@ -9,10 +9,11 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, buildIndex, buildSearchIndex, fillIndex, FIRST_ROWS_FILE, LEGACY_ROWS_FILE, nameAfter, nameBetween, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, buildIndex, buildSearchIndex, fillIndex, FIRST_ROWS_FILE, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
+import { rowFilePlacer, rowFileStarts, setRowFileStarts } from "./rowFilesIndexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 
 /** What an app asks of a bundle's index: the indexer's SqlDriver, and the work on files that goes with it. */
@@ -212,21 +213,9 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     // In steps: as one transaction the log beside the index grows as large as the index itself.
     commitEvery: BUILD_STEP,
   });
-  await setRowFiles(db, name, files);
+  await setRowFileStarts(db, name, files);
   onProgress?.(done, total);
   return done;
-}
-
-/** Which rows file each run of a table's index positions goes back to (D51): each file and the place of its first row. */
-async function rowFilesOf(db: SqlDriver, name: string): Promise<{ name: string; first: number }[]> {
-  await db.exec("create table if not exists _rowfiles(tbl text not null, name text not null, first integer not null, primary key(tbl, name))");
-  return (await db.all("select name, first from _rowfiles where tbl = ? order by first, name", [name])).map((r) => ({ name: r.name as string, first: r.first as number }));
-}
-
-async function setRowFiles(db: SqlDriver, name: string, files: { name: string; first: number }[]): Promise<void> {
-  await db.exec("create table if not exists _rowfiles(tbl text not null, name text not null, first integer not null, primary key(tbl, name))");
-  await db.run("delete from _rowfiles where tbl = ?", [name]);
-  for (const f of files) await db.run("insert into _rowfiles(tbl, name, first) values(?, ?, ?)", [name, f.name, f.first]);
 }
 
 /**
@@ -249,24 +238,18 @@ export async function saveTableRows(
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
   const dir = join(tableDir, ROWS_DIR);
   mkdirSync(dir, { recursive: true });
-  const known = await rowFilesOf(db, name);
-  const bounds = known.length > 0 ? known : [{ name: FIRST_ROWS_FILE, first: -Infinity }];
-  const written: { name: string; first: number }[] = [];
+  const starts = await rowFileStarts(db, name);
+  const placer = rowFilePlacer(starts, limit);
+  const written = placer.files;
   let out: ReturnType<typeof createWriteStream> | null = null;
-  let file = -1;
-  let piece = "";
-  let bytes = 0;
   const close = async () => {
     if (!out) return;
     out.end();
     await once(out, "finish");
     out = null;
   };
-  const open = (pieceName: string, first: number) => {
-    piece = pieceName;
-    bytes = 0;
-    written.push({ name: pieceName, first });
-    out = createWriteStream(join(dir, `${pieceName}.tmp`));
+  const open = (file: string) => {
+    out = createWriteStream(join(dir, `${file}.tmp`));
   };
   let stopped = false;
   try {
@@ -276,26 +259,21 @@ export async function saveTableRows(
         break;
       }
       for (const { pos, line } of batch) {
-        // The file this row's place is in: the last whose first row is at or before it.
-        let k = file < 0 ? 0 : file;
-        while (k + 1 < bounds.length && bounds[k + 1]!.first <= pos) k++;
-        if (k !== file) {
-          await close();
-          file = k;
-          open(bounds[k]!.name, pos);
-        } else if (bytes >= limit) {
-          // Past the limit: the next file, by number after the last file, by letters before another.
-          await close();
-          open(k === bounds.length - 1 ? nameAfter(piece) : nameBetween(piece, bounds[k + 1]!.name), pos);
-        }
         const text = `${line}\n`;
-        bytes += Buffer.byteLength(text);
+        const starting = placer.place(pos, Buffer.byteLength(text));
+        if (starting !== null) {
+          await close();
+          open(starting);
+        }
         const stream = out as unknown as ReturnType<typeof createWriteStream>;
         if (!stream.write(text)) await once(stream, "drain");
       }
     }
     // No rows at all: one empty file, so the folder is kept.
-    if (written.length === 0 && !stopped) open(bounds[0]!.name, 1);
+    if (written.length === 0 && !stopped) {
+      written.push({ name: starts[0]?.name ?? FIRST_ROWS_FILE, first: 1 });
+      open(written[0]!.name);
+    }
     await close();
   } catch (error) {
     (out as ReturnType<typeof createWriteStream> | null)?.destroy();
@@ -311,7 +289,7 @@ export async function saveTableRows(
   const kept = new Set(written.map((w) => w.name));
   for (const old of rowsFileOrder(readdirSync(dir))) if (!kept.has(old)) rmSync(join(dir, old), { force: true });
   rmSync(join(tableDir, LEGACY_ROWS_FILE), { force: true });
-  await setRowFiles(db, name, written);
+  await setRowFileStarts(db, name, written);
   return true;
 }
 

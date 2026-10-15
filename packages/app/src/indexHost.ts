@@ -1,8 +1,8 @@
 // A device's indexes (SPEC section 8), for the apps that keep large tables
 // as folders of their own: iOS (apps/mobile) and the Mac (apps/desktop). A
 // bundle with a large table is a real .table folder in the app's own
-// space, with `index.sqlite` at its root and the table's rows in one file,
-// `tables/<name>/rows/0001.ndjson`, which stays the truth. Files and SQLite are the
+// space, with `index.sqlite` at its root and the table's rows files under
+// `tables/<name>/rows/`, which stay the truth. Files and SQLite are the
 // platform's, passed in (IndexHostPlatform); everything else is here, once.
 // (The web's worker, apps/web/src/sqlite, and Linux's do the same over
 // their own storage.)
@@ -14,9 +14,11 @@
 //
 // The folder is the app's own: nothing else can change its files, so an
 // index is fresh as long as the app says so (its key is "saved"), and what
-// is recorded instead is that a rows file is whole, and its size (`_kept`):
-// one cut short, by the app being ended while it was written, isn't taken
-// for the table. Were these folders shown to other apps (the Files app),
+// is recorded instead is that each rows file is whole, and its size
+// (`_keptfiles`): one cut short, by the app being ended while it was
+// written, isn't taken for the table. A table's rows files are the ones it
+// came with (D51), each row saved back to its own, as on Linux
+// (rowFilesIndexed.ts). Were these folders shown to other apps (the Files app),
 // freshness would need the files' own content, or their size and date.
 
 import {
@@ -32,7 +34,10 @@ import {
   indexKey,
   rowsBeingBuilt,
   setIndexKey,
-  storedRows,
+  isRowsFileName,
+  rowsFileOrder,
+  storedRowLines,
+  utf8Length,
   type LazyZipEntry,
   type Row,
   type SqlDriver,
@@ -41,6 +46,7 @@ import {
 import { joinPath, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
 import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, rowsInChunks } from "./indexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
+import { rowFilePlacer, rowFileStarts, setRowFileStarts, type RowFileStart } from "./rowFilesIndexed.ts";
 import { openArchive, type OpenedBundle } from "./tableFiles.ts";
 
 /** A database the host can close. */
@@ -178,8 +184,8 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   const BATCH = platform.batchSize !== undefined ? { batchSize: platform.batchSize } : {};
   const bundleDir = (bundle: string): string => joinPath(platform.home(), `${bundle}${BUNDLE_EXTENSION}`);
   const tableDir = (bundle: string, table: string): string => joinPath(bundleDir(bundle), BundleEntry.tables, table);
-  // One rows file, however large: the folder is the app's own, and git's limits aren't its.
   const rowsDir = (bundle: string, table: string): string => joinPath(tableDir(bundle, table), ROWS_DIR);
+  // A table's first rows file: where one kept before D51, as rows.ndjson, is moved to.
   const rowsPath = (bundle: string, table: string): string => joinPath(rowsDir(bundle, table), FIRST_ROWS_FILE);
 
   const held = new Map<string, Promise<Held>>();
@@ -223,31 +229,48 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
 
   // -- The rows files, beside the index ---------------------------------------
 
-  /** Say a table's rows file is whole, at this many bytes: one cut short isn't taken for the table. */
-  async function kept(db: SqlDriver, table: string, bytes: number): Promise<void> {
-    await db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
-    await db.run("insert or replace into _kept(name, bytes) values(?, ?)", [table, bytes]);
+  const KEPT = "create table if not exists _keptfiles(tbl text not null, name text not null, bytes integer not null, primary key(tbl, name))";
+  const rowsFile = (bundle: string, table: string, file: string): string => joinPath(rowsDir(bundle, table), file);
+
+  /** Say a table's rows files are whole, each at its size: one cut short isn't taken for the table. */
+  async function kept(db: SqlDriver, table: string, files: { name: string; bytes: number }[]): Promise<void> {
+    await db.exec(KEPT);
+    await db.run("delete from _keptfiles where tbl = ?", [table]);
+    for (const f of files) await db.run("insert into _keptfiles(tbl, name, bytes) values(?, ?, ?)", [table, f.name, f.bytes]);
   }
 
-  /** A table's rows file, emptied and open for writing to its end. */
-  async function emptied(bundle: string, table: string): Promise<FileWriter> {
-    await fs.mkdir(rowsDir(bundle, table));
-    return platform.writer(rowsPath(bundle, table));
-  }
-
-  /** A table's rows file in pieces, when it is whole; null when it's missing or was cut short. */
-  async function keptRows(db: SqlDriver, bundle: string, table: string): Promise<{ chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array>; size: number } | null> {
-    await db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
-    const whole = (await db.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
+  /** A table's rows files in pieces, in file order, when each is whole; null when one is missing or was cut short. */
+  async function keptRows(
+    db: SqlDriver,
+    bundle: string,
+    table: string,
+  ): Promise<{ files: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[]; size: number } | null> {
     // Kept before D51 as the table's rows.ndjson: moved into rows/.
     const legacy = joinPath(tableDir(bundle, table), LEGACY_ROWS_FILE);
     if ((await platform.size(rowsPath(bundle, table))) === null && (await platform.size(legacy)) !== null) {
       await fs.mkdir(rowsDir(bundle, table));
       await fs.rename(legacy, rowsPath(bundle, table));
     }
-    const size = await platform.size(rowsPath(bundle, table));
-    if (whole === undefined || size === null || size !== Number(whole)) return null;
-    return { chunks: platform.pieces(rowsPath(bundle, table), size, READ_STEP), size };
+    await db.exec(KEPT);
+    let files = (await db.all("select name, bytes from _keptfiles where tbl = ?", [table])).map((r) => ({ name: r.name as string, bytes: Number(r.bytes) }));
+    if (files.length === 0) {
+      // Kept before D51: one file, its size in _kept.
+      await db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
+      const whole = (await db.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
+      if (whole === undefined) return null;
+      files = [{ name: FIRST_ROWS_FILE, bytes: Number(whole) }];
+    }
+    const order = rowsFileOrder(files.map((f) => f.name));
+    const out: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[] = [];
+    let size = 0;
+    for (const name of order) {
+      const path = rowsFile(bundle, table, name);
+      const have = await platform.size(path);
+      if (have === null || have !== files.find((f) => f.name === name)!.bytes) return null;
+      out.push({ name, chunks: platform.pieces(path, have, READ_STEP) });
+      size += have;
+    }
+    return { files: out, size };
   }
 
   // -- What the screen asks ---------------------------------------------------
@@ -296,19 +319,28 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   ): Promise<number> {
     const fresh = again ? undefined : waiting.get(`${bundle}/${name}`);
     if (fresh) {
-      // Read a piece at a time: into the index, and into the file kept beside it.
-      const out = await emptied(bundle, name);
-      let at = 0;
+      // Read a piece at a time: into the index, and each rows file into its own file kept beside it.
+      await fs.mkdir(rowsDir(bundle, name));
+      const parts = fresh.rows.parts ?? [{ name: FIRST_ROWS_FILE, entry: fresh.rows }];
+      const starts: RowFileStart[] = [];
+      const sizes = new Map<string, number>();
+      let out: FileWriter | null = null;
       try {
         const count = await buildIndexFromBytes(db, {
           name,
           schema,
           rows: {
-            chunks: fresh.rows.chunks(),
+            files: parts.map((p) => ({ name: p.name, chunks: p.entry.chunks() })),
             size: fresh.rows.size,
-            keep: (chunk) => {
-              at += chunk.length;
-              return out.write(chunk);
+            onFile: async (file, first) => {
+              await out?.close();
+              out = await platform.writer(rowsFile(bundle, name, file));
+              starts.push({ name: file, first });
+              sizes.set(file, 0);
+            },
+            keep: (chunk, file) => {
+              sizes.set(file, sizes.get(file)! + chunk.length);
+              return out!.write(chunk);
             },
           },
           bodies: fresh.bodies,
@@ -317,18 +349,19 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
           ...BATCH,
           ...(onProgress ? { onProgress } : {}),
         });
-        await out.close();
-        await kept(db, name, at);
+        await (out as FileWriter | null)?.close();
+        await setRowFileStarts(db, name, starts);
+        await kept(db, name, [...sizes].map(([file, bytes]) => ({ name: file, bytes })));
         waiting.delete(`${bundle}/${name}`);
         return count;
       } catch (error) {
         // A damaged archive is found out at its end: nothing of it is kept.
         try {
-          await out.close();
+          await (out as FileWriter | null)?.close();
         } catch {
           // Closed already.
         }
-        await fs.remove(rowsPath(bundle, name));
+        for (const file of sizes.keys()) await fs.remove(rowsFile(bundle, name, file));
         throw error;
       }
     }
@@ -339,7 +372,18 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     }
     const rows = await keptRows(db, bundle, name);
     if (!rows) throw new Error("its rows are no longer on this device");
-    return buildIndexFromBytes(db, { name, schema, rows, key: "saved", commitEvery: COMMIT_EVERY, ...BATCH, ...(onProgress ? { onProgress } : {}) });
+    const starts: RowFileStart[] = [];
+    const count = await buildIndexFromBytes(db, {
+      name,
+      schema,
+      rows: { ...rows, onFile: (file, first) => void starts.push({ name: file, first }) },
+      key: "saved",
+      commitEvery: COMMIT_EVERY,
+      ...BATCH,
+      ...(onProgress ? { onProgress } : {}),
+    });
+    await setRowFileStarts(db, name, starts);
+    return count;
   }
 
   function build(bundle: string, name: string, schema: TableSchema, again: boolean, onProgress?: (done: number, total: number) => void): Promise<number> {
@@ -367,57 +411,96 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     return done;
   }
 
-  /** Write a table's rows out of the index to the file beside it: staged, then moved over it in one step. */
+  /**
+   * Write a table's rows out of the index to its rows files beside it (D51):
+   * each row to the file it came from, a file past about 25 MB split, and a
+   * file left without rows removed. Each is staged, and moved over its file
+   * only once all are written.
+   */
   async function writeRows(
     bundle: string,
     name: string,
     schema: TableSchema,
     omit: string[] | undefined,
     stop: () => boolean,
-  ): Promise<{ bytes: number; key: string | null } | null> {
-    await fs.mkdir(rowsDir(bundle, name));
-    const stagedPath = `${rowsPath(bundle, name)}.tmp`;
-    const out = await platform.writer(stagedPath);
+  ): Promise<{ files: (RowFileStart & { bytes: number })[]; key: string | null } | null> {
+    const dir = rowsDir(bundle, name);
+    await fs.mkdir(dir);
+    const staged = (file: string): string => joinPath(dir, `${file}.tmp`);
     const encoder = new TextEncoder();
     // Read on a connection of its own, in one read transaction: the rows as
     // they stood when the save began, however long the writing takes, while
     // the bundle's own connection goes on answering the screen and taking
     // edits. (On that one connection a save held every read behind it.)
     const reader = await platform.openDatabase(bundleDir(bundle), "reader");
-    let at = 0;
+    let placer: ReturnType<typeof rowFilePlacer> | null = null;
+    const sizes = new Map<string, number>();
+    let out: FileWriter | null = null;
+    // What's been placed in the file being written and not yet written: a piece at a time, not a row at a time.
+    let pending = "";
+    const flush = async () => {
+      if (pending === "" || !out) return;
+      await out.write(encoder.encode(pending));
+      pending = "";
+    };
     let stopped = false;
-    // The index's key as these rows have it: the file is this index and no later one.
+    // The index's key as these rows have it: the files are this index and no later one.
     let key: string | null = null;
     try {
       // The reader's first look is what fixes what it sees, so it takes a turn of
       // the bundle's own queue: every edit asked before this save has had its
-      // turn by then and is in the file, and none comes between.
+      // turn by then and is in the files, and none comes between.
       await inTurn(async () => {
         await reader.exec("begin");
         key = await indexKey(reader, name);
       });
-      for await (const text of storedRows(reader, { name, schema, ...(omit ? { omit } : {}) })) {
-        // An edit has landed: this file would be out of date as it was finished, and the next save writes it.
+      const starts = await rowFileStarts(reader, name);
+      placer = rowFilePlacer(starts);
+      for await (const batch of storedRowLines(reader, { name, schema, ...(omit ? { omit } : {}) })) {
+        // An edit has landed: these files would be out of date as they were finished, and the next save writes them.
         if (stop()) {
           stopped = true;
           break;
         }
-        const bytes = encoder.encode(text);
-        await out.write(bytes);
-        at += bytes.length;
+        for (const { pos, line } of batch) {
+          const bytes = utf8Length(line) + 1;
+          const starting = placer.place(pos, bytes);
+          if (starting !== null) {
+            await flush();
+            await out?.close();
+            out = await platform.writer(staged(starting));
+            sizes.set(starting, 0);
+          }
+          const file = placer.files[placer.files.length - 1]!.name;
+          sizes.set(file, sizes.get(file)! + bytes);
+          pending += `${line}\n`;
+        }
+        await flush();
+      }
+      // No rows at all: one empty file, so the folder is kept.
+      if (!stopped && placer.files.length === 0) {
+        const file = starts[0]?.name ?? FIRST_ROWS_FILE;
+        placer.files.push({ name: file, first: 1 });
+        sizes.set(file, 0);
+        out = await platform.writer(staged(file));
       }
       await reader.exec("commit");
     } finally {
-      await out.close();
+      await (out as FileWriter | null)?.close();
       await reader.close().catch(() => {});
     }
+    const files = placer?.files ?? [];
     if (stopped) {
-      // The file from the save before stays as it is, whole.
-      await fs.remove(stagedPath);
+      // The files from the save before stay as they are, whole.
+      for (const f of files) await fs.remove(staged(f.name));
       return null;
     }
-    await fs.rename(stagedPath, rowsPath(bundle, name));
-    return { bytes: at, key };
+    for (const f of files) await fs.rename(staged(f.name), joinPath(dir, f.name));
+    // Files left without rows, and a rows.ndjson from before D51.
+    const now = new Set(files.map((f) => f.name));
+    for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && isRowsFileName(entry.name) && !now.has(entry.name)) await fs.remove(joinPath(dir, entry.name));
+    await fs.remove(joinPath(tableDir(bundle, name), LEGACY_ROWS_FILE));
+    return { files: files.map((f) => ({ ...f, bytes: sizes.get(f.name) ?? 0 })), key };
   }
 
   // A bundle's saves, one after another, and how many are under way.
@@ -473,7 +556,10 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
             // Not asked of the save a build is about to read: the screen holds edits for that
             // one, and it always ends saved.
             if (!whole && written !== null && (await indexKey(driver, name)) !== written.key) return false;
-            if (written !== null) await kept(driver, name, written.bytes);
+            if (written !== null) {
+              await setRowFileStarts(driver, name, written.files);
+              await kept(driver, name, written.files);
+            }
             await setIndexKey(driver, name, "saved");
             return true;
           });
