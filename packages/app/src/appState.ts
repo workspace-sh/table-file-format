@@ -40,6 +40,7 @@ import {
   withViewPatch,
   type FieldPlace,
 } from "./edits.ts";
+import { afterCellEdit, departedCount, type Departed } from "./departed.ts";
 import { indexChanges, logged, NO_EDIT_LOG, pruned, recorded, settledPages, written, type EditLogState } from "./editLog.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
 import type { IndexEdit } from "./indexed.ts";
@@ -161,6 +162,11 @@ export interface AppState {
    * (`AppStart.writesHistory`).
    */
   editLog: EditLogState;
+  /**
+   * Rows a discrete edit took out of the view on screen, for the toast that
+   * says so and puts them back (departed.ts, #598); null when there's none.
+   */
+  departed: Departed | null;
 }
 
 /**
@@ -259,6 +265,10 @@ export type AppAction =
   /** Put the table on screen back as it was before its last edit; and forward again. */
   | { type: "undo" }
   | { type: "redo" }
+  /** The toast saying rows left the view is gone (its time is up, or it was dismissed). */
+  | { type: "departedDone" }
+  /** Put back every row the toast counted, as they were before, as one step (#598). */
+  | { type: "putBackDeparted" }
   | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
   /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
   | { type: "reloaded"; key: string; table: ParsedTable }
@@ -324,6 +334,7 @@ export function initialAppState(input: AppStart): AppState {
     indexWork: [],
     undo: {},
     editLog: input.writesHistory ? { ...NO_EDIT_LOG, on: true } : NO_EDIT_LOG,
+    departed: null,
   };
   const target = input.start ? addressTarget(input.start, tables, bundles, "") : null;
   const state = target ? follow(base, target) : base;
@@ -394,6 +405,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
       openPage: place.page && rows.some((r) => r.id === place.page) ? place.page : null,
     };
   }
+  next = withDeparted(prev, next, action);
   // What the action edited, kept for the table's history.
   if (next.editLog.on) {
     const open = next.openPage !== null ? { key: next.active, rowId: next.openPage } : null;
@@ -416,7 +428,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
  * a file opened or read again, rows moved into the index, the examples
  * reset, a field's change and what it does to the rows.
  */
-const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "addRow", "insertRow", "updateBody", "undo", "redo"]);
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -472,6 +484,25 @@ function edit(state: AppState, name: string, change: (table: ParsedTable) => Par
 function cellEditName(state: AppState, field: string, key = state.active): string {
   const title = state.tables[key]?.schema.fields.find((f) => f.name === field)?.title;
   return `Edit ${title ?? field.replace(/[_-]+/g, " ").replace(/(^|\s)\p{Ll}/gu, (letter) => letter.toUpperCase())}`;
+}
+
+/**
+ * The toast's rows after an action (departed.ts): counted on by a discrete
+ * edit that takes a row out of the view on screen; over when another view
+ * or table shows, or another kind of edit is made.
+ */
+function withDeparted(prev: AppState, next: AppState, action: AppAction): AppState {
+  if (!next.departed && action.type !== "updateRow") return next;
+  let departed = next.departed;
+  if (action.type === "updateRow" && next.tables !== prev.tables) {
+    const before = prev.tables[prev.active];
+    const after = next.tables[prev.active];
+    if (before && after) departed = afterCellEdit(departed, before, after, prev.active, currentView(prev), action.rowId, action.field);
+  } else if (ROW_EDITS.has(action.type) && next.tables !== prev.tables) {
+    departed = null;
+  }
+  if (departed && (next.active !== departed.key || viewIdOf(next, next.active) !== departed.viewId)) departed = null;
+  return departed === next.departed ? next : { ...next, departed };
 }
 
 /** A change that is only a new title: a rename. */
@@ -870,6 +901,20 @@ function step(state: AppState, action: AppAction): AppState {
     case "pagesSettled": {
       const editLog = settledPages(state.editLog, state.tables, null);
       return editLog === state.editLog ? state : { ...state, editLog };
+    }
+    case "departedDone":
+      return state.departed ? { ...state, departed: null } : state;
+    case "putBackDeparted": {
+      const gone = state.departed;
+      if (!gone) return state;
+      const count = departedCount(gone);
+      const putBack = edit(
+        { ...state, departed: null },
+        count === 1 ? "Put Back Row" : `Put Back ${count} Rows`,
+        (t) => gone.rows.reduce((table, r) => withCell(table, r.rowId, r.field, r.was), t),
+        gone.key,
+      );
+      return putBack.tables === state.tables ? { ...state, departed: null } : putBack;
     }
     case "undo":
       return stepBack(state, "past");
