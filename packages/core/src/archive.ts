@@ -150,7 +150,7 @@ export async function readTableArchive(
     }
     // Large rows, still compressed, handed over as they are: several files as one, in file order.
     const lazyRows = rowsFiles.some((f) => compressed.has(f.path))
-      ? chained(rowsFiles.map((f) => compressed.get(f.path) ?? inflated(f.path, files.get(f.path)!)))
+      ? chained(rowsFiles.map((f) => ({ name: f.name, entry: compressed.get(f.path) ?? inflated(f.path, files.get(f.path)!) })))
       : undefined;
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
@@ -234,10 +234,11 @@ function inflated(name: string, data: Uint8Array): LazyZipEntry {
   return { name, size: data.length, head: () => data, chunks: () => [data] };
 }
 
-/** A table's rows files as one entry: their bytes in file order, a line end between where a file had none. */
-function chained(entries: LazyZipEntry[]): LazyZipEntry {
-  if (entries.length === 1) return entries[0]!;
+/** A table's rows files as one entry: their bytes in file order, a line end between where a file had none; and each by its name. */
+function chained(parts: { name: string; entry: LazyZipEntry }[]): LazyZipEntry {
+  const entries = parts.map((p) => p.entry);
   return {
+    parts,
     name: entries[0]!.name,
     size: entries.reduce((n, e) => n + e.size, 0),
     head(bytes) {
