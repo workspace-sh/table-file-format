@@ -1,0 +1,254 @@
+// .table documents opened where they are, chosen in the system's picker:
+// read with core's reader, written back with core's writer, through expoFs,
+// as the Mac's folders.ts does over its own files.
+//
+// A .table is a folder or a single file (SPEC section 13, D49), told apart
+// by what is on disk. A folder is read and written where it is, under the
+// security scope the picker gave it. A single file is edited the way Numbers
+// edits one (table-app's singleFile): unpacked into a working folder in the
+// phone's own storage, edited there as any folder, and packed back into the
+// file after each write. The file itself is only the app's to replace, not
+// its folder, so the pack is one coordinated write (modules/table-files)
+// rather than core's write-beside-and-rename.
+//
+// The documents are kept for the next launch as bookmarks, and opened again
+// then; their tables aren't kept in the app's own store, since the document
+// is where they live.
+
+import { useCallback, useEffect, useRef } from "react";
+import { Directory, File, Paths } from "expo-file-system";
+import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import type { TableFs } from "@workspace.sh/table-core/io";
+import {
+  openLibrary,
+  packTableFile,
+  restampTableFile,
+  unpackTableFile,
+  workDirFor,
+  writeLibraryBundle,
+  type KeyValueStore,
+  type Library,
+} from "@workspace.sh/table-app";
+import { expoFs, pathOfUri } from "./expoFs";
+import { releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "./modules/table-files";
+
+export const OPENED_KEY = "table-mobile:opened";
+
+/** Where single files' working folders are kept: the phone's own, apart from anything else there. */
+const singleFilesHome = (): string => new Directory(Paths.document, "single-files").uri.replace(/\/+$/, "");
+
+/** A single file as it is now, to tell whether its working folder was made from it. */
+function stampOf(uri: string): string {
+  const file = new File(uri);
+  return `${file.size}:${file.modificationTime ?? ""}`;
+}
+
+/**
+ * expoFs, except that writing `<target>.tmp` and renaming it over `target`
+ * (how core's writer replaces a file) is one coordinated write of the
+ * target instead: a file the picker gave is the app's, its folder isn't.
+ */
+function coordinatedFs(target: string): TableFs {
+  const staged = `${target}.tmp`;
+  let pending: Uint8Array | null = null;
+  return {
+    ...expoFs,
+    async writeBytes(path, bytes) {
+      if (path === staged) pending = bytes;
+      else await expoFs.writeBytes!(path, bytes);
+    },
+    async rename(from, to) {
+      if (from === staged && pending) {
+        const bytes = pending;
+        pending = null;
+        await writeCoordinated(pathOfUri(to), bytes);
+      } else await expoFs.rename(from, to);
+    },
+    async remove(path) {
+      if (path === staged) pending = null;
+      else await expoFs.remove(path);
+    },
+  };
+}
+
+/** Read documents, which single file each working folder among them stands for, and each document's bookmark. */
+export interface OpenedDocuments {
+  library: Library;
+  /** Each single file (its URL), by its working folder. */
+  documents: Map<string, string>;
+  /** Each document's bookmark, by its URL. */
+  bookmarks: Map<string, string>;
+}
+
+/**
+ * Read these documents, named apart from `held`. A single file is unpacked
+ * into its working folder first, which is kept as it is when it was made
+ * from the file as it is now (its index with it). A document that can't be
+ * read is a problem, under its name.
+ */
+async function openDocuments(held: HeldDocument[], taken: Iterable<string>): Promise<OpenedDocuments> {
+  const folders: string[] = [];
+  const documents = new Map<string, string>();
+  const bookmarks = new Map<string, string>();
+  const problems: Record<string, string[]> = {};
+  for (const doc of held) {
+    const uri = doc.uri.replace(/\/+$/, "");
+    bookmarks.set(uri, doc.bookmark);
+    try {
+      if (doc.directory) {
+        folders.push(uri);
+        continue;
+      }
+      const workDir = workDirFor(singleFilesHome(), uri);
+      const bytes = await expoFs.readBytes!(uri);
+      if (!bytes) throw new Error("it isn't there");
+      await unpackTableFile(expoFs, bytes, workDir, stampOf(uri));
+      folders.push(workDir);
+      documents.set(workDir, uri);
+    } catch (error) {
+      problems[doc.name.replace(/\.table$/i, "")] = [error instanceof Error ? error.message : String(error)];
+    }
+  }
+  const library = await openLibrary(expoFs, folders, taken);
+  Object.assign(library.problems, problems);
+  // Which bundles are single files, and where each file is: Export as a Single File is for folders only.
+  const singleFiles = Object.fromEntries(Object.entries(library.paths).flatMap(([key, folder]) => (documents.has(folder) ? [[key, documents.get(folder)!]] : [])));
+  if (Object.keys(singleFiles).length > 0) library.singleFiles = singleFiles;
+  return { library, documents, bookmarks };
+}
+
+/** The documents opened last time, held open again from their bookmarks and read: what the app starts with, beside the fixtures. */
+export async function reopenDocuments(store: KeyValueStore | null, taken: Iterable<string>): Promise<OpenedDocuments> {
+  let remembered: string[] = [];
+  try {
+    const raw = store?.getItem(OPENED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) remembered = parsed.filter((b): b is string => typeof b === "string");
+  } catch {
+    // Unreadable: start with none.
+  }
+  const held = remembered.flatMap((bookmark) => {
+    const doc = resolveBookmark(bookmark);
+    return doc ? [doc] : [];
+  });
+  return openDocuments(held, taken);
+}
+
+export interface Documents {
+  /** Read these picked documents, named apart from what's held; the app takes in what comes back. */
+  open: (held: HeldDocument[]) => Promise<Library>;
+  /** Write these opened documents' bundles, one write at a time per document. Rejects with the first that couldn't be written, named. */
+  write: (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => Promise<void>;
+  /** Pack these opened bundles' working folders back into their single files, after anything else wrote to them. Nothing for a folder. */
+  pack: (bundles: string[]) => Promise<void>;
+  /** The document an opened bundle's folder stands for: the single file for its working folder, else the folder itself. */
+  documentOf: (folder: string) => string;
+}
+
+/**
+ * The opened documents (`paths`, table-app's `opened`: each bundle's folder,
+ * a single file's working folder for one): remembered for next launch by
+ * their bookmarks, and written back when useTableApp says their bundles are
+ * edited, a single file packed again after its folder is.
+ */
+export function useDocuments({
+  store,
+  bundles,
+  paths,
+  reopened,
+}: {
+  store: KeyValueStore | null;
+  bundles: Record<string, BundleMeta>;
+  /** Each opened document's folder, by bundle key. */
+  paths: Record<string, string>;
+  /** What was opened again at launch. */
+  reopened?: Pick<OpenedDocuments, "documents" | "bookmarks">;
+}): Documents {
+  // The latest of each, for writes and opens that finish later.
+  const latest = useRef({ bundles, paths });
+  latest.current = { bundles, paths };
+  const queues = useRef<Record<string, Promise<void>>>({});
+  const documents = useRef(new Map(reopened?.documents ?? []));
+  const bookmarks = useRef(new Map(reopened?.bookmarks ?? []));
+
+  const documentOf = useCallback((folder: string) => documents.current.get(folder) ?? folder, []);
+
+  // One pack at a time per single file. Asked again while one runs, it runs once more after,
+  // and everyone asking meanwhile waits for that last one.
+  const packing = useRef<Record<string, { done: Promise<void>; again: boolean }>>({});
+  const packOne = useCallback((bundle: string): Promise<void> => {
+    const workDir = latest.current.paths[bundle];
+    const file = workDir ? documents.current.get(workDir) : undefined;
+    if (!workDir || !file) return Promise.resolve();
+    const running = packing.current[file];
+    if (running) {
+      running.again = true;
+      return running.done;
+    }
+    const entry = { done: Promise.resolve(), again: false };
+    entry.done = (async () => {
+      do {
+        entry.again = false;
+        await packTableFile(coordinatedFs(file), workDir, file);
+        await restampTableFile(expoFs, workDir, stampOf(file));
+      } while (entry.again);
+    })().finally(() => {
+      delete packing.current[file];
+    });
+    packing.current[file] = entry;
+    return entry.done;
+  }, []);
+  const pack = useCallback(async (keys: string[]) => {
+    await Promise.all(keys.map(packOne));
+  }, [packOne]);
+
+  const open = useCallback(async (held: HeldDocument[]) => {
+    const already = new Set(Object.values(latest.current.paths).map((p) => documents.current.get(p) ?? p));
+    const opened = await openDocuments(
+      held.filter((doc) => !already.has(doc.uri.replace(/\/+$/, ""))),
+      Object.keys(latest.current.bundles),
+    );
+    for (const [workDir, uri] of opened.documents) documents.current.set(workDir, uri);
+    for (const [uri, bookmark] of opened.bookmarks) bookmarks.current.set(uri, bookmark);
+    return opened.library;
+  }, []);
+
+  const write = useCallback(
+    async (keys: string[], tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>) => {
+      const library: Library = { tables: {}, bundles: {}, paths: latest.current.paths, problems: {} };
+      await Promise.all(
+        keys.map((key) => {
+          const next = (queues.current[key] ?? Promise.resolve())
+            .catch(() => {})
+            .then(async () => {
+              await writeLibraryBundle(expoFs, library, tables, metas, key);
+              // A single file: its working folder packed back into it.
+              await packOne(key);
+            })
+            .catch((error: unknown) => {
+              // Shown by the app, from useTableApp's `saving`.
+              throw new Error(`${key}.table: ${error instanceof Error ? error.message : String(error)}`);
+            });
+          queues.current[key] = next;
+          return next;
+        }),
+      );
+    },
+    [packOne],
+  );
+
+  // Remembered for next launch by bookmark; a document closed lets go of its scope.
+  const held = useRef(new Set<string>());
+  useEffect(() => {
+    const now = new Set(Object.values(paths).map((p) => documents.current.get(p) ?? p));
+    for (const uri of held.current) if (!now.has(uri)) releaseDocument(pathOfUri(uri));
+    held.current = now;
+    try {
+      store?.setItem(OPENED_KEY, JSON.stringify([...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : []))));
+    } catch {
+      // Full or refused: the documents just won't reopen next launch.
+    }
+  }, [store, paths]);
+
+  return { open, write, pack, documentOf };
+}
