@@ -6,9 +6,8 @@
 
 export type AppCommandId =
   | "new-file"
-  | "open-folder"
-  | "open-zip"
-  | "export-zip"
+  | "open"
+  | "export-file"
   | "undo"
   | "redo"
   | "toggle-sidebar"
@@ -59,15 +58,14 @@ export interface AppCommandState {
 export function appCommands(state: AppCommandState): AppCommand[] {
   return [
     { id: "new-file", menu: "File", label: "New .table File…", key: "n" },
-    { id: "open-folder", menu: "File", label: "Open .table…", key: "o" },
-    { id: "open-zip", menu: "File", label: "Open .table.zip…", key: "o", shift: true },
+    { id: "open", menu: "File", label: "Open…", key: "o", hint: "Open a .table, a folder or a single file, or a spreadsheet as a new table" },
     {
-      id: "export-zip",
+      id: "export-file",
       menu: "File",
-      label: "Export .table.zip…",
+      label: "Export as a Single File…",
       key: "e",
       shift: true,
-      hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, pages) that any .table reader opens.",
+      hint: "Save a copy of this file as a single .table: every table in it, its pages and attachments, in one file that any .table reader opens.",
     },
     { id: "undo", menu: "Edit", label: state.undoName ? `Undo ${state.undoName}` : "Undo", key: "z", enabled: state.canUndo ?? false, hint: "Put the table back as it was before its last edit" },
     { id: "redo", menu: "Edit", label: state.redoName ? `Redo ${state.redoName}` : "Redo", key: "z", shift: true, enabled: state.canRedo ?? false, hint: "Make the edit just undone again" },

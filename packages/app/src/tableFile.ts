@@ -1,6 +1,6 @@
 // A .table opened as a document of its own, read over any platform's files
 // (a TableFs): node.ts's readTableFile does the same over Node's. A folder
-// is read where it is and written back there; a .table.zip is read into
+// is read where it is and written back there; a single-file .table is read into
 // memory, has nowhere to be written (`library.paths` is empty), and is to
 // look at.
 
@@ -51,7 +51,7 @@ export async function readTableFileWith(fs: TableFs, path: string): Promise<Embe
   return opened(await withOtherFiles(fs, await openLibrary(fs, [path], [])), file);
 }
 
-/** A `.table.zip`'s bytes, read into memory: to look at. */
+/** A single-file `.table`'s bytes, read into memory: to look at. */
 export async function readTableArchiveFile(bytes: Uint8Array, file: string): Promise<EmbedRead> {
   try {
     const archive = await openArchive(bytes, []);

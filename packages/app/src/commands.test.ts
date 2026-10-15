@@ -7,9 +7,8 @@ test("every command once, in menu order, with no two sharing a key", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
   assert.deepEqual(all.map((c) => c.id), [
     "new-file",
-    "open-folder",
-    "open-zip",
-    "export-zip",
+    "open",
+    "export-file",
     "undo",
     "redo",
     "copy-link",
@@ -70,7 +69,8 @@ test("undo and redo are in Edit on Z, there only when the table has a step to ta
 test("GTK accelerators: Control with the key, GNOME's own where it differs", () => {
   const accel = (id: string) => gtkAccelOf(appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === id)!);
   assert.equal(accel("new-file"), "<Control>n");
-  assert.equal(accel("open-zip"), "<Control><Shift>o");
+  assert.equal(accel("open"), "<Control>o");
+  assert.equal(accel("export-file"), "<Control><Shift>e");
   assert.equal(accel("copy-link"), "<Control><Alt>c");
   assert.equal(accel("toggle-sidebar"), "<Control>b");
   assert.equal(accel("go-back"), "<Alt>Left");
@@ -81,8 +81,8 @@ test("shortcuts read as each platform writes them", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
   const cmd = (id: string) => all.find((c) => c.id === id)!;
   assert.deepEqual(["mac", "web", "gtk"].map((p) => shortcutText(cmd("toggle-sidebar"), p as "mac")), ["⌘B", "⌘B / Ctrl+B", "Ctrl+B"]);
-  assert.equal(shortcutText(cmd("open-zip"), "mac"), "⇧⌘O");
-  assert.equal(shortcutText(cmd("open-zip"), "gtk"), "Ctrl+Shift+O");
+  assert.equal(shortcutText(cmd("export-file"), "mac"), "⇧⌘E");
+  assert.equal(shortcutText(cmd("export-file"), "gtk"), "Ctrl+Shift+E");
   assert.equal(shortcutText(cmd("copy-link"), "mac"), "⌥⌘C");
   assert.equal(shortcutText(cmd("go-back"), "mac"), "⌘[");
   assert.equal(shortcutText(cmd("go-back"), "gtk"), "Alt+Left");
@@ -94,7 +94,7 @@ test("hints: the sidebar's follows its state; with its shortcut, as the web says
     appCommands({ sidebarCollapsed: collapsed, filesMode: false }).find((c) => c.id === "toggle-sidebar")!;
   assert.equal(hintWithShortcut(sidebar(false), "web"), "Hide the sidebar (⌘B / Ctrl+B)");
   assert.equal(hintWithShortcut(sidebar(true), "mac"), "Show the sidebar (⌘B)");
-  const exportZip = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "export-zip")!;
-  assert.match(exportZip.hint!, /^Save this table as a \.table\.zip/);
+  const exportFile = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "export-file")!;
+  assert.match(exportFile.hint!, /^Save a copy of this file as a single \.table/);
   assert.match(TOOLBAR_HINTS.viewSettings, /^Name, layout, filters/);
 });

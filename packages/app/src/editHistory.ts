@@ -70,7 +70,7 @@ export function clearStoredHistory(store: KeyValueStore | null): void {
   }
 }
 
-// -- A history and an archive: a `.table.zip` carries each table's history as it is (SPEC section 13) ----
+// -- A history and an archive: a single-file `.table` carries each table's history as it is (SPEC section 13) ----
 
 /**
  * An app's tables with each one's edit history put in, ready for an

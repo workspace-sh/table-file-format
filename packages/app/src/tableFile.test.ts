@@ -60,7 +60,7 @@ test("a .table opens on the first table its manifest names, even beside a table 
     const path = join(root, "plans.table");
     const table = (title: string) => ({ schema: { fields: [{ name: "title", type: "string" }] }, rows: [{ id: "r1", title }], views: [{ id: "all", name: "All", layout: "table" }], meta: {} });
     await writeBundleTo(nodeFs, path, { meta: { tables: ["tasks", "projects"] }, tables: { projects: table("P"), tasks: table("T") } } as never);
-    for (const read of [await readTableFileWith(nodeFs, path), await readTableArchiveFile(await writeTableArchive("plans", { meta: { tables: ["tasks", "projects"] }, tables: { projects: table("P"), tasks: table("T") } } as never), "plans.table.zip")]) {
+    for (const read of [await readTableFileWith(nodeFs, path), await readTableArchiveFile(await writeTableArchive("plans", { meta: { tables: ["tasks", "projects"] }, tables: { projects: table("P"), tasks: table("T") } } as never), "plans.table")]) {
       assert.equal(read.kind === "shown" && read.key, "plans/tasks");
     }
   } finally {
@@ -73,16 +73,16 @@ test("a folder that isn't there says so", async () => {
   assert.deepEqual(read, { kind: "problem", text: "“projects.table-gone.table” isn’t there any more." });
 });
 
-test("a .table.zip opens to look at: it has nowhere to be written", async () => {
+test("a single-file .table opens to look at: it has nowhere to be written", async () => {
   const [name, bundle] = Object.entries(bundles)[0]!;
   const bytes = await writeTableArchive(name, bundle);
-  const read = await readTableArchiveFile(bytes, "example.table.zip");
+  const read = await readTableArchiveFile(bytes, "example.table");
   assert.equal(read.kind, "shown");
   if (read.kind !== "shown") return;
   assert.deepEqual(read.library.paths, {});
 });
 
-test("bytes that aren't a .table.zip say why", async () => {
-  const read = await readTableArchiveFile(new Uint8Array(readFileSync(fileURLToPath(import.meta.url))), "notes.table.zip");
+test("bytes that aren't a .table say why", async () => {
+  const read = await readTableArchiveFile(new Uint8Array(readFileSync(fileURLToPath(import.meta.url))), "notes.table");
   assert.equal(read.kind, "problem");
 });

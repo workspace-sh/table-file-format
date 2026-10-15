@@ -339,13 +339,13 @@ describe("a table held in the index on Linux", () => {
     expect(screen.queryAllByText(/^Big 299\d?$/)).toHaveLength(11);
   });
 
-  it("exports as a .table.zip with every row", async () => {
-    const out = join(dir, "out.table.zip");
+  it("exports as a single-file .table with every row", async () => {
+    const out = join(dir, "out.table");
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} chooseZipSaveAs={async () => out} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} chooseSaveAs={async () => out} />);
     await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     const button = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" });
-    (button.getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.export-zip", null);
+    (button.getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.export-file", null);
     await waitFor(() => expect(existsSync(out)).toBe(true));
     const opened = await openArchive(new Uint8Array(readFileSync(out)), []);
     expect(opened.bundle.tables.tasks!.rows).toEqual(rowsOnDisk());

@@ -7,14 +7,14 @@ import { parseTable } from "@workspace.sh/table-core/parser";
 import { bundleToArchive } from "@workspace.sh/table-app";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixturesDir } from "../src/fixtures.js";
 
 // A .table opened as a document of its own: a folder, written back where it
-// is, or a .table.zip, to look at.
+// is, or a single-file .table, to look at (editing it in place comes with #571).
 let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "table-file-"));
@@ -103,13 +103,14 @@ describe("a .table opened as a document", () => {
     await waitFor(async () => expect((await parseTable(join(root, "projects.table", "tables", "projects"))).rows.find((r) => r.id === "p1")?.title).toBe("Workspace one"));
   });
 
-  it("opens a .table.zip to look at: no editor on a click, and it says why", async () => {
+  it("opens a single-file .table to look at: no editor on a click, and it says why", async () => {
     const bundle = await readBundle(nodeFs, join(root, "crm.table"));
-    const zip = join(root, "crm.table.zip");
+    const zip = join(root, "single", "crm.table");
+    mkdirSync(join(root, "single"));
     writeFileSync(zip, await bundleToArchive("crm", bundle));
     const before = readFileSync(zip);
     await open(zip);
-    expect(await screen.findByText("Opened from a .table.zip: changes can’t be saved")).toBeDefined();
+    expect(await screen.findByText("A single file: changes can’t be saved here yet")).toBeDefined();
     await userEvent.click(await cell("Atlas Freight"));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(screen.queryByDisplayValue("Atlas Freight")).toBeNull();

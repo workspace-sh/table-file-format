@@ -8,7 +8,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import type { BundleMeta, ParsedTable, Row } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, fromBundle, isSpreadsheetFile, openSpreadsheet, spreadsheetText, toBundle, type Library } from "@workspace.sh/table-app";
+import { singleFileName, bundleToArchive, fromBundle, isSpreadsheetFile, openSpreadsheet, spreadsheetText, toBundle, type Library } from "@workspace.sh/table-app";
 import { openZip } from "./indexHost";
 
 /** What opening an archive gave: a library to take in, what was skipped, the file's name, and its large tables' first rows by `bundle/table`. */
@@ -110,9 +110,9 @@ export async function shareZip(
   tables: Record<string, ParsedTable>,
   bundles: Record<string, BundleMeta>,
 ): Promise<void> {
-  const file = new File(Paths.cache, archiveFileName(bundle));
+  const file = new File(Paths.cache, singleFileName(bundle));
   if (file.exists) file.delete();
   file.create();
   file.write(await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
-  await Sharing.shareAsync(file.uri, { mimeType: "application/zip", UTI: "public.zip-archive", dialogTitle: archiveFileName(bundle) });
+  await Sharing.shareAsync(file.uri, { mimeType: "application/zip", UTI: "public.zip-archive", dialogTitle: singleFileName(bundle) });
 }

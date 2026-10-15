@@ -23,7 +23,7 @@ import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import {
   addressTarget,
-  archiveFileName,
+  singleFileName,
   attachmentAt,
   attachmentShown,
   browserStore,
@@ -591,7 +591,7 @@ export function App() {
     dispatch({ type: "told" });
   }, [state.telling]);
 
-  // Download: the whole bundle as a real `.table.zip` (D27, D37), so the
+  // Download: the whole bundle as a single-file `.table` (D37, D50), so the
   // tables it links together travel together.
   const downloadTable = useCallback(async () => {
     const bundle = bundleOf(activeTablePath);
@@ -615,13 +615,13 @@ export function App() {
       const going = await withHistories(whole, (key) => (store ? storedHistory(store, key) || undefined : undefined));
       bytes = await bundleToArchive(bundle, toBundle(going, bundles, bundle));
     } catch (error) {
-      dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+      dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       return;
     }
-    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/vnd.workspace-sh.table" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = archiveFileName(bundle);
+    a.download = singleFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }, [tables, bundles, activeTablePath, indexed.everyRow, tell, flush]);
@@ -652,13 +652,13 @@ export function App() {
     [bundles, indexed.hold, tell],
   );
 
-  // Open: a `.table.zip` becomes one more table here, saying what the
+  // Open: a single-file `.table` becomes one more table here, saying what the
   // reader skipped (D25). Only a file with no table in it is refused.
   const openTableFile = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    // A .table.zip, or a spreadsheet someone already has (CSV, TSV and the like), which becomes a new .table file.
-    input.accept = ".zip,application/zip,.csv,.tsv,.tab,.txt,text/csv,text/tab-separated-values";
+    // A single-file .table, or a spreadsheet someone already has (CSV, TSV and the like), which becomes a new .table file.
+    input.accept = ".table,.csv,.tsv,.tab,.txt,text/csv,text/tab-separated-values";
     input.style.display = "none";
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
@@ -679,7 +679,7 @@ export function App() {
 
   // Development, or a production build made with VITE_TABLE_MEASURE=1 (the
   // numbers that count come from production builds, BENCHMARKING.md): opens
-  // a .table.zip from a URL as a chosen file is opened, and says how long
+  // a single-file .table from a URL as a chosen file is opened, and says how long
   // each step took (ms), for measuring large tables (#126): fetching it,
   // reading it (unzip and parse), and showing it (React's render and commit,
   // synchronously: a hidden tab has no frames to wait for).
@@ -948,9 +948,9 @@ export function App() {
           View settings
         </html.button>
       </Hinted>
-      <Hinted hint={commandOf("export-zip").hint}>
+      <Hinted hint={commandOf("export-file").hint}>
         <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
-          Download .table.zip
+          Download as a Single File
         </html.button>
       </Hinted>
       <html.input
@@ -1016,7 +1016,7 @@ export function App() {
                   <html.option value="" disabled>More</html.option>
                   <html.option value="redo" disabled={commandOf("redo").enabled === false}>{commandOf("redo").label}</html.option>
                   <html.option value="settings">{state.settingsOpen ? "Hide View Settings" : "View Settings"}</html.option>
-                  <html.option value="download">Download .table.zip</html.option>
+                  <html.option value="download">Download as a Single File</html.option>
                 </html.select>
               </html.div>
             </>
@@ -1140,7 +1140,7 @@ export function App() {
           <html.div style={styles.indexedNote}>
             {indexed.lost === "elsewhere"
               ? "This table is open in another tab, which holds this browser's storage for it. Use it there, or close that tab and reload this page."
-              : "This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back."}
+              : "This table's rows are no longer in this browser's storage. Open its .table file again to bring them back."}
           </html.div>
         ) : table.indexed && view.layout !== "table" ? (
           <html.div style={styles.indexedNote}>

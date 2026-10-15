@@ -42,7 +42,7 @@ it implements is spec-frozen.
   tables held by `bundle/table` key, `showView` (the rows a view shows,
   after a viewer's own sort and search, and a Sheet view's saved grid),
   a viewer's arrangements, display settings, saved state over any
-  key-value store, and `.table.zip` files. `@workspace.sh/table-app/node`
+  key-value store, and single-file `.table`s. `@workspace.sh/table-app/node`
   opens `.table` folders from disk (`loadLibrary`).
 
 ### A table inside a document
@@ -156,19 +156,26 @@ minted when absent) and `toCSV(table)` — call
 attachments, and bodies do not survive a CSV export, and the loss
 must be visible, not silent.
 
-## Archives (`.table.zip`)
+## A `.table` as a single file
 
-For transport contexts that can't carry a directory:
-
-Portable — works on Node, in browsers, and in React Native (Hermes),
-so mailed/shared archives open on every Workspace platform:
+A `.table` is a folder or a single file, the same document either way
+(SPEC section 13, D49, D50), told apart by what's on disk. Portable:
+it works on Node, in browsers, and in React Native (Hermes), so a
+`.table` sent as one file opens on every Workspace platform:
 
 ```ts
-import { readTableArchive, writeTableArchive } from "@workspace.sh/table-core"; // or the ./archive subpath
+import { readTableDocument, writeTableFileTo, readTableArchive, writeTableArchive } from "@workspace.sh/table-core";
 
-const table = await readTableArchive(bytes);              // same ParsedTable + diagnostics as parseTable
-const out = await writeTableArchive("projects", table);   // canonical <name>.table/ layout, deterministic
+const { form, bundle } = await readTableDocument(fs, path); // "folder" or "file", by what's on disk
+await writeTableFileTo(fs, path, bundle);                  // a single file, written beside it and renamed over it
+
+const read = await readTableArchive(bytes);                // a single file's bytes, as a ParsedBundle
+const out = await writeTableArchive("projects", read);     // and back: canonical <name>.table/ layout, deterministic
 ```
+
+To edit a single file in place, `@workspace.sh/table-app`'s
+`unpackTableFile` and `packTableFile` keep it as a working folder in
+the app's own storage and pack it back after each write.
 
 Callers supply bytes (`await readFile(p)` on Node, `File`/fetch on
 web, the document picker on RN). Reading is fully in-memory (no
