@@ -9,7 +9,37 @@
     "ios": {
       "icon": "./assets/icon/AppIcon.icon",
       "supportsTablet": true,
-      "bundleIdentifier": "sh.workspace.table.mobile"
+      "bundleIdentifier": "sh.workspace.table.mobile",
+      "infoPlist": {
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "sh.workspace.table",
+            "UTTypeDescription": "Table",
+            "UTTypeConformsTo": [
+              "com.apple.package",
+              "public.composite-content"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "table"
+              ]
+            }
+          },
+          {
+            "UTTypeIdentifier": "sh.workspace.table.file",
+            "UTTypeDescription": "Table",
+            "UTTypeConformsTo": [
+              "public.data",
+              "public.composite-content"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "table"
+              ]
+            }
+          }
+        ]
+      }
     },
     "android": {
       "package": "sh.workspace.table.mobile"
