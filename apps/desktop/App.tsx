@@ -712,11 +712,13 @@ function TableApp({ store, reopened, documents }: { store: KeyValueStore | null;
         if (first) dispatch({ type: "showTable", key: first });
         return;
       }
-      const library = await folders.open([path]);
+      const { library, large } = await folders.open([path]);
       for (const [key, messages] of Object.entries(library.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
       if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
+      // A single file with a large table: taken in as a copy, through the index (folders.ts).
+      for (const file of large) await importZip(file);
     },
-    [folders, showProblem],
+    [folders, showProblem, importZip],
   );
 
   // The Display panel, open or not, kept with the sidebar prefs as the web keeps
