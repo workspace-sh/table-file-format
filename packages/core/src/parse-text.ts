@@ -17,12 +17,15 @@ export function parseRowsText(
   diagnostics: ValidationError[],
   /** Given, each line that isn't a row is kept here, with the row it came after, for a writer to put back. */
   unread?: UnreadLine[],
+  /** One of several rows files (D51): its name, for the message, and the last row of the files before it. */
+  from: { file?: string; after?: string | null } = {},
 ): Row[] {
   const rows: Row[] = [];
   const lines = raw.split("\n");
+  const where = from.file ? `${from.file}: ` : "";
   const skip = (i: number, line: string, why: string) => {
-    diagnostics.push({ rowIndex: i, message: `line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
-    unread?.push({ after: rows.at(-1)?.id ?? null, text: line });
+    diagnostics.push({ rowIndex: i, message: `${where}line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
+    unread?.push({ after: rows.at(-1)?.id ?? from.after ?? null, text: line });
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;

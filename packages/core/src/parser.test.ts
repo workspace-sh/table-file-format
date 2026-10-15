@@ -26,7 +26,7 @@ test("parseTable reads the projects table in projects.table", async () => {
 test("parseBundle reads the manifest and every table, in order (D37)", async () => {
   const b = await parseBundle(resolve(fixturesDir, "crm.table"));
   assert.equal(b.meta.format, "table");
-  assert.equal(b.meta.formatVersion, 1);
+  assert.equal(b.meta.formatVersion, 2);
   assert.equal(b.meta.title, "CRM");
   assert.deepEqual(b.meta.tables, ["companies", "contacts", "deals"]);
   assert.deepEqual(Object.keys(b.tables).sort(), ["companies", "contacts", "deals"]);
@@ -213,7 +213,7 @@ test("lines that couldn't be read are kept: a save writes them back where they w
     // Edited and saved: every line it couldn't read is still there, where it was.
     await writeTable(target, { ...t, rows: t.rows.map((r) => (r.id === "r2" ? { ...r, title: "TWO" } : r)) });
     assert.equal(
-      await readFile(join(target, "rows.ndjson"), "utf8"),
+      await readFile(join(target, "rows", "0001.ndjson"), "utf8"),
       "<<<<<<< HEAD\n" +
         '{"id":"r1","title":"one"}\n' +
         "{this is not json}\n" +
@@ -223,7 +223,7 @@ test("lines that couldn't be read are kept: a save writes them back where they w
     );
     // A row they followed is deleted: they go to the end, not away.
     await writeTable(target, { ...t, rows: t.rows.filter((r) => r.id !== "r1") });
-    const after = await readFile(join(target, "rows.ndjson"), "utf8");
+    const after = await readFile(join(target, "rows", "0001.ndjson"), "utf8");
     assert.ok(after.includes("{this is not json}") && after.includes("<<<<<<< HEAD") && after.includes('{"title":"no id"}'));
   } finally {
     await rm(dirname(target), { recursive: true, force: true });

@@ -7,6 +7,7 @@
 import { readTableArchive, writeTableArchive, type ReadArchiveOptions } from "./archive.js";
 import { joinPath, readBundle, type ReadOptions, type TableFs, type WriteBundleInput } from "./io.js";
 import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry } from "./layout.js";
+import { isRowsFileName } from "./rowFiles.js";
 import type { ParsedBundle } from "./types.js";
 
 /** A `.table` on disk: the directory (`folder`), or a single file holding it (`file`). */
@@ -44,6 +45,8 @@ const ownText = (inside: string): boolean => {
   if (parts[0] !== BundleEntry.tables || parts.length < 3) return false;
   const rest = parts.slice(2).join("/");
   if (([TableEntry.schema, TableEntry.rows, TableEntry.views, TableEntry.meta] as string[]).includes(rest)) return true;
+  // Its rows files (D51).
+  if (parts.length === 4 && parts[2] === TableEntry.rowsDir && isRowsFileName(parts[3]!)) return true;
   return parts.length === 4 && parts[2] === TableEntry.bodies && rest.endsWith(BODY_EXTENSION);
 };
 

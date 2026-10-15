@@ -16,7 +16,7 @@ rows: SQLite, DuckDB, compression, splitting rows, and sparse sync.
 ## 1. The three storage tiers
 
 ```
-text layer        schema.json + rows.ndjson + bodies/ + …
+text layer        schema.json + rows/ + bodies/ + …
                   → canonical interchange + at-rest form
                   → git-diffable, human-readable, portable
 
@@ -51,7 +51,7 @@ device, and the architecture — not row counts — is why:
 - **The text layer bottlenecks first.** Whole-file rewrite per save
   hurts before SQLite does. When a table outgrows that, the answer is
   not a bigger database — it's moving the hot path to the cache/log
-  and demoting `rows.ndjson` to snapshot/export, which SPEC section 8
+  and demoting the rows files to snapshot/export, which SPEC section 8
   already permits ("apps decide their own caching strategy").
 
 Platform drivers: Node has `node:sqlite` built in (≥22) — the Node
@@ -68,7 +68,7 @@ honest bridges:
 
 **File-level replication** (e.g. Hyperdrive): treat the directory as
 blobs, last-writer-wins per file. Trivial, but two peers editing
-different rows of the same `rows.ndjson` conflict at file
+different rows of the same rows file conflict at file
 granularity. Viable only for single-writer / many-reader publishing.
 
 **Op-log transport** — the intended model:

@@ -14,6 +14,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseBundle } from "../packages/core/src/parser.ts";
 import { bundleToArchive } from "../packages/app/src/tableFiles.ts";
+import { FIRST_ROWS_FILE, ROWS_FILE_BYTES, nameAfter } from "../packages/core/src/rowFiles.ts";
 
 const n = Number(process.argv[2]);
 const out = process.argv[3];
@@ -46,7 +47,7 @@ await mkdir(tableDir, { recursive: true });
 const now = "2026-10-02T00:00:00Z";
 await writeFile(
   join(dir, "meta.json"),
-  JSON.stringify({ format: "table", formatVersion: 1, title: `Big (${n.toLocaleString("en")} rows)`, tables: ["deals"], created_at: now, modified_at: now, generator: "scripts/big-table.ts" }, null, 2) + "\n",
+  JSON.stringify({ format: "table", formatVersion: 2, title: `Big (${n.toLocaleString("en")} rows)`, tables: ["deals"], created_at: now, modified_at: now, generator: "scripts/big-table.ts" }, null, 2) + "\n",
 );
 await writeFile(join(tableDir, "meta.json"), JSON.stringify({ title: "Deals", created_at: now, modified_at: now }, null, 2) + "\n");
 await writeFile(
@@ -110,9 +111,19 @@ for (let i = 0; i < n; i++) {
   }
 }
 if (lines.length) rows += lines.join("\n") + "\n";
-await writeFile(join(tableDir, "rows.ndjson"), rows);
+// In rows/, a new file at about 25 MB (SPEC section 3, D51).
+await mkdir(join(tableDir, "rows"), { recursive: true });
+let file = FIRST_ROWS_FILE;
+for (let at = 0; at < rows.length; ) {
+  let end = Math.min(rows.length, at + ROWS_FILE_BYTES);
+  // At a line's end (the rows are ASCII, so characters are bytes).
+  if (end < rows.length) end = rows.indexOf("\n", end) + 1 || rows.length;
+  await writeFile(join(tableDir, "rows", file), rows.slice(at, end));
+  file = nameAfter(file);
+  at = end;
+}
 
 const bundle = await parseBundle(dir);
 await mkdir(join(out, "single-file"), { recursive: true });
 await writeFile(join(out, "single-file", `${name}.table`), await bundleToArchive(name, bundle));
-console.log(`${name}: ${(Buffer.byteLength(rows) / 1e6).toFixed(1)} MB rows.ndjson`);
+console.log(`${name}: ${(Buffer.byteLength(rows) / 1e6).toFixed(1)} MB of rows`);

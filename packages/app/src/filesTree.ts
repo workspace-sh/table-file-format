@@ -14,7 +14,7 @@ export type BundleFileKind = "manifest" | "schema" | "rows" | "views" | "meta" |
 
 export interface FilesTreeFile {
   name: string;
-  /** Its path inside `<bundle>.table/`: `tables/deals/rows.ndjson`. */
+  /** Its path inside `<bundle>.table/`: `tables/deals/rows/0001.ndjson`. */
   path: string;
   kind: BundleFileKind;
   /** Opening it shows its text as saving writes it, or an attachment's bytes. */
@@ -98,7 +98,7 @@ export function filesTree(
       }
       const kind = fileKind(path);
       const table = dir.tableKey ? tables[dir.tableKey] : undefined;
-      const note = table ? noteFor(kind, table) : undefined;
+      const note = table ? noteFor(kind, table, parts[parts.length - 1]!) : undefined;
       dir.files.push({
         name: parts[parts.length - 1]!,
         path,
@@ -118,7 +118,7 @@ export function fileKind(path: string): BundleFileKind {
   if (/^tables\/[^/]+\/attachments\//.test(path)) return "attachment";
   if (/^tables\/[^/]+\/bodies\//.test(path)) return "body";
   if (path.endsWith("/schema.json")) return "schema";
-  if (path.endsWith("/rows.ndjson")) return "rows";
+  if (/^tables\/[^/]+\/(rows\/\d{4,}[a-z]*\.ndjson|rows\.ndjson)$/.test(path)) return "rows";
   if (path.endsWith("/views.json")) return "views";
   if (/^tables\/[^/]+\/history\.ndjson$/.test(path)) return "history";
   return "meta";
@@ -181,9 +181,15 @@ function openByDefault(dir: FilesTreeDir, bundle: string, activeTable: string | 
   return true;
 }
 
-function noteFor(kind: BundleFileKind, table: ParsedTable): string | undefined {
+function noteFor(kind: BundleFileKind, table: ParsedTable, name: string): string | undefined {
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  if (kind === "rows") return plural(table.indexed ? table.indexed.count : table.rows.length, "row");
+  if (kind === "rows") {
+    // One of several rows files (D51): the rows it was read with; the only one: the table's.
+    const files = table.rowFiles ?? [];
+    const read = files.length > 1 ? files.find((f) => f.name === name) : undefined;
+    if (read) return plural(read.ids.length, "row");
+    return files.length > 1 ? undefined : plural(table.indexed ? table.indexed.count : table.rows.length, "row");
+  }
   if (kind === "schema") return plural(table.schema.fields.length, "field");
   if (kind === "views") return plural(table.views.length, "view");
   return undefined;

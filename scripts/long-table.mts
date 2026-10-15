@@ -92,7 +92,7 @@ const views = [
 
 const meta = {
   format: "table",
-  formatVersion: 1,
+  formatVersion: 2,
   title: "Library",
   description: "A long list: 1,000 books, for scrolling a long table and its header.",
   tables: ["books"],
@@ -107,5 +107,7 @@ writeFileSync(join(out, "meta.json"), json(meta));
 writeFileSync(join(table, "meta.json"), json({ title: "Books" }));
 writeFileSync(join(table, "schema.json"), json(schema));
 writeFileSync(join(table, "views.json"), json(views));
-writeFileSync(join(table, "rows.ndjson"), `${rows.join("\n")}\n`);
+// In rows/ (SPEC section 3, D51): 1,000 books is one file.
+mkdirSync(join(table, "rows"), { recursive: true });
+writeFileSync(join(table, "rows", "0001.ndjson"), `${rows.join("\n")}\n`);
 console.log(`wrote ${rows.length} rows to ${out}`);

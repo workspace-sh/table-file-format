@@ -96,9 +96,9 @@ function withTimes() {
   const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8"));
   for (const view of Array.isArray(views) ? views : views.views) if (view.id === "v1") view.fields = ["title", "kickoff", "standup", "review"];
   writeFileSync(join(table, "views.json"), JSON.stringify(views, null, 2));
-  const rows = readFileSync(join(table, "rows.ndjson"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const rows = readFileSync(join(table, "rows", "0001.ndjson"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
   Object.assign(rows.find((r) => r.id === "p1"), { kickoff: KICKOFF, standup: "09:30:15" });
-  writeFileSync(join(table, "rows.ndjson"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  writeFileSync(join(table, "rows", "0001.ndjson"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
 }
 
 const p1 = async () => (await parseTable(join(bundle, "tables", "projects"))).rows.find((r) => r.id === "p1")!;

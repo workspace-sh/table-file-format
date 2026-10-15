@@ -150,7 +150,7 @@ test("a link is read over any platform's files, from the document's folder and k
   const table = shown.library.tables[shown.key]!;
   const renamed = { ...table, rows: table.rows.map((r, i) => (i === 0 ? { ...r, title: "Renamed" } : r)) };
   await files.write(shown.library, { ...shown.library.tables, [shown.key]: renamed }, shown.library.bundles, "projects");
-  assert.match((await fs.readText("/ws/tables/projects.table/tables/tasks/rows.ndjson"))!, /Renamed/);
+  assert.match((await fs.readText("/ws/tables/projects.table/tables/tasks/rows/0001.ndjson"))!, /Renamed/);
   await files.appendHistory!(shown.library, shown.key, [{ id: "e1", at: "2026-10-13T00:00:00Z", op: "set", row: renamed.rows[0]!.id, field: "title", to: "Renamed" }]);
   assert.ok((await fs.readText("/ws/tables/projects.table/tables/tasks/history.ndjson"))?.includes("Renamed"));
 });

@@ -300,7 +300,7 @@ export interface TableMeta {
   [key: string]: unknown;
 }
 
-export const TABLE_FORMAT_VERSION = 1;
+export const TABLE_FORMAT_VERSION = 2;
 
 /**
  * The bundle's manifest: its root `meta.json` (SPEC section 5). A
@@ -355,6 +355,13 @@ export interface ParsedTable {
    * back where they were (SPEC section 3, "Reader error contract").
    */
   unread?: UnreadLine[];
+  /**
+   * Which rows each of its rows files held when it was read (SPEC section
+   * 3, D51), in file order: a writer writes each row back to its file, and
+   * only the files that changed. Absent for a new table, laid out from
+   * `0001`.
+   */
+  rowFiles?: { name: string; ids: string[] }[];
   /**
    * Set when the table's rows are not in `rows` (it is empty) but in the
    * bundle's index (SPEC section 8), as an app holds a large table:

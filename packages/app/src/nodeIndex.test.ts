@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,9 +22,10 @@ import {
   setIndexedCell,
   type IndexEdit,
 } from "./indexed.ts";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
 import { isIndexStale, queryIndex, type TableSchema } from "@workspace.sh/table-core";
-import { countRows, openIndexHost, tableContentKey } from "./nodeIndex.ts";
+import { countRows, openIndexHost, saveTableRows, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
 
@@ -35,19 +36,19 @@ function scratch(): { bundle: string; tasks: string; done: () => void } {
   return { bundle, tasks: join(bundle, "tables", "tasks"), done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-const rowsOnDisk = (tableDir: string) => parseRowsText(readFileSync(join(tableDir, "rows.ndjson"), "utf8"), []);
+const rowsOnDisk = (tableDir: string) => parseRowsText(readFileSync(join(tableDir, "rows", "0001.ndjson"), "utf8"), []);
 
-test("a table read with its rows elsewhere has none, and writing it leaves rows.ndjson alone", async () => {
+test("a table read with its rows elsewhere has none, and writing it leaves its rows files alone", async () => {
   const s = scratch();
   try {
-    const before = readFileSync(join(s.tasks, "rows.ndjson"), "utf8");
+    const before = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8");
     const bundle = await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks });
     assert.deepEqual(bundle.tables.tasks!.rows, []);
     assert.deepEqual(bundle.tables.tasks!.indexed, { count: 0, version: 0 });
     assert.ok(bundle.tables.projects!.rows.length > 0);
     assert.equal(bundle.tables.projects!.indexed, undefined);
     await writeBundleTo(nodeFs, s.bundle, bundle);
-    assert.equal(readFileSync(join(s.tasks, "rows.ndjson"), "utf8"), before);
+    assert.equal(readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8"), before);
   } finally {
     s.done();
   }
@@ -67,7 +68,7 @@ test("the index is built from the files, reused while they're the same, and rebu
     assert.equal(await host.ensure("tasks", s.tasks, () => (built = true)), 8);
     assert.equal(built, false);
     // Edited outside the app: stale, and built again.
-    appendFileSync(join(s.tasks, "rows.ndjson"), `${JSON.stringify({ id: "t9", title: "Added by hand", priority: 9 })}\n\n`);
+    appendFileSync(join(s.tasks, "rows", "0001.ndjson"), `${JSON.stringify({ id: "t9", title: "Added by hand", priority: 9 })}\n\n`);
     assert.equal(await countRows(s.tasks), 9);
     assert.equal(await host.ensure("tasks", s.tasks, () => (built = true)), 9);
     assert.equal(built, true);
@@ -77,7 +78,7 @@ test("the index is built from the files, reused while they're the same, and rebu
   }
 });
 
-test("a view of an indexed table shows what the table in memory shows, and edits are saved to rows.ndjson", async () => {
+test("a view of an indexed table shows what the table in memory shows, and edits are saved to its rows files", async () => {
   const s = scratch();
   try {
     const memory = (await readBundle(nodeFs, s.bundle)).tables.tasks!;
@@ -188,6 +189,79 @@ test("saving writes the rows in file order and leaves the index fresh", async ()
   }
 });
 
+test("a save writes each row back to the rows file it came from, new rows to the last, and moves an old rows.ndjson into rows/ (D51)", async () => {
+  const s = scratch();
+  try {
+    // tasks' rows across two files, as a writer splitting at the limit leaves them.
+    const lines = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8").trimEnd().split("\n");
+    writeFileSync(join(s.tasks, "rows", "0001.ndjson"), `${lines.slice(0, 3).join("\n")}\n`);
+    writeFileSync(join(s.tasks, "rows", "0002.ndjson"), `${lines.slice(3).join("\n")}\n`);
+    const ids = (name: string) => parseRowsText(readFileSync(join(s.tasks, "rows", name), "utf8"), []).map((r) => r.id);
+    const first = ids("0001.ndjson");
+    const second = ids("0002.ndjson");
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    const host = openIndexHost(s.bundle);
+    assert.equal(await host.ensure("tasks", s.tasks), lines.length);
+    await setIndexedCell(host, "tasks", held, first[0]!, "title", "Edited");
+    await addIndexedRow(host, "tasks", held, "t-new");
+    await host.save("tasks", s.tasks, true);
+    assert.deepEqual(readdirSync(join(s.tasks, "rows")), ["0001.ndjson", "0002.ndjson"]);
+    assert.deepEqual(ids("0001.ndjson"), first);
+    assert.deepEqual(ids("0002.ndjson"), [...second, "t-new"]);
+
+    // Every row of the first file gone: the file is too.
+    for (const id of first) await removeIndexedRow(host, "tasks", held, id);
+    await host.save("tasks", s.tasks, true);
+    assert.deepEqual(readdirSync(join(s.tasks, "rows")), ["0002.ndjson"]);
+    await host.close();
+  } finally {
+    s.done();
+  }
+
+  // formatVersion 1's one file: read, and written to rows/.
+  const old = scratch();
+  try {
+    renameSync(join(old.tasks, "rows", "0001.ndjson"), join(old.tasks, "rows.ndjson"));
+    rmSync(join(old.tasks, "rows"), { recursive: true });
+    const before = parseRowsText(readFileSync(join(old.tasks, "rows.ndjson"), "utf8"), []);
+    const host = openIndexHost(old.bundle);
+    assert.equal(await host.ensure("tasks", old.tasks), before.length);
+    await host.save("tasks", old.tasks, true);
+    assert.equal(existsSync(join(old.tasks, "rows.ndjson")), false);
+    assert.deepEqual(rowsOnDisk(old.tasks), before);
+    await host.close();
+  } finally {
+    old.done();
+  }
+});
+
+test("a save splits a rows file past the limit: by number at the end of the table, by letters in the middle (D51)", async () => {
+  const s = scratch();
+  try {
+    const lines = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8").trimEnd().split("\n");
+    mkdirSync(join(s.tasks, "rows"), { recursive: true });
+    writeFileSync(join(s.tasks, "rows", "0001.ndjson"), `${lines.slice(0, 4).join("\n")}\n`);
+    writeFileSync(join(s.tasks, "rows", "0002.ndjson"), `${lines.slice(4).join("\n")}\n`);
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    // A limit of one byte: every row past a file's first starts another.
+    assert.equal(await saveTableRows(host, "tasks", s.tasks, [], { limit: 1 }), true);
+    const names = readdirSync(join(s.tasks, "rows")).sort();
+    assert.deepEqual(names.slice(0, 4), ["0001.ndjson", "0001m.ndjson", "0001t.ndjson", "0001w.ndjson"]);
+    assert.deepEqual(names.slice(4, 6), ["0002.ndjson", "0003.ndjson"]);
+    assert.equal(names.length, lines.length);
+    // One row a file, all in order, and read back as the table was.
+    const read = names.flatMap((n) => readFileSync(join(s.tasks, "rows", n), "utf8").trimEnd().split("\n"));
+    assert.deepEqual(read, lines);
+    // Saved again with the limit, nothing moves: each file is past it after its first row.
+    assert.equal(await saveTableRows(host, "tasks", s.tasks, [], { limit: 1 }), true);
+    assert.deepEqual(readdirSync(join(s.tasks, "rows")).sort(), names);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
 test("a save takes turns, and an edit made while it writes stops it: the file stays as it was until a save no edit comes into", async () => {
   const s = scratch();
   try {
@@ -217,7 +291,7 @@ test("a save takes turns, and an edit made while it writes stops it: the file st
     await edit("t2", "Second");
     assert.equal(await stopped, false);
     assert.deepEqual(rowsOnDisk(s.tasks), before, "the file is as it was");
-    assert.equal(existsSync(join(s.tasks, "rows.ndjson.tmp")), false);
+    assert.equal(existsSync(join(s.tasks, "rows", "0001.ndjson.tmp")), false);
     assert.equal(await stale(), true, "and the index isn't said to be fresh for it");
 
     // Asked again with nothing coming into it: both edits are written, a piece a turn.
@@ -433,6 +507,38 @@ test("a large table in an archive is handed over compressed: its start at once, 
   }
 });
 
+test("a large table split across rows files is handed over as one, in file order, small files and all (D51)", async () => {
+  const s = scratch();
+  try {
+    const whole = await readBundle(nodeFs, s.bundle);
+    const many = Array.from({ length: 6000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i}`, priority: i % 7 }));
+    whole.tables.tasks!.rows = [];
+    const files = unzipSync(await bundleToArchive("projects", whole));
+    const dir = "projects.table/tables/tasks/rows/";
+    const lines = (rows: typeof many) => rows.map((r) => JSON.stringify(r)).join("\n");
+    // Two large files and a small one between (inflated as the archive is read, not left compressed);
+    // the first without its last line end, as a hand edit can leave it.
+    files[`${dir}0001.ndjson`] = strToU8(lines(many.slice(0, 3000)));
+    files[`${dir}0001m.ndjson`] = strToU8(`${lines(many.slice(3000, 3005))}\n`);
+    files[`${dir}0002.ndjson`] = strToU8(`${lines(many.slice(3005))}\n`);
+    let entry: import("@workspace.sh/table-core").LazyZipEntry | undefined;
+    const opened = await openArchive(zipSync(files), [], {
+      lazyFrom: 1000,
+      rowsLazily: (name, _table, rows) => name === "tasks" && ((entry = rows), true),
+    });
+    assert.deepEqual(opened.bundle.tables.tasks!.rows, []);
+    assert.deepEqual([...rowsInChunks(entry!.chunks())], many);
+    assert.deepEqual(firstRowsInBytes(entry!.head(1 << 20), 6000), many);
+    assert.deepEqual(firstRowsInBytes(entry!.head(64), 1), many.slice(0, 1));
+
+    // Declined: read as any other, all three files.
+    const read = await openArchive(zipSync(files), [], { lazyFrom: 1000, rowsLazily: () => false });
+    assert.deepEqual(read.bundle.tables.tasks!.rows, many);
+  } finally {
+    s.done();
+  }
+});
+
 test("rows read a piece at a time as they come are the rows read whole", async () => {
   const many = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ünïcode` }));
   const bytes = new TextEncoder().encode(many.map((r) => JSON.stringify(r)).join("\n") + "\n");
@@ -449,9 +555,9 @@ test("rows read a piece at a time as they come are the rows read whole", async (
 test("a table with a line its rows can't read isn't indexed: held in memory, the line is kept (#567)", async () => {
   const s = scratch();
   try {
-    appendFileSync(join(s.tasks, "rows.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
+    appendFileSync(join(s.tasks, "rows", "0001.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
     const host = openIndexHost(s.bundle);
-    await assert.rejects(host.ensure("tasks", s.tasks), /line 9 of its rows couldn't be read/);
+    await assert.rejects(host.ensure("tasks", s.tasks), /line 9 of rows\/0001.ndjson couldn't be read/);
     await host.close();
   } finally {
     s.done();

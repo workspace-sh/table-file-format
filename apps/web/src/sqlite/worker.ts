@@ -7,7 +7,7 @@
 // SQL is the indexer's, run by core's oo1Driver.
 //
 // A large table never reaches the page as rows. Its archive is read here:
-// the table's rows.ndjson is taken as bytes, streamed into the index, and
+// the table's rows are taken as bytes, streamed into the index, and
 // kept as a file beside it, which stays the truth (SPEC section 8). The
 // page gets the first rows to show meanwhile, and how far the reading is.
 
@@ -97,7 +97,7 @@ const timed = (entry: { what: string; ms: number; waited: number }): void => {
   if (timings.length >= 500) timings.shift();
   timings.push(entry);
 };
-// Large tables read from an archive and not yet in the index, by `bundle/table`: their rows.ndjson, still compressed.
+// Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
 const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
 
 const post = (response: Response) => (self as unknown as Worker).postMessage(response);

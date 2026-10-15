@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const projectsBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 1,
+    "formatVersion": 2,
     "title": "Projects",
     "description": "Workspace product roadmap, and the tasks in each project.",
     "tables": [
@@ -345,6 +345,30 @@ export const projectsBundle: ParsedBundle = {
         "modified_at": "2026-04-27T00:00:00Z"
       },
       "path": "fixtures/projects.table/tables/projects",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "p7",
+            "p8",
+            "p9",
+            "p10",
+            "p11",
+            "p12",
+            "p13",
+            "p14",
+            "p15",
+            "p16",
+            "p17"
+          ]
+        }
+      ],
       "bodies": {
         "p10": "# Encrypted vaults\n\nPer-workspace end-to-end encryption. Each workspace gets its own\nkeypair; the user holds the private key, the cloud only sees\nciphertext.\n\n## Why on-hold\n\nThe KMS choice is blocking everything else. Three candidates:\n\n1. **Apple CloudKit + Keychain.** Free for Apple-platform users,\n   zero-config sync of the private key between the user's devices.\n   Useless for cross-platform users (web, Android).\n2. **Passkeys + WebAuthn.** Cross-platform, no password to forget,\n   but the threat model around device loss + recovery is fuzzy.\n3. **Roll our own.** Maximum control, minimum free time.\n\nDecision parked until Q3 — too many other things gate on the answer.\n",
         "p13": "# AI assist\n\nInline LLM helpers anchored at the cursor, not bolted onto a sidebar.\n\n## Targets\n\n- **Writing**: complete a paragraph, rewrite for tone, summarise a\n  long body.\n- **Tables**: \"add a status field with these enum values\", \"rewrite\n  this column as title-case\", \"what's the median budget across\n  active projects\".\n\n## Constraints\n\n- Local-first. The default backend is a local model; cloud is opt-in\n  per workspace.\n- No silent telemetry. Every request shows where it ran and what got\n  sent.\n- Works offline for local-model paths.\n",
@@ -487,7 +511,22 @@ export const projectsBundle: ParsedBundle = {
       "meta": {
         "title": "Tasks"
       },
-      "path": "fixtures/projects.table/tables/tasks"
+      "path": "fixtures/projects.table/tables/tasks",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "t1",
+            "t2",
+            "t3",
+            "t4",
+            "t5",
+            "t6",
+            "t7",
+            "t8"
+          ]
+        }
+      ]
     }
   },
   "path": "fixtures/projects.table"
