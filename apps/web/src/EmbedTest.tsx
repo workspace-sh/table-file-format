@@ -65,9 +65,9 @@ export function EmbedTest() {
       ))}
       <html.button
         style={styles.button}
-        onClick={() => void fs.readText("/ws/tables/projects.table/tables/tasks/rows.ndjson").then((t) => setWritten(t ?? ""))}
+        onClick={() => void fs.readText("/ws/tables/projects.table/tables/tasks/rows/0001.ndjson").then((t) => setWritten(t ?? ""))}
       >
-        Show projects.table/tables/tasks/rows.ndjson as written
+        Show projects.table/tables/tasks/rows/0001.ndjson as written
       </html.button>
       {written ? <html.pre style={styles.pre}>{written}</html.pre> : null}
     </html.div>

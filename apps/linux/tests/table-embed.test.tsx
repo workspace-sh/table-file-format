@@ -564,7 +564,7 @@ describe("a large table embedded in a document", () => {
     const tasks = join(root, "tables", "projects.table", "tables", "tasks");
     let rows = "";
     for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":${i}}\n`;
-    writeFileSync(join(tasks, "rows.ndjson"), rows);
+    writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
     return tasks;
   };
   const address = "../tables/projects.table#table=tasks&view=v1&rows=5&rest=more&embed=1";
@@ -579,7 +579,7 @@ describe("a large table embedded in a document", () => {
     await userEvent.clear(entry);
     await userEvent.type(entry, "Edited in a document, through the index");
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(() => expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").split("\n")[0]).toContain("Edited in a document, through the index"), { timeout: 30_000 });
+    await waitFor(() => expect(readFileSync(join(tasks, "rows", "0001.ndjson"), "utf8").split("\n")[0]).toContain("Edited in a document, through the index"), { timeout: 30_000 });
   }, 60_000);
 
   it("shares one index with the file opened beside it, and lets go of it when both have gone", async () => {
@@ -654,9 +654,9 @@ describe("a table edited in a document", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(screen.queryByDisplayValue("Land .table extension")).toBeNull();
     expect(screen.queryByText("+ New row")).toBeNull();
-    const before = readFileSync(join(tasksDir(), "rows.ndjson"), "utf8");
+    const before = readFileSync(join(tasksDir(), "rows", "0001.ndjson"), "utf8");
     await cleanup();
-    expect(readFileSync(join(tasksDir(), "rows.ndjson"), "utf8")).toBe(before);
+    expect(readFileSync(join(tasksDir(), "rows", "0001.ndjson"), "utf8")).toBe(before);
     expect(history()).toEqual([]);
   });
 

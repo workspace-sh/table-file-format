@@ -22,7 +22,7 @@ beforeEach(() => {
   cpSync(join(fixturesDir()!, "projects.table"), bundle, { recursive: true });
   let more = "";
   for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "p1", status: "todo", priority: 9, assignee: "sam" })}\n`;
-  appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), more);
+  appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
 });
 
 afterEach(async () => {

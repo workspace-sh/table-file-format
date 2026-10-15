@@ -1,6 +1,6 @@
 {
   "format": "table",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "title": "CRM",
   "description": "Companies, the people there, and the deals in progress.",
   "tables": [

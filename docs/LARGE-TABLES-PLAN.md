@@ -95,10 +95,10 @@ What a person sees here was decided (section 10): progress until the first build
 
 ## 4. Where an edit is saved
 
-`rows.ndjson` stays the truth (SPEC section 8: the index is a cache, and deleting it must be safe). Today each app writes the whole table 400 ms after the last edit. For an indexed table the same save streams the rows out of the index in file order, off the thread that draws, and then sets the index's key to the hash of what it wrote, so the index stays fresh.
+The rows files stay the truth (SPEC section 8: the index is a cache, and deleting it must be safe). Today each app writes the whole table 400 ms after the last edit. For an indexed table the same save streams the rows out of the index in file order, off the thread that draws, and then sets the index's key to the hash of what it wrote, so the index stays fresh.
 
 - **Linux and iOS:** the bundle's folder on disk, with `index.sqlite` at its root as SPEC section 8 says.
-- **Web:** the demo's small tables stay in the browser store as now. An indexed table's `rows.ndjson` is kept as a file in OPFS beside its index, written by the worker.
+- **Web:** the demo's small tables stay in the browser store as now. An indexed table's rows are kept as a file in OPFS beside its index, written by the worker.
 
 This is the simplest thing that keeps the spec as it is. Its cost is one full write per burst of edits: at 1M rows that is a 165 MB file. It is measured in Phase B. If it is too slow, the next step is a decision of its own (an append-only journal, or rows split across files, which LARGE-TABLES already raises for git).
 
@@ -186,7 +186,7 @@ For review by whoever implements web and Linux (accepted by the Linux rig, 8 Oct
 
 4. The `ViewRows` shape in section 1. Accepted; it may gain or lose a method once W1 has a real list reading it, and any change is recorded here.
 5. The 50,000-row threshold and the 200-row page, both starting points for measurement. Accepted as starting points.
-6. Saving by rewriting `rows.ndjson` (section 4) until Phase B's numbers say otherwise. Accepted.
+6. Saving by rewriting the rows files (section 4) until Phase B's numbers say otherwise. Accepted.
 
 Changed while building it (9 Oct 2026):
 
@@ -194,7 +194,7 @@ Changed while building it (9 Oct 2026):
 8. Places in a grouped view count one group after another, in `applyGroup`'s order, so a window of a grouped view is a window of what it shows.
 9. A total's sum is exact (`exactSum`, SPEC section 4): what the numbers add up to, rounded once. Added one at a time a sum depended on the rows' order, so it changed in its last digits when a view was sorted, and the index could only match it by reading every number in the view's order (2 to 5 s at 1M rows). Now it reads the column's distinct numbers and their counts off an index (0.1 s).
 10. Row edits to an indexed table go through the reducer like any other (`updateRow`, `addRow`, `deleteRow`, `updateBody`), which queues them (`AppState.indexWork`) for the app to make in the index (`makeIndexEdits`) and then say so (`indexed`). So `viewCallbacks` and every view are unchanged, and each platform only supplies its `SqlDriver`.
-11. `ParsedTable.indexed` marks a table whose rows aren't in `rows`. The writer leaves such a table's `rows.ndjson` alone; the app that holds the index writes it.
+11. `ParsedTable.indexed` marks a table whose rows aren't in `rows`. The writer leaves such a table's rows files alone; the app that holds the index writes it.
 12. Linux (L2, L3 in part): what's built is in "What Linux does" in LARGE-TABLES.md. Left for later there: removing a choice, validation of its rows, and an archive past 250,000 rows.
 13. The indexer runs where the index is. A page asks its worker for a view's rows a message an answer (`rowsServer`, `remoteViewRows`), not a statement a message; an edit comes back with the rows on screen already read (`ViewRows.peek`).
 14. The web (W2, W3) and tall lists: "What the web does" in LARGE-TABLES.md.

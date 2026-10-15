@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const shopBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 1,
+    "formatVersion": 2,
     "title": "Shop",
     "description": "A small coffee shop: customers, products, orders and the lines on each, linked together.",
     "tables": [
@@ -324,7 +324,28 @@ export const shopBundle: ParsedBundle = {
         "title": "Orders",
         "description": "Each order a customer placed."
       },
-      "path": "fixtures/shop.table/tables/orders"
+      "path": "fixtures/shop.table/tables/orders",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "or-1001",
+            "or-1002",
+            "or-1003",
+            "or-1004",
+            "or-1005",
+            "or-1006",
+            "or-1007",
+            "or-1008",
+            "or-1009",
+            "or-1010",
+            "or-1011",
+            "or-1012",
+            "or-1013",
+            "or-1014"
+          ]
+        }
+      ]
     },
     "customers": {
       "schema": {
@@ -484,7 +505,22 @@ export const shopBundle: ParsedBundle = {
         "title": "Customers",
         "description": "People who order from the shop."
       },
-      "path": "fixtures/shop.table/tables/customers"
+      "path": "fixtures/shop.table/tables/customers",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "cu-ada",
+            "cu-ben",
+            "cu-chloe",
+            "cu-dev",
+            "cu-ewa",
+            "cu-finn",
+            "cu-grace",
+            "cu-hugo"
+          ]
+        }
+      ]
     },
     "products": {
       "schema": {
@@ -702,7 +738,24 @@ export const shopBundle: ParsedBundle = {
         "title": "Products",
         "description": "What the shop sells."
       },
-      "path": "fixtures/shop.table/tables/products"
+      "path": "fixtures/shop.table/tables/products",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "pr-house",
+            "pr-ethiopia",
+            "pr-decaf",
+            "pr-sencha",
+            "pr-earl",
+            "pr-v60",
+            "pr-grinder",
+            "pr-kettle",
+            "pr-mug",
+            "pr-tote"
+          ]
+        }
+      ]
     },
     "lines": {
       "schema": {
@@ -950,7 +1003,42 @@ export const shopBundle: ParsedBundle = {
         "title": "Order lines",
         "description": "What's on each order: a product and how many."
       },
-      "path": "fixtures/shop.table/tables/lines"
+      "path": "fixtures/shop.table/tables/lines",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "li-01",
+            "li-02",
+            "li-03",
+            "li-04",
+            "li-05",
+            "li-06",
+            "li-07",
+            "li-08",
+            "li-09",
+            "li-10",
+            "li-11",
+            "li-12",
+            "li-13",
+            "li-14",
+            "li-15",
+            "li-16",
+            "li-17",
+            "li-18",
+            "li-19",
+            "li-20",
+            "li-21",
+            "li-22",
+            "li-23",
+            "li-24",
+            "li-25",
+            "li-26",
+            "li-27",
+            "li-28"
+          ]
+        }
+      ]
     }
   },
   "path": "fixtures/shop.table"

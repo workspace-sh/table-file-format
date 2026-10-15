@@ -24,7 +24,7 @@ beforeEach(() => {
   const tasks = join(bundle, "tables", "tasks");
   let rows = "";
   for (let i = 0; i < ROWS; i++) rows += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, priority: 9 })}\n`;
-  writeFileSync(join(tasks, "rows.ndjson"), rows);
+  writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
   const views = JSON.parse(readFileSync(join(tasks, "views.json"), "utf8")) as { id: string; rowHeight?: number; sort?: unknown }[];
   views[0]!.rowHeight = 240;
   delete views[0]!.sort;

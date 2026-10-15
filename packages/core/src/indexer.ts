@@ -1386,6 +1386,33 @@ export async function* storedRows(
   }
 }
 
+/**
+ * The same rows as storedRows gives, a batch at a time, each with its place
+ * in the file order: for a writer that puts each row back in the rows file
+ * it came from (SPEC section 3, D51).
+ */
+export async function* storedRowLines(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; batchSize?: number; omit?: string[] },
+): AsyncIterable<{ pos: number; line: string }[]> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  const size = options.batchSize ?? BATCH;
+  const leave = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...(await hiddenOf(db, n))];
+  let after = -1;
+  for (;;) {
+    const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
+    if (found.length === 0) return;
+    after = found[found.length - 1]!.pos as number;
+    yield found.map((r) => {
+      if (leave.length === 0) return { pos: r.pos as number, line: r.j as string };
+      const row = JSON.parse(r.j as string) as Row;
+      for (const field of leave) delete row[field];
+      return { pos: r.pos as number, line: JSON.stringify(row) };
+    });
+  }
+}
+
 /** A parsed table's rows as the index holds them: handy for the apps' first build. */
 export function indexSource(table: ParsedTable, name: string, key: string): BuildOptions {
   return { name, schema: table.schema, rows: table.rows, bodies: table.bodies, key };

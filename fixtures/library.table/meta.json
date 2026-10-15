@@ -1,6 +1,6 @@
 {
   "format": "table",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "title": "Library",
   "description": "A long list: 1,000 books, for scrolling a long table and its header.",
   "tables": [
