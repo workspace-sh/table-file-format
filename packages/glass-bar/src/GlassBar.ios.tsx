@@ -67,7 +67,7 @@ import {
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
-import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+import type { GlassBarAction, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 
 const SIZE = 48;
 const GAP = 8;
@@ -289,21 +289,32 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
   if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
-    // More is the system's menu, its button the same glass circle.
+    // More is the system's menu, its button the same glass circle. SwiftUI
+    // puts a menu's first item next to its button, which at the foot of the
+    // screen is the bottom: the groups, and the actions in each, are given
+    // to it in reverse, so the menu reads top to bottom as `moreActions` does.
+    const groups: GlassBarAction[][] = [];
+    for (const a of moreActions) {
+      if (a.startsGroup || groups.length === 0) groups.push([a]);
+      else groups[groups.length - 1]!.push(a);
+    }
+    const shown = groups.reverse().map((g) => [...g].reverse());
     return (
       <Menu
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
       >
-        {moreActions.flatMap((a) => [
-          ...(a.startsGroup ? [<Divider key={`${a.label}-line`} />] : []),
-          <Button
-            key={a.label}
-            label={a.label}
-            systemImage={a.symbol as Symbol | undefined}
-            onPress={a.onPress}
-            modifiers={a.disabled ? [disabled(true)] : undefined}
-          />,
+        {shown.flatMap((g, i) => [
+          ...(i > 0 ? [<Divider key={`${g[0]!.label}-line`} />] : []),
+          ...g.map((a) => (
+            <Button
+              key={a.label}
+              label={a.label}
+              systemImage={a.symbol as Symbol | undefined}
+              onPress={a.onPress}
+              modifiers={a.disabled ? [disabled(true)] : undefined}
+            />
+          )),
         ])}
       </Menu>
     );
