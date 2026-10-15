@@ -13,6 +13,7 @@ import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
 import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
+import { useDepartedToast } from "@workspace.sh/table-app/react";
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
@@ -109,6 +110,8 @@ export default function TableScreen() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoring?.n]);
+  // Rows an edit took out of the view: said above the bar, with Undo (#598).
+  const toast = useDepartedToast(app?.state, app?.dispatch);
   const glass = useGlassEditor({
     onScrollBy: (dy) => scroller.current?.scrollTo({ y: scrollY.current + dy, animated: true }),
     query: search ?? "",
@@ -445,6 +448,7 @@ export default function TableScreen() {
         <GlassBar
           ref={glass.bar}
           {...glass.props}
+          toast={toast}
           moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
         />
       )}

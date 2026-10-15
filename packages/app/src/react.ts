@@ -351,3 +351,4 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
 
 export { useIndexedTables, type IndexedTables } from "./useIndexedTables.ts";
 export { useFolderHistories, type FolderHistories } from "./useFolderHistories.ts";
+export { DEPARTED_TOAST_MS, useDepartedToast, type DepartedToast } from "./useDepartedToast.ts";

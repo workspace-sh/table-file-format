@@ -49,6 +49,7 @@ import {
   background,
   datePickerStyle,
   contentShape,
+  contentTransition,
   disabled,
   fixedSize,
   font,
@@ -206,7 +207,8 @@ export function GlassBar(props: GlassBarProps) {
   // Letting go of the Host after the operators' return changes nothing on
   // screen, so it must not count as a change: another spring there dipped
   // the group behind the keyboard.
-  const layout = layoutOf(state) + (expanded ? 100 : 0) + (collapsing === "shrinking" ? 200 : 0);
+  const toasting = !!props.toast && (state.kind === "rest" || state.kind === "selected");
+  const layout = layoutOf(state) + (expanded ? 100 : 0) + (collapsing === "shrinking" ? 200 : 0) + (toasting ? 1000 : 0);
   const expansion: Expansion = { can: canExpand, on: expanded, height: expandedHeight, toggle: () => setExpanded((e) => !e), settling: collapsing === "shrinking" };
   return (
     <Animated.View
@@ -240,6 +242,7 @@ export function GlassBar(props: GlassBarProps) {
             ]}
           >
             <VStack alignment="leading" spacing={GAP}>
+              {toasting ? <Toast {...props} ns={ns} /> : null}
               <Chips {...props} ns={ns} editor={editor} expansion={expansion} />
               <HStack spacing={expanded ? 0 : GAP} alignment="bottom">
                 <Lead {...props} ns={ns} expansion={expansion} />
@@ -332,6 +335,37 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
         accessibilityLabel(searching ? "Close search" : "More"),
       ]}
     />
+  );
+}
+
+/**
+ * What an edit did that can't be seen, centred above the bar: a glass
+ * capsule like the bar's own, its count rolling from one number to the
+ * next as more is counted, and Undo.
+ */
+function Toast({ toast, ns }: Part) {
+  if (!toast) return null;
+  return (
+    <HStack spacing={0}>
+      <Spacer />
+      <HStack
+        spacing={10}
+        modifiers={[
+          padding({ leading: 16, trailing: 6, vertical: 6 }),
+          glassEffect({ glass: { variant: "regular", interactive: true }, shape: "capsule" }),
+          glassEffectId("toast", ns),
+          accessibilityLabel(toast.label),
+        ]}
+      >
+        <Image systemName="checkmark" size={14} modifiers={[secondary]} />
+        <HStack spacing={0}>
+          <Text modifiers={[font({ size: 15 }), contentTransition("numericText"), animation(Animation.default, toast.n), lineLimit(1)]}>{toast.lead}</Text>
+          <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{toast.rest}</Text>
+        </HStack>
+        <Button label="Undo" onPress={toast.onUndo} modifiers={[font({ size: 15, weight: "semibold" }), padding({ horizontal: 8, vertical: 4 })]} />
+      </HStack>
+      <Spacer />
+    </HStack>
   );
 }
 
