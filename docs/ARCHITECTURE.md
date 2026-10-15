@@ -322,19 +322,25 @@ Xcode 26 / Apple Clang 17 `fmt` consteval workaround.
 The `.app`-bundle model works everywhere, but "IS a file" carries
 platform caveats consumers should plan for rather than discover:
 
-- **macOS**: presenting a `.table/` as a single Finder item needs the
-  consuming app to declare the extension as a document package (UTI
-  conforming to `com.apple.package`). Without that it's just a folder
-  — still fully functional, just not one-item-shaped.
+- **macOS and iOS**: presenting a `.table` as a single item needs the
+  consuming app to declare the extension's two types (SPEC section 13,
+  "Platform types"): the folder form as a document package
+  (`com.apple.package`), the file form as data. Without them a folder
+  form is just a folder — still fully functional, just not
+  one-item-shaped.
 - **iOS**: directory documents are second-class in the Files app and
   file-provider APIs compared to flat files; expect extra
   `NSFileCoordinator` care in a document-based app.
 - **Android**: Storage Access Framework hands out tree URIs, not
   paths — readers must be written against SAF documents, not `fs`.
-- **Transport**: email/upload flows flatten or reject directories;
-  the interchange convention is `projects.table.zip` — canonical
-  layout, security rules, and the reference reader/writer are in
-  SPEC section 13 (`@workspace.sh/table-core/archive`).
+- **Transport and the file form**: email/upload flows flatten or
+  reject directories, and some people want one file. A `.table` can
+  be kept as a single file (the file form), and `projects.table.zip`
+  is that file with `.zip` added for sending — canonical layout,
+  security rules, and the reference reader/writer are in SPEC
+  section 13 (`@workspace.sh/table-core/archive`). Linux and Windows
+  have no packages, so there the file form is the one that shows as
+  one item.
 - **Git on case-insensitive filesystems**: checkout behaviour for
   case-colliding paths feeds the row-id rules in SPEC section 3.
 

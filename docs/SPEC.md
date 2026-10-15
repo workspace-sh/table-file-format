@@ -16,6 +16,13 @@ an Airtable base holds linked tables. The directory contains
 plain-text files designed for line-diffable storage in git, plus an
 optional rebuildable SQLite cache.
 
+**Two forms, one document (D49).** A `.table` is either that
+directory (the **folder form**) or a single file holding it (the
+**file form**: a zip of the directory, section 13). Both carry the
+same name and extension and are the same document; converting one
+to the other loses nothing but the cache. Sections 1 to 12 and 14
+describe the directory, which is what a file-form `.table` holds.
+
 **Written by tools, readable by people.** The files are text so that
 version control can diff, review and merge them, not so that people
 can edit them. A `.table/` is written by software — an app, a CLI, a
@@ -1326,12 +1333,82 @@ carry its own edit history in the format, so that "what did this row
 or page look like yesterday" works without git, uses the optional
 `history.ndjson` (section 14).
 
-## 13. Archive transport (`.table.zip`)
+## 13. The file form and archive transport (`.table`, `.table.zip`)
 
-A `.table/` travelling through a context that cannot carry a
-directory (email, upload, chat drag-and-drop) is zipped. This is a
-transport convention only — the on-disk format is unchanged and
-`formatVersion` is unaffected (additive, per DECISIONS D26/D27).
+A `.table` can be kept as a single file, and a `.table/` travelling
+through a context that cannot carry a directory (email, upload, chat
+drag-and-drop) is zipped. Both are the same archive, in the canonical
+layout below. The bundle inside is unchanged and `formatVersion` is
+unaffected (additive, per DECISIONS D26/D27/D49).
+
+### The file form
+
+A `.table` that is a regular file, not a directory, is an archive in
+the canonical layout below holding the whole bundle (D49). It is the
+same document as the folder it unzips to.
+
+- **Telling the forms apart.** Readers MUST decide by what is on
+  disk: a directory is the folder form, a regular file the file form.
+  They MUST NOT rely on a platform's type for the name, which can
+  report one form's type for the other.
+- **`.table.zip` is the file form for sending.** `<name>.table.zip`
+  is a file-form `<name>.table` with `.zip` added, so that it travels
+  as a zip and unzips anywhere. The bytes are the same; readers treat
+  the two alike, and renaming one to the other is lossless.
+- **Saving.** Writers save a document in the form it was opened in.
+  A new document is written in the folder form unless the user
+  chooses the file form.
+- **What a file-form save carries.** Everything the folder would
+  hold: every table's files, `attachments/`, `bodies/`,
+  `history.ndjson`, and unknown files (section 1's round-trip rule).
+  Unlike transport (below), a writer saving a document MUST NOT omit
+  attachments. It MUST NOT include `index.sqlite`.
+- **Atomic replace.** A writer writes the whole new archive to a
+  sibling file (`<name>.table.tmp`), then renames it over the
+  document, so a reader sees the old file or the new one, never part
+  of either (compare section 1, "Writer atomicity").
+- **The index lives outside.** An app that indexes a file-form
+  document (section 8) keeps the index in its own storage, keyed to
+  that document. It is a cache like any `index.sqlite`: rebuildable
+  from the archive, never part of it.
+- **Size.** Rows compress well: the 1,000,000-row example's 165 MB
+  `rows.ndjson` is a 19.6 MB archive. A writer for a large table
+  SHOULD stream rows into the archive rather than build it in memory,
+  and a reader SHOULD inflate a large `rows.ndjson` as a stream. The
+  archive has no zip64 (below), so no file in it, and not the archive
+  itself, can pass 4 GiB, and it can't hold more than 65,535 files
+  (each row page is one): a document that would is kept in the folder
+  form, and a writer asked to save it as a file says so rather than
+  writing a broken one. The decompression-bomb cap (below, "Security")
+  is for archives that arrive from elsewhere; opening a document the
+  person chose, a reader MAY raise it, up to the 4 GiB limit.
+
+### Platform types
+
+On Apple platforms the two forms are two exported types sharing the
+extension `table` and the description "Table", as Numbers declares
+its package and single-file documents:
+
+| Form | Identifier | Conforms to |
+|---|---|---|
+| Folder | `sh.workspace.table` | `com.apple.package`, `public.composite-content` |
+| File | `sh.workspace.table.file` | `public.data`, `public.composite-content` |
+
+The file form conforms to `public.data`, not `public.zip-archive`, so
+the system treats it as a document and never offers to expand it.
+An app that opens `.table` declares both as document types it opens;
+`.table.zip` needs no type of its own (it is `public.zip-archive`,
+opened when its name ends `.table.zip`).
+
+On systems without packages (Linux, Windows) the folder form shows as
+a folder: a directory has no type of its own there, so an app tells it
+by its name. The file form is matched by its name, `*.table`. On Linux
+an app that opens it declares it in shared-mime-info as
+`application/vnd.workspace-sh.table`, with the glob `*.table`, the
+comment "Table", and no `sub-class-of` a zip type, for the reason the
+Apple file type isn't one: a file manager would offer to extract it.
+On the web a file input accepts `.table` and `.table.zip`; the folder
+form needs a directory picker.
 
 ### Canonical layout
 
@@ -1360,8 +1437,9 @@ name even if the archive file is renamed.
 
 Readers MUST ignore archiver junk (`__MACOSX/`, `.DS_Store`,
 `Thumbs.db`) and unknown entries (same tolerance as section 1).
-Writers SHOULD omit `index.sqlite` (rebuildable) and MAY omit
-`attachments/`. A table's `history.ndjson` (section 14), when it has
+Writers SHOULD omit `index.sqlite` (rebuildable). A writer making an
+archive only to send MAY omit `attachments/`; saving a file-form
+document, it MUST NOT (above). A table's `history.ndjson` (section 14), when it has
 one, travels with it as it is: a writer copies the file's bytes and
 doesn't rewrite its lines.
 
@@ -1372,7 +1450,8 @@ whose resolved path escapes the extraction root (zip-slip): any
 `..` segment, absolute path, backslash, or drive prefix. Readers
 SHOULD cap total declared uncompressed size (reference: 1 GiB) to
 bound decompression-bomb exposure, and SHOULD verify per-entry CRC
-and size declarations.
+and size declarations. A file-form document the person opens is
+input they chose, and its cap MAY be raised ("The file form", Size).
 
 ### Reference implementation
 
