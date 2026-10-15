@@ -1371,10 +1371,17 @@ same document as the folder it unzips to.
   document (section 8) keeps the index in its own storage, keyed to
   that document. It is a cache like any `index.sqlite`: rebuildable
   from the archive, never part of it.
-- **Size.** The constraints below apply (without zip64, 4 GiB).
-  Rows compress well: the 1,000,000-row example's 165 MB
+- **Size.** Rows compress well: the 1,000,000-row example's 165 MB
   `rows.ndjson` is a 19.6 MB archive. A writer for a large table
-  SHOULD stream rows into the archive rather than build it in memory.
+  SHOULD stream rows into the archive rather than build it in memory,
+  and a reader SHOULD inflate a large `rows.ndjson` as a stream. The
+  archive has no zip64 (below), so no file in it, and not the archive
+  itself, can pass 4 GiB, and it can't hold more than 65,535 files
+  (each row page is one): a document that would is kept in the folder
+  form, and a writer asked to save it as a file says so rather than
+  writing a broken one. The decompression-bomb cap (below, "Security")
+  is for archives that arrive from elsewhere; opening a document the
+  person chose, a reader MAY raise it, up to the 4 GiB limit.
 
 ### Platform types
 
@@ -1391,10 +1398,17 @@ The file form conforms to `public.data`, not `public.zip-archive`, so
 the system treats it as a document and never offers to expand it.
 An app that opens `.table` declares both as document types it opens;
 `.table.zip` needs no type of its own (it is `public.zip-archive`,
-opened when its name ends `.table.zip`). On systems without packages
-(Linux, Windows) the folder form shows as a folder, and the file form
-is matched by its name, `*.table`. On the web a file input accepts
-`.table` and `.table.zip`; the folder form needs a directory picker.
+opened when its name ends `.table.zip`).
+
+On systems without packages (Linux, Windows) the folder form shows as
+a folder: a directory has no type of its own there, so an app tells it
+by its name. The file form is matched by its name, `*.table`. On Linux
+an app that opens it declares it in shared-mime-info as
+`application/vnd.workspace-sh.table`, with the glob `*.table`, the
+comment "Table", and no `sub-class-of` a zip type, for the reason the
+Apple file type isn't one: a file manager would offer to extract it.
+On the web a file input accepts `.table` and `.table.zip`; the folder
+form needs a directory picker.
 
 ### Canonical layout
 
@@ -1436,7 +1450,8 @@ whose resolved path escapes the extraction root (zip-slip): any
 `..` segment, absolute path, backslash, or drive prefix. Readers
 SHOULD cap total declared uncompressed size (reference: 1 GiB) to
 bound decompression-bomb exposure, and SHOULD verify per-entry CRC
-and size declarations.
+and size declarations. A file-form document the person opens is
+input they chose, and its cap MAY be raised ("The file form", Size).
 
 ### Reference implementation
 
