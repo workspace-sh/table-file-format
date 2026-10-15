@@ -15,8 +15,8 @@ views the platform's way; table-ui itself owns no navigation:
 - **Navigation:** expo-router's native stack (`app/`). The table screen
   (`app/index.tsx`) has its view's name as the title, and the same
   actions on both platforms: the tables list, the views menu, View
-  settings, search and a ⋯ menu (New Table, New .table File, Open
-  .table.zip, Export .table.zip).
+  settings, search and a ⋯ menu (New Table, New .table File, Open…,
+  Export as a Single File).
   - **iOS:** a large title, the tables button (top left), the views menu
     (top right), and a bottom toolbar with View settings, search and ⋯.
     On iOS 26+ the bars, buttons and search are Liquid Glass, from the
@@ -34,10 +34,15 @@ views the platform's way; table-ui itself owns no navigation:
 - **Questions:** native alerts. On iOS a name (new table, new `.table`
   file) is asked in the system's alert with a text field; Android uses
   the app's `NameSheet.tsx` until it gets a Material dialog.
-- **Files:** `files.ts` opens a `.table.zip` from the system's document
-  picker and hands the file on screen to the share sheet
-  (expo-document-picker, expo-file-system, expo-sharing). Reading and
-  writing archives is table-app's.
+- **Files:** Open… asks the system's picker for a `.table` where it is, a
+  folder or a single file (SPEC section 13), or a spreadsheet to make one
+  from. `documents.ts` keeps an opened document open by its security scope,
+  remembers it as a bookmark for the next launch, and writes edits back to
+  it. A single file is edited through a working folder in the app's own
+  storage and packed back into the file by one coordinated write after each
+  save (`modules/table-files`), since the file is the app's to replace but
+  its folder isn't. Export as a Single File hands the file on screen to the
+  share sheet. Reading and writing the format is table-app's.
 - **Leaving:** going to the background writes what's left at once.
 
 ## Running it
