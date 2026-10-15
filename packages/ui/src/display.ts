@@ -67,7 +67,7 @@ export function groupedRows(
   const def = schema.fields.find((f) => f.name === field);
   const options = enumOptions(def);
   const out: { row: Row; starts?: { label: string; count: number } }[] = [];
-  for (const [key, members] of Object.entries(applyGroup(rows, field, schema))) {
+  for (const [key, members] of applyGroup(rows, field, schema)) {
     if (members.length === 0) continue;
     const label = key === "(empty)" ? EMPTY_GROUP : (options.find((o) => o.value === key)?.label ?? key);
     members.forEach((row, i) => out.push(i === 0 ? { row, starts: { label, count: members.length } } : { row }));

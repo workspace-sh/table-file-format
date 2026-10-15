@@ -60,7 +60,7 @@ export function applyView(
   // `options.tables` lets lookups and linked rows reach other tables (D36),
   // and the table's own views let formulas read its Sheet views (D41).
   let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...compute }).rows;
-  if (view.filter) rows = applyFilters(rows, view.filter);
+  if (view.filter) rows = applyFilters(rows, view.filter, parsed.schema);
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
   // cleared.
