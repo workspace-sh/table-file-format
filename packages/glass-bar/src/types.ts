@@ -97,8 +97,25 @@ export type GlassBarAction = {
   onPress: () => void;
 };
 
+/**
+ * A light message above the bar, saying what an edit did that can't be
+ * seen (rows that left the view, #598), with Undo. `lead` is the part that
+ * changes as it counts, drawn to roll from one number to the next; `n`
+ * moves each time it changes.
+ */
+export type GlassBarToast = {
+  lead: string;
+  rest: string;
+  /** All of it, to be read out. */
+  label: string;
+  n: number;
+  onUndo: () => void;
+};
+
 export type GlassBarProps = {
   state: GlassBarState;
+  /** A message above the bar, at rest or with a cell selected (never over an editor's choices). */
+  toast?: GlassBarToast | null;
   /** More's menu. Without it, More calls `onMore`. */
   moreActions?: GlassBarAction[];
   ref?: import("react").Ref<GlassBarHandle>;
