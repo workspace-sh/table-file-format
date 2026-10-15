@@ -29,7 +29,7 @@ test("a new bundle holds one new table, named, and says what it is (D37)", () =>
   const b = newBundle("Reading list", "reading-list.table", "reading-list", NOW);
   assert.deepEqual(b.meta, {
     format: "table",
-    formatVersion: 1,
+    formatVersion: 2,
     title: "Reading list",
     tables: ["reading-list"],
     created_at: "2026-09-25T20:00:00.000Z",

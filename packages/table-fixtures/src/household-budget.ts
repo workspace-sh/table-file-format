@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const householdBudgetBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 1,
+    "formatVersion": 2,
     "title": "Household budget",
     "description": "A quarter's budget laid out as a sheet, and a ledger with a running balance.",
     "tables": [
@@ -256,7 +256,21 @@ export const householdBudgetBundle: ParsedBundle = {
         "created_at": "2026-09-26T00:00:00Z",
         "modified_at": "2026-09-26T00:00:00Z"
       },
-      "path": "fixtures/household-budget.table/tables/budget"
+      "path": "fixtures/household-budget.table/tables/budget",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "rent",
+            "energy",
+            "groceries",
+            "eating-out",
+            "transport",
+            "savings",
+            "income"
+          ]
+        }
+      ]
     },
     "ledger": {
       "schema": {
@@ -405,7 +419,24 @@ export const householdBudgetBundle: ParsedBundle = {
         "created_at": "2026-09-29T00:00:00Z",
         "modified_at": "2026-09-29T00:00:00Z"
       },
-      "path": "fixtures/household-budget.table/tables/ledger"
+      "path": "fixtures/household-budget.table/tables/ledger",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "opening",
+            "salary-jan",
+            "rent-jan",
+            "groceries-jan",
+            "energy-jan",
+            "rent-feb",
+            "salary-feb",
+            "transport-feb",
+            "eating-feb",
+            "savings-feb"
+          ]
+        }
+      ]
     }
   },
   "path": "fixtures/household-budget.table"

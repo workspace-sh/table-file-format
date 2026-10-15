@@ -6,9 +6,10 @@
 
 import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
 import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
-import { normaliseBody, pretty, serializeRows, stampMeta, tableMetaOnly } from "./serialize.js";
+import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
 import { BODY_EXTENSION, BundleEntry, TableEntry, tablePath } from "./layout.js";
+import { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, layoutRows, rowsFileOrder } from "./rowFiles.js";
 
 /**
  * The file operations a `.table` folder needs. Paths are `/`-separated, as
@@ -146,9 +147,10 @@ export async function readBundle(fs: TableFs, dir: string, options: ReadOptions 
     .sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const tableDir = joinPath(tablesDir, entry.name);
-    const files = new Set(((await fs.list(tableDir)) ?? []).filter((e) => !e.directory).map((e) => e.name));
-    if (!files.has(TableEntry.schema) || !files.has(TableEntry.rows)) {
-      diagnostics.push({ rowIndex: -1, message: `${tablePath(entry.name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rows}` });
+    const listed = (await fs.list(tableDir)) ?? [];
+    const has = (name: string, directory: boolean) => listed.some((e) => e.name === name && e.directory === directory);
+    if (!has(TableEntry.schema, false) || !(has(ROWS_DIR, true) || has(LEGACY_ROWS_FILE, false))) {
+      diagnostics.push({ rowIndex: -1, message: `${tablePath(entry.name)} isn't a table: it needs ${TableEntry.schema} and ${ROWS_DIR}/` });
       continue;
     }
     tables[entry.name] = await readTable(fs, tableDir, options);
@@ -183,17 +185,39 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
 
   const elsewhere = (await options.rowsElsewhere?.(dir)) === true;
   const unread: UnreadLine[] = [];
-  const rows = elsewhere ? [] : parseRowsText((await fs.readText(joinPath(dir, TableEntry.rows))) ?? "", diagnostics, unread);
+  const read = elsewhere ? { rows: [], rowFiles: [] } : await readRowsFiles(fs, dir, diagnostics, unread);
+  const rows = read.rows;
   const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
   const bodies = await readBodies(fs, joinPath(dir, TableEntry.bodies));
 
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
+  if (read.rowFiles.length > 0) parsed.rowFiles = read.rowFiles;
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };
   if (bodies) parsed.bodies = bodies;
   if (unread.length > 0) parsed.unread = unread;
   if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
   return parsed;
+}
+
+/** Where a table's rows are: its `rows/` files in order (D51), or `formatVersion` 1's one `rows.ndjson` as `0001`. */
+export async function rowsFilesOf(fs: TableFs, dir: string): Promise<{ name: string; path: string }[]> {
+  const listed = await fs.list(joinPath(dir, ROWS_DIR));
+  if (listed !== null) return rowsFileOrder(listed.filter((e) => !e.directory).map((e) => e.name)).map((name) => ({ name, path: joinPath(dir, ROWS_DIR, name) }));
+  const legacy = joinPath(dir, LEGACY_ROWS_FILE);
+  return (await fs.readText(legacy)) === null ? [] : [{ name: FIRST_ROWS_FILE, path: legacy }];
+}
+
+/** A table's rows from its rows files, in file order, and which file held which rows (for writing them back). */
+async function readRowsFiles(fs: TableFs, dir: string, diagnostics: ValidationError[], unread: UnreadLine[]): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[] }> {
+  const rows: Row[] = [];
+  const rowFiles: { name: string; ids: string[] }[] = [];
+  for (const file of await rowsFilesOf(fs, dir)) {
+    const these = parseRowsText((await fs.readText(file.path)) ?? "", diagnostics, unread, { file: file.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`, after: rows.at(-1)?.id ?? null });
+    for (const r of these) rows.push(r);
+    rowFiles.push({ name: file.name, ids: these.map((r) => r.id) });
+  }
+  return { rows, rowFiles };
 }
 
 async function readBodies(fs: TableFs, dir: string): Promise<Record<string, string> | undefined> {
@@ -227,6 +251,8 @@ export interface WriteTableInput {
   bodies?: Record<string, string>;
   /** Lines of `rows.ndjson` that couldn't be read as rows, put back where they were (ParsedTable.unread). */
   unread?: UnreadLine[];
+  /** Which rows each rows file held (ParsedTable.rowFiles): written back to the same files. */
+  rowFiles?: { name: string; ids: string[] }[];
   /**
    * The table's edit history as text (SPEC section 14), for a table that
    * arrived with one (from an archive). Written only when the table has
@@ -286,6 +312,8 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   // A file whose text wouldn't change isn't staged at all, so saving one
   // edit rewrites only the files it changed, and git sees only those.
   const staged: Array<{ tmp: string; target: string }> = [];
+  const rowsDir = joinPath(dir, ROWS_DIR);
+  let rowsWritten: { name: string; text: string }[] | null = null;
   const stage = async (target: string, content: string) => {
     if ((await fs.readText(target)) === content) return;
     const tmp = target + ".tmp";
@@ -296,7 +324,15 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   try {
     await stage(joinPath(dir, TableEntry.schema), pretty(input.schema));
     // Rows held in the index aren't here to write: whoever holds them saves them.
-    if (!("indexed" in input && input.indexed)) await stage(joinPath(dir, TableEntry.rows), serializeRows(input.rows, input.schema, input.unread));
+    if (!("indexed" in input && input.indexed)) {
+      // Each row back in its file, and only the files that changed (D51).
+      rowsWritten = layoutRows(input.rows, rowLine(input.schema), {
+        ...(input.rowFiles ? { files: input.rowFiles } : {}),
+        ...(input.unread ? { unread: input.unread } : {}),
+      });
+      await fs.mkdir(rowsDir);
+      for (const file of rowsWritten) await stage(joinPath(rowsDir, file.name), file.text);
+    }
     await stage(joinPath(dir, TableEntry.views), pretty(input.views ?? []));
     await stage(joinPath(dir, TableEntry.meta), pretty(meta));
     // A history that came with the table (an archive opened into a folder) is put there once. The file is
@@ -324,6 +360,12 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   }
 
   // ---- Trim: deletions strictly after every rename has landed.
+  if (rowsWritten) {
+    // Rows files no longer holding rows, and formatVersion 1's rows.ndjson, now in rows/.
+    const kept = new Set(rowsWritten.map((f) => f.name));
+    for (const name of rowsFileOrder(((await fs.list(rowsDir)) ?? []).map((e) => e.name))) if (!kept.has(name)) await fs.remove(joinPath(rowsDir, name));
+    await fs.remove(joinPath(dir, LEGACY_ROWS_FILE));
+  }
   if (haveBodies) {
     for (const entry of (await fs.list(bodiesDir)) ?? []) {
       if (entry.directory || !entry.name.endsWith(BODY_EXTENSION)) continue;

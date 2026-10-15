@@ -9,7 +9,8 @@
 //   ├── tables/                   BundleEntry.tables
 //   │   └── companies/
 //   │       ├── schema.json       TableEntry.schema
-//   │       ├── rows.ndjson       TableEntry.rows
+//   │       ├── rows/             TableEntry.rowsDir (D51; formatVersion 1: rows.ndjson, TableEntry.rows)
+//   │       │   └── 0001.ndjson
 //   │       ├── views.json        TableEntry.views
 //   │       ├── meta.json         TableEntry.meta
 //   │       ├── history.ndjson    TableEntry.history
@@ -42,7 +43,9 @@ export type BundleEntry = (typeof BundleEntry)[keyof typeof BundleEntry];
 export const TableEntry = {
   /** Its fields (section 2). Required. */
   schema: "schema.json",
-  /** Its rows, one JSON object a line (section 3). Required. */
+  /** Its rows, one JSON object a line, in files in order (section 3, D51). Required. */
+  rowsDir: "rows",
+  /** Where `formatVersion` 1 kept its rows, in one file: still read. */
   rows: "rows.ndjson",
   /** Its views (section 4). Optional. */
   views: "views.json",
@@ -58,7 +61,7 @@ export const TableEntry = {
 export type TableEntry = (typeof TableEntry)[keyof typeof TableEntry];
 
 /** The files a directory under `tables/` must have to be a table. */
-export const REQUIRED_TABLE_FILES: readonly TableEntry[] = [TableEntry.schema, TableEntry.rows];
+export const REQUIRED_TABLE_FILES: readonly TableEntry[] = [TableEntry.schema, TableEntry.rowsDir];
 
 /** A bundle's folder or archive name without what it ends in: `crm` for `crm.table` and for `crm.table.zip`. */
 export function bundleNameOf(fileName: string): string {
@@ -92,6 +95,9 @@ export function tableNameIn(path: string): string | null {
 /** Whether a path inside an archive (`crm.table/tables/companies/rows.ndjson`) is a table's rows file. */
 export function isArchivedRowsFile(path: string): boolean {
   const parts = path.split("/");
-  return parts.length === 4 && parts[0] !== "" && parts[1] === BundleEntry.tables && parts[2] !== "" && parts[3] === TableEntry.rows;
+  if (parts[0] === "" || parts[1] !== BundleEntry.tables || !parts[2]) return false;
+  // `<name>.table/tables/<t>/rows/0001.ndjson`, or formatVersion 1's `<name>.table/tables/<t>/rows.ndjson`.
+  if (parts.length === 5) return parts[3] === TableEntry.rowsDir && /^\d{4,}[a-z]*\.ndjson$/.test(parts[4]!);
+  return parts.length === 4 && parts[3] === TableEntry.rows;
 }
 

@@ -1276,3 +1276,28 @@ D49 kept `.table.zip` as the file form with `.zip` added for sending. Leslie dro
 **Considered:** keeping `.table.zip` alongside for sending (D49 as it was): two names for the same bytes, and a sent file opening in an archive utility on many systems rather than in an app that reads it.
 
 **To revisit when** a channel a `.table` must travel through refuses or mangles a file not named `.zip`.
+
+## D51: a table's rows are files in `rows/`, split at about 25 MB, named to sort the same everywhere
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.** Breaking: `formatVersion` 2. Closes #582.
+
+A table's rows were one file, `rows.ndjson`. At a million rows that's 165 MB (442 MB for wider rows), and GitHub warns at 50 MB and refuses 100 MB, so a large table couldn't be kept in git as a folder, the folder form's point (D49). Now every table's rows are NDJSON files in its `rows/` folder, read in name order as one file order (SPEC section 3).
+
+- **Always the folder** (Leslie: "normalise the format"). A small table's is one file, `rows/0001.ndjson`; one rule for every reader and writer, and nothing changes shape as a table grows.
+- **About 25 MB a file.** The aim is only to fit git without a large-file extension, at the least computation: a writer counts the bytes it writes (no cost), starts a new file once the one it's writing passes 25,000,000 bytes, and never rebalances or merges files, so their sizes vary. 25 MB keeps every file well under GitHub's 50 MB warning, with room to grow by edits between splits, and keeps a save (which rewrites only the files it changes, not the whole table) and an archive entry small enough for a phone. That's about 57,000 to 150,000 rows a file for rows of 442 to 165 bytes.
+- **Names: four digits, then letters for splits.** New files at the end take the next number; a file that passes the limit in the middle splits into a name made by adding letters (`0002m` between `0002` and `0003`), so no other file is renamed. Digits then letters sort the same as bytes compare (git, GitHub, a terminal) and as file browsers sort numbers by value (Finder, Explorer, GNOME Files), so the folder lists in file order everywhere; `00025` would sort after `0003` in a browser.
+- **Where the files split isn't canonical.** It depends on how the table was edited, so two writers holding the same rows may split them differently. The rows, in order, and each row's serialisation stay canonical (SPEC section 3).
+- **`formatVersion` 1** (one `rows.ndjson`) is still read, as the table's only rows file; a writer writes `rows/` and removes it.
+
+**Also gained.** A save rewrites only the rows files it changes, not 165 MB for a cell. A single-file `.table` (section 13) holds each rows file as its own entry, so reading or changing part of a large table needn't inflate all of it.
+
+**Considered.**
+- **`rows.0.ndjson`, `rows.1.ndjson` beside the table's other files:** dozens of files next to `schema.json`, and numbers that force renames on a split.
+- **Files of about 1 MB:** hundreds of files at a million rows for no gain; the aim is git's limit, not small diffs (git already stores a changed line as a small delta).
+- **A row count per file:** as cheap, but rows vary in size, so a table of wide rows could still pass 50 MB.
+- **Only for large tables** (`rows.ndjson` until a limit): two layouts for every reader, and a table that changes shape as it grows.
+- **An index file listing the files' order** (Delta Lake, Iceberg, LevelDB's MANIFEST): names stop mattering, but every split edits one shared file, which two people editing in git then clash on.
+- **Content-defined chunking** (Dolt, restic, rsync: a file ends where a row's id hashes to a pattern, so splits depend on the rows, not on edits): any two writers split alike and an insert only ever changes its own file. Kept for later: it needs a size cap beside it, and more to build.
+
+**To revisit when** git hosting's limits change, or two writers splitting differently costs more than it saves.
+

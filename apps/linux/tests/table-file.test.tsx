@@ -192,7 +192,7 @@ describe("a .table opened as a document", () => {
     const tasks = join(root, "projects.table", "tables", "tasks");
     let rows = "";
     for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":${i}}\n`;
-    writeFileSync(join(tasks, "rows.ndjson"), rows);
+    writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
     const path = join(root, "projects.table");
     await render(
       <GtkWindow defaultWidth={1000} defaultHeight={700}>
@@ -207,8 +207,8 @@ describe("a .table opened as a document", () => {
     await userEvent.clear(entry);
     await userEvent.type(entry, "Edited through the index");
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(() => expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").split("\n")[0]).toContain("Edited through the index"), { timeout: 30_000 });
-    expect(readFileSync(join(tasks, "rows.ndjson"), "utf8").trimEnd().split("\n")).toHaveLength(50_000);
+    await waitFor(() => expect(readFileSync(join(tasks, "rows", "0001.ndjson"), "utf8").split("\n")[0]).toContain("Edited through the index"), { timeout: 30_000 });
+    expect(readFileSync(join(tasks, "rows", "0001.ndjson"), "utf8").trimEnd().split("\n")).toHaveLength(50_000);
     // The file's other table is held in memory as ever.
     await pick(await picker("table-file-tables"), 0);
     expect(await screen.findByText("Workspace v1")).toBeDefined();

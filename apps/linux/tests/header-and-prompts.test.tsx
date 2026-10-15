@@ -43,7 +43,7 @@ describe("the line under a view's name", () => {
   });
 
   it("counts a table's errors, with the first as its hint", async () => {
-    appendFileSync(join(bundle, "tables", "ledger", "rows.ndjson"), `${JSON.stringify({ id: "bad", date: "2026-03-01", item: "Odd", amount: "lots" })}\n`);
+    appendFileSync(join(bundle, "tables", "ledger", "rows", "0001.ndjson"), `${JSON.stringify({ id: "bad", date: "2026-03-01", item: "Odd", amount: "lots" })}\n`);
     await openLedger("as-entered");
     const invalid = await screen.findByText("1 validation error");
     expect(invalid.getTooltipText()).toMatch(/^amount: /);

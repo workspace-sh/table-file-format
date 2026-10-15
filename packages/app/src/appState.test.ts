@@ -529,10 +529,10 @@ test("opened: a folder is held and shown, and isn't written back until edited", 
 });
 
 test("opened: an archive has no folder yet, so it's written; what was skipped is told", () => {
-  const s = run(start(), { type: "opened", library: one("notes"), skipped: ["rows.ndjson line 2: bad"] });
+  const s = run(start(), { type: "opened", library: one("notes"), skipped: ["rows/0001.ndjson: line 2 isn't JSON"] });
   assert.deepEqual(s.opened, {});
   assert.deepEqual(s.dirty, ["notes"]);
-  assert.deepEqual(s.telling, { heading: `Opened "Notes", but skipped 1 thing it couldn't read:`, body: "rows.ndjson line 2: bad" });
+  assert.deepEqual(s.telling, { heading: `Opened "Notes", but skipped 1 thing it couldn't read:`, body: "rows/0001.ndjson: line 2 isn't JSON" });
   assert.equal(run(s, { type: "told" }).telling, null);
 });
 

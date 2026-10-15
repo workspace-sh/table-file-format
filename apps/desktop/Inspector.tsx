@@ -8,7 +8,7 @@ import { StyleSheet, Text, View, useColorScheme } from "react-native";
 import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost, ViewSettings } from "@workspace.sh/table-ui";
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
-import { macControls } from "./MacControls";
+import { macControls } from "@workspace.sh/table-mac-controls";
 import { MacSettingsForm, macSheet } from "./MacSettings";
 import { inspectorStore } from "./inspectorStore";
 

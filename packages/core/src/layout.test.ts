@@ -25,6 +25,7 @@ test("the names are SPEC section 1's", () => {
   assert.deepEqual(BundleEntry, { meta: "meta.json", tables: "tables", index: "index.sqlite" });
   assert.deepEqual(TableEntry, {
     schema: "schema.json",
+    rowsDir: "rows",
     rows: "rows.ndjson",
     views: "views.json",
     meta: "meta.json",
@@ -32,7 +33,7 @@ test("the names are SPEC section 1's", () => {
     attachments: "attachments",
     bodies: "bodies",
   });
-  assert.deepEqual(REQUIRED_TABLE_FILES, ["schema.json", "rows.ndjson"]);
+  assert.deepEqual(REQUIRED_TABLE_FILES, ["schema.json", "rows"]);
 });
 
 test("paths within a bundle", () => {
@@ -52,6 +53,10 @@ test("whose a path is", () => {
   assert.equal(tableNameIn("tables/companies/bodies/c1.md"), "companies");
   assert.equal(tableNameIn("meta.json"), null);
   assert.equal(tableNameIn("tables/companies"), null);
+  assert.equal(isArchivedRowsFile("crm.table/tables/companies/rows/0001.ndjson"), true);
+  assert.equal(isArchivedRowsFile("crm.table/tables/companies/rows/0002m.ndjson"), true);
+  assert.equal(isArchivedRowsFile("crm.table/tables/companies/rows/notes.txt"), false);
+  // formatVersion 1's, still read.
   assert.equal(isArchivedRowsFile("crm.table/tables/companies/rows.ndjson"), true);
   assert.equal(isArchivedRowsFile("crm.table/tables/companies/schema.json"), false);
   assert.equal(isArchivedRowsFile("crm.table/tables/companies/bodies/rows.ndjson"), false);

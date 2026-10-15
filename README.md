@@ -55,7 +55,8 @@ crm.table/
 ├── tables/
 │   ├── companies/
 │   │   ├── schema.json    the fields: names, types, constraints, formulas
-│   │   ├── rows.ndjson    the rows, one JSON object per line
+│   │   ├── rows/          the rows, one JSON object per line
+│   │   │   └── 0001.ndjson  a new file each ~25 MB: 0002, 0003…
 │   │   ├── views.json     saved views: table, board, gallery, list, calendar
 │   │   ├── bodies/        a markdown document for any row that has one
 │   │   └── attachments/   files that rows refer to
@@ -63,7 +64,7 @@ crm.table/
 └── index.sqlite           a cache for querying and search; safe to delete
 ```
 
-Only `schema.json` and `rows.ndjson` are required. A row is a line:
+Only `schema.json` and `rows/` are required. A row is a line:
 
 ```json
 {"id":"p1","title":"Workspace v1","status":"active","owner":"leslie","budget":80000,"launched":"2026-01-15"}

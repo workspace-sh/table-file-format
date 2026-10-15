@@ -53,13 +53,13 @@ test("opening one whose name is taken keeps both", async () => {
 
 test("what the reader skipped is said, per table, and the rest still opens (D25)", async () => {
   const files = unzipSync(await bundleToArchive("reading-list", sample()));
-  const rows = "reading-list.table/tables/books/rows.ndjson";
+  const rows = "reading-list.table/tables/books/rows/0001.ndjson";
   files[rows] = strToU8(`{"id":"a1","title":"Kept"}\n<<<<<<< HEAD\n{"title":"no id"}\n`);
   const opened = await openArchive(zipSync(files), []);
   assert.deepEqual(opened.bundle.tables.books!.rows, [{ id: "a1", title: "Kept" }]);
   assert.equal(opened.skipped.length, 2);
-  assert.match(opened.skipped[0]!, /^books: rows\.ndjson line 2: /);
-  assert.match(opened.skipped[1]!, /^books: rows\.ndjson line 3: /);
+  assert.match(opened.skipped[0]!, /^books: rows\/0001\.ndjson: line 2 /);
+  assert.match(opened.skipped[1]!, /^books: rows\/0001\.ndjson: line 3 /);
   assert.equal(opened.bundle.tables.books!.diagnostics, undefined);
 });
 
@@ -80,9 +80,9 @@ test("what a file was read with is never written back", async () => {
 test("what opening says: the skipped lines under a count, nothing when it read cleanly", () => {
   const opened = (skipped: string[]): OpenedBundle => ({ key: "crm", bundle: { path: "crm", meta: { title: "CRM" }, tables: {} }, skipped });
   assert.equal(importSkippedText(opened([])), null);
-  assert.deepEqual(importSkippedText(opened(["deals: rows.ndjson line 3: bad"])), {
+  assert.deepEqual(importSkippedText(opened(["deals: rows/0001.ndjson: line 3 isn't JSON"])), {
     heading: `Opened "CRM", but skipped 1 thing it couldn't read:`,
-    body: "deals: rows.ndjson line 3: bad",
+    body: "deals: rows/0001.ndjson: line 3 isn't JSON",
   });
   assert.match(importSkippedText(opened(["a", "b"]))!.heading, /skipped 2 things/);
   assert.equal(openFailedText("x.zip", new Error("not a zip")), "Couldn't open x.zip: not a zip");

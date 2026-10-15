@@ -6,7 +6,7 @@
 import { TextDecoder } from "@exodus/bytes/encoding-lite.js";
 import { newBundle, orderedTables, readTableArchive, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
 import { fieldKey } from "@workspace.sh/table-ui/shared";
-import type { ParsedBundle, ValidationError } from "@workspace.sh/table-core";
+import type { ParsedBundle } from "@workspace.sh/table-core";
 
 import { tableKeyFor } from "./tableKey.ts";
 
@@ -46,7 +46,7 @@ export async function openArchive(bytes: Uint8Array, taken: Iterable<string>, op
   const tables: ParsedBundle["tables"] = {};
   for (const [name, { diagnostics, ...table }] of names) {
     tables[name] = table;
-    for (const d of diagnostics ?? []) skipped.push(`${name}: ${describeSkip(d)}`);
+    for (const d of diagnostics ?? []) skipped.push(`${name}: ${d.message}`);
   }
   const { diagnostics: _bundle, ...rest } = read;
   return {
@@ -116,10 +116,6 @@ export function openSpreadsheet(text: string, fileName: string, taken: Iterable<
     bundle: { ...made, tables: { [name]: { ...table, schema: { ...table.schema, fields: read.schema.fields }, rows: read.rows } } },
     skipped,
   };
-}
-
-function describeSkip(d: ValidationError): string {
-  return d.rowIndex >= 0 ? `rows.ndjson line ${d.rowIndex + 1}: ${d.message}` : d.message;
 }
 
 /**

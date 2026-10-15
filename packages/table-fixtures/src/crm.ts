@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const crmBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 1,
+    "formatVersion": 2,
     "title": "CRM",
     "description": "Companies, the people there, and the deals in progress.",
     "tables": [
@@ -331,6 +331,19 @@ export const crmBundle: ParsedBundle = {
         "modified_at": "2026-09-26T00:00:00Z"
       },
       "path": "fixtures/crm.table/tables/companies",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "co-northwind",
+            "co-lumen",
+            "co-atlas",
+            "co-quill",
+            "co-tidal",
+            "co-fern"
+          ]
+        }
+      ],
       "bodies": {
         "co-atlas": "# Atlas Freight\n\nOur largest account. Renewal talks start in Q4.\n\n- Champion: Maya Okafor\n- Risk: procurement wants a three-year term\n"
       }
@@ -494,7 +507,22 @@ export const crmBundle: ParsedBundle = {
         "created_at": "2026-09-26T00:00:00Z",
         "modified_at": "2026-09-26T00:00:00Z"
       },
-      "path": "fixtures/crm.table/tables/contacts"
+      "path": "fixtures/crm.table/tables/contacts",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "ct-maya",
+            "ct-jonas",
+            "ct-priya",
+            "ct-sam",
+            "ct-ines",
+            "ct-leo",
+            "ct-ada",
+            "ct-kofi"
+          ]
+        }
+      ]
     },
     "deals": {
       "schema": {
@@ -803,6 +831,21 @@ export const crmBundle: ParsedBundle = {
         "modified_at": "2026-09-26T00:00:00Z"
       },
       "path": "fixtures/crm.table/tables/deals",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "dl-1",
+            "dl-2",
+            "dl-3",
+            "dl-4",
+            "dl-5",
+            "dl-6",
+            "dl-7",
+            "dl-8"
+          ]
+        }
+      ],
       "bodies": {
         "dl-1": "# Atlas: 3-year renewal\n\nThey want a three-year term with a price lock.\n\n## Next\n\n1. Legal review of the MSA\n2. Security questionnaire\n"
       }
