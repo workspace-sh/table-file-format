@@ -400,4 +400,13 @@ export interface ParsedBundle {
   /** Bundle-level problems: an unreadable manifest, a directory that isn't a table. */
   diagnostics?: ValidationError[];
   path: string;
+  /**
+   * What a single-file `.table` (SPEC section 13) holds besides what's
+   * parsed: `attachments/`, each table's `history.ndjson`, and files no
+   * reader knows, by path inside `<name>.table/`, as their bytes. A
+   * single-file save writes them back as they are. A folder's stay on
+   * disk, and aren't read here (`filesOfFolder` reads them to save the
+   * folder as a single file).
+   */
+  files?: Record<string, Uint8Array>;
 }

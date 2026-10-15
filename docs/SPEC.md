@@ -1469,13 +1469,20 @@ platform's one line:
   `parseTable` (section 3); missing/malformed `schema.json` is
   fatal. Reads entirely **in memory** — nothing is extracted to
   disk, so the zip-slip class cannot arise there (hostile names are
-  rejected anyway). Attachments are not materialised (section 6);
-  consumers needing attachment bytes extract the archive themselves
-  under the rules above.
+  rejected anyway). What it doesn't parse (attachments, each table's
+  `history.ndjson` is parsed; anything else) comes back as bytes in
+  the bundle's `files`, by path inside the bundle, never the index.
 - `writeTableArchive(name, input): Promise<Uint8Array>` —
   byte-deterministic for identical input (fixed timestamps, fixed
   entry order, canonical serialisation shared with `writeTable`),
-  per section 3's canonical-write-order rule.
+  per section 3's canonical-write-order rule, then the bundle's
+  `files` by path.
+- Over a `TableFs` (a platform's files, given `readBytes` and
+  `writeBytes`): `tableFormOf(fs, path)` says which form is on disk;
+  `readTableDocument(fs, path)` reads either; `filesOfFolder(fs, dir)`
+  reads what a folder holds besides its tables' text, for saving it as
+  a single file; and `writeTableFileTo(fs, path, bundle)` saves a
+  single file atomically (written to `<path>.tmp`, renamed over it).
 
 Constraints: methods stored/deflate only; UTF-8 names; no
 encryption, no multi-volume, no zip64 (readers MAY reject archives

@@ -35,6 +35,10 @@ export interface TableFs {
   list(path: string): Promise<{ name: string; directory: boolean }[] | null>;
   /** Remove a file, or a directory and everything in it. Not an error if absent. */
   remove(path: string): Promise<void>;
+  /** A file's bytes, or null when there's no such file (a directory isn't one). For single-file `.table`s and attachments. */
+  readBytes?(path: string): Promise<Uint8Array | null>;
+  /** Write bytes, replacing any file there. The directory exists. */
+  writeBytes?(path: string, bytes: Uint8Array): Promise<void>;
 }
 
 /** `/`-joined path parts, without doubled separators. */
@@ -50,26 +54,45 @@ export function joinPath(...parts: string[]): string {
  * browser demo). `files` and `dirs` are its contents, `renames` how many
  * renames it has done. Paths are `/`-separated from the root, "".
  */
-export function memoryFs(): TableFs & { files: Map<string, string>; dirs: Set<string>; renames: number } {
+export function memoryFs(): TableFs & { files: Map<string, string>; bytes: Map<string, Uint8Array>; dirs: Set<string>; renames: number } {
   const files = new Map<string, string>();
+  // Files written as bytes; a file is in one map or the other.
+  const bytes = new Map<string, Uint8Array>();
   const dirs = new Set<string>([""]);
   const parent = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
   const fs = {
     files,
+    bytes,
     dirs,
     renames: 0,
     async readText(p: string) {
-      return files.get(p) ?? null;
+      const b = bytes.get(p);
+      return files.get(p) ?? (b ? new TextDecoder().decode(b) : null);
     },
     async writeText(p: string, content: string) {
       if (!dirs.has(parent(p))) throw new Error(`ENOENT: no directory for ${p}`);
+      bytes.delete(p);
       files.set(p, content);
+    },
+    async readBytes(p: string) {
+      const t = files.get(p);
+      return bytes.get(p) ?? (t === undefined ? null : new TextEncoder().encode(t));
+    },
+    async writeBytes(p: string, data: Uint8Array) {
+      if (!dirs.has(parent(p))) throw new Error(`ENOENT: no directory for ${p}`);
+      files.delete(p);
+      bytes.set(p, data);
     },
     async rename(from: string, to: string) {
       const content = files.get(from);
-      if (content === undefined) throw new Error(`ENOENT: ${from}`);
+      const data = bytes.get(from);
+      if (content === undefined && data === undefined) throw new Error(`ENOENT: ${from}`);
       files.delete(from);
-      files.set(to, content);
+      bytes.delete(from);
+      files.delete(to);
+      bytes.delete(to);
+      if (content !== undefined) files.set(to, content);
+      else bytes.set(to, data!);
       fs.renames++;
     },
     async mkdir(p: string) {
@@ -79,11 +102,12 @@ export function memoryFs(): TableFs & { files: Map<string, string>; dirs: Set<st
       if (!dirs.has(p)) return null;
       const names = new Map<string, boolean>();
       for (const d of dirs) if (d !== p && parent(d) === p) names.set(d.slice(p.length + 1), true);
-      for (const f of files.keys()) if (parent(f) === p) names.set(f.slice(p.length + 1), false);
+      for (const f of [...files.keys(), ...bytes.keys()]) if (parent(f) === p) names.set(f.slice(p.length + 1), false);
       return [...names].map(([name, directory]) => ({ name, directory }));
     },
     async remove(p: string) {
       for (const f of [...files.keys()]) if (f === p || f.startsWith(p + "/")) files.delete(f);
+      for (const f of [...bytes.keys()]) if (f === p || f.startsWith(p + "/")) bytes.delete(f);
       for (const d of [...dirs]) if (d === p || d.startsWith(p + "/")) dirs.delete(d);
     },
   };
@@ -214,6 +238,8 @@ export interface WriteTableInput {
 export interface WriteBundleInput {
   meta?: BundleMeta;
   tables: Record<string, WriteTableInput | ParsedTable>;
+  /** Files beyond the tables' text, by path inside the bundle, carried by a single-file save (ParsedBundle.files). */
+  files?: Record<string, Uint8Array>;
 }
 
 /**

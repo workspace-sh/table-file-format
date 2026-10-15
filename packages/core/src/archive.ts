@@ -177,7 +177,26 @@ export async function readTableArchive(
 
   const bundle: ParsedBundle = { meta, tables, path: root };
   if (diagnostics.length > 0) bundle.diagnostics = diagnostics;
+  // Everything else it holds, as it is: a single-file save writes it back (section 13).
+  const kept = Object.fromEntries([...files].filter(([path]) => !parsedHere(path, tables)));
+  if (Object.keys(kept).length > 0) bundle.files = kept;
   return bundle;
+}
+
+/**
+ * Whether a path inside a bundle is one the reader turns into the parsed
+ * bundle (the manifest; a table's schema, rows, views, meta, history and
+ * pages), so a writer writes it from that and not as a file. The index
+ * is neither: it's never carried (section 13).
+ */
+function parsedHere(path: string, tables: Record<string, unknown>): boolean {
+  if (path === BundleEntry.meta) return true;
+  if (/(^|\/)index\.sqlite[^/]*$/.test(path)) return true;
+  const table = tableNameIn(path);
+  if (table === null || !(table in tables)) return false;
+  const inside = path.slice(`${tablePath(table)}/`.length);
+  if (([TableEntry.schema, TableEntry.rows, TableEntry.views, TableEntry.meta, TableEntry.history] as string[]).includes(inside)) return true;
+  return inside.startsWith(`${TableEntry.bodies}/`) && inside.endsWith(BODY_EXTENSION) && !inside.slice(`${TableEntry.bodies}/`.length).includes("/");
 }
 
 /**
@@ -190,8 +209,9 @@ export async function readTableArchive(
  * Output is byte-deterministic for identical input: fixed entry
  * order (manifest; per table schema, rows, views, meta, bodies sorted
  * by id), fixed timestamps, canonical serialisation shared with
- * `writeBundle`. The rebuildable `index.sqlite` cache and
- * `attachments/` are not carried by this writer (see SPEC section 13).
+ * `writeBundle`, then the bundle's other files (`files`: attachments,
+ * histories, files no reader knows) by path. The rebuildable
+ * `index.sqlite` cache is never carried (SPEC section 13).
  */
 export async function writeTableArchive(
   name: string,
@@ -202,10 +222,17 @@ export async function writeTableArchive(
     throw new Error(`invalid table name: ${JSON.stringify(name)}`);
   }
   const root = `${bare}${BUNDLE_EXTENSION}`;
-  return writeZip(
+  const text = bundleFiles(input);
+  const written = new Set(text.map((f) => f.path));
+  // Its other files (attachments, histories, files no reader knows) after, by path; never the index.
+  const files = Object.entries(input.files ?? {})
+    .filter(([path]) => !written.has(path) && !/(^|\/)index\.sqlite[^/]*$/.test(path))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return writeZip([
     // strToU8, not a global TextEncoder — portable across Hermes.
-    bundleFiles(input).map((f) => ({ name: `${root}/${f.path}`, data: strToU8(f.content) })),
-  );
+    ...text.map((f) => ({ name: `${root}/${f.path}`, data: strToU8(f.content) })),
+    ...files.map(([path, data]) => ({ name: `${root}/${path}`, data })),
+  ]);
 }
 
 /** One file of a bundle: its path inside `<name>.table/`, and its text. */
