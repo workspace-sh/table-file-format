@@ -3,7 +3,8 @@
 // between, a search, and the view itself filling what it is given. The same
 // state as an app of its own (table-app's useEmbeddedTable), so edits are
 // written to the folder, go to its history and can be undone. A single-file .table
-// has nowhere to be written, and is to look at.
+// is edited as its working folder and packed back into the file after each
+// write (table-app's openSingleFile).
 
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
@@ -30,7 +31,7 @@ import { useIndexedTables } from "./indexed/useIndexedTables.js";
 export interface TableFileProps {
   /** The `.table` folder, or a single-file `.table`. */
   path: string;
-  /** To look at only: nothing in it can be changed, and nothing is written. A single-file `.table` always is. */
+  /** To look at only: nothing in it can be changed, and nothing is written. */
   readOnly?: boolean;
   /** The reader's locale, for dates, numbers and which way it reads. The system's, when not given. */
   locale?: string;
@@ -96,7 +97,7 @@ function Opened({
   // The count says what the index has read, for a large table.
   const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
   const { table, view } = derived;
-  // A single-file .table was read into memory: there is nowhere to write it back.
+  // Read into memory with nowhere to be written (no path): to look at.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
 
@@ -175,7 +176,7 @@ function Opened({
             />
           ) : null}
           <GtkLabel name="table-file-count" label={derived.summary.count} hexpand xalign={0} cssClasses={["dim-label"]} />
-          {fromArchive ? <GtkLabel label="A single file: changes can’t be saved here yet" cssClasses={["dim-label", "caption"]} /> : null}
+          {fromArchive ? <GtkLabel label="To look at only: there’s nowhere to save changes" cssClasses={["dim-label", "caption"]} /> : null}
           <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => dispatch({ type: "search", text: entry.getText() })} />
           {lookOnly ? null : (
             <>

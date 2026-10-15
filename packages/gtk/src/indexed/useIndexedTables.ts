@@ -8,7 +8,7 @@
 
 import { bundleOf, remoteEdits, remoteViewRows, settled, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import { computeRows, queryIndex } from "@workspace.sh/table-core";
-import { firstRows, type IndexHost } from "@workspace.sh/table-app/node";
+import { firstRows, packSingleFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
@@ -283,6 +283,7 @@ export function useIndexedTables(input: {
           unsaved.current.delete(key);
           try {
             await host.save(tableNameOf(key), dirOf(key), true, gone, true);
+            await packSingleFile(dirOf(key));
           } catch (error) {
             unsaved.current.add(key);
             setMade((m) => ({ ...m, [key]: "ready" }));
@@ -308,6 +309,8 @@ export function useIndexedTables(input: {
           if (rows) unsaved.current.add(key);
           continue;
         }
+        // A single file's rows are in its working folder: packed back into the file (singleFile.ts).
+        if (rows) void packSingleFile(dirOf(key)).catch((error: unknown) => latest.current.tell("Couldn't save the file", error instanceof Error ? error.message : String(error)));
         if (!again) {
           madeFor.current.set(key, table.schema);
           continue;

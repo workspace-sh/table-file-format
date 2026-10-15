@@ -1,11 +1,11 @@
 import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
-import { bundleToArchive, openArchive, toBundle } from "@workspace.sh/table-app";
-import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
-import { parseEditLog } from "@workspace.sh/table-core";
+import { bundleToArchive, openArchive, toBundle, workDirFor } from "@workspace.sh/table-app";
+import { copiesOf, jsonFileStore, loadLibrary, singleFilesHome } from "@workspace.sh/table-app/node";
+import { parseEditLog, readTableArchive } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -64,31 +64,35 @@ describe("the File menu on Linux", () => {
     expect(example.rows.some((r) => r.name === "Northwind Ltd")).toBe(false);
   });
 
-  it("Open… opens a single-file .table as a new .table beside the examples", async () => {
+  it("Open… opens a single-file .table, and its edits are saved back into it, a single file still (D49)", async () => {
     const budget = await loadLibrary([join(fixturesDir()!, "household-budget.table")]);
-    const zip = join(dir, "budget.table");
-    writeFileSync(zip, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
-    await openExamples({ chooseToOpen: async () => zip });
+    const file = join(dir, "budget.table");
+    writeFileSync(file, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
+    await openExamples({ chooseToOpen: async () => file });
     await run("open");
-    // The examples already hold a household-budget.table folder: the archive
-    // is named apart from it, and that folder is left as it was.
-    const before = readFileSync(join(examples, "household-budget.table", "meta.json"), "utf8");
-    expect(await screen.findByText(/^Household budget \(household-budget-2\.table\)/)).toBeDefined();
-    await waitFor(() => expect(existsSync(join(examples, "household-budget-2.table", "meta.json"))).toBe(true));
-    expect(readFileSync(join(examples, "household-budget.table", "meta.json"), "utf8")).toBe(before);
+    expect(await screen.findByText("Household budget (budget.table)")).toBeDefined();
+    // It's a single file already: there's nothing to export as one.
+    const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow;
+    await waitFor(() => expect(window.getActionEnabled("export-file")).toBe(false));
+    // An edit, saved into the file, which stays a single file; nothing is made beside the examples.
+    await userEvent.click(await screen.findByText("Groceries"));
+    const entry = (await screen.findByDisplayValue("Groceries")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Food shop");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => {
+      expect(statSync(file).isFile()).toBe(true);
+      const saved = await readTableArchive(new Uint8Array(readFileSync(file)));
+      expect(saved.tables.budget!.rows.find((r) => r.id === "groceries")?.item).toBe("Food shop");
+    });
+    expect(existsSync(join(examples, "budget.table"))).toBe(false);
+    expect(existsSync(join(examples, "household-budget-2.table"))).toBe(false);
   });
 
-  it("with a folder of your own open, Open… makes a single file's .table beside it", async () => {
-    const own = join(dir, "mine", "crm.table");
-    cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
-    const budget = await loadLibrary([join(examples, "household-budget.table")]);
-    const zip = join(dir, "budget.table");
-    writeFileSync(zip, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
-    // No examples library: the app was started on that one folder.
-    const library = await loadLibrary([own]);
-    await render(<App library={library} initialTable="crm/companies" chooseToOpen={async () => zip} />);
-    await run("open");
-    await waitFor(() => expect(existsSync(join(dir, "mine", "household-budget.table", "meta.json"))).toBe(true));
+  it("a .table folder can be exported as a single file; Export is on for it", async () => {
+    await openExamples({});
+    const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow;
+    expect(window.getActionEnabled("export-file")).toBe(true);
   });
 
   it("Open Spreadsheet… makes a CSV a new .table: its headings the columns, its lines the rows, shown and saved", async () => {
@@ -191,12 +195,13 @@ describe("the File menu on Linux", () => {
     expect("history" in opened.bundle.tables.projects!).toBe(false);
     expect(opened.bundle.tables.tasks!.rows.find((r) => r.id === "t1")?.title).toBe("Renamed task");
 
-    // Opened again as a new .table: its folder has the history it came with.
+    // Opened: edited where it is, its working folder has the history it came with.
     await run("open");
-    const copy = join(examples, "projects-2.table", "tables", "tasks");
-    await waitFor(() => expect(existsSync(join(copy, "history.ndjson"))).toBe(true));
-    expect(readFileSync(join(copy, "history.ndjson"), "utf8")).toBe(onDisk);
-    expect(existsSync(join(examples, "projects-2.table", "tables", "projects", "history.ndjson"))).toBe(false);
+    expect(await screen.findByText(/\(out\.table\)/)).toBeDefined();
+    const work = join(workDirFor(singleFilesHome(), out), "tables", "tasks");
+    await waitFor(() => expect(existsSync(join(work, "history.ndjson"))).toBe(true));
+    expect(readFileSync(join(work, "history.ndjson"), "utf8")).toBe(onDisk);
+    expect(existsSync(join(examples, "projects-2.table"))).toBe(false);
   });
 
   it("an edit to a table that came with a history is added after it", async () => {
@@ -207,7 +212,8 @@ describe("the File menu on Linux", () => {
     writeFileSync(zip, await bundleToArchive("arrived", toBundle(Object.fromEntries(Object.entries(tables).map(([k, t]) => [k.replace("projects/", "arrived/"), t])), { arrived: projects.bundles.projects! }, "arrived")));
     await openExamples({ chooseToOpen: async () => zip });
     await run("open");
-    const file = join(examples, "arrived.table", "tables", "tasks", "history.ndjson");
+    // Edited in its working folder, which has the history it came with.
+    const file = join(workDirFor(singleFilesHome(), zip), "tables", "tasks", "history.ndjson");
     await waitFor(() => expect(existsSync(file)).toBe(true));
     expect(readFileSync(file, "utf8")).toBe(theirs);
     // The archive's table is on screen: edit it.
@@ -221,6 +227,8 @@ describe("the File menu on Linux", () => {
     const text = readFileSync(file, "utf8");
     expect(text.startsWith(theirs)).toBe(true);
     expect(parseEditLog(text).events.map((e) => e.id === "theirs" || (e.op === "set" && e.to))).toEqual([true, "Polished"]);
+    // And the single file holds it, packed back.
+    await waitFor(async () => expect((await openArchive(new Uint8Array(readFileSync(zip)), [])).bundle.tables.tasks!.history).toBe(text));
   });
 
   // Close File: from a file's heading in the sidebar (a right-click), and from the main menu for the file on screen.

@@ -4,17 +4,18 @@ import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing"
 import { TableFile } from "@workspace.sh/table-gtk/embed";
 import { openIndexHost } from "@workspace.sh/table-app/node";
 import { parseTable } from "@workspace.sh/table-core/parser";
+import { filesOfFolder, readTableArchive } from "@workspace.sh/table-core";
 import { bundleToArchive } from "@workspace.sh/table-app";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle, writeBundleTo } from "@workspace.sh/table-core/io";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixturesDir } from "../src/fixtures.js";
 
 // A .table opened as a document of its own: a folder, written back where it
-// is, or a single-file .table, to look at (editing it in place comes with #571).
+// is, or a single-file .table, edited as its working folder and packed back into it.
 let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "table-file-"));
@@ -103,18 +104,25 @@ describe("a .table opened as a document", () => {
     await waitFor(async () => expect((await parseTable(join(root, "projects.table", "tables", "projects"))).rows.find((r) => r.id === "p1")?.title).toBe("Workspace one"));
   });
 
-  it("opens a single-file .table to look at: no editor on a click, and it says why", async () => {
+  it("opens a single-file .table to edit: an edit is saved back into the file, a single file still (D49)", async () => {
     const bundle = await readBundle(nodeFs, join(root, "crm.table"));
-    const zip = join(root, "single", "crm.table");
+    const file = join(root, "single", "crm.table");
     mkdirSync(join(root, "single"));
-    writeFileSync(zip, await bundleToArchive("crm", bundle));
-    const before = readFileSync(zip);
-    await open(zip);
-    expect(await screen.findByText("A single file: changes can’t be saved here yet")).toBeDefined();
+    writeFileSync(file, await bundleToArchive("crm", { ...bundle, files: await filesOfFolder(nodeFs, join(root, "crm.table")) }));
+    await open(file);
     await userEvent.click(await cell("Atlas Freight"));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(screen.queryByDisplayValue("Atlas Freight")).toBeNull();
-    expect(Buffer.compare(readFileSync(zip), before)).toBe(0);
+    const entry = (await screen.findByDisplayValue("Atlas Freight")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Atlas Shipping");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => {
+      expect(statSync(file).isFile()).toBe(true);
+      const saved = await readTableArchive(new Uint8Array(readFileSync(file)));
+      expect(saved.tables.companies!.rows.some((r) => r.name === "Atlas Shipping")).toBe(true);
+    });
+    // Its attachments (the companies' logos) are still in it.
+    const saved = await readTableArchive(new Uint8Array(readFileSync(file)));
+    expect(Object.keys(saved.files ?? {}).filter((p) => p.includes("/attachments/")).length).toBe(6);
   });
 
   it("goes where the app says: a table, a view", async () => {

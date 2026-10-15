@@ -52,6 +52,8 @@ export interface AppCommandState {
   /** What each would act on, as a menu says it ("Delete Row"): the labels read "Undo Delete Row". Plain "Undo" and "Redo" when absent. */
   undoName?: string | null;
   redoName?: string | null;
+  /** The file on screen is a single-file `.table` already: there's nothing to export as one. */
+  singleFile?: boolean;
 }
 
 /** The commands in menu order, labelled and ticked for the state they're shown in. */
@@ -65,6 +67,7 @@ export function appCommands(state: AppCommandState): AppCommand[] {
       label: "Export as a Single File…",
       key: "e",
       shift: true,
+      enabled: !state.singleFile,
       hint: "Save a copy of this file as a single .table: every table in it, its pages and attachments, in one file that any .table reader opens.",
     },
     { id: "undo", menu: "Edit", label: state.undoName ? `Undo ${state.undoName}` : "Undo", key: "z", enabled: state.canUndo ?? false, hint: "Put the table back as it was before its last edit" },

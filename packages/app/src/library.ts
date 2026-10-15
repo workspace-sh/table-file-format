@@ -18,6 +18,13 @@ export interface Library {
   paths: Record<string, string>;
   /** Problems reading a bundle, by bundle key. Shown, never thrown. */
   problems: Record<string, string[]>;
+  /**
+   * The bundles that are single-file `.table`s (SPEC section 13, D49):
+   * where each file is. Its `paths` entry is then the working folder it's
+   * edited in, packed back into the file after each write (`singleFile.ts`).
+   * A bundle not named here is a folder, edited where it is.
+   */
+  singleFiles?: Record<string, string>;
 }
 
 /** A bundle's key: its folder's name without `.table` (D37), unique among `taken`. */
