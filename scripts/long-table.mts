@@ -1,4 +1,4 @@
-// A long table, not a large one: 180 books, the same every time (seeded),
+// A long table, not a large one: 1,000 books, the same every time (seeded),
 // written as fixtures/library.table. Long enough to scroll past a screen or
 // two, to see a long table's layout and how its header scrolls, and small
 // enough to sit with the other fixtures and load instantly. A large table
@@ -11,7 +11,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ROWS = 180;
+const ROWS = 1000;
 const out = join(import.meta.dirname, "..", "fixtures", "library.table");
 
 // mulberry32: small, seeded, the same on every run.
@@ -94,7 +94,7 @@ const meta = {
   format: "table",
   formatVersion: 1,
   title: "Library",
-  description: "A long list: 180 books, for scrolling a long table and its header.",
+  description: "A long list: 1,000 books, for scrolling a long table and its header.",
   tables: ["books"],
   created_at: "2026-10-14T00:00:00Z",
   modified_at: "2026-10-14T00:00:00Z",
