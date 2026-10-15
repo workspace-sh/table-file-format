@@ -9,7 +9,7 @@ import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
 import { BODY_EXTENSION, BundleEntry, TableEntry, tablePath } from "./layout.js";
-import { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, layoutRows, rowsFileOrder } from "./rowFiles.js";
+import { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, estimateRows, layoutRows, rowsFileOrder } from "./rowFiles.js";
 
 /**
  * The file operations a `.table` folder needs. Paths are `/`-separated, as
@@ -40,6 +40,10 @@ export interface TableFs {
   readBytes?(path: string): Promise<Uint8Array | null>;
   /** Write bytes, replacing any file there. The directory exists. */
   writeBytes?(path: string, bytes: Uint8Array): Promise<void>;
+  /** A file's size in bytes, or null when there's no such file: for judging how many rows a table has before reading them. */
+  size?(path: string): Promise<number | null>;
+  /** A file's first `bytes` bytes (fewer when it's shorter), or null when there's no such file. */
+  readHead?(path: string, bytes: number): Promise<Uint8Array | null>;
 }
 
 /** `/`-joined path parts, without doubled separators. */
@@ -135,6 +139,13 @@ export interface ReadOptions {
    * `indexed` set, its count for the caller to fill in.
    */
   rowsElsewhere?: (tableDir: string) => boolean | Promise<boolean>;
+  /**
+   * "later": every table is read without its rows, for drawing a document
+   * at once from its small files (its name, tables, views and fields). Each
+   * comes back with `loading` set, about how many rows it has; its rows
+   * are read after, by `readTableRows`.
+   */
+  rows?: "later";
 }
 
 export async function readBundle(fs: TableFs, dir: string, options: ReadOptions = {}): Promise<ParsedBundle> {
@@ -183,9 +194,10 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   if (schemaRaw === null) throw new Error(`${schemaPath}: no ${TableEntry.schema}, so this isn't a table`);
   const schema = JSON.parse(schemaRaw) as TableSchema;
 
-  const elsewhere = (await options.rowsElsewhere?.(dir)) === true;
+  const later = options.rows === "later";
+  const elsewhere = !later && (await options.rowsElsewhere?.(dir)) === true;
   const unread: UnreadLine[] = [];
-  const read = elsewhere ? { rows: [], rowFiles: [] } : await readRowsFiles(fs, dir, diagnostics, unread);
+  const read = elsewhere || later ? { rows: [], rowFiles: [] } : await readRowsFiles(fs, dir, diagnostics, unread);
   const rows = read.rows;
   const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
@@ -194,6 +206,7 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
   if (read.rowFiles.length > 0) parsed.rowFiles = read.rowFiles;
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };
+  if (later) parsed.loading = { estimate: await estimateTableRows(fs, dir) };
   if (bodies) parsed.bodies = bodies;
   if (unread.length > 0) parsed.unread = unread;
   if (diagnostics.length > 0) parsed.diagnostics = diagnostics;
@@ -208,14 +221,54 @@ export async function rowsFilesOf(fs: TableFs, dir: string): Promise<{ name: str
   return (await fs.readText(legacy)) === null ? [] : [{ name: FIRST_ROWS_FILE, path: legacy }];
 }
 
+/** How much of the first rows file is read to judge how many rows a table has. */
+const ESTIMATE_HEAD = 64 * 1024;
+
+/** About how many rows a table's rows files hold, without reading them (estimateRows); 0 when the file system can't say a file's size. */
+async function estimateTableRows(fs: TableFs, dir: string): Promise<number> {
+  if (!fs.size) return 0;
+  const files = await rowsFilesOf(fs, dir);
+  let total = 0;
+  for (const f of files) total += (await fs.size(f.path)) ?? 0;
+  if (total === 0) return 0;
+  const head = fs.readHead ? await fs.readHead(files[0]!.path, ESTIMATE_HEAD) : null;
+  // Without a way to read a file's start: rows of about 150 bytes.
+  return head ? estimateRows(total, head) : Math.max(1, Math.round(total / 150));
+}
+
+/**
+ * A table's rows, read after the rest of it (a reader's `rows: "later"`):
+ * from its rows files in file order, each file's rows handed to `onRows` as
+ * it's read. Resolves with all of them and what the reader would have set
+ * with them: which file held which rows, the lines it couldn't read, and
+ * what it said about them.
+ */
+export async function readTableRows(
+  fs: TableFs,
+  dir: string,
+  options: { onRows?: (rows: Row[]) => void } = {},
+): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[]; unread: UnreadLine[]; diagnostics: ValidationError[] }> {
+  const diagnostics: ValidationError[] = [];
+  const unread: UnreadLine[] = [];
+  const read = await readRowsFiles(fs, dir, diagnostics, unread, options.onRows);
+  return { ...read, unread, diagnostics };
+}
+
 /** A table's rows from its rows files, in file order, and which file held which rows (for writing them back). */
-async function readRowsFiles(fs: TableFs, dir: string, diagnostics: ValidationError[], unread: UnreadLine[]): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[] }> {
+async function readRowsFiles(
+  fs: TableFs,
+  dir: string,
+  diagnostics: ValidationError[],
+  unread: UnreadLine[],
+  onRows?: (rows: Row[]) => void,
+): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[] }> {
   const rows: Row[] = [];
   const rowFiles: { name: string; ids: string[] }[] = [];
   for (const file of await rowsFilesOf(fs, dir)) {
     const these = parseRowsText((await fs.readText(file.path)) ?? "", diagnostics, unread, { file: file.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`, after: rows.at(-1)?.id ?? null });
     for (const r of these) rows.push(r);
     rowFiles.push({ name: file.name, ids: these.map((r) => r.id) });
+    onRows?.(these);
   }
   return { rows, rowFiles };
 }
@@ -324,7 +377,8 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   try {
     await stage(joinPath(dir, TableEntry.schema), pretty(input.schema));
     // Rows held in the index aren't here to write: whoever holds them saves them.
-    if (!("indexed" in input && input.indexed)) {
+    // Rows not read yet (`loading`) aren't here to write either.
+    if (!("indexed" in input && input.indexed) && !("loading" in input && input.loading)) {
       // Each row back in its file, and only the files that changed (D51).
       rowsWritten = layoutRows(input.rows, rowLine(input.schema), {
         ...(input.rowFiles ? { files: input.rowFiles } : {}),
