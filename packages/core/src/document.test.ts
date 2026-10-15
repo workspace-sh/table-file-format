@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { filesOfFolder, readTableDocument, tableFormOf, writeTableFileTo } from "./document.js";
+import { filesOfFolder, packTableFileFrom, readTableDocument, tableFormOf, unpackTableFileTo, writeTableFileTo } from "./document.js";
 import { memoryFs, writeBundleTo } from "./io.js";
 import { nodeFs } from "./node-fs.js";
-import { readZip } from "./zip.js";
+import { crc32, rawChunks, readZip, readZipRaw, writeZip, writeZipEntries, type RawZipEntry } from "./zip.js";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
 
@@ -99,3 +99,86 @@ test("a single-file save is written beside the document and renamed over it", as
   assert.equal(fs.bytes.has("/docs/a.table.tmp"), false);
   assert.equal(await tableFormOf(fs, "/docs/a.table"), "file");
 });
+
+/** Every file under `dir`, by its path inside it, as bytes. */
+function filesUnder(dir: string, inside = ""): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of readdirSync(join(dir, inside), { withFileTypes: true })) {
+    const path = inside === "" ? name.name : `${inside}/${name.name}`;
+    if (name.isDirectory()) Object.assign(out, filesUnder(dir, path));
+    else out[path] = readFileSync(join(dir, path)).toString("hex");
+  }
+  return out;
+}
+
+test("a single file is packed from its folder and unpacked into one without parsing: every file as it is, never the index", async () => {
+  const s = scratch();
+  try {
+    const folder = join(s.dir, "work", "crm.table");
+    cpSync(join(fixtures, "crm.table"), folder, { recursive: true });
+    // Nothing is parsed: a schema.json no reader can read, and a rows line that isn't JSON, go as they are.
+    writeFileSync(join(folder, "tables", "deals", "schema.json"), "{ not json");
+    writeFileSync(join(folder, "tables", "deals", "rows", "0001.ndjson"), "<<<<<<< HEAD\n");
+    writeFileSync(join(folder, "notes.txt"), "a file no reader knows");
+    // Not the document's: its index, a file being written, and the .gitignore that keeps the index out of git.
+    writeFileSync(join(folder, "index.sqlite"), "index");
+    writeFileSync(join(folder, "index.sqlite-wal"), "log");
+    writeFileSync(join(folder, "tables", "deals", "rows", "0002.ndjson.tmp"), "half");
+    writeFileSync(join(folder, ".gitignore"), "index.sqlite*\n");
+    const target = join(s.dir, "crm.table");
+    await packTableFileFrom(nodeFs, folder, target);
+    const names = readZip(readFileSync(target)).map((e) => e.name);
+    assert.equal(names[0], "crm.table/meta.json");
+    assert.ok(names.every((n) => n.startsWith("crm.table/")));
+    assert.ok(!names.some((n) => /index\.sqlite|\.tmp$|\.gitignore$/.test(n)), names.join(" "));
+
+    const back = join(s.dir, "back", "crm.table");
+    await unpackTableFileTo(nodeFs, new Uint8Array(readFileSync(target)), back);
+    const expected = filesUnder(folder);
+    for (const key of ["index.sqlite", "index.sqlite-wal", "tables/deals/rows/0002.ndjson.tmp", ".gitignore"]) delete expected[key];
+    assert.deepEqual(filesUnder(back), expected);
+    // An index in a file (another app's packing) isn't unpacked as the document's.
+    const withIndex = join(s.dir, "withIndex", "crm.table");
+    await unpackTableFileTo(nodeFs, writeZip([{ name: "crm.table/meta.json", data: new Uint8Array(2) }, { name: "crm.table/index.sqlite", data: new Uint8Array(1) }]), withIndex);
+    assert.deepEqual(readdirSync(withIndex), ["meta.json"]);
+    // A file that isn't one .table folder is refused.
+    await assert.rejects(unpackTableFileTo(nodeFs, writeZip([{ name: "a/b.txt", data: new Uint8Array(1) }]), join(s.dir, "x")), /one <name>\.table folder/);
+  } finally {
+    s.done();
+  }
+});
+
+test("packing again copies what didn't change from the file as it is, and compresses only what did (D51)", async () => {
+  const s = scratch();
+  try {
+    const folder = join(s.dir, "work", "crm.table");
+    cpSync(join(fixtures, "crm.table"), folder, { recursive: true });
+    const target = join(s.dir, "crm.table");
+    // The file as another writer left it: every entry stored, not compressed. A copied entry stays stored.
+    await packTableFileFrom(nodeFs, folder, target);
+    const stored = readZipRaw(readFileSync(target)).map((e) => ({ name: e.name, data: inflated(e) }));
+    writeFileSync(target, writeZipEntries(stored.map((e) => ({ name: e.name, method: 0, crc: crc32(e.data), size: e.data.length, raw: e.data }))));
+
+    // One rows file changed.
+    const deals = join(folder, "tables", "deals", "rows", "0001.ndjson");
+    writeFileSync(deals, `${readFileSync(deals, "utf8")}{"id":"new","title":"Added"}\n`);
+    await packTableFileFrom(nodeFs, folder, target);
+    const after = new Map(readZipRaw(readFileSync(target)).map((e) => [e.name, e]));
+    assert.equal(after.get("crm.table/tables/deals/rows/0001.ndjson")!.method, 8, "the changed file is compressed again");
+    for (const [name, e] of after) if (name !== "crm.table/tables/deals/rows/0001.ndjson") assert.equal(e.method, 0, `${name} is copied as it was`);
+    assert.match(new TextDecoder().decode(inflated(after.get("crm.table/tables/deals/rows/0001.ndjson")!)), /"Added"/);
+  } finally {
+    s.done();
+  }
+});
+
+function inflated(entry: RawZipEntry): Uint8Array {
+  const parts = [...rawChunks(entry)];
+  const out = new Uint8Array(entry.size);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}

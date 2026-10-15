@@ -139,12 +139,44 @@ function lazyEntry(name: string, method: number, raw: Uint8Array, size: number, 
   };
 }
 
+/**
+ * An entry as the archive holds it, not inflated: its compressed bytes, how
+ * they're compressed, and what they inflate to (size, CRC-32). Copied into
+ * another archive as it is (writeZipEntries), or read a piece at a time.
+ */
+export interface RawZipEntry {
+  name: string;
+  method: number;
+  crc: number;
+  size: number;
+  raw: Uint8Array;
+}
+
+/** Every entry, left as the archive holds it: nothing is inflated. Names and sizes are checked as readZip checks them. */
+export function readZipRaw(source: Uint8Array, opts?: { maxTotalBytes?: number }): RawZipEntry[] {
+  const raws: RawZipEntry[] = [];
+  readZip(source, {
+    ...(opts?.maxTotalBytes !== undefined ? { maxTotalBytes: opts.maxTotalBytes } : {}),
+    lazy: () => true,
+    raw: (entry: RawZipEntry) => raws.push(entry),
+  });
+  return raws;
+}
+
+/** A raw entry's bytes, inflated a piece at a time; throws at the end if its size or CRC-32 isn't as declared. */
+export function rawChunks(entry: RawZipEntry): Iterable<Uint8Array> {
+  return lazyEntry(entry.name, entry.method, entry.raw, entry.size, entry.crc).chunks();
+}
+
 export function readZip(source: Uint8Array, opts?: { maxTotalBytes?: number }): ZipEntry[];
 /** With `lazy`: the entries it says yes to are left compressed (a LazyZipEntry), to be read a piece at a time. */
-export function readZip(source: Uint8Array, opts: { maxTotalBytes?: number; lazy: (name: string, size: number) => boolean }): (ZipEntry | LazyZipEntry)[];
 export function readZip(
   source: Uint8Array,
-  opts?: { maxTotalBytes?: number; lazy?: (name: string, size: number) => boolean },
+  opts: { maxTotalBytes?: number; lazy: (name: string, size: number) => boolean; raw?: (entry: RawZipEntry) => void },
+): (ZipEntry | LazyZipEntry)[];
+export function readZip(
+  source: Uint8Array,
+  opts?: { maxTotalBytes?: number; lazy?: (name: string, size: number) => boolean; raw?: (entry: RawZipEntry) => void },
 ): (ZipEntry | LazyZipEntry)[] {
   const buf = source;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -216,6 +248,7 @@ export function readZip(
 
     if (method !== 0 && method !== 8) throw new Error(`unsupported compression method ${method} for ${name}`);
     if (opts?.lazy?.(name, uncompSize)) {
+      opts.raw?.({ name, method, crc, size: uncompSize, raw });
       entries.push(lazyEntry(name, method, raw, uncompSize, crc));
       continue;
     }
@@ -245,6 +278,15 @@ function header(size: number, write: (dv: DataView) => void): Uint8Array {
 }
 
 export function writeZip(entries: ZipEntry[]): Uint8Array {
+  return writeZipEntries(entries);
+}
+
+/**
+ * An archive of `entries`: each ZipEntry compressed here, each RawZipEntry
+ * copied as it is, its compressed bytes unread (an unchanged file of a
+ * document packed again).
+ */
+export function writeZipEntries(entries: (ZipEntry | RawZipEntry)[]): Uint8Array {
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];
   let offset = 0;
@@ -254,13 +296,23 @@ export function writeZip(entries: ZipEntry[]): Uint8Array {
     // strToU8, not a global TextEncoder — Hermes only gained the web
     // encoding APIs recently; fflate's helper is portable everywhere.
     const name = strToU8(entry.name);
-    const data = entry.data;
-    const crc = crc32(data);
-    const deflated = deflateSync(data);
-    // Store when deflate doesn't help (already-compressed or tiny).
-    const useDeflate = deflated.length < data.length;
-    const payload = useDeflate ? deflated : data;
-    const method = useDeflate ? 8 : 0;
+    let crc: number;
+    let size: number;
+    let payload: Uint8Array;
+    let method: number;
+    if ("raw" in entry) {
+      ({ crc, size, method } = entry);
+      payload = entry.raw;
+    } else {
+      const data = entry.data;
+      crc = crc32(data);
+      size = data.length;
+      const deflated = deflateSync(data);
+      // Store when deflate doesn't help (already-compressed or tiny).
+      const useDeflate = deflated.length < data.length;
+      payload = useDeflate ? deflated : data;
+      method = useDeflate ? 8 : 0;
+    }
 
     const local = header(30, (dv) => {
       dv.setUint32(0, LOCAL_SIG, true);
@@ -271,7 +323,7 @@ export function writeZip(entries: ZipEntry[]): Uint8Array {
       dv.setUint16(12, DOS_DATE, true);
       dv.setUint32(14, crc, true);
       dv.setUint32(18, payload.length, true);
-      dv.setUint32(22, data.length, true);
+      dv.setUint32(22, size, true);
       dv.setUint16(26, name.length, true);
       dv.setUint16(28, 0, true);
     });
@@ -287,7 +339,7 @@ export function writeZip(entries: ZipEntry[]): Uint8Array {
       dv.setUint16(14, DOS_DATE, true);
       dv.setUint32(16, crc, true);
       dv.setUint32(20, payload.length, true);
-      dv.setUint32(24, data.length, true);
+      dv.setUint32(24, size, true);
       dv.setUint16(28, name.length, true);
       // extra, comment, disk, internal attrs, external attrs all zero
       dv.setUint32(42, localOffset, true);
