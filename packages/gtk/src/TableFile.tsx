@@ -1,8 +1,8 @@
-// A .table opened as a document of its own (a folder, or a .table.zip), for
+// A .table opened as a document of its own (a folder, or a single-file .table), for
 // an app on Node that opens files: its tables and their views to choose
 // between, a search, and the view itself filling what it is given. The same
 // state as an app of its own (table-app's useEmbeddedTable), so edits are
-// written to the folder, go to its history and can be undone. A .table.zip
+// written to the folder, go to its history and can be undone. A single-file .table
 // has nowhere to be written, and is to look at.
 
 import * as Gdk from "@gtkx/gi/gdk";
@@ -28,9 +28,9 @@ import { openWorkerIndexHost } from "./indexed/indexClient.js";
 import { useIndexedTables } from "./indexed/useIndexedTables.js";
 
 export interface TableFileProps {
-  /** The `.table` folder, or a `.table.zip`. */
+  /** The `.table` folder, or a single-file `.table`. */
   path: string;
-  /** To look at only: nothing in it can be changed, and nothing is written. A `.table.zip` always is. */
+  /** To look at only: nothing in it can be changed, and nothing is written. A single-file `.table` always is. */
   readOnly?: boolean;
   /** The reader's locale, for dates, numbers and which way it reads. The system's, when not given. */
   locale?: string;
@@ -96,7 +96,7 @@ function Opened({
   // The count says what the index has read, for a large table.
   const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
   const { table, view } = derived;
-  // A .table.zip was read into memory: there is nowhere to write it back.
+  // A single-file .table was read into memory: there is nowhere to write it back.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
 
@@ -175,7 +175,7 @@ function Opened({
             />
           ) : null}
           <GtkLabel name="table-file-count" label={derived.summary.count} hexpand xalign={0} cssClasses={["dim-label"]} />
-          {fromArchive ? <GtkLabel label="Opened from a .table.zip: changes can’t be saved" cssClasses={["dim-label", "caption"]} /> : null}
+          {fromArchive ? <GtkLabel label="A single file: changes can’t be saved here yet" cssClasses={["dim-label", "caption"]} /> : null}
           <GtkSearchEntry placeholderText="Search rows" onSearchChanged={(entry) => dispatch({ type: "search", text: entry.getText() })} />
           {lookOnly ? null : (
             <>

@@ -1,10 +1,10 @@
 // A large .table for measuring (LARGE-TABLES.md, #126): one "deals" table
 // of N rows, the same every time (seeded), written as a .table folder and
-// as a .table.zip packed by table-app, as an app would open it.
+// and as a single-file .table packed by table-app, as an app would open it.
 //
 //   npx tsx scripts/big-table.mts <rows> <out-dir>
 //
-// Writes <out-dir>/big-<rows>.table/ and <out-dir>/big-<rows>.table.zip.
+// Writes <out-dir>/big-<rows>.table/ and <out-dir>/single-file/big-<rows>.table.
 // The rows are deal-shaped (about 200 bytes each): a title, a stage from
 // six choices, an amount, a probability, an owner, a close date, a short
 // note, and one formula column (weighted = amount × probability), so the
@@ -113,5 +113,6 @@ if (lines.length) rows += lines.join("\n") + "\n";
 await writeFile(join(tableDir, "rows.ndjson"), rows);
 
 const bundle = await parseBundle(dir);
-await writeFile(join(out, `${name}.table.zip`), await bundleToArchive(name, bundle));
+await mkdir(join(out, "single-file"), { recursive: true });
+await writeFile(join(out, "single-file", `${name}.table`), await bundleToArchive(name, bundle));
 console.log(`${name}: ${(Buffer.byteLength(rows) / 1e6).toFixed(1)} MB rows.ndjson`);

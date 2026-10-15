@@ -371,7 +371,7 @@ interface SidebarProps {
   onCloseFile: (bundle: string) => void;
   /** Add a view to this table and open its settings. */
   onNewView: () => void;
-  /** Open a `.table.zip` as one more table. */
+  /** Open a single-file `.table` as one more table. */
   onOpenFile: () => void;
   /** This viewer's locale and default date format. */
   display: DisplaySettings;
@@ -537,7 +537,7 @@ export function Sidebar({
           + New .table file
         </html.button>
         <html.button style={[styles.item, styles.newTable]} onClick={onOpenFile}>
-          Open .table.zip or CSV…
+          Open .table or CSV…
         </html.button>
       </html.div>
       )}

@@ -4,7 +4,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 
 import { newBundle, newTable } from "@workspace.sh/table-core";
 import type { ParsedBundle } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, importSkippedText, isSpreadsheetFile, openArchive, openFailedText, openSpreadsheet, spreadsheetText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
+import { singleFileName, bundleToArchive, importSkippedText, isSpreadsheetFile, openArchive, openFailedText, openSpreadsheet, spreadsheetText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
 
 const NOW = new Date("2026-09-25T20:00:00Z");
 
@@ -30,9 +30,9 @@ function sample(): ParsedBundle {
   };
 }
 
-test("a bundle downloads as <key>.table.zip and opens back as it was, every table (D37)", async () => {
+test("a bundle downloads as a single <key>.table (D50) and opens back as it was, every table (D37)", async () => {
   const b = sample();
-  assert.equal(archiveFileName("reading-list"), "reading-list.table.zip");
+  assert.equal(singleFileName("reading-list"), "reading-list.table");
   const opened = await openArchive(await bundleToArchive("reading-list", b), ["projects"]);
   assert.equal(opened.key, "reading-list");
   assert.deepEqual(opened.bundle.meta.tables, ["books", "authors"]);
@@ -90,7 +90,7 @@ test("what opening says: the skipped lines under a count, nothing when it read c
 
 
 test("an export that fails says which file and why", () => {
-  assert.equal(exportFailedText("crm.table.zip", new Error("disk full")), "Couldn't export crm.table.zip: disk full");
+  assert.equal(exportFailedText("crm.table", new Error("disk full")), "Couldn't export crm.table: disk full");
   assert.equal(exportFailedText("crm.table.zip", "no"), "Couldn't export crm.table.zip: no");
 });
 

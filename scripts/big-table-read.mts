@@ -1,8 +1,8 @@
 // The data side of opening a large table, without drawing it (#126):
-// unzip and parse a big-<rows>.table.zip as the apps do (openArchive), then
+// unzip and parse a single-file big-<rows>.table as the apps do (openArchive), then
 // compute its view (formulas, filters, sort) as derive() does each render.
 //
-//   npx tsx scripts/big-table-read.mts <zip>
+//   npx tsx scripts/big-table-read.mts <single-file .table>
 
 import { readFile } from "node:fs/promises";
 import { openArchive } from "../packages/app/src/tableFiles.ts";

@@ -30,7 +30,7 @@ because they run the same code. Only the drawing is here.
 
 ## A .table opened as a document: `TableFile`
 
-`TableFile` (also from `@workspace.sh/table-gtk/embed`) is a `.table` opened as a document of its own, for an app that opens files: a `.table` folder, or a `.table.zip`. It opens on the file's first table in its first view, with the file's tables and that table's views to choose between, the row count, a search, New View and View Settings, and the view filling what it is given. Edits are written to the folder and its history and can be undone (Ctrl+Z, Ctrl+Shift+Z). A `.table.zip` is read into memory, has nowhere to be written, and is to look at: it says so. `readOnly` makes a folder the same. A file that can't be opened says why.
+`TableFile` (also from `@workspace.sh/table-gtk/embed`) is a `.table` opened as a document of its own, for an app that opens files: a `.table` folder, or a single-file `.table` (to look at, until #571 lets it be saved in place). It opens on the file's first table in its first view, with the file's tables and that table's views to choose between, the row count, a search, New View and View Settings, and the view filling what it is given. Edits are written to the folder and its history and can be undone (Ctrl+Z, Ctrl+Shift+Z). A single file is read into memory, has nowhere to be written yet, and is to look at: it says so. `readOnly` makes a folder the same. A file that can't be opened says why.
 
 ```tsx
 <TableFile path="/home/me/notes/projects.table" onOpenLink={(address) => open(address)} />

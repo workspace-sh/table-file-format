@@ -53,7 +53,7 @@ export interface TableEmbedProps {
    * The table opened as a document of its own: the file's address at the table and view drawn
    * (`/notes/projects.table#table=tasks&view=v2`), for the host to open there. Given, the embed
    * offers it at the end of its caption line (Open). Absent, or for a file read from a
-   * `.table.zip` (no path), it offers nothing.
+   * single-file `.table` (no path), it offers nothing.
    */
   onOpen?: (address: string) => void;
   /** Ask a question (deleting a row, say) in the host's own way; `answer` gets the response's id. Each platform has a default. */

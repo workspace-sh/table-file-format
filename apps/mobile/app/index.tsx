@@ -198,8 +198,8 @@ export default function TableScreen() {
       onPress: () => dispatch({ type: "create", making: { kind: "table", bundle } }),
     },
     { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
-    { label: labelOf("open-zip"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
-    { label: labelOf("export-zip"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
+    { label: labelOf("open"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
+    { label: labelOf("export-file"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
     { label: "Files", sf: "folder.badge.gearshape", material: "folder_open", onPress: () => router.push("/files") },
     { label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
   ];

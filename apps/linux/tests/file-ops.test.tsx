@@ -13,7 +13,7 @@ import { App } from "../src/App.js";
 import { loadClosed } from "../src/closedFiles.js";
 import { fixturesDir } from "../src/fixtures.js";
 
-// Opening a .table folder or a .table.zip, exporting one, and putting the
+// Opening a .table folder or a single-file .table, exporting one, and putting the
 // examples back: the File menu's commands, with the file chooser's answers
 // given by the test.
 
@@ -43,11 +43,11 @@ async function run(action: string) {
 }
 
 describe("the File menu on Linux", () => {
-  it("Open .table… opens a folder from disk, edited where it is", async () => {
+  it("Open… opens a .table folder from disk, picked by its manifest, edited where it is", async () => {
     const crm = join(dir, "elsewhere", "crm.table");
     cpSync(join(fixturesDir()!, "crm.table"), crm, { recursive: true });
-    await openExamples({ chooseFolder: async () => crm });
-    await run("open-folder");
+    await openExamples({ chooseToOpen: async () => join(crm, "meta.json") });
+    await run("open");
     expect(await screen.findByText("CRM (crm.table) › Companies")).toBeDefined();
     // An edit to it is written where it is, not beside the examples.
     await userEvent.click(await screen.findByText("Northwind Traders"));
@@ -64,12 +64,12 @@ describe("the File menu on Linux", () => {
     expect(example.rows.some((r) => r.name === "Northwind Ltd")).toBe(false);
   });
 
-  it("Open .table.zip… opens an archive as a new .table beside the examples", async () => {
+  it("Open… opens a single-file .table as a new .table beside the examples", async () => {
     const budget = await loadLibrary([join(fixturesDir()!, "household-budget.table")]);
-    const zip = join(dir, "budget.table.zip");
+    const zip = join(dir, "budget.table");
     writeFileSync(zip, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
-    await openExamples({ chooseZip: async () => zip });
-    await run("open-zip");
+    await openExamples({ chooseToOpen: async () => zip });
+    await run("open");
     // The examples already hold a household-budget.table folder: the archive
     // is named apart from it, and that folder is left as it was.
     const before = readFileSync(join(examples, "household-budget.table", "meta.json"), "utf8");
@@ -78,16 +78,16 @@ describe("the File menu on Linux", () => {
     expect(readFileSync(join(examples, "household-budget.table", "meta.json"), "utf8")).toBe(before);
   });
 
-  it("with a folder of your own open, Open .table.zip… makes the archive's .table beside it", async () => {
+  it("with a folder of your own open, Open… makes a single file's .table beside it", async () => {
     const own = join(dir, "mine", "crm.table");
     cpSync(join(fixturesDir()!, "crm.table"), own, { recursive: true });
     const budget = await loadLibrary([join(examples, "household-budget.table")]);
-    const zip = join(dir, "budget.table.zip");
+    const zip = join(dir, "budget.table");
     writeFileSync(zip, await bundleToArchive("household-budget", toBundle(budget.tables, budget.bundles, "household-budget")));
     // No examples library: the app was started on that one folder.
     const library = await loadLibrary([own]);
-    await render(<App library={library} initialTable="crm/companies" chooseZip={async () => zip} />);
-    await run("open-zip");
+    await render(<App library={library} initialTable="crm/companies" chooseToOpen={async () => zip} />);
+    await run("open");
     await waitFor(() => expect(existsSync(join(dir, "mine", "household-budget.table", "meta.json"))).toBe(true));
   });
 
@@ -146,33 +146,33 @@ describe("the File menu on Linux", () => {
     expect(existsSync(join(examples, "empty.table"))).toBe(false);
   });
 
-  it("a file that isn't a .table.zip is refused, and says why", async () => {
-    const junk = join(dir, "junk.zip");
+  it("a file that isn't a .table is refused, and says why", async () => {
+    const junk = join(dir, "junk.table");
     writeFileSync(junk, "not a zip");
-    await openExamples({ chooseZip: async () => junk });
-    await run("open-zip");
-    expect(await screen.findByText(/^Couldn't open junk\.zip: /)).toBeDefined();
+    await openExamples({ chooseToOpen: async () => junk });
+    await run("open");
+    expect(await screen.findByText(/^Couldn't open junk\.table: /)).toBeDefined();
   });
 
-  it("Export .table.zip… saves the open table's .table, every table in it", async () => {
-    const out = join(dir, "out.table.zip");
+  it("Export as a Single File… saves the open table's .table as one file, every table in it", async () => {
+    const out = join(dir, "out.table");
     let suggested = "";
     await openExamples({
-      chooseZipSaveAs: async (name) => {
+      chooseSaveAs: async (name) => {
         suggested = name;
         return out;
       },
     });
-    await run("export-zip");
+    await run("export-file");
     await waitFor(() => expect(existsSync(out)).toBe(true));
-    expect(suggested).toBe("projects.table.zip");
+    expect(suggested).toBe("projects.table");
     const opened = await openArchive(new Uint8Array(readFileSync(out)), []);
     expect(Object.keys(opened.bundle.tables).sort()).toEqual(["projects", "tasks"]);
   });
 
-  it("a table's edit history goes out in its .table.zip, and comes back in when the archive is opened", async () => {
-    const out = join(dir, "out.table.zip");
-    await openExamples({ chooseZipSaveAs: async () => out, chooseZip: async () => out });
+  it("a table's edit history goes out in its single file, and comes back in when the file is opened", async () => {
+    const out = join(dir, "out.table");
+    await openExamples({ chooseSaveAs: async () => out, chooseToOpen: async () => out });
     // An edit, so the table has a history.
     await userEvent.click(await screen.findByText("Land .table extension"));
     const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
@@ -180,7 +180,7 @@ describe("the File menu on Linux", () => {
     await userEvent.type(entry, "Renamed task");
     await userEvent.keyboard(entry, "{Enter}");
     // Exported at once: what is still to write is written first.
-    await run("export-zip");
+    await run("export-file");
     await waitFor(() => expect(existsSync(out)).toBe(true));
     const onDisk = readFileSync(join(examples, "projects.table", "tables", "tasks", "history.ndjson"), "utf8");
     const events = parseEditLog(onDisk).events;
@@ -192,7 +192,7 @@ describe("the File menu on Linux", () => {
     expect(opened.bundle.tables.tasks!.rows.find((r) => r.id === "t1")?.title).toBe("Renamed task");
 
     // Opened again as a new .table: its folder has the history it came with.
-    await run("open-zip");
+    await run("open");
     const copy = join(examples, "projects-2.table", "tables", "tasks");
     await waitFor(() => expect(existsSync(join(copy, "history.ndjson"))).toBe(true));
     expect(readFileSync(join(copy, "history.ndjson"), "utf8")).toBe(onDisk);
@@ -203,10 +203,10 @@ describe("the File menu on Linux", () => {
     const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"t1","field":"title","to":"Land .table extension"}\n';
     const projects = await loadLibrary([join(fixturesDir()!, "projects.table")]);
     const tables = { ...projects.tables, "projects/tasks": { ...projects.tables["projects/tasks"]!, history: theirs } };
-    const zip = join(dir, "with-history.table.zip");
+    const zip = join(dir, "with-history.table");
     writeFileSync(zip, await bundleToArchive("arrived", toBundle(Object.fromEntries(Object.entries(tables).map(([k, t]) => [k.replace("projects/", "arrived/"), t])), { arrived: projects.bundles.projects! }, "arrived")));
-    await openExamples({ chooseZip: async () => zip });
-    await run("open-zip");
+    await openExamples({ chooseToOpen: async () => zip });
+    await run("open");
     const file = join(examples, "arrived.table", "tables", "tasks", "history.ndjson");
     await waitFor(() => expect(existsSync(file)).toBe(true));
     expect(readFileSync(file, "utf8")).toBe(theirs);
@@ -250,7 +250,7 @@ describe("the File menu on Linux", () => {
     expect(existsSync(copy)).toBe(true);
     (await fileMenu("CRM"))!.activateAction("file.close", null);
     await screen.findByText("Close “CRM”?");
-    await screen.findByText("This app's copy is removed. A .table.zip you opened it from isn't touched.");
+    await screen.findByText("This app's copy is removed. A file you opened it from isn't touched.");
     // Cancelled, nothing changes.
     (await answer("Cancel")).activate();
     await waitFor(() => expect(screen.queryByText("Close “CRM”?")).toBeNull());
@@ -328,7 +328,7 @@ describe("the File menu on Linux", () => {
       rmSync(examples, { recursive: true, force: true });
       return loadLibrary(copiesOf(fixturesDir()!, examples).filter((p) => p.endsWith("projects.table")), held);
     };
-    await openExamples({ chooseFolder: async () => crm, resetExamples });
+    await openExamples({ chooseToOpen: async () => crm, resetExamples });
     // An edit to the example, saved.
     await userEvent.click(await screen.findByText("Land .table extension"));
     const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
@@ -336,7 +336,7 @@ describe("the File menu on Linux", () => {
     await userEvent.type(entry, "Edited");
     await userEvent.keyboard(entry, "{Enter}");
     await waitFor(async () => expect((await parseTable(tasks)).rows.find((r) => r.id === "t1")?.title).toBe("Edited"));
-    await run("open-folder");
+    await run("open");
     await screen.findByText("CRM (crm.table) › Companies");
     await run("reset-data");
     // The question says the opened folder isn't touched.

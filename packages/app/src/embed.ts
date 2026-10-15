@@ -253,7 +253,7 @@ export function embedFilesWith(fs: TableFs): EmbeddedTableFiles {
  * The cell's own address names the row's table as the file does (`projects#row=p2`),
  * which means nothing outside it. Null when the table isn't one this file
  * holds (a link to another `.table`, not followed from here yet), or the file
- * has no path (read from a `.table.zip`).
+ * has no path (read from a single-file `.table`).
  */
 export function linkedRowAddress(address: string, library: Library, held: { tables: Record<string, ParsedTable>; bundles: Record<string, BundleMeta> }, fromBundle: string): string | null {
   const target = addressTarget(address, held.tables, held.bundles, fromBundle);
@@ -267,7 +267,7 @@ export function linkedRowAddress(address: string, library: Library, held: { tabl
  * Where an embed's table is, as an address an app can open the file at: the
  * `.table`'s path as it was read, and the table and view drawn
  * (`/notes/projects.table#table=tasks&view=v2`). Null for a file read from a
- * `.table.zip`, which has no path.
+ * single-file `.table`, which has no path.
  */
 export function embedFileAddress(shown: EmbedShown, viewId: string = shown.viewId): string | null {
   const path = shown.library.paths[bundleOf(shown.key)];

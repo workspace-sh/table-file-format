@@ -190,9 +190,9 @@ export const embedFiles: EmbeddedTableFiles = {
 };
 
 /**
- * A `.table` opened as a document of its own (a folder, or a `.table.zip`):
+ * A `.table` opened as a document of its own (a folder, or a single-file `.table`):
  * the file as an app holds it, on its first table in its first view. A
- * folder is written back where it is. A `.table.zip` is read into memory
+ * folder is written back where it is. A single-file `.table` is read into memory
  * and has nowhere to be written (`library.paths` is empty), so it is to look
  * at. A large table comes back without its rows, as an embed's does.
  */
