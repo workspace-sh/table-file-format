@@ -291,7 +291,7 @@ describe("the File menu on Linux", () => {
     expect(window.getActionEnabled("close-file")).toBe(true);
     window.activateAction("win.close-file", null);
     await screen.findByText("Close “CRM”?");
-    await screen.findByText("The folder stays where it is, and can be opened again.");
+    await screen.findByText("It stays where it is on disk, and can be opened again.");
     (await answer("Close")).activate();
     await waitFor(async () => expect(await fileMenu("CRM")).toBeUndefined());
     // Another file is on screen now.
@@ -315,7 +315,7 @@ describe("the File menu on Linux", () => {
     await waitFor(() => expect(existsSync(join(made, "meta.json"))).toBe(true));
     (await fileMenu("Garden"))!.activateAction("file.close", null);
     // It is a folder of the viewer's, though the app made it: it stays.
-    await screen.findByText("The folder stays where it is, and can be opened again.");
+    await screen.findByText("It stays where it is on disk, and can be opened again.");
     (await answer("Close")).activate();
     await waitFor(async () => expect(await fileMenu("Garden")).toBeUndefined());
     await new Promise((resolve) => setTimeout(resolve, 1200));

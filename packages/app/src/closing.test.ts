@@ -37,9 +37,9 @@ test("Close asks first, worded for a file the app keeps; Cancel keeps it", () =>
   assert.equal(kept.asking, null);
 });
 
-test("Close of a folder from disk says the folder stays", () => {
+test("Close of a .table from disk, a folder or a single file, says it stays where it is", () => {
   const asked = run(start({ opened: { crm: "/somewhere/crm.table" } }), { type: "close", bundle: "crm" });
-  assert.match(asked.asking?.kind === "confirm" ? asked.asking.confirm.body : "", /folder stays/);
+  assert.match(asked.asking?.kind === "confirm" ? asked.asking.confirm.body : "", /stays where it is on disk/);
 });
 
 test("closing takes every trace of the file out, moves the screen off it, and marks it to write away", () => {

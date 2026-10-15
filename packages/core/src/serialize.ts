@@ -52,13 +52,14 @@ export function rowLine(schema: TableSchema): (row: Row) => string {
   };
 }
 
-/** Manifest stamping (SPEC section 5): format + formatVersion on every write. */
+/**
+ * Manifest stamping (SPEC section 5): format + formatVersion on every write,
+ * whatever the bundle was read with. What's written is this version's layout
+ * (a version 1 table's rows.ndjson is moved into rows/), so the manifest says so.
+ */
 export function stampMeta(meta: TableMeta | undefined): TableMeta {
-  return {
-    format: "table",
-    formatVersion: TABLE_FORMAT_VERSION,
-    ...(meta ?? {}),
-  };
+  const { format: _format, formatVersion: _version, ...rest } = meta ?? {};
+  return { format: "table", formatVersion: TABLE_FORMAT_VERSION, ...rest };
 }
 
 /**
