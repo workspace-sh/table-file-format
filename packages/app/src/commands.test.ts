@@ -98,3 +98,10 @@ test("hints: the sidebar's follows its state; with its shortcut, as the web says
   assert.match(exportFile.hint!, /^Save a copy of this file as a single \.table/);
   assert.match(TOOLBAR_HINTS.viewSettings, /^Name, layout, filters/);
 });
+
+test("Export as a Single File is for a folder: a single file already is one", () => {
+  const exportFile = (singleFile?: boolean) => appCommands({ sidebarCollapsed: false, filesMode: false, ...(singleFile === undefined ? {} : { singleFile }) }).find((c) => c.id === "export-file")!;
+  assert.equal(exportFile().enabled, true);
+  assert.equal(exportFile(false).enabled, true);
+  assert.equal(exportFile(true).enabled, false);
+});

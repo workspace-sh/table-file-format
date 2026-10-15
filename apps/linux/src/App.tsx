@@ -73,7 +73,7 @@ import {
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
-import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, openSingleFile, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
@@ -642,6 +642,7 @@ export function App({
       tables: library.tables,
       bundles: library.bundles,
       opened: Object.fromEntries(Object.entries(library.paths).filter(([, path]) => !inExamples(path))),
+      ...(library.singleFiles ? { singleFiles: library.singleFiles } : {}),
       stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
       ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
       // Each edit goes to its table's history.ndjson (SPEC section 14).
@@ -772,7 +773,19 @@ export function App({
     if (!picked) return;
     const path = tableFolderOf(picked);
     if (statSync(path).isDirectory()) return openFolder(path);
-    return openFile(path);
+    if (isSpreadsheetFile(path)) return openFile(path);
+    return openSingle(path);
+  };
+  // A single-file .table, edited as its working folder in this user's cache and packed back into it after each write (D49).
+  const openSingle = async (path: string) => {
+    try {
+      const opened = await openSingleFile(path, Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
+      const problems = Object.values(opened.problems).flat();
+      if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
+      dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
+    } catch (error) {
+      tell(openFailedText(basename(path), error));
+    }
   };
   // A .table folder from disk, edited where it is.
   const openFolder = async (path: string) => {
@@ -781,7 +794,7 @@ export function App({
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
   };
-  // A single-file .table, or a spreadsheet someone already has, becomes a .table folder beside the new files, written as it opens.
+  // A spreadsheet someone already has becomes a .table folder beside the new files, written as it opens.
   const openFile = async (path: string) => {
     if (!filesIn) return tell(openFailedText(basename(path), "this app was started on its own folders, with nowhere to put a new .table"));
     try {
