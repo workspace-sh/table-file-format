@@ -51,3 +51,20 @@ test("an attached file keeps its name, numbered when the folder already has it, 
   assert.equal(attachmentName("..", []), "file");
   assert.equal(attachmentName(".hidden", []), "hidden");
 });
+
+test("a line of a table's rows that couldn't be read is said when the file opens, and kept through a save (#567)", async () => {
+  const fs = memoryFs();
+  await writeBundleTo(fs, "/docs/Work.table", { tables: { tasks: tables["tasks"]! } });
+  const rowsPath = "/docs/Work.table/tables/tasks/rows.ndjson";
+  const damaged = `${(await fs.readText(rowsPath))!}{"id":"t9","title":"Broken because of a typo"\n`;
+  await fs.writeText(rowsPath, damaged);
+  const library = await openLibrary(fs, ["/docs/Work.table"]);
+  assert.equal(library.problems["Work"]?.length, 1);
+  assert.match(library.problems["Work"]![0]!, /^tasks: line \d+ isn't JSON .*kept as it is/);
+  // Edited and saved, as an app saves: the line is still there.
+  const edited = { ...library.tables, "Work/tasks": withCell(library.tables["Work/tasks"]!, "t1", "title", "Saved") };
+  await writeLibraryBundle(fs, library, edited, library.bundles, "Work");
+  const after = (await fs.readText(rowsPath))!;
+  assert.ok(after.includes('{"id":"t9","title":"Broken because of a typo"'), "the damaged line is kept");
+  assert.ok(after.includes('"title":"Saved"'), "and the edit is saved");
+});

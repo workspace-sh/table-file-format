@@ -331,6 +331,12 @@ export interface ValidationError {
 
 // ---- Parsed Table ----
 
+/** A line of `rows.ndjson` that couldn't be read as a row, and the row it came after (null: before every row). */
+export interface UnreadLine {
+  after: string | null;
+  text: string;
+}
+
 export interface ParsedTable {
   schema: TableSchema;
   rows: Row[];
@@ -342,6 +348,13 @@ export interface ParsedTable {
    * Rows without a body simply have no entry here.
    */
   bodies?: Record<string, string>;
+  /**
+   * Lines of `rows.ndjson` that couldn't be read as rows (a typo, a
+   * merge-conflict marker), kept as they were: each after the row it
+   * followed (`after` its id; null, before every row). A writer puts them
+   * back where they were (SPEC section 3, "Reader error contract").
+   */
+  unread?: UnreadLine[];
   /**
    * Set when the table's rows are not in `rows` (it is empty) but in the
    * bundle's index (SPEC section 8), as an app holds a large table:

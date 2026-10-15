@@ -51,7 +51,11 @@ export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<s
     Object.assign(library.tables, fromBundle(key, bundle));
     library.bundles[key] = bundle.meta;
     library.paths[key] = path;
-    const messages = (bundle.diagnostics ?? []).map((d) => d.message);
+    // And each table's: a line of its rows that couldn't be read is said, and kept (SPEC section 3).
+    const messages = [
+      ...(bundle.diagnostics ?? []).map((d) => d.message),
+      ...Object.entries(bundle.tables).flatMap(([name, table]) => (table.diagnostics ?? []).map((d) => `${name}: ${d.message}`)),
+    ];
     if (messages.length > 0) library.problems[key] = messages;
   }
   return library;

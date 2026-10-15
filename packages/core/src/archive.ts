@@ -5,6 +5,7 @@ import type {
   ParsedTable,
   TableMeta,
   TableSchema,
+  UnreadLine,
   ValidationError,
   View,
 } from "./types.js";
@@ -161,8 +162,10 @@ export async function readTableArchive(
       if (!elsewhere) files.set(`${prefix}${TableEntry.rows}`, whole(lazyRows));
     }
     if (!elsewhere) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, files.get(`${prefix}${TableEntry.rows}`)!)) === true;
-    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}${TableEntry.rows}`) ?? "", tableDiagnostics);
+    const unread: UnreadLine[] = [];
+    const rows = elsewhere ? [] : parseRowsText(text(`${prefix}${TableEntry.rows}`) ?? "", tableDiagnostics, unread);
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
+    if (unread.length > 0) table.unread = unread;
     if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (Object.keys(bodies).length > 0) table.bodies = bodies;
     // Its edit history travels with it, as it is: this reader doesn't judge its lines (section 14).
@@ -227,7 +230,7 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
     const at = `${tablePath(tableName)}/`;
     files.push(
       { path: `${at}${TableEntry.schema}`, content: pretty(t.schema) },
-      { path: `${at}${TableEntry.rows}`, content: serializeRows(t.rows, t.schema) },
+      { path: `${at}${TableEntry.rows}`, content: serializeRows(t.rows, t.schema, t.unread) },
       { path: `${at}${TableEntry.views}`, content: pretty(t.views ?? []) },
       { path: `${at}${TableEntry.meta}`, content: pretty(tableMetaOnly(t.meta)) },
     );

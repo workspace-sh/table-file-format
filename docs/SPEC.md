@@ -608,6 +608,15 @@ line-oriented text that passes through version control, transports
 and other people's tools — one damaged line or a merge-conflict marker
 must not make the whole table unreadable.
 
+A writer MUST NOT lose a line it couldn't read. Writing the table
+back, it puts each such line where it was, after the row it followed
+(at the end when that row has gone), exactly as it was: a typo or a
+conflict marker stays in the file for a person or a tool to fix,
+rather than being deleted by the next save. An app SHOULD say, when
+it opens the file, which lines it couldn't read. (The reference
+reader keeps them as `unread` on the parsed table; an index that
+writes the rows back out doesn't hold a table with such lines.)
+
 The one fatal case: `schema.json` missing or malformed. A `.table/`
 without a readable schema is not a table; there is nothing sound to
 degrade to.

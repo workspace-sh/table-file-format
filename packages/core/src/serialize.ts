@@ -1,4 +1,4 @@
-import type { Row, TableMeta, TableSchema } from "./types.js";
+import type { Row, TableMeta, TableSchema, UnreadLine } from "./types.js";
 import { TABLE_FORMAT_VERSION } from "./types.js";
 
 /**
@@ -16,8 +16,8 @@ export function pretty(value: unknown): string {
  * fields are never stored (SPEC section 2), even when a caller hands
  * back rows that had them filled in for display.
  */
-export function serializeRows(rows: Row[], schema: TableSchema): string {
-  if (rows.length === 0) return "";
+export function serializeRows(rows: Row[], schema: TableSchema, unread: UnreadLine[] = []): string {
+  if (rows.length === 0 && unread.length === 0) return "";
   const computed = schema.fields.filter((f) => f.computed).map((f) => f.name);
   const stored = (row: Row): Row => {
     if (computed.length === 0) return row;
@@ -25,7 +25,20 @@ export function serializeRows(rows: Row[], schema: TableSchema): string {
     for (const name of computed) delete out[name];
     return out;
   };
-  return rows.map((r) => JSON.stringify(stored(r))).join("\n") + "\n";
+  if (unread.length === 0) return rows.map((r) => JSON.stringify(stored(r))).join("\n") + "\n";
+  // Lines that couldn't be read go back where they were: after the row they followed,
+  // or at the end when that row has gone. A save never loses a line (SPEC section 3).
+  const ids = new Set(rows.map((r) => r.id));
+  const after = new Map<string | null, string[]>();
+  for (const line of unread) {
+    const at = line.after === null || ids.has(line.after) ? line.after : undefined;
+    if (at === undefined) continue;
+    after.set(at, [...(after.get(at) ?? []), line.text]);
+  }
+  const lines: string[] = [...(after.get(null) ?? [])];
+  for (const r of rows) lines.push(JSON.stringify(stored(r)), ...(after.get(r.id) ?? []));
+  for (const line of unread) if (line.after !== null && !ids.has(line.after)) lines.push(line.text);
+  return lines.join("\n") + "\n";
 }
 
 /** Manifest stamping (SPEC section 5): format + formatVersion on every write. */

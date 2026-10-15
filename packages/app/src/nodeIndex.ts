@@ -117,21 +117,31 @@ export async function tableContentKey(tableDir: string): Promise<string> {
   return hash.digest("hex");
 }
 
+/**
+ * A table's rows for its index. A line that isn't a row stops the build: the
+ * index writes the rows back out, and would leave that line out of the file
+ * (#567), so such a table is held in memory instead, where it's kept.
+ */
 function rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> {
-  return rowsFrom(createReadStream(join(tableDir, "rows.ndjson")), onRow);
+  return rowsFrom(createReadStream(join(tableDir, "rows.ndjson")), onRow, true);
 }
 
-async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}): AsyncIterable<Row> {
+async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}, strict = false): AsyncIterable<Row> {
+  let at = 0;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    at++;
     if (line.trim().length === 0) continue;
     let row: unknown;
     try {
       row = JSON.parse(line);
     } catch {
-      // A line that doesn't parse is skipped, as the reader skips it (SPEC section 3).
+      row = null;
+    }
+    if (row === null || typeof row !== "object" || Array.isArray(row) || typeof (row as Row).id !== "string" || (row as Row).id === "") {
+      if (strict) throw new Error(`line ${at} of its rows couldn't be read`);
+      // Shown meanwhile, it's skipped, as the reader skips it (SPEC section 3).
       continue;
     }
-    if (row === null || typeof row !== "object" || typeof (row as Row).id !== "string") continue;
     onRow();
     yield row as Row;
   }
