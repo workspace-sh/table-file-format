@@ -34,4 +34,13 @@ export const nodeFs: TableFs = {
     }
   },
   remove: (path) => rm(path, { recursive: true, force: true }),
+  async readBytes(path) {
+    try {
+      return new Uint8Array(await readFile(path));
+    } catch (err) {
+      if (missing(err) || (err as NodeJS.ErrnoException).code === "EISDIR") return null;
+      throw err;
+    }
+  },
+  writeBytes: (path, bytes) => writeFile(path, bytes),
 };
