@@ -88,7 +88,7 @@ Whole-file codecs at 1M rows (442 MB):
 
 The options, in short:
 
-- **(a)** plain shards on disk and in git, compressed only in the `.table.zip` archive;
+- **(a)** plain shards on disk and in git, compressed only in the single-file form;
 - **(b)** compressed shards as the stored form;
 - **(c)** a derived columnar copy (Parquet at 72 MB).
 
@@ -131,7 +131,7 @@ Options for a large table:
 
 Leslie, 2 Oct: make large tables work on mobile first, then the web; the web demo stays client-side (SQLite through WebAssembly when it comes to that). This is the starting point, measured before any change (Phase 0).
 
-**How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and a `.table.zip`. The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
+**How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and as a single-file `.table` (in `single-file/`; until D50 it was a `.table.zip`, which the measurements below opened). The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
 - **iOS:** a Release build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, in the iOS 26 Simulator on this Mac. It asks `scripts/measure-server.py` what to open, edits the first row's title once, and posts the times back (`apps/mobile/measure.ts`). The app is reinstalled before each run. Memory is the process's peak resident size.
 - **Web:** the Vite development build in Chromium (`__tableWeb.openZipFrom`), with render and commit timed by `flushSync`. Measured before the rule in [BENCHMARKING.md](BENCHMARKING.md) (Release builds only); rerun in a production build before comparing.
 - **Data alone:** `scripts/big-table-read.mts` in Node 22, with no drawing: `openArchive`, then `applyView` (formulas, filters, sort) as `derive()` runs it on every render.
@@ -265,13 +265,13 @@ Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows wh
 
   A field removed is left out of every row read and saved at once, and its values stay in the index, hidden (#556, #562). A change of fields is an undo step, as on a small table: undo changes the index back in place, and a field deleted comes back with its values (the app says which fields an undo restores), written to `rows.ndjson` again. A new field that only reuses a deleted field's name starts empty.
 - **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
-- **Export.** A `.table.zip` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
+- **Export.** A single-file `.table` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
 
 Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an archive of more than 250,000 rows. No timings from the app itself yet; the index's own are above.
 
 ### What the web does (W2 and W3, 9 Oct 2026)
 
-A `.table.zip` of 256 KB or more is read in the page's worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps each bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
+A single-file `.table` of 256 KB or more is read in the page's worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps each bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
 
 - **Opening.** The worker reads the archive's directory and its small files, and inflates only the start of a large table's `rows.ndjson` (`LazyZipEntry.head`): enough for the first 200 rows and to judge how many there are. The page has those to show in a few hundred milliseconds, whatever the table's size, under a count of rows read and a bar. The rest is inflated a piece at a time, each piece going into the index and into a file kept beside it, which stays the truth. Its CRC is checked at the end; a damaged archive keeps nothing.
 - **While it's read**, the table shows every row read so far, in file order, to scroll through and look at: the first 200 are with the page already, and the rest are asked of the worker, which sees the rows its build has put in (`rowsBeingBuilt`, on the build's own connection). The build doesn't hold the worker: each of its statements takes a turn, and before each the worker hears what the page has sent. Anything that would write to that bundle waits for the build. When the reading is done the same table view takes the view's own rows, so where you had scrolled to is where you still are.
@@ -303,13 +303,13 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 - **At a million rows the wait to be ready is the build**, slower in the browser than in Node (15 s with `node:sqlite`) and slower in Chrome than in Firefox. First rows are on screen for all of it. A search in that time, and until its own index is whole some tens of seconds after, reads every row's text: about a second.
 - Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
 
-`Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
+`Download as a Single File` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
 ### What iOS does (I2, 10 Oct 2026)
 
 The phone has a real file system and its own SQLite (expo-sqlite, through core's `expoDriver`), so it does what the web does with a folder in place of the browser's storage and no worker: expo-sqlite runs each statement on its own queue. `apps/mobile/indexHost.ts` is the counterpart of the web's worker and its client; `apps/mobile/useIndexedTables.ts` is the web's hook over it.
 
-- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own documents when its `.table.zip` is opened: `index.sqlite` at its root, the large table's `rows.ndjson` under `tables/<name>/`, and the rest of the bundle's files written by core's writer. A bundle with no large table is held as before, in memory and the phone's key-value store.
+- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own documents when its single file is opened: `index.sqlite` at its root, the large table's `rows.ndjson` under `tables/<name>/`, and the rest of the bundle's files written by core's writer. A bundle with no large table is held as before, in memory and the phone's key-value store.
 - **Opening** is the web's: the large table's rows stay compressed, their head gives the first 200 rows and a judged count, and the rest is inflated a piece at a time into the index and into the rows file. While it's read, every row read so far can be scrolled through.
 - **Reading and editing** go through `rowsServer`, `remoteViewRows` and `remoteEdits` in the app's own thread: there is no message to cross, only the turn each request takes.
 - **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
@@ -322,7 +322,7 @@ The phone has a real file system and its own SQLite (expo-sqlite, through core's
 
 - **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
 - **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
-- **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
+- **Export.** As the web's: `Export as a Single File…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
 
 iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that it works; a Release build on a phone is still to be measured.
 

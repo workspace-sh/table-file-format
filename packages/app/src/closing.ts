@@ -1,6 +1,6 @@
 // Closing a file: it leaves the sidebar, and what the app kept of it goes
 // (#501). A folder read from disk stays where it is; a file the app keeps
-// itself (opened from a .table.zip, made here, an example) is removed from
+// itself (opened from a single-file .table, made here, an example) is removed from
 // the app's own space. The reducer takes it out of what's held and marks
 // the bundle to write; an app's write, given a bundle it no longer holds,
 // removes what it kept of it (its store's copy, a large table's folder).
@@ -15,7 +15,7 @@ export function closePrompt(title: string, fromFolder: boolean): Confirm {
     heading: `Close “${title}”?`,
     body: fromFolder
       ? "The folder stays where it is, and can be opened again."
-      : "This app's copy is removed. A .table.zip you opened it from isn't touched.",
+      : "This app's copy is removed. A file you opened it from isn't touched.",
     responses: [CANCEL, { id: "close", label: "Close", destructive: true }],
   };
 }

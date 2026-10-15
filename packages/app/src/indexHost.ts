@@ -127,7 +127,7 @@ export interface IndexHost {
   /** Where a bundle's folder is. */
   bundleDir(bundle: string): string;
   /**
-   * Read a `.table.zip`. Its large tables stay here, still compressed, on
+   * Read a single-file `.table`. Its large tables stay here, still compressed, on
    * their way into the index: they come back with no rows and `indexed` set,
    * with their first rows beside them. A bundle with such a table is written
    * as a folder in the app's own space, whole but for those tables' rows,

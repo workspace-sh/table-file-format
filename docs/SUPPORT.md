@@ -25,9 +25,9 @@ Apple's only. What it lacks is listed in #429.
 | | Web | iOS | Mac | Linux | Notes |
 |---|---|---|---|---|---|
 | Open a `.table` folder | No | No | Yes | Yes | The web's example tables are built in. iOS and the web open archives (below). |
-| Open a `.table.zip` | Yes | Yes | Yes | Yes | Each app edits its own copy: Linux writes a `.table` folder beside the archive; the others keep it in their own storage. |
-| A `.table` as a single file (the file form, D49) | No | No | No | No | #571 |
-| Export a `.table.zip` | Yes | Yes | Yes | Yes | Large tables up to 250,000 rows (#434). |
+| Open a single-file `.table` | Yes | Yes | Partly | Yes | Each app edits its own copy for now: Linux writes a `.table` folder beside it; the others keep it in their own storage. The Mac's Open takes folders until #571. |
+| Save a single-file `.table` in place (D49, D50) | No | No | No | No | #571 |
+| Export as a single file | Yes | Yes | Yes | Yes | Large tables up to 250,000 rows (#434). |
 | Open a CSV as a new table | Yes | Yes | Yes | Yes | |
 | Export a CSV | No | No | No | No | #574 |
 | Import a CSV into a table | No | No | No | No | #519 |
@@ -120,7 +120,7 @@ held in memory (SPEC section 8, [LARGE-TABLES.md](LARGE-TABLES.md)).
 
 | | Web | iOS | Mac | Linux | Notes |
 |---|---|---|---|---|---|
-| Held in the index | Partly | Partly | Partly | Partly | Web, iOS and the Mac: tables that arrive in a `.table.zip`. Linux: folders. The Mac from a folder: #435. |
+| Held in the index | Partly | Partly | Partly | Partly | Web, iOS and the Mac: tables that arrive in a single file. Linux: folders. The Mac from a folder: #435. |
 | Edit, search, sort, filter at 1,000,000 rows | Yes | Yes | Yes | Yes | Tables with formulas over other rows, or a Sheet view, are held in memory. |
 | Change fields in place, undoable | Yes | Yes | Yes | Yes | #551, #556, #562 |
 | Two views of one table keep in step | Partly | Partly | Partly | Partly | Edits show in the other view when it next reads (#554). |

@@ -114,7 +114,7 @@ export function FileView({ bundle, path, content, attachment, onClose }: FileVie
       <html.span style={styles.note}>
         {attachment
           ? "An attachment: a file the table's rows name, kept beside them."
-          : "As saving writes it. Download .table.zip carries the same files."}
+          : "As saving writes it. Download as a Single File carries the same files."}
       </html.span>
       {attachment && "image" in attachment ? (
         <html.img src={attachment.image} alt={name} style={styles.image} />

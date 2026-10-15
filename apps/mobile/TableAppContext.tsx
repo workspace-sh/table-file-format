@@ -17,7 +17,7 @@ import {
   STORAGE_KEY,
   appendFolderHistory,
   appendStoredHistory,
-  archiveFileName,
+  singleFileName,
   bundleOf,
   clearSaved,
   clearStoredHistory,
@@ -303,7 +303,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
         await flush();
         await shareZip(bundle, await withHistories(whole, historyOf), state.bundles);
       } catch (error) {
-        dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+        dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       }
     },
   };

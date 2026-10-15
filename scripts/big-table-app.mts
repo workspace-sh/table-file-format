@@ -1,9 +1,9 @@
-// The app-state side of a large table (#126, Phase 2): open a big-<rows>.table.zip
+// The app-state side of a large table (#126, Phase 2): open a single-file big-<rows>.table
 // as the apps do, then time derive() on the renders an app makes: the first,
 // one after a row edit, one after something that doesn't touch the data
 // (the settings panel opening), and the write the edit schedules.
 //
-//   node --conditions=source --import tsx scripts/big-table-app.mts <zip>
+//   node --conditions=source --import tsx scripts/big-table-app.mts <single-file .table>
 
 import { readFile } from "node:fs/promises";
 import { openArchive } from "../packages/app/src/tableFiles.ts";

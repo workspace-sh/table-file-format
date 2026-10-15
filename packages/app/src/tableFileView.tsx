@@ -8,7 +8,7 @@
 // What goes around the view is the host's to draw in its platform's way (a
 // phone's header menus and glass bar, a Mac's toolbar): it is handed a
 // TableFileChrome, with the file's tables and views, the search, New View,
-// View Settings and undo. A .table.zip has nowhere to be written, and is to
+// View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
 import { useEffect, useState, type ReactNode } from "react";
@@ -41,9 +41,9 @@ export interface TableFileChrome {
   count: string;
   query: string;
   search: (text: string) => void;
-  /** To look at only: nothing can be changed (a .table.zip, or a reader who can't write). */
+  /** To look at only: nothing can be changed (a single-file .table, or a reader who can't write). */
   lookOnly: boolean;
-  /** Opened from a .table.zip: its changes can't be saved. */
+  /** Opened from a single-file .table: its changes can't be saved. */
   fromArchive: boolean;
   addView: () => void;
   openSettings: () => void;

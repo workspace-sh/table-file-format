@@ -126,7 +126,7 @@ export async function openWebDatabase(name: string): Promise<WebDatabase> {
 }
 
 /**
- * Read a `.table.zip` in the worker. Its large tables stay there, still
+ * Read a single-file `.table` in the worker. Its large tables stay there, still
  * compressed, on their way into the index: they come back with no rows and
  * `indexed` set, with their first rows beside them. `index` is the bundle's
  * database when it has such a table, and null when it has none.

@@ -99,11 +99,12 @@ behind it in [docs/DECISIONS.md](docs/DECISIONS.md).
 - **A document per row.** A row can carry a long markdown body, kept as
   its own file.
 - **Attachments.** Files stored beside the rows that refer to them.
-- **History.** An optional append-only log of edits. It is specified;
-  the apps here don't write it yet.
+- **History.** An optional append-only log of edits, which the apps
+  write as you edit.
 
-A `.table` also travels as a single `.table.zip`, and a table goes in
-and out as CSV.
+A `.table` can also be a single file, named `.table` all the same,
+which is how it's sent or kept by anyone who wants one file. A
+spreadsheet opens as a new table from CSV.
 
 ## Reading one in code
 
