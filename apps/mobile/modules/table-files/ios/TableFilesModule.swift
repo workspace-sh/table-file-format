@@ -37,6 +37,18 @@ public class TableFilesModule: Module {
       if let shakes = self.shakes { NotificationCenter.default.removeObserver(shakes) }
     }
 
+    /// Development: turn the screen to "landscape" or "portrait", as turning the phone does, so a
+    /// rotation can be recorded in the Simulator, which has no window to turn here.
+    Function("requestOrientation") { (to: String) in
+      DispatchQueue.main.async {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+        let mask: UIInterfaceOrientationMask = to == "landscape" ? .landscapeRight : .portrait
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+          NSLog("[TableFiles] requestOrientation(%@): %@", to, error.localizedDescription)
+        }
+      }
+    }
+
     /// Whether the person wants shaking to undo (Settings › Accessibility › Touch › Shake to Undo).
     Function("shakeToUndoEnabled") { () -> Bool in
       UIAccessibility.isShakeToUndoEnabled

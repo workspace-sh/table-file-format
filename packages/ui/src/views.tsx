@@ -3199,7 +3199,7 @@ export function TableView({
   // Container-measured (not viewport-measured) so a sidebar-narrowed
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  const { measureProps, width: containerWidth, probe } = useContainerWidth();
 
   // Column-width model. The earlier version divided the container by
   // `fields + 1` (counting the "+ Field" slot) but then rendered that
@@ -4314,7 +4314,9 @@ export function TableView({
         rather than every row carrying an empty column (#71). */}
     {edgeToEdge && (
       <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
-        <html.div {...measureProps} style={styles.tableGrow} />
+        <html.div {...measureProps} style={styles.tableGrow}>
+          {probe}
+        </html.div>
       </html.div>
     )}
     <EdgeToEdge on={edgeToEdge} snapTo={columnStarts}>
@@ -4334,6 +4336,7 @@ export function TableView({
       style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
     >
     <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+      {edgeToEdge ? null : probe}
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
@@ -4932,7 +4935,7 @@ export function GalleryView({
   //
   // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
   // cards (not trailing the last one in a row).
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  const { measureProps, width: containerWidth, probe } = useContainerWidth();
   const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
 
   // Cut (`cut`), only the first cards are drawn.
@@ -4955,6 +4958,7 @@ export function GalleryView({
       }}
       style={styles.gallery}
     >
+      {probe}
       {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
@@ -5222,7 +5226,7 @@ export function CalendarView({
   // is `floor(containerWidth / 7)`; until the first layout pass
   // completes width is 0, so we guard with a tiny fallback that
   // doesn't visibly flash.
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  const { measureProps, width: containerWidth, probe } = useContainerWidth();
   // 7 columns. `floor(width / 7)` alone leaves up to 6px of dead space
   // on the right (the grid's border floating away from the cells); the
   // remainder is spread one pixel at a time across the leftmost
@@ -5273,6 +5277,7 @@ export function CalendarView({
 
   return (
     <html.div {...measureProps} style={styles.calendar}>
+      {probe}
       <html.div style={styles.calendarHeader}>
         <html.button
           onClick={

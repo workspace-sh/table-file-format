@@ -8,19 +8,19 @@
  * layout where the container is narrower than the viewport.
  *
  * RSD's strict prop whitelist on native rejects `onLayout` (it's not
- * one of the spec'd "web" event names), so we can't go through the
- * usual RN layout-event channel. Instead: attach a ref to the html.div,
- * call `measureInWindow` on attach to seed the initial size, then
- * subscribe to `Dimensions` change events to catch window resizes /
- * orientation changes, measuring again as the new layout settles. That
- * covers iOS rotation. A change the system
- * doesn't announce (a Mac window dragged wider, its sidebar or inspector
- * opening) comes from the host, which says when its content's own view
- * was laid out again (`notifyLayoutChanged`, internal/relayout).
+ * one of the spec'd "web" event names), so the container can't be told
+ * when its size changes. Its `probe` can: an untouchable view laid over
+ * the container, rendered as one of its children, whose `onLayout`
+ * fires once whenever the container is laid out at a new size, after
+ * layout has finished. A turned phone (and its safe area, which arrives
+ * after the turn), a Mac window or split resized, a frame in a document
+ * moved to a new width: each is one event, at the moment the size is
+ * final, so nothing is measured mid-change and nothing is missed (#610).
+ * The width itself is the container's own, measured then
+ * (`measureInWindow`, its border box), as the columns expect.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Dimensions } from "react-native";
-import { onLayoutChanged } from "./relayout";
+import { createElement, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { StyleSheet, View } from "react-native";
 
 export interface ContainerMeasurement {
   measureProps: {
@@ -29,6 +29,8 @@ export interface ContainerMeasurement {
     onLayout?: (e: never) => void;
   };
   width: number;
+  /** Rendered as a child of the measured container: what says it was laid out again. Null on the web. */
+  probe: ReactNode;
 }
 
 interface MeasurableNode {
@@ -50,32 +52,14 @@ export function useContainerWidth(): ContainerMeasurement {
     });
   }, []);
 
-  const ref = useCallback(
-    (el: unknown) => {
-      nodeRef.current = (el ?? null) as MeasurableNode | null;
-      // measureInWindow returns 0×0 if called before layout commits;
-      // setTimeout pushes us past the first layout pass without
-      // needing onLayout (which RSD won't pass through).
-      if (el) setTimeout(measure, 0);
-    },
+  const ref = useCallback((el: unknown) => {
+    nodeRef.current = (el ?? null) as MeasurableNode | null;
+  }, []);
+
+  const probe = useMemo(
+    () => createElement(View, { pointerEvents: "none", style: StyleSheet.absoluteFill, onLayout: measure }),
     [measure],
   );
 
-  // Re-measure on window resize / orientation change. The event comes
-  // before the views have their new sizes, and a rotation's layout settles
-  // over a few frames, so it's measured again as it settles: once only
-  // could read the old width and keep it.
-  useEffect(() => {
-    const sub = Dimensions.addEventListener("change", () => {
-      for (const ms of [0, 100, 300]) setTimeout(measure, ms);
-    });
-    // And when the host says its content was laid out again.
-    const stop = onLayoutChanged(measure);
-    return () => {
-      sub.remove();
-      stop();
-    };
-  }, [measure]);
-
-  return { measureProps: { ref }, width };
+  return { measureProps: { ref }, width, probe };
 }
