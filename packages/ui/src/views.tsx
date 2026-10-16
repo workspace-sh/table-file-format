@@ -105,7 +105,7 @@ import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { onWindowResize } from "./internal/onWindowResize";
-import { useViewportWidth } from "./internal/useViewportWidth";
+import { useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
@@ -3188,8 +3188,7 @@ export function TableView({
   // portrait viewports it ate too much real estate (the title column
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
-  const viewportWidth = useViewportWidth();
-  const freezePrimary = viewportWidth > TOUCH_VIEWPORT_MAX;
+  const freezePrimary = !useCompactViewport(TOUCH_VIEWPORT_MAX);
 
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
@@ -4283,7 +4282,7 @@ export function TableView({
     rtl,
     editor,
     facts,
-    viewportWidth,
+    freezePrimary,
     containerWidth,
     pageReveal,
   ];
@@ -4715,7 +4714,7 @@ export function BoardView({
   // we fall back to free horizontal scroll with the default 240-280pt
   // columns and immediate drag activation (desktop / wide tablet).
   const viewportWidth = useViewportWidth();
-  const isTouchViewport = viewportWidth <= TOUCH_VIEWPORT_MAX;
+  const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
   // Carousel column width: viewport minus side padding minus peek.
   // 16pt side padding, ~52pt peek of the next column on the right.
   const carouselColumnWidth = Math.max(240, viewportWidth - 16 - 52);
@@ -5022,9 +5021,8 @@ export function ListView({
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
-  const viewportWidth = useViewportWidth();
-  const dragLongPressMs =
-    viewportWidth <= TOUCH_VIEWPORT_MAX ? TOUCH_DRAG_LONGPRESS_MS : undefined;
+  const touchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const dragLongPressMs = touchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
   const {
     register: registerRow,
     hitTest,
@@ -5126,7 +5124,7 @@ export function ListView({
               style={[
                 styles.listItem,
                 cards.focusId === row.id && styles.listItemFocused,
-                viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
+                touchViewport && styles.listItemTouch,
                 i === listed.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
@@ -5210,7 +5208,7 @@ export function CalendarView({
   // Google Calendar pattern. On a phone the cells show dots; wider,
   // they show each entry's title, and clicking a title opens it.
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  const isTouchViewport = useViewportWidth() <= TOUCH_VIEWPORT_MAX;
+  const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
   // A title chip sits inside its day's button. The chip's click marks
   // itself handled so the day's click doesn't also open the sheet —
   // this works whether or not a platform lets a click stop propagating.
