@@ -101,6 +101,8 @@ import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
 import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
+import { PageScrollContext } from "./pageScroll";
+import { animateNextLayout } from "./internal/animateNextLayout";
 import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
@@ -158,6 +160,10 @@ const CAROUSEL_PAGE_AGAIN_MS = 800;
 const CAROUSEL_SETTLE_MS = 350;
 // How long measuring the columns and cards again takes to come back.
 const CAROUSEL_MEASURED_MS = 60;
+// After a page turn, a column whose cards end above this far into what's on
+// screen is scrolled into view; an empty one, so this much of it shows.
+const CAROUSEL_IN_VIEW = 48;
+const CAROUSEL_EMPTY_COLUMN_SHOWN = 120;
 // A dragged card or row's floating copy.
 const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
@@ -4689,6 +4695,7 @@ export function BoardView({
     register: registerColumn,
     hitTest,
     remeasure: remeasureColumns,
+    rectOf: columnRect,
   } = useDropTargets<string>();
   // Cards are drop targets too, so a card lands where it's dropped
   // within a column — before or after the card under the pointer —
@@ -4740,6 +4747,9 @@ export function BoardView({
   // a sliver of the next can be reached otherwise, and a card let go over
   // that sliver went into a column out of sight, as if lost.
   const carousel = useRef<CarouselPager | null>(null);
+  // The page the board is drawn in (a document's embed frame, or the app's
+  // page), scrolled so the column a page turns to has its cards in view.
+  const pageScroll = useContext(PageScrollContext);
   // The finger and the card, as the last move left them, for what's under it once a page has turned.
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   const draggedRef = useRef<string | null>(null);
@@ -4751,6 +4761,27 @@ export function BoardView({
     edgePaging.current = { direction: 0, timer: null };
   };
   useEffect(() => stopEdgePaging, []);
+  /**
+   * A page turned to a column shorter than the one it left, with the page
+   * scrolled down, showed an empty column: its cards were above what's on
+   * screen, and a card let go there went somewhere out of sight. Scroll up
+   * until its last card (or, empty, its top) is in view. True when it scrolled.
+   */
+  const bringColumnIntoView = (column: string, dragged: string): boolean => {
+    if (!pageScroll) return false;
+    const cards = (board.groups[column] ?? []).filter((r) => r.id !== dragged);
+    const last = cards[cards.length - 1];
+    const lastRect = last ? cardRect(last.id) : null;
+    const columnTop = columnRect(column)?.y ?? null;
+    const bottom = lastRect ? lastRect.y + lastRect.height : columnTop !== null ? columnTop + CAROUSEL_EMPTY_COLUMN_SHOWN : null;
+    if (bottom === null) return false;
+    const { offset, height } = pageScroll.now();
+    const visibleTop = pageScroll.windowTop() + offset;
+    if (bottom >= visibleTop + CAROUSEL_IN_VIEW) return false;
+    // Its last card a third of the way down what's on screen.
+    pageScroll.scrollBy(bottom - visibleTop - height / 3);
+    return true;
+  };
   const pageAtEdge = (x: number) => {
     if (!isTouchViewport || PLATFORM_OS === "web") return;
     const direction = x > windowWidth - CAROUSEL_EDGE ? 1 : x < CAROUSEL_EDGE ? -1 : 0;
@@ -4775,6 +4806,21 @@ export function BoardView({
             setHoveredColumn((prev) => (prev === hit ? prev : hit));
             const slot = slotAt(at.x, at.y, hit, dragged);
             setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+            if (hit && bringColumnIntoView(hit, dragged)) {
+              // Scrolled: where everything is now, and what's under the finger.
+              setTimeout(() => {
+                remeasureColumns();
+                remeasureCards();
+                setTimeout(() => {
+                  const now = lastPointer.current;
+                  if (!now || !draggedRef.current) return;
+                  const over = hitTest(now.x, now.y);
+                  setHoveredColumn((prev) => (prev === over ? prev : over));
+                  const gap = slotAt(now.x, now.y, over, draggedRef.current);
+                  setDropSlot((prev) => (prev?.id === gap?.id && prev?.after === gap?.after ? prev : gap));
+                }, CAROUSEL_MEASURED_MS);
+              }, CAROUSEL_SETTLE_MS);
+            }
           }, CAROUSEL_MEASURED_MS);
         }, CAROUSEL_SETTLE_MS);
         after(CAROUSEL_PAGE_AGAIN_MS);
@@ -4879,6 +4925,8 @@ export function BoardView({
                     // it to the end of its column, as a drop on no card does.
                     const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
                     if (target && onUpdateRow && !backWhereItWas) {
+                      // The card slides into its place and the columns to their heights.
+                      animateNextLayout();
                       const source = rows.find((r) => r.id === row.id);
                       if (source && source[groupField] !== target) {
                         onUpdateRow(row.id, groupField, columnValue(target));
