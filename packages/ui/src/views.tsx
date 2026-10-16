@@ -156,6 +156,8 @@ const CAROUSEL_PAGE_FIRST_MS = 450;
 const CAROUSEL_PAGE_AGAIN_MS = 800;
 // How long a page's animated scroll takes to settle before measuring again.
 const CAROUSEL_SETTLE_MS = 350;
+// How long measuring the columns and cards again takes to come back.
+const CAROUSEL_MEASURED_MS = 60;
 // A dragged card or row's floating copy.
 const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
@@ -4738,6 +4740,11 @@ export function BoardView({
   // a sliver of the next can be reached otherwise, and a card let go over
   // that sliver went into a column out of sight, as if lost.
   const carousel = useRef<CarouselPager | null>(null);
+  // The finger and the card, as the last move left them, for what's under it once a page has turned.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = useRef<string | null>(null);
+  draggedRef.current = draggedRowId;
+  lastPointer.current = pointerPos;
   const edgePaging = useRef<{ direction: -1 | 0 | 1; timer: ReturnType<typeof setTimeout> | null }>({ direction: 0, timer: null });
   const stopEdgePaging = () => {
     if (edgePaging.current.timer) clearTimeout(edgePaging.current.timer);
@@ -4754,10 +4761,21 @@ export function BoardView({
     const after = (ms: number) => {
       edgePaging.current.timer = setTimeout(() => {
         carousel.current?.page(direction);
-        // Where the columns and cards are once the page has turned, for the drop.
+        // Where the columns and cards are once the page has turned, for the
+        // drop; then what's under the finger, which may not have moved: the
+        // column it's over and the gap between cards, outlined as a move shows them.
         setTimeout(() => {
           remeasureColumns();
           remeasureCards();
+          setTimeout(() => {
+            const at = lastPointer.current;
+            const dragged = draggedRef.current;
+            if (!at || !dragged) return;
+            const hit = hitTest(at.x, at.y);
+            setHoveredColumn((prev) => (prev === hit ? prev : hit));
+            const slot = slotAt(at.x, at.y, hit, dragged);
+            setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+          }, CAROUSEL_MEASURED_MS);
         }, CAROUSEL_SETTLE_MS);
         after(CAROUSEL_PAGE_AGAIN_MS);
       }, ms);
