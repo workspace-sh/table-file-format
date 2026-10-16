@@ -23,7 +23,17 @@ export function useViewportWidth(): number {
  * resizing changes.
  */
 export function useCompactViewport(max: number): boolean {
+  return useCompactSide() <= max;
+}
+
+/**
+ * The screen's width as a phone or tablet is laid out by: its shorter side,
+ * which turning it doesn't change (useCompactViewport). What's sized from it,
+ * a board's carousel columns, stays the same size in landscape, which shows
+ * more of them, instead of each growing to the width of the turned screen.
+ * On the Mac it's the window's width.
+ */
+export function useCompactSide(): number {
   const { width, height } = useWindowDimensions();
-  const side = Platform.OS === "ios" || Platform.OS === "android" ? Math.min(width, height) : width;
-  return side <= max;
+  return Platform.OS === "ios" || Platform.OS === "android" ? Math.min(width, height) : width;
 }

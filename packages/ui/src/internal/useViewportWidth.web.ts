@@ -44,6 +44,11 @@ function readCompactSide(): number {
  * Elsewhere it's the window's width.
  */
 export function useCompactViewport(max: number): boolean {
+  return useCompactSide() <= max;
+}
+
+/** The window's width as a phone or tablet is laid out by: its shorter side (useCompactSide on native). */
+export function useCompactSide(): number {
   const [side, setSide] = useState(readCompactSide);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -51,5 +56,5 @@ export function useCompactViewport(max: number): boolean {
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, []);
-  return side <= max;
+  return side;
 }

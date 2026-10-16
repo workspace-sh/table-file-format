@@ -105,7 +105,7 @@ import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { onWindowResize } from "./internal/onWindowResize";
-import { useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
+import { useCompactSide, useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
@@ -4713,11 +4713,13 @@ export function BoardView({
   // navigate columns instead of starting a drag. Above the breakpoint
   // we fall back to free horizontal scroll with the default 240-280pt
   // columns and immediate drag activation (desktop / wide tablet).
-  const viewportWidth = useViewportWidth();
+  const compactSide = useCompactSide();
   const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
-  // Carousel column width: viewport minus side padding minus peek.
-  // 16pt side padding, ~52pt peek of the next column on the right.
-  const carouselColumnWidth = Math.max(240, viewportWidth - 16 - 52);
+  // Carousel column width: the screen's shorter side (as the layout is
+  // chosen, so a turned phone keeps its columns' width and shows more of
+  // them, rather than one column as wide as the screen) minus 16pt side
+  // padding and a ~52pt peek of the next column on the right.
+  const carouselColumnWidth = Math.max(240, compactSide - 16 - 52);
   // Snap interval: column width + the gap between columns (`styles.board.gap`).
   const carouselSnapInterval = carouselColumnWidth + 12;
   const dragLongPressMs = isTouchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
