@@ -100,7 +100,7 @@ import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
-import { SnapHScroll } from "./internal/SnapHScroll";
+import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
 import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
@@ -148,6 +148,16 @@ const MIN_CELL_WIDTH = 180; // MIN_CELL_WIDTH in display.ts, restated for StyleX
  * tablet-portrait. Above this, the mouse / wide-screen UX takes over.
  */
 const TOUCH_VIEWPORT_MAX = 720;
+// A board's carousel while a card is dragged: within this far of the
+// screen's edge the card pages it that way, first after a moment held
+// there (so passing through doesn't), then again at a steady pace.
+const CAROUSEL_EDGE = 44;
+const CAROUSEL_PAGE_FIRST_MS = 450;
+const CAROUSEL_PAGE_AGAIN_MS = 800;
+// How long a page's animated scroll takes to settle before measuring again.
+const CAROUSEL_SETTLE_MS = 350;
+// A dragged card or row's floating copy.
+const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
 
 // CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
@@ -660,7 +670,7 @@ const styles = css.create({
     position: "fixed",
     zIndex: 100,
     pointerEvents: "none",
-    width: 240,
+    width: 240, // GHOST_WIDTH
     opacity: 0.95,
     borderRadius: 8,
     boxShadow: "0 12px 32px rgba(0, 0, 0, 0.25)",
@@ -2594,11 +2604,18 @@ function DragGhost({
   pointerPos: { x: number; y: number } | null;
   children: ReactNode;
 }) {
+  const windowWidth = useViewportWidth();
   if (!pointerPos) return null;
+  // With a pointer, beside it, as a cursor carries it. Under a finger, centred
+  // on it and kept on screen: beside the finger, at the screen's edge where a
+  // card is taken to reach the next column, most of it was off screen.
+  const touch = PLATFORM_OS === "ios" || PLATFORM_OS === "android";
+  const x = touch ? Math.min(Math.max(8, pointerPos.x - GHOST_WIDTH / 2), windowWidth - GHOST_WIDTH - 8) : pointerPos.x + 14;
+  const y = touch ? pointerPos.y - 24 : pointerPos.y + 14;
   return (
     <Portal>
       <html.div
-        style={[styles.ghost, styles.ghostPosition(pointerPos.x + 14, pointerPos.y + 14)]}
+        style={[styles.ghost, styles.ghostPosition(x, y)]}
       >
         {children}
       </html.div>
@@ -4715,6 +4732,38 @@ export function BoardView({
   // columns and immediate drag activation (desktop / wide tablet).
   const compactSide = useCompactSide();
   const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const windowWidth = useViewportWidth();
+  // A card held at the screen's edge while it's dragged pages the carousel
+  // that way, and again while it stays there: only the column on screen and
+  // a sliver of the next can be reached otherwise, and a card let go over
+  // that sliver went into a column out of sight, as if lost.
+  const carousel = useRef<CarouselPager | null>(null);
+  const edgePaging = useRef<{ direction: -1 | 0 | 1; timer: ReturnType<typeof setTimeout> | null }>({ direction: 0, timer: null });
+  const stopEdgePaging = () => {
+    if (edgePaging.current.timer) clearTimeout(edgePaging.current.timer);
+    edgePaging.current = { direction: 0, timer: null };
+  };
+  useEffect(() => stopEdgePaging, []);
+  const pageAtEdge = (x: number) => {
+    if (!isTouchViewport || PLATFORM_OS === "web") return;
+    const direction = x > windowWidth - CAROUSEL_EDGE ? 1 : x < CAROUSEL_EDGE ? -1 : 0;
+    if (direction === edgePaging.current.direction) return;
+    stopEdgePaging();
+    if (direction === 0) return;
+    edgePaging.current.direction = direction;
+    const after = (ms: number) => {
+      edgePaging.current.timer = setTimeout(() => {
+        carousel.current?.page(direction);
+        // Where the columns and cards are once the page has turned, for the drop.
+        setTimeout(() => {
+          remeasureColumns();
+          remeasureCards();
+        }, CAROUSEL_SETTLE_MS);
+        after(CAROUSEL_PAGE_AGAIN_MS);
+      }, ms);
+    };
+    after(CAROUSEL_PAGE_FIRST_MS);
+  };
   // Carousel column width: the screen's shorter side (as the layout is
   // chosen, so a turned phone keeps its columns' width and shows more of
   // them, rather than one column as wide as the screen) minus 16pt side
@@ -4792,6 +4841,7 @@ export function BoardView({
               canDrag
                 ? (e: DragEvent) => {
                     setPointerPos({ x: e.pageX, y: e.pageY });
+                    pageAtEdge(e.pageX);
                     const hit = hitTest(e.pageX, e.pageY);
                     setHoveredColumn((prev) => (prev === hit ? prev : hit));
                     const slot = slotAt(e.pageX, e.pageY, hit, row.id);
@@ -4804,6 +4854,7 @@ export function BoardView({
             onDragEnd={
               canDrag
                 ? (e: DragEvent) => {
+                    stopEdgePaging();
                     const target = hitTest(e.pageX, e.pageY);
                     // Let go over itself, the card goes back where it was: a long
                     // press that didn't move (it starts a drag on a phone) moved
@@ -4890,7 +4941,7 @@ export function BoardView({
       <>
         <html.div {...cards.containerProps}>
           <Bleed>
-            <SnapHScroll snapInterval={carouselSnapInterval} gap={BOARD_GAP}>
+            <SnapHScroll snapInterval={carouselSnapInterval} gap={BOARD_GAP} pager={carousel}>
               {columnsContent}
             </SnapHScroll>
           </Bleed>
