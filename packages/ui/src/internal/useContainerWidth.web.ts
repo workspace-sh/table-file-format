@@ -9,12 +9,12 @@
  * resize events. ResizeObserver is OS-event-driven, not polled, so
  * idle cost is zero.
  *
- * Returns the same `{ measureProps, width }` shape as the native
- * variant. `measureProps` here contains `ref` (a callback ref); on
- * native it contains `onLayout`. Consumers spread it onto the target
- * `html.div` and don't care which attachment mechanism is in use.
+ * Returns the same `{ measureProps, width, probe }` shape as the native
+ * variant. Consumers spread `measureProps` onto the target `html.div`
+ * and render `probe` inside it; here the probe is nothing, as the
+ * observer needs no help.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 
 export interface ContainerMeasurement {
   measureProps: {
@@ -22,6 +22,8 @@ export interface ContainerMeasurement {
     onLayout?: (e: never) => void; // unused on web; type parity with native
   };
   width: number;
+  /** Native's layout probe, rendered inside the measured container; nothing here. */
+  probe: ReactNode;
 }
 
 export function useContainerWidth(): ContainerMeasurement {
@@ -55,5 +57,6 @@ export function useContainerWidth(): ContainerMeasurement {
   return {
     measureProps: { ref },
     width,
+    probe: null,
   };
 }

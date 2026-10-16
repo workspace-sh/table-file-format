@@ -17,6 +17,7 @@ export interface HeldDocument {
 const TableFiles = requireNativeModule<{
   rename(from: string, to: string): void;
   shakeToUndoEnabled(): boolean;
+  requestOrientation(to: string): void;
   pickDocument(types: string[]): Promise<HeldDocument | null>;
   resolveBookmark(bookmark: string): HeldDocument | null;
   holdDocument(path: string): HeldDocument;
@@ -64,4 +65,9 @@ export function onShakeToUndo(listener: () => void): () => void {
     if (TableFiles.shakeToUndoEnabled()) listener();
   });
   return () => sub.remove();
+}
+
+/** Development: turn the screen to "landscape" or "portrait", as turning the phone does (the Simulator can't be turned from a script). */
+export function requestOrientation(to: "landscape" | "portrait"): void {
+  TableFiles.requestOrientation(to);
 }

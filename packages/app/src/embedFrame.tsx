@@ -11,7 +11,7 @@
 
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, Animated, Platform, ScrollView } from "react-native";
-import { PageGutter, PageScrollContext, notifyLayoutChanged, pageScrollOver } from "@workspace.sh/table-ui";
+import { PageGutter, PageScrollContext, pageScrollOver } from "@workspace.sh/table-ui";
 
 import type { Confirm } from "./confirm.ts";
 import { EMBED_MAX_HEIGHT, TableEmbedWith, type TableEmbedProps } from "./embedView.shared.tsx";
@@ -54,7 +54,6 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   const shown = useRef(new Animated.Value(0)).current;
   const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (settling.current && clearTimeout(settling.current)), []);
-  const width = useRef(0);
   const gutter = useContext(PageGutter);
   const height = settled ? Math.min(held || limit, limit) : limit;
   return (
@@ -75,13 +74,6 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
         page.onLayout(e);
         // Where it is in the window, for what's drawn over a cell (an editor, a menu).
         (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.((_x, y) => page.setWindowTop(y));
-        // A new width (the phone turned, the window resized): the table's
-        // columns are measured again for it.
-        const w = e.nativeEvent.layout.width;
-        if (w !== width.current) {
-          width.current = w;
-          notifyLayoutChanged();
-        }
       }}
       onContentSizeChange={(_w, h) => {
         page.onContentSizeChange();

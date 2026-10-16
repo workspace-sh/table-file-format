@@ -22,7 +22,6 @@ import {
   PageGutter,
   PageScrollContext,
   pageScrollOver,
-  notifyLayoutChanged,
   PageReveal,
   type PageRevealRect,
   PlatformControlsProvider,
@@ -1423,8 +1422,6 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
       style={{ flex: 1 }}
       onLayout={(e) => {
         setWindowWidth(e.nativeEvent.layout.width);
-        // The pane is as wide as the window, its sidebar and its inspector leave it: what measured itself measures again.
-        notifyLayoutChanged();
       }}
     >
       <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file, folderPaths)}>
