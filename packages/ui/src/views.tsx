@@ -4805,7 +4805,11 @@ export function BoardView({
               canDrag
                 ? (e: DragEvent) => {
                     const target = hitTest(e.pageX, e.pageY);
-                    if (target && onUpdateRow) {
+                    // Let go over itself, the card goes back where it was: a long
+                    // press that didn't move (it starts a drag on a phone) moved
+                    // it to the end of its column, as a drop on no card does.
+                    const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
+                    if (target && onUpdateRow && !backWhereItWas) {
                       const source = rows.find((r) => r.id === row.id);
                       if (source && source[groupField] !== target) {
                         onUpdateRow(row.id, groupField, columnValue(target));
