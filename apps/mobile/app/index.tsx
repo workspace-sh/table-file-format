@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
@@ -165,6 +166,14 @@ export default function TableScreen() {
     const { onShakeToUndo } = require("../modules/table-files") as typeof import("../modules/table-files");
     return onShakeToUndo(() => shake.current.ask?.());
   }, []);
+  // The page's sides: the margin, or the safe area where it's wider, as in
+  // landscape, where the Dynamic Island and the corners take the sides. What
+  // runs over the margin to the screen's edge (PageGutter) runs over the
+  // smaller side's, so it never passes the screen's edge.
+  const insets = useSafeAreaInsets();
+  const sideLeft = Math.max(MOBILE_H_PADDING, insets.left);
+  const sideRight = Math.max(MOBILE_H_PADDING, insets.right);
+  const gutter = Math.min(sideLeft, sideRight);
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
   shake.current.ask = () => {
@@ -225,7 +234,7 @@ export default function TableScreen() {
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
       <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
-      <PageGutter.Provider value={MOBILE_H_PADDING}>
+      <PageGutter.Provider value={gutter}>
       <PortalHost>
         <ScrollView
           ref={scroller}
@@ -252,7 +261,7 @@ export default function TableScreen() {
           style={{ flex: 1 }}
           // Room under the last row for the glass control on iOS.
           // and, while an editor is open, room for any cell to scroll clear of it.
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
+          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped. On iOS the
           // glass bar's editor leaves that room itself (`reserve`) and scrolls
