@@ -158,12 +158,25 @@ const styles = css.create({
     paddingBlock: 20,
     overflow: "auto",
   },
-  /** Holds the sidebar at full width, or slides it to nothing when collapsed. */
+  /**
+   * Holds the sidebar at full width, or slides it to nothing when collapsed.
+   * It stays the window's height as the page scrolls, and scrolls its own
+   * contents when they're taller: a long table moves the page, not the
+   * sidebar, and a long sidebar doesn't move the table.
+   */
   sidebarSlot: {
     display: "flex",
+    // As tall as its contents, scrolled by the slot (the drawer's rule, below):
+    // stretched to the slot's height, a long sidebar spilled past its own background.
+    alignItems: "flex-start",
+    alignSelf: "flex-start",
+    position: "sticky",
+    top: 0,
+    height: "100vh",
     flexShrink: 0,
     maxWidth: 320,
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "auto",
     visibility: "visible",
     transitionProperty: "max-width, visibility",
     transitionDuration: "200ms",
