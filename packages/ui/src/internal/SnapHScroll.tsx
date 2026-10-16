@@ -10,7 +10,7 @@
  * (interval-based) or `snapToOffsets` (point-based). We use the
  * interval form — columns are uniform width.
  */
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ScrollView } from "react-native";
 import { PageGutter } from "../pageGutter";
 
@@ -22,6 +22,13 @@ export interface SnapHScrollProps {
   paddingLeft?: number;
   /** Space between the children, in points. */
   gap?: number;
+  /** Filled with a way to page the scroll a snap step at a time: a card dragged to an edge pages the board toward it. */
+  pager?: RefObject<CarouselPager | null>;
+}
+
+/** Pages a carousel one snap step back (-1) or forward (1), animated, and stops at its ends. */
+export interface CarouselPager {
+  page(direction: -1 | 1): void;
 }
 
 export function SnapHScroll({
@@ -29,6 +36,7 @@ export function SnapHScroll({
   snapInterval,
   paddingLeft,
   gap,
+  pager,
 }: SnapHScrollProps) {
   // Bled over the page's margins (Bleed): the first column rests on the
   // margin, and each snap lines one up there.
@@ -40,9 +48,34 @@ export function SnapHScroll({
   const [width, setWidth] = useState(0);
   const column = snapInterval - (gap ?? 0);
   const trailing = width > 0 ? Math.max(gutter, width - gutter - column) : gutter;
+  const scroller = useRef<ScrollView>(null);
+  const offset = useRef(0);
+  const contentWidth = useRef(0);
+  useEffect(() => {
+    if (!pager) return;
+    pager.current = {
+      page: (direction) => {
+        const max = Math.max(0, contentWidth.current - width);
+        const step = Math.round(offset.current / snapInterval) + direction;
+        const x = Math.min(max, Math.max(0, step * snapInterval));
+        if (x !== offset.current) scroller.current?.scrollTo({ x, animated: true });
+      },
+    };
+    return () => {
+      pager.current = null;
+    };
+  }, [pager, snapInterval, width]);
   return (
     <ScrollView
+      ref={scroller}
       horizontal
+      scrollEventThrottle={16}
+      onScroll={(e) => {
+        offset.current = e.nativeEvent.contentOffset.x;
+      }}
+      onContentSizeChange={(w) => {
+        contentWidth.current = w;
+      }}
       showsHorizontalScrollIndicator={false}
       snapToInterval={snapInterval}
       snapToAlignment="start"
