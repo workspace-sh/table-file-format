@@ -11,6 +11,8 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
     width: 240,
+    // At least the height of what holds it (the page's, beside the table), so its edge runs the whole height.
+    minHeight: "100%",
     paddingBlock: 16,
     paddingInline: 12,
     borderInlineEndWidth: 1,
