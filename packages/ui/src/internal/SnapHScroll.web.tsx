@@ -22,6 +22,8 @@ export interface SnapHScrollProps {
   paddingLeft?: number;
   /** Space between the children, in pixels. */
   gap?: number;
+  /** Native only: the web's drag scrolls the page itself (DragHandle.web). */
+  pager?: unknown;
 }
 
 const styles = css.create({
