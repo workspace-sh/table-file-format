@@ -120,9 +120,10 @@ export default function TableScreen() {
   });
   // Development only: lets a script drive the app through React Native's
   // debugger connection, as the Mac's __tableDesktop does (taps can't be
-  // sent from an agent's session). Not in release builds.
+  // sent from an agent's session). Not in release builds, unless built for
+  // measuring (measure.ts), whose timings need production JavaScript.
   useEffect(() => {
-    if (!__DEV__ || !app) return;
+    if (!(__DEV__ || MEASURING) || !app) return;
     (globalThis as { __tableMobile?: unknown }).__tableMobile = {
       // Table embeds over the `.table` folders in `folder` (EmbedTest.tsx); null closes it.
       embedTest: (folder: string | null) => setEmbedTest(folder),
@@ -138,6 +139,11 @@ export default function TableScreen() {
       // The page's scroll, as a finger or the scroll indicator would move it.
       scrollTo: (y: number, animated = false) => scroller.current?.scrollTo({ y, animated }),
       scrolled: () => page.pageScroll.now(),
+      // The screen turned, as turning the phone does: the Simulator can't be turned from a script (iOS only).
+      rotate: (to: "landscape" | "portrait") => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        if (Platform.OS === "ios") (require("../modules/table-files") as typeof import("../modules/table-files")).requestOrientation(to);
+      },
     };
   });
   // A measuring build (EXPO_PUBLIC_TABLE_MEASURE=1) opens what its local
@@ -389,7 +395,7 @@ export default function TableScreen() {
             onClose={() => dispatch({ type: "openPage", rowId: null })}
           />
         )}
-        {__DEV__ && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
+        {(__DEV__ || MEASURING) && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
       </PortalHost>
       </PageGutter.Provider>
       </CellEditorContext.Provider>
