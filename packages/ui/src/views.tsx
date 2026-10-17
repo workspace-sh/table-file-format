@@ -1,5 +1,6 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
+import { KeyboardOnShow } from "./keyboardOnShow";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
@@ -2944,9 +2945,11 @@ export function TableView({
   const keysRef = useRef<GridKeysHandle | null>(null);
   // On the Mac, a table that comes into view takes the keyboard, so the first
   // arrow selects its first cell (gridKey) without a click first. Not on the
-  // web, where focusing would scroll the page, nor on a phone.
+  // web, where focusing would scroll the page, nor on a phone; nor where the
+  // host says not to (a document's embeds: KeyboardOnShow).
+  const keyboardOnShow = useContext(KeyboardOnShow);
   useEffect(() => {
-    if (PLATFORM_OS !== "macos") return;
+    if (PLATFORM_OS !== "macos" || !keyboardOnShow) return;
     const t = setTimeout(() => keysRef.current?.focus(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

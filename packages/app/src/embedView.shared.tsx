@@ -12,7 +12,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 import type { View } from "@workspace.sh/table-core";
-import { BodyEditor, DisplaySettingsProvider } from "@workspace.sh/table-ui";
+import { BodyEditor, DisplaySettingsProvider, KeyboardOnShow } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
@@ -115,6 +115,8 @@ function Shown({
   }, [telling]);
   return (
     <DisplaySettingsProvider value={display}>
+      {/* In a document, a table comes into view as the page scrolls: it doesn't take the keyboard until it's clicked. */}
+      <KeyboardOnShow.Provider value={false}>
       <Frame limit={limit}>
         <LayoutView
           key={view.id}
@@ -143,6 +145,7 @@ function Shown({
             : {})}
         />
       </Frame>
+      </KeyboardOnShow.Provider>
       {leftOut > 0 ? (
         <html.button style={styles.more} onClick={() => setOpened(true)}>
           <html.span style={styles.moreText}>{embedMoreText(leftOut, view.layout)}</html.span>
