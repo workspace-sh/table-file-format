@@ -140,6 +140,18 @@ export interface EmbeddedTableFiles {
   appendHistory?: (library: Library, key: string, events: EditEvent[]) => Promise<void>;
 }
 
+/** The tallest an embedded view is before it scrolls within itself, as on GTK. */
+export const EMBED_MAX_HEIGHT = 480;
+
+/** A row's height and the header's, for how tall `rows=n` is: table-ui's own default. */
+export const EMBED_ROW_HEIGHT = 44;
+
+/**
+ * The line under an embedded table, with its caption or Open, and the gap
+ * above it: about this tall, as measured on macOS (13 pt text).
+ */
+export const EMBED_FOOT_HEIGHT = 22;
+
 /**
  * The room an embed is likely to take, from its link alone, before its file
  * is read: exact for a table's `rows=n` (a header and n rows of `rowHeight`),
@@ -150,6 +162,19 @@ export function embedRoom(address: string | undefined, maxHeight: number, rowHei
   if (!parsed) return null;
   const rows = embedSize(parsed).rows;
   return rows === undefined ? maxHeight : Math.min(maxHeight, rowHeight + rows * rowHeight);
+}
+
+/**
+ * The room a document keeps for a `TableEmbed` before the embed has drawn,
+ * from its link alone: the room it keeps while its file is read
+ * (`embedRoom`), and the line under it when it will have one (a `caption`, or
+ * Open, which a host that gives `onOpen` offers). Reserved from the document's
+ * first layout, so the text after an embed doesn't move down once the embed
+ * has measured. Null when the link can't be read as an address.
+ */
+export function tableEmbedRoom(address: string, { caption = false, open = false }: { caption?: boolean; open?: boolean } = {}): number | null {
+  const room = embedRoom(address, EMBED_MAX_HEIGHT, EMBED_ROW_HEIGHT);
+  return room === null ? null : room + (caption || open ? EMBED_FOOT_HEIGHT : 0);
 }
 
 /** A document's link to a `.table`, and where it can be read from. */
