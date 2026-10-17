@@ -161,3 +161,46 @@ test("an embed keeps the room its link says it will take while it's read", () =>
   assert.equal(embedRoom("projects.table#table=tasks&embed=1", 480, 44), 480);
   assert.equal(embedRoom(undefined, 480, 44), null);
 });
+
+test("a document's embeds read each file once, and again after a write", async () => {
+  const { memoryFs, writeBundleTo } = await import("@workspace.sh/table-core/io");
+  const { embedReaderWith, embedFilesWith } = await import("./embed.ts");
+  const { noteWriting } = await import("./heldFiles.ts");
+  const fs = memoryFs();
+  await writeBundleTo(fs, "/ws/tables/projects.table", bundles.projects!);
+  let reads = 0;
+  const readText = fs.readText.bind(fs);
+  fs.readText = (path) => {
+    if (path === "/ws/tables/projects.table/meta.json") reads += 1;
+    return readText(path);
+  };
+  const read = embedReaderWith(fs);
+  const at = (address: string) => read({ address, baseDir: "/ws/docs", within: "/ws" });
+
+  const [tasks, projects, again] = await Promise.all([
+    at("../tables/projects.table#table=tasks&embed=1"),
+    at("../tables/projects.table#table=projects&embed=1"),
+    at("../tables/projects.table#table=tasks&view=v1&embed=1"),
+  ]);
+  assert.equal(reads, 1);
+  assert.ok(tasks.kind === "shown" && projects.kind === "shown" && again.kind === "shown");
+  assert.equal(tasks.library, projects.library);
+  assert.equal(tasks.key, "projects/tasks");
+  assert.equal(projects.key, "projects/projects");
+
+  // Written since: read again, with the edit.
+  const table = tasks.library.tables[tasks.key]!;
+  const renamed = { ...table, rows: table.rows.map((r, i) => (i === 0 ? { ...r, title: "Renamed" } : r)) };
+  const write = embedFilesWith(fs).write(tasks.library, { ...tasks.library.tables, [tasks.key]: renamed }, tasks.library.bundles, "projects");
+  noteWriting("/ws/tables/projects.table", write);
+  await write;
+  const written = reads;
+  const after = await at("../tables/projects.table#table=tasks&embed=1");
+  assert.equal(reads, written + 1);
+  assert.ok(after.kind === "shown");
+  assert.equal(after.library.tables[after.key]!.rows[0]!.title, "Renamed");
+
+  // Another document's reader reads for itself.
+  await embedReaderWith(fs)({ address: "../tables/projects.table#table=tasks&embed=1", baseDir: "/ws/docs" });
+  assert.equal(reads, written + 2);
+});
