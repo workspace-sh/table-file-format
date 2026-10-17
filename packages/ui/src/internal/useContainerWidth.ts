@@ -64,16 +64,27 @@ export function useContainerWidth(): ContainerMeasurement {
   // Re-measure on window resize / orientation change. The event comes
   // before the views have their new sizes, and a rotation's layout settles
   // over a few frames, so it's measured again as it settles: once only
-  // could read the old width and keep it.
+  // could read the old width and keep it. A Mac window being resized sends
+  // a change at every step of the drag: each one starts the three again
+  // rather than adding three more, so a drag measures at most once a step
+  // (and settles once it stops), not three times a step for every table on
+  // screen, all queued behind each other.
   useEffect(() => {
+    let settling: ReturnType<typeof setTimeout>[] = [];
+    const stopSettling = () => {
+      for (const timer of settling) clearTimeout(timer);
+      settling = [];
+    };
     const sub = Dimensions.addEventListener("change", () => {
-      for (const ms of [0, 100, 300]) setTimeout(measure, ms);
+      stopSettling();
+      settling = [0, 100, 300].map((ms) => setTimeout(measure, ms));
     });
     // And when the host says its content was laid out again.
     const stop = onLayoutChanged(measure);
     return () => {
       sub.remove();
       stop();
+      stopSettling();
     };
   }, [measure]);
 
