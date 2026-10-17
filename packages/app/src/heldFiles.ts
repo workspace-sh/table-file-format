@@ -13,6 +13,7 @@ export type HeldFileListener = (name: string, table: ParsedTable, from: object) 
 
 const listeners = new Map<string, Set<HeldFileListener>>();
 const writing = new Map<string, Promise<void>>();
+let writes = 0;
 
 /** Hear of changes to the file at `path` made by other views. Returns the way to stop. */
 export function heldFile(path: string, listener: HeldFileListener): () => void {
@@ -32,6 +33,7 @@ export function tellHeld(path: string, name: string, table: ParsedTable, from: o
 
 /** A write of the file at `path` under way: a read of it waits for this. */
 export function noteWriting(path: string, write: Promise<unknown>): void {
+  writes += 1;
   const after = (writing.get(path) ?? Promise.resolve()).then(
     () => write.then(() => undefined, () => undefined),
     () => undefined,
@@ -45,4 +47,9 @@ export function noteWriting(path: string, write: Promise<unknown>): void {
 /** When every write of the file at `path` that was under way has ended. */
 export function settled(path: string): Promise<void> {
   return writing.get(path) ?? Promise.resolve();
+}
+
+/** How many writes have been noted, of any file: a read kept from before a write is read again (embedReaderWith). */
+export function writesNoted(): number {
+  return writes;
 }

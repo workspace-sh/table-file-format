@@ -13,7 +13,7 @@ import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-co
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
 import { addressTarget, bundleOf, otherFilesNamed, tableNameOf } from "./bundles.ts";
-import { settled } from "./heldFiles.ts";
+import { settled, writesNoted } from "./heldFiles.ts";
 import { appendFolderHistory } from "./editHistory.ts";
 import { openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 
@@ -216,7 +216,46 @@ const lastPart = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  * table and view (embedIn), or why it can't be drawn. The same reading,
  * and the same words, on every platform.
  */
-export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: EmbedTarget, reading: EmbedReading = {}): Promise<EmbedRead> {
+export function readEmbedWith(fs: TableFs, target: EmbedTarget, reading: EmbedReading = {}): Promise<EmbedRead> {
+  return readEmbedFrom(fs, target, reading, (path) => readLinked(fs, path, reading));
+}
+
+/** A file an embed names, with the files its relations name beside it (withOtherFiles). */
+async function readLinked(fs: TableFs, path: string, reading: EmbedReading): Promise<Library> {
+  const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
+  return withOtherFiles(fs, library, reading);
+}
+
+/**
+ * A document's embeds read as one: each file once, however many embeds name
+ * it, rather than once for each. A document of six embeds of one file read
+ * it six times over, all at once, on the one thread the page is drawn from;
+ * and the first table waited for all of them. The embeds of a file are then
+ * handed the same Library, which none of them changes: each keeps its own
+ * state, and an edit in one reaches the others through heldFiles.
+ *
+ * A file is read again once anything has been written since it was read, so
+ * an embed drawn after an edit draws the edit. Make one for each document
+ * shown, so that opening it again reads it from the disk.
+ */
+export function embedReaderWith(fs: TableFs, reading: EmbedReading = {}): (target: EmbedTarget) => Promise<EmbedRead> {
+  const read = new Map<string, { writes: number; library: Promise<Library> }>();
+  const open = (path: string): Promise<Library> => {
+    const held = read.get(path);
+    if (held && held.writes === writesNoted()) return held.library;
+    const library = readLinked(fs, path, reading);
+    const entry = { writes: writesNoted(), library };
+    read.set(path, entry);
+    // A read that failed is tried again by the next embed, not handed on.
+    library.catch(() => {
+      if (read.get(path) === entry) read.delete(path);
+    });
+    return library;
+  };
+  return (target) => readEmbedFrom(fs, target, reading, open);
+}
+
+async function readEmbedFrom(fs: TableFs, { address, baseDir, within }: EmbedTarget, reading: EmbedReading, open: (path: string) => Promise<Library>): Promise<EmbedRead> {
   const parsed = parseAddress(address);
   if (!parsed) return embedProblem("This link doesn’t name a table.");
   const written = decoded(parsed.tablePath);
@@ -234,8 +273,7 @@ export async function readEmbedWith(fs: TableFs, { address, baseDir, within }: E
   }
   // After any write of it another view has under way.
   await settled(path);
-  const library = await openLibrary(fs, [path], [], reading.rowsElsewhere ? { rowsElsewhere: reading.rowsElsewhere } : {});
-  return embedIn(await withOtherFiles(fs, library, reading), parsed, lastPart(path), { readsIndex: reading.readsIndex === true });
+  return embedIn(await open(path), parsed, lastPart(path), { readsIndex: reading.readsIndex === true });
 }
 
 /** An embedded table's files over a platform's TableFs: edits written where the file was read from, and each to its table's history. */
