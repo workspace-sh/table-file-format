@@ -16,16 +16,14 @@ import { BodyEditor, DisplaySettingsProvider } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
-import { embedCount, embedFileAddress, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
+import { EMBED_MAX_HEIGHT, EMBED_ROW_HEIGHT, embedCount, embedFileAddress, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
 
-/** The tallest an embedded view is before it scrolls within itself, as on GTK. */
-export const EMBED_MAX_HEIGHT = 480;
+export { EMBED_MAX_HEIGHT };
 
-/** A row's height and the header's, for how tall `rows=n` is: table-ui's own default. */
-const ROW_HEIGHT = 44;
+const ROW_HEIGHT = EMBED_ROW_HEIGHT;
 
 /** The room Open takes at the end of the caption line, kept on both sides so the caption stays centred. */
 const OPEN_WIDTH = 56;
