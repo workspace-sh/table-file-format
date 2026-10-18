@@ -343,14 +343,6 @@ const styles = css.create({
     flexBasis: 0,
     minWidth: 0,
   },
-  // A pane of such columns: as many shares as it has, on top of what in it
-  // has a width of its own (row numbers, its divider, resized columns, the "+").
-  paneShare: (shares: number, fixed: number) => ({
-    flexGrow: shares,
-    flexShrink: 1,
-    flexBasis: fixed,
-    minWidth: 0,
-  }),
   // A column's header slot (headerCell): what's in it is as wide as it is.
   headerSlot: {
     display: "flex",
@@ -3298,7 +3290,8 @@ export function TableView({
   const colWidth = columnWidths(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
   // In a frame, when the columns fill it, the ones nobody resized share its
   // width in the layout (columnShare), so they follow a window being resized
-  // in the same pass as everything around them. `colWidth` is still what
+  // in the same pass as everything around them. All in one pane: nothing
+  // scrolls, so no column is frozen (primaryName). `colWidth` is still what
   // they were when last measured: what overlays (column lines, grips) and
   // scroll positions go by, a step behind at most. A table wider than its
   // frame, which scrolls, keeps its columns' widths.
@@ -3307,13 +3300,6 @@ export function TableView({
   // Sharing, the columns have no scroller (PaneScroll), so nothing is scrolled.
   if (fills) paneScroll.x.current = 0;
   const columnStyle = (name: string) => (shares(name) ? styles.columnShare : styles.cellWidth(colWidth(name)));
-  // A pane's shares, on top of what in it has a width of its own.
-  const paneStyle = (names: string[], fixed: number) =>
-    fills &&
-    styles.paneShare(
-      names.filter(shares).length,
-      fixed + names.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0),
-    );
   // Where the "+" column is, the scrolling pane's rows are as wide as their
   // columns and stop there: no row line, group band or total runs under the
   // "+", which is a place a column could go, not a column.
@@ -3549,13 +3535,16 @@ export function TableView({
   // When the primary is frozen, the left pane gets it and the right
   // pane gets the rest. When not frozen, the right pane gets all
   // fields and the left pane is unused.
-  const primaryName = freezePrimary ? fields[0] : undefined;
+  // Not while the columns share the frame's width (`fills`): nothing scrolls
+  // then, and in one pane they share it evenly, which two side by side
+  // didn't (the frozen one took its longest title as well as its share).
+  const primaryName = freezePrimary && !fills ? fields[0] : undefined;
   // Tables are edge to edge, as the markdown library's are: the framed
   // grid rests on the page's margin and scrolls sideways over it to the
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
-  const edgeToEdge = !primaryName;
-  const restNames = freezePrimary ? fields.slice(1) : fields;
+  const edgeToEdge = !freezePrimary || fields.length === 0;
+  const restNames = primaryName ? fields.slice(1) : fields;
   // Where each column of the sideways-scrolling part starts, from that
   // part's own start: a scroll comes to rest on one, so no column is left
   // cut in half at the edge with its title out of sight. (Row numbers,
@@ -4428,8 +4417,6 @@ export function TableView({
           <html.div
             style={[
               styles.tableFrozenColumn,
-              // Its rows carry the divider (1) and any row numbers.
-              paneStyle([primaryName], 1 + numberWidth),
               byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
             ]}
           >
@@ -4494,7 +4481,7 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={edgeToEdge ? styles.tablePaneFit : [styles.tableScrollOuter, paneStyle(restNames, addFieldW)]}>
+        <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
           {/* Columns that share the frame's width have nothing to scroll, and
               no scroller: in one, the layout sizes them by what's in them. */}
           <PaneScroll on={!edgeToEdge && !fills} scroll={paneScroll} snapTo={columnStarts}>
