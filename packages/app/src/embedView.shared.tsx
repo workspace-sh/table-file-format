@@ -231,8 +231,8 @@ const styles = css.create({
   side: { flexGrow: 1, flexShrink: 0, flexBasis: 0, display: "flex", flexDirection: "row" },
   end: { justifyContent: "flex-end" },
   holdsOpen: { minWidth: OPEN_WIDTH },
-  open: { paddingBlock: 2, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
+  open: { paddingBlock: 2, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   room: (height: number) => ({ height }),
-  more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent" },
+  more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   moreText: { fontSize: 14, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
 });
