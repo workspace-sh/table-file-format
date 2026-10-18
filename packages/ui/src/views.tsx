@@ -1937,6 +1937,13 @@ interface EditableCellProps {
    */
   onSelect?: () => void;
   /**
+   * The cell around it takes the clicks (selects, and edits once selected),
+   * so the idle value has no handler of its own: a view that only lays out
+   * is folded into the one around it on native, one view fewer for every
+   * cell a table draws, each moved again at every step of a window resize.
+   */
+  clicksFromCell?: boolean;
+  /**
    * For an attachment column: what editing does instead of typing a name,
    * such as choosing a file to copy into the table's folder. Absent, the
    * name is typed as before.
@@ -1987,6 +1994,7 @@ function EditableCell({
   autoEdit,
   selected,
   onSelect,
+  clicksFromCell,
   onAttach,
   editRequest,
   onEditHeard,
@@ -2082,6 +2090,8 @@ function EditableCell({
     else if (kind === "attachment" && onAttach) onAttach();
     else startEdit();
   };
+  // The idle value's own click, unless the cell around it takes them.
+  const idleClick = clicksFromCell ? undefined : clickToEdit;
 
   /**
    * Save the draft if the column can hold it (D42). Returns false, and
@@ -2150,7 +2160,7 @@ function EditableCell({
   // Being edited outside the cell: show what is typed, as it is typed.
   if (outsideDraft !== undefined) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
       </html.div>
     );
@@ -2180,7 +2190,7 @@ function EditableCell({
     ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
   ) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
       </html.div>
     );
@@ -2263,7 +2273,7 @@ function EditableCell({
         );
       }
       return (
-        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
+        <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
           {shown}
         </html.div>
       );
@@ -2323,7 +2333,7 @@ function EditableCell({
       );
     }
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         {shown}
       </html.div>
     );
@@ -3822,6 +3832,9 @@ export function TableView({
     };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
+    // The cell takes the clicks for an editable value's idle view (EditableCell's
+    // clicksFromCell); a checkbox keeps its own.
+    const cellClicks = !!onUpdateRow && field?.type !== "boolean";
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
       <html.div
@@ -3847,6 +3860,12 @@ export function TableView({
                 }
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
+              }
+            : cellClicks
+            ? () => {
+                // Selected, a click edits it, as a key does (openCell).
+                if (isSelected) void openCell(row.id, name);
+                else select();
               }
             : select
         }
@@ -3876,6 +3895,7 @@ export function TableView({
             autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
             selected={isSelected}
             onSelect={select}
+            clicksFromCell={cellClicks}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditHeard={editHeard}
