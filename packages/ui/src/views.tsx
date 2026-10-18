@@ -189,6 +189,9 @@ const ROW_BORDER = 1;
 /** The line at the frozen column's end (frozenEdge's borderInlineEndWidth). */
 const FROZEN_EDGE = 1;
 
+/** A board column's width: one width, whatever the board's, so a scroll comes to rest on one (with BOARD_GAP between). */
+const BOARD_COLUMN_WIDTH = 280;
+
 const styles = css.create({
   // Table
   tableWithAdd: {
@@ -566,6 +569,13 @@ const styles = css.create({
   tableRowLast: {
     borderBottomWidth: 0,
   },
+  // Edge to edge, the header row is the frame's top: its background takes
+  // the frame's corners (the frame's radius less its border), which on the
+  // Mac the frame doesn't clip it to.
+  tableHeaderRound: {
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+  },
   tableHeaderRow: {
     backgroundColor: {
       default: "#f5f5f7",
@@ -677,7 +687,7 @@ const styles = css.create({
   boardColumn: {
     display: "flex",
     flexDirection: "column",
-    width: 280,
+    width: BOARD_COLUMN_WIDTH,
     flexShrink: 0,
     padding: 12,
     borderRadius: 8,
@@ -1417,6 +1427,7 @@ const styles = css.create({
     backgroundColor: "transparent",
     cursor: "pointer",
     textAlign: "start",
+    maxWidth: "100%",
     fontSize: 13,
     color: {
       default: "#3478f6",
@@ -1937,7 +1948,7 @@ function RelationCellValue({
   // and a second opens the picker (CellLink).
   return (
     <CellLink onOpen={() => onOpenRelation(link.address)} label={`Open ${link.label}`} style={styles.relationLink}>
-      {link.label}
+      <html.span style={styles.clamp(1)}>{link.label}</html.span>
     </CellLink>
   );
 }
@@ -2741,8 +2752,8 @@ function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolea
 const PANE_CONTENT = { flexGrow: 1 };
 
 /** A board's columns, side by side: a sideways scroller of their own on React Native; the web's board scrolls itself. */
-function BoardScroll({ children }: { children: ReactNode }) {
-  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll>{children}</HScroll>;
+function BoardScroll({ children, snapTo }: { children: ReactNode; snapTo?: readonly number[] }) {
+  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo}>{children}</HScroll>;
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
@@ -4571,7 +4582,7 @@ export function TableView({
               ]}
             >
               {columnLines(restNames, coords && !primaryName ? numberWidth : 0, edgeToEdge && !fills ? 0 : addFieldW)}
-              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+              <html.div style={[styles.tableRow, styles.tableHeaderRow, edgeToEdge && styles.tableHeaderRound]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   headerCell(name, idx, restNames.length),
@@ -5161,7 +5172,7 @@ export function BoardView({
     <>
       <Bleed>
         {/* The web's board scrolls itself (overflowX); React Native's needs a scroller. */}
-        <BoardScroll>
+        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))}>
           <html.div {...cards.containerProps} style={styles.board}>
             <GutterSpacer gap={BOARD_GAP} />
             {columnsContent}
