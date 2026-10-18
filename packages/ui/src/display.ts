@@ -354,6 +354,28 @@ export function columnWidths(
   };
 }
 
+/**
+ * Whether the columns `columnWidths` gives fill the table exactly, as when
+ * none is too wide to fit: then the columns nobody resized can share the
+ * table's width as it changes, in the layout, rather than waiting to be
+ * measured again (a window resized on a Mac). Not when the table is wider
+ * than its room and scrolls, nor before it's measured, nor when every
+ * column has been given a width.
+ */
+export function columnsFill(
+  fields: string[],
+  setWidths: Record<string, number | undefined>,
+  containerWidth: number,
+  chrome: number,
+  squeezeTo: number = MIN_CELL_WIDTH,
+): boolean {
+  if (containerWidth <= 0) return false;
+  if (!fields.some((name) => typeof setWidths[name] !== "number")) return false;
+  const width = columnWidths(fields, setWidths, containerWidth, chrome, squeezeTo);
+  const total = fields.reduce((sum, name) => sum + width(name), 0);
+  return total === Math.max(0, containerWidth - chrome);
+}
+
 /** What an empty cell shows, and a choice picker's "no value" option. */
 export const EMPTY_TEXT = "—";
 
