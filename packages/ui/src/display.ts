@@ -321,6 +321,12 @@ export function columnWidths(
   chrome: number,
   /** How narrow flexible columns may be made to keep the table whole; the comfortable width when not given (no squeezing). */
   squeezeTo: number = MIN_CELL_WIDTH,
+  /**
+   * What they're given when the table can't be whole even squeezed: the
+   * comfortable width, or (`squeezeTo`) the squeezed one, held as the
+   * table starts to scroll, so its columns don't grow as its space shrinks.
+   */
+  past: number = MIN_CELL_WIDTH,
 ): (name: string) => number {
   const fixedWidth = (name: string) => {
     const w = setWidths[name];
@@ -332,7 +338,7 @@ export function columnWidths(
   // Whole in its space when it can be, down to the squeezed width; past that, comfortable and scrolling.
   const shared = (room: number, count: number) => {
     const raw = count > 0 && containerWidth > 0 ? Math.floor(room / count) : MIN_CELL_WIDTH;
-    return raw >= Math.min(squeezeTo, MIN_CELL_WIDTH) ? raw : MIN_CELL_WIDTH;
+    return raw >= Math.min(squeezeTo, MIN_CELL_WIDTH) ? raw : past;
   };
   // What each column would be with none resized: the least a flexible one is given.
   const unresized = shared(Math.max(0, containerWidth - chrome), fields.length);
