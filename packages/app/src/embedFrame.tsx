@@ -11,7 +11,7 @@
 
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, Animated, Platform, ScrollView } from "react-native";
-import { PageGutter, PageScrollContext, notifyLayoutChanged, pageScrollOver } from "@workspace.sh/table-ui";
+import { LayoutChannel, PageGutter, PageScrollContext, layoutChannel, pageScrollOver } from "@workspace.sh/table-ui";
 
 import type { Confirm } from "./confirm.ts";
 import { EMBED_MAX_HEIGHT, TableEmbedWith, type TableEmbedProps } from "./embedView.shared.tsx";
@@ -55,6 +55,8 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (settling.current && clearTimeout(settling.current)), []);
   const width = useRef(0);
+  // What's in this frame hears of its width changing, and nothing else does.
+  const [channel] = useState(layoutChannel);
   const gutter = useContext(PageGutter);
   const height = settled ? Math.min(held || limit, limit) : limit;
   return (
@@ -80,7 +82,7 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
         const w = e.nativeEvent.layout.width;
         if (w !== width.current) {
           width.current = w;
-          notifyLayoutChanged();
+          channel.notify();
         }
       }}
       onContentSizeChange={(_w, h) => {
@@ -95,7 +97,9 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
       }}
     >
       <PageScrollContext.Provider value={page.pageScroll}>
-        <Animated.View style={{ opacity: shown }}>{children}</Animated.View>
+        <LayoutChannel.Provider value={channel.listen}>
+          <Animated.View style={{ opacity: shown }}>{children}</Animated.View>
+        </LayoutChannel.Provider>
       </PageScrollContext.Provider>
     </ScrollView>
   );
