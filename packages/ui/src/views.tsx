@@ -227,6 +227,10 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
   },
+  // Edge to edge, filling the width: grown to what's around it.
+  fitGrow: {
+    flexGrow: 1,
+  },
   bleedRow: {
     display: "flex",
     flexDirection: "row",
@@ -2719,12 +2723,12 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
-function EdgeToEdge({ on, children, snapTo }: { on: boolean; children: ReactNode; snapTo?: readonly number[] }) {
+function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolean; children: ReactNode; snapTo?: readonly number[] }) {
   if (!on) return <>{children}</>;
   return (
     <Bleed>
-      <HScroll snapTo={snapTo}>
-        <html.div style={styles.bleedRow}>
+      <HScroll snapTo={snapTo} scrollProps={fill ? { contentContainerStyle: PANE_CONTENT } : undefined}>
+        <html.div style={[styles.bleedRow, fill && styles.fitGrow]}>
           <GutterSpacer />
           {children}
           <GutterSpacer />
@@ -3286,7 +3290,13 @@ export function TableView({
   // portrait viewports it ate too much real estate (the title column
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
-  const freezePrimary = !useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const wide = !useCompactViewport(TOUCH_VIEWPORT_MAX);
+  // A pinned first column is, for now, the web's wide layout. Elsewhere a
+  // table is edge to edge, as the markdown library's tables are and the
+  // phone's always were: it fills the width when it fits, and when it
+  // doesn't it scrolls sideways over the page's margins, to its edges,
+  // rather than inside a frame with a margin either side.
+  const freezePrimary = wide && PLATFORM_OS === "web";
 
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
@@ -3299,7 +3309,7 @@ export function TableView({
   // In a frame, the layout keeps the columns right as its width changes
   // (columnShare): the table isn't drawn again at each step of a window
   // being resized, only once it's still.
-  const { measureProps, width: containerWidth } = useContainerWidth(() => freezePrimary);
+  const { measureProps, width: containerWidth } = useContainerWidth(() => wide);
 
   // Column-width model. The earlier version divided the container by
   // `fields + 1` (counting the "+ Field" slot) but then rendered that
@@ -3340,7 +3350,7 @@ export function TableView({
   const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
   // Squeezed past fitting, a framed table's columns hold the squeezed width
   // and scroll, rather than growing to the comfortable one as its space shrinks.
-  const colWidth = columnWidths(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH, freezePrimary ? SQUEEZED_CELL_WIDTH : undefined);
+  const colWidth = columnWidths(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH, wide ? SQUEEZED_CELL_WIDTH : undefined);
   // In a frame, the columns nobody resized share its width in the layout
   // (columnShare), down to the squeezed width; past that they hold it and
   // the columns beside the frozen one scroll. The layout does it, in the
@@ -3349,7 +3359,7 @@ export function TableView({
   // where it had been a different table, built again, a moment after the
   // window moved. `colWidth` is what they were when last measured: what
   // grips and scroll positions go by, a step behind at most.
-  const shares = (name: string) => freezePrimary && typeof setWidths[name] !== "number";
+  const shares = (name: string) => wide && typeof setWidths[name] !== "number";
   // As narrow as a sharing column can be: the squeezed width, or, when a
   // column dragged wider has made the table scroll, what they had before
   // (a column dragged wider widens the table, rather than taking the
@@ -3365,7 +3375,7 @@ export function TableView({
   // "+", which is a place a column could go, not a column.
   const restRowWidth = () =>
     addFieldW > 0
-      ? !edgeToEdge
+      ? !edgeToEdge || fills
         ? styles.rowStopsBefore(addFieldW)
         : styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? numberWidth : 0))
       : false;
@@ -3602,6 +3612,10 @@ export function TableView({
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
   const edgeToEdge = !freezePrimary || fields.length === 0;
+  // Edge to edge on a wide screen, the columns share the page's width in
+  // the layout, as they do beside a pinned column: the scroller's content
+  // is at least as wide as the page, and the frame and its pane grow to it.
+  const fills = wide && edgeToEdge;
   const restNames = primaryName ? fields.slice(1) : fields;
   // Beside the frozen column: one share for each of its columns that shares
   // the width, on what it holds at a fixed width; or, when none does and the
@@ -4457,7 +4471,7 @@ export function TableView({
         <html.div {...measureProps} style={styles.tableGrow} />
       </html.div>
     )}
-    <EdgeToEdge on={edgeToEdge} snapTo={columnStarts}>
+    <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
     <GridKeys ref={keysRef} onKeyDown={onGridKey}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4471,9 +4485,9 @@ export function TableView({
       // mask to a bitmap, and for thousands of rows it took gigabytes.
       tabIndex={PLATFORM_OS === "web" ? 0 : undefined}
       onKeyDown={onGridKey}
-      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
+      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit, fills && styles.fitGrow]}
     >
-    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow, fills && styles.fitGrow]}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
@@ -4548,15 +4562,15 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={edgeToEdge ? styles.tablePaneFit : [styles.tableScrollBeside, paneShare]}>
+        <html.div style={edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow] : [styles.tableScrollBeside, paneShare]}>
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
             <html.div
               style={[
-                edgeToEdge ? styles.tablePaneFit : [styles.tableScrollPane, styles.paneLeast(restLeast)],
+                edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow, fills && styles.paneLeast(restLeast)] : [styles.tableScrollPane, styles.paneLeast(restLeast)],
                 byLines && styles.positioned,
               ]}
             >
-              {columnLines(restNames, coords && !primaryName ? numberWidth : 0, edgeToEdge ? 0 : addFieldW)}
+              {columnLines(restNames, coords && !primaryName ? numberWidth : 0, edgeToEdge && !fills ? 0 : addFieldW)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
                 {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
