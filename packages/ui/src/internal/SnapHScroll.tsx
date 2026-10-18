@@ -11,7 +11,7 @@
  * interval form — columns are uniform width.
  */
 import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ScrollView } from "react-native";
+import { Platform, ScrollView } from "react-native";
 import { PageGutter } from "../pageGutter";
 
 export interface SnapHScrollProps {
@@ -30,6 +30,9 @@ export interface SnapHScrollProps {
 export interface CarouselPager {
   page(direction: -1 | 1): void;
 }
+
+/** How long a Mac's scroll must have been still before it's settled on a column, in milliseconds (as HScroll's). */
+const SETTLE_AFTER_MS = 160;
 
 export function SnapHScroll({
   children,
@@ -51,6 +54,17 @@ export function SnapHScroll({
   const scroller = useRef<ScrollView>(null);
   const offset = useRef(0);
   const contentWidth = useRef(0);
+  // A Mac's scroll view has no snapping (React Native macOS takes
+  // snapToInterval and never uses it): there the scroll is moved to the
+  // nearest column once it has been still a moment, as HScroll does.
+  const settles = Platform.OS === "macos";
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (settle.current) clearTimeout(settle.current);
+    },
+    [],
+  );
   useEffect(() => {
     if (!pager) return;
     pager.current = {
@@ -71,7 +85,16 @@ export function SnapHScroll({
       horizontal
       scrollEventThrottle={16}
       onScroll={(e) => {
-        offset.current = e.nativeEvent.contentOffset.x;
+        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+        offset.current = contentOffset.x;
+        if (!settles) return;
+        if (settle.current) clearTimeout(settle.current);
+        settle.current = setTimeout(() => {
+          const x = offset.current;
+          const max = Math.max(0, contentSize.width - layoutMeasurement.width);
+          const to = Math.min(max, Math.max(0, Math.round(x / snapInterval) * snapInterval));
+          if (Math.abs(to - x) > 0.5) scroller.current?.scrollTo({ x: to, animated: true });
+        }, SETTLE_AFTER_MS);
       }}
       onContentSizeChange={(w) => {
         contentWidth.current = w;
