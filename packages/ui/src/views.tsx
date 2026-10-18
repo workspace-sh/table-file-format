@@ -3251,7 +3251,11 @@ export function TableView({
   // Container-measured (not viewport-measured) so a sidebar-narrowed
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  // While the columns share the frame's width either side of a change, the
+  // layout keeps them right as it changes (`fills`): the table isn't drawn
+  // again at each step of a window being resized, only once it's still.
+  const fillsAt = useRef<(width: number) => boolean>(() => false);
+  const { measureProps, width: containerWidth } = useContainerWidth((from, to) => fillsAt.current(from) && fillsAt.current(to));
 
   // Column-width model. The earlier version divided the container by
   // `fields + 1` (counting the "+ Field" slot) but then rendered that
@@ -3299,6 +3303,8 @@ export function TableView({
   // scroll positions go by, a step behind at most. A table wider than its
   // frame, which scrolls, keeps its columns' widths.
   const fills = freezePrimary && fields.length > 0 && columnsFill(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  fillsAt.current = (width) =>
+    freezePrimary && fields.length > 0 && columnsFill(fields, setWidths, width, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
   const shares = (name: string) => fills && typeof setWidths[name] !== "number";
   // Sharing, the columns have no scroller (PaneScroll), so nothing is scrolled.
   if (fills) paneScroll.x.current = 0;
