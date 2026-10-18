@@ -22,9 +22,12 @@ export { EMBED_MAX_HEIGHT, type TableEmbedProps };
 const SETTLE_MS = 120;
 
 // React Native for macOS doesn't run an opacity animation on the native
-// driver: the view stays at 0, and the table is never seen. There the fade
-// runs in JS, once per embed, which costs nothing that matters.
-const NATIVE_FADE = Platform.OS !== "macos";
+// driver: the view stays at 0, and the table is never seen. Nor is it faded
+// in JS there: a JS-driven animation sets its view's props outside a render
+// (setNativeProps), which Fabric doesn't guard against the window's own
+// layout, and a window being resized while a table faded in crashed the app.
+// On the Mac what the frame holds is shown, in a render, without a fade.
+const FADES = Platform.OS !== "macos";
 
 function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   const scroller = useRef<ScrollView>(null);
@@ -92,13 +95,13 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
         if (settling.current) clearTimeout(settling.current);
         settling.current = setTimeout(() => {
           setSettled(true);
-          Animated.timing(shown, { toValue: 1, duration: 180, useNativeDriver: NATIVE_FADE }).start();
+          if (FADES) Animated.timing(shown, { toValue: 1, duration: 180, useNativeDriver: true }).start();
         }, SETTLE_MS);
       }}
     >
       <PageScrollContext.Provider value={page.pageScroll}>
         <LayoutChannel.Provider value={channel.listen}>
-          <Animated.View style={{ opacity: shown }}>{children}</Animated.View>
+          <Animated.View style={{ opacity: FADES ? shown : settled ? 1 : 0 }}>{children}</Animated.View>
         </LayoutChannel.Provider>
       </PageScrollContext.Provider>
     </ScrollView>
