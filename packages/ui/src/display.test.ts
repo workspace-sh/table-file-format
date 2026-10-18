@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, columnsFill, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -121,4 +121,17 @@ test("a sheet's row numbers fit on one line: the gutter is as wide as the larges
   // 1,000,001 has seven digits: room for seven tabular figures at 11 points, with the padding.
   assert.ok(rowNumberWidth(1_000_001) >= 7 * 6.6 + 12);
   assert.equal(rowNumberWidth(1_000_001), rowNumberWidth(9_999_999));
+});
+
+test("columns fill the table when none overflows it, so the layout can share its width", () => {
+  // Shared exactly, squeezed or not, and with a column narrowed.
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 1002, 2), true);
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 642, 2, SQUEEZED_CELL_WIDTH), true);
+  assert.equal(columnsFill(["a", "b", "c", "d"], { a: 100 }, 1002, 2), true);
+  // Wider than the table (it scrolls): comfortable columns, or one widened.
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 558, 2, SQUEEZED_CELL_WIDTH), false);
+  assert.equal(columnsFill(["a", "b", "c", "d"], { a: 400 }, 1002, 2), false);
+  // Not measured yet, or nothing left to share.
+  assert.equal(columnsFill(["a", "b"], {}, 0, 2), false);
+  assert.equal(columnsFill(["a", "b"], { a: 300, b: 300 }, 602, 2), false);
 });
