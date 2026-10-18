@@ -351,6 +351,17 @@ const styles = css.create({
     flexBasis: fixed,
     minWidth: 0,
   }),
+  // A column's header slot (headerCell): what's in it is as wide as it is.
+  headerSlot: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    flexShrink: 0,
+  },
+  // A header in its slot: as tall as the header row.
+  slotFill: {
+    flexGrow: 1,
+  },
   // A row that stops short of the "+" column after it.
   rowStopsBefore: (w: number) => ({
     marginInlineEnd: w,
@@ -3587,7 +3598,7 @@ export function TableView({
           text={hintText}
           style={[
             styles.tableCell,
-            columnStyle(name),
+            styles.slotFill,
             styles.tableHeaderCell,
             styles.positioned,
             cellAlignStyle(align),
@@ -3617,7 +3628,7 @@ export function TableView({
         text={isEditing ? undefined : hintText}
         style={[
           styles.headerCellWrapper,
-          columnStyle(name),
+          styles.slotFill,
           (!isLast || closes(name)) && styles.tableCellSeparator,
         ]}
       >
@@ -3692,7 +3703,14 @@ export function TableView({
       </RowActions>
     );
   };
-  const headerCell = renderHeaderCell;
+  // Each header in a slot of its column's width, straight in the row: what
+  // wraps a header (its right-click menu, its tooltip) are views of their
+  // own on a Mac, and a width given inside them never reached the row.
+  const headerCell = (name: string, idxInPane: number, paneLen: number) => (
+    <html.div key={name} style={[styles.headerSlot, columnStyle(name)]}>
+      {renderHeaderCell(name, idxInPane, paneLen)}
+    </html.div>
+  );
   // The "+" for a new field, in the header after the last column.
   const headerAddCell = addFieldW > 0 && <html.div style={[styles.headerAddCell, styles.cellWidth(addFieldW)]}>{addFieldButton(true)}</html.div>;
 
