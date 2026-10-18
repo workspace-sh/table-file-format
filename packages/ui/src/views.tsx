@@ -4500,7 +4500,7 @@ export function TableView({
       </html.div>
     )}
     <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
-    <GridKeys ref={keysRef} onKeyDown={onGridKey}>
+    <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
