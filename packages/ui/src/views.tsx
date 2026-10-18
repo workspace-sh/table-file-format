@@ -18,6 +18,7 @@ import {
   type RelationLink,
   linesFor,
   columnWidths,
+  columnsFill,
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
@@ -332,6 +333,30 @@ const styles = css.create({
   // Applied at use-site to both header and body cells so columns align.
   cellWidth: (w: number) => ({
     width: w,
+  }),
+  // A column that shares the table's width with the others nobody resized,
+  // in the layout: it follows the window as it's resized, in the same pass
+  // as the text around it, rather than once the table is measured again.
+  columnShare: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+  },
+  // A column's header slot (headerCell): what's in it is as wide as it is.
+  headerSlot: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    flexShrink: 0,
+  },
+  // A header in its slot: as tall as the header row.
+  slotFill: {
+    flexGrow: 1,
+  },
+  // A row that stops short of the "+" column after it.
+  rowStopsBefore: (w: number) => ({
+    marginInlineEnd: w,
   }),
   rowHeight: (h: number) => ({
     height: h,
@@ -3100,7 +3125,7 @@ export function TableView({
           {names.map((name, idx) => (
             <html.div
               key={name}
-              style={[styles.tableCell, styles.cellWidth(colWidth(name)), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
+              style={[styles.tableCell, columnStyle(name), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
             />
           ))}
         </html.div>
@@ -3261,13 +3286,28 @@ export function TableView({
   const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
   // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
   const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
-  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
+  const colWidth = columnWidths(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  // In a frame, when the columns fill it, the ones nobody resized share its
+  // width in the layout (columnShare), so they follow a window being resized
+  // in the same pass as everything around them. All in one pane: nothing
+  // scrolls, so no column is frozen (primaryName). `colWidth` is still what
+  // they were when last measured: what overlays (column lines, grips) and
+  // scroll positions go by, a step behind at most. A table wider than its
+  // frame, which scrolls, keeps its columns' widths.
+  const fills = freezePrimary && fields.length > 0 && columnsFill(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  const shares = (name: string) => fills && typeof setWidths[name] !== "number";
+  // Sharing, the columns have no scroller (PaneScroll), so nothing is scrolled.
+  if (fills) paneScroll.x.current = 0;
+  const columnStyle = (name: string) => (shares(name) ? styles.columnShare : styles.cellWidth(colWidth(name)));
   // Where the "+" column is, the scrolling pane's rows are as wide as their
   // columns and stop there: no row line, group band or total runs under the
   // "+", which is a place a column could go, not a column.
   const restRowWidth = () =>
     addFieldW > 0
-      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? numberWidth : 0))
+      ? fills
+        ? styles.rowStopsBefore(addFieldW)
+        : styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? numberWidth : 0))
       : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
@@ -3495,13 +3535,16 @@ export function TableView({
   // When the primary is frozen, the left pane gets it and the right
   // pane gets the rest. When not frozen, the right pane gets all
   // fields and the left pane is unused.
-  const primaryName = freezePrimary ? fields[0] : undefined;
+  // Not while the columns share the frame's width (`fills`): nothing scrolls
+  // then, and in one pane they share it evenly, which two side by side
+  // didn't (the frozen one took its longest title as well as its share).
+  const primaryName = freezePrimary && !fills ? fields[0] : undefined;
   // Tables are edge to edge, as the markdown library's are: the framed
   // grid rests on the page's margin and scrolls sideways over it to the
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
-  const edgeToEdge = !primaryName;
-  const restNames = freezePrimary ? fields.slice(1) : fields;
+  const edgeToEdge = !freezePrimary || fields.length === 0;
+  const restNames = primaryName ? fields.slice(1) : fields;
   // Where each column of the sideways-scrolling part starts, from that
   // part's own start: a scroll comes to rest on one, so no column is left
   // cut in half at the edge with its title out of sight. (Row numbers,
@@ -3540,7 +3583,7 @@ export function TableView({
           text={hintText}
           style={[
             styles.tableCell,
-            styles.cellWidth(colWidth(name)),
+            styles.slotFill,
             styles.tableHeaderCell,
             styles.positioned,
             cellAlignStyle(align),
@@ -3570,7 +3613,7 @@ export function TableView({
         text={isEditing ? undefined : hintText}
         style={[
           styles.headerCellWrapper,
-          styles.cellWidth(colWidth(name)),
+          styles.slotFill,
           (!isLast || closes(name)) && styles.tableCellSeparator,
         ]}
       >
@@ -3645,7 +3688,14 @@ export function TableView({
       </RowActions>
     );
   };
-  const headerCell = renderHeaderCell;
+  // Each header in a slot of its column's width, straight in the row: what
+  // wraps a header (its right-click menu, its tooltip) are views of their
+  // own on a Mac, and a width given inside them never reached the row.
+  const headerCell = (name: string, idxInPane: number, paneLen: number) => (
+    <html.div key={name} style={[styles.headerSlot, columnStyle(name)]}>
+      {renderHeaderCell(name, idxInPane, paneLen)}
+    </html.div>
+  );
   // The "+" for a new field, in the header after the last column.
   const headerAddCell = addFieldW > 0 && <html.div style={[styles.headerAddCell, styles.cellWidth(addFieldW)]}>{addFieldButton(true)}</html.div>;
 
@@ -3671,7 +3721,7 @@ export function TableView({
     ) : null;
     const cellStyle = [
       styles.tableCell,
-      styles.cellWidth(colWidth(name)),
+      columnStyle(name),
       cellAlignStyle(effectiveAlign(field)),
       (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
       styles.totalCell,
@@ -3695,7 +3745,7 @@ export function TableView({
         key={name}
         style={[
           styles.tableCell,
-          styles.cellWidth(colWidth(name)),
+          columnStyle(name),
           cellAlignStyle(effectiveAlign(field)),
           (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
           styles.totalCell,
@@ -3788,7 +3838,7 @@ export function TableView({
         }
         style={[
           styles.tableCell,
-          styles.cellWidth(colWidth(name)),
+          columnStyle(name),
           cellAlignStyle(align),
           (!isLast || closes(name)) && styles.tableCellSeparator,
           isFormula && styles.formulaCellClickable,
@@ -4364,7 +4414,12 @@ export function TableView({
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
         {primaryName && (
-          <html.div style={[styles.tableFrozenColumn, byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane)]}>
+          <html.div
+            style={[
+              styles.tableFrozenColumn,
+              byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
+            ]}
+          >
             {columnLines([primaryName], numberWidth)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
@@ -4427,7 +4482,9 @@ export function TableView({
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
-          <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
+          {/* Columns that share the frame's width have nothing to scroll, and
+              no scroller: in one, the layout sizes them by what's in them. */}
+          <PaneScroll on={!edgeToEdge && !fills} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
               {columnLines(restNames, coords && !primaryName ? numberWidth : 0)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
