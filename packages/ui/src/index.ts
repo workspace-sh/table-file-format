@@ -20,7 +20,7 @@ export { PlatformControlsProvider, usePlatformControls } from "./PlatformControl
 export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { PageGutter } from "./pageGutter";
 export { KeyboardOnShow } from "./keyboardOnShow";
-export { notifyLayoutChanged } from "./internal/relayout";
+export { notifyLayoutChanged, layoutChannel, LayoutChannel } from "./internal/relayout";
 export { PageReveal, type PageRevealRect } from "./pageReveal";
 export { PageScrollContext, pageScrollOver, type PageScroll } from "./pageScroll";
 export { PanelSurface, type PanelSurfaceComponent } from "./panelSurface";
