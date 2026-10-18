@@ -77,6 +77,9 @@ test("columns fill the table exactly, resized ones keep their width, and narrow 
   // Not asked to squeeze, columns keep the comfortable width: the same four in 642 scroll.
   assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2)("a"), 180);
   assert.equal(scrolls("a"), 180);
+  // Asked to hold the squeezed width past it (a framed table), they stay 140 and the table scrolls.
+  assert.equal(columnWidths(["a", "b", "c", "d"], {}, 558, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH)("a"), 140);
+  assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH)("a"), 160);
 });
 
 test("widening a column makes the table wider, and leaves the others as they were", () => {
