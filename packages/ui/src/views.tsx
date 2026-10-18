@@ -2711,14 +2711,11 @@ function PaneScroll({
   children,
   scroll,
   snapTo,
-  fill,
 }: {
   on: boolean;
   children: ReactNode;
   scroll?: { ref: { current: unknown }; x: { current: number } };
   snapTo?: readonly number[];
-  /** What it holds is as wide as it is, not as its content: columns that share the width (TableView's `fills`). */
-  fill?: boolean;
 }) {
   return on ? (
     <HScroll
@@ -2726,14 +2723,11 @@ function PaneScroll({
       // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scrollProps={
-        (scroll || fill) &&
+        scroll &&
         ({
-          ...(fill ? { contentContainerStyle: { flexGrow: 1 } } : {}),
-          ...(scroll ? {
           ref: scroll.ref,
           onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
           scrollEventThrottle: 16,
-          } : {}),
         } as any)
       }
     >
@@ -3313,6 +3307,8 @@ export function TableView({
   // frame, which scrolls, keeps its columns' widths.
   const fills = freezePrimary && fields.length > 0 && columnsFill(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
   const shares = (name: string) => fills && typeof setWidths[name] !== "number";
+  // Sharing, the columns have no scroller (PaneScroll), so nothing is scrolled.
+  if (fills) paneScroll.x.current = 0;
   const columnStyle = (name: string) => (shares(name) ? styles.columnShare : styles.cellWidth(colWidth(name)));
   // A pane's shares, on top of what in it has a width of its own.
   const paneStyle = (names: string[], fixed: number) =>
@@ -4502,7 +4498,9 @@ export function TableView({
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
         <html.div style={edgeToEdge ? styles.tablePaneFit : [styles.tableScrollOuter, paneStyle(restNames, addFieldW)]}>
-          <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts} fill={fills}>
+          {/* Columns that share the frame's width have nothing to scroll, and
+              no scroller: in one, the layout sizes them by what's in them. */}
+          <PaneScroll on={!edgeToEdge && !fills} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
               {columnLines(restNames, coords && !primaryName ? numberWidth : 0)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
