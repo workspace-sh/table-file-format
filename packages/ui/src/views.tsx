@@ -380,10 +380,14 @@ const styles = css.create({
   // as the text around it, rather than once the table is measured again.
   // Never narrower than `least` (as narrow as a column can be squeezed):
   // past that, it holds its width and the columns beside the frozen one scroll.
+  // No width of its own (width and basis 0), so what's in a cell never
+  // widens it: every row of a table shares its width the same way, its
+  // header, its rows and its totals alike, whatever each holds.
   columnShare: (least: number) => ({
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
+    width: 0,
     minWidth: least,
   }),
   // A column's header slot (headerCell): what's in it is as wide as it is.
