@@ -1529,6 +1529,11 @@ const styles = css.create({
     // pushed out of the cell.
     minWidth: 0,
     minHeight: 22,
+  },
+  // On the web a cell shows the text cursor. Not on the Mac, as in Numbers
+  // and Finder's lists: there each view with a cursor of its own is one
+  // more region the window walks at every step of a resize.
+  cellIdleCursor: {
     cursor: "text",
   },
 
@@ -2119,7 +2124,7 @@ function EditableCell({
   // Being edited outside the cell: show what is typed, as it is typed.
   if (outsideDraft !== undefined) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
       </html.div>
     );
@@ -2149,7 +2154,7 @@ function EditableCell({
     ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
   ) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
       </html.div>
     );
@@ -2227,12 +2232,12 @@ function EditableCell({
               onEditEnd?.("done");
             }}
             label={field?.title ?? field?.name}
-            trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+            trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
           />
         );
       }
       return (
-        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
           {shown}
         </html.div>
       );
@@ -2287,12 +2292,12 @@ function EditableCell({
             onEditEnd?.("done");
           }}
           label={field?.title ?? field?.name}
-          trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+          trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
         />
       );
     }
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         {shown}
       </html.div>
     );
@@ -2321,7 +2326,7 @@ function EditableCell({
               void measureAnchor(el).then(setLongAt);
             }
           }}
-          style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}
+          style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}
         >
           <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
         </html.span>
@@ -2518,7 +2523,7 @@ function ListCell({
         if (selected !== false) void openPicker();
         else onSelect?.();
       }}
-      style={styles.cellEditableIdle}
+      style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor]}
     >
       <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
     </html.div>
