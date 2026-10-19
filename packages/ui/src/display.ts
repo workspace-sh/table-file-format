@@ -285,14 +285,14 @@ export const SQUEEZED_CELL_WIDTH = 140;
 
 /**
  * How narrow a column of `field` may be squeezed to keep its table whole,
- * by what its cells hold: a checkbox needs little, a choice's pill or a
+ * by what its cells hold: a checkbox needs room for its header, a choice's pill or a
  * date a little more, an amount room for its total ("SUM US$732,800.00"),
  * and the title or a text column the comfortable width. In a table that
  * doesn't fit, the columns that can spare it give their room first.
  */
 export function squeezedWidthOf(field: Field | undefined, schema: TableSchema, primary = false): number {
   if (primary || field === undefined) return MIN_CELL_WIDTH;
-  if (field.type === "boolean") return 80;
+  if (field.type === "boolean") return 100;
   if (field.relation || field.attachment) return SQUEEZED_CELL_WIDTH;
   if (enumOptions(field).length > 0) return field.type === "array" ? SQUEEZED_CELL_WIDTH : 110;
   switch (field.type) {
