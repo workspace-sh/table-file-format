@@ -1502,6 +1502,16 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
+  // A column's title, on one line however narrow its column: cut short
+  // with an ellipsis (the full title is in the hover hint), never broken
+  // across two. On native the button's nowrap doesn't reach the text;
+  // lineClamp does (numberOfLines).
+  headerTitle: {
+    lineClamp: 1,
+    overflow: "hidden",
+    minWidth: 0,
+    flexShrink: 1,
+  },
   headerCellButtonCenter: {
     textAlign: "center",
   },
@@ -3324,7 +3334,12 @@ export function TableView({
   // portrait viewports it ate too much real estate (the title column
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
-  const wide = !useCompactViewport(TOUCH_VIEWPORT_MAX);
+  // On the Mac a table is laid out for a pointer however narrow its window:
+  // a window dragged under the touch width took the phone's layout a moment
+  // after the drag, when the window's size reached it, and the table jumped
+  // to columns of another width.
+  const compact = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const wide = PLATFORM_OS === "macos" || !compact;
   // A pinned first column is, for now, the web's wide layout. Elsewhere a
   // table is edge to edge, as the markdown library's tables are and the
   // phone's always were: it fills the width when it fits, and when it
@@ -3717,7 +3732,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
           {!byLines && columnResizer(name)}
         </Hinted>
       );
@@ -3764,7 +3779,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
         {isEditing && field && anchorRect && (
           <SchemaFieldEditor
@@ -4493,6 +4508,7 @@ export function TableView({
     editor,
     facts,
     freezePrimary,
+    wide,
     containerWidth,
     pageReveal,
   ];
