@@ -77,6 +77,7 @@ function Shown({
   onOpenLink,
   ask,
   Frame,
+  onWidest,
 }: {
   shown: EmbedShown;
   files: EmbeddedTableFiles;
@@ -86,6 +87,7 @@ function Shown({
   onOpenLink: ((address: string) => void) | undefined;
   ask: NonNullable<TableEmbedProps["ask"]>;
   Frame: EmbedFrame;
+  onWidest: (width: number | null) => void;
 }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
   const { table, view } = derived;
@@ -124,6 +126,7 @@ function Shown({
           // Cut, the view draws only its first rows or cards; what it counts is still the whole view's.
           {...(cut ? { cut: count } : {})}
           {...(shown.size.width === "full" ? { fillWidth: true } : {})}
+          {...(view.layout === "table" ? { onWidest } : {})}
           schema={table.schema}
           bodies={table.bodies}
           relatedTables={related}
@@ -174,6 +177,9 @@ export function TableEmbedWith(
   // Where Open goes: the file at the table and view drawn. Nothing for a file without a path, or a host that opens none.
   const openAt = onOpen && read?.kind === "shown" ? embedFileAddress(read) : null;
   const captioned = caption && (read || room !== null);
+  // As wide as the table grows, the caption line ends where it does: the
+  // caption centred under it and Open at its end, not the page's.
+  const [widest, setWidest] = useState<number | null>(null);
   return (
     <html.div style={styles.embed}>
       {room !== null ? <html.div aria-hidden={true} style={styles.room(room)} /> : null}
@@ -188,6 +194,7 @@ export function TableEmbedWith(
           onOpenLink={onOpenLink}
           ask={ask ?? defaultAsk}
           Frame={Frame}
+          onWidest={setWidest}
         />
       ) : null}
       {read?.kind === "problem" ? (
@@ -197,7 +204,7 @@ export function TableEmbedWith(
       ) : null}
       {captioned || openAt ? (
         // The caption, centred under the table; and Open, at its end, for the table as a document.
-        <html.div style={styles.foot}>
+        <html.div style={[styles.foot, widest !== null && read?.kind === "shown" && styles.footMost(widest)]}>
           {/* Each side as wide as Open, so a long caption stays centred and Open stays whole. */}
           <html.div style={[styles.side, openAt ? styles.holdsOpen : null]} />
           {captioned ? <html.span style={styles.caption}>{caption}</html.span> : null}
@@ -229,6 +236,7 @@ const styles = css.create({
   problemText: { fontSize: 14, color: dim },
   caption: { flexShrink: 1, fontSize: 13, color: dim, textAlign: "center" },
   foot: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  footMost: (width: number) => ({ maxWidth: width }),
   side: { flexGrow: 1, flexShrink: 0, flexBasis: 0, display: "flex", flexDirection: "row" },
   end: { justifyContent: "flex-end" },
   holdsOpen: { minWidth: OPEN_WIDTH },
