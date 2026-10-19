@@ -41,7 +41,7 @@ const NAMED = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End",
 const TYPED = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i));
 const HANDLED: HandledKey[] = [...NAMED.map((key) => ({ key })), ...TYPED.map((key) => ({ key, metaKey: false, ctrlKey: false }))];
 
-export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridKeys({ onKeyDown, children, grow }, ref) {
+export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridKeys({ onKeyDown, children, grow, most }, ref) {
   const view = useRef<{ focus?: () => void } | null>(null);
   useImperativeHandle(ref, () => ({ focus: () => view.current?.focus?.() }));
   return (
@@ -57,7 +57,7 @@ export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridK
         const { key, shiftKey, metaKey, ctrlKey, altKey } = e.nativeEvent;
         onKeyDown({ key, shiftKey, metaKey, ctrlKey, altKey });
       }}
-      style={grow ? GROW : SHRINK}
+      style={most !== undefined ? [grow ? GROW : SHRINK, { maxWidth: most }] : grow ? GROW : SHRINK}
     >
       {children}
     </KeyView>
