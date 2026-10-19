@@ -1423,6 +1423,8 @@ const styles = css.create({
   choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
   choiceCheck: { width: 12, fontSize: 12 },
   relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
+  /** Links cut to one line, with a "+N" for the rest; the last one shown is cut short if it must be. */
+  relationListOneLine: { flexWrap: "nowrap", overflow: "hidden", alignItems: "center", minWidth: 0 },
   link: {
     textDecorationLine: "underline",
     textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
@@ -1819,6 +1821,22 @@ function pillsThatFit(pills: Pill[], width: number): Pill[] {
   return out;
 }
 
+/** A related row's name, roughly: its label at 13 pt and the gap after it. */
+const linkWidth = (l: RelationLink) => String(l.label ?? l.id).length * 7 + 8;
+/** The links that fit in `width`, leaving room for a "+N" when some don't; the first always shows, cut short if it must be. */
+function linksThatFit(links: RelationLink[], width: number): RelationLink[] {
+  let used = 0;
+  const out: RelationLink[] = [];
+  for (let i = 0; i < links.length; i++) {
+    const w = linkWidth(links[i]!);
+    const reserve = i < links.length - 1 ? 40 : 0;
+    if (out.length > 0 && used + w + reserve > width) break;
+    out.push(links[i]!);
+    used += w;
+  }
+  return out;
+}
+
 interface CellValueProps {
   field: Field | undefined;
   value: unknown;
@@ -1845,13 +1863,25 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
     case "relations":
       // One related row reads as itself; many sit in a row of links.
       if (!Array.isArray(value)) return <RelationCellValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
-      return (
-        <html.div style={styles.relationList}>
-          {shown.links.map((link) => (
-            <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
-          ))}
-        </html.div>
-      );
+      {
+        // On one line in a table, as many as fit and then "+2", as choices
+        // are: a row's height stays the row's, not its longest list's.
+        const oneLine = width !== undefined && (lines ?? 1) <= 1;
+        const shownLinks = oneLine ? linksThatFit(shown.links, width) : shown.links;
+        const more = shown.links.length - shownLinks.length;
+        return (
+          <html.div style={[styles.relationList, oneLine && styles.relationListOneLine]}>
+            {shownLinks.map((link) => (
+              <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
+            ))}
+            {more > 0 ? (
+              <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
+                +{more}
+              </html.span>
+            ) : null}
+          </html.div>
+        );
+      }
     case "error":
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
     case "pills": {
