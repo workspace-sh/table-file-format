@@ -1250,8 +1250,19 @@ const styles = css.create({
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
   /** A footer cell inside a menu button: fills the row's height, as the others do. */
+  // A total in its slot (a menu's trigger): as wide and tall as the slot.
   totalCellFill: {
     alignSelf: "stretch",
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+  },
+  // A total's slot: the column's width, around the menu that wraps the cell.
+  totalSlot: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "stretch",
   },
   /** Pills cut to one line, with a "+N" for the rest. */
   pillListOneLine: {
@@ -3859,9 +3870,8 @@ export function TableView({
     ) : onUpdateView ? (
       <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
     ) : null;
-    const cellStyle = [
+    const cellLook = [
       styles.tableCell,
-      columnStyle(name),
       cellAlignStyle(effectiveAlign(field)),
       (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
       styles.totalCell,
@@ -3869,27 +3879,26 @@ export function TableView({
     // On a phone the footer cell is itself the system's menu of totals, as a
     // choice cell is its menu of choices; elsewhere it opens the popover below.
     if (onUpdateView && TotalsSelect.opensFromTrigger) {
+      // The menu wraps the cell in a view of its own, which the row lays
+      // out: the column's width goes on a slot around it, as a header's
+      // does, and the cell fills the slot. On the menu's own view, the
+      // totals took an even share of the row whatever the columns above.
       return (
-        <Select
-          key={name}
-          value={kind ?? ""}
-          options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
-          onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
-          label={`Calculate ${field?.title ?? name}`}
-          trigger={<html.div style={[...cellStyle, styles.totalCellFill]}>{content}</html.div>}
-        />
+        <html.div key={name} style={[styles.totalSlot, columnStyle(name)]}>
+          <Select
+            value={kind ?? ""}
+            options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
+            onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
+            label={`Calculate ${field?.title ?? name}`}
+            trigger={<html.div style={[...cellLook, styles.totalCellFill]}>{content}</html.div>}
+          />
+        </html.div>
       );
     }
     return (
       <html.div
         key={name}
-        style={[
-          styles.tableCell,
-          columnStyle(name),
-          cellAlignStyle(effectiveAlign(field)),
-          (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
-          styles.totalCell,
-        ]}
+        style={[...cellLook.slice(0, 1), columnStyle(name), ...cellLook.slice(1)]}
         onClick={
           onUpdateView
             ? (e: { pageX: number; pageY: number }) =>
