@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, columnsFill, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, squeezedWidthOf, columnsFill, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -137,4 +137,37 @@ test("columns fill the table when none overflows it, so the layout can share its
   // Not measured yet, or nothing left to share.
   assert.equal(columnsFill(["a", "b"], {}, 0, 2), false);
   assert.equal(columnsFill(["a", "b"], { a: 300, b: 300 }, 602, 2), false);
+});
+
+test("each column squeezes as far as what it holds allows, the narrow ones first", () => {
+  const schema = {
+    fields: [
+      { name: "title", type: "string" as const },
+      { name: "done", type: "boolean" as const },
+      { name: "stage", type: "string" as const, constraints: { enum: ["Lead", "Won"] } },
+      { name: "value", type: "number" as const, format: "currency:USD" },
+      { name: "notes", type: "string" as const, format: "markdown" },
+      { name: "due", type: "date" as const },
+    ],
+  };
+  const f = (name: string) => schema.fields.find((x) => x.name === name);
+  assert.deepEqual(
+    ["title", "done", "stage", "value", "notes", "due"].map((n) => squeezedWidthOf(f(n), schema, n === "title")),
+    [180, 80, 110, 150, 180, 110],
+  );
+  const least = (n: string) => squeezedWidthOf(f(n), schema, n === "title");
+  const names = ["title", "done", "stage", "value"];
+  // Room for 200 each: an even share.
+  const roomy = columnWidths(names, {}, 802, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(roomy), [200, 200, 200, 200]);
+  // 560: the title holds 180, the amount 150, and the checkbox and choice share the rest.
+  const tight = columnWidths(names, {}, 562, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(tight), [180, 115, 115, 150]);
+  assert.equal(names.map(tight).reduce((a, b) => a + b, 0), 560);
+  // Past their sum (520), each holds its own and the table scrolls.
+  const scrolls = columnWidths(names, {}, 500, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(scrolls), [180, 80, 110, 150]);
+  // A column dragged wider widens the table; the others keep what they had.
+  const wider = columnWidths(names, { title: 400 }, 802, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(wider), [400, 200, 200, 200]);
 });

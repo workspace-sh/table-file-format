@@ -25,6 +25,7 @@ import {
   MIN_RESIZED_COLUMN_WIDTH,
   rowNumberWidth,
   SQUEEZED_CELL_WIDTH,
+  squeezedWidthOf,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
@@ -3365,7 +3366,18 @@ export function TableView({
   const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
   // Squeezed past fitting, a framed table's columns hold the squeezed width
   // and scroll, rather than growing to the comfortable one as its space shrinks.
-  const colWidth = columnWidths(fields, setWidths, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH, wide ? SQUEEZED_CELL_WIDTH : undefined);
+  // How narrow each column may go, by what it holds: a checkbox or a
+  // choice gives its room before the title or an amount does.
+  const leastOf = (name: string) => squeezedWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  const colWidth = columnWidths(
+    fields,
+    setWidths,
+    containerWidth,
+    chrome + addFieldW,
+    SQUEEZED_CELL_WIDTH,
+    wide ? SQUEEZED_CELL_WIDTH : undefined,
+    wide ? leastOf : undefined,
+  );
   // In a frame, the columns nobody resized share its width in the layout
   // (columnShare), down to the squeezed width; past that they hold it and
   // the columns beside the frozen one scroll. The layout does it, in the
@@ -3382,9 +3394,9 @@ export function TableView({
   const flexibleWidth = fields.find((name) => typeof setWidths[name] !== "number");
   const overflows =
     containerWidth > 0 && fields.reduce((n, name) => n + colWidth(name), 0) > containerWidth - chrome - addFieldW;
-  const shareLeast =
-    overflows && flexibleWidth !== undefined ? Math.max(SQUEEZED_CELL_WIDTH, colWidth(flexibleWidth)) : SQUEEZED_CELL_WIDTH;
-  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast) : styles.cellWidth(colWidth(name)));
+  const shareLeast = (name: string) =>
+    overflows && flexibleWidth !== undefined ? Math.max(leastOf(name), colWidth(name)) : leastOf(name);
+  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast(name)) : styles.cellWidth(colWidth(name)));
   // Where the "+" column is, the scrolling pane's rows are as wide as their
   // columns and stop there: no row line, group band or total runs under the
   // "+", which is a place a column could go, not a column.
@@ -3639,7 +3651,7 @@ export function TableView({
   const restFixed = restNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0) + addFieldW;
   const paneShare = styles.paneShare(restSharing > 0 || !primaryName || !shares(primaryName) ? Math.max(1, restSharing) : 0, restFixed);
   // Its columns at their narrowest: past that, it scrolls.
-  const restLeast = restNames.reduce((n, name) => n + (shares(name) ? shareLeast : colWidth(name)), 0) + addFieldW;
+  const restLeast = restNames.reduce((n, name) => n + (shares(name) ? shareLeast(name) : colWidth(name)), 0) + addFieldW;
   // Where each column of the sideways-scrolling part starts, from that
   // part's own start: a scroll comes to rest on one, so no column is left
   // cut in half at the edge with its title out of sight. (Row numbers,
@@ -4512,7 +4524,7 @@ export function TableView({
           <html.div
             style={[
               styles.tableFrozenColumn,
-              shares(primaryName) && styles.frozenShare(numberWidth + FROZEN_EDGE, numberWidth + FROZEN_EDGE + shareLeast),
+              shares(primaryName) && styles.frozenShare(numberWidth + FROZEN_EDGE, numberWidth + FROZEN_EDGE + shareLeast(primaryName)),
               byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
             ]}
           >
