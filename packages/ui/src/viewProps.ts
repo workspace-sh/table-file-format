@@ -18,6 +18,13 @@ export interface ViewProps {
    */
   cut?: number;
   /**
+   * A table's columns share the whole width it's given, rather than
+   * stopping at their natural widths: a view drawn in place with
+   * `width=full` (SPEC section 10). Other layouts are as wide as they're
+   * given already.
+   */
+  fillWidth?: boolean;
+  /**
    * For a table whose rows are in the index (`ParsedTable.indexed`): what
    * the view reads them from, a window at a time. `rows` is then empty.
    * A view that can't read a source draws from `rows`.
