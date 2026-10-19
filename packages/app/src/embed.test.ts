@@ -68,6 +68,11 @@ test("an address says how many rows or cards to show at once, and only a whole n
   assert.deepEqual(embedSize({ extra: { rows: "100000" } }), { rows: EMBED_COUNT_MAX });
 });
 
+test("an address may ask for a table the whole width, and nothing else widens it", () => {
+  assert.deepEqual(embedSize({ extra: { width: "full", rows: "5" } }), { rows: 5, width: "full" });
+  for (const not of ["", "100%", "wide", "FULL", "auto"]) assert.deepEqual(embedSize({ extra: { width: not } }), {}, not);
+});
+
 test("what is drawn carries the size its address asked for", () => {
   const result = embedIn(projects, { tableName: "tasks", viewId: "v1", extra: { rows: "4", embed: "1" } }, "projects.table");
   assert.deepEqual(result.kind === "shown" && result.size, { rows: 4 });

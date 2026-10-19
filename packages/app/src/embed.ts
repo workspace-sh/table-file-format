@@ -33,6 +33,11 @@ export interface EmbedSize {
    * and shows them.
    */
   rest?: "more";
+  /**
+   * A table's width (`width=full`): its columns share the whole width it's
+   * given, rather than stopping at their natural widths (the default).
+   */
+  width?: "full";
 }
 
 /** The most rows or cards an address can ask to be shown at once. */
@@ -48,7 +53,10 @@ function count(value: string | undefined): number | undefined {
 export function embedSize(address: Pick<Address, "extra">): EmbedSize {
   const rows = count(address.extra?.rows);
   const cards = count(address.extra?.cards);
-  return { ...(rows === undefined ? {} : { rows }), ...(cards === undefined ? {} : { cards }), ...(address.extra?.rest === "more" ? { rest: "more" as const } : {}) };
+  return {
+    ...(rows === undefined ? {} : { rows }), ...(cards === undefined ? {} : { cards }), ...(address.extra?.rest === "more" ? { rest: "more" as const } : {}),
+    ...(address.extra?.width === "full" ? { width: "full" as const } : {}),
+  };
 }
 
 /** Which of an address's counts a view's layout shows: rows for a table or a list, cards for a board or a gallery. */
