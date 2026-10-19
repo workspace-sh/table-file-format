@@ -1200,9 +1200,10 @@ fragment:
   - `view=<id>` — the view with this id
   - `field=<name>` — a specific field on the row (cell-level
     addressing for future affordances; reserved)
-  - `rows=<n>`, `cards=<n>`, `rest=more`: how much of a view to show
-    at once where the address is drawn in place (see "A view drawn in
-    place" below). They say nothing about which rows the view has.
+  - `rows=<n>`, `cards=<n>`, `rest=more`, `width=full`: how much of a
+    view to show at once, and how wide, where the address is drawn in
+    place (see "A view drawn in place" below). They say nothing about
+    which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
 strings). Order is not significant. Unknown keys MUST be tolerated
@@ -1263,10 +1264,22 @@ shown. `rest=more` without a
 count that the layout shows does nothing; any other value is read as
 `scroll`.
 
+`width=` says how wide a `table` layout is drawn:
+
+| Value | Width |
+|---|---|
+| absent | The app's own. The reference apps stop each column at a natural width for what it holds (the title wider, a checkbox narrower), so a table of a few columns is narrower than the document. |
+| `full` | Its columns share the whole width the document gives it, however few there are. |
+
+Any other value is read as absent. Other layouts already take the
+width they are given, and ignore it. A column resized in the view
+(`columnWidths`) keeps its width either way.
+
 ```
 docs/projects.table#table=tasks&view=v1&rows=5             # five rows of a table view, then it scrolls
 docs/projects.table#table=tasks&view=v2&cards=3            # a board, three cards down each column
 docs/projects.table#table=tasks&view=v1&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
+docs/projects.table#table=tasks&view=v1&width=full         # the whole width of the document
 ```
 
 ### Resolution
