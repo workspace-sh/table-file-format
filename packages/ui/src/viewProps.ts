@@ -25,6 +25,13 @@ export interface ViewProps {
    */
   fillWidth?: boolean;
   /**
+   * The widest a table grows (its columns at their natural widths, with its
+   * lines), or null when it takes whatever width it's given: for what sits
+   * with it, such as an embed's caption line, to be as wide as it is. Told
+   * again only when that changes, not as its space does.
+   */
+  onWidest?: (width: number | null) => void;
+  /**
    * For a table whose rows are in the index (`ParsedTable.indexed`): what
    * the view reads them from, a window at a time. `rows` is then empty.
    * A view that can't read a source draws from `rows`.

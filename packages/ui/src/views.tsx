@@ -2870,6 +2870,7 @@ export function TableView({
   view,
   cut,
   fillWidth,
+  onWidest,
   rows,
   schema,
   bodies,
@@ -3687,6 +3688,10 @@ export function TableView({
   // what a resized one was given), with its lines, row numbers and "+".
   const frameMostWidth = fields.reduce((n, name) => n + (shares(name) ? mostOf(name) : colWidth(name)), 0) + chrome + addFieldW;
   const frameMost = styles.frameMost(frameMostWidth);
+  const widest = wide && !fillWidth ? frameMostWidth : null;
+  useEffect(() => {
+    onWidest?.(widest);
+  }, [onWidest, widest]);
   const restNames = primaryName ? fields.slice(1) : fields;
   // Beside the frozen column: a share for each of its columns that shares
   // the width (its natural width, as the columns grow by), on what it holds
