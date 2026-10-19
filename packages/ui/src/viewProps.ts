@@ -26,7 +26,8 @@ export interface ViewProps {
   fillWidth?: boolean;
   /**
    * The widest a table grows (its columns at their natural widths, with its
-   * lines), or null when it takes whatever width it's given: for what sits
+   * lines) or a board is (its columns side by side), or null when it takes
+   * whatever width it's given: for what sits
    * with it, such as an embed's caption line, to be as wide as it is. Told
    * again only when that changes, not as its space does.
    */
