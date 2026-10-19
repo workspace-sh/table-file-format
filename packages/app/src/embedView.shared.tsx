@@ -126,7 +126,7 @@ function Shown({
           // Cut, the view draws only its first rows or cards; what it counts is still the whole view's.
           {...(cut ? { cut: count } : {})}
           {...(shown.size.width === "full" ? { fillWidth: true } : {})}
-          {...(view.layout === "table" ? { onWidest } : {})}
+          {...(view.layout === "table" || view.layout === "board" ? { onWidest } : {})}
           schema={table.schema}
           bodies={table.bodies}
           relatedTables={related}

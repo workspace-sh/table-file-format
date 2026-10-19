@@ -4957,6 +4957,7 @@ export function BoardView({
   onOpenBody,
   relatedTables,
   onOpenRelation,
+  onWidest,
 }: ViewProps) {
   const board = boardColumns(view, rows, schema);
   const groupField = board.field;
@@ -5268,6 +5269,13 @@ export function BoardView({
         </DragGhost>
       );
     })();
+
+  // As wide as its columns, side by side: what sits with it (an embed's
+  // caption line) ends where it does. A phone's carousel takes the width.
+  const boardWidest = isTouchViewport ? null : board.keys.length * BOARD_COLUMN_WIDTH + Math.max(0, board.keys.length - 1) * BOARD_GAP;
+  useEffect(() => {
+    onWidest?.(boardWidest);
+  }, [onWidest, boardWidest]);
 
   // Phone: snap-paging carousel — one column dominates the viewport,
   // peek of next at the right edge, swipe horizontally to advance.
