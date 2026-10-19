@@ -1501,6 +1501,16 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
+  // A column's title, on one line however narrow its column: cut short
+  // with an ellipsis (the full title is in the hover hint), never broken
+  // across two. On native the button's nowrap doesn't reach the text;
+  // lineClamp does (numberOfLines).
+  headerTitle: {
+    lineClamp: 1,
+    overflow: "hidden",
+    minWidth: 0,
+    flexShrink: 1,
+  },
   headerCellButtonCenter: {
     textAlign: "center",
   },
@@ -3699,7 +3709,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
           {!byLines && columnResizer(name)}
         </Hinted>
       );
@@ -3746,7 +3756,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
         {isEditing && field && anchorRect && (
           <SchemaFieldEditor
