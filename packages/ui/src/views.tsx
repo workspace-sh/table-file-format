@@ -27,6 +27,7 @@ import {
   rowNumberWidth,
   SQUEEZED_CELL_WIDTH,
   squeezedWidthOf,
+  roomiestWidthOf,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
@@ -353,8 +354,8 @@ const styles = css.create({
   // The frozen column, when its column shares the width: one share, on what
   // it holds at a fixed width (`basis`: row numbers, its line); never
   // narrower than a column can be squeezed to.
-  frozenShare: (basis: number, least: number) => ({
-    flexGrow: 1,
+  frozenShare: (basis: number, least: number, grow: number) => ({
+    flexGrow: grow,
     flexShrink: 0,
     flexBasis: basis,
     minWidth: least,
@@ -376,6 +377,10 @@ const styles = css.create({
   cellWidth: (w: number) => ({
     width: w,
   }),
+  // A table grows with its space only as far as its columns' natural widths.
+  frameMost: (w: number) => ({
+    maxWidth: w,
+  }),
   // A column that shares the table's width with the others nobody resized,
   // in the layout: it follows the window as it's resized, in the same pass
   // as the text around it, rather than once the table is measured again.
@@ -384,8 +389,10 @@ const styles = css.create({
   // No width of its own (width and basis 0), so what's in a cell never
   // widens it: every row of a table shares its width the same way, its
   // header, its rows and its totals alike, whatever each holds.
-  columnShare: (least: number) => ({
-    flexGrow: 1,
+  // Columns grow by their natural widths (`grow`), so a frame as wide as
+  // those (`frameMost`) has each at its own.
+  columnShare: (least: number, grow: number) => ({
+    flexGrow: grow,
     flexShrink: 1,
     flexBasis: 0,
     width: 0,
@@ -3443,6 +3450,8 @@ export function TableView({
   // How narrow each column may go, by what it holds: a checkbox or a
   // choice gives its room before the title or an amount does.
   const leastOf = (name: string) => squeezedWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  // How wide each grows when there's room, and no wider: the table stops there.
+  const mostOf = (name: string) => roomiestWidthOf(fieldMap.get(name), schema, name === fields[0]);
   const colWidth = columnWidths(
     fields,
     setWidths,
@@ -3451,6 +3460,7 @@ export function TableView({
     SQUEEZED_CELL_WIDTH,
     wide ? SQUEEZED_CELL_WIDTH : undefined,
     wide ? leastOf : undefined,
+    mostOf,
   );
   // In a frame, the columns nobody resized share its width in the layout
   // (columnShare), down to the squeezed width; past that they hold it and
@@ -3470,7 +3480,7 @@ export function TableView({
     containerWidth > 0 && fields.reduce((n, name) => n + colWidth(name), 0) > containerWidth - chrome - addFieldW;
   const shareLeast = (name: string) =>
     overflows && flexibleWidth !== undefined ? Math.max(leastOf(name), colWidth(name)) : leastOf(name);
-  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast(name)) : styles.cellWidth(colWidth(name)));
+  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast(name), mostOf(name)) : styles.cellWidth(colWidth(name)));
   // Where the "+" column is, the scrolling pane's rows are as wide as their
   // columns and stop there: no row line, group band or total runs under the
   // "+", which is a place a column could go, not a column.
@@ -3717,11 +3727,16 @@ export function TableView({
   // the layout, as they do beside a pinned column: the scroller's content
   // is at least as wide as the page, and the frame and its pane grow to it.
   const fills = wide && edgeToEdge;
+  // As wide as the frame grows: its columns at their natural widths (or
+  // what a resized one was given), with its lines, row numbers and "+".
+  const frameMostWidth = fields.reduce((n, name) => n + (shares(name) ? mostOf(name) : colWidth(name)), 0) + chrome + addFieldW;
+  const frameMost = styles.frameMost(frameMostWidth);
   const restNames = primaryName ? fields.slice(1) : fields;
-  // Beside the frozen column: one share for each of its columns that shares
-  // the width, on what it holds at a fixed width; or, when none does and the
-  // frozen one doesn't either, the rest of the frame.
-  const restSharing = restNames.filter(shares).length;
+  // Beside the frozen column: a share for each of its columns that shares
+  // the width (its natural width, as the columns grow by), on what it holds
+  // at a fixed width; or, when none does and the frozen one doesn't either,
+  // the rest of the frame.
+  const restSharing = restNames.filter(shares).reduce((n, name) => n + mostOf(name), 0);
   const restFixed = restNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0) + addFieldW;
   const paneShare = styles.paneShare(restSharing > 0 || !primaryName || !shares(primaryName) ? Math.max(1, restSharing) : 0, restFixed);
   // Its columns at their narrowest: past that, it scrolls.
@@ -4582,7 +4597,7 @@ export function TableView({
       </html.div>
     )}
     <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
-    <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills}>
+    <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills} most={wide ? frameMostWidth : undefined}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
@@ -4595,9 +4610,9 @@ export function TableView({
       // mask to a bitmap, and for thousands of rows it took gigabytes.
       tabIndex={PLATFORM_OS === "web" ? 0 : undefined}
       onKeyDown={onGridKey}
-      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit, fills && styles.fitGrow]}
+      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit, fills && styles.fitGrow, wide && frameMost]}
     >
-    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow, fills && styles.fitGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow, fills && styles.fitGrow, wide && frameMost]}>
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
@@ -4607,7 +4622,7 @@ export function TableView({
           <html.div
             style={[
               styles.tableFrozenColumn,
-              shares(primaryName) && styles.frozenShare(numberWidth + FROZEN_EDGE, numberWidth + FROZEN_EDGE + shareLeast(primaryName)),
+              shares(primaryName) && styles.frozenShare(numberWidth + FROZEN_EDGE, numberWidth + FROZEN_EDGE + shareLeast(primaryName), mostOf(primaryName)),
               byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
             ]}
           >
