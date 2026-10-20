@@ -39,6 +39,8 @@ export interface TableFileChrome {
   showView: (id: string) => void;
   /** The rows shown, as a count says it ("8 of 8 rows"). */
   count: string;
+  /** While searching, what was found, for the search field ("2 rows"). */
+  found?: string;
   query: string;
   search: (text: string) => void;
   /** To look at only: nothing can be changed (a single-file .table, or a reader who can't write). */
@@ -144,6 +146,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
     view: view.id,
     showView: (id) => id !== view.id && dispatch({ type: "showView", key: state.active, viewId: id }),
     count: derived.summary.count,
+    found: derived.summary.found,
     query: state.search,
     search: (text) => dispatch({ type: "search", text }),
     lookOnly,
