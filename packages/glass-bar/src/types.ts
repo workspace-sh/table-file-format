@@ -11,7 +11,21 @@ export type GlassBarState =
    * A selected cell: its label ("Owner · iOS Pro launch") and value or
    * formula; a line about the field when it has one; `info`, an ⓘ for more.
    */
-  | { kind: "selected"; label: string; value: string; monospaced?: boolean; about?: string; info?: boolean }
+  | {
+      kind: "selected";
+      label: string;
+      value: string;
+      monospaced?: boolean;
+      about?: string;
+      info?: boolean;
+      /**
+       * What the field is, a line or two ("Choice · 4 choices · required"),
+       * with `factsTitle` (its name) over it: the ⓘ shows them in a popover
+       * (#704). Absent, the ⓘ calls `onInfo`.
+       */
+      facts?: string;
+      factsTitle?: string;
+    }
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
@@ -156,6 +170,8 @@ export type GlassBarProps = {
   onDeselect?: () => void;
   /** Selected: the ⓘ, for what the field is. */
   onInfo?: () => void;
+  /** Selected, in the ⓘ's popover: open the field's settings. Absent: the popover has no button. */
+  onInfoSettings?: () => void;
   /** Expanded, under a formula's working: open the field's settings. */
   onFieldSettings?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */

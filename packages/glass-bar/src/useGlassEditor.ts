@@ -243,6 +243,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       monospaced: selection.formula,
       about: selection.description,
       info: !!selection.facts,
+      facts: selection.facts,
+      factsTitle: selection.label,
     };
   } else state = { kind: "rest", query };
 
@@ -297,6 +299,12 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         { text: "OK", style: "cancel" as const },
       ]);
     },
+    onInfoSettings: commands.current?.openFieldSettings && selection
+      ? () => {
+          const toSettings = commands.current?.openFieldSettings;
+          if (toSettings && selection) toSettings(selection.name);
+        }
+      : undefined,
     onEdit: () => commands.current?.editSelected(),
     onCancel: () => {
       open.current?.cancel();

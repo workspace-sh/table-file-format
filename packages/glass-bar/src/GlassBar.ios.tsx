@@ -34,6 +34,7 @@ import {
   Image,
   Menu,
   Namespace,
+  Popover,
   ScrollView,
   Spacer,
   Text,
@@ -581,7 +582,9 @@ function Capsule(props: Part) {
             {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
           </VStack>
           <Spacer />
-          {state.info ? (
+          {state.facts ? (
+            <Info title={state.factsTitle ?? state.label} facts={state.facts} onSettings={props.onInfoSettings} />
+          ) : state.info ? (
             <Image
               systemName="info.circle"
               size={19}
@@ -621,6 +624,44 @@ function Steps(props: Part) {
       <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
       <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
     </>
+  );
+}
+
+/**
+ * The ⓘ on a selected cell: what the field is, in a popover from it, not an
+ * alert (an alert is for a warning). Field Settings… goes on to the field's
+ * settings, which are a sheet: configuration.
+ */
+function Info({ title, facts, onSettings }: { title: string; facts: string; onSettings?: () => void }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <Popover isPresented={shown} onIsPresentedChange={setShown} arrowEdge="bottom">
+      <Popover.Trigger>
+        <Image
+          systemName="info.circle"
+          size={19}
+          onPress={() => setShown(true)}
+          modifiers={[frame({ width: 32, height: 32 }), secondary, contentShape(shapes.circle()), accessibilityLabel("About this field")]}
+        />
+      </Popover.Trigger>
+      <Popover.Content>
+        <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 300, alignment: "leading" })]}>
+          <Text modifiers={[font({ size: 17, weight: "semibold" })]}>{title}</Text>
+          <Text modifiers={[font({ size: 15 }), secondary, fixedSize({ horizontal: false, vertical: true })]}>{facts}</Text>
+          {onSettings ? (
+            <Button
+              label="Field Settings…"
+              onPress={() => {
+                setShown(false);
+                // Once the popover has gone: a sheet presented while it's
+                // still leaving isn't shown.
+                setTimeout(onSettings, 350);
+              }}
+            />
+          ) : null}
+        </VStack>
+      </Popover.Content>
+    </Popover>
   );
 }
 
