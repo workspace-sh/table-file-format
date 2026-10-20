@@ -544,10 +544,12 @@ function Capsule(props: Part) {
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
           <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || (props.searchLabel ?? "Search")}</Text>
           <Spacer />
-          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
-          {/* The keyboard away, a document's matches can still be stepped through. */}
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
+          {/* The keyboard away, a document's matches can still be stepped
+              through. Clear then waits in the open field (a tap away), so the
+              query and its count keep their room. */}
           {state.query ? <Steps {...props} /> : null}
-          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "searching":
@@ -564,7 +566,7 @@ function Capsule(props: Part) {
             onValueChange={props.onQueryChange}
             modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
           />
-          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
           {state.query ? <Steps {...props} /> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
