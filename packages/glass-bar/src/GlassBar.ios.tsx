@@ -69,7 +69,7 @@ import {
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
-import type { GlassBarAction, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+import type { GlassBarAction, GlassBarDetails, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 
 const SIZE = 48;
 const GAP = 8;
@@ -289,7 +289,7 @@ function Lead({ state, ns, onFilter, restLead, onDeselect, onCancel, expansion }
   );
 }
 
-function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
+function Trail({ state, ns, onMore, onSearchEnd, moreActions, details, onDetailsClose }: Part) {
   if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
@@ -303,7 +303,7 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
       else groups[groups.length - 1]!.push(a);
     }
     const shown = groups.reverse().map((g) => [...g].reverse());
-    return (
+    const menu = (
       <Menu
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
@@ -321,6 +321,12 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
           )),
         ])}
       </Menu>
+    );
+    return (
+      <Popover isPresented={!!details} onIsPresentedChange={(on) => { if (!on) onDetailsClose?.(); }} arrowEdge="bottom">
+        <Popover.Trigger>{menu}</Popover.Trigger>
+        <Popover.Content>{details ? <Details details={details} onDone={onDetailsClose} /> : <Spacer />}</Popover.Content>
+      </Popover>
     );
   }
   return (
@@ -662,6 +668,39 @@ function Info({ title, facts, onSettings }: { title: string; facts: string; onSe
         </VStack>
       </Popover.Content>
     </Popover>
+  );
+}
+
+/** A file's details, as More › Details shows them: facts, then the last few changes. */
+function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () => void }) {
+  const row = (r: { label: string; value: string }, key: string) => (
+    <HStack key={key} spacing={12}>
+      <Text modifiers={[font({ size: 15 }), secondary]}>{r.label}</Text>
+      <Spacer />
+      <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{r.value}</Text>
+    </HStack>
+  );
+  return (
+    <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 320, alignment: "leading" })]}>
+      <VStack alignment="leading" spacing={2}>
+        <Text modifiers={[font({ size: 17, weight: "semibold" }), lineLimit(1)]}>{details.title}</Text>
+        {details.subtitle ? <Text modifiers={[font({ size: 13 }), secondary, lineLimit(1)]}>{details.subtitle}</Text> : null}
+      </VStack>
+      {details.rows.map((r, i) => row(r, `r${i}`))}
+      {details.recent?.length ? <Divider /> : null}
+      {details.recent?.map((r, i) => row(r, `h${i}`))}
+      {details.more ? (
+        <Button
+          label={details.more.label}
+          onPress={() => {
+            const go = details.more!.onPress;
+            onDone?.();
+            // Once the popover has gone: a sheet presented while it's still leaving isn't shown.
+            setTimeout(go, 350);
+          }}
+        />
+      ) : null}
+    </VStack>
   );
 }
 
