@@ -129,6 +129,16 @@ export type GlassBarProps = {
   onMore?: () => void;
   /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
+  /**
+   * How Search sits at rest. `field` (the default): a capsule across the bar.
+   * `button`: a circle beside More, minimised as iOS minimises a toolbar's
+   * search, which leaves the bar's middle to the content. Pressing it opens
+   * the field with the keyboard up. Either way, while there's a query the
+   * field stays open, so what was found stays in reach.
+   */
+  searchStyle?: "field" | "button";
+  /** What Search is called, as the placeholder and for VoiceOver ("Search rows"). Default: Search. */
+  searchLabel?: string;
   onQueryChange?: (query: string) => void;
   /** Searching: Close, or Return. The query stays. */
   onSearchEnd?: () => void;

@@ -525,12 +525,28 @@ function Capsule(props: Part) {
     case "rest":
       // No search: the two buttons at the ends, and nothing between them.
       if (!props.onSearch) return <Spacer />;
+      // Minimised: a circle beside More. It keeps the capsule's glass identity,
+      // so pressing it grows the field out of the circle.
+      if (props.searchStyle === "button" && !state.query)
+        return (
+          <HStack spacing={0}>
+            <Spacer />
+            <Image
+              systemName="magnifyingglass"
+              size={18}
+              onPress={props.onSearch}
+              modifiers={[frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("capsule", ns), contentShape(shapes.circle()), accessibilityLabel(props.searchLabel ?? "Search")]}
+            />
+          </HStack>
+        );
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape, onTapGesture(() => props.onSearch?.()), accessibilityLabel("Search")]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || "Search"}</Text>
+          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || (props.searchLabel ?? "Search")}</Text>
           <Spacer />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
+          {/* The keyboard away, a document's matches can still be stepped through. */}
+          {state.query ? <Steps {...props} /> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -538,14 +554,18 @@ function Capsule(props: Part) {
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <TextField key="search" defaultValue={state.query} placeholder="Search" autoFocus onValueChange={props.onQueryChange} />
+          {/* Focused as it opens, so typing starts at once. Return puts the
+              keyboard away and keeps the query. */}
+          <TextField
+            key="search"
+            defaultValue={state.query}
+            placeholder={props.searchLabel ?? "Search"}
+            autoFocus
+            onValueChange={props.onQueryChange}
+            modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
+          />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
-          {state.query && props.onSearchStep ? (
-            <>
-              <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
-              <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
-            </>
-          ) : null}
+          {state.query ? <Steps {...props} /> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -589,6 +609,17 @@ function Capsule(props: Part) {
     case "editing":
       return <Editor {...props} state={state} shape={shape} />;
   }
+}
+
+/** Previous and next match: a document's or a canvas's find, not a table's (its rows are filtered). */
+function Steps(props: Part) {
+  if (!props.onSearchStep) return null;
+  return (
+    <>
+      <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
+      <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
+    </>
+  );
 }
 
 type ChipLook = { on: boolean; tone?: { bg: string; fg: string } };
