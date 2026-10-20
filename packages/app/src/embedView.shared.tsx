@@ -5,7 +5,7 @@
 // shows, over the same state (useEmbeddedTable), so a cell edited here is
 // written to the file, goes to its history, and can be undone. It is as tall
 // as what it holds up to a limit, then scrolls within itself, with the link's
-// caption beneath. What can't be drawn says why, in the table's place.
+// title above it. What can't be drawn says why, in the table's place.
 // table-gtk's TableEmbed is the same for GTK. Each platform's frame (what
 // scrolls it) and dialogs are in embedView.tsx and embedView.web.tsx.
 
@@ -25,15 +25,13 @@ export { EMBED_MAX_HEIGHT };
 
 const ROW_HEIGHT = EMBED_ROW_HEIGHT;
 
-/** The room Open takes at the end of the caption line, kept on both sides so the caption stays centred. */
-const OPEN_WIDTH = 56;
 
 export interface TableEmbedProps {
   /** What the link names, read by the host over its own files (readEmbedWith); null while it's read. */
   read: EmbedRead | null;
   /** How the host writes the file back and adds to its history (embedFilesWith over its files). */
   files: EmbeddedTableFiles;
-  /** Shown beneath: the link's title. */
+  /** Shown above it, as its title: the link's title. */
   caption?: string;
   /** The tallest the view is, in points; past it, it scrolls within itself. */
   maxHeight?: number;
@@ -50,7 +48,7 @@ export interface TableEmbedProps {
   /**
    * The table opened as a document of its own: the file's address at the table and view drawn
    * (`/notes/projects.table#table=tasks&view=v2`), for the host to open there. Given, the embed
-   * offers it at the end of its caption line (Open). Absent, or for a file read from a
+   * offers it from its title, and the ↗ beside it. Absent, or for a file read from a
    * single-file `.table` (no path), it offers nothing.
    */
   onOpen?: (address: string) => void;
@@ -177,11 +175,34 @@ export function TableEmbedWith(
   // Where Open goes: the file at the table and view drawn. Nothing for a file without a path, or a host that opens none.
   const openAt = onOpen && read?.kind === "shown" ? embedFileAddress(read) : null;
   const captioned = caption && (read || room !== null);
-  // As wide as the table grows, the caption line ends where it does: the
-  // caption centred under it and Open at its end, not the page's.
+  // As wide as the table grows, the title line ends where it does, not the page's.
   const [widest, setWidest] = useState<number | null>(null);
+  // The title: the embed's own name, above it, and nothing else, as other
+  // documents' embedded tables have it. The table opens from it, and from
+  // the ↗ beside it. Where it comes from (its file and table) isn't shown
+  // here (#704): the host says that when the embed itself is selected.
+  const head =
+    captioned || openAt ? (
+      <html.div style={[styles.head, widest !== null && read?.kind === "shown" && styles.headMost(widest)]}>
+        {captioned ? (
+          openAt ? (
+            <html.button aria-label={`${caption}, open as a document`} style={styles.titleButton} onClick={() => onOpen?.(openAt)}>
+              <html.span style={styles.title}>{caption}</html.span>
+            </html.button>
+          ) : (
+            <html.span style={styles.title}>{caption}</html.span>
+          )
+        ) : null}
+        {openAt ? (
+          <html.button aria-label="Open as a document" style={styles.open} onClick={() => onOpen?.(openAt)}>
+            <html.span style={styles.openMark}>↗</html.span>
+          </html.button>
+        ) : null}
+      </html.div>
+    ) : null;
   return (
     <html.div style={styles.embed}>
+      {head}
       {room !== null ? <html.div aria-hidden={true} style={styles.room(room)} /> : null}
       {read?.kind === "shown" ? (
         <Shown
@@ -202,21 +223,6 @@ export function TableEmbedWith(
           <html.span style={styles.problemText}>{read.text}</html.span>
         </html.div>
       ) : null}
-      {captioned || openAt ? (
-        // The caption, centred under the table; and Open, at its end, for the table as a document.
-        <html.div style={[styles.foot, widest !== null && read?.kind === "shown" && styles.footMost(widest)]}>
-          {/* Each side as wide as Open, so a long caption stays centred and Open stays whole. */}
-          <html.div style={[styles.side, openAt ? styles.holdsOpen : null]} />
-          {captioned ? <html.span style={styles.caption}>{caption}</html.span> : null}
-          <html.div style={[styles.side, styles.end, openAt ? styles.holdsOpen : null]}>
-            {openAt ? (
-              <html.button aria-label="Open as a document" style={styles.open} onClick={() => onOpen?.(openAt)}>
-                <html.span style={styles.moreText}>Open</html.span>
-              </html.button>
-            ) : null}
-          </html.div>
-        </html.div>
-      ) : null}
     </html.div>
   );
 }
@@ -234,13 +240,12 @@ const styles = css.create({
     borderColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#3a3a3f" },
   },
   problemText: { fontSize: 14, color: dim },
-  caption: { flexShrink: 1, fontSize: 13, color: dim, textAlign: "center" },
-  foot: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
-  footMost: (width: number) => ({ maxWidth: width }),
-  side: { flexGrow: 1, flexShrink: 0, flexBasis: 0, display: "flex", flexDirection: "row" },
-  end: { justifyContent: "flex-end" },
-  holdsOpen: { minWidth: OPEN_WIDTH },
+  head: { display: "flex", flexDirection: "row", alignItems: "center", gap: 2 },
+  headMost: (width: number) => ({ maxWidth: width }),
+  titleButton: { flexShrink: 1, padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
+  title: { fontSize: 15, fontWeight: "600", color: { default: "#1d1d1f", "@media (prefers-color-scheme: dark)": "#f2f2f4" } },
   open: { paddingBlock: 2, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
+  openMark: { fontSize: 15, color: dim },
   room: (height: number) => ({ height }),
   more: { alignSelf: "flex-start", paddingBlock: 4, paddingInline: 6, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   moreText: { fontSize: 14, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
