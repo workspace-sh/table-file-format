@@ -100,6 +100,20 @@ export type GlassBarWorking = {
 /** A stretch of a formula to colour, by UTF-16 offsets. */
 export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
+/**
+ * A file's details, shown in a popover from More (More › Details, #704):
+ * what it is and where, and its last few changes. `more` goes on to deeper
+ * work, such as the whole history, which is a sheet.
+ */
+export type GlassBarDetails = {
+  title: string;
+  subtitle?: string;
+  rows: { label: string; value: string }[];
+  /** A second list under a line: the last few changes, say. */
+  recent?: { label: string; value: string }[];
+  more?: { label: string; onPress: () => void };
+};
+
 /** One action in the More menu. */
 export type GlassBarAction = {
   label: string;
@@ -132,6 +146,10 @@ export type GlassBarProps = {
   toast?: GlassBarToast | null;
   /** More's menu. Without it, More calls `onMore`. */
   moreActions?: GlassBarAction[];
+  /** Shown: the file's details, in a popover from More. */
+  details?: GlassBarDetails | null;
+  /** The details' popover was closed (a tap outside it). */
+  onDetailsClose?: () => void;
   ref?: import("react").Ref<GlassBarHandle>;
   onFilter?: () => void;
   /**
