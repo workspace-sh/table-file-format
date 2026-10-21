@@ -164,12 +164,18 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"contextMenu" ];
+  return @[ @"contextMenu", @"settingsForm" ];
 }
 
 - (void)startObserving
 {
   _observed = YES;
+  // What's done in the inspector's settings form (TableInspector.swift), for src/settings.tsx.
+  __weak TableMacControls *weakForm = self;
+  [TableInspector listen:^(NSDictionary *event) {
+    TableMacControls *controls = weakForm;
+    if (controls != nil && controls->_observed) [controls sendEventWithName:@"settingsForm" body:event];
+  }];
   if (contextMenus != nil) return;
   __weak TableMacControls *weakSelf = self;
   // A right-click (or Control-click) in a React surface asks for the menu of
@@ -340,6 +346,18 @@ RCT_EXPORT_METHOD(popUpChoose:(NSString *)title after:(nonnull NSNumber *)second
 {
   _armedTitle = title;
   _armedDelay = seconds.doubleValue;
+}
+
+/// The inspector's settings form (TableInspector.swift), as JSON; "" for none.
+RCT_EXPORT_METHOD(setSettingsForm:(NSString *)json)
+{
+  [TableInspector setForm:json];
+}
+
+/// Open or close the inspector.
+RCT_EXPORT_METHOD(setInspectorShown:(BOOL)shown)
+{
+  [TableInspector setShown:shown];
 }
 
 @end

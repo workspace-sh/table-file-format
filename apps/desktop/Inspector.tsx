@@ -8,8 +8,7 @@ import { StyleSheet, Text, View, useColorScheme } from "react-native";
 import { BodyEditor, DisplaySettingsProvider, PanelSurface, PlatformControlsProvider, PortalHost, ViewSettings } from "@workspace.sh/table-ui";
 import type { PlatformControls, SheetProps } from "@workspace.sh/table-ui/shared";
 import { html, css } from "react-strict-dom";
-import { macControls } from "@workspace.sh/table-mac-controls";
-import { MacSettingsForm, macSheet } from "./MacSettings";
+import { MacSettingsForm, macControls, macSheet } from "@workspace.sh/table-mac-controls";
 import { inspectorStore } from "./inspectorStore";
 
 /**
@@ -71,7 +70,7 @@ export function Inspector() {
     </PanelSurface.Provider>
   ) : settings ? (
     // The view's settings change as they're made, beside the view they change.
-    // Drawn by the inspector's own form (MacSettings.tsx); this only describes them.
+    // Drawn by the inspector's own form (@workspace.sh/table-mac-controls' settings); this only describes them.
     <SettingsOf settings={settings} />
   ) : cell && (cell.state.kind === "selected" || cell.state.kind === "editing") ? (
     // Said, and a formula written, in the system's form over this view

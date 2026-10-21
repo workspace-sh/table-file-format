@@ -35,10 +35,26 @@ import type { DisplaySettingKind, PlaceMeasure } from "@workspace.sh/table-ui/sh
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
-import { datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, watchRowMenus } from "@workspace.sh/table-mac-controls";
-import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
+import {
+  cancelSettingsForm,
+  datePickerClose,
+  datePickerSet,
+  datePickerShown,
+  dismissSettingsForm,
+  onSettingsFormEvent,
+  popUpChoose,
+  popUpTitles,
+  setSettingsTransport,
+  settingsFormJson,
+  settingsFormShown,
+  watchRowMenus,
+} from "@workspace.sh/table-mac-controls";
 import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
-import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendAppSettings, sendSettingsForm, setAppSettings, setInspectorCell, setInspectorShown, setSidebar, showAppSettings, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendAppSettings, sendSettingsForm, setAppSettings, setInspectorCell, setInspectorShown, setSettingsForm, setSidebar, showAppSettings, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+
+// Settings forms go to this window's own inspector (TableShell.swift), and what's done in them
+// comes back with the sidebar's events (onSettingsFormEvent, below).
+setSettingsTransport({ setForm: setSettingsForm, setShown: setInspectorShown });
 import {
   ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
