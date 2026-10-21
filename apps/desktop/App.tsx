@@ -105,7 +105,7 @@ import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
 import { LARGE_KEY, OPENED_KEY, reopenFolders, useFolders, type OpenedDocuments } from "./folders";
-import { useFolderHistories, useIndexedTables, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
+import { useFolderHistories, useIndexedTables, useSearchBehind, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
 import { chooseFile, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
@@ -782,7 +782,9 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
   const folderName = (bundle: string) => folderPaths[bundle]?.split("/").pop();
   // Tables held in the index (large ones): read, edited and saved there, as on the phone.
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
   holdFirst.current = indexed.hold;
   // The first rows of large documents reopened at launch, shown while the rest is read (folders.ts).
@@ -805,7 +807,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
   rereadHistory.current = folderHistories.reread;
   const historyText = (key: string): string | undefined =>
     historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
-  const derived = derive(state, {
+  const derived = derive(behind, {
     locale: systemLocale,
     attachmentsOf,
     fileNameOf: folderName,
