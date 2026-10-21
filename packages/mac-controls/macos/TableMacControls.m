@@ -164,7 +164,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"contextMenu", @"settingsForm" ];
+  return @[ @"contextMenu", @"settingsForm", @"choiceToggled" ];
 }
 
 - (void)startObserving
@@ -358,6 +358,47 @@ RCT_EXPORT_METHOD(setSettingsForm:(NSString *)json)
 RCT_EXPORT_METHOD(setInspectorShown:(BOOL)shown)
 {
   [TableInspector setShown:shown];
+}
+
+/// Several choices (`options`: { value, label, color }) in a popover pointing at
+/// the view React marked with `nativeID` `anchor`, else at `rect` (as React
+/// measures in its surface), `selected` ticked (TableChoicePicker.swift). Each
+/// pick is sent as a `choiceToggled` event; resolves when it closes.
+RCT_EXPORT_METHOD(chooseMany:(NSArray<NSDictionary *> *)options
+                  selected:(NSArray<NSString *> *)selected
+                  rect:(NSDictionary *)rect
+                  anchor:(nullable NSString *)anchor
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  __weak TableMacControls *weakSelf = self;
+  void (^toggled)(NSString *) = ^(NSString *value) {
+    TableMacControls *controls = weakSelf;
+    if (controls != nil && controls->_observed) [controls sendEventWithName:@"choiceToggled" body:@{ @"value" : value }];
+  };
+  void (^done)(void) = ^{
+    resolve([NSNull null]);
+  };
+  NSView *anchored = AnchorIn(CurrentWindow(), anchor);
+  if (anchored != nil) {
+    [TableChoicePicker.shared showWithOptions:options selected:selected rect:anchored.bounds in:anchored toggled:toggled done:done];
+    return;
+  }
+  NSView *root = CurrentReactRoot();
+  if (root == nil) {
+    resolve([NSNull null]);
+    return;
+  }
+  double height = [rect[@"height"] doubleValue];
+  double y = [rect[@"y"] doubleValue];
+  NSRect at = NSMakeRect([rect[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y - height, [rect[@"width"] doubleValue], height);
+  [TableChoicePicker.shared showWithOptions:options selected:selected rect:at in:root toggled:toggled done:done];
+}
+
+/// Close the popover of several choices, if one is open.
+RCT_EXPORT_METHOD(chooseManyClose)
+{
+  [TableChoicePicker.shared close];
 }
 
 @end

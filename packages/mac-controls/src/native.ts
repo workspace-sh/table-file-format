@@ -18,6 +18,8 @@ interface TableMacControlsModule {
   popUpChoose(title: string, seconds: number): void;
   setSettingsForm(json: string): void;
   setInspectorShown(shown: boolean): void;
+  chooseMany(options: { value: string; label: string; color?: string }[], selected: string[], rect: { x: number; y: number; width: number; height: number }, anchor: string | null): Promise<null>;
+  chooseManyClose(): void;
 }
 
 const native = NativeModules.TableMacControls as TableMacControlsModule | undefined;
@@ -99,4 +101,29 @@ export function setInspectorShown(shown: boolean): void {
 export function onSettingsForm<E>(then: (event: E) => void): () => void {
   const sub = events?.addListener("settingsForm", then);
   return () => sub?.remove();
+}
+
+/**
+ * Several choices in a popover pointing at the view whose `nativeID` is
+ * `anchor`, else at `rect`; each pick goes to `onToggle`. Resolves when it
+ * closes.
+ */
+export function chooseMany(
+  options: { value: string; label: string; color?: string }[],
+  selected: string[],
+  rect: { x: number; y: number; width: number; height: number },
+  anchor: string | null,
+  onToggle: (value: string) => void,
+): Promise<void> {
+  if (!native) return Promise.resolve();
+  const sub = events?.addListener("choiceToggled", (e: { value: string }) => onToggle(e.value));
+  return native.chooseMany(options, selected, rect, anchor).then(
+    () => sub?.remove(),
+    () => sub?.remove(),
+  );
+}
+
+/** Close the popover of several choices, if one is open. */
+export function chooseManyClose(): void {
+  native?.chooseManyClose();
 }
