@@ -5,6 +5,7 @@
 // own where it wants something else. Free of any renderer, as shared.ts.
 
 import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
+import type { AnchorRect } from "./internal/measureAnchor";
 
 /** An entry of a menu the platform draws: a row's, or a column's. */
 interface Action<Id extends string> {
@@ -98,6 +99,28 @@ export interface DateInputProps {
   /** The cell's value as it's shown, for a picker that opens from it (Android). */
   trigger: ReactElement;
 }
+
+/**
+ * Several choices from a list, opened over a cell (a multi-select's
+ * tags, a link to several rows): each choice toggles as it's picked and
+ * the list stays open, as a quick choice should. The platform's own: a
+ * popover of the system's on a Mac. Absent, the views draw their own menu.
+ */
+export interface ChooseManyProps {
+  options: { value: string; label: string; /** A choice's colour's name (EnumColor), for its tag. */ color?: string }[];
+  /** The values chosen now. */
+  selected: string[];
+  /** A choice picked: on if it was off, off if it was on. */
+  onToggle: (value: string) => void;
+  /** The cell it opens from: the `id` its element carries, and where it is as React measures. */
+  anchor: string;
+  rect: AnchorRect | null;
+  /** Closed: by a click outside, Escape or Return. */
+  onClose: () => void;
+}
+
+/** A ChooseMany control, or null where the views draw their own. */
+export type ChooseManySlot = ((props: ChooseManyProps) => ReactElement | null) | null;
 
 /** A DateInput control; `available` false where cells type their dates instead. */
 export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
@@ -251,6 +274,8 @@ export interface PlatformControls {
   Toggle: ToggleSlot;
   Sheet: SheetSlot;
   SettingsForm: SettingsFormSlot;
+  /** Several choices over a cell; absent or null, the views' own menu. */
+  ChooseMany?: ChooseManySlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */

@@ -29,7 +29,7 @@ const defaults: PlatformControls = {
 const Context = createContext<PlatformControls>(defaults);
 
 export function PlatformControlsProvider({ value, children }: { value: Partial<PlatformControls>; children: ReactNode }) {
-  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm } = value;
+  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm, ChooseMany: chooseMany } = value;
   const merged = useMemo<PlatformControls>(
     () => ({
       RowActions: rowActions ?? defaults.RowActions,
@@ -38,8 +38,9 @@ export function PlatformControlsProvider({ value, children }: { value: Partial<P
       Toggle: toggle ?? defaults.Toggle,
       Sheet: sheet ?? defaults.Sheet,
       SettingsForm: settingsForm !== undefined ? settingsForm : defaults.SettingsForm,
+      ChooseMany: chooseMany ?? null,
     }),
-    [rowActions, select, dateInput, toggle, sheet, settingsForm],
+    [rowActions, select, dateInput, toggle, sheet, settingsForm, chooseMany],
   );
   return <Context.Provider value={merged}>{children}</Context.Provider>;
 }
