@@ -16,6 +16,8 @@ interface TableMacControlsModule {
   datePickerClose(): void;
   popUpTitles(): Promise<string[]>;
   popUpChoose(title: string, seconds: number): void;
+  setSettingsForm(json: string): void;
+  setInspectorShown(shown: boolean): void;
 }
 
 const native = NativeModules.TableMacControls as TableMacControlsModule | undefined;
@@ -81,4 +83,20 @@ export function popUpTitles(): Promise<string[]> {
 }
 export function popUpChoose(title: string, seconds = 1): void {
   native?.popUpChoose(title, seconds);
+}
+
+/** The inspector's settings form (macos/TableInspector.swift), as JSON; "" for none. */
+export function setSettingsForm(json: string): void {
+  native?.setSettingsForm(json);
+}
+
+/** Open or close the inspector. */
+export function setInspectorShown(shown: boolean): void {
+  native?.setInspectorShown(shown);
+}
+
+/** What's done in the inspector's settings form. */
+export function onSettingsForm<E>(then: (event: E) => void): () => void {
+  const sub = events?.addListener("settingsForm", then);
+  return () => sub?.remove();
 }
