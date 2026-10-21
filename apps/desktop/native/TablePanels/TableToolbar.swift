@@ -68,8 +68,12 @@ public class TableToolbar: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
   }
 
   /// The search field's text, when the app changes it (leaving a view clears it).
+  /// While it's being typed in, the field's own text is the latest: what the app
+  /// sends back then is what was typed a few keys ago, and setting it lost the
+  /// keys since. Only clearing it (leaving the view) still applies.
   @objc public func setSearch(_ text: String) {
     guard let field = searchItem?.searchField, field.stringValue != text else { return }
+    if field.currentEditor() != nil && !text.isEmpty { return }
     field.stringValue = text
   }
 

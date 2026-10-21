@@ -5,7 +5,7 @@
 // settings with the direction the viewer's language reads (derive's own rule). React is a peer
 // of this subpath only: the rest of table-app stays renderer-free.
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
 import { newId, stampEdits, textDirection, type BundleMeta, type EditChange, type EditEvent, type ParsedTable, type TextDirection } from "@workspace.sh/table-core";
 import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
@@ -343,10 +343,22 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.tables]);
 
-  const derived = derive(state, { locale, newTableIn: "none" });
+  const derived = derive(useSearchBehind(state), { locale, newTableIn: "none" });
   const related = useMemo(() => relatedTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
   const { onOpenRelation: _follow, ...callbacks } = viewCallbacks(state, dispatch, newId);
   return { state, dispatch, derived, display, tableName: tableNameOf(state.active), related, callbacks };
+}
+
+/**
+ * The state with its search a step behind what's typed, for drawing the
+ * view. What's typed shows at once in the search field, and the view's
+ * rows, filtered again for each keystroke, follow when there's time: on a
+ * table of thousands of rows the filtering held the keyboard, and the
+ * field lost keys. The search field itself reads `state.search`.
+ */
+export function useSearchBehind(state: AppState): AppState {
+  const search = useDeferredValue(state.search);
+  return useMemo(() => (search === state.search ? state : { ...state, search }), [state, search]);
 }
 
 export { useIndexedTables, type IndexedTables } from "./useIndexedTables.ts";
