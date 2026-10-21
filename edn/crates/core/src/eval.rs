@@ -20,7 +20,8 @@ pub enum Value {
     /// Nothing: `undefined`, `null` or `""` there (all read as empty).
     Empty,
     Number(f64),
-    Str(String),
+    /// Shared: a cell's text is read by many rows without being copied.
+    Str(Rc<str>),
     Bool(bool),
     Error(ErrorCode, String),
     /// Shared: a whole column (`values`) is the same list for every row.
@@ -137,8 +138,12 @@ fn numeric(name: &str, args: &[Expr], scope: &dyn Scope, how: Reduce, skip_empty
         Err(e) => return e,
     };
     // sum / min / max / average take lists as spreadsheets take ranges: every item counts, blanks skipped.
-    let mut flat = Vec::with_capacity(vs.len());
-    for v in vs {
+    // Without a list among them (most rows), the values are read as they are.
+    let flat: Vec<Value> = if !vs.iter().any(|v| matches!(v, Value::List(_))) {
+        vs
+    } else {
+        let mut flat = Vec::with_capacity(vs.len());
+        for v in vs {
         if let Value::List(items) = &v {
             if !skip_empty {
                 return err(ErrorCode::Value, format!("{name} needs single values, got a list"));
@@ -154,7 +159,9 @@ fn numeric(name: &str, args: &[Expr], scope: &dyn Scope, how: Reduce, skip_empty
         } else {
             flat.push(v);
         }
-    }
+        }
+        flat
+    };
     let mut nums = Vec::with_capacity(flat.len());
     for v in &flat {
         if v.is_empty() {
@@ -355,7 +362,7 @@ fn call(name: &str, args: &[Expr], scope: &dyn Scope) -> Value {
         }
         "concatenate" => match values(args, scope) {
             Err(e) => e,
-            Ok(vs) => Value::Str(vs.iter().map(|v| if v.is_empty() { String::new() } else { js_string(v) }).collect()),
+            Ok(vs) => Value::Str(vs.iter().map(|v| if v.is_empty() { String::new() } else { js_string(v) }).collect::<String>().into()),
         },
         // How many values there are: blanks aren't counted, a list counts its items.
         "count" => match values(args, scope) {
@@ -379,8 +386,8 @@ fn call(name: &str, args: &[Expr], scope: &dyn Scope) -> Value {
             [Expr::Str(field)] => scope.values(field),
             _ => err(ErrorCode::Value, "values takes a field name: (values \"quarter\")"),
         },
-        "upper" => text("upper", args, scope, |s| Value::Str(s.to_uppercase())),
-        "lower" => text("lower", args, scope, |s| Value::Str(s.to_lowercase())),
+        "upper" => text("upper", args, scope, |s| Value::Str(s.to_uppercase().into())),
+        "lower" => text("lower", args, scope, |s| Value::Str(s.to_lowercase().into())),
         "len" => text("len", args, scope, |s| Value::Number(s.chars().count() as f64)),
         "related" => match args {
             [Expr::Str(relation), Expr::Str(field)] => scope.related(relation, field),
@@ -404,7 +411,7 @@ pub fn js_string(v: &Value) -> String {
     match v {
         Value::Empty => String::new(),
         Value::Number(n) => js_number(*n),
-        Value::Str(s) => s.clone(),
+        Value::Str(s) => s.to_string(),
         Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         Value::Error(code, _) => code.as_str().to_string(),
         Value::List(items) => items.iter().map(js_string).collect::<Vec<_>>().join(","),

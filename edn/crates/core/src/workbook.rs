@@ -11,7 +11,7 @@
 //! formula, so nothing crosses per row.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use crate::fxhash::FxHashMap as HashMap;
 use std::rc::Rc;
 
 use crate::eval::{evaluate, needs_host, ErrorCode, Scope, Value};
@@ -69,7 +69,8 @@ pub struct Workbook {
     /// Per table: field index by name.
     fields: Vec<HashMap<String, usize>>,
     /// Per table and field: one slot per row, for computed fields.
-    slots: RefCell<HashMap<(usize, usize), Vec<Slot>>>,
+    /// Per table, per field: one slot per row (empty until the field is first computed).
+    slots: Vec<Vec<RefCell<Vec<Slot>>>>,
     by_id: RefCell<HashMap<usize, Rc<HashMap<String, usize>>>>,
     columns: RefCell<HashMap<(usize, usize), Value>>,
     backlinks: RefCell<HashMap<(usize, usize), Rc<HashMap<String, Vec<usize>>>>>,
@@ -79,15 +80,16 @@ pub struct Workbook {
 impl Workbook {
     pub fn new(tables: Vec<Table>) -> Self {
         let by_name = tables.iter().enumerate().map(|(i, t)| (t.name.clone(), i)).collect();
+        let slots = tables.iter().map(|t| t.fields.iter().map(|_| RefCell::new(Vec::new())).collect()).collect();
         let fields = tables.iter().map(|t| t.fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect()).collect();
         Self {
             tables,
             by_name,
             fields,
-            slots: RefCell::new(HashMap::new()),
-            by_id: RefCell::new(HashMap::new()),
-            columns: RefCell::new(HashMap::new()),
-            backlinks: RefCell::new(HashMap::new()),
+            slots,
+            by_id: RefCell::new(HashMap::default()),
+            columns: RefCell::new(HashMap::default()),
+            backlinks: RefCell::new(HashMap::default()),
             depth: RefCell::new(0),
         }
     }
@@ -101,7 +103,11 @@ impl Workbook {
     /// computeRows computes each table in a workbook of its own, so a loop
     /// through another table is reported from the table being computed.
     pub fn fresh_pass(&self) {
-        self.slots.borrow_mut().clear();
+        for table in &self.slots {
+            for f in table {
+                f.borrow_mut().clear();
+            }
+        }
         self.columns.borrow_mut().clear();
         self.backlinks.borrow_mut().clear();
     }
@@ -132,9 +138,9 @@ impl Workbook {
             return field.column.as_ref().map_or(Value::Empty, |c| c.at(i));
         };
         {
-            let slots = self.slots.borrow();
-            if let Some(s) = slots.get(&(t, f)) {
-                match &s[i] {
+            let s = self.slots[t][f].borrow();
+            if let Some(slot) = s.get(i) {
+                match slot {
                     Slot::Done(v) => return v.clone(),
                     Slot::Pending => return Value::Error(ErrorCode::Ref, format!("{} depends on itself", field.name)),
                     Slot::Unset => {}
@@ -155,7 +161,11 @@ impl Workbook {
 
     fn set(&self, t: usize, f: usize, i: usize, slot: Slot) {
         let rows = self.tables[t].ids.len();
-        self.slots.borrow_mut().entry((t, f)).or_insert_with(|| vec![Slot::Unset; rows])[i] = slot;
+        let mut s = self.slots[t][f].borrow_mut();
+        if s.is_empty() {
+            s.resize(rows, Slot::Unset);
+        }
+        s[i] = slot;
     }
 
     fn index_by_id(&self, t: usize) -> Rc<HashMap<String, usize>> {
@@ -185,8 +195,8 @@ impl Workbook {
         };
         let index = self.backlinks_of(there, relation);
         let id = &self.tables[t].ids[i];
-        let rows = index.get(id).cloned().unwrap_or_default();
-        Value::List(Rc::new(rows.into_iter().map(|j| self.value_by_name(there, j, name)).collect()))
+        let rows: &[usize] = index.get(id).map_or(&[], |v| v.as_slice());
+        Value::List(Rc::new(rows.iter().map(|&j| self.value_by_name(there, j, name)).collect()))
     }
 
     fn backlinks_of(&self, there: usize, relation: &str) -> Rc<HashMap<String, Vec<usize>>> {
@@ -196,7 +206,7 @@ impl Workbook {
                 return m.clone();
             }
         }
-        let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut index: HashMap<String, Vec<usize>> = HashMap::default();
         for j in 0..self.tables[there].ids.len() {
             let v = self.value_by_name(there, j, relation);
             let ids: Vec<Value> = match &v {
@@ -206,7 +216,7 @@ impl Workbook {
             for id in ids {
                 if let Value::Str(s) = id {
                     if !s.is_empty() {
-                        index.entry(s).or_default().push(j);
+                        index.entry(s.to_string()).or_default().push(j);
                     }
                 }
             }
@@ -233,8 +243,16 @@ impl Workbook {
             if id.is_empty() {
                 return Value::Empty;
             }
-            let key = crate::eval::js_string(id);
-            match by_id.get(&key) {
+            // Ids are strings; anything else is looked up as JavaScript's String() writes it.
+            let owned;
+            let key: &str = match id {
+                Value::Str(s) => &s[..],
+                other => {
+                    owned = crate::eval::js_string(other);
+                    &owned
+                }
+            };
+            match by_id.get(key) {
                 Some(&target) => self.value_by_name(there, target, name),
                 None => Value::Error(ErrorCode::Ref, format!("no row {key} in {table}")),
             }
@@ -310,7 +328,7 @@ fn from_json(v: &serde_json::Value) -> Value {
         serde_json::Value::Null => Value::Empty,
         serde_json::Value::Bool(b) => Value::Bool(*b),
         serde_json::Value::Number(n) => n.as_f64().map_or(Value::Empty, Value::Number),
-        serde_json::Value::String(s) => Value::Str(s.clone()),
+        serde_json::Value::String(s) => Value::Str(s.as_str().into()),
         serde_json::Value::Array(items) => Value::List(Rc::new(items.iter().map(from_json).collect())),
         serde_json::Value::Object(_) => Value::Empty,
     }

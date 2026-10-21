@@ -72,6 +72,29 @@ have a formula of their own: 250,000 distinct formulas. Read once each
 | This core, WebAssembly, canonical text out | 1.37 s | about the same |
 | This core, WebAssembly, tree into JavaScript | 2.24 s | 1.8× slower |
 
+### Formulas computed inside the core
+
+Whole bundles go in once (row ids, stored columns, formulas, relations) and
+every formula column comes out once. Same results as `.table`'s workbook
+(`computeRows`), value for value and message for message: every fixture
+bundle, deliberately awkward values, and relations gone wrong
+(`js/src/evaluate.test.ts`). 21 of the fixtures' 22 formulas are the core's;
+the one reading a Sheet place (`at`) stays with `.table`'s workbook.
+
+100,000 deals pointing at 2,000 companies (a row formula, a lookup through
+the relation, two rollups back), everything included (columns in, results
+out):
+
+| | Today (`computeRows`) | This core |
+| --- | --- | --- |
+| Native (N-API, Linux) | 295 ms | 215 ms |
+| WebAssembly (Node) | 273 ms | 214 ms |
+
+Inside the core it's about 80 ms natively; the rest is getting columns in
+and results out.
+
+### Reading formulas
+
 - **Native** (Linux, and what macOS, iOS and Android will use) is faster
   than today. Not yet measured on a phone's ARM chip.
 - **WebAssembly** is at parity for text, slower when whole trees cross into
