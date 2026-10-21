@@ -36,12 +36,13 @@ fn error_json(e: Error) -> JsValue {
 }
 
 
-/// A formula over whole columns: results encoded as `workspace_edn::column::encode` describes.
+/// A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
 #[wasm_bindgen]
 pub struct ColumnResults {
     kinds: Vec<u8>,
     numbers: Vec<f64>,
     extra: String,
+    index: String,
 }
 
 #[wasm_bindgen]
@@ -58,13 +59,16 @@ impl ColumnResults {
     pub fn extra(&self) -> String {
         self.extra.clone()
     }
+    #[wasm_bindgen(getter)]
+    pub fn index(&self) -> String {
+        self.index.clone()
+    }
 }
 
-/// `formula` over `rows` rows: number columns as `number_names` and one `numbers` array, the rest as JSON.
-#[wasm_bindgen(js_name = evaluateColumn)]
-pub fn evaluate_column(formula: &str, number_names: Vec<String>, numbers: &[f64], json: &str, rows: usize) -> Result<ColumnResults, JsValue> {
-    let columns = workspace_edn::column::columns_from(&number_names, numbers, json, rows).map_err(error_json)?;
-    let results = workspace_edn::column::evaluate_column(formula, &columns, rows).map_err(error_json)?;
-    let e = workspace_edn::column::encode(&results);
-    Ok(ColumnResults { kinds: e.kinds, numbers: e.numbers, extra: e.extra })
+/// A workbook's formulas computed (see `workspace_edn::workbook::workbook_from` and `column::compute`); `index` comes back in `extra`'s place as a second string.
+#[wasm_bindgen(js_name = computeWorkbook)]
+pub fn compute_workbook(json: &str, numbers: &[f64]) -> Result<ColumnResults, JsValue> {
+    let book = workspace_edn::workbook::workbook_from(json, numbers).map_err(error_json)?;
+    let c = workspace_edn::column::compute(&book);
+    Ok(ColumnResults { kinds: c.encoded.kinds, numbers: c.encoded.numbers, extra: c.encoded.extra, index: c.index })
 }
