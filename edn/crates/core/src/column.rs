@@ -1,106 +1,8 @@
-//! A formula over a whole column, evaluated inside the core: the columns it
-//! reads go in once, its results come out once, so nothing crosses per row.
-//! Numbers-only columns travel as `f64`s (`NaN` for an empty cell, which
-//! JSON can't hold, so no real value is lost); any other column as JSON.
+//! Results leaving the core without crossing per row: see `encode`.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
-use crate::eval::{evaluate, needs_host, Scope, Value};
-use crate::formula::{json_string, read_formula};
-use crate::Error;
-
-/// A column a formula reads, by field name.
-pub enum Column {
-    /// Numbers, `NaN` for an empty cell.
-    Numbers(Vec<f64>),
-    Values(Vec<Value>),
-}
-
-impl Column {
-    fn at(&self, row: usize) -> Value {
-        match self {
-            Column::Numbers(ns) => match ns.get(row) {
-                Some(n) if !n.is_nan() => Value::Number(*n),
-                _ => Value::Empty,
-            },
-            Column::Values(vs) => vs.get(row).cloned().unwrap_or(Value::Empty),
-        }
-    }
-
-    fn all(&self, rows: usize) -> Value {
-        Value::List(Rc::new((0..rows).map(|r| self.at(r)).collect()))
-    }
-}
-
-struct ColumnScope<'a> {
-    columns: &'a HashMap<String, Column>,
-    rows: usize,
-    row: usize,
-    lists: &'a RefCell<HashMap<String, Value>>,
-}
-
-impl Scope for ColumnScope<'_> {
-    fn field(&self, name: &str) -> Value {
-        self.columns.get(name).map_or(Value::Empty, |c| c.at(self.row))
-    }
-
-    fn values(&self, name: &str) -> Value {
-        if let Some(v) = self.lists.borrow().get(name) {
-            return v.clone();
-        }
-        let v = self.columns.get(name).map_or_else(|| Value::List(Rc::new(vec![Value::Empty; self.rows])), |c| c.all(self.rows));
-        self.lists.borrow_mut().insert(name.to_string(), v.clone());
-        v
-    }
-}
-
-/// `formula` for each of `rows` rows over `columns`. Refused when the formula needs the host (see `needs_host`).
-pub fn evaluate_column(formula: &str, columns: &HashMap<String, Column>, rows: usize) -> Result<Vec<Value>, Error> {
-    let expr = read_formula(formula)?;
-    if needs_host(&expr) {
-        return Err(Error { message: "this formula needs the host: it follows a relation or reads a Sheet place".into(), line: None, column: None });
-    }
-    let lists = RefCell::new(HashMap::new());
-    let mut out = Vec::with_capacity(rows);
-    for row in 0..rows {
-        out.push(evaluate(&expr, &ColumnScope { columns, rows, row, lists: &lists }));
-    }
-    Ok(out)
-}
-
-/// Columns given as numbers (`names[i]` → `numbers[i*rows..(i+1)*rows]`) and as JSON (`{"name": [value, …]}`).
-pub fn columns_from(names: &[String], numbers: &[f64], json: &str, rows: usize) -> Result<HashMap<String, Column>, Error> {
-    let mut columns = HashMap::new();
-    for (i, name) in names.iter().enumerate() {
-        let slice = numbers.get(i * rows..(i + 1) * rows).ok_or_else(|| bad("the number columns are shorter than the rows"))?;
-        columns.insert(name.clone(), Column::Numbers(slice.to_vec()));
-    }
-    if !json.is_empty() {
-        let parsed: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json).map_err(|e| bad(&format!("columns aren't JSON: {e}")))?;
-        for (name, v) in parsed {
-            let serde_json::Value::Array(items) = v else { return Err(bad("a column is a list of values")) };
-            columns.insert(name, Column::Values(items.iter().map(from_json).collect()));
-        }
-    }
-    Ok(columns)
-}
-
-fn bad(m: &str) -> Error {
-    Error { message: m.into(), line: None, column: None }
-}
-
-fn from_json(v: &serde_json::Value) -> Value {
-    match v {
-        serde_json::Value::Null => Value::Empty,
-        serde_json::Value::Bool(b) => Value::Bool(*b),
-        serde_json::Value::Number(n) => n.as_f64().map_or(Value::Empty, Value::Number),
-        serde_json::Value::String(s) => Value::Str(s.clone()),
-        serde_json::Value::Array(items) => Value::List(Rc::new(items.iter().map(from_json).collect())),
-        serde_json::Value::Object(_) => Value::Empty,
-    }
-}
+use crate::eval::Value;
+use crate::formula::json_string;
+use crate::workbook::Workbook;
 
 /// Results for a binding to hand over without crossing per row: a kind per
 /// row (0 empty, 1 number, 2 true, 3 false, 4 in `extra`), the numbers (`NaN`
@@ -163,4 +65,47 @@ fn json_value(out: &mut String, v: &Value) {
             out.push(']');
         }
     }
+}
+
+/// A workbook's computed columns, encoded together: `index` (JSON) says, per
+/// table, either that the host computes it (`{"host":true}`, a formula reads a
+/// Sheet place) or where each computed field's rows are in `kinds` and
+/// `numbers` (`{"fields":{"name":[start,rows]}}`). `extra` holds the strings,
+/// errors and lists of every column, in order.
+pub struct Computed {
+    pub index: String,
+    pub encoded: Encoded,
+}
+
+pub fn compute(book: &Workbook) -> Computed {
+    let mut all: Vec<Value> = Vec::new();
+    let mut index = String::from("{");
+    for (t, table) in book.tables().iter().enumerate() {
+        if t > 0 {
+            index.push(',');
+        }
+        json_string(&mut index, &table.name);
+        if book.needs_host(t) {
+            index.push_str(":{\"host\":true}");
+            continue;
+        }
+        book.fresh_pass();
+        index.push_str(":{\"fields\":{");
+        let mut first = true;
+        for (f, field) in table.fields.iter().enumerate() {
+            if field.formula.is_none() {
+                continue;
+            }
+            if !first {
+                index.push(',');
+            }
+            first = false;
+            json_string(&mut index, &field.name);
+            index.push_str(&format!(":[{},{}]", all.len(), table.ids.len()));
+            all.extend(book.column(t, f));
+        }
+        index.push_str("}}");
+    }
+    index.push('}');
+    Computed { index, encoded: encode(&all) }
 }

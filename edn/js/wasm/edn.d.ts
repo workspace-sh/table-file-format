@@ -2,13 +2,14 @@
 /* eslint-disable */
 
 /**
- * A formula over whole columns: results encoded as `workspace_edn::column::encode` describes.
+ * A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
  */
 export class ColumnResults {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
     readonly extra: string;
+    readonly index: string;
     readonly kinds: Uint8Array;
     readonly numbers: Float64Array;
 }
@@ -19,9 +20,9 @@ export class ColumnResults {
 export function canonical(text: string): string;
 
 /**
- * `formula` over `rows` rows: number columns as `number_names` and one `numbers` array, the rest as JSON.
+ * A workbook's formulas computed (see `workspace_edn::workbook::workbook_from` and `column::compute`); `index` comes back in `extra`'s place as a second string.
  */
-export function evaluateColumn(formula: string, number_names: string[], numbers: Float64Array, json: string, rows: number): ColumnResults;
+export function computeWorkbook(json: string, numbers: Float64Array): ColumnResults;
 
 /**
  * A `.table` formula read, as JSON in the shape `.table`'s evaluator takes (`parseExpr`'s `Expr`), or throws as `canonical` does.
@@ -40,14 +41,15 @@ export interface InitOutput {
     readonly __wbg_columnresults_free: (a: number, b: number) => void;
     readonly canonical: (a: number, b: number, c: number) => void;
     readonly columnresults_extra: (a: number, b: number) => void;
+    readonly columnresults_index: (a: number, b: number) => void;
     readonly columnresults_kinds: (a: number, b: number) => void;
     readonly columnresults_numbers: (a: number, b: number) => void;
-    readonly evaluateColumn: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly computeWorkbook: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly formula: (a: number, b: number, c: number) => void;
     readonly read: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export3: (a: number, b: number, c: number) => void;
 }
 

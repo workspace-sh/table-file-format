@@ -19,6 +19,7 @@
 pub mod column;
 pub mod eval;
 pub mod formula;
+pub mod workbook;
 
 use clojure_reader::edn::{self, Edn};
 use clojure_reader::error::Code;

@@ -36,20 +36,19 @@ pub fn read(text: String) -> Result<String> {
     workspace_edn::read(&text).map(|v| value_json(&v)).map_err(error)
 }
 
-/// A formula over whole columns: results encoded as `workspace_edn::column::encode` describes.
+/// A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
 #[napi(object)]
 pub struct ColumnResults {
     pub kinds: Uint8Array,
     pub numbers: Float64Array,
     pub extra: String,
+    pub index: String,
 }
 
-/// `formula` over `rows` rows: number columns as `number_names` and one `numbers` array, the rest as JSON.
-#[napi(js_name = "evaluateColumn")]
-pub fn evaluate_column(formula: String, number_names: Vec<String>, numbers: Float64Array, json: String, rows: u32) -> Result<ColumnResults> {
-    let rows = rows as usize;
-    let columns = workspace_edn::column::columns_from(&number_names, &numbers, &json, rows).map_err(error)?;
-    let results = workspace_edn::column::evaluate_column(&formula, &columns, rows).map_err(error)?;
-    let e = workspace_edn::column::encode(&results);
-    Ok(ColumnResults { kinds: Uint8Array::new(e.kinds), numbers: Float64Array::new(e.numbers), extra: e.extra })
+/// A workbook's formulas computed (see `workspace_edn::workbook::workbook_from`).
+#[napi(js_name = "computeWorkbook")]
+pub fn compute_workbook(json: String, numbers: Float64Array) -> Result<ColumnResults> {
+    let book = workspace_edn::workbook::workbook_from(&json, &numbers).map_err(error)?;
+    let c = workspace_edn::column::compute(&book);
+    Ok(ColumnResults { kinds: Uint8Array::new(c.encoded.kinds), numbers: Float64Array::new(c.encoded.numbers), extra: c.encoded.extra, index: c.index })
 }

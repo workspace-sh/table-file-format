@@ -7,7 +7,7 @@
 // list and a vector, `1` and `1.0` all stay apart, and integers are strings,
 // so one beyond 2^53 survives JavaScript's numbers.
 
-import init, { canonical as wasmCanonical, evaluateColumn as wasmEvaluateColumn, formula as wasmFormula, read as wasmRead } from "../wasm/edn.js";
+import init, { canonical as wasmCanonical, computeWorkbook as wasmComputeWorkbook, formula as wasmFormula, read as wasmRead } from "../wasm/edn.js";
 
 export type EdnValue =
   | { t: "nil" }
@@ -46,13 +46,12 @@ export interface Edn {
   /** A `.table` formula, read into the expression its evaluator takes, or throws an EdnError. */
   formula(text: string): FormulaExpr;
   /**
-   * A `.table` formula over whole columns, inside the core: the same results
-   * as `.table`'s evaluator, row by row. `columns` holds each field the
-   * formula reads (fieldsOf), one value per row. Throws an EdnError for a
-   * formula the core leaves to the host (it follows a relation or reads a
-   * Sheet place); use `.table`'s own evaluator for those.
+   * Every formula of a bundle's tables, computed inside the core: the same
+   * results as `.table`'s workbook (computeRows), field by field and row by
+   * row. A table whose formulas read a Sheet view's places is the host's:
+   * it comes back as "host", for `.table`'s own workbook to compute.
    */
-  evaluateColumn(formula: string, columns: Record<string, readonly unknown[]>, rows: number): FormulaResult[];
+  computeTables(tables: Record<string, TableIn>): Record<string, Record<string, FormulaResult[]> | "host">;
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
@@ -60,13 +59,19 @@ export interface Edn {
 /** A formula's result: `.table`'s `Value`, with an error as its code and message. */
 export type FormulaResult = number | string | boolean | undefined | { code: string; message: string } | FormulaResult[];
 
-type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string };
+type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; index: string };
+
+/** A table as `computeTables` takes it: `.table`'s schema fields (only what's read) and rows. */
+export interface TableIn {
+  schema: { fields: { name: string; computed?: { expr: string; dialect: string }; relation?: { table: string } }[] };
+  rows: readonly ({ id: string } & Record<string, unknown>)[];
+}
 
 type Calls = {
   read(text: string): string;
   canonical(text: string): string;
   formula(text: string): string;
-  evaluateColumn(formula: string, numberNames: string[], numbers: Float64Array, json: string, rows: number): ColumnResults;
+  computeWorkbook(json: string, numbers: Float64Array): ColumnResults;
 };
 
 const loading = new Map<string, Promise<Edn>>();
@@ -86,7 +91,7 @@ export function loadEdn(options: { wasm?: BufferSource | URL | Response; binding
       if (options.binding === "native") throw new Error("no native EDN library for this machine (edn/js/build-native.sh builds one)");
       const url = new URL("../wasm/edn_bg.wasm", import.meta.url);
       await init({ module_or_path: options.wasm ?? (isNode() ? await readNodeFile(url) : url) });
-      return api({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula, evaluateColumn: wasmEvaluateColumn }, "wasm");
+      return api({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula, computeWorkbook: wasmComputeWorkbook }, "wasm");
     })();
     loading.set(key, found);
   }
@@ -97,21 +102,36 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
   canonical: (text) => call(c.canonical, text),
   formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
-  evaluateColumn: (formula, columns, rows) => {
-    const numberNames: string[] = [];
+  computeTables: (tables) => {
     const parts: Float64Array[] = [];
-    const json: Record<string, unknown[]> = {};
-    for (const [name, cells] of Object.entries(columns)) {
-      const numbers = numbersOnly(cells, rows);
-      if (numbers) {
-        numberNames.push(name);
-        parts.push(numbers);
-      } else json[name] = Array.from({ length: rows }, (_, i) => (cells[i] === undefined ? null : cells[i]));
+    const json = {
+      tables: Object.entries(tables).map(([name, t]) => ({
+        name,
+        ids: t.rows.map((r) => r.id),
+        fields: t.schema.fields.map((f) => {
+          if (f.computed) return { name: f.name, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };
+          const cells = t.rows.map((r) => r[f.name]);
+          const numbers = numbersOnly(cells, cells.length);
+          const stored = numbers ? (parts.push(numbers), { numbers: parts.length - 1 }) : { values: cells.map((v) => (v === undefined ? null : v)) };
+          return { name: f.name, ...(f.relation ? { relation: f.relation.table } : {}), ...stored };
+        }),
+      })),
+    };
+    const numbers = new Float64Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      numbers.set(p, at);
+      at += p.length;
     }
-    const numbers = new Float64Array(numberNames.length * rows);
-    parts.forEach((p, i) => numbers.set(p, i * rows));
-    const out = callWith(() => c.evaluateColumn(formula, numberNames, numbers, Object.keys(json).length > 0 ? JSON.stringify(json) : "", rows));
-    return decode(out, rows);
+    const r = callWith(() => c.computeWorkbook(JSON.stringify(json), numbers));
+    const all = decode(r, r.kinds.length);
+    const index = JSON.parse(r.index) as Record<string, { host: true } | { fields: Record<string, [number, number]> }>;
+    const out: Record<string, Record<string, FormulaResult[]> | "host"> = {};
+    for (const [name, entry] of Object.entries(index)) {
+      if ("host" in entry) out[name] = "host";
+      else out[name] = Object.fromEntries(Object.entries(entry.fields).map(([f, [start, rows]]) => [f, all.slice(start, start + rows)]));
+    }
+    return out;
   },
   binding,
 });
