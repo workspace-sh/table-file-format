@@ -1,4 +1,4 @@
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
@@ -2466,6 +2466,12 @@ function ListCell({
   const items = listItems(value);
   const options = choices ?? enumOptions(field);
   const [open, setOpen] = useState(false);
+  // The platform's own list of several choices, where it has one (a popover on a Mac).
+  const { ChooseMany } = usePlatformControls();
+  const anchorId = `choices-${useId()}`;
+  // The value as last toggled: toggles come faster than the table draws again.
+  const latest = useRef(value);
+  latest.current = value;
   const [text, setText] = useState("");
   // Whether the text box was focused since it opened: once, not on every keystroke.
   const textFocused = useRef(false);
@@ -2510,6 +2516,7 @@ function ListCell({
   };
   const shown = (
     <html.div
+      id={anchorId}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         anchor.current = el;
@@ -2556,6 +2563,29 @@ function ListCell({
     );
   }
   const toggle = (choice: string) => onCommit(toggled ? toggled(choice) : listToggled(field, value, choice));
+  if (ChooseMany) {
+    return (
+      <>
+        {shown}
+        <ChooseMany
+          options={options.map((o) => {
+            // A relation's rows are named, not coloured choices.
+            const color = choices ? undefined : (o as { color?: string }).color;
+            return { value: o.value, label: o.label ?? o.value, ...(color ? { color } : {}) };
+          })}
+          selected={items}
+          onToggle={(choice) => {
+            const next = toggled ? toggled(choice) : listToggled(field, latest.current, choice);
+            latest.current = next;
+            onCommit(next);
+          }}
+          anchor={anchorId}
+          rect={rect}
+          onClose={() => close("done")}
+        />
+      </>
+    );
+  }
   return (
     <>
       {shown}
