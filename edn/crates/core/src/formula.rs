@@ -10,7 +10,7 @@ use crate::{read, Error, Value};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
-    Str(String),
+    Str(std::rc::Rc<str>),
     Bool(bool),
     Nil,
     /// A bare word: a field of the same row.
@@ -31,7 +31,7 @@ fn expr(v: &Value) -> Result<Expr, Error> {
     Ok(match v {
         Value::Int(i) => Expr::Number(*i as f64),
         Value::Float(f) => Expr::Number(*f),
-        Value::Str(s) => Expr::Str(s.clone()),
+        Value::Str(s) => Expr::Str(s.as_str().into()),
         Value::Bool(b) => Expr::Bool(*b),
         Value::Nil => Expr::Nil,
         Value::Symbol(s) => Expr::Field(s.clone()),

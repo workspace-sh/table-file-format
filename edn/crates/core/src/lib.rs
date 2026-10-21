@@ -19,6 +19,7 @@
 pub mod column;
 pub mod eval;
 pub mod formula;
+mod fxhash;
 pub mod workbook;
 
 use clojure_reader::edn::{self, Edn};
