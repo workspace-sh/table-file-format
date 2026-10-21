@@ -11,8 +11,8 @@ import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef
 import { Pressable, type View } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
-import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
+import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
+import { chooseMany, chooseManyClose, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
 
 export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
 export { datePickerClose, datePickerSet, datePickerShown, onContextMenu, pickDate, popUpChoose, popUpMenu, popUpTitles, type PopUpItem } from "./native";
@@ -139,8 +139,36 @@ export function watchRowMenus(): () => void {
   });
 }
 
+/**
+ * Several choices (a multi-select's tags, a link to several rows) in a
+ * popover of the system's pointing at the cell: each toggles as it's
+ * picked, and the list stays open (TableChoicePicker.swift). Drawn while
+ * the views have it open; nothing of its own is drawn here.
+ */
+function ChooseManyView({ options, selected, onToggle, anchor, rect, onClose }: ChooseManyProps): null {
+  const latest = useRef({ onToggle, onClose });
+  latest.current = { onToggle, onClose };
+  useEffect(() => {
+    let open = true;
+    void chooseMany(options, selected, rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : { x: 0, y: 0, width: 0, height: 0 }, anchor, (value) =>
+      latest.current.onToggle(value),
+    ).then(() => {
+      if (open) latest.current.onClose();
+    });
+    return () => {
+      open = false;
+      chooseManyClose();
+    };
+    // Opened once, with the choices as they were: it ticks its own as they're picked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+  return null;
+}
+
+export const MacChooseMany: ChooseManySlot = ChooseManyView;
+
 /** The Mac's controls, for PlatformControlsProvider. One object, so the views' rows aren't remounted. */
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput };
+export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany };
 
 const styles = css.create({
   button: {
