@@ -149,12 +149,15 @@ function numbersOnly(cells: readonly unknown[], rows: number): Float64Array | nu
 }
 
 function decode(r: ColumnResults, rows: number): FormulaResult[] {
+  // Each read once: through WebAssembly, every read of `kinds` or `numbers` copies the whole array.
+  const kinds = r.kinds;
+  const numbers = r.numbers;
   const extra = JSON.parse(r.extra) as unknown[];
   const out: FormulaResult[] = new Array(rows);
   let next = 0;
   for (let i = 0; i < rows; i++) {
-    const k = r.kinds[i];
-    out[i] = k === 1 ? r.numbers[i] : k === 2 ? true : k === 3 ? false : k === 4 ? fromJson(extra[next++]) : undefined;
+    const k = kinds[i];
+    out[i] = k === 1 ? numbers[i] : k === 2 ? true : k === 3 ? false : k === 4 ? fromJson(extra[next++]) : undefined;
   }
   return out;
 }
