@@ -16,6 +16,8 @@
 //! - characters by name where EDN has one (`\newline`, `\space`, `\tab`,
 //!   `\return`), control characters as `\uXXXX`, the rest as themselves.
 
+pub mod column;
+pub mod eval;
 pub mod formula;
 
 use clojure_reader::edn::{self, Edn};

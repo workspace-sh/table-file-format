@@ -35,3 +35,21 @@ pub fn formula(text: String) -> Result<String> {
 pub fn read(text: String) -> Result<String> {
     workspace_edn::read(&text).map(|v| value_json(&v)).map_err(error)
 }
+
+/// A formula over whole columns: results encoded as `workspace_edn::column::encode` describes.
+#[napi(object)]
+pub struct ColumnResults {
+    pub kinds: Uint8Array,
+    pub numbers: Float64Array,
+    pub extra: String,
+}
+
+/// `formula` over `rows` rows: number columns as `number_names` and one `numbers` array, the rest as JSON.
+#[napi(js_name = "evaluateColumn")]
+pub fn evaluate_column(formula: String, number_names: Vec<String>, numbers: Float64Array, json: String, rows: u32) -> Result<ColumnResults> {
+    let rows = rows as usize;
+    let columns = workspace_edn::column::columns_from(&number_names, &numbers, &json, rows).map_err(error)?;
+    let results = workspace_edn::column::evaluate_column(&formula, &columns, rows).map_err(error)?;
+    let e = workspace_edn::column::encode(&results);
+    Ok(ColumnResults { kinds: Uint8Array::new(e.kinds), numbers: Float64Array::new(e.numbers), extra: e.extra })
+}
