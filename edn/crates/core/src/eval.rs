@@ -58,21 +58,22 @@ fn err(code: ErrorCode, message: impl Into<String>) -> Value {
     Value::Error(code, message.into())
 }
 
-/// What a formula reads: a field of its row, and a whole column.
+/// What a formula reads (`expr.ts`'s `Scope`, but for Sheet places): its row, another row, a whole column, and other tables.
 pub trait Scope {
     fn field(&self, name: &str) -> Value;
+    fn field_of(&self, row_id: &str, name: &str) -> Value;
     fn values(&self, name: &str) -> Value;
+    fn related(&self, relation: &str, name: &str) -> Value;
+    fn linked(&self, table: &str, relation: &str, name: &str) -> Value;
 }
 
-/// The functions only the host can answer: they follow relations, or read a Sheet view's places.
-const HOST_ONLY: [&str; 6] = ["related", "linked", "at", "range", "row", "rows"];
+/// The functions only the host can answer: they read a Sheet view's places (D41).
+const HOST_ONLY: [&str; 4] = ["at", "range", "row", "rows"];
 
-/// Whether `expr` needs the host's evaluator: it follows a relation, reads a Sheet place, or reads another row's field.
+/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places.
 pub fn needs_host(expr: &Expr) -> bool {
     match expr {
-        Expr::Call(name, args) => {
-            HOST_ONLY.contains(&name.as_str()) || (name == "field" && args.len() == 2) || args.iter().any(needs_host)
-        }
+        Expr::Call(name, args) => HOST_ONLY.contains(&name.as_str()) || args.iter().any(needs_host),
         _ => false,
     }
 }
@@ -381,8 +382,17 @@ fn call(name: &str, args: &[Expr], scope: &dyn Scope) -> Value {
         "upper" => text("upper", args, scope, |s| Value::Str(s.to_uppercase())),
         "lower" => text("lower", args, scope, |s| Value::Str(s.to_lowercase())),
         "len" => text("len", args, scope, |s| Value::Number(s.chars().count() as f64)),
+        "related" => match args {
+            [Expr::Str(relation), Expr::Str(field)] => scope.related(relation, field),
+            _ => err(ErrorCode::Value, "related takes a relation field and a field there: (related \"company\" \"industry\")"),
+        },
+        "linked" => match args {
+            [Expr::Str(table), Expr::Str(relation), Expr::Str(field)] => scope.linked(table, relation, field),
+            _ => err(ErrorCode::Value, "linked takes a table, its relation field and a field: (linked \"deals\" \"company\" \"value\")"),
+        },
         "field" => match args {
             [Expr::Str(name)] => scope.field(name),
+            [Expr::Str(name), Expr::Str(row)] => scope.field_of(row, name),
             _ => err(ErrorCode::Value, "field takes a name and, optionally, a row id: (field \"unit price\" \"r7\")"),
         },
         _ => err(ErrorCode::Name, format!("unknown function {name}")),

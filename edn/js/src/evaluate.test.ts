@@ -1,56 +1,54 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { evaluate, FormulaError, parseExpr, type Scope, type Value } from "../../../packages/core/src/expr.ts";
-import { fieldsOf, loadEdn, type FormulaResult } from "./index.ts";
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { FormulaError } from "../../../packages/core/src/expr.ts";
+import { computeRows } from "../../../packages/core/src/workbook.ts";
+import { readBundle } from "../../../packages/core/src/io.ts";
+import { nodeFs } from "../../../packages/core/src/node-fs.ts";
+import type { ParsedTable } from "../../../packages/core/src/types.ts";
+import { loadEdn, type Edn, type FormulaResult } from "./index.ts";
 
 // Today's evaluator and the core, value for value, over the same rows: a formula's
 // result is the same whichever computes it (empties compared as empties).
 
-type Row = Record<string, unknown>;
-
-function today(formula: string, rows: Row[]): Value[] {
-  const parsed = parseExpr(formula);
-  if (!parsed.ok) throw new Error(parsed.message);
-  let row: Row = {};
-  const scope = {
-    field: (name: string) => row[name] as Value,
-    values: (name: string) => rows.map((r) => r[name]) as Value,
-  } as unknown as Scope;
-  return rows.map((r) => {
-    row = r;
-    return evaluate(parsed.expr, scope);
-  });
-}
+type Row = { id: string } & Record<string, unknown>;
 
 const plain = (v: unknown): unknown =>
   v instanceof FormulaError ? { code: v.code, message: v.message } : Array.isArray(v) ? v.map(plain) : v === "" || v === null ? undefined : v;
 
-function check(edn: Awaited<ReturnType<typeof loadEdn>>, formula: string, rows: Row[]) {
-  const expr = edn.formula(formula);
-  const columns: Record<string, unknown[]> = {};
-  for (const f of fieldsOf(expr)) columns[f] = rows.map((r) => r[f]);
-  const got = edn.evaluateColumn(formula, columns, rows.length).map(plain);
-  const want = today(formula, rows).map(plain);
-  for (let i = 0; i < rows.length; i++) assert.deepEqual(got[i], want[i], `${formula} on row ${i} (${JSON.stringify(rows[i])})`);
-}
-
-function fixtureTables(): { rows: Row[]; formulas: string[] }[] {
-  const out: { rows: Row[]; formulas: string[] }[] = [];
-  const root = new URL("../../../fixtures/", import.meta.url);
-  for (const bundle of readdirSync(root).filter((d) => d.endsWith(".table"))) {
-    const tables = new URL(`${bundle}/tables/`, root);
-    for (const t of readdirSync(tables)) {
-      const schema = JSON.parse(readFileSync(new URL(`${t}/schema.json`, tables), "utf8")) as { fields: { computed?: { expr: string } }[] };
-      const rows = readFileSync(new URL(`${t}/rows/0001.ndjson`, tables), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Row);
-      out.push({ rows, formulas: schema.fields.flatMap((f) => (f.computed ? [f.computed.expr] : [])) });
-    }
+/** Today's results for a bundle's tables: computeRows, table by table, as the apps compute them. */
+function today(tables: Record<string, ParsedTable>): Record<string, Record<string, unknown[]>> {
+  const out: Record<string, Record<string, unknown[]>> = {};
+  for (const [name, t] of Object.entries(tables)) {
+    const { rows } = computeRows(t.schema, t.rows, { tables, self: name, views: t.views });
+    out[name] = Object.fromEntries(t.schema.fields.filter((f) => f.computed).map((f) => [f.name, rows.map((r) => r[f.name])]));
   }
   return out;
 }
 
+function same(edn: Edn, tables: Record<string, ParsedTable>, label: string): { core: number; host: number } {
+  const want = today(tables);
+  const got = edn.computeTables(tables as never);
+  let core = 0;
+  let host = 0;
+  for (const [name, fields] of Object.entries(want)) {
+    const g = got[name];
+    if (g === "host") {
+      host++;
+      continue;
+    }
+    for (const [field, values] of Object.entries(fields)) {
+      core++;
+      const mine = g![field]!.map(plain);
+      values.forEach((v, i) => assert.deepEqual(mine[i], plain(v), `${label}: ${name}.${field} row ${i} (${tables[name]!.schema.fields.find((f) => f.name === field)?.computed?.expr})`));
+    }
+  }
+  return { core, host };
+}
+
 // Rows meant to find differences: empties of every kind, text where numbers go, halves, huge and tiny numbers.
-const hostile: Row[] = [
+const hostile: Record<string, unknown>[] = [
   { a: 1, b: 2, s: "x", t: true },
   { a: 2.5, b: 0, s: "", t: false },
   { a: -2.5, b: null, s: "Zebra", t: true },
@@ -73,37 +71,92 @@ const hostileFormulas = [
   "(field \"a\")", "(values \"t\")", "(nope a)", "(+ a (values \"a\"))", "(round)", "(/ 1 2 3)", "(+ (/ a 0) 1)",
 ];
 
+/** The awkward rows as one table, each formula a computed field over them. */
+function hostileTable(): Record<string, ParsedTable> {
+  const fields = [
+    { name: "a", type: "number" }, { name: "b", type: "number" }, { name: "s", type: "string" }, { name: "t", type: "boolean" },
+    ...hostileFormulas.map((expr, i) => ({ name: `f${i}`, type: "string", computed: { expr, dialect: "table-expr-v1" } })),
+  ];
+  const rows = hostile.map((r, i) => ({ ...r, id: `r${i}` })) as Row[];
+  return { t: { schema: { fields }, rows, views: [], meta: {} } as unknown as ParsedTable };
+}
+
+/** Two tables that point at each other, with every way a relation goes wrong. */
+function relationsTables(): Record<string, ParsedTable> {
+  const t = (fields: object[], rows: object[]) => ({ schema: { fields }, rows, views: [], meta: {} }) as unknown as ParsedTable;
+  const f = (name: string, expr: string) => ({ name, type: "string", computed: { expr, dialect: "table-expr-v1" } });
+  return {
+    companies: t(
+      [
+        { name: "name", type: "string" },
+        { name: "size", type: "number" },
+        f("open", '(sum (linked "deals" "company" "value"))'),
+        f("count", '(count (linked "deals" "company" "title"))'),
+        f("loop", '(sum (linked "deals" "company" "back"))'),
+        f("nowhere", '(linked "nope" "company" "value")'),
+        f("unknown", '(linked "deals" "company" "nosuchfield")'),
+      ],
+      [{ id: "c1", name: "Atlas", size: 10 }, { id: "c2", name: "Beacon", size: "" }, { id: "c3", name: "Cove" }],
+    ),
+    deals: t(
+      [
+        { name: "title", type: "string" },
+        { name: "value", type: "number" },
+        { name: "company", type: "string", relation: { table: "companies" } },
+        { name: "owners", type: "string", relation: { table: "companies" } },
+        f("industry", '(related "company" "name")'),
+        f("size", '(related "company" "size")'),
+        f("many", '(related "owners" "name")'),
+        f("back", '(related "company" "loop")'),
+        f("notarelation", '(related "title" "name")'),
+        f("nosuch", '(related "nosuch" "name")'),
+        f("self", "(+ self 1)"),
+        f("other", '(field "value" "d2")'),
+        f("gone", '(field "value" "d404")'),
+        f("unknownfield", "(+ ghost 1)"),
+        f("broken", "(+ 1"),
+      ],
+      [
+        { id: "d1", title: "Renewal", value: 100, company: "c1", owners: ["c1", "c2"] },
+        { id: "d2", title: "Pilot", value: 250.5, company: "c1", owners: [] },
+        { id: "d3", title: "Lost", value: "", company: "c404", owners: ["c3", "c404", ""] },
+        { id: "d4", title: "Orphan", value: 7 },
+        { id: "d5", title: "Second", value: 3, company: "c2", owners: "c2" },
+      ],
+    ),
+  };
+}
+
 for (const binding of ["native", "wasm"] as const) {
-  test(`${binding}: every fixture formula, over its own rows, gives today's results`, async () => {
+  test(`${binding}: every fixture bundle's formulas give today's results`, async () => {
     const edn = await loadEdn({ binding });
-    let n = 0;
+    let core = 0;
     let host = 0;
-    for (const { rows, formulas } of fixtureTables()) {
-      for (const f of formulas) {
-        try {
-          check(edn, f, rows);
-          n++;
-        } catch (e) {
-          // The host's, not the core's (yet): a relation or a Sheet place. Anything else is a failure.
-          if (!(e instanceof Error && /needs the host/.test(e.message))) throw e;
-          host++;
-        }
-      }
+    const root = new URL("../../../fixtures/", import.meta.url);
+    for (const bundle of readdirSync(root).filter((d) => d.endsWith(".table"))) {
+      const b = await readBundle(nodeFs, fileURLToPath(new URL(bundle, root)));
+      const n = same(edn, b.tables, bundle);
+      core += n.core;
+      host += n.host;
     }
-    assert.ok(n >= 8, `${n} formulas checked by the core, ${host} left to the host`);
+    assert.ok(core >= 18, `${core} computed fields checked by the core, ${host} tables left to the host`);
   });
 
   test(`${binding}: awkward values give today's results, error messages included`, async () => {
     const edn = await loadEdn({ binding });
-    for (const f of hostileFormulas) check(edn, f, hostile);
+    same(edn, hostileTable(), "hostile");
   });
 
-  test(`${binding}: a formula that follows a relation is left to the host`, async () => {
+  test(`${binding}: relations gone wrong give today's results: missing rows and tables, lists, loops, unknown names`, async () => {
     const edn = await loadEdn({ binding });
-    assert.throws(() => edn.evaluateColumn('(related "company" "name")', {}, 1), /needs the host/);
+    const n = same(edn, relationsTables(), "relations");
+    assert.equal(n.host, 0);
+    assert.ok(n.core >= 15, `${n.core}`);
+  });
+
+  test(`${binding}: a table whose formulas read a Sheet place is left to the host`, async () => {
+    const edn = await loadEdn({ binding });
+    const table = { schema: { fields: [{ name: "x", type: "number", computed: { expr: '(at "x" -1 "v")', dialect: "table-expr-v1" } }] }, rows: [{ id: "r1" }] };
+    assert.equal(edn.computeTables({ t: table })["t"], "host");
   });
 }
-
-// Keep the type honest: a FormulaResult is what plain() gives for today's values.
-const _check: FormulaResult = undefined;
-void _check;
