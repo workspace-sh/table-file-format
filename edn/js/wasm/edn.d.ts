@@ -7,6 +7,11 @@
 export function canonical(text: string): string;
 
 /**
+ * A `.table` formula read, as JSON in the shape `.table`'s evaluator takes (`parseExpr`'s `Expr`), or throws as `canonical` does.
+ */
+export function formula(text: string): string;
+
+/**
  * `text` read, as a JSON tree (one object per value, `{"t": kind, "v": ...}`), or throws as `canonical` does.
  */
 export function read(text: string): string;
@@ -16,6 +21,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly canonical: (a: number, b: number, c: number) => void;
+    readonly formula: (a: number, b: number, c: number) => void;
     readonly read: (a: number, b: number, c: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export: (a: number, b: number) => number;

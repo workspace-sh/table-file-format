@@ -8,9 +8,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "files": ["src", "wasm"],
+  "files": ["src", "wasm", "native"],
   "scripts": {
     "build:wasm": "sh ./build-wasm.sh",
+    "build:native": "sh ./build-native.sh",
     "test": "node --import tsx --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
   }
