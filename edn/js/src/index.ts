@@ -7,7 +7,7 @@
 // list and a vector, `1` and `1.0` all stay apart, and integers are strings,
 // so one beyond 2^53 survives JavaScript's numbers.
 
-import init, { canonical as wasmCanonical, formula as wasmFormula, read as wasmRead } from "../wasm/edn.js";
+import init, { canonical as wasmCanonical, evaluateColumn as wasmEvaluateColumn, formula as wasmFormula, read as wasmRead } from "../wasm/edn.js";
 
 export type EdnValue =
   | { t: "nil" }
@@ -45,11 +45,29 @@ export interface Edn {
   canonical(text: string): string;
   /** A `.table` formula, read into the expression its evaluator takes, or throws an EdnError. */
   formula(text: string): FormulaExpr;
+  /**
+   * A `.table` formula over whole columns, inside the core: the same results
+   * as `.table`'s evaluator, row by row. `columns` holds each field the
+   * formula reads (fieldsOf), one value per row. Throws an EdnError for a
+   * formula the core leaves to the host (it follows a relation or reads a
+   * Sheet place); use `.table`'s own evaluator for those.
+   */
+  evaluateColumn(formula: string, columns: Record<string, readonly unknown[]>, rows: number): FormulaResult[];
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
 
-type Calls = { read(text: string): string; canonical(text: string): string; formula(text: string): string };
+/** A formula's result: `.table`'s `Value`, with an error as its code and message. */
+export type FormulaResult = number | string | boolean | undefined | { code: string; message: string } | FormulaResult[];
+
+type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string };
+
+type Calls = {
+  read(text: string): string;
+  canonical(text: string): string;
+  formula(text: string): string;
+  evaluateColumn(formula: string, numberNames: string[], numbers: Float64Array, json: string, rows: number): ColumnResults;
+};
 
 const loading = new Map<string, Promise<Edn>>();
 
@@ -68,7 +86,7 @@ export function loadEdn(options: { wasm?: BufferSource | URL | Response; binding
       if (options.binding === "native") throw new Error("no native EDN library for this machine (edn/js/build-native.sh builds one)");
       const url = new URL("../wasm/edn_bg.wasm", import.meta.url);
       await init({ module_or_path: options.wasm ?? (isNode() ? await readNodeFile(url) : url) });
-      return api({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula }, "wasm");
+      return api({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula, evaluateColumn: wasmEvaluateColumn }, "wasm");
     })();
     loading.set(key, found);
   }
@@ -79,8 +97,64 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
   canonical: (text) => call(c.canonical, text),
   formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
+  evaluateColumn: (formula, columns, rows) => {
+    const numberNames: string[] = [];
+    const parts: Float64Array[] = [];
+    const json: Record<string, unknown[]> = {};
+    for (const [name, cells] of Object.entries(columns)) {
+      const numbers = numbersOnly(cells, rows);
+      if (numbers) {
+        numberNames.push(name);
+        parts.push(numbers);
+      } else json[name] = Array.from({ length: rows }, (_, i) => (cells[i] === undefined ? null : cells[i]));
+    }
+    const numbers = new Float64Array(numberNames.length * rows);
+    parts.forEach((p, i) => numbers.set(p, i * rows));
+    const out = callWith(() => c.evaluateColumn(formula, numberNames, numbers, Object.keys(json).length > 0 ? JSON.stringify(json) : "", rows));
+    return decode(out, rows);
+  },
   binding,
 });
+
+/** A column's cells as numbers (`NaN` for an empty cell), or null when any cell isn't a number or empty. */
+function numbersOnly(cells: readonly unknown[], rows: number): Float64Array | null {
+  const out = new Float64Array(rows);
+  for (let i = 0; i < rows; i++) {
+    const v = cells[i];
+    if (typeof v === "number") out[i] = v;
+    else if (v === undefined || v === null || v === "") out[i] = NaN;
+    else return null;
+  }
+  return out;
+}
+
+function decode(r: ColumnResults, rows: number): FormulaResult[] {
+  const extra = JSON.parse(r.extra) as unknown[];
+  const out: FormulaResult[] = new Array(rows);
+  let next = 0;
+  for (let i = 0; i < rows; i++) {
+    const k = r.kinds[i];
+    out[i] = k === 1 ? r.numbers[i] : k === 2 ? true : k === 3 ? false : k === 4 ? fromJson(extra[next++]) : undefined;
+  }
+  return out;
+}
+
+const fromJson = (v: unknown): FormulaResult =>
+  v === null ? undefined : Array.isArray(v) ? v.map(fromJson) : (v as FormulaResult);
+
+/** The fields a formula reads: its bare words and `(field "…")`s, and the columns its `(values "…")` read. */
+export function fieldsOf(expr: FormulaExpr): string[] {
+  const out = new Set<string>();
+  const walk = (e: FormulaExpr): void => {
+    if (e.kind === "field") out.add(e.name);
+    else if (e.kind === "call") {
+      if ((e.fn === "field" || e.fn === "values") && e.args[0]?.kind === "string") out.add(e.args[0].value);
+      e.args.forEach(walk);
+    }
+  };
+  walk(expr);
+  return [...out];
+}
 
 /** The native library built for this machine (native/edn.<platform>-<arch>.node), or null when there isn't one. */
 async function loadNative(): Promise<Calls | null> {
@@ -92,8 +166,12 @@ async function loadNative(): Promise<Calls | null> {
 }
 
 function call(fn: (text: string) => string, text: string): string {
+  return callWith(() => fn(text));
+}
+
+function callWith<T>(run: () => T): T {
   try {
-    return fn(text);
+    return run();
   } catch (thrown) {
     // WebAssembly throws the JSON itself; the native library throws an Error carrying it.
     const json = typeof thrown === "string" ? thrown : thrown instanceof Error && thrown.message.startsWith("{") ? thrown.message : null;

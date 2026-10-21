@@ -35,3 +35,36 @@ fn error_json(e: Error) -> JsValue {
     JsValue::from_str(&out)
 }
 
+
+/// A formula over whole columns: results encoded as `workspace_edn::column::encode` describes.
+#[wasm_bindgen]
+pub struct ColumnResults {
+    kinds: Vec<u8>,
+    numbers: Vec<f64>,
+    extra: String,
+}
+
+#[wasm_bindgen]
+impl ColumnResults {
+    #[wasm_bindgen(getter)]
+    pub fn kinds(&self) -> Vec<u8> {
+        self.kinds.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn numbers(&self) -> Vec<f64> {
+        self.numbers.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn extra(&self) -> String {
+        self.extra.clone()
+    }
+}
+
+/// `formula` over `rows` rows: number columns as `number_names` and one `numbers` array, the rest as JSON.
+#[wasm_bindgen(js_name = evaluateColumn)]
+pub fn evaluate_column(formula: &str, number_names: Vec<String>, numbers: &[f64], json: &str, rows: usize) -> Result<ColumnResults, JsValue> {
+    let columns = workspace_edn::column::columns_from(&number_names, numbers, json, rows).map_err(error_json)?;
+    let results = workspace_edn::column::evaluate_column(formula, &columns, rows).map_err(error_json)?;
+    let e = workspace_edn::column::encode(&results);
+    Ok(ColumnResults { kinds: e.kinds, numbers: e.numbers, extra: e.extra })
+}
