@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The Mac's own controls for table-ui's slots: a choice in the system's pop-up menu, a date in the system's date picker, a row's actions in its context menu.",
+  "description": "The Mac's own controls for table-ui's slots: a choice in the system's pop-up menu, a date in the system's date picker, a row's actions in its context menu, and settings in the window's inspector.",
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
   "exports": {

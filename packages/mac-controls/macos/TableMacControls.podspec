@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.author       = "workspace.sh"
   s.homepage     = "https://github.com/workspace-sh/table-file-format"
   s.source       = { :path => "." }
-  s.platforms    = { :osx => "14.0" }
+  s.platforms    = { :osx => "26.0" }
   s.source_files = "*.{h,m,swift}"
   s.swift_version = "5.9"
   s.dependency "React-Core"
