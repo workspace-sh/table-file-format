@@ -14,6 +14,7 @@ import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
 import type { DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
 import { onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
 
+export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
 export { datePickerClose, datePickerSet, datePickerShown, onContextMenu, pickDate, popUpChoose, popUpMenu, popUpTitles, type PopUpItem } from "./native";
 
 /** No choice: an id of its own, as a menu item needs one. */
