@@ -349,9 +349,6 @@ format above stays as it is:
 - `unit`: text shown after the number. A label only, never converted;
   money stays `currency:<ISO-4217>`, which is a unit (DECISIONS D33).
 - `grouping`: thousands separators; `true` (default) or `false`.
-- `excel`: the spreadsheet number format a converter read, such as
-  `#,##0.00;[Red](#,##0.00)`, kept so an export can give it back. It is
-  a plain string: no reader shows a value by it or parses it.
 
 A key or value a reader doesn't know is ignored, and the rest of the
 format still applies.
@@ -467,9 +464,12 @@ uses exactly this form.
 numbers, strings, `true`, `false`, `nil` and vectors of rows for
 arrays. EDN's other forms (keywords, maps, sets, tags, `N` and `M`
 numbers, quoting, `#_`) are not formulas, and a reader refuses them. A
-function or form joins the stored form only if it converts to a
-spreadsheet's typed formula and back unchanged, as the conformance
-suite already converts every case for an engine that reads Excel.
+function or form joins the stored form only if it is one of `.table`'s
+own forms above, or a published standard defines it (D38: OpenFormula
+first). A standard's formula then converts to that standard's formula
+text and back unchanged, as the conformance suite's importer reads
+OpenFormula's; no one application's formula language decides what a
+`.table` can say.
 
 The reference evaluator doesn't read arrays or `nil` yet, and covers
 only the functions below; the engine that replaces it covers
