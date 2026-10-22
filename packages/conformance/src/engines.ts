@@ -1,7 +1,7 @@
 // The engines the suite measures. Each takes a case's expression and
 // gives a value, or says it can't express it at all.
 
-import { computeRows, FormulaError, parseExpr } from "@workspace.sh/table-core";
+import { computeRows, FORMER_NAMES, FormulaError, parseExpr } from "@workspace.sh/table-core";
 import { Workbook } from "formualizer/pkg/formualizer_wasm.js";
 
 import { type Case, printNode } from "./edn.js";
@@ -123,6 +123,22 @@ export function formualizer(version: string): Engine {
 
 // ---- table-core's own evaluator (SPEC section 2 as it stands)
 
+/** An OpenFormula function the reference reader takes as one of `.table`'s former names, so it can't be asked for. */
+function formerName(node: Node): string | undefined {
+  if (node.kind === "call") {
+    if (Object.hasOwn(FORMER_NAMES, node.fn)) return node.fn;
+    for (const a of node.args) {
+      const found = formerName(a);
+      if (found) return found;
+    }
+  }
+  if (node.kind === "array") for (const r of node.rows) for (const a of r) {
+    const found = formerName(a);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function tableCore(version: string): Engine {
   return {
     name: "table-core",
@@ -130,6 +146,8 @@ export function tableCore(version: string): Engine {
     host: TABLE_HOST,
     evaluate(c) {
       if (c.cells) return { cannotExpress: "reads cells" };
+      const former = formerName(c.expr);
+      if (former) return { cannotExpress: `reads ${former} as .table's former name for ${FORMER_NAMES[former]} (D48)` };
       const text = printNode(c.expr);
       const parsed = parseExpr(text);
       if (!parsed.ok) return { cannotExpress: parsed.message };

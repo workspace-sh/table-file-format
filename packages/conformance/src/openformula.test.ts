@@ -5,7 +5,7 @@ import { printCase, printHost, printNode, readCases } from "./edn.js";
 import { TABLE_HOST } from "./node.js";
 import { readOpenFormula, Unsupported } from "./openformula.js";
 import { meets, roundTo } from "./compare.js";
-import { toExcel } from "./engines.js";
+import { tableCore, toExcel } from "./engines.js";
 
 const edn = (f: string) => printNode(readOpenFormula(f));
 
@@ -76,4 +76,14 @@ test("comparison judges as the source's check did", () => {
   assert.ok(meets([[3, 4]], 3), "a single value compares with an array's top-left");
   assert.equal(roundTo(1.005, 2), 1.01);
   assert.equal(roundTo(-2.5, 0), -3);
+});
+
+test("OpenFormula's lookup and column aren't read as .table's former names for related and values", () => {
+  const engine = tableCore("test");
+  const [lookup, column, sum] = readCases(
+    '{:expr (lookup 2 [[1 2 3]] [["a" "b" "c"]]) :expect "b" :from "x"}\n{:expr (+ 1 (column)) :expect 2 :from "x"}\n{:expr (+ 1 2) :expect 3 :from "x"}\n',
+  );
+  assert.match(String((engine.evaluate(lookup!) as { cannotExpress: string }).cannotExpress), /former name for related/);
+  assert.match(String((engine.evaluate(column!) as { cannotExpress: string }).cannotExpress), /former name for values/, "found inside another call");
+  assert.equal(engine.evaluate(sum!), 3);
 });
