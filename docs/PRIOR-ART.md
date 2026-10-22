@@ -62,7 +62,7 @@ Everything below comes back to these positions.
 | Views | None | Implicit display state | None | First-class | None | First-class (`views.json`) |
 | Long-form content | One CSV cell | One spreadsheet cell (up to ~32k chars) | One CSV cell | One field (long-text type) | Body is the markdown file; structured fields in companion CSV | `bodies/{id}.md` per row |
 | Binary attachments | Not modelled | Embedded base64 / OLE | External URLs in fields | URL + cached blob | Files alongside the markdown | `attachments/` dir |
-| Formulas | None | First-class | None | First-class (formula field type) | None | None |
+| Formulas | None | First-class | None | First-class (formula field type) | None | Per field (`computed`) and per cell (`cells/`) |
 | Styling | None | First-class (`<Styles>`, conditional formatting) | None | View-level only | None in export | None — UI concern |
 | Diff-friendly | Line-oriented ✓ (but no row ids → row reorders churn) | Heavy XML diffs | Line-oriented ✓ | JSON re-serialization can churn | Line-oriented ✓ | Line-oriented + stable row ids ✓ |
 | Spec size | RFC 4180 (~10 pages) | ECMA-376 (~6000 pages) | ~50 pages | Proprietary, undocumented edges | Proprietary, undocumented | One markdown file |
@@ -128,6 +128,11 @@ Results are **never persisted** — recomputed on read — and the
 optional `index.sqlite` may cache them for query speed. Reading across
 rows (column totals, rollups, lookups) is three named forms over lists
 (D36), each built once per evaluation.
+
+A cell may also have its own formula, as a spreadsheet's does (D52):
+in a stored field it stands in for the value, and in a computed field
+it is that row's exception. It is kept in `cells/`, beside the rows,
+so the rows files stay plain values.
 
 #### Maintained formula libraries (checked 2026-09-25)
 
