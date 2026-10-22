@@ -316,7 +316,12 @@ Unknown tokens fall back to plain text.
 
 **Number** (`number`, `integer`, `year`): `integer`, `decimal:N`
 (N fraction digits), `percent`, `currency:<ISO-4217>` (e.g.
-`currency:USD`), `duration:seconds`.
+`currency:USD`), `duration:seconds`, `scientific:N` (N fraction
+digits: `scientific:2` shows 12345 as `1.23E+04`), `fraction` (`1.25`
+as `1 1/4`, to the nearest fraction with a denominator below 100).
+`decimal:N` and `currency:<ISO-4217>` MAY end `:parens`, which shows a
+negative number in brackets without its sign (`currency:USD:parens`
+shows −1200 as `($1,200.00)`). D53.
 
 **Currency is a unit** (DECISIONS D33). `currency:<ISO-4217>` names
 what the stored number is in, not only how it looks, so changing it
@@ -923,6 +928,33 @@ DECISIONS D41). A table may have several Sheet views, each its own grid.
   (DECISIONS D4); that changes only their screen, never a grid or a
   formula's answer, and a Sheet view shown that way keeps its grid's
   numbers.
+
+### Colour rules
+
+A view MAY colour rows or cells by their values (DECISIONS D53).
+`colors` is a list of rules:
+
+```json
+"colors": [
+  { "filter": [{ "field": "status", "operator": "eq", "value": "blocked" }], "color": "red" },
+  { "filter": [{ "field": "budget", "operator": "gt", "value": 10000 }], "color": "orange", "field": "budget" }
+]
+```
+
+- `filter`: the conditions, written as a view's `filter` is ("Filter
+  operators" above): a rule matches a row that meets all of them.
+- `color`: one of the choice colours (section 2, "Enum entries"):
+  `gray`, `brown`, `red`, `orange`, `yellow`, `lime`, `green`, `mint`,
+  `teal`, `cyan`, `blue`, `indigo`, `purple`, `pink`. Shown with the
+  reader's own light or dark pair; a name it doesn't know is `gray`.
+- `field` (optional): the cell to colour. Absent, the whole row.
+- **The first rule that matches wins**, for a row and for each cell; a
+  cell's own rule is shown over its row's.
+- Rules read what the row shows, results of formulas included, and
+  colour every layout that shows the row or the field (a card, a
+  calendar entry). They colour; they never hide, sort or change a
+  value, and the value is always still shown, since colour is never
+  the only carrier of meaning.
 
 ### Layout-specific fields
 
