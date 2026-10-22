@@ -83,6 +83,7 @@ export { serializeRows } from "./serialize.js";
 export {
   parseExpr,
   FUNCTION_NAMES,
+  FORMER_NAMES,
   FormulaError,
   type Expr,
   type FormulaErrorCode,
