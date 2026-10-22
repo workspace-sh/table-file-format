@@ -42,6 +42,7 @@ crm.table/
 │   │   ├── rows/             REQUIRED: the rows, in one or more files (section 3)
 │   │   │   ├── 0001.ndjson
 │   │   │   └── …
+│   │   ├── cells/            OPTIONAL: what single cells have of their own (section 3)
 │   │   ├── views.json        OPTIONAL
 │   │   ├── meta.json         OPTIONAL: the table's own title and description
 │   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
@@ -334,6 +335,48 @@ number. Converting is a formula over a rate kept as data:
 honoured by the body editor), `url`, `email`, `phone`. The last three
 are link-rendering hints; the stored value is the raw target.
 
+**A format may also be an object**, for what a spreadsheet's number
+formats show. A string is short for `{"as": <string>}`, so every
+format above stays as it is:
+
+```json
+"format": { "as": "decimal:2", "negative": "red-brackets", "unit": "kg", "grouping": false }
+```
+
+- `as`: any format above, or, for numbers, `scientific:N` (N
+  decimals) or `fraction:N` (at most N digits below the line).
+- `negative`: `minus` (default), `red`, `brackets` or `red-brackets`.
+- `unit`: text shown after the number. A label only, never converted;
+  money stays `currency:<ISO-4217>`, which is a unit (DECISIONS D33).
+- `grouping`: thousands separators; `true` (default) or `false`.
+- `excel`: the spreadsheet number format a converter read, such as
+  `#,##0.00;[Red](#,##0.00)`, kept so an export can give it back. It is
+  a plain string: no reader shows a value by it or parses it.
+
+A key or value a reader doesn't know is ignored, and the rest of the
+format still applies.
+
+### Field style
+
+A field MAY carry `style`, how its cells look unless a cell has its
+own (section 3, "A cell's own formula and look"):
+
+```json
+{ "name": "total", "type": "number", "style": { "bold": true, "fill": "yellow" } }
+```
+
+| Key | Values |
+| --- | --- |
+| `bold`, `italic`, `strike` | `true` or `false` |
+| `color`, `fill` | `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `grey` |
+| `align` | `start`, `center`, `end` |
+
+- Colours are names, not RGB: each app draws them from its own palette,
+  in light and dark. A converter maps a spreadsheet's colour to the
+  nearest name; the exact colour isn't kept.
+- There are no fonts or sizes: a `.table` is shown in the app's type.
+- A key or value a reader doesn't know is ignored.
+
 ### Computed fields
 
 A field MAY carry a `computed` declaration for a formula whose result
@@ -418,6 +461,15 @@ uses exactly this form.
 - An omitted argument, as in `ROUND(2.5;)`, is `nil`.
 - Precedence needs no rules here: the brackets say it. A client's
   typed syntax follows OpenFormula's Table 1 (5.5) when it compiles.
+
+**The stored form stays this small.** A formula, a field's or a cell's
+(section 3), is written only with lists `(f a b)`, bare words (fields),
+numbers, strings, `true`, `false`, `nil` and vectors of rows for
+arrays. EDN's other forms (keywords, maps, sets, tags, `N` and `M`
+numbers, quoting, `#_`) are not formulas, and a reader refuses them. A
+function or form joins the stored form only if it converts to a
+spreadsheet's typed formula and back unchanged, as the conformance
+suite already converts every case for an engine that reads Excel.
 
 The reference evaluator doesn't read arrays or `nil` yet, and covers
 only the functions below; the engine that replaces it covers
@@ -625,6 +677,51 @@ tables/deals/rows/
 ├── 0002m.ndjson       the second half of 0002, after rows were inserted there
 └── 0003.ndjson        new rows go here, at the end
 ```
+
+### A cell's own formula and look (`cells/`)
+
+A cell MAY have its own formula, format or style, kept beside the rows
+in the table's `cells/` folder, so the rows files hold only values:
+
+```ndjson
+{"id":"r7","field":"total","expr":"(* price qty)","style":{"bold":true,"fill":"yellow"}}
+{"id":"r9","field":"price","format":{"as":"decimal:2","negative":"red"}}
+```
+
+One line is one cell: the row's `id`, the field's `name`, and any of:
+
+- **`expr`**: the cell's formula, in the stored form of section 2
+  ("Computed fields"), with the same meaning: a bare word is a field
+  of this row.
+  - In a stored field, the cell shows the formula's result. The result
+    is never stored: a writer leaves the field out of that row in the
+    rows files, and a reader given a value there as well uses the
+    formula.
+  - In a computed field, the cell's formula is used instead of the
+    field's, for this row only. An app SHOULD mark such a cell, as a
+    spreadsheet marks a formula unlike its neighbours'.
+  - The result is checked against the field's type as a typed value
+    is; one the field can't hold is `#VALUE!`.
+- **`format`**: as a field's (section 2, "Field format"), for this cell
+  instead of the field's.
+- **`style`**: as a field's (section 2, "Field style"), key by key over
+  the field's.
+
+Rules:
+
+- **Files.** NDJSON, named and split as the rows files are (section 3,
+  "The rows files"); a small table's is `cells/0001.ndjson`. The order
+  of lines carries no meaning, and a cell has at most one line in the
+  folder.
+- **A cell's line follows its row.** A line whose row or field doesn't
+  exist is ignored, and a writer removes it. Deleting a row removes its
+  cells' lines.
+- **Optional, and additive.** A table with no `cells/` reads as it
+  always has. A reader that doesn't know `cells/` ignores it (section
+  1, unknown files) and shows a cell with its own formula as empty.
+- **Canonical form.** Lines in the rows' file order, then the schema's
+  field order; keys in the order `id`, `field`, `expr`, `format`,
+  `style`.
 
 ### System `id`
 
