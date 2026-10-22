@@ -647,6 +647,9 @@ deferred, and when it is built it needs designing against that cost
   aggregation is still deferred, for the performance reasons above;
   when it arrives it gets its own form rather than overloading `sum`.
 
+**Later (D52):** a cell's own formula, kept in `cells/`, is stored in the
+same form and compiled the same way. There is still one stored grammar.
+
 ## D30: Every field type has exactly one JSON encoding
 
 SPEC section 2 named thirteen field types but said how only some of
@@ -1309,13 +1312,16 @@ A table's rows were one file, `rows.ndjson`. At a million rows that's 165 MB (44
 
 ## D52: a cell may have its own formula, kept beside the rows in `cells/`
 
-**Decided by Leslie (22 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
+**Decided by Leslie (22 Oct 2026). Open to revisit.** `formatVersion` 3.
 
 A field's formula is the same for every row, as in Airtable or Notion. A spreadsheet's is per cell. A `.table` should hold what spreadsheet users expect without giving up what it already is (Leslie: "as long as we don't break our own format").
 
-- **A cell's own formula** (`expr`), in any field. In a computed field it is that row's exception, as Excel's tables allow. Its result is never stored, as a computed field's isn't (D21).
-- **Kept in `cells/`, not in the rows.** The rows files stay plain values that any tool can read as records, no field name is reserved, and a table without cell formulas has no new file. A cell's line follows its row, as a body does (SPEC section 7). The folder is named and split as `rows/` is (D51), so a table with 250,000 cell formulas fits git the same way.
-- **The stored form doesn't grow.** Only lists, bare words, numbers, strings, `true`, `false`, `nil` and vectors; nothing more of EDN than a formula needs. A function or form joins only if it is one of `.table`'s own or a published standard defines it (D38: OpenFormula first), so it converts to that standard's formula text and back unchanged (Leslie: "the stored version should match what we already have and be easily transpilable"). No one application's formula language is the test.
+- **A cell's own formula** (`expr`), in any field but `id`. In a computed field it is that row's exception. Its result is never stored, as a computed field's isn't (D21), and is a value like any other: views, other formulas and validation see it as they see a computed field's.
+- **Kept in `cells/`, not in the rows.** The rows files stay plain values that any tool can read as records, no field name is reserved, and a table without cell formulas has no new file. The folder is named and split as `rows/` is (D51), so a table with 250,000 cell formulas fits git the same way.
+- **A typed value beats a formula.** A row with a value where `cells/` has a formula was written by an app that doesn't know `cells/`, after the formula: what the person typed last stands.
+- **Lines aren't lost by accident.** A line whose row or field can't be found is kept, as an unreadable row is (D25): a merge may bring the row back. Only removing the formula, the row or the field removes it.
+- **A version bump.** An older reader ignores `cells/` and shows wrong values, an empty cell or the field's own formula, without knowing it. That is a breaking change, so `cells/` came with `formatVersion` 3.
+- **The stored form doesn't grow.** Only lists, bare words, numbers, strings, `true`, `false`, `nil` and vectors; nothing more of EDN than a formula needs. A function or form joins only if it is one of `.table`'s own or a published standard defines it (D38: OpenFormula first), so it converts to that standard's formula text and back (Leslie: "the stored version should match what we already have and be easily transpilable"). No one application's formula language is the test.
 
 **Considered.**
-- **The cell's extras inside its row** (`"@cells": {…}` on the row): one file to keep in step, but the format's own data among a person's values, and every field name beginning with `@` reserved, which would break a file that already has one.
+- **A cell's formula inside its row** (`"@cells": {…}` on the row): one file to keep in step, but the format's own data among a person's values, and every field name beginning with `@` reserved, which would break a file that already has one.
