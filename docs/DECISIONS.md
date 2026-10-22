@@ -1307,18 +1307,15 @@ A table's rows were one file, `rows.ndjson`. At a million rows that's 165 MB (44
 **To revisit when** git hosting's limits change, or two writers splitting differently costs more than it saves.
 
 
-## D52: a cell may have its own formula, format and style, kept beside the rows in `cells/`
+## D52: a cell may have its own formula, kept beside the rows in `cells/`
 
 **Decided by Leslie (22 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
 
-A field's formula is the same for every row, as in Airtable or Notion. A spreadsheet's is per cell, and a workbook carries number formats and simple colours that its users expect to keep. A `.table` should hold what spreadsheet users expect without giving up what it already is (Leslie: "as long as we don't break our own format").
+A field's formula is the same for every row, as in Airtable or Notion. A spreadsheet's is per cell. A `.table` should hold what spreadsheet users expect without giving up what it already is (Leslie: "as long as we don't break our own format").
 
 - **A cell's own formula** (`expr`), in any field. In a computed field it is that row's exception, as Excel's tables allow. Its result is never stored, as a computed field's isn't (D21).
 - **Kept in `cells/`, not in the rows.** The rows files stay plain values that any tool can read as records, no field name is reserved, and a table without cell formulas has no new file. A cell's line follows its row, as a body does (SPEC section 7). The folder is named and split as `rows/` is (D51), so a table with 250,000 cell formulas fits git the same way.
-- **The stored form doesn't grow.** Only lists, bare words, numbers, strings, `true`, `false`, `nil` and vectors; nothing EDN has that a spreadsheet formula can't say. A function or form joins only if it is one of `.table`'s own or a published standard defines it (D38: OpenFormula first), so it converts to that standard's formula text and back unchanged (Leslie: "the stored version should match what we already have and be easily transpilable"). No one application's formula language is the test.
-- **Formats: named options, not a pattern language.** `scientific`, `fraction`, negatives in red or brackets, a unit label, grouping. Nothing in the format is named after another application or keeps its data: an exporter writes, say, Excel's pattern from these options, and says what it couldn't carry, as the CSV export does (SPEC section 11).
-- **Style: bold, italic, strike, a text and a fill colour from eight named colours, and alignment.** Names, so each app draws them in its own palette, light and dark. No fonts (Leslie, 22 Oct 2026: hold).
+- **The stored form doesn't grow.** Only lists, bare words, numbers, strings, `true`, `false`, `nil` and vectors; nothing more of EDN than a formula needs. A function or form joins only if it is one of `.table`'s own or a published standard defines it (D38: OpenFormula first), so it converts to that standard's formula text and back unchanged (Leslie: "the stored version should match what we already have and be easily transpilable"). No one application's formula language is the test.
 
 **Considered.**
 - **The cell's extras inside its row** (`"@cells": {…}` on the row): one file to keep in step, but the format's own data among a person's values, and every field name beginning with `@` reserved, which would break a file that already has one.
-- **Excel's number-format patterns as the format:** complete, but a language of its own for every reader to implement, and one D29 kept out of the formulas.

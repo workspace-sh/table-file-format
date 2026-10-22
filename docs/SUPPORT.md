@@ -61,8 +61,6 @@ What a cell shows, and whether it can be typed in.
 |---|---|---|---|---|---|
 | Title, description, alignment | Yes | Yes | Yes | Yes | |
 | Number, currency and date formats | Yes | Yes | Yes | Yes | |
-| Scientific, fractions, negatives in red or brackets, a unit, grouping | No | No | No | No | #640 |
-| A field's style: bold, italic, strike, colours, alignment | No | No | No | No | #640 |
 | Choices, with colours and labels | Yes | Yes | Yes | Partly | Linux adds and removes choices; colours and labels are shown, not set. |
 | Required | Yes | Yes | Yes | Yes | |
 | Minimum, maximum, length, pattern | Partly | Partly | Partly | Partly | Enforced on entry; can't be set (#572). |
@@ -91,7 +89,7 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   public test cases check it (D38): LibreOffice's function tests, in
   [conformance/openformula/](../conformance/openformula/README.md),
   whose `REPORT.md` says what each engine meets.
-- **A cell's own formula, format and style** (`cells/`, D52): not
+- **A cell's own formula** (`cells/`, D52): not
   read or written yet (#640).
 
 ## Views

@@ -335,45 +335,6 @@ number. Converting is a formula over a rate kept as data:
 honoured by the body editor), `url`, `email`, `phone`. The last three
 are link-rendering hints; the stored value is the raw target.
 
-**A format may also be an object**, for what a spreadsheet's number
-formats show. A string is short for `{"as": <string>}`, so every
-format above stays as it is:
-
-```json
-"format": { "as": "decimal:2", "negative": "red-brackets", "unit": "kg", "grouping": false }
-```
-
-- `as`: any format above, or, for numbers, `scientific:N` (N
-  decimals) or `fraction:N` (at most N digits below the line).
-- `negative`: `minus` (default), `red`, `brackets` or `red-brackets`.
-- `unit`: text shown after the number. A label only, never converted;
-  money stays `currency:<ISO-4217>`, which is a unit (DECISIONS D33).
-- `grouping`: thousands separators; `true` (default) or `false`.
-
-A key or value a reader doesn't know is ignored, and the rest of the
-format still applies.
-
-### Field style
-
-A field MAY carry `style`, how its cells look unless a cell has its
-own (section 3, "A cell's own formula and look"):
-
-```json
-{ "name": "total", "type": "number", "style": { "bold": true, "fill": "yellow" } }
-```
-
-| Key | Values |
-| --- | --- |
-| `bold`, `italic`, `strike` | `true` or `false` |
-| `color`, `fill` | `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `grey` |
-| `align` | `start`, `center`, `end` |
-
-- Colours are names, not RGB: each app draws them from its own palette,
-  in light and dark. A converter maps a spreadsheet's colour to the
-  nearest name; the exact colour isn't kept.
-- There are no fonts or sizes: a `.table` is shown in the app's type.
-- A key or value a reader doesn't know is ignored.
-
 ### Computed fields
 
 A field MAY carry a `computed` declaration for a formula whose result
@@ -678,17 +639,16 @@ tables/deals/rows/
 └── 0003.ndjson        new rows go here, at the end
 ```
 
-### A cell's own formula and look (`cells/`)
+### A cell's own formula (`cells/`)
 
-A cell MAY have its own formula, format or style, kept beside the rows
+A cell MAY have its own formula, kept beside the rows
 in the table's `cells/` folder, so the rows files hold only values:
 
 ```ndjson
-{"id":"r7","field":"total","expr":"(* price qty)","style":{"bold":true,"fill":"yellow"}}
-{"id":"r9","field":"price","format":{"as":"decimal:2","negative":"red"}}
+{"id":"r7","field":"total","expr":"(* price qty)"}
 ```
 
-One line is one cell: the row's `id`, the field's `name`, and any of:
+One line is one cell: the row's `id`, the field's `name`, and:
 
 - **`expr`**: the cell's formula, in the stored form of section 2
   ("Computed fields"), with the same meaning: a bare word is a field
@@ -702,10 +662,6 @@ One line is one cell: the row's `id`, the field's `name`, and any of:
     spreadsheet marks a formula unlike its neighbours'.
   - The result is checked against the field's type as a typed value
     is; one the field can't hold is `#VALUE!`.
-- **`format`**: as a field's (section 2, "Field format"), for this cell
-  instead of the field's.
-- **`style`**: as a field's (section 2, "Field style"), key by key over
-  the field's.
 
 Rules:
 
@@ -720,8 +676,7 @@ Rules:
   always has. A reader that doesn't know `cells/` ignores it (section
   1, unknown files) and shows a cell with its own formula as empty.
 - **Canonical form.** Lines in the rows' file order, then the schema's
-  field order; keys in the order `id`, `field`, `expr`, `format`,
-  `style`.
+  field order; keys in the order `id`, `field`, `expr`.
 
 ### System `id`
 
