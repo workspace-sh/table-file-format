@@ -61,6 +61,7 @@ What a cell shows, and whether it can be typed in.
 |---|---|---|---|---|---|
 | Title, description, alignment | Yes | Yes | Yes | Yes | |
 | Number, currency and date formats | Yes | Yes | Yes | Yes | |
+| `scientific:N`, `fraction`, `:parens` (D53) | No | No | No | No | #642 |
 | Choices, with colours and labels | Yes | Yes | Yes | Partly | Linux adds and removes choices; colours and labels are shown, not set. |
 | Required | Yes | Yes | Yes | Yes | |
 | Minimum, maximum, length, pattern | Partly | Partly | Partly | Partly | Enforced on entry; can't be set (#572). |
@@ -106,6 +107,7 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
 | Column widths, single rows' heights | Yes | Yes | Yes | Yes | |
 | A view's default row height, a calendar's range | Partly | Partly | Partly | Partly | Honoured; can't be set (#573). |
 | Personal arrangements, Save for Everyone | Yes | Yes | Yes | Yes | |
+| Colour rules (`colors`, D53) | No | No | No | No | #642 |
 
 ## Rows and pages
 
