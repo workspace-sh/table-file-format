@@ -1325,3 +1325,16 @@ A field's formula is the same for every row, as in Airtable or Notion. A spreads
 
 **Considered.**
 - **A cell's formula inside its row** (`"@cells": {…}` on the row): one file to keep in step, but the format's own data among a person's values, and every field name beginning with `@` reserved, which would break a file that already has one.
+
+## D53: a view may colour rows and cells by their values; three more number formats
+
+**Decided by Leslie (23 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
+
+Seven apps were compared: Excel, Numbers, Google Sheets, LibreOffice Calc, Airtable, Notion and Coda. Spreadsheets style each cell (fills, fonts, borders, any colour). Database apps never style a single cell: formats are per field, and colour comes from rules in a view or from coloured choices. `.table` already works the second way. What all seven have, and `.table` didn't, is colour driven by values.
+
+- **Colour rules in a view** (`colors`): a filter and a named colour, for the row or one cell. In the view, not on the cells, so the same table can be coloured differently for different people's work, and the colour always follows the data (PRIOR-ART, "Cell-level decoration").
+- **The choice colours, not hex.** Fourteen names each reader maps onto its own light and dark themes (D43), as choices already are.
+- **`scientific:N`, `fraction`, `:parens`.** Number formats spreadsheets have and an import needs, in the closed vocabulary the field `format` already is.
+
+**Not adopted.** Styling single cells by hand (fills, bold, borders, fonts): only the spreadsheets have it. An importer reports what it can't carry.
+
