@@ -86,8 +86,11 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   (D36, D41, D48).
 - **Not there yet:** the rest of OpenFormula's 393 functions (#124),
   `^`, `%` and `power`. A function is counted as supported only once
-  public test cases check it (D38), and there are none yet:
-  [conformance/openformula/](../conformance/openformula/README.md).
+  public test cases check it (D38): LibreOffice's function tests, in
+  [conformance/openformula/](../conformance/openformula/README.md),
+  whose `REPORT.md` says what each engine meets.
+- **A cell's own formula** (`cells/`, D52): not
+  read or written yet (#640).
 
 ## Views
 

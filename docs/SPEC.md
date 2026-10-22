@@ -42,6 +42,7 @@ crm.table/
 │   │   ├── rows/             REQUIRED: the rows, in one or more files (section 3)
 │   │   │   ├── 0001.ndjson
 │   │   │   └── …
+│   │   ├── cells/            OPTIONAL: cells' own formulas (section 3)
 │   │   ├── views.json        OPTIONAL
 │   │   ├── meta.json         OPTIONAL: the table's own title and description
 │   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
@@ -403,7 +404,8 @@ empty and reports it.
 **OpenFormula in the stored form.** Formula meaning is OpenFormula's
 (ODF 1.4 Part 4, DECISIONS D38). Its expressions are written as
 follows; the public conformance suite in `conformance/openformula/`
-uses exactly this form.
+uses exactly this form, with one addition of its own: `(ref "A1")`
+reads a cell of the test's sheet, and is not part of the stored form.
 
 - A function call `ROUND(2.348;2)` is `(round 2.348 2)`: lowercase,
   arguments in order.
@@ -418,6 +420,28 @@ uses exactly this form.
 - An omitted argument, as in `ROUND(2.5;)`, is `nil`.
 - Precedence needs no rules here: the brackets say it. A client's
   typed syntax follows OpenFormula's Table 1 (5.5) when it compiles.
+
+**The stored form stays this small.** A formula, a field's or a cell's
+(section 3), is written only with lists `(f a b)`, bare words, numbers,
+strings, `true`, `false`, `nil` and vectors of rows for arrays.
+
+- A **bare word** is what EDN calls a symbol: it starts with a letter
+  or one of `* + ! - _ ? < > = & %` (not `+` or `-` followed by a
+  digit), and goes on with letters, digits and those characters, `.`
+  and `/`. At the head of a list it names a function; anywhere else, a
+  field of this row. A field whose name isn't a bare word, or is
+  `true`, `false` or `nil`, is reached with `(field "name")`.
+- EDN's other forms (keywords, maps, sets, tags, `N` and `M` numbers,
+  quoting, `#_`) are not formulas. A writer never stores them, and a
+  reader given one treats the formula as one it can't parse (above).
+- A function or form joins the stored form only if it is one of
+  `.table`'s own forms above, or a published standard defines it (D38:
+  OpenFormula first). A standard's formula converts to the stored form
+  and back: from the stored form to the standard's text and back gives
+  the same stored form, and from text to the stored form and back gives
+  text with the same meaning (spacing, case and brackets may differ).
+  No one application's formula language decides what a `.table` can
+  say.
 
 The reference evaluator doesn't read arrays or `nil` yet, and covers
 only the functions below; the engine that replaces it covers
@@ -625,6 +649,72 @@ tables/deals/rows/
 ├── 0002m.ndjson       the second half of 0002, after rows were inserted there
 └── 0003.ndjson        new rows go here, at the end
 ```
+
+### A cell's own formula (`cells/`)
+
+A cell MAY have its own formula, kept beside the rows
+in the table's `cells/` folder, so the rows files hold only values
+(DECISIONS D52):
+
+```ndjson
+{"id":"r7","field":"total","expr":"(* price qty)"}
+```
+
+One line is one cell: the row's `id`, the field's `name`, and:
+
+- **`expr`**: the cell's formula, in the stored form of section 2
+  ("Computed fields"), with the same meaning: a bare word is a field
+  of this row.
+- **`dialect`** (optional): as a computed field's; absent means
+  `table-expr-v1`.
+
+What the formula does:
+
+- **In a stored field**, the cell shows the formula's result. The
+  result is never stored: a writer leaves the field out of that row in
+  the rows files. A row that has a value there as well was written by
+  an app that doesn't know `cells/`, after the formula was set: the
+  value wins, and a writer removes the formula's line.
+- **In a computed field**, the cell's formula is used instead of the
+  field's, for this row only. An app MAY mark such a cell, as a
+  spreadsheet marks a formula unlike its neighbours'.
+- **Any field but `id`** may have one (`id` isn't a field, section 3,
+  "System `id`").
+- **Its result is a value like any other.** Views sort, filter, group
+  and total by it; `values`, `related` and `linked` read it; another
+  formula may use it. It is checked against the field's type as a
+  typed value is, and one the field can't hold is `#VALUE!`. A loop,
+  through any mix of fields' and cells' formulas, is `#REF!` in every
+  cell on it.
+- **Validation** (section 9) treats the cell as a computed field's:
+  its result isn't checked against the field's constraints, and it
+  counts as filled for `required`.
+- **A formula that can't be read** (an `expr` that doesn't parse, a
+  `dialect` the reader doesn't know) makes the cell empty, and the
+  reader reports it, as for a computed field.
+
+Rules:
+
+- **Files.** NDJSON, named and split as the rows files are (section 3,
+  "The rows files"); a small table's is `cells/0001.ndjson`. The order
+  of lines carries no meaning.
+- **One line per cell.** Two lines for one cell (after a merge, say):
+  the reader uses the last, in the files' name order and then line
+  order, and reports the others. A writer keeps them all until that
+  cell's formula is next set, which replaces them.
+- **Lines are never lost by accident.** A line whose row or field the
+  reader can't find (a row that comes back in a merge, a field hidden
+  by an index, section 8) is ignored but kept, as is a line the reader
+  can't parse (section 3, "Reader error contract"). A writer removes a
+  cell's line only when that cell's formula is removed, its row is
+  deleted, or its field is removed from the schema.
+- **Other keys.** A reader ignores keys it doesn't know; a writer
+  keeps them.
+- **Canonical form.** Lines in the rows' file order, then the schema's
+  field order; keys in the order `id`, `field`, `expr`, `dialect`.
+- **A version bump.** A reader that doesn't know `cells/` ignores it
+  (section 1, unknown files) and shows such cells empty or with their
+  field's formula, so `cells/` came with `formatVersion` 3 (section 12).
 
 ### System `id`
 
@@ -1078,7 +1168,7 @@ search, with the same rows.
 
 The index stores the table's schema signature and an opaque `key` the
 caller chooses when it builds (a content hash of `schema.json` +
-the rows files + bodies is the natural one). `isIndexStale(db, name,
+the rows files + `cells/` + bodies is the natural one). `isIndexStale(db, name,
 key)` compares it. A key from another content version, a missing
 index and an index of another format all read as stale.
 
@@ -1104,18 +1194,21 @@ by the fallback rule).
 An edit does not need a rebuild: `putRows` adds or replaces rows and
 their pages, and `removeRows` removes them, each a few statements (about
 a millisecond at a million rows), and both move the key. Rows added
-this way sit at the end of the file order. Schemas with formulas that
-read other rows (a change to one row changes others) refuse in-place
-edits and are rebuilt; so is a table whose rows were inserted mid-file.
+this way sit at the end of the file order. Tables with formulas that
+read other rows (a change to one row changes others), in a field or in
+a cell, refuse in-place edits and are rebuilt; so is a table whose rows
+were inserted mid-file. Setting or removing a cell's formula is an
+edit like a value's, and moves the key.
 
 A change of fields does not need a rebuild either. `alterIndex` changes
 the index from the old schema to the new one where it is: a field
 added, removed, moved, retyped or given another formula. It renames
 columns to their fields' new places, adds empty ones for new fields,
 and hides a gone field: its values stay in each row's stored JSON, and
-every row read or saved leaves them out, so the file loses the field.
+its cells' formulas in the index, and every row read or saved leaves
+them out, so the files lose the field.
 The index answers for the new schema at once. An undo that brings the
-field back (`restore`) shows its values again; a new field that only
+field back (`restore`) shows its values and its cells' formulas again; a new field that only
 reuses the name has them taken out, and starts empty. A build forgets
 what was hidden. What must be worked out again (a formula's results, a
 retyped, new or restored field's columns, the search text) is filled in
@@ -1123,7 +1216,8 @@ afterwards, a batch at a time (`fillIndex`), behind whatever else is
 asked. Until a field is filled, the index
 doesn't promise it: a view sorted, filtered, grouped or totalled by it,
 or a search while the search text is filled, is computed in memory, and
-a formula's values are worked out as rows are read. Once filled, it
+a formula's values, a field's or a cell's, are worked out as rows are
+read. Once filled, it
 answers what a build of the same rows with the new schema answers. A
 schema with formulas that read other rows, before or after the change,
 is rebuilt instead.
@@ -1133,7 +1227,8 @@ is rebuilt instead.
 An app MAY hold a large table's rows in the index alone, not in memory,
 reading the rows files only to build it. They stay the truth:
 after edits the app writes the rows back out of the index in file order
-(`storedRows`), replaces each rows file it writes in one rename, and stamps the
+(`storedRows`), and the cells' formulas with them, replaces each rows
+or cells file it writes in one rename, and stamps the
 index with the new content's key (`setIndexKey`), so it is fresh for
 what was written. An index whose edits were never written is stale on
 the next open and is rebuilt from the file. The index file's journal
@@ -1169,9 +1264,14 @@ A `.table/` is **valid** when:
 
 1. Every row has a non-empty system `id`, and ids are unique.
 2. Every row's field values match the declared types and constraints.
+   A cell with its own formula is checked as a computed field's is
+   (section 3, "A cell's own formula").
 3. If `primaryKey` is declared, no two rows share the same composite
    key.
 4. Every body file in `bodies/` has a matching row.
+5. Every line in `cells/` names a row and a field the table has. A
+   writer keeps one that doesn't (section 3), but the table isn't valid
+   until it's resolved.
 
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
@@ -1357,8 +1457,8 @@ docs/DECISIONS.md D14).
 
 The spec itself is versioned by `formatVersion` in the bundle's
 `meta.json` (section 5). The
-current value is `2` (D51: rows in `rows/`; `1` had one
-`rows.ndjson`). Breaking changes bump the major; additive
+current value is `3` (D52: cells' own formulas in `cells/`; `2` had
+no `cells/`, and `1` had one `rows.ndjson` in place of `rows/`). Breaking changes bump the major; additive
 changes do not. Readers SHOULD warn on `formatVersion` higher than
 they recognise but MAY still attempt to read.
 
@@ -1487,6 +1587,7 @@ crm.table              (a single file)
         ├── companies/
         │   ├── schema.json
         │   ├── rows/0001.ndjson
+        │   ├── cells/0001.ndjson
         │   ├── views.json
         │   ├── meta.json
         │   └── bodies/…
@@ -1576,6 +1677,7 @@ Ops:
 {"id":"e2","at":"2026-10-01T15:02:00Z","by":"leslie","op":"insert","row":"p9","values":{"id":"p9","title":"New"}}
 {"id":"e3","at":"2026-10-01T15:03:00Z","by":"leslie","op":"delete","row":"p9","values":{"id":"p9","title":"New"}}
 {"id":"e4","at":"2026-10-01T15:05:00Z","by":"leslie","op":"page","row":"p1","from":"Old text","to":"New text"}
+{"id":"e5","at":"2026-10-01T15:06:00Z","by":"leslie","op":"formula","row":"p1","field":"total","to":"(* price qty)"}
 ```
 
 - `set`: one cell changed. `field` is the field key; `from` and `to`
@@ -1583,12 +1685,20 @@ Ops:
   lookup or rollup's result isn't in the rows files, so it isn't here. As in the rows files, an absent value means
   empty (section 3), so `from` is absent for a cell that was empty and
   `to` is absent for one that was cleared.
-- `insert`: a row was added. `values` is the row as written.
-- `delete`: a row was removed. `values` is the whole row as it was, so
-  it can be restored.
+- `insert`: a row was added. `values` is the row as written, and
+  `cells` (when it has any) its cells' own formulas: each cell's line
+  without `id` and `field`, by the field's name,
+  `{"total": {"expr": "(* price qty)"}}`.
+- `delete`: a row was removed. `values` is the whole row as it was, and
+  `cells` its cells' own formulas, so it can be restored.
 - `page`: a row's page (`bodies/{id}.md`, section 7) changed. `from`
   and `to` are the **complete** text before and after; `from` is absent
   for a new page and `to` is absent for a cleared one.
+- `formula`: a cell's own formula (section 3) was set, changed or
+  removed. `field` is the field key; `from` and `to` are the `expr`
+  before and after, absent when the cell had none. Setting a formula on
+  a stored field also clears its value, recorded as a `set` with no
+  `to`.
 
 Rules:
 
