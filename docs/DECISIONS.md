@@ -1383,7 +1383,7 @@ A spreadsheet's cell note (Excel's notes, Sheets' notes, Numbers' comments) is t
 
 ## D59: a spreadsheet without a header row
 
-**Drafted for Leslie (23 Oct 2026; "no header: an option"). Open to revisit. Not built yet.**
+**Drafted for Leslie (23 Oct 2026; "no header: an option"). Open to revisit.** Built: the apps tell a headerless sheet by itself (`firstLineIsData`), a first line of numbers, dates or yes/no where the column below has them.
 
 Not every sheet starts with headings. `tableFromCSV(csv, { header: false })` reads the first line as a row and names the fields for their columns (`A`, `B`, `C`…), each with that as its `title`, for the person to rename. It's a converter's option, not the format's: a `.table` always names its fields.
 
