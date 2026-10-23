@@ -544,7 +544,25 @@ export function TableView({
     lastValue.current = value;
     adjustment.setValue(value);
   };
+  // The frozen band (D58): at the top of the window once the header has gone up under it.
+  // It lies over the window, its own sideways scroll kept with the table's.
+  const bandRef = useRef<Gtk.ScrolledWindow | null>(null);
+  const placeBand = () => {
+    const band = bandRef.current;
+    const down = scroller.current?.getVadjustment();
+    if (!band || !down) return;
+    const under = down.getValue() > frameMargin;
+    if (band.getVisible() !== under) band.setVisible(under);
+    if (under) alignBand();
+  };
+  const alignBand = () => {
+    const across = scroller.current?.getHadjustment();
+    const bandAcross = bandRef.current?.getHadjustment();
+    if (!across || !bandAcross || !bandRef.current?.getVisible()) return;
+    if (Math.abs(bandAcross.getValue() - across.getValue()) >= 0.5) bandAcross.setValue(across.getValue());
+  };
   const follow = () => {
+    placeBand();
     const adjustment = scroller.current?.getVadjustment();
     if (!adjustment) return;
     placeSoon();
@@ -617,6 +635,9 @@ export function TableView({
   const after = count ? Math.max(0, laidOut - (layout.topOf(lastBuilt) + layout.heightOf(lastBuilt) - built.shift)) : 0;
   // The built rows: one that hasn't arrived from the index yet is undefined, and drawn empty.
   const builtRows = useViewWindow(source, firstBuilt, lastBuilt + 1);
+  // The view's first rows that stay at the top with the header (D58), read wherever the window is.
+  const frozenRowCount = Math.max(0, Math.min(view.frozen?.rows ?? 0, count));
+  const topRows = useViewWindow(source, 0, frozenRowCount);
   const builtPlace = new Map<string, number>();
   const builtRow = new Map<string, Row>();
   builtRows.forEach((row, i) => {
@@ -1577,7 +1598,77 @@ export function TableView({
     </GtkOverlay>
   ) : null;
 
-  return (
+  // The header and the view's frozen rows (D58), laid over the top of the window once the table has gone
+  // up under it: drawn again, to look at, while the rows themselves scroll on beneath. At rest it isn't
+  // there, so nothing is drawn twice.
+  const bandCell = (name: string, height: number, children: ReactNode) => (
+    <Cell key={name} width={colWidth(name)} height={height}>
+      {children}
+    </Cell>
+  );
+  const bandHeaderCell = (name: string, i: number) => {
+    const title = fieldMap.get(name)?.title ?? name;
+    return bandCell(
+      name,
+      HEADER_HEIGHT,
+      <GtkLabel label={coords ? `${columnLetter(i)} ${title}` : title} xalign={xalignOf(effectiveAlign(fieldMap.get(name)))} hexpand ellipsize={Pango.EllipsizeMode.END} maxWidthChars={1} cssClasses={[styles.headerCell]} />,
+    );
+  };
+  // As its row draws it: its colour, its lines, its alignment.
+  const bandValue = (row: Row, name: string) => {
+    const height = heightOf(row.id);
+    const lines = linesFor(height);
+    return (
+      <Cell key={name} width={colWidth(name)} height={height} classes={tintClass(colorsOf(row).cells[name], dark)}>
+        <GtkBox hexpand valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER} marginTop={lines > 1 ? 10 : 0}>
+          <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} lines={lines} xalign={xalignOf(effectiveAlign(fieldMap.get(name)))} />
+        </GtkBox>
+      </Cell>
+    );
+  };
+  const bandHeader = rowStart("band:header", HEADER_HEIGHT, [styles.frozenBandHeader], "", freeze ? frozenNames.map((name, i) => bandHeaderCell(name, i)) : null);
+  const band = (
+    <GtkScrolledWindow
+      ref={bandRef}
+      name="frozen-band"
+      valign={Gtk.Align.START}
+      visible={false}
+      canTarget={false}
+      hscrollbarPolicy={Gtk.PolicyType.EXTERNAL}
+      vscrollbarPolicy={Gtk.PolicyType.NEVER}
+      propagateNaturalHeight
+    >
+    <GtkViewport scrollToFocus={false}>
+    <GtkBox orientation={Gtk.Orientation.VERTICAL} halign={Gtk.Align.START} marginStart={sideMargin} marginEnd={sideMargin} cssClasses={[styles.frozenBand]}>
+      {/* As wide as the table, "+" and all, so it scrolls as far across. */}
+      <GtkBox>
+        <GtkOverlay overlays={bandHeader.frozen}>
+          <GtkBox cssClasses={[styles.frozenBandHeader]}>
+            {bandHeader.inLine}
+            {scrolling.map((name, i) => bandHeaderCell(name, i + frozenCount))}
+          </GtkBox>
+        </GtkOverlay>
+        {trailing}
+      </GtkBox>
+      {topRows.map((row, i) => {
+        if (!row) return null;
+        const colors = colorsOf(row);
+        const start = rowStart(`band:${row.id}`, heightOf(row.id), [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, i)), freeze ? frozenNames.map((name) => bandValue(row, name)) : null);
+        return (
+          <GtkOverlay key={row.id} overlays={start.frozen}>
+            <GtkBox cssClasses={[styles.bodyRow, ...tintClass(colors.row, dark)]}>
+              {start.inLine}
+              {scrolling.map((name) => bandValue(row, name))}
+            </GtkBox>
+          </GtkOverlay>
+        );
+      })}
+    </GtkBox>
+    </GtkViewport>
+    </GtkScrolledWindow>
+  );
+
+  const table = (
     <GtkScrolledWindow
       ref={scroller}
       hexpand
@@ -1598,7 +1689,10 @@ export function TableView({
             pinAcross();
             restoreAcross();
           }}
-          onNotifyValue={(value) => scrollAcross(value ?? 0)}
+          onNotifyValue={(value) => {
+            scrollAcross(value ?? 0);
+            alignBand();
+          }}
         />
       }
     >
@@ -1714,4 +1808,6 @@ export function TableView({
       ) : null}
     </GtkScrolledWindow>
   );
+  // An embed shows a cut of the table, in a document that scrolls: it has no band.
+  return embedded ? table : <GtkOverlay overlays={band}>{table}</GtkOverlay>;
 }
