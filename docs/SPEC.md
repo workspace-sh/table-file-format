@@ -433,7 +433,7 @@ strings, `true`, `false`, `nil` and vectors of rows for arrays.
 - A **bare word** is what EDN calls a symbol: it starts with a letter
   or one of `* + ! - _ ? < > = & %` (not `+` or `-` followed by a
   digit), and goes on with letters, digits and those characters, `.`
-  and `/`. At the head of a list it names a function; anywhere else, a
+  and `/`; `/` alone, division, is one too. At the head of a list it names a function; anywhere else, a
   field of this row. A field whose name isn't a bare word, or is
   `true`, `false` or `nil`, is reached with `(field "name")`.
 - EDN's other forms (keywords, maps, sets, tags, `N` and `M` numbers,

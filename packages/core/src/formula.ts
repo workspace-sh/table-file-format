@@ -23,7 +23,7 @@
  * wherever table-core does and any app's formula bar can share it.
  */
 
-import { FORMER_NAMES, FUNCTION_NAMES, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
+import { FORMER_NAMES, FUNCTION_NAMES, isSymbol, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
 import type { FieldType } from "./types.js";
 
 export type CompileResult =
@@ -41,13 +41,7 @@ export type CompileResult =
 
 /** A field name the stored grammar can write as a bare word (SPEC section 2). */
 function isBareWord(name: string): boolean {
-  return (
-    /^[^\s()"]+$/.test(name) &&
-    name !== "true" &&
-    name !== "false" &&
-    name !== "nil" &&
-    !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(name)
-  );
+  return isSymbol(name) && name !== "true" && name !== "false" && name !== "nil";
 }
 
 /** A reference to field `name`: a bare word when it can be one, else `(field "…")`. */

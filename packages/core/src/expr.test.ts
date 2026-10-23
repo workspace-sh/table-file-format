@@ -147,3 +147,15 @@ test("a result too large for a number is #NUM!, as in spreadsheets", () => {
   assert.equal(String(run("(* 1e308 10)")), "#NUM!");
   assert.equal(String(run("(- (* 1e308 10))")), "#NUM!");
 });
+
+test("a bare word is an EDN symbol (SPEC section 2): other EDN forms, and names that aren't one, can't be read", async () => {
+  const { parseExpr } = await import("./expr.js");
+  for (const ok of ["(/ a b)", "(<> a b)", "(% a)", "(- a)", "café", "unit-price", "q1.total", "(+ a -1)", "is_done?"]) {
+    assert.equal(parseExpr(ok).ok, true, ok);
+  }
+  for (const bad of [":status", "#inst", "{a 1}", "(sum 2025sales)", "(#fn a)", "'a"]) {
+    assert.equal(parseExpr(bad).ok, false, bad);
+  }
+  const named = parseExpr("2025sales");
+  assert.ok(!named.ok && /write \(field "2025sales"\)/.test(named.message));
+});
