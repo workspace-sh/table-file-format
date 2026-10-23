@@ -24,6 +24,7 @@ import {
   OPERATOR_LABELS,
   RULE_COLORS,
   colorLabel,
+  hiddenRowsText,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -322,6 +323,14 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
               />
             ))}
           </AdwPreferencesGroup>
+
+          {hiddenRowsText(view) ? (
+            <AdwPreferencesGroup>
+              <AdwActionRow title={hiddenRowsText(view)!} activatable={false}>
+                <GtkButton label="Show All" valign={Gtk.Align.CENTER} onClicked={() => onChange({ hidden: undefined })} />
+              </AdwActionRow>
+            </AdwPreferencesGroup>
+          ) : null}
 
           <AdwPreferencesGroup
             title="Colours"

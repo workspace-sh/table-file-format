@@ -42,6 +42,23 @@ async function shownChoices(): Promise<string[]> {
 }
 
 describe("view settings on Linux", () => {
+  it("a row hidden from its menu leaves the view, and View Settings shows it again (D58)", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    const cell = await screen.findByText("Land .table extension");
+    const window = cell.getRoot() as unknown as Gtk.ApplicationWindow;
+    await userEvent.click(cell);
+    // The row's menu action, as its menu item runs it.
+    const row = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Row Actions" }))[0]!;
+    row.activateAction("row.hide", null);
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.hidden).toEqual(["t1"]));
+    await waitFor(() => expect(screen.queryByText("Land .table extension")).toBeNull());
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
+    await userEvent.click(await screen.findByText("Show All"));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.hidden).toBeUndefined());
+    expect(window).toBeDefined();
+  });
+
   it("Colours: a rule added colours the whole row in a colour not yet used, and its colour is chosen from the list (D53)", async () => {
     await openSettings();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Colour" }));
