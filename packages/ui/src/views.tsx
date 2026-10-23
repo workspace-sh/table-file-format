@@ -79,6 +79,7 @@ import {
   hasColorRules,
   memoryViewRows,
   mergedBlocks,
+  mergeOver,
   rowColors,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
@@ -2921,6 +2922,8 @@ export function TableView({
   onSetCellFormula,
   onSetIteration,
   onAskCellNote,
+  onAskMerge,
+  onUnmerge,
 }: ViewProps) {
   // Every prop as given, to tell a drawing the screen asked for from one
   // only the index's window caused (drawKey, below).
@@ -2980,6 +2983,12 @@ export function TableView({
       onDeleteRow,
       ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
       ...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {}),
+      // In a Sheet view, from the selected cell: merge a block, or show a merged one's cells again (D58).
+      ...(coords && sel?.rowId === rowId && sheet && onAskMerge && onUnmerge
+        ? mergeOver(view, sel.name, rowId, fields, sheet.order) !== -1
+          ? { onUnmergeCells: () => onUnmerge(rowId, sel.name) }
+          : { onMergeCells: () => onAskMerge(rowId, sel.name) }
+        : {}),
     });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);

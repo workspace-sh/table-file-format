@@ -75,3 +75,9 @@ test("a column's actions: insert either side, reset a resized width, delete last
   // Nothing it can't do: a width never set has nothing to reset.
   assert.deepEqual(columnActions("status", { onInsertField: can.onInsertField }).map((a) => a.id), ["insert-left", "insert-right"]);
 });
+
+test("a Sheet view's selected cell offers Merge Cells…, or Unmerge Cells when it's in a merged block, never both (D58)", () => {
+  const ids = (can: Parameters<typeof rowActions>[1]) => rowActions("r1", can).map((a) => a.id);
+  assert.deepEqual(ids({ onMergeCells: () => {} }), ["merge-cells"]);
+  assert.deepEqual(ids({ onMergeCells: () => {}, onUnmergeCells: () => {} }), ["unmerge-cells"]);
+});

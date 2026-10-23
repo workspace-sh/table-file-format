@@ -36,7 +36,7 @@ import {
   GtkViewport,
 } from "@gtkx/jsx/gtk";
 import type { MenuItem } from "@gtkx/react/internal";
-import { columnLetter, effectiveAlign, isSheet, memoryViewRows, mergedBlocks, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
+import { columnLetter, effectiveAlign, isSheet, memoryViewRows, mergedBlocks, mergeOver, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
 import {
   canInsertAt,
   describeCell,
@@ -194,6 +194,8 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "insert-above": "row.above",
   "insert-below": "row.below",
   "cell-note": "row.note",
+  "merge-cells": "row.merge",
+  "unmerge-cells": "row.unmerge",
   "hide-row": "row.hide",
   "fit-row": "row.fit",
   "reset-row-height": "row.reset-height",
@@ -207,7 +209,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-page", "add-page", "cell-note"]), section(["insert-above", "insert-below"]), section(["hide-row", "fit-row", "reset-row-height"]), section(["delete"])]
+  return [section(["open-page", "add-page", "cell-note", "merge-cells", "unmerge-cells"]), section(["insert-above", "insert-below"]), section(["hide-row", "fit-row", "reset-row-height"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
@@ -295,6 +297,8 @@ function BodyRow({
   onResetRowHeight,
   onCellNote,
   onHideRow,
+  onMergeCells,
+  onUnmergeCells,
   menuRef,
   frozen,
   tint = [],
@@ -315,6 +319,8 @@ function BodyRow({
   onCellNote?: () => void;
   /** Leave the row out of this view by hand (D58). */
   onHideRow?: (rowId: string) => void;
+  onMergeCells?: () => void;
+  onUnmergeCells?: () => void;
   menuRef?: (button: Gtk.MenuButton | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
@@ -344,6 +350,8 @@ function BodyRow({
               <GSimpleAction name="reset-height" enabled={!!onResetRowHeight} onActivate={() => onResetRowHeight?.(rowId)} />
               <GSimpleAction name="note" enabled={!!onCellNote} onActivate={() => onCellNote?.()} />
               <GSimpleAction name="hide" enabled={!!onHideRow} onActivate={() => onHideRow?.(rowId)} />
+              <GSimpleAction name="merge" enabled={!!onMergeCells} onActivate={() => onMergeCells?.()} />
+              <GSimpleAction name="unmerge" enabled={!!onUnmergeCells} onActivate={() => onUnmergeCells?.()} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
             </>
           }
@@ -366,7 +374,7 @@ function BodyRow({
             <GtkPopoverMenu
               flags={Gtk.PopoverMenuFlags.NESTED}
               hasArrow={false}
-              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}), ...(onHideRow ? { onHideRow } : {}) }))} />}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}), ...(onHideRow ? { onHideRow } : {}), ...(onMergeCells ? { onMergeCells } : {}), ...(onUnmergeCells ? { onUnmergeCells } : {}) }))} />}
             />
           }
         />
@@ -406,6 +414,8 @@ export function TableView({
   onSetCellFormula,
   onSetIteration,
   onAskCellNote,
+  onAskMerge,
+  onUnmerge,
   onUpdateView,
   onUpdateField,
   onAddEnumValue,
@@ -1537,6 +1547,11 @@ export function TableView({
         onFitRow={onUpdateView ? fitRow : undefined}
         onResetRowHeight={onUpdateView && view.rowHeights?.[row.id] !== undefined ? resetRowHeight : undefined}
         {...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {})}
+        {...(coords && sheet && onAskMerge && onUnmerge && focusedCell?.startsWith(`${row.id}\u0000`)
+          ? mergeOver(view, focusedCell.slice(row.id.length + 1), row.id, fields, sheet.order) !== -1
+            ? { onUnmergeCells: () => onUnmerge(row.id, focusedCell.slice(row.id.length + 1)) }
+            : { onMergeCells: () => onAskMerge(row.id, focusedCell.slice(row.id.length + 1)) }
+          : {})}
         {...(onAskCellNote && focusedCell?.startsWith(`${row.id}\u0000`)
           ? { onCellNote: () => onAskCellNote(row.id, focusedCell.slice(row.id.length + 1), ownNote(cellFormulas, row.id, focusedCell.slice(row.id.length + 1), row)) }
           : {})}

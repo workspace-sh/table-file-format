@@ -19,7 +19,7 @@ interface Action<Id extends string> {
 }
 
 /** Something that can be done to a row as a whole, from its row menu. */
-export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "merge-cells" | "unmerge-cells" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
 
 /** Something that can be done to a column, from its header's menu (columnActions). */
 export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
@@ -272,10 +272,14 @@ export function rowActions(
     onCellNote?: () => void;
     /** Leave the row out of this view by hand (D58). */
     onHideRow?: (rowId: string) => void;
+    /** Merge a block of a Sheet view's cells, from the selected one (D58). */
+    onMergeCells?: () => void;
+    /** The selected cell is in a merged block: show its cells again (D58). */
+    onUnmergeCells?: () => void;
   },
 ): RowAction[] {
   const actions: RowAction[] = [];
-  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote, onHideRow } = can;
+  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote, onHideRow, onMergeCells, onUnmergeCells } = can;
   // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
@@ -291,6 +295,11 @@ export function rowActions(
   }
   if (onCellNote) {
     actions.push({ id: "cell-note", label: "Cell Note…", symbol: { sf: "note.text", material: "sticky_note_2" }, onSelect: onCellNote });
+  }
+  if (onUnmergeCells) {
+    actions.push({ id: "unmerge-cells", label: "Unmerge Cells", symbol: { sf: "rectangle.split.2x2", material: "grid_view" }, onSelect: onUnmergeCells });
+  } else if (onMergeCells) {
+    actions.push({ id: "merge-cells", label: "Merge Cells…", symbol: { sf: "rectangle.grid.1x2", material: "select_all" }, onSelect: onMergeCells });
   }
   if (onHideRow) {
     actions.push({ id: "hide-row", label: "Hide Row", symbol: { sf: "eye.slash", material: "visibility_off" }, onSelect: () => onHideRow(rowId) });
