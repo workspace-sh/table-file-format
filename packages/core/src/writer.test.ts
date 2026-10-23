@@ -81,7 +81,7 @@ test("writeBundle writes every table under tables/ and stamps the manifest (D37)
     });
     const meta = JSON.parse(await readFile(join(target, "meta.json"), "utf8"));
     assert.equal(meta.format, "table");
-    assert.equal(meta.formatVersion, 2);
+    assert.equal(meta.formatVersion, 3);
     assert.deepEqual(meta.tables, ["deals", "companies"], "the given order is kept");
     const back = await parseBundle(target);
     assert.equal(back.tables.companies!.rows[0]!.name, "Atlas");

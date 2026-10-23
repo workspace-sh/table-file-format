@@ -31,7 +31,7 @@ test("there are fixtures to check, and at least one holds several tables", async
 test("every bundle's manifest lists exactly its tables", async () => {
   for (const [name, b] of Object.entries(await fixtureBundles())) {
     assert.equal(b.meta.format, "table", name);
-    assert.equal(b.meta.formatVersion, 2, name);
+    assert.equal(b.meta.formatVersion, 3, name);
     assert.deepEqual([...(b.meta.tables ?? [])].sort(), Object.keys(b.tables).sort(), name);
   }
 });

@@ -50,7 +50,7 @@ test("bundleFiles lists every text file on disk, holding the same data", async (
     for (const f of files) {
       const disk = data(f.path, await readFile(join(dir, f.path), "utf8")) as Record<string, unknown>;
       // The manifest gains format and formatVersion on every write (SPEC section 5).
-      const want = f.path === "meta.json" ? { format: "table", formatVersion: 2, ...disk } : disk;
+      const want = f.path === "meta.json" ? { format: "table", formatVersion: 3, ...disk } : disk;
       assert.deepEqual(data(f.path, f.content), want, `${name}/${f.path}`);
     }
   }

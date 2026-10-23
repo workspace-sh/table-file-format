@@ -305,7 +305,10 @@ export function largeTables(from: number = INDEXED_FROM): (tableDir: string) => 
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const viewsPath = join(tableDir, "views.json");
       const views = existsSync(viewsPath) ? (JSON.parse(readFileSync(viewsPath, "utf8")) as View[]) : [];
-      if (!canBeIndexed({ schema, views })) return false;
+      // Any cells' own formulas (D52) keep it in memory, as canBeIndexed says; their files aren't read here.
+      const cellsDir = join(tableDir, "cells");
+      const cells = existsSync(cellsDir) && readdirSync(cellsDir).length > 0 ? [{ id: "", field: "", expr: "" }] : [];
+      if (!canBeIndexed({ schema, views, cells })) return false;
     } catch {
       // The reader says what's wrong with it.
       return false;

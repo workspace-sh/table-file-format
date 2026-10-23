@@ -44,8 +44,10 @@ export function viewQuery(view: View, search = ""): IndexQuery {
  * their own row, and with no Sheet view, whose formulas read by place
  * (LARGE-TABLES-PLAN section 1). Any other is held in memory.
  */
-export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views">): boolean {
+export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views" | "cells">): boolean {
   if (table.views.some((v) => v.coordinates === true)) return false;
+  // The index doesn't hold cells' own formulas yet (D52, #640): such a table is held in memory.
+  if (table.cells && table.cells.length > 0) return false;
   const computed = table.schema.fields.filter((f) => f.computed);
   return computed.length === 0 || rowLocal(table.schema, computed);
 }
