@@ -13,7 +13,7 @@ The bar is #126: 10,000 to 1,000,000 rows within 1 s, and ideally within 135 ms.
 | SQLite in the browser, in a worker, kept in OPFS | In `apps/web/src/sqlite/` (#331). Used by `apps/web/harness` only. |
 | A list that draws only the rows on screen | Chosen (LegendList, 2 Oct), used only in `apps/mobile/app/bench.tsx`. Every view still draws every row. |
 | A `SqlDriver` for Linux or iOS | None. |
-| `history.ndjson` (SPEC section 14, D44) | Specified (#313). table-core reads the file and makes its events (`edit-log.ts`); table-app keeps each edit for it (`editLog.ts`). The Linux app writes it, for tables held in memory and in the index alike. A `.table.zip` carries the file as it is, and a table opened from one keeps it. Not yet: the other apps writing it. |
+| `history.ndjson` (SPEC section 14, D44) | Specified (#313). table-core reads the file and makes its events (`edit-log.ts`); table-app keeps each edit for it (`editLog.ts`). The Linux app writes it, for tables held in memory and in the index alike. A single-file `.table` carries the file as it is, and a table opened from one keeps it. Not yet: the other apps writing it. |
 
 What a person feels today: about 10,000 rows took 15 s to show on the web, and never showed on the phone.
 
@@ -95,7 +95,7 @@ What a person sees here was decided (section 10): progress until the first build
 
 ## 4. Where an edit is saved
 
-The rows files stay the truth (SPEC section 8: the index is a cache, and deleting it must be safe). Today each app writes the whole table 400 ms after the last edit. For an indexed table the same save streams the rows out of the index in file order, off the thread that draws, and then sets the index's key to the hash of what it wrote, so the index stays fresh.
+The rows files stay the truth (SPEC section 8: the index is a cache, and deleting it must be safe). Each app saves 400 ms after the last edit, each row to the rows file it came from (D51); a single file is then packed back, its unchanged files copied as they were (#602). For an indexed table the same save streams the rows out of the index in file order, off the thread that draws, and then sets the index's key to the hash of what it wrote, so the index stays fresh.
 
 - **Linux and iOS:** the bundle's folder on disk, with `index.sqlite` at its root as SPEC section 8 says.
 - **Web:** the demo's small tables stay in the browser store as now. An indexed table's rows are kept as a file in OPFS beside its index, written by the worker.
@@ -110,7 +110,7 @@ SPEC section 14 fixes the file and its events. What is left is who writes them a
 - **Naming:** `packages/app/src/history.ts` is navigation history (Back and Forward). The edit history lives in separately named modules: `edit-log.ts` in core and `editLog.ts` in app.
 - **When they are written:** appended to `tables/{name}/history.ndjson` in the same save as the rows. A page's burst of typing is one `page` event (the editor closed, or about 60 s idle), as the spec asks.
 - **`by`:** the app supplies it. Left out when the app has no name for the viewer.
-- **Archives:** `.table.zip` carries the file, since it is part of the table.
+- **Single files:** a single-file `.table` carries the file, since it is part of the table.
 - **Large tables:** the same events. An append costs the same at any row count.
 - **Not in this plan:** a screen that shows or restores history, compaction, and schema or view events. D44 leaves those open.
 
@@ -167,7 +167,7 @@ Proposed numbers, for review. They come from what LARGE-TABLES measured, with th
 | **A. Draw only what's on screen** (W1, L1, I1) | Memory source, every platform | 10,000 rows: first rows within 1 s (web was 15 s). 100,000 rows: first rows within 1.5 s. Flicking at 60 fps with no blank rows. An edit shows within 135 ms. Page elements don't grow with the row count. |
 | **B. Read through the index** (W2, L2, I2) | Indexed source, exact against memory | 1M rows: reopen to first rows within 135 ms. Any window within 135 ms. An edit shows within 135 ms. A filter, a search and totals each within 1 s. The same sort again within 135 ms. Every answer equal to the memory path's. |
 | **C. Build, fall back, save** (W3, L3, I3) | First open, no space, files | 1M rows: something on screen within 1 s of opening, with progress. With no space, the table opens in memory and says so. A save after an edit, timed, off the drawing thread. Deleting the index loses nothing. |
-| **D. Edit history** (W4, L4, I4) | D44 | Every edit made in the app appears as one event. A table round-trips through `.table.zip` with its history. A reader without history support leaves the file alone. |
+| **D. Edit history** (W4, L4, I4) | D44 | Every edit made in the app appears as one event. A table round-trips through a single-file `.table` with its history. A reader without history support leaves the file alone. |
 
 Two known gaps against the bar, with what closes them:
 
@@ -195,6 +195,6 @@ Changed while building it (9 Oct 2026):
 9. A total's sum is exact (`exactSum`, SPEC section 4): what the numbers add up to, rounded once. Added one at a time a sum depended on the rows' order, so it changed in its last digits when a view was sorted, and the index could only match it by reading every number in the view's order (2 to 5 s at 1M rows). Now it reads the column's distinct numbers and their counts off an index (0.1 s).
 10. Row edits to an indexed table go through the reducer like any other (`updateRow`, `addRow`, `deleteRow`, `updateBody`), which queues them (`AppState.indexWork`) for the app to make in the index (`makeIndexEdits`) and then say so (`indexed`). So `viewCallbacks` and every view are unchanged, and each platform only supplies its `SqlDriver`.
 11. `ParsedTable.indexed` marks a table whose rows aren't in `rows`. The writer leaves such a table's rows files alone; the app that holds the index writes it.
-12. Linux (L2, L3 in part): what's built is in "What Linux does" in LARGE-TABLES.md. Left for later there: removing a choice, validation of its rows, and an archive past 250,000 rows.
+12. Linux (L2, L3 in part): what's built is in "What Linux does" in LARGE-TABLES.md. Left for later there: removing a choice, validation of its rows, and an export past 250,000 rows.
 13. The indexer runs where the index is. A page asks its worker for a view's rows a message an answer (`rowsServer`, `remoteViewRows`), not a statement a message; an edit comes back with the rows on screen already read (`ViewRows.peek`).
 14. The web (W2, W3) and tall lists: "What the web does" in LARGE-TABLES.md.
