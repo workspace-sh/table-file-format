@@ -165,6 +165,12 @@ export interface Scope {
   place(p: Place): Value;
   /** Where a place is in its Sheet view's grid: its top row's position (from 1), its height, and the grid's size. */
   where(p: Place): { top: number; height: number; size: number } | FormulaError;
+  /**
+   * The clock and chance `today`, `now` and `rand` read (D55): one moment
+   * for every cell worked out together, as a spreadsheet recalculates.
+   * Absent: the time now, and Math.random.
+   */
+  clock?(): { now: Date; random: () => number };
 }
 
 /** A row of a Sheet view: an offset from this row, a row id (pinned), or an open end (`nil`). */
@@ -346,7 +352,19 @@ function roundHalfAway(x: number, digits: number): number {
   return x < 0 ? -r : r;
 }
 
+/** A function of nothing but the clock or chance (D55): `(today)`, `(now)`, `(rand)`. */
+const ofClock =
+  (name: string, give: (clock: { now: Date; random: () => number }) => Value): Fn =>
+  (args, scope) =>
+    args.length > 0 ? new FormulaError("#VALUE!", `${name} takes no arguments`) : give(scope.clock?.() ?? { now: new Date(), random: Math.random });
+
+const two = (n: number) => String(n).padStart(2, "0");
+
 const FUNCTIONS: Record<string, Fn> = {
+  // The reader's own date, as a date is stored (YYYY-MM-DD); the instant, in UTC; a number from 0 up to 1.
+  today: ofClock("today", ({ now }) => `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`),
+  now: ofClock("now", ({ now }) => now.toISOString().replace(/\.\d{3}Z$/, "Z")),
+  rand: ofClock("rand", ({ random }) => random()),
   "+": numeric("+", (n) => n.reduce((a, b) => a + b, 0), { skipEmpty: false }),
   "*": numeric("*", (n) => n.reduce((a, b) => a * b, 1), { skipEmpty: false }),
   "-": numeric("-", (n) => (n.length === 1 ? -n[0]! : n[0]! - n[1]!), { skipEmpty: false, arity: [1, 2] }),
