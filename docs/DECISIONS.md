@@ -1375,7 +1375,7 @@ A spreadsheet's cell note (Excel's notes, Sheets' notes, Numbers' comments) is t
 
 ## D58: views freeze rows and columns, hide rows, and merge cells
 
-**Drafted for Leslie (23 Oct 2026; "merged cells, frozen panes, hidden rows and columns: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+**Drafted for Leslie (23 Oct 2026; "merged cells, frozen panes, hidden rows and columns: yes"). Open to revisit.** Built: hidden rows, and frozen columns (the apps freeze a view's first `frozen.columns` on a wide window, always leaving one to scroll). Not built yet: frozen rows, merged cells, a setting for `frozen`. Additive: no `formatVersion` change.
 
 - **Frozen** rows and columns are how a view is looked at, so they're the view's (`frozen`), as column widths are.
 - **Hidden rows** are the view's too (`hidden`): a row left out by hand, not by a rule. A Sheet view keeps their numbers, as it does for filtered rows. Hidden columns were already there: a view's `fields`.

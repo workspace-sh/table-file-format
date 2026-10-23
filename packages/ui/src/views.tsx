@@ -3168,8 +3168,8 @@ export function TableView({
     const entry = entryAt(place);
     if (entry) return draw(entry, place);
     const frozen = pane === "frozen";
-    const names = frozen && primaryName ? [primaryName] : restNames;
-    const numbered = coords && (frozen || !primaryName);
+    const names = frozen && frozenOn ? frozenNames : restNames;
+    const numbered = coords && (frozen || !frozenOn);
     return (
       <>
         {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow, frozen ? styles.frozenEdge : restRowWidth()]} />}
@@ -3299,6 +3299,15 @@ export function TableView({
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
   const freezePrimary = !useCompactViewport(TOUCH_VIEWPORT_MAX);
+  // The frozen columns are the first in the visible order: the view's
+  // `frozen.columns` of them (D58), the title field alone when it doesn't
+  // say, and never all of them, so something is left to scroll. Empty
+  // tables (no fields) still render a placeholder header. The left pane
+  // gets the frozen columns and the right pane the rest; with none
+  // frozen, the right pane gets all fields and the left pane is unused.
+  const frozenCount = freezePrimary ? Math.min(view.frozen?.columns ?? 1, Math.max(1, fields.length - 1)) : 0;
+  const frozenNames = fields.slice(0, frozenCount);
+  const frozenOn = frozenNames.length > 0;
 
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
@@ -3340,7 +3349,7 @@ export function TableView({
     return most;
   }, [total, sheet?.position]);
   const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
-  const chrome = (freezePrimary ? 3 : 2) + numberWidth;
+  const chrome = (frozenOn ? 3 : 2) + numberWidth;
   // The "+" for a new field is a narrow column of its own at the end of the
   // header: it takes its width from the columns', as the borders do.
   const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
@@ -3352,7 +3361,7 @@ export function TableView({
   // "+", which is a place a column could go, not a column.
   const restRowWidth = () =>
     addFieldW > 0
-      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !primaryName ? numberWidth : 0))
+      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !frozenOn ? numberWidth : 0))
       : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
@@ -3575,18 +3584,12 @@ export function TableView({
   };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
-  // Primary is the title field — first in the visible order. Empty
-  // tables (no fields) still render a placeholder header.
-  // When the primary is frozen, the left pane gets it and the right
-  // pane gets the rest. When not frozen, the right pane gets all
-  // fields and the left pane is unused.
-  const primaryName = freezePrimary ? fields[0] : undefined;
   // Tables are edge to edge, as the markdown library's are: the framed
   // grid rests on the page's margin and scrolls sideways over it to the
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
-  const edgeToEdge = !primaryName;
-  const restNames = freezePrimary ? fields.slice(1) : fields;
+  const edgeToEdge = !frozenOn;
+  const restNames = fields.slice(frozenNames.length);
   // Where each column of the sideways-scrolling part starts, from that
   // part's own start: a scroll comes to rest on one, so no column is left
   // cut in half at the edge with its title out of sight. (Row numbers,
@@ -3903,7 +3906,7 @@ export function TableView({
             onOpenRelation={onOpenRelation}
             lines={linesFor(heightOf(row.id))}
             align={align}
-            autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
+            autoEdit={row.id === focusRowId && name === fields[0]}
             selected={isSelected}
             onSelect={select}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
@@ -4330,7 +4333,7 @@ export function TableView({
       // here, and the page, which the app scrolls, is asked for the rest.
       void measureAnchor(cell).then(async (rect) => {
         if (!rect) return;
-        const pane = sel.name === primaryName ? null : await measureAnchor(paneScroll.ref.current);
+        const pane = frozenNames.includes(sel.name) ? null : await measureAnchor(paneScroll.ref.current);
         if (pane) {
           const margin = 8;
           const dx =
@@ -4420,7 +4423,7 @@ export function TableView({
     rtl,
     editor,
     facts,
-    freezePrimary,
+    frozenCount,
     containerWidth,
     pageReveal,
   ];
@@ -4476,12 +4479,12 @@ export function TableView({
             stacked vertically. The primary stays put while the user pans
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
-        {primaryName && (
+        {frozenOn && (
           <html.div style={[styles.tableFrozenColumn, byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane)]}>
-            {columnLines([primaryName], numberWidth)}
+            {columnLines(frozenNames, numberWidth)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
-              {headerCell(primaryName, 0, 1)}
+              {frozenNames.map((name, idx) => headerCell(name, idx, frozenNames.length))}
             </html.div>
             <RowList
               items={places}
@@ -4515,14 +4518,14 @@ export function TableView({
                       ]}
                     >
                       {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                      {renderBodyCell(row, primaryName, 0, 1)}
+                      {frozenNames.map((name, idx) => renderBodyCell(row, name, idx, frozenNames.length))}
                       {rowLine(row, true)}
                     </html.div>
                   </RowActions>
-                  {sel?.rowId === row.id && sel.name === primaryName && (
+                  {sel?.rowId === row.id && frozenNames.includes(sel.name) && (
                     <html.div style={styles.rowGripAnchor}>
-                      {rowGrip(row, cellStartIn([primaryName], primaryName, !!coords), colWidth(primaryName))}
-                      {columnGrip(primaryName, cellStartIn([primaryName], primaryName, !!coords) + colWidth(primaryName), heightOf(row.id))}
+                      {rowGrip(row, cellStartIn(frozenNames, sel.name, !!coords), colWidth(sel.name))}
+                      {columnGrip(sel.name, cellStartIn(frozenNames, sel.name, !!coords) + colWidth(sel.name), heightOf(row.id))}
                     </html.div>
                   )}
                 </>
@@ -4532,7 +4535,7 @@ export function TableView({
             {showTotals && (
               <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, !quietTotals && styles.frozenEdge, styles.tableRowLast]}>
                 {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
-                {renderTotalCell(primaryName, 0, 1)}
+                {frozenNames.map((name, idx) => renderTotalCell(name, idx, frozenNames.length))}
               </html.div>
             )}
           </html.div>
@@ -4543,9 +4546,9 @@ export function TableView({
         <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
             <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
-              {columnLines(restNames, coords && !primaryName ? numberWidth : 0)}
+              {columnLines(restNames, coords && !frozenOn ? numberWidth : 0)}
               <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
+                {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   headerCell(name, idx, restNames.length),
                 )}
@@ -4568,7 +4571,7 @@ export function TableView({
                       // The frozen pane labels the group; this pane's band
                       // matches its height so the rows stay in line.
                       <html.div style={[styles.tableRow, styles.groupRow, restRowWidth()]}>
-                        {!primaryName && (
+                        {!frozenOn && (
                           <html.span style={styles.groupLabel}>
                             {groupTitle} · {starts.label}
                             <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
@@ -4587,26 +4590,26 @@ export function TableView({
                           tintOf(colorsOf(row).row),
                         ]}
                       >
-                        {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                        {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                         {restNames.map((name, idx) =>
                           renderBodyCell(row, name, idx, restNames.length),
                         )}
-                        {rowLine(row, !primaryName)}
+                        {rowLine(row, !frozenOn)}
                       </html.div>
                     </RowActions>
-                    {sel?.rowId === row.id && sel.name !== primaryName && (
+                    {sel?.rowId === row.id && !frozenNames.includes(sel.name) && (
                       <html.div style={styles.rowGripAnchor}>
-                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName), colWidth(sel.name))}
-                        {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !primaryName) + colWidth(sel.name), heightOf(row.id))}
+                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !frozenOn), colWidth(sel.name))}
+                        {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !frozenOn) + colWidth(sel.name), heightOf(row.id))}
                       </html.div>
                     )}
                   </>
                 ), "rest")}
               />
-              {addRow && newRowBand(!primaryName)}
+              {addRow && newRowBand(!frozenOn)}
               {showTotals && (
                 <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
-                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
+                  {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
                 </html.div>
               )}
