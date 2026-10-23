@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -336,7 +336,9 @@ export function largeTables(from: number = INDEXED_FROM): (tableDir: string) => 
       const viewsPath = join(tableDir, "views.json");
       const views = existsSync(viewsPath) ? (JSON.parse(readFileSync(viewsPath, "utf8")) as View[]) : [];
       // Cells' own formulas (D52) go into the index when each reads only its own row.
-      if (!canBeIndexed({ schema, views, cells: cellsIn(tableDir) })) return false;
+      const metaPath = join(tableDir, "meta.json");
+      const meta = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as ParsedTable["meta"]) : {};
+      if (!canBeIndexed({ schema, views, cells: cellsIn(tableDir), meta })) return false;
     } catch {
       // The reader says what's wrong with it.
       return false;
