@@ -397,3 +397,22 @@ test("a row deleted with a cell's own formula has it in its delete event", () =>
   assert.deepEqual(gone.op === "delete" && gone.cells, { budget: { expr: "1" } });
   assert.equal(s.tables[KEY]!.cells, undefined);
 });
+
+test("a cell's note (D57): asked with the one it has, saved and said, kept when a formula comes and goes", () => {
+  const s0 = start();
+  const asked = run(s0, { type: "askCellNote", rowId: "p1", field: "budget" });
+  assert.equal(asked.asking?.kind, "name");
+  assert.equal(asked.asking?.kind === "name" ? asked.asking.prompt.heading : "", "Note on Budget");
+  const noted = run(asked, { type: "answer", response: "create", text: "Approved in March" });
+  assert.deepEqual(noted.tables[KEY]!.cells, [{ id: "p1", field: "budget", note: "Approved in March" }]);
+  assert.deepEqual(kept(noted).at(-1), { op: "note", row: "p1", field: "budget", to: "Approved in March" });
+  // Asked again, it starts from the note.
+  const again = run(noted, { type: "askCellNote", rowId: "p1", field: "budget" });
+  assert.equal(again.asking?.kind === "name" ? again.asking.prompt.value : "", "Approved in March");
+  // A formula given and taken away: the note stays.
+  const withFormula = run(noted, { type: "setCellFormula", rowId: "p1", field: "budget", expr: "1" }, { type: "setCellFormula", rowId: "p1", field: "budget", expr: null });
+  assert.deepEqual(withFormula.tables[KEY]!.cells, [{ id: "p1", field: "budget", note: "Approved in March" }]);
+  // Emptied: gone.
+  const cleared = run(noted, { type: "askCellNote", rowId: "p1", field: "budget" }, { type: "answer", response: "create", text: "" });
+  assert.equal(cleared.tables[KEY]!.cells, undefined);
+});

@@ -29,6 +29,7 @@ import {
   withBody,
   withCell,
   withCellFormula,
+  withCellNote,
   withChoice,
   withField,
   withFieldMoved,
@@ -71,7 +72,8 @@ export type Pending =
   | { type: "updateView"; key: string; viewId: string; patch: Partial<View> }
   | { type: "reset"; fresh: Library }
   | { type: "create"; making: Making }
-  | { type: "close"; bundle: string };
+  | { type: "close"; bundle: string }
+  | { type: "note"; key: string; rowId: string; field: string };
 
 /** A question waiting for its answer: a Confirm, or a name to type. */
 export type Asking = { kind: "confirm"; confirm: Confirm; on: Pending } | { kind: "name"; prompt: NamePrompt; on: Pending };
@@ -216,6 +218,10 @@ export type AppAction =
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
   /** A cell given its own formula (D52), in the stored form; null takes it away. */
   | { type: "setCellFormula"; rowId: string; field: string; expr: string | null }
+  /** A cell's note (D57); empty takes it away. */
+  | { type: "setCellNote"; rowId: string; field: string; note: string }
+  /** Ask for a cell's note, starting from the one it has (D57). */
+  | { type: "askCellNote"; rowId: string; field: string; note?: string }
   | { type: "addRow"; id: string }
   | { type: "insertRow"; anchor: string; where: "above" | "below"; id: string }
   | { type: "deleteRow"; rowId: string }
@@ -413,7 +419,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
   if (next.editLog.on) {
     const open = next.openPage !== null ? { key: next.active, rowId: next.openPage } : null;
     // (Deleting a row asks first: its answer is the edit.)
-    const edits = ROW_EDITS.has(action.type) || (action.type === "answer" && prev.asking?.on.type === "deleteRow");
+    const edits = ROW_EDITS.has(action.type) || (action.type === "answer" && (prev.asking?.on.type === "deleteRow" || prev.asking?.on.type === "note"));
     let editLog = next.tables === prev.tables ? next.editLog : pruned(next.editLog, next.tables);
     // The examples put back as they shipped: their files are new, and what was edited before is no part of them.
     if (action.type === "answer" && prev.asking?.on.type === "reset" && next.tables !== prev.tables) editLog = { ...NO_EDIT_LOG, on: true };
@@ -431,7 +437,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
  * a file opened or read again, rows moved into the index, the examples
  * reset, a field's change and what it does to the rows.
  */
-const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "setCellFormula", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "setCellFormula", "setCellNote", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -714,6 +720,27 @@ function step(state: AppState, action: AppAction): AppState {
         return queued(state, state.active, { kind: "formula", rowId: action.rowId, field: action.field, expr: action.expr }, { name: cellEditName(state, action.field), back: null });
       }
       return edit(state, cellEditName(state, action.field), (t) => withCellFormula(t, action.rowId, action.field, action.expr));
+    case "askCellNote": {
+      const table = state.tables[state.active];
+      if (!table) return state;
+      // Called as its column is (Edit Budget, Note on Budget).
+      const title = cellEditName(state, action.field).slice("Edit ".length);
+      // Held in memory, the note it has is here; in an index, the view says what it read.
+      const note = table.indexed ? action.note : table.cells?.find((c) => c.id === action.rowId && c.field === action.field)?.note;
+      return {
+        ...state,
+        asking: {
+          kind: "name",
+          prompt: { heading: `Note on ${title}`, action: "Save", placeholder: "A note on this cell", ...(note ? { value: note } : {}) },
+          on: { type: "note", key: state.active, rowId: action.rowId, field: action.field },
+        },
+      };
+    }
+    case "setCellNote":
+      if (state.tables[state.active]?.indexed) {
+        return queued(state, state.active, { kind: "note", rowId: action.rowId, field: action.field, note: action.note }, { name: "Edit Note", back: null });
+      }
+      return edit(state, "Edit Note", (t) => withCellNote(t, action.rowId, action.field, action.note));
     case "addRow":
       if (state.tables[state.active]?.indexed) {
         return queued(state, state.active, { kind: "add", rowId: action.id }, { name: "Add Row", back: { kind: "remove", rowId: action.id } });
@@ -965,6 +992,13 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
   if (action.response === CANCEL.id) return state;
   if (asking.kind === "confirm" && !asking.confirm.responses.some((r) => r.id === action.response)) return state;
   switch (on.type) {
+    case "note": {
+      // Saved in the table it was asked of, wherever the screen is now.
+      if (state.tables[on.key]?.indexed) {
+        return queued(state, on.key, { kind: "note", rowId: on.rowId, field: on.field, note: action.text ?? "" }, { name: "Edit Note", back: null });
+      }
+      return edit(state, "Edit Note", (t) => withCellNote(t, on.rowId, on.field, action.text ?? ""), on.key);
+    }
     case "deleteRow":
       // Its page, if open, goes with it (settle's rule).
       if (state.tables[on.key]?.indexed) {
@@ -1218,6 +1252,7 @@ export type ViewCallbacks = Required<
     ViewProps,
     | "onUpdateRow"
     | "onSetCellFormula"
+    | "onAskCellNote"
     | "onUpdateField"
     | "onAddEnumValue"
     | "onRemoveEnumValue"
@@ -1243,6 +1278,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
   return {
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
     onSetCellFormula: (rowId, field, expr) => dispatch({ type: "setCellFormula", rowId, field, expr }),
+    onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),

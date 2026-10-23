@@ -24,7 +24,7 @@ export interface SetChange {
 }
 
 /** A row's cells' own formulas (D52): each cell's `cells/` line without `id` and `field`, by the field's name. */
-export type RowCells = Record<string, { expr: string; dialect?: string; [key: string]: unknown }>;
+export type RowCells = Record<string, { expr?: string; dialect?: string; note?: string; [key: string]: unknown }>;
 
 /** A row was added: `values` is the row as written, and `cells` its cells' own formulas, when it has any. */
 export interface InsertChange {
@@ -40,6 +40,15 @@ export interface DeleteChange {
   row: string;
   values: Row;
   cells?: RowCells;
+}
+
+/** A cell's note set, changed or removed (D57): `from` and `to` are the note, absent for none. */
+export interface NoteChange {
+  op: "note";
+  row: string;
+  field: string;
+  from?: string;
+  to?: string;
 }
 
 /** A cell's own formula set, changed or removed (D52): `from` and `to` are its `expr`, absent for none. */
@@ -60,7 +69,7 @@ export interface PageChange {
 }
 
 /** What happened, before it is given an id, a time and a writer. */
-export type EditChange = SetChange | InsertChange | DeleteChange | PageChange | FormulaChange;
+export type EditChange = SetChange | InsertChange | DeleteChange | PageChange | FormulaChange | NoteChange;
 
 /** An event as `history.ndjson` holds it. */
 export type EditEvent = EditChange & {
@@ -178,6 +187,7 @@ function readable(value: unknown): value is EditEvent {
     case "page":
       return textOrAbsent(value.from) && textOrAbsent(value.to);
     case "formula":
+    case "note":
       return typeof value.field === "string" && textOrAbsent(value.from) && textOrAbsent(value.to);
     default:
       return false;

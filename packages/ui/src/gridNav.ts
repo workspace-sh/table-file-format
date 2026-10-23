@@ -35,6 +35,8 @@ export type GridAction =
   | { kind: "select"; at: GridPlace }
   /** Open the selected cell: its editor (with `text` typed over it), its picker, or its formula. */
   | { kind: "open"; text?: string }
+  /** Edit the selected cell's note (D57): Shift+F2, as a spreadsheet does. */
+  | { kind: "note" }
   /** Flip the selected checkbox. */
   | { kind: "toggle" }
   /** Empty the selected cell. */
@@ -102,8 +104,10 @@ export function gridKey(at: GridPlace | null, rows: number, cols: number, k: Gri
       const next = tabbed(at, !!k.shift, rows, cols);
       return next ? { kind: "select", at: next } : { kind: "leave" };
     }
-    case "Enter":
     case "F2":
+      if (k.shift) return { kind: "note" };
+    // falls through
+    case "Enter":
       if (cell.boolean) return cell.editable ? { kind: "toggle" } : null;
       return cell.editable || cell.computed ? { kind: "open" } : null;
     case "Escape":

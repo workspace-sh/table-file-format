@@ -532,7 +532,7 @@ function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (r
 
 /** Ask for a name, worded by table-app's namePrompt; what's typed goes to `onName` as it is. */
 function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (typed: string) => void; onClose: () => void }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(prompt.value ?? "");
   return (
     <AdwAlertDialog
       heading={prompt.heading}
@@ -547,7 +547,7 @@ function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (
         onClose();
       }}
     >
-      <GtkEntry placeholderText={prompt.placeholder} activatesDefault onChanged={(e) => setName(e.getText())} />
+      <GtkEntry text={prompt.value ?? ""} placeholderText={prompt.placeholder} activatesDefault onChanged={(e) => setName(e.getText())} />
     </AdwAlertDialog>
   );
 }

@@ -3,7 +3,7 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
-import { compileFormula, enumOptions, OWN_FORMULAS, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
+import { CELL_NOTES, compileFormula, enumOptions, OWN_FORMULAS, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { relationLabel } from "./display";
@@ -105,6 +105,13 @@ export function ownFormula(cells: readonly CellFormula[] | undefined, rowId: str
   const carried = row?.[OWN_FORMULAS] as Record<string, string> | undefined;
   if (carried) return carried[field];
   return cells?.find((c) => c.id === rowId && c.field === field)?.expr;
+}
+
+/** A cell's note (D57): the one a row read out of an index carries (CELL_NOTES), else its line's among a table's `cells`. */
+export function ownNote(cells: readonly CellFormula[] | undefined, rowId: string, field: string, row?: Record<string, unknown>): string | undefined {
+  const carried = row?.[CELL_NOTES] as Record<string, string> | undefined;
+  if (carried) return carried[field];
+  return cells?.find((c) => c.id === rowId && c.field === field && c.note !== undefined)?.note;
 }
 
 /** What a cell with its own formula shows when it's edited: `=` and the formula, in the reader's syntax. */

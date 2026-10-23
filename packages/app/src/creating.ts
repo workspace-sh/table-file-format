@@ -76,6 +76,8 @@ export interface NamePrompt {
   action: string;
   /** The name field's placeholder. */
   placeholder: string;
+  /** What's in the field to start with: the note being edited (D57). Absent: empty. */
+  value?: string;
 }
 
 export function namePrompt(making: Making, bundles: Record<string, BundleMeta>): NamePrompt {

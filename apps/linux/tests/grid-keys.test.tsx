@@ -56,6 +56,19 @@ function focusedText(w: Gtk.Widget): string {
 }
 
 describe("the keyboard in a table on Linux", () => {
+  it("Shift+F2 edits a cell's note: saved to cells/, and asked again from what it says (D57)", async () => {
+    await openTasks();
+    const first = await cellOf("Land .table extension");
+    first.grabFocus();
+    await userEvent.keyboard(first, "{Shift>}{F2}{/Shift}");
+    const entry = (await screen.findByPlaceholderText("A note on this cell")) as Gtk.Entry;
+    await userEvent.type(entry, "Shipped in 0.3");
+    await userEvent.click(await screen.findByText("Save"));
+    await waitFor(async () => expect((await tasksOnDisk()).cells).toEqual([{ id: "t1", field: "title", note: "Shipped in 0.3" }]));
+    // The cell says so on hover.
+    await waitFor(async () => expect((await cellOf("Land .table extension")).getTooltipText()).toBe("Shipped in 0.3"));
+  });
+
   it("arrows move between cells", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");

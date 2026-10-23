@@ -33,7 +33,7 @@ Apple's only. What it lacks is listed in #429.
 | Export a CSV | No | No | No | No | #574 |
 | Import a CSV into a table | No | No | No | No | #519 |
 | Lines of a table's rows files that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569), large tables too: one with such a line is held in memory instead of its index, and says so (#567). Said on opening a small table by the Mac and Linux (#574). |
-| A cell's note (`cells/` `note`, D57) | No | No | No | No | Drafted; #658 |
+| A cell's note (`cells/` `note`, D57) | Yes | Yes | Yes | Yes | Shift+F2 or the row's Cell Note… edits it; a mark in the cell's corner, the note on hover. Seen on Linux and the web; iOS and the Mac share the web's code. |
 | CSV without a header row (D59) | Yes | Yes | Yes | Yes | Told by itself: a first line of numbers, dates or yes/no where the column below has them is data, and the fields are A, B, C…. |
 | A row twice after a git merge (D54) | Yes | Yes | Yes | Yes | The first copy is the row, a later one that differs is kept and said. A large table with one is held in memory instead of its index until it's saved. |
 | Warn about a newer `formatVersion` | No | No | No | No | #574 |

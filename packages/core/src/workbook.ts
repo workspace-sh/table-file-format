@@ -517,7 +517,7 @@ function build(name: string, schema: TableSchema, rows: Row[], views: View[], ce
           mine.set(field, null);
           continue;
         }
-        const r = parseExpr(c.expr);
+        const r = parseExpr(c.expr!);
         if (!r.ok) diagnostics.push({ rowIndex: i, rowId: id, field, message: `formula doesn't parse (${r.message} at ${r.at}): ${c.expr}` });
         mine.set(field, r.ok ? r.expr : null);
       }

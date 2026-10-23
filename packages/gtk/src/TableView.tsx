@@ -80,6 +80,7 @@ import {
   type GridPlace,
   useDisplaySettings,
   ownFormula,
+  ownNote,
 } from "@workspace.sh/table-ui/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -154,11 +155,14 @@ function Cell({
   classes = [],
   cellRef,
   onFocused,
+  tooltip,
 }: {
   width: number;
   height: number;
   children: ReactNode;
   classes?: string[];
+  /** Shown on hover: the cell's note (D57). */
+  tooltip?: string;
   /** A body cell: it takes the keyboard's focus, and says when it has it. */
   cellRef?: (widget: Gtk.Box | null) => void;
   onFocused?: (focused: boolean) => void;
@@ -171,6 +175,7 @@ function Cell({
       heightRequest={height}
       hexpand={false}
       cssClasses={[styles.cell, styles.columnRule, ...classes]}
+      tooltipText={tooltip}
       controllers={onFocused ? <GtkEventControllerFocus onEnter={() => onFocused(true)} onLeave={() => onFocused(false)} /> : undefined}
     >
       {children}
@@ -185,6 +190,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "add-page": "row.open",
   "insert-above": "row.above",
   "insert-below": "row.below",
+  "cell-note": "row.note",
   "fit-row": "row.fit",
   "reset-row-height": "row.reset-height",
   delete: "row.delete",
@@ -197,7 +203,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-page", "add-page"]), section(["insert-above", "insert-below"]), section(["fit-row", "reset-row-height"]), section(["delete"])]
+  return [section(["open-page", "add-page", "cell-note"]), section(["insert-above", "insert-below"]), section(["fit-row", "reset-row-height"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
@@ -283,6 +289,7 @@ function BodyRow({
   onInsertRow,
   onFitRow,
   onResetRowHeight,
+  onCellNote,
   menuRef,
   frozen,
   tint = [],
@@ -299,6 +306,8 @@ function BodyRow({
   onFitRow?: (rowId: string) => void;
   /** Only for a row that was resized: back to the view's height. */
   onResetRowHeight?: (rowId: string) => void;
+  /** The note of this row's selected cell (D57). */
+  onCellNote?: () => void;
   menuRef?: (button: Gtk.MenuButton | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
@@ -326,6 +335,7 @@ function BodyRow({
               <GSimpleAction name="below" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "below")} />
               <GSimpleAction name="fit" enabled={!!onFitRow} onActivate={() => onFitRow?.(rowId)} />
               <GSimpleAction name="reset-height" enabled={!!onResetRowHeight} onActivate={() => onResetRowHeight?.(rowId)} />
+              <GSimpleAction name="note" enabled={!!onCellNote} onActivate={() => onCellNote?.()} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
             </>
           }
@@ -348,7 +358,7 @@ function BodyRow({
             <GtkPopoverMenu
               flags={Gtk.PopoverMenuFlags.NESTED}
               hasArrow={false}
-              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow }))} />}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}) }))} />}
             />
           }
         />
@@ -386,6 +396,7 @@ export function TableView({
   onUpdateRow,
   cells: cellFormulas,
   onSetCellFormula,
+  onAskCellNote,
   onUpdateView,
   onUpdateField,
   onAddEnumValue,
@@ -1261,6 +1272,9 @@ export function TableView({
       case "clear":
         onUpdateRow!(rowId, name, undefined);
         break;
+      case "note":
+        onAskCellNote?.(rowId, name, ownNote(cellFormulas, rowId, name, row));
+        break;
       case "toggle":
         onUpdateRow!(rowId, name, !(row?.[name] === true));
         break;
@@ -1332,7 +1346,9 @@ export function TableView({
                 ...(inputCells.has(`${row.id}\u0000${name}`) ? [styles.formulaInput] : []),
                 ...(focusedCell === cellKey(row.id, name) ? [styles.selectedCell] : []),
                 ...tintClass(colors.cells[name], dark),
+                ...(ownNote(cellFormulas, row.id, name, row) !== undefined ? [styles.noted] : []),
               ]}
+              tooltip={ownNote(cellFormulas, row.id, name, row)}
               cellRef={(widget) => {
                 if (widget) cells.current.set(cellKey(row.id, name), widget);
                 else cells.current.delete(cellKey(row.id, name));
@@ -1429,6 +1445,9 @@ export function TableView({
         onInsertRow={onInsertRow}
         onFitRow={onUpdateView ? fitRow : undefined}
         onResetRowHeight={onUpdateView && view.rowHeights?.[row.id] !== undefined ? resetRowHeight : undefined}
+        {...(onAskCellNote && focusedCell?.startsWith(`${row.id}\u0000`)
+          ? { onCellNote: () => onAskCellNote(row.id, focusedCell.slice(row.id.length + 1), ownNote(cellFormulas, row.id, focusedCell.slice(row.id.length + 1), row)) }
+          : {})}
         menuRef={(button) => {
           if (button) rowMenus.current.set(row.id, button);
           else rowMenus.current.delete(row.id);
