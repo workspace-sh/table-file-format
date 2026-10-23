@@ -1254,6 +1254,7 @@ interface ViewCallbacks {
   allRows: Row[];
   cells?: import("@workspace.sh/table-core").CellFormula[];
   onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
   onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
@@ -1332,6 +1333,7 @@ function renderView(
           onUpdateRow={cb.onUpdateRow}
           cells={cb.cells}
           onSetCellFormula={cb.onSetCellFormula}
+          onSetIteration={cb.onSetIteration}
           onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}

@@ -7,6 +7,7 @@ import {
   compileFormula,
   computeRows,
   coordinateOf,
+  FormulaError,
   formulaRefs,
   formulaTypeIfKnown,
   parseExpr,
@@ -74,7 +75,25 @@ export interface FormulaExplained {
   save?: Partial<Field>;
   /** For this row only (`rowOnly`): the cell's own formula saving stores, in the stored form (D52). */
   saveRow?: string;
+  /**
+   * Loops (D60): "stuck", this cell is #REF! from a loop that repeating the
+   * calculation would work out; "repeating", the table already repeats its
+   * loops, whatever this cell is.
+   */
+  loops?: "stuck" | "repeating";
 }
+
+/** How a table repeats its loops once asked (D60): a spreadsheet's usual, 100 passes, until nothing moves by more than 0.001. */
+export const LOOP_ITERATION = { max: 100, change: 0.001 };
+
+/** What the formula panel says of a loop (D60). */
+export function loopNote(loops: "stuck" | "repeating"): string {
+  return loops === "stuck"
+    ? "This formula reads itself, through the formulas it reads, so it has no answer. The table can repeat the calculation until it settles."
+    : "This table works out its loops by repeating the calculation until it settles.";
+}
+
+const isRef = (value: unknown) => value instanceof FormulaError && value.code === "#REF!";
 
 /**
  * Explain the formula in `field` for `row` (as displayed, computed values
@@ -149,6 +168,15 @@ export function explainFormula(options: {
     };
   }
 
+  // A loop: worked out already, or #REF! now and not when repeated.
+  const iterating = computeOptions?.iteration ?? (computeOptions?.self !== undefined ? computeOptions.tables?.[computeOptions.self]?.meta?.iteration : undefined);
+  let loops: FormulaExplained["loops"];
+  if (iterating) loops = "repeating";
+  else if (isRef(row[field.name])) {
+    const repeated = computeRows({ fields }, tableRows, { ...computeOptions, iteration: LOOP_ITERATION }).rows.find((r) => r.id === rowId)?.[field.name];
+    if (!isRef(repeated)) loops = "stuck";
+  }
+
   return {
     compiled,
     status: compiled ? formulaStatus(compiled, draft) : null,
@@ -158,6 +186,7 @@ export function explainFormula(options: {
     ...(preview ? { preview } : {}),
     ...(save ? { save } : {}),
     ...(saveRow ? { saveRow } : {}),
+    ...(loops ? { loops } : {}),
   };
 }
 

@@ -403,6 +403,7 @@ export function TableView({
   onUpdateRow,
   cells: cellFormulas,
   onSetCellFormula,
+  onSetIteration,
   onAskCellNote,
   onUpdateView,
   onUpdateField,
@@ -1641,6 +1642,8 @@ export function TableView({
             onSave={onUpdateField ? (patch) => onUpdateField(openFormula.name, patch) : undefined}
             {...(ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow) !== undefined ? { own: ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow)! } : {})}
             onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(openFormula.rowId, openFormula.name, expr) : undefined}
+            // Rows from an index are worked out a row at a time: a table that repeats its loops is held whole (D60).
+            onSetIteration={given ? undefined : onSetIteration}
             onClose={() => setOpenFormula(null)}
             grid={grid ? { ...grid, here: openFormula.rowId } : undefined}
             allRows={allRows}

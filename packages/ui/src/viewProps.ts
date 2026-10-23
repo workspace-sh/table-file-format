@@ -38,6 +38,8 @@ export interface ViewProps {
   cells?: CellFormula[];
   /** Give a cell its own formula, in the stored form, or take it away (null). Absent: `=` is typed as text. */
   onSetCellFormula?: (rowId: string, fieldName: string, expr: string | null) => void;
+  /** Work the table's loops out by repeating (D60), or not (null). Absent: the formula panel doesn't offer it. */
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
   /** Ask for a cell's note, starting from `note`, the one it has (D57). Absent: notes can't be edited. */
   onAskCellNote?: (rowId: string, fieldName: string, note?: string) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;

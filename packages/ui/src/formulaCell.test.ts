@@ -100,3 +100,24 @@ test("for this row only, a formula is compared with and saved as the cell's own,
   // For every row, as before.
   assert.deepEqual(explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows }).save?.computed, { expr: "(* a 10)", dialect: "table-expr-v1" });
 });
+
+test("a loop (D60): stuck when repeating would work it out, repeating once the table does, and nothing for another #REF!", async () => {
+  const { LOOP_ITERATION } = await import("./formulaCell");
+  const c = (expr: string) => ({ expr, dialect: "table-expr-v1" });
+  const fields = [
+    { name: "deposit", type: "number" as const },
+    { name: "interest", type: "number" as const, computed: c("(* total 0.1)") },
+    { name: "total", type: "number" as const, computed: c("(+ deposit interest)") },
+    { name: "self", type: "number" as const, computed: c("(+ self 1)") },
+  ];
+  const rows = [{ id: "a", deposit: 900 }];
+  const shownRow = computeRows({ fields }, rows).rows[0]!;
+  const explain = (name: string, meta?: { iteration: { max: number; change: number } }) =>
+    explainFormula({ field: fields.find((f) => f.name === name)!, row: shownRow, fields, draft: "", editable: false, allRows: rows, computeOptions: { tables: { t: { path: "t", schema: { fields }, rows, views: [], meta: meta ?? {} } }, self: "t" } });
+  assert.equal(explain("total").loops, "stuck");
+  assert.equal(explain("total", { iteration: LOOP_ITERATION }).loops, "repeating");
+  // Counting itself up never settles: repeating gives a number, so it's offered too.
+  assert.equal(explain("self").loops, "stuck");
+  // Not a loop: no offer.
+  assert.equal(explain("deposit").loops, undefined);
+});
