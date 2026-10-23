@@ -28,6 +28,8 @@ export interface ViewCallbacks {
   cells?: import("@workspace.sh/table-core").CellFormula[];
   onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
   onSetIteration?: (iteration: { max: number; change: number } | null) => void;
+  onAskMerge?: (rowId: string, field: string) => void;
+  onUnmerge?: (rowId: string, field: string) => void;
   onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
@@ -83,6 +85,8 @@ export function renderView(
           cells={cb.cells}
           onSetCellFormula={cb.onSetCellFormula}
           onSetIteration={cb.onSetIteration}
+          onAskMerge={cb.onAskMerge}
+          onUnmerge={cb.onUnmerge}
           onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}

@@ -6,8 +6,8 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
-import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
+import { coordinateOf, isSheet, mergeOfRange, mergeOver, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
+import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
@@ -51,7 +51,7 @@ import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type 
 import { leaving } from "./leaving.ts";
 import type { Library } from "./library.ts";
 import { afterReset, resetPrompt } from "./resetting.ts";
-import { showView, type ShownView } from "./showView.ts";
+import { sheetShown, showView, type ShownView } from "./showView.ts";
 import { flattenSidebar, sidebarTree, type SidebarBundle, type SidebarEntry } from "./sidebar.ts";
 import { withFileToggled, withFileUnfolded, type SidebarPrefs } from "./sidebarPrefs.ts";
 import { firstTableKey, firstViews, NO_TABLE } from "./starting.ts";
@@ -74,7 +74,8 @@ export type Pending =
   | { type: "reset"; fresh: Library }
   | { type: "create"; making: Making }
   | { type: "close"; bundle: string }
-  | { type: "note"; key: string; rowId: string; field: string };
+  | { type: "note"; key: string; rowId: string; field: string }
+  | { type: "merge"; key: string; viewId: string };
 
 /** A question waiting for its answer: a Confirm, or a name to type. */
 export type Asking = { kind: "confirm"; confirm: Confirm; on: Pending } | { kind: "name"; prompt: NamePrompt; on: Pending };
@@ -223,6 +224,10 @@ export type AppAction =
   | { type: "setCellNote"; rowId: string; field: string; note: string }
   /** The table's loops worked out by repeating (D60); null, a loop is #REF!. */
   | { type: "setIteration"; iteration: { max: number; change: number } | null }
+  /** Ask which block of a Sheet view's cells to merge, starting from a cell (D58). */
+  | { type: "askMerge"; rowId: string; field: string }
+  /** Show the merged block over a cell as its cells again (D58). */
+  | { type: "unmerge"; rowId: string; field: string }
   /** Ask for a cell's note, starting from the one it has (D57). */
   | { type: "askCellNote"; rowId: string; field: string; note?: string }
   | { type: "addRow"; id: string }
@@ -658,6 +663,13 @@ function moved(state: AppState, to: { history: History; address: string; place?:
   return { ...follow(state, target), history: to.history, restoring: { place: to.place ?? {}, n: (state.restoring?.n ?? 0) + 1 } };
 }
 
+/** A Sheet view's grid as saved (D41): its columns and its rows, in order. Undefined for any other view. */
+function sheetGridOf(state: AppState, key: string, view: View): { columns: string[]; rows: string[] } | undefined {
+  const table = state.tables[key];
+  const order = table && sheetShown(state.tables, key, view)?.order;
+  return order ? { columns: visibleFields(view, table.schema), rows: order } : undefined;
+}
+
 function currentView(state: AppState): View | undefined {
   const id = viewIdOf(state, state.active);
   return state.tables[state.active]?.views.find((v) => v.id === id);
@@ -727,6 +739,29 @@ function step(state: AppState, action: AppAction): AppState {
       // An index works a row out at a time: a table that iterates is held in memory (canBeIndexed), so one in an index can't.
       if (state.tables[state.active]?.indexed) return state;
       return edit(state, action.iteration ? "Repeat Loops" : "Stop Repeating Loops", (t) => withIteration(t, action.iteration));
+    case "askMerge": {
+      const view = currentView(state);
+      const grid = view && sheetGridOf(state, state.active, view);
+      if (!view || !grid) return state;
+      const at = coordinateOf(action.field, action.rowId, grid);
+      return {
+        ...state,
+        asking: {
+          kind: "name",
+          prompt: { heading: "Merge Cells", action: "Merge", placeholder: "B2:C4", ...(at ? { value: `${at}:` } : {}) },
+          on: { type: "merge", key: state.active, viewId: view.id },
+        },
+      };
+    }
+    case "unmerge": {
+      const view = currentView(state);
+      const grid = view && sheetGridOf(state, state.active, view);
+      if (!view || !grid) return state;
+      const at = mergeOver(view, action.field, action.rowId, grid.columns, grid.rows);
+      if (at === -1) return state;
+      const merged = view.merged!.filter((_, i) => i !== at);
+      return edit(state, "Unmerge Cells", (t) => withViewPatch(t, view.id, { merged: merged.length > 0 ? merged : undefined }));
+    }
     case "askCellNote": {
       const table = state.tables[state.active];
       if (!table) return state;
@@ -999,6 +1034,14 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
   if (action.response === CANCEL.id) return state;
   if (asking.kind === "confirm" && !asking.confirm.responses.some((r) => r.id === action.response)) return state;
   switch (on.type) {
+    case "merge": {
+      const view = state.tables[on.key]?.views.find((v) => v.id === on.viewId);
+      const grid = view && sheetGridOf(state, on.key, view);
+      if (!view || !grid) return state;
+      const merge = mergeOfRange(action.text ?? "", grid.columns, grid.rows);
+      if (!merge) return { ...state, telling: { heading: `“${(action.text ?? "").trim()}” isn't a block of cells`, body: "Type two of its corners, as B2:C4." } };
+      return edit(state, "Merge Cells", (t) => withViewPatch(t, view.id, { merged: withMerge(view, merge, grid.columns, grid.rows) }), on.key);
+    }
     case "note": {
       // Saved in the table it was asked of, wherever the screen is now.
       if (state.tables[on.key]?.indexed) {
@@ -1260,6 +1303,8 @@ export type ViewCallbacks = Required<
     | "onUpdateRow"
     | "onSetCellFormula"
     | "onSetIteration"
+    | "onAskMerge"
+    | "onUnmerge"
     | "onAskCellNote"
     | "onUpdateField"
     | "onAddEnumValue"
@@ -1287,6 +1332,8 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
     onSetCellFormula: (rowId, field, expr) => dispatch({ type: "setCellFormula", rowId, field, expr }),
     onSetIteration: (iteration) => dispatch({ type: "setIteration", iteration }),
+    onAskMerge: (rowId, field) => dispatch({ type: "askMerge", rowId, field }),
+    onUnmerge: (rowId, field) => dispatch({ type: "unmerge", rowId, field }),
     onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
