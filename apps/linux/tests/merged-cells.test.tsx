@@ -71,6 +71,32 @@ describe("merged cells on Linux", () => {
     });
   });
 
+  it("Merge Cells… from Rent's January asks for the block from C1, merges C1:D2, and Unmerge Cells shows the cells again", async () => {
+    const root = await openSheet([]);
+    const views = () => JSON.parse(readFileSync(join(budget, "views.json"), "utf8")) as { id: string; merged?: unknown }[];
+    const january = () => {
+      let cell: Gtk.Widget | null = screen.queryAllByText("£1,450.00")[0] as Gtk.Widget;
+      while (cell && !cell.getFocusable()) cell = cell.getParent();
+      cell!.grabFocus();
+    };
+    const rowMenu = async () => (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Row Actions" }))[0]!;
+    await screen.findAllByText("£1,450.00");
+    january();
+    (await rowMenu()).activateAction("row.merge", null);
+    const entry = (await screen.findByPlaceholderText("B2:C4")) as Gtk.Entry;
+    expect(entry.getText()).toBe("C1:");
+    entry.setPosition(-1);
+    await userEvent.type(entry, "D2");
+    await userEvent.click(await screen.findByText("Merge"));
+    await waitFor(() => expect(views().find((v) => v.id === "sheet")?.merged).toEqual([{ from: { field: "jan", row: "rent" }, to: { field: "feb", row: "energy" } }]));
+    await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(1));
+    // From the block: its top-left cell is selected, and the menu offers to take it apart.
+    await userEvent.click(all(root, "merged-cells")[0]!);
+    (await rowMenu()).activateAction("row.unmerge", null);
+    await waitFor(() => expect(views().find((v) => v.id === "sheet")?.merged).toBeUndefined());
+    await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(0));
+  });
+
   it("a block that isn't one (a single cell, a corner that isn't there, outside a Sheet view) isn't drawn", async () => {
     const root = await openSheet([
       { from: { field: "jan", row: "rent" }, to: { field: "jan", row: "rent" } },
