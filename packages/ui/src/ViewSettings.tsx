@@ -41,6 +41,9 @@ import {
   frozenColumnsOf,
   frozenOptions,
   frozenPatch,
+  frozenRowsOf,
+  frozenRowOptions,
+  frozenRowsPatch,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -143,14 +146,24 @@ export function ViewSettings({
           </FieldRow>
         )}
         {view.layout === "table" && (
-          <FieldRow label="Freeze">
-            <Select
-              value={String(frozenColumnsOf(view))}
-              options={frozenOptions(shown.size)}
-              onChange={(n) => onChange(frozenPatch(view, Number(n)))}
-              style={styles.input}
-            />
-          </FieldRow>
+          <>
+            <FieldRow label="Freeze columns">
+              <Select
+                value={String(frozenColumnsOf(view))}
+                options={frozenOptions(shown.size)}
+                onChange={(n) => onChange(frozenPatch(view, Number(n)))}
+                style={styles.input}
+              />
+            </FieldRow>
+            <FieldRow label="Freeze rows">
+              <Select
+                value={String(frozenRowsOf(view))}
+                options={frozenRowOptions()}
+                onChange={(n) => onChange(frozenRowsPatch(view, Number(n)))}
+                style={styles.input}
+              />
+            </FieldRow>
+          </>
         )}
         {(view.layout === "table" || view.layout === "list") && (
           <FieldRow label="Group by">

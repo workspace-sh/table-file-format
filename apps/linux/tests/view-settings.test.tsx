@@ -157,10 +157,10 @@ describe("view settings on Linux", () => {
     expect(screen.queryByText("Shown in a row under the table.")).toBeNull();
   });
 
-  it("Freeze: the first column by default, and two chosen are written to the view (D58)", async () => {
+  it("Freeze Columns: the first column by default, and two chosen are written to the view (D58)", async () => {
     await openSettings();
     const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
-    const freeze = rows.find((r) => r.getTitle() === "Freeze")!;
+    const freeze = rows.find((r) => r.getTitle() === "Freeze Columns")!;
     expect((freeze.getSelectedItem() as Gtk.StringObject).getString()).toBe("First Column");
     freeze.setSelected(2);
     await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.frozen).toEqual({ columns: 2 }));
@@ -168,11 +168,22 @@ describe("view settings on Linux", () => {
     await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.frozen).toBeUndefined());
   });
 
+  it("Freeze Rows: the header only by default, and two chosen are written to the view (D58)", async () => {
+    await openSettings();
+    const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
+    const freeze = rows.find((r) => r.getTitle() === "Freeze Rows")!;
+    expect((freeze.getSelectedItem() as Gtk.StringObject).getString()).toBe("Header Only");
+    freeze.setSelected(2);
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.frozen).toEqual({ rows: 2 }));
+    freeze.setSelected(0);
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.frozen).toBeUndefined());
+  });
+
   it("Totals are offered for the columns the view shows", async () => {
     await openSettings();
     const totalRows = async () => {
       const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
-      return rows.filter((r) => (r.getModel() as Gtk.StringList).getString(0) === "None" && r.getTitle() !== "Group By" && r.getTitle() !== "Freeze").map((r) => r.getTitle());
+      return rows.filter((r) => (r.getModel() as Gtk.StringList).getString(0) === "None" && r.getTitle() !== "Group By" && !r.getTitle().startsWith("Freeze")).map((r) => r.getTitle());
     };
     const all = (await tasksOnDisk()).schema.fields.map((f) => f.name);
     await waitFor(async () => expect(await totalRows()).toEqual(all));
