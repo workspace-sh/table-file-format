@@ -9,7 +9,7 @@
 // apps/linux/src/useIndexedTables.ts. What differs is where a host comes
 // from and what it's made from.)
 
-import { bundleOf, remoteEdits, remoteViewRows, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
+import { bundleOf, heldText, remoteEdits, remoteViewRows, tableNameOf, withHeld, type HeldRows, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openWebDatabase, type WebDatabase } from "./sqlite/client";
@@ -126,7 +126,24 @@ export function useIndexedTables(input: {
       const schema = table.schema;
       void hostOf(bundleOf(key))
         .then(async (host) => ready(key, schema, await host.ensure(tableNameOf(key), schema, (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } }))), host))
-        .catch(() => {
+        .catch(async (error: unknown) => {
+          // No index to be had (a line of its rows that couldn't be read, two rows of one id, no space): while
+          // the archive it came in is still held, the table is read from it into memory instead, with what
+          // couldn't be read kept, and says so (#567).
+          let held: HeldRows | null = null;
+          try {
+            held = await (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));
+          } catch {
+            held = null;
+          }
+          if (held) {
+            const { indexed: _indexed, ...rest } = table;
+            asked.current.delete(key);
+            setMade(({ [key]: _was, ...others }) => others);
+            latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) } });
+            latest.current.tell("Opened without its index", heldText(tableNameOf(key), error, held));
+            return;
+          }
           setMade((was) => ({ ...was, [key]: "lost" }));
           // Not gone if another tab holds the storage: it's there, and this tab can't reach it.
           void hostOf(bundleOf(key))

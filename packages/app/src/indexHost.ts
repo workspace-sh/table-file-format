@@ -44,7 +44,7 @@ import {
   type TableSchema,
 } from "@workspace.sh/table-core";
 import { joinPath, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, rowsInChunks } from "./indexed.ts";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, readHeldRows, type HeldRows } from "./indexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 import { rowFilePlacer, rowFileStarts, setRowFileStarts, type RowFileStart } from "./rowFilesIndexed.ts";
 import { openArchive, type OpenedBundle } from "./tableFiles.ts";
@@ -119,7 +119,7 @@ export interface IndexDatabase {
    * can be made of it. Null when its archive is no longer held (after a
    * relaunch); throws when the archive is damaged.
    */
-  heldRows(name: string): Row[] | null;
+  heldRows(name: string): HeldRows | null;
   close(): Promise<void>;
 }
 
@@ -590,7 +590,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       heldRows: (name) => {
         const entry = waiting.get(`${bundle}/${name}`);
         if (!entry) return null;
-        const rows = [...rowsInChunks(entry.rows.chunks())];
+        const rows = readHeldRows(entry.rows, FIRST_ROWS_FILE);
         waiting.delete(`${bundle}/${name}`);
         return rows;
       },

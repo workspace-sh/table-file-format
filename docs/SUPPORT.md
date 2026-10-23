@@ -32,7 +32,7 @@ Apple's only. What it lacks is listed in #429.
 | Open a CSV as a new table | Yes | Yes | Yes | Yes | |
 | Export a CSV | No | No | No | No | #574 |
 | Import a CSV into a table | No | No | No | No | #519 |
-| Lines of a table's rows files that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569). Said on opening by the Mac and Linux (#574). Large tables from a zip: #567. |
+| Lines of a table's rows files that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569), large tables too: one with such a line is held in memory instead of its index, and says so (#567). Said on opening a small table by the Mac and Linux (#574). |
 | A row twice after a git merge (D54) | Yes | Yes | Yes | Yes | The first copy is the row, a later one that differs is kept and said. A large table with one is held in memory instead of its index until it's saved. |
 | Warn about a newer `formatVersion` | No | No | No | No | #574 |
 | Edit history (`history.ndjson`) | Partly | Partly | Partly | Yes | Web, iOS and the Mac keep it in the app's own storage except for folders and large tables. |
