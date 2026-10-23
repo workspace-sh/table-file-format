@@ -28,6 +28,9 @@ import {
   frozenColumnsOf,
   frozenOptions,
   frozenPatch,
+  frozenRowsOf,
+  frozenRowOptions,
+  frozenRowsPatch,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -248,13 +251,22 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
               />
             ) : null}
             {view.layout === "table" ? (
-              <Choice
-                title="Freeze"
-                subtitle="Columns that stay put while the rest scroll"
-                options={frozenOptions(shown.size).map((o) => ({ ...o, label: o.label.replace(/column/, "Column") }))}
-                value={String(frozenColumnsOf(view))}
-                onChange={(n) => n !== undefined && onChange(frozenPatch(view, Number(n)))}
-              />
+              <>
+                <Choice
+                  title="Freeze Columns"
+                  subtitle="Columns that stay put while the rest scroll across"
+                  options={frozenOptions(shown.size).map((o) => ({ ...o, label: o.label.replace(/column/, "Column") }))}
+                  value={String(frozenColumnsOf(view))}
+                  onChange={(n) => n !== undefined && onChange(frozenPatch(view, Number(n)))}
+                />
+                <Choice
+                  title="Freeze Rows"
+                  subtitle="Rows that stay at the top with the header as the rest scroll down"
+                  options={frozenRowOptions().map((o) => ({ ...o, label: o.label.replace(/\b(only|row|rows)\b/g, (w) => w[0]!.toUpperCase() + w.slice(1)) }))}
+                  value={String(frozenRowsOf(view))}
+                  onChange={(n) => n !== undefined && onChange(frozenRowsPatch(view, Number(n)))}
+                />
+              </>
             ) : null}
             {view.layout === "table" || view.layout === "list" ? (
               <Choice

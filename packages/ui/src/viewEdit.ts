@@ -303,6 +303,25 @@ export function frozenPatch(view: Pick<View, "frozen">, columns: number): Partia
   return { frozen: Object.keys(next).length > 0 ? next : undefined };
 }
 
+/** How many of a table view's first rows stay at the top with its header (`frozen.rows`, D58): none when it doesn't say. */
+export function frozenRowsOf(view: Pick<View, "frozen">): number {
+  return view.frozen?.rows ?? 0;
+}
+
+/** The choices for a view's frozen rows: the header alone, or it and the first row, two… up to five. */
+export function frozenRowOptions(): { value: string; label: string }[] {
+  const options = [{ value: "0", label: "Header only" }, { value: "1", label: "First row" }];
+  for (let n = 2; n <= MOST_FROZEN; n++) options.push({ value: String(n), label: `First ${n} rows` });
+  return options;
+}
+
+/** A view frozen at its first `rows`: none is said by saying nothing, and frozen columns are kept. */
+export function frozenRowsPatch(view: Pick<View, "frozen">, rows: number): Partial<View> {
+  const { rows: _, ...rest } = view.frozen ?? {};
+  const next = rows === 0 ? rest : { ...rest, rows };
+  return { frozen: Object.keys(next).length > 0 ? next : undefined };
+}
+
 /** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */
 export interface ViewSettingsProps {
   view: View;
