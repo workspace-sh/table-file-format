@@ -539,6 +539,18 @@ test("a large table split across rows files is handed over as one, in file order
   }
 });
 
+test("a table with two rows of one id isn't indexed: held in memory, where the later is kept (D54)", async () => {
+  const s = scratch();
+  try {
+    appendFileSync(join(s.tasks, "rows", "0001.ndjson"), '{"id":"t1","title":"Edited on another branch"}\n');
+    const host = openIndexHost(s.bundle);
+    await assert.rejects(host.ensure("tasks", s.tasks), /two of its rows have the same id/);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
 test("rows read a piece at a time as they come are the rows read whole", async () => {
   const many = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ünïcode` }));
   const bytes = new TextEncoder().encode(many.map((r) => JSON.stringify(r)).join("\n") + "\n");

@@ -264,8 +264,9 @@ async function readRowsFiles(
 ): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[] }> {
   const rows: Row[] = [];
   const rowFiles: { name: string; ids: string[] }[] = [];
+  const seen = new Map<string, Row>();
   for (const file of await rowsFilesOf(fs, dir)) {
-    const these = parseRowsText((await fs.readText(file.path)) ?? "", diagnostics, unread, { file: file.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`, after: rows.at(-1)?.id ?? null });
+    const these = parseRowsText((await fs.readText(file.path)) ?? "", diagnostics, unread, { file: file.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`, after: rows.at(-1)?.id ?? null, seen });
     for (const r of these) rows.push(r);
     rowFiles.push({ name: file.name, ids: these.map((r) => r.id) });
     onRows?.(these);
