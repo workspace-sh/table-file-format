@@ -333,6 +333,8 @@ interface ViewCallbacks {
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  cells?: import("@workspace.sh/table-core").CellFormula[];
+  onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: SheetGridShown;
@@ -376,6 +378,8 @@ function renderView(
           {...common}
           onUpdateView={cb.onUpdateView}
           onUpdateRow={cb.onUpdateRow}
+          cells={cb.cells}
+          onSetCellFormula={cb.onSetCellFormula}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
@@ -1529,6 +1533,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
                           onPlaceMeasure,
                           relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
                           allRows: table.rows,
+                          cells: table.cells,
                           tableKey: tableNameOf(activeTablePath),
                           sheet,
                           onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,

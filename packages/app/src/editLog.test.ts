@@ -368,3 +368,32 @@ test("rowsChanges: rows are told apart by id, so a row moved is no change; formu
     ],
   );
 });
+
+test("a cell given its own formula: its value goes, history says a set and a formula, undo puts both back, a value typed over it takes its place (D52)", () => {
+  const before = start();
+  const budget = rowOf(before, "p1").budget;
+  const s = run(before, { type: "setCellFormula", rowId: "p1", field: "budget", expr: "(* 2 1000)" });
+  assert.deepEqual(s.tables[KEY]!.cells, [{ id: "p1", field: "budget", expr: "(* 2 1000)" }]);
+  assert.equal("budget" in rowOf(s, "p1"), false);
+  assert.deepEqual(kept(s), [
+    { op: "set", row: "p1", field: "budget", from: budget },
+    { op: "formula", row: "p1", field: "budget", to: "(* 2 1000)" },
+  ]);
+  // Undone: the value back, the formula gone.
+  const undone = run(s, { type: "undo" });
+  assert.equal(rowOf(undone, "p1").budget, budget);
+  assert.equal(undone.tables[KEY]!.cells, undefined);
+  // A value typed over it takes its place.
+  const typed = run(s, { type: "updateRow", rowId: "p1", field: "budget", value: 5 });
+  assert.equal(typed.tables[KEY]!.cells, undefined);
+  assert.deepEqual(kept(typed).at(-1), { op: "formula", row: "p1", field: "budget", from: "(* 2 1000)" });
+  // Taken away by itself.
+  assert.equal(run(s, { type: "setCellFormula", rowId: "p1", field: "budget", expr: null }).tables[KEY]!.cells, undefined);
+});
+
+test("a row deleted with a cell's own formula has it in its delete event", () => {
+  const s = run(start(), { type: "setCellFormula", rowId: "p1", field: "budget", expr: "1" }, { type: "deleteRow", rowId: "p1" }, { type: "answer", response: "delete" });
+  const gone = kept(s).find((c) => c.op === "delete")!;
+  assert.deepEqual(gone.op === "delete" && gone.cells, { budget: { expr: "1" } });
+  assert.equal(s.tables[KEY]!.cells, undefined);
+});
