@@ -34,6 +34,9 @@ export const styles = {
    * table's own ground behind it, so nothing shows through.
    */
   frozen: css({ backgroundColor: "@view_bg_color" }),
+  /** The header and frozen rows, over the rows scrolled under them (D58): the table's ground, and a shadow below. */
+  frozenBand: css({ backgroundColor: "@view_bg_color", borderLeft: `1px solid ${RULE}`, borderRight: `1px solid ${RULE}`, boxShadow: "0 2px 4px alpha(black, 0.12)" }),
+  frozenBandHeader: css({ borderBottom: `1px solid ${RULE}`, backgroundColor: "mix(@view_bg_color, currentColor, 0.04)" }),
   /**
    * Beside a first column that stays put on a page's margin (an embedded table): the page's own ground
    * out to the window's edge, so the cells that scroll under the column don't show again in the margin.
