@@ -132,7 +132,8 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
 | Personal arrangements, Save for Everyone | Yes | Yes | Yes | Yes | |
 | Hidden rows (`hidden`, D58) | Yes | Yes | Yes | Yes | Hide Row in a row's menu; View Settings shows them all again. A Sheet view keeps their numbers. Hidden columns are a view's columns. |
 | Frozen columns (`frozen.columns`, D58) | Yes | Yes | Yes | Yes | A view's first `frozen.columns` stay put on a wide window (the title alone when it doesn't say; never all of them). View Settings sets it: Freeze. Seen on Linux and the web; iOS and the Mac share the web's code. |
-| Frozen rows, merged cells (D58) | No | No | No | No | Drafted; #658 |
+| Frozen rows (`frozen.rows`, D58) | No | No | No | Yes | Scrolled down, the header and the view's first `frozen.rows` rows stay at the window's top (the header alone when it doesn't say). Not in an embed. Nothing sets it yet: edit `views.json`. #658 |
+| Merged cells (`merged`, D58) | No | No | No | No | Drafted; #658 |
 | Colour rules (`colors`, D53) | Yes | Yes | Yes | Yes | A row or one cell, in every layout; set in View Settings, one condition each (a rule with more, from another app, keeps the rest). iOS and the Mac share the web's code, not yet seen on either. |
 
 ## Rows and pages
