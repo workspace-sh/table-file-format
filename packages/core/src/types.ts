@@ -268,6 +268,10 @@ export interface View {
    * D53): the first rule that matches wins. Display-only.
    */
   colors?: ViewColorRule[];
+  /** Rows this view leaves out by hand, by id (SPEC section 4, D58). A Sheet view keeps their numbers. */
+  hidden?: string[];
+  /** Rows and columns that stay put while the rest scroll (D58). Absent: the app's own choice. */
+  frozen?: { columns?: number; rows?: number };
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;

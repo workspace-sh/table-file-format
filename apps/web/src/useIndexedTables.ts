@@ -167,7 +167,7 @@ export function useIndexedTables(input: {
   // The view on screen's rows.
   const [source, setSource] = useState<{ key: string; asked: string; rows: RemoteViewRows } | undefined>(undefined);
   const askingOf = (version: number | string) =>
-    `${state.active}\u0000${version}\u0000${JSON.stringify([view.filter, view.sort, view.order, view.group, view.totals])}\u0000${state.search}`;
+    `${state.active}\u0000${version}\u0000${JSON.stringify([view.filter, view.sort, view.order, view.group, view.totals, view.hidden])}\u0000${state.search}`;
   const asking = askingOf(active?.indexed?.version ?? "");
   const shownNow = useRef({ source, view, search: state.search, askingOf });
   shownNow.current = { source, view, search: state.search, askingOf };
