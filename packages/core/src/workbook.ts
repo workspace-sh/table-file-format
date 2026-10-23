@@ -46,6 +46,10 @@ export interface ComputeOptions {
   views?: View[];
   /** This table's cells' own formulas (D52). Absent: its cells in `tables`, if it's there. */
   cells?: CellFormula[];
+  /** What `today` and `now` read (D55): one moment for the whole computation. Absent: the time it's asked. */
+  now?: Date;
+  /** What `rand` draws from (D55). Absent: Math.random. */
+  random?: () => number;
 }
 
 /** Something being worked out, and how deep in the stack it began. */
@@ -135,10 +139,16 @@ class Workbook {
   private readonly stack: ({ looped: boolean } | null)[] = [];
   private readonly pendings: Pending[] = [];
 
+  /** The one moment and source of chance every formula worked out here reads (D55). */
+  readonly clock: { now: Date; random: () => number };
+
   constructor(
     private readonly tables: Record<string, ParsedTable>,
     private readonly self: { name: string; schema: TableSchema; rows: Row[]; views: View[]; cells?: CellFormula[] },
-  ) {}
+    clock: { now?: Date; random?: () => number } = {},
+  ) {
+    this.clock = { now: clock.now ?? new Date(), random: clock.random ?? Math.random };
+  }
 
   /** A table by the name a relation or `linked` gives it, or null when it isn't there. */
   sheet(name: string): Sheet | null {
@@ -464,6 +474,9 @@ class RowScope implements Scope {
   where(p: Place) {
     return this.book.where(this.sheet, this.i, p);
   }
+  clock() {
+    return this.book.clock;
+  }
 }
 
 /** Which of this table's Sheet views a formula reads by place, if any, and whether only rows below. */
@@ -554,7 +567,7 @@ function workbookFor(schema: TableSchema, rows: Row[], options: ComputeOptions):
   const self = options.self ?? "";
   const views = options.views ?? options.tables?.[self]?.views ?? [];
   const cells = options.cells ?? options.tables?.[self]?.cells;
-  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views, ...(cells ? { cells } : {}) });
+  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views, ...(cells ? { cells } : {}) }, { ...(options.now ? { now: options.now } : {}), ...(options.random ? { random: options.random } : {}) });
   return { workbook, sheet: workbook.sheet(self)! };
 }
 
@@ -602,8 +615,8 @@ export function computeRows(
  * that reads across rows, tables or a Sheet view's places isn't, and the
  * table is computed whole each time.
  */
-// Anything that reads the clock or chance (TODAY, NOW, RAND, #124) must be added here too: its answer isn't the row's alone.
-const ACROSS_ROWS = new Set(["values", "related", "linked", "at", "range", "row", "rows"]);
+// So are the clock and chance (`today`, `now`, `rand`, D55): their answer isn't the row's alone, and changes.
+const ACROSS_ROWS = new Set(["values", "related", "linked", "at", "range", "row", "rows", "today", "now", "rand"]);
 const localSchemas = new WeakMap<TableSchema, boolean>();
 const memos = new WeakMap<TableSchema, { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] }>();
 

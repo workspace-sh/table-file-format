@@ -485,6 +485,7 @@ itself contains no test cases.
 | `isblank` | `true` when the value is empty |
 | `concatenate` | joins its arguments as text; empties add nothing (`&` in the typed form) |
 | `upper` `lower` `len` | text; `len` counts characters |
+| `today` `now` `rand` | no arguments: the reader's date (`YYYY-MM-DD`), the instant in UTC (`…T12:00:05Z`), a number from 0 up to 1. One moment for every cell worked out together; never stored, never remembered, so a table that uses them is worked out whenever it's read (D55) |
 
 **Empty values** (see "Empty values"): an empty argument makes
 arithmetic, comparison with `<`/`>`, and text functions empty; `sum`,

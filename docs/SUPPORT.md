@@ -87,6 +87,9 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   operators, and `.table`'s own forms for other rows and tables:
   `field`, `values`, `related`, `linked`, `at`, `range`, `row`, `rows`
   (D36, D41, D48).
+- **The clock and chance:** `today`, `now`, `rand` (D55). No public
+  case can fix a clock, so `.table`'s own tests check them. A table
+  that uses them is held in memory, not in an index.
 - **Not there yet:** the rest of OpenFormula's 393 functions (#124),
   `^`, `%` and `power`. A function is counted as supported only once
   public test cases check it (D38): LibreOffice's function tests, in
