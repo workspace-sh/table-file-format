@@ -44,6 +44,19 @@ export type ParseResult = { ok: true; expr: Expr } | { ok: false; message: strin
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const WORD = /^[^\s()"]+/;
 
+/**
+ * A bare word, as SPEC section 2 defines it: what EDN calls a symbol. It
+ * starts with a letter or one of `* + ! - _ ? < > = & %` (not `+` or `-`
+ * before a digit) and goes on with letters, digits, those, `.` and `/`;
+ * `/` alone is division. EDN's other forms (`:keyword`, `#tag`, `{map}`)
+ * aren't words, and a formula with one can't be read.
+ */
+const SYMBOL = /^(?:\/|(?:[\p{L}*!_?<>=&%]|[+-](?!\d))[\p{L}\p{N}*+!\-_?<>=&%./]*)$/u;
+
+export function isSymbol(word: string): boolean {
+  return SYMBOL.test(word);
+}
+
 /** Read a stored `expr`. Anything but one complete expression is refused. */
 /**
  * Names a form had before (D48), read as the name it has now: a stored
@@ -69,6 +82,7 @@ export function parseExpr(src: string): ParseResult {
       skip();
       const head = WORD.exec(src.slice(pos));
       if (!head) fail("expected a function name after (");
+      if (!isSymbol(head![0])) fail(`${head![0]} isn't a function's name`);
       pos += head![0].length;
       const args: Expr[] = [];
       for (;;) {
@@ -99,6 +113,7 @@ export function parseExpr(src: string): ParseResult {
       return { kind: "number", value: Number(num[0]) };
     }
     const word = WORD.exec(src.slice(pos))!;
+    if (!isSymbol(word[0])) fail(`${word[0]} isn't a field's name: write (field ${JSON.stringify(word[0])})`);
     pos += word[0].length;
     if (word[0] === "true" || word[0] === "false") return { kind: "boolean", value: word[0] === "true" };
     if (word[0] === "nil") return { kind: "nil" };
