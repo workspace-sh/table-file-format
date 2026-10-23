@@ -166,3 +166,16 @@ test("colour rules: a new one takes an unused colour and the whole row, and none
   assert.deepEqual(withColorRule([first, cell], 0, null), [cell]);
   assert.deepEqual(colorRulesPatch([]), { colors: undefined });
 });
+
+test("a view's frozen columns (D58): the first by default, none to all but one, the first alone said by nothing, frozen rows kept", async () => {
+  const { frozenColumnsOf, frozenOptions, frozenPatch } = await import("./viewEdit.ts");
+  assert.equal(frozenColumnsOf({}), 1);
+  assert.equal(frozenColumnsOf({ frozen: { columns: 0 } }), 0);
+  assert.deepEqual(frozenOptions(3).map((o) => o.value), ["0", "1", "2"]);
+  assert.deepEqual(frozenOptions(1).map((o) => o.value), ["0", "1"]);
+  assert.equal(frozenOptions(20).at(-1)!.label, "First 5 columns");
+  assert.deepEqual(frozenPatch({}, 2), { frozen: { columns: 2 } });
+  assert.deepEqual(frozenPatch({ frozen: { columns: 2 } }, 1), { frozen: undefined });
+  assert.deepEqual(frozenPatch({ frozen: { columns: 2, rows: 1 } }, 1), { frozen: { rows: 1 } });
+  assert.deepEqual(frozenPatch({}, 0), { frozen: { columns: 0 } });
+});
