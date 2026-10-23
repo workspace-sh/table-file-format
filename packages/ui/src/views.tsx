@@ -76,11 +76,15 @@ import {
   computeRows,
   coordinateOf,
   formatValue as formatCellValue,
+  hasColorRules,
   memoryViewRows,
+  rowColors,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
 import { useViewFacts, useViewWindow } from "./useViewRows";
 import type {
+  EnumColor,
+  RowColors,
   SheetRef,
   ViewTotal,
   Field,
@@ -1325,6 +1329,21 @@ const styles = css.create({
   pillIndigo: { backgroundColor: { default: "#e1e4fb", "@media (prefers-color-scheme: dark)": "#1f2347" }, color: { default: "#4338ca", "@media (prefers-color-scheme: dark)": "#a5adff" } },
   pillPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" }, color: { default: "#6d28d9", "@media (prefers-color-scheme: dark)": "#c4a8ff" } },
   pillPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" }, color: { default: "#be185d", "@media (prefers-color-scheme: dark)": "#ff9ecb" } },
+  // A view's colour rules (SPEC section 4, D53): a row or cell behind its values, in the choice's own background.
+  tintGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" } },
+  tintBrown: { backgroundColor: { default: "#eee3d8", "@media (prefers-color-scheme: dark)": "#3b2a1d" } },
+  tintRed: { backgroundColor: { default: "#fde2e1", "@media (prefers-color-scheme: dark)": "#4a1f1f" } },
+  tintOrange: { backgroundColor: { default: "#fde8d4", "@media (prefers-color-scheme: dark)": "#4a2c14" } },
+  tintYellow: { backgroundColor: { default: "#fdf3c4", "@media (prefers-color-scheme: dark)": "#433a10" } },
+  tintLime: { backgroundColor: { default: "#eaf5cc", "@media (prefers-color-scheme: dark)": "#2b3a10" } },
+  tintGreen: { backgroundColor: { default: "#dcf5e3", "@media (prefers-color-scheme: dark)": "#16341f" } },
+  tintMint: { backgroundColor: { default: "#d8f5ea", "@media (prefers-color-scheme: dark)": "#12362b" } },
+  tintTeal: { backgroundColor: { default: "#d4f1f2", "@media (prefers-color-scheme: dark)": "#10353a" } },
+  tintCyan: { backgroundColor: { default: "#d6eefb", "@media (prefers-color-scheme: dark)": "#0f3447" } },
+  tintBlue: { backgroundColor: { default: "#dde9fd", "@media (prefers-color-scheme: dark)": "#15284a" } },
+  tintIndigo: { backgroundColor: { default: "#e1e4fb", "@media (prefers-color-scheme: dark)": "#1f2347" } },
+  tintPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" } },
+  tintPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" } },
   pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 4 },
   choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
   choiceCheck: { width: 12, fontSize: 12 },
@@ -1800,6 +1819,47 @@ const PILL_COLORS = {
   purple: styles.pillPurple,
   pink: styles.pillPink,
 } as const;
+
+const TINT_COLORS = {
+  gray: styles.tintGray,
+  brown: styles.tintBrown,
+  red: styles.tintRed,
+  orange: styles.tintOrange,
+  yellow: styles.tintYellow,
+  lime: styles.tintLime,
+  green: styles.tintGreen,
+  mint: styles.tintMint,
+  teal: styles.tintTeal,
+  cyan: styles.tintCyan,
+  blue: styles.tintBlue,
+  indigo: styles.tintIndigo,
+  purple: styles.tintPurple,
+  pink: styles.tintPink,
+} as const;
+
+const NO_COLORS: RowColors = { cells: {} };
+
+/**
+ * A view's colour rules for each row (D53): none to work out when the view
+ * has none, and each row's worked out once while the rules stay the same.
+ */
+function useRowColors(view: Pick<View, "colors">, schema?: TableSchema): (row: Row) => RowColors {
+  return useMemo(() => {
+    if (!hasColorRules(view)) return () => NO_COLORS;
+    const seen = new WeakMap<Row, RowColors>();
+    return (row: Row) => {
+      let colors = seen.get(row);
+      if (!colors) seen.set(row, (colors = rowColors(view, row, schema)));
+      return colors;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.colors, schema]);
+}
+
+/** A colour rule's colour as a background (D53); none for no colour. */
+function tintOf(color: EnumColor | undefined) {
+  return color ? TINT_COLORS[color] : undefined;
+}
 
 /** What opening a link does, for assistive technology: "Email a@b.c", "Call +44…", "Open example.com". */
 function linkLabel(href: string, text: string): string {
@@ -3717,6 +3777,9 @@ export function TableView({
     );
   };
 
+  // A view's colour rules (D53), worked out once per row as it's drawn.
+  const colorsOf = useRowColors(view, schema);
+
   const renderBodyCell = (
     row: Row,
     name: string,
@@ -3795,6 +3858,7 @@ export function TableView({
           inOpenColumn && styles.formulaColumnTint,
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
+          tintOf(colorsOf(row).cells[name]),
           isSelected && styles.cellSelected,
         ]}
       >
@@ -4398,6 +4462,7 @@ export function TableView({
                         styles.positioned,
                         styles.frozenEdge,
                         i === total - 1 && !onAddRow && styles.tableRowLast,
+                        tintOf(colorsOf(row).row),
                       ]}
                     >
                       {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -4470,6 +4535,7 @@ export function TableView({
                           styles.positioned,
                           restRowWidth(),
                           i === total - 1 && !onAddRow && styles.tableRowLast,
+                          tintOf(colorsOf(row).row),
                         ]}
                       >
                         {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
@@ -4683,6 +4749,7 @@ export function BoardView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const board = boardColumns(view, rows, schema);
   const groupField = board.field;
   const fields = cardFields(view, schema, groupField);
@@ -4965,6 +5032,7 @@ export function BoardView({
               ]}
             >
               <Card
+                tint={colorsOf(row).row}
                 row={row}
                 fields={fields}
                 fieldMap={fieldMap}
@@ -5041,6 +5109,7 @@ export function GalleryView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const galleryField = view.gallery_field;
   const fields = cardFields(view, schema, galleryField);
   const fieldMap = fieldsByName(schema);
@@ -5089,6 +5158,7 @@ export function GalleryView({
               styles.card,
               styles.galleryCard,
               styles.cellWidth(cardWidth),
+              tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
             ]}
           >
@@ -5133,6 +5203,7 @@ export function ListView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
   const secondaryFields = fields.slice(1);
@@ -5246,6 +5317,7 @@ export function ListView({
               }}
               style={[
                 styles.listItem,
+                tintOf(colorsOf(row).row),
                 cards.focusId === row.id && styles.listItemFocused,
                 touchViewport && styles.listItemTouch,
                 i === listed.length - 1 && styles.listItemLast,
@@ -5324,6 +5396,7 @@ export function CalendarView({
   bodies,
   onOpenBody,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
   const range = view.calendar_range;
 
@@ -5476,7 +5549,7 @@ export function CalendarView({
                         chipClicked.current = true;
                         onOpenBody?.(row.id);
                       }}
-                      style={styles.calendarChip}
+                      style={[styles.calendarChip, tintOf(colorsOf(row).row)]}
                     >
                       {labelOf(row)}
                     </html.span>
@@ -5559,13 +5632,15 @@ interface CardProps {
   onOpenRelation?: (address: string) => void;
   /** The row has a long-form body (its page); the card shows the PAGE badge. */
   hasBody?: boolean;
+  /** The row's colour from the view's colour rules (D53). */
+  tint?: EnumColor;
 }
 
-function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody }: CardProps) {
+function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody, tint }: CardProps) {
   const titleField = fields[0];
   const restFields = fields.slice(1);
   return (
-    <html.div style={styles.card}>
+    <html.div style={[styles.card, tintOf(tint)]}>
       {titleField && (
         // The badge beside the title, not inside it (see the list's title).
         <html.div style={styles.titleWithBadge}>

@@ -150,3 +150,19 @@ test("columns are shown and hidden in the schema's order; all shown is no list; 
   assert.deepEqual(columnShownPatch({ ...view, fields: ["c", "a"] }, schema, "b", true), { fields: undefined });
   assert.equal(columnShownPatch({ ...view, fields: ["a"] }, schema, "a", false), null);
 });
+
+test("colour rules: a new one takes an unused colour and the whole row, and none left is no colors (D53)", async () => {
+  const { colorRulesPatch, colorTargetPatch, newColorRule, withColorRule, withFirstCondition } = await import("./viewEdit");
+  const live: Field[] = [{ name: "status", type: "string" }, { name: "budget", type: "number" }];
+  const first = newColorRule(live, [])!;
+  assert.deepEqual(first, { filter: [{ field: "status", operator: "eq" }], color: "red" });
+  assert.equal(newColorRule(live, [first])!.color, "orange");
+  assert.equal(newColorRule([], []), null);
+  const cell = colorTargetPatch(first, "budget");
+  assert.equal(cell.field, "budget");
+  assert.equal("field" in colorTargetPatch(cell, ""), false);
+  const two = { ...first, filter: [{ field: "status", operator: "eq" as const, value: "a" }, { field: "budget", operator: "gt" as const, value: 1 }] };
+  assert.deepEqual(withFirstCondition(two, { field: "budget", operator: "lt", value: 5 }).filter, [{ field: "budget", operator: "lt", value: 5 }, two.filter[1]]);
+  assert.deepEqual(withColorRule([first, cell], 0, null), [cell]);
+  assert.deepEqual(colorRulesPatch([]), { colors: undefined });
+});
