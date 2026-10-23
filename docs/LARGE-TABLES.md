@@ -351,6 +351,18 @@ Not there yet on iOS for an indexed table: a build that leaves the screen free o
 
 A large table that arrives in a single file is held as iOS holds one (above): the index host's folder for it is the file's working folder in the app's own storage, its rows files kept as the file had them, and after each save it is packed back into the file where it is (db88c76). At launch the file is read again and the old folder removed. A large table opened as a folder is still read into memory (#435).
 
+### Cells' own formulas in the index (23 Oct 2026)
+
+A table whose cells have formulas of their own (D52) is held in its index like any other, as long as each formula reads only its own row. The index keeps every `cells/` line (`_cells`), works each row out with its own formulas as it's built or edited, keeps their results out of the row's stored JSON (they're never stored), puts them back as rows are read, and writes `cells/` back with the rows. Measured on the rig with `scripts/cells-index.mts`: the 1,000,000-row table, with 250,000 of its rows' `weighted` given a formula of its own, each different, against the same table with none:
+
+| | 250,000 cell formulas | None |
+|---|---|---|
+| Build | 20.7 s | 17.5 s |
+| First 200 rows sorted by `weighted` | 1.22 s | 1.15 s |
+| A cell given a formula | 70 ms | |
+| Save (rows and `cells/`) | 8.6 s | 7.5 s |
+| Peak resident memory | 783 MB | 395 MB |
+
 ### Saving a single file (23 Oct 2026)
 
 iOS, the Mac and Linux save a single file by packing its working folder back into it (`packTableFileFrom`): each file is read one at a time, a file the old archive holds unchanged is copied from it as it is, and only the files that changed are compressed again (#602). The new archive is built in memory and renamed over the old one. With rows files of at most about 25 MB (D51) that costs little, so the pack doesn't stream. Measured on the rig with `scripts/pack-peak.mts`, the 1,000,000-row table from `scripts/big-table.mts` (165 MB of rows in 7 files, a 19.6 MB single file):

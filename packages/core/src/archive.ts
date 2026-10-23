@@ -212,7 +212,8 @@ export async function readTableArchive(
     if (!elsewhere && !later) tableDiagnostics.push(...cellDiagnostics(schema, rows, cells));
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
     if (rowFiles.length > 0) table.rowFiles = rowFiles;
-    if (cells.length > 0) table.cells = cells;
+    // A table read into an index has its cells' formulas there, as its rows (D52).
+    if (cells.length > 0 && !elsewhere) table.cells = cells;
     if (unreadCells.length > 0) table.unreadCells = unreadCells;
     if (unread.length > 0) table.unread = unread;
     if (elsewhere) table.indexed = { count: 0, version: 0 };

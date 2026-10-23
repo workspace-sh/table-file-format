@@ -69,6 +69,7 @@ import {
   type AppCommandId,
   type AttachmentShown,
   type ShownFile,
+  storedTableRows,
 } from "@workspace.sh/table-app";
 import { useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
@@ -623,7 +624,7 @@ export function App() {
           return tell(heading, body);
         }
         const { indexed: _index, ...rest } = held;
-        whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+        whole[key] = { ...rest, ...storedTableRows(held, await indexed.everyRow(key, held)) };
       }
       // Each table's history goes with it, everything written so far included (SPEC section 14).
       await flush();

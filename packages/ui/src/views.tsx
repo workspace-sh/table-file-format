@@ -3898,7 +3898,7 @@ export function TableView({
                 ? {
                     fields: schema.fields,
                     ...(grid ? { grid: { ...grid, here: row.id } } : {}),
-                    ...(ownFormula(cells, row.id, name) !== undefined ? { own: ownFormula(cells, row.id, name)! } : {}),
+                    ...(ownFormula(cells, row.id, name, row) !== undefined ? { own: ownFormula(cells, row.id, name, row)! } : {}),
                     syntax: formulaSyntax,
                     onSet: (expr) => onSetCellFormula(row.id, name, expr),
                   }
@@ -4096,7 +4096,7 @@ export function TableView({
       const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
       if (kind !== "text" && kind !== "choice" && !many && !linksOne && !linksMany) return false;
       // A cell with its own formula is edited as that formula (D52); `=…` typed gives it one.
-      const own = ownFormula(cells, rowId, name);
+      const own = ownFormula(cells, rowId, name, row);
       const cellFormula: CellFormulaEntry | undefined =
         onSetCellFormula && kind === "text" && !dated
           ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
@@ -4621,7 +4621,7 @@ export function TableView({
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
-            {...(ownFormula(cells, formulaCell.rowId, name) !== undefined ? { own: ownFormula(cells, formulaCell.rowId, name)! } : {})}
+            {...(ownFormula(cells, formulaCell.rowId, name, openRow) !== undefined ? { own: ownFormula(cells, formulaCell.rowId, name, openRow)! } : {})}
             onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(formulaCell.rowId, name, expr) : undefined}
             // The cell under a click, named as a tap names it on iOS: its
             // coordinate in a sheet, else its column. Only a page has points.
