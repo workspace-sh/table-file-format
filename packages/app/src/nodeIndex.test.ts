@@ -575,3 +575,43 @@ test("a table with a line its rows can't read isn't indexed: held in memory, the
     s.done();
   }
 });
+
+test("a table with cells' own formulas is indexed: shown with their results, edited, and saved back to cells/ (D52)", async () => {
+  const s = scratch();
+  try {
+    mkdirSync(join(s.tasks, "cells"), { recursive: true });
+    writeFileSync(join(s.tasks, "cells", "0001.ndjson"), '{"id":"t2","field":"priority","expr":"(* 7 6)"}\n');
+    // The row's own value goes with the formula, as a writer would have left it.
+    const rows = rowsOnDisk(s.tasks).map((r) => (r.id === "t2" ? (({ priority: _p, ...rest }) => rest)(r) : r));
+    writeFileSync(join(s.tasks, "rows", "0001.ndjson"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
+    // Held in the index, its cells are there, not in memory.
+    assert.equal(held.cells, undefined);
+    assert.equal(canBeIndexed({ ...held, cells: [{ id: "t2", field: "priority", expr: "(* 7 6)" }] }), true);
+    assert.equal(canBeIndexed({ ...held, cells: [{ id: "t2", field: "priority", expr: '(sum (values "priority"))' }] }), false);
+    const host = openIndexHost(s.bundle);
+    await host.ensure("tasks", s.tasks);
+    const shownOf = async (id: string) => (await (await indexedViewRows(host, "tasks", held, held.views[0]!, "")).rows(0, 20)).find((r) => r.id === id)!;
+    assert.equal((await shownOf("t2")).priority, 42);
+    // A formula given in place, and one typed over: undo of that brings the formula back.
+    const made = await makeIndexEdits(host, "tasks", held, [{ kind: "formula", rowId: "t1", field: "priority", expr: "(+ 1 1)" }]);
+    assert.deepEqual(made.back, [{ kind: "formula", rowId: "t1", field: "priority", expr: null }]);
+    assert.equal((await shownOf("t1")).priority, 2);
+    const typed = await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "t2", field: "priority", value: 5 }]);
+    assert.deepEqual(typed.back, [{ kind: "formula", rowId: "t2", field: "priority", expr: "(* 7 6)" }]);
+    assert.equal((await shownOf("t2")).priority, 5);
+    // Another of t1's fields edited: its formula's result isn't taken for a typed value.
+    await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "t1", field: "title", value: "Retitled" }, { kind: "body", rowId: "t1", content: "Notes" }]);
+    assert.equal((await shownOf("t1")).priority, 2);
+    await host.save("tasks", s.tasks, true);
+    assert.equal(readFileSync(join(s.tasks, "cells", "0001.ndjson"), "utf8"), '{"id":"t1","field":"priority","expr":"(+ 1 1)"}\n');
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t1")!.priority, undefined);
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t2")!.priority, 5);
+    // Read again from the files, as any reader: the same.
+    const again = (await readBundle(nodeFs, s.bundle)).tables.tasks!;
+    assert.deepEqual(again.cells, [{ id: "t1", field: "priority", expr: "(+ 1 1)" }]);
+    await host.close();
+  } finally {
+    s.done();
+  }
+});

@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, buildIndex, buildSearchIndex, fillIndex, FIRST_ROWS_FILE, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -128,6 +128,14 @@ export async function tableContentKey(tableDir: string): Promise<string> {
     hash.update(`\0${name}\0`);
     hash.update(readFileSync(join(tableDir, "bodies", name)));
   }
+  // Cells' own formulas are part of what the index holds (D52).
+  const cellsDir = join(tableDir, CELLS_DIR);
+  if (existsSync(cellsDir)) {
+    for (const name of rowsFileOrder(readdirSync(cellsDir))) {
+      hash.update(`\0cells/${name}\0`);
+      hash.update(readFileSync(join(cellsDir, name)));
+    }
+  }
   return hash.digest("hex");
 }
 
@@ -208,6 +216,7 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
     ),
     bodies,
     key,
+    cells: cellsIn(tableDir),
     // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
     search: "later",
     // In steps: as one transaction the log beside the index grows as large as the index itself.
@@ -290,7 +299,28 @@ export async function saveTableRows(
   for (const old of rowsFileOrder(readdirSync(dir))) if (!kept.has(old)) rmSync(join(dir, old), { force: true });
   rmSync(join(tableDir, LEGACY_ROWS_FILE), { force: true });
   await setRowFileStarts(db, name, written);
+  // Cells' own formulas (D52), out of the index into cells/: one file, or none when there are none.
+  const cellsText = await storedCellsText(db, { name, schema });
+  const cellsDir = join(tableDir, CELLS_DIR);
+  if (cellsText) {
+    mkdirSync(cellsDir, { recursive: true });
+    writeFileSync(join(cellsDir, `${FIRST_ROWS_FILE}.tmp`), cellsText);
+    renameSync(join(cellsDir, `${FIRST_ROWS_FILE}.tmp`), join(cellsDir, FIRST_ROWS_FILE));
+  }
+  if (existsSync(cellsDir)) {
+    for (const old of readdirSync(cellsDir)) if (!cellsText || old !== FIRST_ROWS_FILE) rmSync(join(cellsDir, old), { force: true });
+    if (!cellsText) rmSync(cellsDir, { recursive: true, force: true });
+  }
   return true;
+}
+
+/** A table's cells' own formulas, read from its `cells/` (D52); what can't be read is left to the reader to say. */
+function cellsIn(tableDir: string): CellFormula[] {
+  const dir = join(tableDir, CELLS_DIR);
+  if (!existsSync(dir)) return [];
+  const cells: CellFormula[] = [];
+  for (const name of rowsFileOrder(readdirSync(dir))) for (const c of parseCellsText(readFileSync(join(dir, name), "utf8"), [], [], name)) cells.push(c);
+  return cells;
 }
 
 /**
@@ -305,10 +335,8 @@ export function largeTables(from: number = INDEXED_FROM): (tableDir: string) => 
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const viewsPath = join(tableDir, "views.json");
       const views = existsSync(viewsPath) ? (JSON.parse(readFileSync(viewsPath, "utf8")) as View[]) : [];
-      // Any cells' own formulas (D52) keep it in memory, as canBeIndexed says; their files aren't read here.
-      const cellsDir = join(tableDir, "cells");
-      const cells = existsSync(cellsDir) && readdirSync(cellsDir).length > 0 ? [{ id: "", field: "", expr: "" }] : [];
-      if (!canBeIndexed({ schema, views, cells })) return false;
+      // Cells' own formulas (D52) go into the index when each reads only its own row.
+      if (!canBeIndexed({ schema, views, cells: cellsIn(tableDir) })) return false;
     } catch {
       // The reader says what's wrong with it.
       return false;

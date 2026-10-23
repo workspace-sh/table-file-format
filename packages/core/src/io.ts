@@ -209,7 +209,8 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   if (!elsewhere && !later) diagnostics.push(...cellDiagnostics(schema, rows, cells));
 
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
-  if (cells.length > 0) parsed.cells = cells;
+  // A table held in the index has its cells' formulas there, as its rows (D52).
+  if (cells.length > 0 && !elsewhere) parsed.cells = cells;
   if (unreadCells.length > 0) parsed.unreadCells = unreadCells;
   if (read.rowFiles.length > 0) parsed.rowFiles = read.rowFiles;
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };

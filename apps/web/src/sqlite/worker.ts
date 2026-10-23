@@ -24,6 +24,7 @@ import {
   rowsBeingBuilt,
   setIndexKey,
   storedRows,
+  type CellFormula,
   type LazyZipEntry,
   type Row,
   type SqlDriver,
@@ -100,7 +101,7 @@ const timed = (entry: { what: string; ms: number; waited: number }): void => {
   timings.push(entry);
 };
 // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
-const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
 
 const post = (response: Response) => (self as unknown as Worker).postMessage(response);
 
@@ -241,7 +242,7 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
   const from = req.from ?? INDEXED_FROM;
   const first: Record<string, Row[]> = {};
   const counts: Record<string, number> = {};
-  const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+  const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
   const opened = await openArchive(req.bytes, req.taken, {
     // A large table's rows are left compressed: only their start is read here, so the
     // page has rows to show at once, however large the table. The rest is read by `ensure`.
@@ -254,7 +255,7 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
       const figures = 10 ** Math.max(0, String(judged).length - 2);
       const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
       if (count < from) return false;
-      large.set(name, { rows, bodies: table.bodies });
+      large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}) });
       first[name] = firstRowsInBytes(head, FIRST_ROWS);
       counts[name] = count;
       return true;
@@ -282,6 +283,7 @@ async function ensure(on: On, id: number, name: string, schema: TableSchema, aga
         schema,
         rows: { chunks: fresh.rows.chunks(), size: fresh.rows.size, keep: (chunk) => file && (at += file.write(chunk, { at })) },
         bodies: fresh.bodies,
+        ...(fresh.cells ? { cells: fresh.cells } : {}),
         key: "saved",
         onProgress: progress,
       });
@@ -316,7 +318,7 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
     // No index to be had: the table's rows from the archive just read, into the page's memory, with the lines they couldn't read kept (#567).
     const entry = waiting.get(`${req.bundle}/${req.name}`);
     if (!entry) return null;
-    const held = readHeldRows(entry.rows, FIRST_ROWS_FILE);
+    const held = { ...readHeldRows(entry.rows, FIRST_ROWS_FILE), ...(entry.cells ? { cells: entry.cells } : {}) };
     waiting.delete(`${req.bundle}/${req.name}`);
     return held;
   }
