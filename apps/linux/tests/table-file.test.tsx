@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fixturesDir } from "../src/fixtures.js";
+import { clickFresh } from "./clickFresh.js";
 
 // A .table opened as a document of its own: a folder, written back where it
 // is, or a single-file .table, edited as its working folder and packed back into it.
@@ -110,7 +111,7 @@ describe("a .table opened as a document", () => {
     mkdirSync(join(root, "single"));
     writeFileSync(file, await bundleToArchive("crm", { ...bundle, files: await filesOfFolder(nodeFs, join(root, "crm.table")) }));
     await open(file);
-    await userEvent.click(await cell("Atlas Freight"));
+    await clickFresh(() => cell("Atlas Freight"));
     const entry = (await screen.findByDisplayValue("Atlas Freight")) as Gtk.Entry;
     await userEvent.clear(entry);
     await userEvent.type(entry, "Atlas Shipping");

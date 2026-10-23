@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App.js";
+import { clickFresh } from "./clickFresh.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // A checkbox that takes rows out of the view they're in (#598): GNOME's
@@ -30,7 +31,8 @@ const count = async () => ((await screen.findByText(/^[\d,]+ of [\d,]+ rows$/)) 
 describe("rows a checkbox takes out of the view", () => {
   it("are counted in one toast, and Undo puts them all back", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="library/books" initialView="unread" />);
+    // The toast stays until Undo, however slow the machine (#649).
+    await render(<App library={library} initialTable="library/books" initialView="unread" departedMs={60_000} />);
     const before = await count();
     const ticks = async () => (await screen.findAllByRole(Gtk.AccessibleRole.CHECKBOX)).filter((b) => (b as Gtk.CheckButton).getTooltipText() === "read");
     // Read, one book: it leaves To read, and the toast names it.
@@ -41,7 +43,7 @@ describe("rows a checkbox takes out of the view", () => {
     expect(await screen.findByText("2 books left To read")).toBeDefined();
     expect(await count()).not.toBe(before);
     // Undo: both back, as one step.
-    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Undo" }));
+    await clickFresh(() => screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Undo" }));
     await waitFor(async () => expect(await count()).toBe(before));
   });
 });
