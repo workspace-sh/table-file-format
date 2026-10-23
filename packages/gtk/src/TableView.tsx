@@ -26,6 +26,7 @@ import {
   GtkEventControllerKey,
   GtkGestureClick,
   GtkGestureDrag,
+  GtkFixed,
   GtkOverlay,
   GtkImage,
   GtkLabel,
@@ -35,7 +36,7 @@ import {
   GtkViewport,
 } from "@gtkx/jsx/gtk";
 import type { MenuItem } from "@gtkx/react/internal";
-import { columnLetter, effectiveAlign, isSheet, memoryViewRows, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
+import { columnLetter, effectiveAlign, isSheet, memoryViewRows, mergedBlocks, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
 import {
   canInsertAt,
   describeCell,
@@ -1326,6 +1327,63 @@ export function TableView({
   // While a formula is open: its column tinted, the cells it read outlined.
   const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
 
+  // A Sheet view's merged cells (D58): each block a box over its cells, showing its top-left cell's
+  // value; a click on it is a click on that cell. Over the rows as they're shown, in memory and not
+  // grouped (a group's heading would come between its rows).
+  const shownIds = view.coordinates === true && view.merged?.length && groupField === undefined && isImmediate(source) ? (source.ids(0, count) as string[]) : [];
+  const merges = shownIds.length > 0 ? mergedBlocks(view, fields, shownIds, sheet?.order ?? shownIds, freeze ? frozenCount : 0) : [];
+  // Placed down the rows by a Fixed, not a margin: GTK holds a margin to 32,767, which a long sheet passes.
+  const mergeTops = useRef(new Map<Gtk.Widget, number>());
+  useLayoutEffect(() => {
+    for (const [widget, y] of mergeTops.current) {
+      const fixed = widget.getParent();
+      if (fixed instanceof Gtk.Fixed) fixed.move(widget, 0, y);
+      else mergeTops.current.delete(widget);
+    }
+  });
+  const mergeBoxes = merges.map((block, i) => {
+    const last = block.row + block.rows - 1;
+    if (last < firstBuilt || block.row > lastBuilt) return null;
+    // From the first of its rows that's built: nothing is laid out above the built ones.
+    const top = Math.max(block.row, firstBuilt);
+    const y = layout.topOf(top) - built.shift;
+    const height = layout.topOf(last) + layout.heightOf(last) - layout.topOf(top) - ROW_RULE;
+    let x = numberWidth;
+    for (let c = 0; c < block.column; c++) x += colWidth(fields[c]!);
+    let width = -1;
+    for (let c = block.column; c < block.column + block.columns; c++) width += colWidth(fields[c]!);
+    const row = builtRows.find((r) => r?.id === block.rowId) ?? (isImmediate(source) ? (source.row(block.rowId) as Row | undefined) : undefined);
+    const field = fieldMap.get(block.field);
+    const key = cellKey(block.rowId, block.field);
+    const stays = freeze && block.column < frozenCount;
+    return (
+      <GtkBox
+        key={`merge:${i}`}
+        name="merged-cells"
+        ref={(widget: Gtk.Box | null) => {
+          if (stays) pin(`merge:${i}`, x)(widget);
+          if (widget) mergeTops.current.set(widget, y);
+        }}
+        marginStart={x + (stays ? scrolledAcross.current : 0)}
+        widthRequest={width}
+        heightRequest={height}
+        cssClasses={[styles.frozen, styles.cell, ...(row ? tintClass(colorsOf(row).cells[block.field] ?? colorsOf(row).row, dark) : []), ...(focusedCell === key ? [styles.selectedCell] : [])]}
+        controllers={
+          <GtkGestureClick
+            onReleased={() => {
+              const at = placeOf(key);
+              if (at) focusCell(at);
+            }}
+          />
+        }
+      >
+        <GtkBox hexpand valign={Gtk.Align.CENTER}>
+          <CellValue field={field} value={row?.[block.field]} relatedTables={relatedTables} lines={1} xalign={xalignOf(effectiveAlign(field))} />
+        </GtkBox>
+      </GtkBox>
+    );
+  });
+
   const body = builtRows.map((row, i) => {
     const index = firstBuilt + i;
     const group = groupStarts.get(index);
@@ -1712,7 +1770,7 @@ export function TableView({
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}
-        <GtkOverlay overlays={<>{columnLines()}</>}>
+        <GtkOverlay overlays={<>{merges.length > 0 ? <GtkFixed>{mergeBoxes}</GtkFixed> : null}{columnLines()}</>}>
           <GtkBox orientation={Gtk.Orientation.VERTICAL}>
             {before > 0 ? <GtkBox heightRequest={before} /> : null}
             {body}

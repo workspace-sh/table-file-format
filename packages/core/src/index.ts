@@ -100,6 +100,7 @@ export {
   type PlaceRow,
 } from "./expr.js";
 export { computeRows, rowLocal, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { mergedBlocks, type MergedBlock } from "./merged.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
   compileFormula,
