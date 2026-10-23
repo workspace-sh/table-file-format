@@ -1389,9 +1389,9 @@ Not every sheet starts with headings. `tableFromCSV(csv, { header: false })` rea
 
 ## D60: circular references may be worked out by iteration
 
-**Drafted for Leslie (23 Oct 2026). Open to revisit. Not built yet.**
+**Drafted for Leslie (23 Oct 2026). Open to revisit.** Built in core: a table's own `meta.json` asks for it; no app sets it yet.
 
-A loop between formulas is `#REF!` (D32): no answer is better than a wrong one. A spreadsheet can instead iterate, repeating the calculation until it settles, for models that mean to loop (interest on a balance that includes the interest). A table may ask for that in `meta.json` (`iteration: { max, change }`), with the spreadsheet's meaning: start from empty, repeat up to `max` times, stop when nothing changes by more than `change`. Without it a loop stays `#REF!`.
+A loop between formulas is `#REF!` (D32): no answer is better than a wrong one. A spreadsheet can instead iterate, repeating the calculation until it settles, for models that mean to loop (interest on a balance that includes the interest). A table may ask for that in `meta.json` (`iteration: { max, change }`), with the spreadsheet's meaning: a loop reads what the pass before gave (0 on the first: from empty, every pass would stay empty, D32), repeat up to `max` passes, stop when no number changes by more than `change`. Without it a loop stays `#REF!`.
 
 **Held, from the same list:** `LET`, `LAMBDA` and named ranges. The stored form takes a function only when a published standard defines it (D52), and OpenFormula 1.4 defines none of these (`LET` and `LAMBDA` are Excel's own). A named range is closest to a name for a place in a Sheet view (D41), which can be drafted when it's wanted.
 

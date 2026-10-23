@@ -50,6 +50,8 @@ export interface ComputeOptions {
   now?: Date;
   /** What `rand` draws from (D55). Absent: Math.random. */
   random?: () => number;
+  /** Loops worked out by iteration (D60), as the table's meta asks. Absent: its meta's in `tables`, if it's there; else a loop is #REF!. */
+  iteration?: { max: number; change: number };
 }
 
 /** Something being worked out, and how deep in the stack it began. */
@@ -146,6 +148,8 @@ class Workbook {
     private readonly tables: Record<string, ParsedTable>,
     private readonly self: { name: string; schema: TableSchema; rows: Row[]; views: View[]; cells?: CellFormula[] },
     clock: { now?: Date; random?: () => number } = {},
+    /** What the last pass gave, by field and row index: iterating, a loop reads it (D60). */
+    private readonly previous?: Map<string, Value>,
   ) {
     this.clock = { now: clock.now ?? new Date(), random: clock.random ?? Math.random };
   }
@@ -176,7 +180,11 @@ class Workbook {
     const got = slots[i];
     if (got !== undefined) {
       if (got === NONE) return undefined;
-      if (got instanceof Pending) return this.loop(got.depth, new FormulaError("#REF!", `${name} depends on itself`));
+      if (got instanceof Pending) {
+        // Iterating (D60): a loop reads what the last pass gave, 0 on the first, as a spreadsheet does.
+        if (this.previous && sheet.name === this.self.name) return this.previous.get(`${name}\u0000${i}`) ?? 0;
+        return this.loop(got.depth, new FormulaError("#REF!", `${name} depends on itself`));
+      }
       return got;
     }
     const expr = own !== undefined ? own : sheet.parsed.get(name);
@@ -562,12 +570,12 @@ function build(name: string, schema: TableSchema, rows: Row[], views: View[], ce
   };
 }
 
-function workbookFor(schema: TableSchema, rows: Row[], options: ComputeOptions): { workbook: Workbook; sheet: Sheet } {
+function workbookFor(schema: TableSchema, rows: Row[], options: ComputeOptions, previous?: Map<string, Value>): { workbook: Workbook; sheet: Sheet } {
   // A table name is never empty (D37), so "" stands for a table not in `tables`.
   const self = options.self ?? "";
   const views = options.views ?? options.tables?.[self]?.views ?? [];
   const cells = options.cells ?? options.tables?.[self]?.cells;
-  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views, ...(cells ? { cells } : {}) }, { ...(options.now ? { now: options.now } : {}), ...(options.random ? { random: options.random } : {}) });
+  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views, ...(cells ? { cells } : {}) }, { ...(options.now ? { now: options.now } : {}), ...(options.random ? { random: options.random } : {}) }, previous);
   return { workbook, sheet: workbook.sheet(self)! };
 }
 
@@ -589,6 +597,9 @@ export function computeRows(
   const ownFields = withCells ? new Set(cells.map((c) => c.field)) : undefined;
   const computed = schema.fields.filter((f) => f.computed || ownFields?.has(f.name));
   if (computed.length === 0) return { rows, diagnostics: [] };
+  // Loops worked out by iteration (D60): whole passes, each reading the last, until they settle.
+  const iteration = options.iteration ?? (options.self !== undefined ? (options.tables?.[options.self]?.meta?.iteration as ComputeOptions["iteration"]) : undefined);
+  if (iteration && iteration.max > 0) return iterated(schema, rows, options, computed, iteration);
   const out: Row[] = new Array(rows.length);
   const memo = !withCells && rowLocal(schema, computed) ? memoFor(schema) : undefined;
   let made: { workbook: Workbook; sheet: Sheet } | undefined;
@@ -606,6 +617,34 @@ export function computeRows(
   // The diagnostics are the formulas' own (one doesn't parse): the same for every row of this schema.
   if (memo) memo.diagnostics ??= book().sheet.diagnostics;
   return { rows: out, diagnostics: memo ? memo.diagnostics! : book().sheet.diagnostics };
+}
+
+/**
+ * A table's rows worked out by iteration (D60): a loop reads what the pass
+ * before gave (0 on the first), and passes repeat, at most `max`, until no
+ * number changes by more than `change`, as a spreadsheet's iterative
+ * calculation does.
+ */
+function iterated(schema: TableSchema, rows: Row[], options: ComputeOptions, computed: Field[], iteration: { max: number; change: number }): { rows: Row[]; diagnostics: ValidationError[] } {
+  // One moment for every pass, so `today` and `rand` can't keep it from settling.
+  const moment: ComputeOptions = { ...options, now: options.now ?? new Date(), random: options.random ?? Math.random };
+  let previous = new Map<string, Value>();
+  let out: Row[] = rows;
+  let diagnostics: ValidationError[] = [];
+  for (let pass = 0; pass < iteration.max; pass++) {
+    const { workbook, sheet } = workbookFor(schema, rows, moment, previous);
+    out = rows.map((_, i) => workbook.fill(sheet, i, computed));
+    diagnostics = sheet.diagnostics;
+    const next = new Map<string, Value>();
+    for (let i = 0; i < out.length; i++) for (const f of computed) next.set(`${f.name}\u0000${i}`, out[i]![f.name] as Value);
+    const settled = pass > 0 && [...next].every(([k, v]) => {
+      const was = previous.get(k);
+      return typeof v === "number" && typeof was === "number" ? Math.abs(v - was) <= iteration.change : JSON.stringify(v) === JSON.stringify(was);
+    });
+    previous = next;
+    if (settled) break;
+  }
+  return { rows: out, diagnostics };
 }
 
 /**
