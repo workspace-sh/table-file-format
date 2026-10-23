@@ -38,6 +38,9 @@ import {
   RULE_COLORS,
   colorLabel,
   hiddenRowsText,
+  frozenColumnsOf,
+  frozenOptions,
+  frozenPatch,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -137,6 +140,16 @@ export function ViewSettings({
             >
               Letter the columns and number the rows, so formulas can use =B7
             </Toggle>
+          </FieldRow>
+        )}
+        {view.layout === "table" && (
+          <FieldRow label="Freeze">
+            <Select
+              value={String(frozenColumnsOf(view))}
+              options={frozenOptions(shown.size)}
+              onChange={(n) => onChange(frozenPatch(view, Number(n)))}
+              style={styles.input}
+            />
           </FieldRow>
         )}
         {(view.layout === "table" || view.layout === "list") && (
@@ -469,6 +482,9 @@ function viewSettingsSections({
   }
   if (view.layout === "gallery") {
     viewRows.push(choice("gallery", "Card lead", view.gallery_field, fieldOptions(live, "Nothing"), (f) => onChange({ gallery_field: f || undefined })));
+  }
+  if (view.layout === "table") {
+    viewRows.push(choice("freeze", "Freeze", String(frozenColumnsOf(view)), frozenOptions(shownColumns(view, schema).size), (n) => onChange(frozenPatch(view, Number(n)))));
   }
   if (view.layout === "table" || view.layout === "list") {
     viewRows.push(

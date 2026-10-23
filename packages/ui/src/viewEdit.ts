@@ -274,6 +274,35 @@ export function hiddenRowsText(view: Pick<View, "hidden">): string | null {
   return n === 0 ? null : `${n} ${n === 1 ? "row" : "rows"} hidden`;
 }
 
+/** The most columns a view's setting offers to freeze. */
+const MOST_FROZEN = 5;
+
+/**
+ * How many of a table view's first columns stay put (`frozen.columns`,
+ * D58): the first alone when it doesn't say.
+ */
+export function frozenColumnsOf(view: Pick<View, "frozen">): number {
+  return view.frozen?.columns ?? 1;
+}
+
+/**
+ * The choices for a view's frozen columns, of the `shown` columns it has:
+ * none, or the first one, two… up to all but one, so something is left to
+ * scroll (and no more than five).
+ */
+export function frozenOptions(shown: number): { value: string; label: string }[] {
+  const options = [{ value: "0", label: "None" }, { value: "1", label: "First column" }];
+  for (let n = 2; n <= Math.min(MOST_FROZEN, shown - 1); n++) options.push({ value: String(n), label: `First ${n} columns` });
+  return options;
+}
+
+/** A view frozen at its first `columns`: the first alone is said by saying nothing, and frozen rows are kept. */
+export function frozenPatch(view: Pick<View, "frozen">, columns: number): Partial<View> {
+  const { columns: _, ...rest } = view.frozen ?? {};
+  const next = columns === 1 ? rest : { ...rest, columns };
+  return { frozen: Object.keys(next).length > 0 ? next : undefined };
+}
+
 /** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */
 export interface ViewSettingsProps {
   view: View;

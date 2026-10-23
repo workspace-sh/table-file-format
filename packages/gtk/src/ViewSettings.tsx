@@ -25,6 +25,9 @@ import {
   RULE_COLORS,
   colorLabel,
   hiddenRowsText,
+  frozenColumnsOf,
+  frozenOptions,
+  frozenPatch,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -242,6 +245,15 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
                 onNotifyActive={(active) => {
                   if (active !== (view.coordinates === true)) onChange(sheetPatch(!!active));
                 }}
+              />
+            ) : null}
+            {view.layout === "table" ? (
+              <Choice
+                title="Freeze"
+                subtitle="Columns that stay put while the rest scroll"
+                options={frozenOptions(shown.size).map((o) => ({ ...o, label: o.label.replace(/column/, "Column") }))}
+                value={String(frozenColumnsOf(view))}
+                onChange={(n) => n !== undefined && onChange(frozenPatch(view, Number(n)))}
               />
             ) : null}
             {view.layout === "table" || view.layout === "list" ? (

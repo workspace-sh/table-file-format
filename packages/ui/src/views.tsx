@@ -131,7 +131,7 @@ import { inputHints, type InputHintKind } from "./inputHints";
 import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { columnActions, rowActions } from "./controlSlots";
-import { hiddenPatch } from "./viewEdit";
+import { frozenColumnsOf, hiddenPatch } from "./viewEdit";
 import { MAX_LIST_HEIGHT } from "./internal/listLimits";
 import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
@@ -3305,7 +3305,7 @@ export function TableView({
   // tables (no fields) still render a placeholder header. The left pane
   // gets the frozen columns and the right pane the rest; with none
   // frozen, the right pane gets all fields and the left pane is unused.
-  const frozenCount = freezePrimary ? Math.min(view.frozen?.columns ?? 1, Math.max(1, fields.length - 1)) : 0;
+  const frozenCount = freezePrimary ? Math.min(frozenColumnsOf(view), Math.max(1, fields.length - 1)) : 0;
   const frozenNames = fields.slice(0, frozenCount);
   const frozenOn = frozenNames.length > 0;
 
