@@ -17,6 +17,7 @@
 import type { Field, ParsedTable, Row, TableSchema } from "./types.js";
 import Papa from "papaparse";
 import { newId } from "./id.js";
+import { columnLetter } from "./formula.js";
 
 export interface FromCSVResult {
   rows: Row[];
@@ -188,6 +189,29 @@ function inferType(values: string[]): Field["type"] {
   return "string";
 }
 
+/**
+ * Whether a sheet's first line looks like data, not headings (D59): every
+ * column whose cells below are all numbers, dates or yes/no has one of
+ * those in its first line too, and there's at least one such column. A
+ * heading is words: "qty" over numbers says the line is a header.
+ */
+export function firstLineIsData(csv: string): boolean {
+  const lines = delimitedCells(csv);
+  if (lines.length < 2) return false;
+  const [first, ...rest] = lines as [string[], ...string[][]];
+  let typed = 0;
+  for (let i = 0; i < first.length; i++) {
+    const below = rest.map((cells) => (cells[i] ?? "").trim()).filter((v) => v !== "");
+    const kind = below.length > 0 && below.every((v) => ISO_DATE.test(v) || ISO_DATETIME.test(v)) ? "date" : inferType(below);
+    if (kind === "string") continue;
+    typed++;
+    const head = (first[i] ?? "").trim();
+    const fits = kind === "date" ? ISO_DATE.test(head) || ISO_DATETIME.test(head) : kind === "boolean" ? /^(true|false)$/i.test(head) : head !== "" && Number.isFinite(Number(head));
+    if (!fits) return false;
+  }
+  return typed > 0;
+}
+
 // -- A spreadsheet someone already has, opened as a table ----
 
 /**
@@ -213,6 +237,11 @@ export interface TableFromCSVOptions {
    * plain).
    */
   keyOf?: (heading: string, taken: ReadonlySet<string>) => string;
+  /**
+   * False: the first line is a row like the others, and the fields are
+   * named for their columns, `A`, `B`, `C`… (D59). True when not given.
+   */
+  header?: boolean;
 }
 
 export interface TableFromCSV {
@@ -243,8 +272,11 @@ const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2
 export function tableFromCSV(csv: string, options: TableFromCSVOptions = {}): TableFromCSV {
   const lines = delimitedCells(csv);
   if (lines.length === 0) return { schema: { fields: [] }, rows: [], extraCells: 0 };
-  const headings = lines[0]!.map((cell) => cell.trim());
-  const data = lines.slice(1);
+  // Without a header row (D59): every line is a row, and each column is called by its letter.
+  const header = options.header !== false;
+  const widest = header ? 0 : Math.max(...lines.map((cells) => cells.length));
+  const headings = header ? lines[0]!.map((cell) => cell.trim()) : Array.from({ length: widest }, (_, i) => columnLetter(i));
+  const data = header ? lines.slice(1) : lines;
   const column = (i: number) => data.map((cells) => cells[i] ?? "").filter((cell) => cell !== "");
 
   // The rows' own ids, when a column gives every row a different one.

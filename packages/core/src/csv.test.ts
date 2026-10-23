@@ -241,3 +241,21 @@ test("empty lines are no rows, a BOM is no part of a heading, and cells past the
   assert.deepEqual(tableFromCSV("A,B\n").schema.fields.map((f) => f.type), ["string", "string"]);
 });
 
+
+test("a sheet without a header row: every line a row, fields named for their columns (D59)", async () => {
+  const { tableFromCSV } = await import("./csv.js");
+  const t = tableFromCSV("Apples,3\nBread,4,extra\n", { header: false });
+  assert.deepEqual(t.schema.fields.map((f) => [f.name, f.type]), [["A", "string"], ["B", "integer"], ["C", "string"]]);
+  assert.deepEqual(t.rows.map(({ id: _id, ...r }) => r), [{ A: "Apples", B: 3 }, { A: "Bread", B: 4, C: "extra" }]);
+  // With a header, as before.
+  assert.equal(tableFromCSV("item,qty\nApples,3\n").rows.length, 1);
+});
+
+test("a first line of data, not headings, is told apart (D59)", async () => {
+  const { firstLineIsData } = await import("./csv.js");
+  assert.equal(firstLineIsData("Apples,3,2026-01-02\nBread,4,2026-02-03\n"), true);
+  assert.equal(firstLineIsData("item,qty,when\nApples,3,2026-01-02\n"), false);
+  // Words only: nothing to tell by, so a header, as before.
+  assert.equal(firstLineIsData("name,city\nAda,Paris\n"), false);
+  assert.equal(firstLineIsData("one line\n"), false);
+});

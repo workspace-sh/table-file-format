@@ -4,7 +4,7 @@
 // The DOM parts stay in App; this is what can be tested without a browser.
 
 import { TextDecoder } from "@exodus/bytes/encoding-lite.js";
-import { newBundle, orderedTables, readTableArchive, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
+import { newBundle, orderedTables, readTableArchive, firstLineIsData, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
 import { fieldKey } from "@workspace.sh/table-ui/shared";
 import type { ParsedBundle } from "@workspace.sh/table-core";
 
@@ -100,7 +100,8 @@ function titleOf(fileName: string): string {
  * the names already used, which this one is kept unlike.
  */
 export function openSpreadsheet(text: string, fileName: string, taken: Iterable<string>, now?: Date): OpenedBundle {
-  const read = tableFromCSV(text, { keyOf: fieldKey });
+  // A sheet whose first line is data, not headings, is read without a header row (D59).
+  const read = tableFromCSV(text, { keyOf: fieldKey, header: !firstLineIsData(text) });
   if (read.schema.fields.length === 0) throw new Error("there's nothing in it");
   const title = titleOf(fileName);
   const key = tableKeyFor(title, taken);
