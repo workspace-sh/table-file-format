@@ -90,6 +90,10 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   operators, and `.table`'s own forms for other rows and tables:
   `field`, `values`, `related`, `linked`, `at`, `range`, `row`, `rows`
   (D36, D41, D48).
+- **Loops by iteration** (D60): a table whose own `meta.json` has
+  `iteration: { max, change }` works its loops out as a spreadsheet's
+  iterative calculation does; worked out whole, it's held in memory. No
+  app sets it yet.
 - **The clock and chance:** `today`, `now`, `rand` (D55). No public
   case can fix a clock, so `.table`'s own tests check them. A table
   that uses them is held in memory, not in an index.

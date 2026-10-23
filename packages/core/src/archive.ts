@@ -64,14 +64,14 @@ export interface ReadArchiveOptions {
    * has now taken to index. The table comes back with no rows and
    * `indexed` set, its count for the caller to fill in.
    */
-  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[] }, rows: Uint8Array) => boolean | Promise<boolean>;
+  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[]; meta?: TableMeta }, rows: Uint8Array) => boolean | Promise<boolean>;
   /**
    * The same question, asked before a table with a large rows file (of `lazyFrom`
    * bytes or more, 1 MB when left out) is inflated at all: it is handed
    * still compressed, to be read a piece at a time, so its start can be
    * shown while the rest is read. False inflates and parses it as usual.
    */
-  rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[] }, rows: LazyZipEntry) => boolean | Promise<boolean>;
+  rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[]; meta?: TableMeta }, rows: LazyZipEntry) => boolean | Promise<boolean>;
   lazyFrom?: number;
   /**
    * "later": every table without its rows, none of them inflated, for
@@ -193,11 +193,11 @@ export async function readTableArchive(
     let elsewhere = false;
     const later = options.rows === "later";
     if (lazyRows && !later) {
-      elsewhere = (await options.rowsLazily!(name, { schema, views, bodies, cells }, lazyRows)) === true;
+      elsewhere = (await options.rowsLazily!(name, { schema, views, bodies, cells, meta: tableMeta }, lazyRows)) === true;
       // Not taken: read as any other.
       if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
     }
-    if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies, cells }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
+    if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies, cells, meta: tableMeta }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
     const unread: UnreadLine[] = [];
     const rows: Row[] = [];
     const rowFiles: { name: string; ids: string[] }[] = [];

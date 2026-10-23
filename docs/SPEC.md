@@ -504,11 +504,11 @@ argument, or wrong number of arguments), `#NAME?` (unknown function
 or field), `#REF!` (a computed field that depends on itself, directly or through
 other rows, or a reference to a row or table that isn't there), `#NUM!`
 (a result too large to represent). A loop is `#REF!` unless the table
-asks for iteration (D60, not built yet): `meta.json`'s
-`iteration: { "max": <steps>, "change": <smallest change> }` works a
-loop out again from empty, up to `max` times, until no value in it
-changes by more than `change`, as a spreadsheet's iterative
-calculation does.
+asks for iteration (D60): its own `meta.json`'s
+`iteration: { "max": <passes>, "change": <smallest change> }` works its
+formulas out in whole passes, a loop reading what the pass before gave
+(0 on the first), up to `max` passes, until no number changes by more
+than `change`, as a spreadsheet's iterative calculation does.
 
 **Worked examples** (illustrative). Each row of this table is checked
 against the reference evaluator by `packages/core/src/spec-examples.test.ts`,

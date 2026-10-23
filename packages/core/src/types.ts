@@ -315,6 +315,12 @@ export interface TableMeta {
   created_at?: string;
   modified_at?: string;
   generator?: string;
+  /**
+   * A table's own: loops between its formulas worked out by repeating the
+   * calculation, at most `max` times, until no value in them changes by more
+   * than `change` (D60). Absent: a loop is #REF!.
+   */
+  iteration?: { max: number; change: number };
   [key: string]: unknown;
 }
 

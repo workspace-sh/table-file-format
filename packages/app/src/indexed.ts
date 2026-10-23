@@ -51,8 +51,10 @@ export function viewQuery(view: View, search = ""): IndexQuery {
  * their own row, and with no Sheet view, whose formulas read by place
  * (LARGE-TABLES-PLAN section 1). Any other is held in memory.
  */
-export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views" | "cells">): boolean {
+export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views" | "cells"> & { meta?: ParsedTable["meta"] }): boolean {
   if (table.views.some((v) => v.coordinates === true)) return false;
+  // Worked out by iteration (D60), it's worked out whole, in passes: not a row at a time.
+  if (table.meta?.iteration) return false;
   // Cells' own formulas are worked out a row at a time with their rows, so each must read only its own (D52).
   if (!cellsRowLocal(table.cells)) return false;
   const computed = table.schema.fields.filter((f) => f.computed);
