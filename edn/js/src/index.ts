@@ -65,6 +65,10 @@ type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; 
 export interface TableIn {
   schema: { fields: { name: string; computed?: { expr: string; dialect: string }; relation?: { table: string } }[] };
   rows: readonly ({ id: string } & Record<string, unknown>)[];
+  /** Its cells' own formulas and notes (D52, D57): a table with a formula among them is the host's to work out. */
+  cells?: readonly { expr?: string }[];
+  /** Its meta: a table that works its loops out by iteration (D60) is the host's. */
+  meta?: { iteration?: unknown };
 }
 
 type Calls = {
@@ -107,6 +111,7 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
     const json = {
       tables: Object.entries(tables).map(([name, t]) => ({
         name,
+        ...(t.cells?.some((c) => c.expr !== undefined) || t.meta?.iteration ? { host: true } : {}),
         ids: t.rows.map((r) => r.id),
         fields: t.schema.fields.map((f) => {
           if (f.computed) return { name: f.name, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };

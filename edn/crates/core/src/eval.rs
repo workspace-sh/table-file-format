@@ -68,14 +68,29 @@ pub trait Scope {
     fn linked(&self, table: &str, relation: &str, name: &str) -> Value;
 }
 
-/// The functions only the host can answer: they read a Sheet view's places (D41).
-const HOST_ONLY: [&str; 4] = ["at", "range", "row", "rows"];
+/// The functions only the host can answer: they read a Sheet view's places
+/// (D41), or the clock and chance, which are the host's to give (D55).
+const HOST_ONLY: [&str; 7] = ["at", "range", "row", "rows", "today", "now", "rand"];
 
-/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places.
+/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places, or the clock.
 pub fn needs_host(expr: &Expr) -> bool {
     match expr {
         Expr::Call(name, args) => HOST_ONLY.contains(&name.as_str()) || args.iter().any(needs_host),
         _ => false,
+    }
+}
+
+/// The tables `expr` names to read rows that point at its own (`linked`).
+pub fn linked_tables<'a>(expr: &'a Expr, out: &mut Vec<&'a str>) {
+    if let Expr::Call(name, args) = expr {
+        if name == "linked" {
+            if let Some(Expr::Str(table)) = args.first() {
+                out.push(table);
+            }
+        }
+        for a in args {
+            linked_tables(a, out);
+        }
     }
 }
 

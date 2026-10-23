@@ -21,7 +21,7 @@ const plain = (v: unknown): unknown =>
 function today(tables: Record<string, ParsedTable>): Record<string, Record<string, unknown[]>> {
   const out: Record<string, Record<string, unknown[]>> = {};
   for (const [name, t] of Object.entries(tables)) {
-    const { rows } = computeRows(t.schema, t.rows, { tables, self: name, views: t.views });
+    const { rows } = computeRows(t.schema, t.rows, { tables, self: name, views: t.views, ...(t.cells ? { cells: t.cells } : {}) });
     out[name] = Object.fromEntries(t.schema.fields.filter((f) => f.computed).map((f) => [f.name, rows.map((r) => r[f.name])]));
   }
   return out;
@@ -152,6 +152,27 @@ for (const binding of ["native", "wasm"] as const) {
     const n = same(edn, relationsTables(), "relations");
     assert.equal(n.host, 0);
     assert.ok(n.core >= 15, `${n.core}`);
+  });
+
+  test(`${binding}: the clock, a cell's own formula and iteration are the host's, with every table related to them`, async () => {
+    const edn = await loadEdn({ binding });
+    const c = (expr: string) => ({ expr, dialect: "table-expr-v1" });
+    const plainTable = { schema: { fields: [{ name: "n", type: "number" }, { name: "x", type: "number", computed: c("(* n 2)") }] }, rows: [{ id: "r1", n: 1 }] };
+    const clock = { schema: { fields: [{ name: "x", type: "date", computed: c("(today)") }] }, rows: [{ id: "r1" }] };
+    const owned = { ...plainTable, cells: [{ id: "r1", field: "x", expr: "5" }] };
+    const looping = { ...plainTable, meta: { iteration: { max: 10, change: 0.1 } } };
+    const reader = {
+      schema: { fields: [{ name: "to", type: "string", relation: { table: "t" } }, { name: "y", type: "number", computed: c('(related "to" "x")') }] },
+      rows: [{ id: "a", to: "r1" }],
+    };
+    for (const [label, t] of [["clock", clock], ["cells", owned], ["iteration", looping]] as const) {
+      const out = edn.computeTables({ t: t as never, reader: reader as never, alone: plainTable as never });
+      assert.equal(out["t"], "host", label);
+      assert.equal(out["reader"], "host", `${label}: a table reading it`);
+      assert.notEqual(out["alone"], "host", `${label}: a table that isn't related to it`);
+    }
+    // A note alone is no formula.
+    assert.notEqual(edn.computeTables({ t: { ...plainTable, cells: [{ id: "r1", field: "x", note: "hi" }] } as never })["t"], "host");
   });
 
   test(`${binding}: a table whose formulas read a Sheet place is left to the host`, async () => {

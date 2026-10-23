@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use crate::fxhash::FxHashMap as HashMap;
 use std::rc::Rc;
 
-use crate::eval::{evaluate, needs_host, ErrorCode, Scope, Value};
+use crate::eval::{evaluate, linked_tables, needs_host, ErrorCode, Scope, Value};
 use crate::formula::{read_formula, Expr};
 use crate::Error;
 
@@ -51,6 +51,9 @@ pub struct Table {
     pub name: String,
     pub ids: Vec<String>,
     pub fields: Vec<Field>,
+    /// The host says it works this table out itself: its cells have formulas of their own (D52), or it
+    /// works its loops out by iteration (D60).
+    pub host: bool,
 }
 
 #[derive(Clone)]
@@ -75,6 +78,8 @@ pub struct Workbook {
     columns: RefCell<HashMap<(usize, usize), Value>>,
     backlinks: RefCell<HashMap<(usize, usize), Rc<HashMap<String, Vec<usize>>>>>,
     depth: RefCell<usize>,
+    /// Per table: whether the host works it out (`needs_host`).
+    hosted: Vec<bool>,
 }
 
 impl Workbook {
@@ -82,6 +87,7 @@ impl Workbook {
         let by_name = tables.iter().enumerate().map(|(i, t)| (t.name.clone(), i)).collect();
         let slots = tables.iter().map(|t| t.fields.iter().map(|_| RefCell::new(Vec::new())).collect()).collect();
         let fields = tables.iter().map(|t| t.fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect()).collect();
+        let hosted = hosted(&tables, &by_name);
         Self {
             tables,
             by_name,
@@ -91,12 +97,14 @@ impl Workbook {
             columns: RefCell::new(HashMap::default()),
             backlinks: RefCell::new(HashMap::default()),
             depth: RefCell::new(0),
+            hosted,
         }
     }
 
-    /// Whether any formula of table `t` needs the host (reads a Sheet place).
+    /// Whether the host works table `t` out: it, or a table it's related to either way, has a formula
+    /// that reads a Sheet place or the clock, or is one the host said it works out itself.
     pub fn needs_host(&self, t: usize) -> bool {
-        self.tables[t].fields.iter().any(|f| matches!(&f.formula, Some(Some(e)) if needs_host(e)))
+        self.hosted[t]
     }
 
     /// Forget every computed value, as starting a fresh pass: `.table`'s
@@ -292,6 +300,50 @@ impl Scope for RowScope<'_> {
     }
 }
 
+/// Which tables the host works out. One that needs it takes every table it's related to with it, by a
+/// relation or a `linked` either way: a value read across from the host's table has to be the host's.
+fn hosted(tables: &[Table], by_name: &HashMap<String, usize>) -> Vec<bool> {
+    let mut group: Vec<usize> = (0..tables.len()).collect();
+    fn top(group: &mut [usize], mut t: usize) -> usize {
+        while group[t] != t {
+            group[t] = group[group[t]];
+            t = group[t];
+        }
+        t
+    }
+    let mut join = |group: &mut Vec<usize>, a: usize, b: usize| {
+        let (ra, rb) = (top(group, a), top(group, b));
+        if ra != rb {
+            group[ra] = rb;
+        }
+    };
+    for (t, table) in tables.iter().enumerate() {
+        for f in &table.fields {
+            if let Some(other) = f.relation.as_deref().and_then(|n| by_name.get(n)) {
+                join(&mut group, t, *other);
+            }
+            if let Some(Some(e)) = &f.formula {
+                let mut named = Vec::new();
+                linked_tables(e, &mut named);
+                for n in named {
+                    if let Some(other) = by_name.get(n) {
+                        join(&mut group, t, *other);
+                    }
+                }
+            }
+        }
+    }
+    let own: Vec<bool> = tables.iter().map(|t| t.host || t.fields.iter().any(|f| matches!(&f.formula, Some(Some(e)) if needs_host(e)))).collect();
+    let mut groups_hosted = vec![false; tables.len()];
+    for (t, h) in own.iter().enumerate() {
+        if *h {
+            let g = top(&mut group, t);
+            groups_hosted[g] = true;
+        }
+    }
+    (0..tables.len()).map(|t| groups_hosted[top(&mut group, t)]).collect()
+}
+
 // -- Arriving and leaving ----------------------------------------------------
 
 /// A workbook from JSON (`{"tables":[{"name","ids":[…],"fields":[{"name","formula"?,"relation"?,"values"?:[…],"numbers"?:k}]}]}`)
@@ -318,7 +370,8 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
             };
             fields.push(Field { name: f["name"].as_str().unwrap_or_default().to_string(), formula, relation, column });
         }
-        tables.push(Table { name, ids, fields });
+        let host = t.get("host").and_then(|v| v.as_bool()).unwrap_or(false);
+        tables.push(Table { name, ids, fields, host });
     }
     Ok(Workbook::new(tables))
 }
