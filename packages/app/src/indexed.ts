@@ -421,6 +421,6 @@ export function heldText(table: string, error: unknown, held: HeldRows): string 
   const why = `${table} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`;
   const lines = held.unread.length;
   if (lines === 0) return why;
-  return `${why} ${lines === 1 ? "A line of its rows couldn't be read; it's kept as it is." : `${lines} lines of its rows couldn't be read; they're kept as they are.`}`;
+  return `${why} ${lines === 1 ? "The line it couldn't read is kept as it is." : `The ${lines} lines it couldn't read are kept as they are.`}`;
 }
 
