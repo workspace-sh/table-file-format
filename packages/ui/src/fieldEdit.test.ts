@@ -42,6 +42,27 @@ test("a number's format picker: currency keeps its code, decimal its places", ()
   assert.equal(value.notes[0]!.kind, "note");
 });
 
+test("scientific keeps its places, and negatives in brackets go with decimal and currency only (D53)", () => {
+  const n = (format?: string): Field => ({ name: "n", type: "number", ...(format ? { format } : {}) });
+  const sci = formatState(n("scientific:3"), [n("scientific:3")], {})!;
+  assert.equal(sci.kind, "scientific");
+  assert.equal(sci.digits, 3);
+  assert.equal(sci.takesParens, false);
+  assert.deepEqual(sci.choose("decimal"), { format: "decimal:3" });
+  const money = formatState(n("currency:EUR:parens"), [n("currency:EUR:parens")], {})!;
+  assert.equal(money.kind, "currency");
+  assert.equal(money.code, "EUR");
+  assert.equal(money.parens, true);
+  assert.deepEqual(money.currency("GBP"), { format: "currency:GBP:parens" });
+  assert.deepEqual(money.choose("decimal"), { format: "decimal:2:parens" });
+  // A kind that can't show brackets drops them.
+  assert.deepEqual(money.choose("fraction"), { format: "fraction" });
+  assert.deepEqual(money.setParens(false), { format: "currency:EUR" });
+  const places = formatState(n("decimal:1"), [n("decimal:1")], {})!;
+  assert.deepEqual(places.setParens(true), { format: "decimal:1:parens" });
+  assert.ok(places.choices.some((c) => c.value === "fraction"));
+});
+
 test("a formula shows its inputs' currency, and warns when shown in another", () => {
   const quarter = formatState(f(budget, "quarter"), budget, {})!;
   assert.equal(quarter.choices[0]!.label, "Same as inputs (GBP)");

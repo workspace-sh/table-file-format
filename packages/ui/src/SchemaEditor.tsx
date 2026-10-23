@@ -598,7 +598,6 @@ function FormatPicker({
   const { kind, digits, code, notes } = state;
   const shown = state.choices;
   const choose = (next: string) => onUpdate(state.choose(next));
-  const set = (format: string) => onUpdate({ format: format || undefined });
   return (
     <>
       <html.span style={styles.label}>Format</html.span>
@@ -608,14 +607,14 @@ function FormatPicker({
         onChange={choose}
         style={styles.input}
       />
-      {kind === "decimal" && (
+      {(kind === "decimal" || kind === "scientific") && (
         <Select
           value={String(digits)}
           options={DECIMAL_PLACES.map((d) => ({
             value: String(d),
             label: `${d} decimal place${d === 1 ? "" : "s"}`,
           }))}
-          onChange={(next) => set(`decimal:${next}`)}
+          onChange={(next) => onUpdate(kind === "decimal" ? state.decimal(Number(next)) : state.scientific(Number(next)))}
           style={styles.input}
         />
       )}
@@ -623,9 +622,16 @@ function FormatPicker({
         <Select
           value={code}
           options={currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` }))}
-          onChange={(next) => set(`currency:${next}`)}
+          onChange={(next) => onUpdate(state.currency(next))}
           style={styles.input}
         />
+      )}
+      {state.takesParens && (
+        <html.div style={styles.checkRow}>
+          <Toggle role="setting" checked={state.parens} onChange={(on) => onUpdate(state.setParens(on))} style={styles.checkRow}>
+            Negatives in brackets
+          </Toggle>
+        </html.div>
       )}
       {notes.map((n) => (
         <html.span key={n.text} style={n.kind === "warn" ? styles.warnText : styles.noteText}>
@@ -994,7 +1000,6 @@ export function SchemaFieldEditor({
     });
     const format = formatState(field, fields ?? [], display);
     if (format) {
-      const set = (f: string) => onUpdate({ format: f || undefined });
       const rows: SettingsRow[] = [
         {
           kind: "choice",
@@ -1005,14 +1010,14 @@ export function SchemaFieldEditor({
           onChange: (next) => onUpdate(format.choose(next)),
         },
       ];
-      if (format.kind === "decimal") {
+      if (format.kind === "decimal" || format.kind === "scientific") {
         rows.push({
           kind: "choice",
           id: "digits",
           label: "Decimal places",
           value: String(format.digits),
           options: DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) })),
-          onChange: (next) => set(`decimal:${next}`),
+          onChange: (next) => onUpdate(format.kind === "decimal" ? format.decimal(Number(next)) : format.scientific(Number(next))),
         });
       }
       if (format.kind === "currency") {
@@ -1022,8 +1027,11 @@ export function SchemaFieldEditor({
           label: "Currency",
           value: format.code,
           options: currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` })),
-          onChange: (next) => set(`currency:${next}`),
+          onChange: (next) => onUpdate(format.currency(next)),
         });
+      }
+      if (format.takesParens) {
+        rows.push({ kind: "toggle", id: "parens", label: "Negatives in brackets", value: format.parens, onChange: (on) => onUpdate(format.setParens(on)) });
       }
       sections.push({ id: "format", footer: format.notes.map((n) => n.text).join(" ") || undefined, rows });
     }

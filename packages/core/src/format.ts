@@ -97,13 +97,23 @@ function formatNumber(format: string, value: unknown, locale: string | undefined
 
   if (format === "integer") return shown({ maximumFractionDigits: 0 });
   if (format === "percent") return shown({ style: "percent" });
-  if (format.startsWith("decimal:")) {
-    const digits = clampDigits(format.slice("decimal:".length));
-    return shown({ minimumFractionDigits: digits, maximumFractionDigits: digits });
+  if (format === "fraction") return fraction(n, locale);
+  if (format.startsWith("scientific:")) return scientific(n, clampDigits(format.slice("scientific:".length)), locale);
+  // `:parens` (D53): a negative in brackets, without its sign.
+  const parens = format.endsWith(":parens") && (format.startsWith("decimal:") || format.startsWith("currency:"));
+  const token = parens ? format.slice(0, -":parens".length) : format;
+  const bracketed = (options: Intl.NumberFormatOptions): string => {
+    if (!parens || !(n < 0)) return shown(options);
+    const positive = tryIntl(() => new Intl.NumberFormat(locale, options).format(-n)) ?? String(-n);
+    return `(${positive})`;
+  };
+  if (token.startsWith("decimal:")) {
+    const digits = clampDigits(token.slice("decimal:".length));
+    return bracketed({ minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
-  if (format.startsWith("currency:")) {
+  if (token.startsWith("currency:")) {
     // An unknown ISO 4217 code shows the plain number rather than throwing.
-    return shown({ style: "currency", currency: format.slice("currency:".length).toUpperCase() });
+    return bracketed({ style: "currency", currency: token.slice("currency:".length).toUpperCase() });
   }
   if (format.startsWith("duration:")) {
     // Only `duration:seconds` defined so far — value is a second count.
@@ -112,6 +122,55 @@ function formatNumber(format: string, value: unknown, locale: string | undefined
     }
   }
   return shown();
+}
+
+/**
+ * `scientific:N` (D53): N fraction digits and a signed exponent of at least
+ * two digits, as spreadsheets show it: 12345 is `1.23E+04`. The digits are
+ * the locale's.
+ */
+function scientific(n: number, digits: number, locale: string | undefined): string {
+  if (n === 0) return `${plain(0, digits, locale)}E+00`;
+  let exponent = Math.floor(Math.log10(Math.abs(n)));
+  let mantissa = n / 10 ** exponent;
+  // Rounding can carry the mantissa to 10 (9.996 at two digits): one more power of ten.
+  if (Math.abs(Number(mantissa.toFixed(digits))) >= 10) {
+    exponent += 1;
+    mantissa = n / 10 ** exponent;
+  }
+  const sign = exponent < 0 ? "-" : "+";
+  return `${plain(mantissa, digits, locale)}E${sign}${String(Math.abs(exponent)).padStart(2, "0")}`;
+}
+
+/** A number with exactly `digits` fraction digits, in the locale's digits, without grouping. */
+function plain(n: number, digits: number, locale: string | undefined): string {
+  return tryIntl(() => new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false }).format(n)) ?? n.toFixed(digits);
+}
+
+/**
+ * `fraction` (D53): the whole part and the nearest fraction with a
+ * denominator below 100, as spreadsheets show it: 1.25 is `1 1/4`. A
+ * fraction that rounds to nothing or to one shows as the whole number.
+ */
+function fraction(n: number, locale: string | undefined): string {
+  const negative = n < 0;
+  const a = Math.abs(n);
+  let whole = Math.floor(a);
+  const rest = a - whole;
+  let best = { num: 0, den: 1, error: rest };
+  for (let den = 2; den < 100; den++) {
+    const num = Math.round(rest * den);
+    const error = Math.abs(rest - num / den);
+    if (error < best.error - 1e-12) best = { num, den, error };
+  }
+  if (best.num === best.den) {
+    whole += 1;
+    best = { num: 0, den: 1, error: 0 };
+  }
+  const int = (x: number) => tryIntl(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(x)) ?? String(x);
+  const parts = [whole > 0 || best.num === 0 ? int(whole) : "", best.num > 0 ? `${best.num}/${best.den}` : ""].filter((p) => p !== "");
+  const text = parts.join(" ");
+  return negative && text !== "0" ? `-${text}` : text;
 }
 
 /**

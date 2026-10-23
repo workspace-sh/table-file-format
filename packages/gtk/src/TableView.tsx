@@ -86,7 +86,8 @@ import { EditableCell } from "./EditableCell.js";
 import { FieldAbout } from "./FieldAbout.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
-import { styles } from "./theme.js";
+import { styles, tintClass, useDark } from "./theme.js";
+import { useRowColors } from "./rowColors.js";
 import { drawnOf, NO_LIMIT, scrollerHeight, useEmbedded } from "./embedded.js";
 import { gridKeyOf } from "./gridKeys.js";
 
@@ -283,6 +284,7 @@ function BodyRow({
   onResetRowHeight,
   menuRef,
   frozen,
+  tint = [],
   children,
 }: {
   rowId: string;
@@ -299,12 +301,14 @@ function BodyRow({
   menuRef?: (button: Gtk.MenuButton | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
+  /** The row's colour from the view's colour rules (D53), as a class. */
+  tint?: string[];
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
   // As wide as its cells and no wider: its rule stops at the last real column, short of the "+" after it.
   if (!menu) {
-    const cells = <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+    const cells = <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow, ...tint]}>{children}</GtkBox>;
     return frozen ? <GtkOverlay halign={Gtk.Align.START} overlays={frozen}>{cells}</GtkOverlay> : cells;
   }
   return (
@@ -350,7 +354,7 @@ function BodyRow({
         </>
       }
     >
-      <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow]}>{children}</GtkBox>
+      <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow, ...tint]}>{children}</GtkBox>
     </GtkOverlay>
   );
 }
@@ -402,6 +406,9 @@ export function TableView({
   onScrollPlace,
   restorePlace,
 }: GtkTableViewProps) {
+  const dark = useDark();
+  // A view's colour rules (D53), worked out once per row as it's drawn.
+  const colorsOf = useRowColors(view, schema);
   // A field's editor open, by name, and "add a field" open.
   const [editingField, setEditingField] = useState<string | null>(null);
   // The schema as it was when a field's editor opened, for its Cancel.
@@ -1308,6 +1315,7 @@ export function TableView({
     }
     const rowHeight = heightOf(row.id);
     const lines = linesFor(rowHeight);
+    const colors = colorsOf(row);
     const bodyCell = (name: string, i: number) => {
           const field = fieldMap.get(name);
           const xalign = xalignOf(effectiveAlign(field));
@@ -1320,6 +1328,7 @@ export function TableView({
                 ...(openFormula?.name === name ? [styles.formulaColumn] : []),
                 ...(inputCells.has(`${row.id}\u0000${name}`) ? [styles.formulaInput] : []),
                 ...(focusedCell === cellKey(row.id, name) ? [styles.selectedCell] : []),
+                ...tintClass(colors.cells[name], dark),
               ]}
               cellRef={(widget) => {
                 if (widget) cells.current.set(cellKey(row.id, name), widget);
@@ -1382,7 +1391,8 @@ export function TableView({
             </Cell>
           );
     };
-    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen], String(numberOf(row, index)), freeze ? bodyCell(fields[0]!, 0) : null);
+    // The frozen start covers the row's own background: it takes the row's colour too.
+    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, index)), freeze ? bodyCell(fields[0]!, 0) : null);
     return (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
       {heading}
@@ -1396,6 +1406,7 @@ export function TableView({
       >
       <BodyRow
         rowId={row.id}
+        tint={tintClass(colors.row, dark)}
         menu={hasMenu}
         hasBody={bodies?.[row.id] !== undefined}
         canInsert={canInsert}

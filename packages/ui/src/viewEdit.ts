@@ -3,7 +3,7 @@
 // use, how a typed filter value becomes a stored one, and which field a
 // layout starts from. Views are SPEC section 4.
 
-import { enumOptions, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
+import { enumOptions, type EnumColor, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewColorRule, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
 
 export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   eq: "is",
@@ -203,6 +203,57 @@ export function filterWithOperator(filter: ViewFilter, field: Field | undefined,
 /** Whether a filter's value is one of the field's choices, picked, rather than typed. */
 export function picksChoice(field: Field | undefined, operator: FilterOperator): boolean {
   return enumOptions(field).length > 0 && ["eq", "neq", "contains", "not_contains"].includes(operator);
+}
+
+// ─── Colour rules (SPEC section 4, D53) ────────────────────────────────
+
+/** The choice colours a rule can take, in the palette's order. */
+export const RULE_COLORS: EnumColor[] = ["red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink", "brown", "gray"];
+
+/** A colour's name as it's shown: "Red". */
+export function colorLabel(color: string): string {
+  return color.charAt(0).toUpperCase() + color.slice(1);
+}
+
+/** The view's colour rules, as it holds them (none is an empty list). */
+export function colorRulesOf(view: Pick<View, "colors">): ViewColorRule[] {
+  return Array.isArray(view.colors) ? view.colors : [];
+}
+
+/** Colour rules set; none at all is no `colors`. */
+export function colorRulesPatch(next: ViewColorRule[]): Partial<View> {
+  return { colors: next.length ? next : undefined };
+}
+
+/** A new rule: the first field's first condition, the next colour not yet used, the whole row. Null when there's no field. */
+export function newColorRule(live: Field[], rules: ViewColorRule[]): ViewColorRule | null {
+  const filter = newFilter(live);
+  if (!filter) return null;
+  const used = new Set(rules.map((r) => r.color));
+  return { filter: [filter], color: RULE_COLORS.find((c) => !used.has(c)) ?? "red" };
+}
+
+/** One rule changed, the rest kept in their order: the first that matches wins, so order matters. */
+export function withColorRule(rules: ViewColorRule[], index: number, rule: ViewColorRule | null): ViewColorRule[] {
+  const next = rules.slice();
+  if (rule === null) next.splice(index, 1);
+  else next[index] = rule;
+  return next;
+}
+
+/**
+ * A rule's first condition replaced: what a settings panel edits. A rule
+ * with more conditions (written by another app) keeps the rest, and the
+ * panel says how many.
+ */
+export function withFirstCondition(rule: ViewColorRule, filter: ViewFilter): ViewColorRule {
+  return { ...rule, filter: [filter, ...rule.filter.slice(1)] };
+}
+
+/** What a rule colours: a field's name, or "" for the whole row. */
+export function colorTargetPatch(rule: ViewColorRule, target: string): ViewColorRule {
+  const { field: _was, ...rest } = rule;
+  return target ? { ...rest, field: target } : rest;
 }
 
 /** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */

@@ -162,12 +162,12 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
 
           <AdwPreferencesGroup title="Display">
             {format ? <Combo title="Format" options={format.choices} value={format.kind} onChange={(v) => onUpdate(format.choose(v))} /> : null}
-            {format?.kind === "decimal" ? (
+            {format?.kind === "decimal" || format?.kind === "scientific" ? (
               <Combo
                 title="Decimal Places"
                 options={DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) }))}
                 value={String(format.digits)}
-                onChange={(v) => onUpdate(format.decimal(Number(v)))}
+                onChange={(v) => onUpdate(format.kind === "decimal" ? format.decimal(Number(v)) : format.scientific(Number(v)))}
               />
             ) : null}
             {format?.kind === "currency" ? (
@@ -177,6 +177,15 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
                 options={currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c, display.locale)}` }))}
                 value={format.code}
                 onChange={(v) => onUpdate(format.currency(v))}
+              />
+            ) : null}
+            {format?.takesParens ? (
+              <AdwSwitchRow
+                title="Negatives in Brackets"
+                active={format.parens}
+                onNotifyActive={(on) => {
+                  if (!!on !== format.parens) onUpdate(format.setParens(!!on));
+                }}
               />
             ) : null}
             <Combo

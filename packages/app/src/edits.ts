@@ -160,6 +160,12 @@ function viewWithoutField(view: View, name: string): View {
   if (view.group?.field === name) delete next.group;
   if (view.columnWidths && name in view.columnWidths) next.columnWidths = withoutKey(view.columnWidths, name);
   if (view.totals && name in view.totals) next.totals = withoutKey(view.totals, name);
+  // A colour rule that colours the field's cell, or asks about it, goes whole: one condition less would colour other rows (D53).
+  if (Array.isArray(view.colors)) {
+    const colors = view.colors.filter((r) => r.field !== name && !r.filter.some((f) => f.field === name));
+    if (colors.length > 0) next.colors = colors;
+    else delete next.colors;
+  }
   for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === name) delete next[k];
   return next;
 }

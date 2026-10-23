@@ -84,6 +84,8 @@ export const FORMAT_CHOICES: Record<Exclude<FormatFamily, null>, { value: string
     { value: "decimal", label: "Decimal places…" },
     { value: "percent", label: "Percent" },
     { value: "currency", label: "Currency…" },
+    { value: "scientific", label: "Scientific…" },
+    { value: "fraction", label: "Fraction" },
     { value: "duration:seconds", label: "Duration (seconds)" },
   ],
   date: [
@@ -143,11 +145,15 @@ export interface FormatState {
   family: Exclude<FormatFamily, null>;
   /** The choices, with their labels as shown (a formula's inherited currency, a date's example). */
   choices: { value: string; label: string }[];
-  /** The chosen choice: "decimal" and "currency" stand for any decimal:N and currency:XYZ. */
+  /** The chosen choice: "decimal", "currency" and "scientific" stand for any decimal:N, currency:XYZ and scientific:N. */
   kind: string;
   digits: number;
   /** The currency code, when the kind is currency. */
   code: string;
+  /** Negatives shown in brackets (`:parens`, D53): only decimal and currency take it. */
+  parens: boolean;
+  /** Whether the chosen kind can show negatives in brackets. */
+  takesParens: boolean;
   /**
    * Notes to show under the picker, about currency being a label, not a
    * conversion (D33): a `warn` when a formula is shown in a currency other
@@ -158,6 +164,9 @@ export interface FormatState {
   choose(next: string): Partial<Field>;
   decimal(digits: number): Partial<Field>;
   currency(code: string): Partial<Field>;
+  scientific(digits: number): Partial<Field>;
+  /** Negatives in brackets, or with their sign. */
+  setParens(on: boolean): Partial<Field>;
 }
 
 /**
@@ -182,11 +191,16 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
         : o,
     )
     .map((o) => (family === "date" ? { ...o, label: `${o.label} (${example(o.value)})` } : o));
-  const current = field.format ?? "";
-  const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current;
-  const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : 2;
+  const whole = field.format ?? "";
+  // `:parens` (D53) says only how a negative looks: decimal:2:parens is decimal places, 2.
+  const takes = (f: string) => f.startsWith("decimal:") || f.startsWith("currency:");
+  const parens = whole.endsWith(":parens") && takes(whole);
+  const current = parens ? whole.slice(0, -":parens".length) : whole;
+  const kind = current.startsWith("decimal:") ? "decimal" : current.startsWith("currency:") ? "currency" : current.startsWith("scientific:") ? "scientific" : current;
+  const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : current.startsWith("scientific:") ? Number(current.slice("scientific:".length)) || 0 : 2;
   const code = current.startsWith("currency:") ? current.slice("currency:".length).toUpperCase() : "";
-  const set = (format: string): Partial<Field> => ({ format: format || undefined });
+  // A choice keeps the brackets when it can take them.
+  const set = (format: string): Partial<Field> => ({ format: format ? (parens && takes(format) ? `${format}:parens` : format) : undefined });
   const notes: FormatState["notes"] = [];
   if (own && inherited && inherited !== "mixed" && own !== inherited) {
     notes.push({ kind: "warn", text: `${title} is worked out from values in ${inherited}. Showing it in ${own} relabels the numbers; it doesn't convert them.` });
@@ -200,9 +214,12 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
     kind,
     digits,
     code,
+    parens,
+    takesParens: kind === "decimal" || kind === "currency",
     notes,
     choose(next) {
       if (next === "decimal") return set(`decimal:${digits}`);
+      if (next === "scientific") return set(`scientific:${digits}`);
       // A formula's inputs decide its unit; only a column with nothing to
       // go on falls back to the reader's own currency.
       if (next === "currency") return set(`currency:${code || (inherited && inherited !== "mixed" ? inherited : defaultCurrency())}`);
@@ -210,6 +227,8 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
     },
     decimal: (d) => set(`decimal:${d}`),
     currency: (c) => set(`currency:${c}`),
+    scientific: (d) => set(`scientific:${d}`),
+    setParens: (on) => ({ format: takes(current) ? (on ? `${current}:parens` : current) : whole || undefined }),
   };
 }
 

@@ -48,7 +48,8 @@ import { gridKeyOf } from "./gridKeys.js";
 import { AttachmentPicture, useAttachmentPaintable } from "./AttachmentImage.js";
 import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
-import { styles } from "./theme.js";
+import { styles, tintClass, useDark } from "./theme.js";
+import { useRowColors } from "./rowColors.js";
 import { bottomIn, childAt, drawnOf, scrollerHeight, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
 
 /** A board column's width: the web board's. */
@@ -124,6 +125,7 @@ function CardButton({
   cardRef,
   onKey,
   plain,
+  tint = [],
 }: {
   onActivate?: () => void;
   width?: number;
@@ -136,11 +138,13 @@ function CardButton({
   onKey?: (key: string, alt: boolean) => boolean;
   /** A list's row: a line of the list with a rule under it, not a card with a frame of its own. */
   plain?: boolean;
+  /** The row's colour from the view's colour rules (D53), as a class. */
+  tint?: string[];
 }) {
   return (
     <GtkButton
       ref={cardRef}
-      cssClasses={plain ? ["flat", styles.listRow] : ["card", styles.card]}
+      cssClasses={[...(plain ? ["flat", styles.listRow] : ["card", styles.card]), ...tint]}
       widthRequest={width}
       hexpand={width === undefined}
       onClicked={() => onActivate?.()}
@@ -198,6 +202,8 @@ function useCardKeys({ move, onAltKey }: { move: (id: string, key: string) => st
 }
 
 export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
+  const dark = useDark();
+  const colorsOf = useRowColors(view, schema);
   const embedded = useEmbedded();
   const board = boardColumns(view, rows, schema);
   // A card dropped into a column takes its value; where it lands in the
@@ -280,6 +286,7 @@ export function BoardView({ view, rows, schema, bodies, onOpenBody, onUpdateRow,
               {drawn(key).map((row) => (
                 <CardButton
                   key={row.id}
+                  tint={tintClass(colorsOf(row).row, dark)}
                   onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined}
                   cardRef={keys.cardRef(row.id)}
                   onKey={keys.onKey(row.id)}
@@ -331,6 +338,8 @@ function GalleryHero({ field, value, text }: { field: Field | undefined; value: 
 }
 
 export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTables, onOpenRelation }: ViewProps) {
+  const dark = useDark();
+  const colorsOf = useRowColors(view, schema);
   const embedded = useEmbedded();
   const heroField = view.gallery_field;
   const fields = cardFields(view, schema, heroField);
@@ -377,7 +386,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
             {line.map((row) => {
               const excerpt = bodyExcerpt(bodies?.[row.id]);
               return (
-                <CardButton key={row.id} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined} cardRef={keys.cardRef(row.id)} onKey={keys.onKey(row.id)}>
+                <CardButton key={row.id} tint={tintClass(colorsOf(row).row, dark)} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined} cardRef={keys.cardRef(row.id)} onKey={keys.onKey(row.id)}>
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={6}>
                     {heroField ? <GalleryHero field={fieldMap.get(heroField)} value={row[heroField]} text={rowTitle(row, heroField)} /> : null}
                     <Card
@@ -415,6 +424,8 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
 }
 
 export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView, relatedTables, onOpenRelation }: ViewProps) {
+  const dark = useDark();
+  const colorsOf = useRowColors(view, schema);
   const embedded = useEmbedded();
   // A row dropped on another takes its place in the view's order (orderMovedTo).
   const reorderable = !!onUpdateView;
@@ -461,6 +472,7 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
             ) : null}
             <CardButton
               plain
+              tint={tintClass(colorsOf(row).row, dark)}
               onActivate={() => onOpenBody?.(row.id)}
               cardRef={keys.cardRef(row.id)}
               onKey={keys.onKey(row.id)}
@@ -494,6 +506,8 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
 }
 
 export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
+  const dark = useDark();
+  const colorsOf = useRowColors(view, schema);
   const embedded = useEmbedded();
   const field = view.calendar_field;
   const { locale } = useDisplaySettings();
@@ -558,7 +572,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewPro
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} valign={Gtk.Align.START} hexpand>
                     <GtkLabel label={String(cell.date.getDate())} xalign={0} cssClasses={[styles.calendarNumber, ...(key === today ? [styles.calendarToday] : [])]} />
                     {chips.map((row) => (
-                      <Title key={row.id} text={rowTitle(row, titleField)} classes={[styles.calendarChip]} />
+                      <Title key={row.id} text={rowTitle(row, titleField)} classes={[styles.calendarChip, ...tintClass(colorsOf(row).row, dark)]} />
                     ))}
                     {more > 0 ? <GtkLabel label={`+${more} more`} xalign={0} cssClasses={["caption", "dim-label"]} /> : null}
                   </GtkBox>

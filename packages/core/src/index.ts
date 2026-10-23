@@ -127,3 +127,4 @@ export {
   type SetChange,
 } from "./edit-log.js";
 export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";
+export { hasColorRules, knownColor, rowColors, type RowColors } from "./colors.js";

@@ -201,3 +201,23 @@ export function pillClass(color: string | undefined, dark: boolean): string {
   }
   return name;
 }
+
+const tintClasses = new Map<string, string>();
+
+/**
+ * The class that colours a row or cell behind its values, from a view's
+ * colour rules (D53): the choice's own background, light or dark. None for
+ * no colour.
+ */
+export function tintClass(color: string | undefined, dark: boolean): string[] {
+  if (color === undefined) return [];
+  const palette = pillColors(color);
+  const bg = dark ? palette.dark.bg : palette.light.bg;
+  let name = tintClasses.get(bg);
+  if (name === undefined) {
+    name = css({ backgroundColor: bg });
+    tintClasses.set(bg, name);
+  }
+  return [name];
+}
+

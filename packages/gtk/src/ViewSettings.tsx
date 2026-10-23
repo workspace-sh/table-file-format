@@ -22,6 +22,14 @@ import { GtkBox, GtkButton, GtkDropDown, GtkEntry } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type FilterOperator, type ViewFilter, type ViewLayout, type ViewSort, type ViewTotal } from "@workspace.sh/table-core";
 import {
   OPERATOR_LABELS,
+  RULE_COLORS,
+  colorLabel,
+  colorRulesOf,
+  colorRulesPatch,
+  colorTargetPatch,
+  newColorRule,
+  withColorRule,
+  withFirstCondition,
   filterOnField,
   filtersPatch,
   filterValueFrom,
@@ -313,6 +321,46 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
                 onRemove={() => arrange(filtersPatch(filters.filter((_, j) => j !== i)))}
               />
             ))}
+          </AdwPreferencesGroup>
+
+          <AdwPreferencesGroup
+            title="Colours"
+            description={colorRulesOf(view).length > 1 ? "The first rule that matches a row or cell colours it." : undefined}
+            headerSuffix={
+              <GtkButton
+                iconName="list-add-symbolic"
+                cssClasses={["flat"]}
+                tooltipText="Add Colour"
+                onClicked={() => {
+                  const made = newColorRule(choices.live, colorRulesOf(view));
+                  if (made) onChange(colorRulesPatch([...colorRulesOf(view), made]));
+                }}
+              />
+            }
+          >
+            {colorRulesOf(view).flatMap((rule, i) => {
+              const set = (next: typeof rule | null) => onChange(colorRulesPatch(withColorRule(colorRulesOf(view), i, next)));
+              const first = rule.filter[0] ?? newFilter(choices.live);
+              return [
+                first ? <FilterRow key={`where-${i}`} filter={first} fields={choices.live} onChange={(next) => set(withFirstCondition(rule, next))} onRemove={() => set(null)} /> : null,
+                <AdwActionRow key={`color-${i}`} title="Colour" subtitle={rule.filter.length > 1 ? `And ${rule.filter.length - 1} more condition${rule.filter.length === 2 ? "" : "s"}` : undefined} activatable={false}>
+                  <GtkBox spacing={6} valign={Gtk.Align.CENTER}>
+                    <Pick
+                      tooltip="Colour"
+                      options={RULE_COLORS.map((c) => ({ value: c, label: colorLabel(c) }))}
+                      value={RULE_COLORS.includes(rule.color as never) ? rule.color : "gray"}
+                      onChange={(c) => set({ ...rule, color: c })}
+                    />
+                    <Pick
+                      tooltip="What it colours"
+                      options={[{ value: "", label: "Whole row" }, ...choices.live.map((f) => ({ value: f.name, label: `${label(f)} only` }))]}
+                      value={rule.field ?? ""}
+                      onChange={(t) => set(colorTargetPatch(rule, t))}
+                    />
+                  </GtkBox>
+                </AdwActionRow>,
+              ];
+            })}
           </AdwPreferencesGroup>
 
           <AdwPreferencesGroup

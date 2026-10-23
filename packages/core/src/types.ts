@@ -263,6 +263,11 @@ export interface View {
    * but the choice.
    */
   totals?: Record<string, ViewTotal>;
+  /**
+   * Rows or cells coloured by their values (SPEC section 4, "Colour rules";
+   * D53): the first rule that matches wins. Display-only.
+   */
+  colors?: ViewColorRule[];
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;
@@ -285,6 +290,15 @@ export interface View {
    */
   calendar_range?: { start: string; end: string };
   [key: string]: unknown;
+}
+
+/** One colour rule of a view: rows meeting every condition of `filter` are coloured, or only their `field`'s cell. */
+export interface ViewColorRule {
+  filter: ViewFilter[];
+  /** One of the choice colours; a reader shows one it doesn't know as `gray`. */
+  color: EnumColor | string;
+  /** The cell to colour; absent, the whole row. */
+  field?: string;
 }
 
 // ---- Meta ----

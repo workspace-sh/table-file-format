@@ -200,6 +200,18 @@ test("deleting a field takes it from the schema, every row and every view that n
   assert.equal(withoutField(companies, "no-such-field"), companies);
 });
 
+test("deleting a field takes the colour rules that colour it or ask about it, and leaves the rest (D53)", () => {
+  const companies = tables["companies"]!;
+  const colors = [
+    { filter: [{ field: "industry", operator: "eq" as const, value: "Retail" }], color: "red" },
+    { filter: [{ field: "employees", operator: "gt" as const, value: 100 }], color: "green", field: "industry" },
+    { filter: [{ field: "employees", operator: "gt" as const, value: 100 }], color: "blue" },
+  ];
+  const coloured = { ...companies, views: companies.views.map((v, i) => (i === 0 ? { ...v, colors } : v)) };
+  assert.deepEqual(withoutField(coloured, "industry").views[0]!.colors, [colors[2]]);
+  assert.equal("colors" in withoutField(withoutField(coloured, "industry"), "employees").views[0]!, false);
+});
+
 test("withField: beside a field, in the schema and the view that lists its fields", () => {
   const view = tasks.views[0]!;
   const listed = { ...tasks, views: [{ ...view, fields: tasks.schema.fields.map((f) => f.name) }, ...tasks.views.slice(1)] };
