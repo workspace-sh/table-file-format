@@ -9,7 +9,7 @@
 import { newId } from "./id.js";
 import { TableEntry } from "./layout.js";
 import { normaliseBody } from "./serialize.js";
-import type { CellFormula, Row } from "./types.js";
+import type { Row } from "./types.js";
 
 /** The history's file, in its table's folder: `tables/{name}/history.ndjson`. */
 export const HISTORY_FILE = TableEntry.history;
@@ -24,7 +24,7 @@ export interface SetChange {
 }
 
 /** A row's cells' own formulas (D52): each cell's `cells/` line without `id` and `field`, by the field's name. */
-export type RowCells = Record<string, Omit<CellFormula, "id" | "field">>;
+export type RowCells = Record<string, { expr: string; dialect?: string; [key: string]: unknown }>;
 
 /** A row was added: `values` is the row as written, and `cells` its cells' own formulas, when it has any. */
 export interface InsertChange {

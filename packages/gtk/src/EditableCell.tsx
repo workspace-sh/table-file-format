@@ -23,7 +23,7 @@ import {
 } from "@gtkx/jsx/gtk";
 import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { styles } from "./theme.js";
-import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { type GridEditEnd, inputHints, cellFormulaDraft, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -51,6 +51,11 @@ export interface EditableCellProps {
   editRequest?: { n: number; text?: string };
   /** Editing closed from the keyboard, and how: the grid moves on from it. */
   onEditEnd?: (how: GridEditEnd) => void;
+  /**
+   * Typing `=…` gives the cell its own formula (D52): what that needs, the
+   * formula it has now, and where it's saved. Absent: `=` is typed as text.
+   */
+  formula?: CellFormulaEntry & { syntax?: "excel" | "stored"; onSet: (expr: string) => void };
 }
 
 /**
@@ -104,7 +109,7 @@ const PICKERS: Record<DateKind, { tooltip: string; icon: string }> = {
   time: { tooltip: "Choose a Time", icon: "preferences-system-time-symbolic" },
 };
 
-export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd }: EditableCellProps) {
+export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd, formula }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
@@ -183,7 +188,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     closed.current = false;
     queried.current = null;
     typedOver.current = text !== undefined;
-    setDraft(text ?? draftOf(value));
+    // A cell with its own formula is edited as that formula (D52).
+    setDraft(text ?? (formula?.own !== undefined ? cellFormulaDraft(formula.own, formula.grid, formula.syntax) : draftOf(value)));
     setProblem(null);
     setEditing(true);
   };
@@ -221,7 +227,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   /** Saved (or nothing to save) and closed: true; refused, the editor stays: false. */
   const commit = (raw: string, how: "key" | "blur"): boolean => {
     if (closed.current) return false;
-    const result = commitDraft(field, value, raw, how, queried.current);
+    const result = commitDraft(field, value, raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem({ message: result.check.message, suggestion: result.check.suggestion });
@@ -229,6 +235,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     }
     close();
     if (result.kind === "save") onCommit(result.value);
+    if (result.kind === "formula") formula?.onSet(result.expr);
     return true;
   };
 

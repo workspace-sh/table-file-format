@@ -29,7 +29,29 @@ export function bumpSchemaVersion(schema: TableSchema): TableSchema {
 }
 
 export function withCell(table: ParsedTable, rowId: string, field: string, value: unknown): ParsedTable {
-  return { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
+  const next = { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
+  // A value typed into a cell with its own formula takes its place (D52).
+  return table.cells?.some((c) => c.id === rowId && c.field === field) ? withCellFormula(next, rowId, field, null) : next;
+}
+
+/**
+ * A cell given its own formula (D52), in the stored form, or `null` to take
+ * it away. The row's value goes with a formula set: the formula stands in
+ * for it, and its result is never stored.
+ */
+export function withCellFormula(table: ParsedTable, rowId: string, field: string, expr: string | null): ParsedTable {
+  const others = (table.cells ?? []).filter((c) => !(c.id === rowId && c.field === field));
+  const cells = expr === null ? others : [...others, { id: rowId, field, expr }];
+  const rows =
+    expr === null
+      ? table.rows
+      : table.rows.map((row) => {
+          if (row.id !== rowId || !(field in row)) return row;
+          const { [field]: _gone, ...rest } = row;
+          return rest as typeof row;
+        });
+  const { cells: _was, ...rest } = table;
+  return { ...rest, rows, ...(cells.length > 0 ? { cells } : {}) };
 }
 
 /**
@@ -70,7 +92,11 @@ export function withRowAt(table: ParsedTable, viewId: string, anchor: string, wh
 /** Without the row, its body, and its cells' own formulas (D52). */
 export function withoutRow(table: ParsedTable, rowId: string): ParsedTable {
   const next: ParsedTable = { ...table, rows: table.rows.filter((r) => r.id !== rowId) };
-  if (table.cells?.some((c) => c.id === rowId)) next.cells = table.cells.filter((c) => c.id !== rowId);
+  if (table.cells?.some((c) => c.id === rowId)) {
+    const cells = table.cells.filter((c) => c.id !== rowId);
+    if (cells.length > 0) next.cells = cells;
+    else delete next.cells;
+  }
   if (!table.bodies) return next;
   const bodies = { ...table.bodies };
   delete bodies[rowId];

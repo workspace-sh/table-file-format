@@ -209,6 +209,7 @@ function Opened({
             bodies={table.bodies}
             relatedTables={related}
             allRows={table.rows}
+        cells={table.cells}
             tableKey={tableName}
             sheet={derived.shown.sheet}
             {...(lookOnly ? {} : callbacks)}

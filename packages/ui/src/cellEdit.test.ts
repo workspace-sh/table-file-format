@@ -103,3 +103,21 @@ test("toggling a many-relation keeps the related table's order; dangling ids sta
   assert.deepEqual(relationToggled(contacts, [ids[0], "gone"], ids[1]!, related), [ids[0], ids[1], "gone"]);
   assert.equal(relationToggled(contacts, [ids[0]], ids[0]!, related), undefined);
 });
+
+test("`=` typed in a stored field's cell is its own formula; typed over one, a value or nothing takes its place (D52)", async () => {
+  const { cellFormulaDraft, commitDraft } = await import("./cellEdit");
+  const fields = [{ name: "price", type: "number" as const }, { name: "qty", type: "number" as const }];
+  const qty = fields[1]!;
+  assert.deepEqual(commitDraft(qty, 3, "=price * 2", "key", null, { fields }), { kind: "formula", expr: "(* price 2)" });
+  assert.equal(commitDraft(qty, 3, "=price *", "key", null, { fields }).kind, "problem");
+  assert.equal(commitDraft(qty, 3, "=price *", "blur", null, { fields }).kind, "dropped");
+  // The same formula again changes nothing.
+  assert.deepEqual(commitDraft(qty, 6, "=price*2", "key", null, { fields, own: "(* price 2)" }), { kind: "unchanged" });
+  // Typed over it: the value, even the one it shows, and nothing at all.
+  assert.deepEqual(commitDraft(qty, 6, "6", "key", null, { fields, own: "(* price 2)" }), { kind: "save", value: 6 });
+  assert.deepEqual(commitDraft(qty, 6, "", "key", null, { fields, own: "(* price 2)" }), { kind: "save", value: null });
+  // Without a way to give a cell a formula, `=` is text like any other (and not a number).
+  assert.equal(commitDraft(qty, 3, "=price * 2", "key", null).kind, "problem");
+  assert.equal(cellFormulaDraft("(* price 2)"), "=price * 2");
+  assert.equal(cellFormulaDraft("(* price 2)", undefined, "stored"), "=(* price 2)");
+});

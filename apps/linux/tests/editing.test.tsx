@@ -35,6 +35,34 @@ async function openTasks() {
 }
 
 describe("editing on Linux saves to the file", () => {
+  it("= typed in a cell gives it its own formula, shown again when it's edited; a value typed over it takes its place (D52)", async () => {
+    await openTasks();
+    await userEvent.click((await screen.findAllByText("2"))[0]!);
+    let entry = (await screen.findByDisplayValue("2")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "=2*3");
+    await userEvent.keyboard(entry, "{Enter}");
+    let id = "";
+    await waitFor(async () => {
+      const t = await tasksOnDisk();
+      expect(t.cells).toHaveLength(1);
+      expect(t.cells![0]).toMatchObject({ field: "priority", expr: "(* 2 3)" });
+      id = t.cells![0]!.id;
+      expect(t.rows.find((r) => r.id === id)?.priority).toBeUndefined();
+    });
+    // Shown as what it works out to; edited as the formula.
+    await userEvent.click(await screen.findByText("6"));
+    entry = (await screen.findByDisplayValue("=2 * 3")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "4");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => {
+      const t = await tasksOnDisk();
+      expect(t.cells).toBeUndefined();
+      expect(t.rows.find((r) => r.id === id)?.priority).toBe(4);
+    });
+  });
+
   it("a cell clicked, retyped and entered is saved", async () => {
     await openTasks();
     await userEvent.click(await screen.findByText("Land .table extension"));

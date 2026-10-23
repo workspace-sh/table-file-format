@@ -372,6 +372,7 @@ export default function TableScreen() {
                       ...callbacks,
                       relatedTables: bundleTables(state.tables, bundle),
                       allRows: table.rows,
+                      cells: table.cells,
                       tableKey: tableNameOf(state.active),
                       sheet,
                       onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,

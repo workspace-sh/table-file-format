@@ -398,6 +398,7 @@ function TablePane({
                   bodies={table.bodies}
                   relatedTables={related}
                   allRows={table.rows}
+        cells={table.cells}
                   tableKey={tableNameOf(tableKey)}
                   sheet={shown.sheet}
                   {...callbacks}

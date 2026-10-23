@@ -170,6 +170,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
         bodies={table.bodies}
         relatedTables={related}
         allRows={table.rows}
+        cells={table.cells}
         tableKey={tableName}
         sheet={derived.shown.sheet}
         {...(lookOnly ? {} : callbacks)}

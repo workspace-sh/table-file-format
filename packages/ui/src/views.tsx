@@ -36,7 +36,7 @@ import {
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
+import { cellFormulaDraft, commitDraft, currencySymbolOf, draftOf, ownFormula, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
@@ -1937,6 +1937,11 @@ function RelationCellValue({
 
 interface EditableCellProps {
   /**
+   * Typing `=…` gives the cell its own formula (D52): what that needs, the
+   * formula it has now, and where it's saved. Absent: `=` is typed as text.
+   */
+  formula?: CellFormulaEntry & { syntax?: "excel" | "stored"; onSet: (expr: string) => void };
+  /**
    * Whose cell this is (its row's id). A list that recycles its rows hands
    * a cell another row's value; what was being written in it belonged to
    * the row before, and is dropped, never saved into the new one.
@@ -2022,6 +2027,7 @@ function EditableCell({
   onEditEnd,
   editOutside,
   outsideDraft,
+  formula,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -2099,7 +2105,8 @@ function EditableCell({
     if (editOutside?.(text)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
-    setDraft(text ?? draftOf(value));
+    // A cell with its own formula is edited as that formula (D52).
+    setDraft(text ?? (formula?.own !== undefined ? cellFormulaDraft(formula.own, formula.grid, formula.syntax) : draftOf(value)));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -2119,7 +2126,7 @@ function EditableCell({
    * year is kept, since it's a valid date.
    */
   const commit = (raw: string, how: "key" | "blur" = "key"): boolean => {
-    const result = commitDraft(field, value, raw, how, queried.current);
+    const result = commitDraft(field, value, raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem(result.check);
@@ -2131,6 +2138,7 @@ function EditableCell({
     setProblem(null);
     if (result.kind === "dropped") return false;
     if (result.kind === "save") onCommit(result.value);
+    if (result.kind === "formula") formula?.onSet(result.expr);
     return true;
   };
 
@@ -2362,7 +2370,8 @@ function EditableCell({
   // swapped for @react-native-community/datetimepicker (or similar); the
   // RSD strict-subset purity is deliberately broken here in favour of
   // platform-native pickers — see PR description.
-  const inputType = inputKind(field);
+  // A number's box takes `=` when the cell can have a formula: a number input would refuse it.
+  const inputType = formula && inputKind(field) === "number" ? "text" : inputKind(field);
   // The stored value is a plain number; a currency format only changes
   // how it's shown. While editing, show the symbol beside the input so
   // it's clear what the number is in.
@@ -2835,6 +2844,8 @@ export function TableView({
   onPlace,
   restorePlace,
   onPlaceMeasure,
+  cells,
+  onSetCellFormula,
 }: ViewProps) {
   // Every prop as given, to tell a drawing the screen asked for from one
   // only the index's window caused (drawKey, below).
@@ -3882,6 +3893,17 @@ export function TableView({
             onEditEnd={endEdit(row.id, name)}
             editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
+            formula={
+              onSetCellFormula
+                ? {
+                    fields: schema.fields,
+                    ...(grid ? { grid: { ...grid, here: row.id } } : {}),
+                    ...(ownFormula(cells, row.id, name) !== undefined ? { own: ownFormula(cells, row.id, name)! } : {}),
+                    syntax: formulaSyntax,
+                    onSet: (expr) => onSetCellFormula(row.id, name, expr),
+                  }
+                : undefined
+            }
           />
         ) : (
           <CellValue
@@ -4073,7 +4095,13 @@ export function TableView({
       const linksOne = linked.length > 0 && !linksMany;
       const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
       if (kind !== "text" && kind !== "choice" && !many && !linksOne && !linksMany) return false;
-      const initial = text ?? draftOf(row[name]);
+      // A cell with its own formula is edited as that formula (D52); `=…` typed gives it one.
+      const own = ownFormula(cells, rowId, name);
+      const cellFormula: CellFormulaEntry | undefined =
+        onSetCellFormula && kind === "text" && !dated
+          ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
+          : undefined;
+      const initial = text ?? (cellFormula?.own !== undefined ? cellFormulaDraft(cellFormula.own, cellFormula.grid, formulaSyntax) : draftOf(row[name]));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
       // A multi-select's value as it's toggled, each toggle saved.
@@ -4158,7 +4186,7 @@ export function TableView({
             if (t !== row[name]) onUpdateRow!(rowId, name, t);
             return { ok: true };
           }
-          const r = commitDraft(field, row[name], t, "key", queried);
+          const r = commitDraft(field, row[name], t, "key", queried, cellFormula);
           if (r.kind === "problem") {
             queried = r.queried;
             return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
@@ -4166,6 +4194,7 @@ export function TableView({
           setBarDraft(null);
           barSession.current = null;
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
           return { ok: true };
         },
         // Emptied as the Delete key does (the value goes, not ""), required or not:

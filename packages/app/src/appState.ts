@@ -28,6 +28,7 @@ import {
   viewPatchPrompt,
   withBody,
   withCell,
+  withCellFormula,
   withChoice,
   withField,
   withFieldMoved,
@@ -213,6 +214,8 @@ export type AppAction =
   | { type: "settings"; open: boolean; revert?: boolean }
   // Edits to the view on screen: ViewProps' callbacks, one to one
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
+  /** A cell given its own formula (D52), in the stored form; null takes it away. */
+  | { type: "setCellFormula"; rowId: string; field: string; expr: string | null }
   | { type: "addRow"; id: string }
   | { type: "insertRow"; anchor: string; where: "above" | "below"; id: string }
   | { type: "deleteRow"; rowId: string }
@@ -428,7 +431,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
  * a file opened or read again, rows moved into the index, the examples
  * reset, a field's change and what it does to the rows.
  */
-const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "setCellFormula", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -705,6 +708,10 @@ function step(state: AppState, action: AppAction): AppState {
         return queued(state, state.active, { kind: "cell", rowId: action.rowId, field: action.field, value: action.value }, { name: cellEditName(state, action.field), back: null });
       }
       return edit(state, cellEditName(state, action.field), (t) => withCell(t, action.rowId, action.field, action.value));
+    case "setCellFormula":
+      // The index doesn't hold cells' own formulas (#640): a table in it isn't offered one.
+      if (state.tables[state.active]?.indexed) return state;
+      return edit(state, cellEditName(state, action.field), (t) => withCellFormula(t, action.rowId, action.field, action.expr));
     case "addRow":
       if (state.tables[state.active]?.indexed) {
         return queued(state, state.active, { kind: "add", rowId: action.id }, { name: "Add Row", back: { kind: "remove", rowId: action.id } });
@@ -1208,6 +1215,7 @@ export type ViewCallbacks = Required<
   Pick<
     ViewProps,
     | "onUpdateRow"
+    | "onSetCellFormula"
     | "onUpdateField"
     | "onAddEnumValue"
     | "onRemoveEnumValue"
@@ -1232,6 +1240,7 @@ export type ViewCallbacks = Required<
 export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => void, newId: () => string): ViewCallbacks {
   return {
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
+    onSetCellFormula: (rowId, field, expr) => dispatch({ type: "setCellFormula", rowId, field, expr }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),

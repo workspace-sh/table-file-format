@@ -2,7 +2,7 @@
 // Native, and table-gtk's on Linux. An app wires one set of callbacks and
 // hands them to either.
 
-import type { Field, ParsedTable, Row, SheetRef, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
+import type { CellFormula, Field, ParsedTable, Row, SheetRef, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 
 export interface ViewProps {
   view: View;
@@ -34,6 +34,10 @@ export interface ViewProps {
    */
   relatedTables?: Record<string, ParsedTable>;
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
+  /** The table's cells' own formulas (D52): what a cell with one shows when it's edited. */
+  cells?: CellFormula[];
+  /** Give a cell its own formula, in the stored form, or take it away (null). Absent: `=` is typed as text. */
+  onSetCellFormula?: (rowId: string, fieldName: string, expr: string | null) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice from a field; rows holding it lose it (the host asks first). */

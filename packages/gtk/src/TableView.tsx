@@ -79,6 +79,7 @@ import {
   mirroredKey,
   type GridPlace,
   useDisplaySettings,
+  ownFormula,
 } from "@workspace.sh/table-ui/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -383,6 +384,8 @@ export function TableView({
   bodies,
   relatedTables,
   onUpdateRow,
+  cells: cellFormulas,
+  onSetCellFormula,
   onUpdateView,
   onUpdateField,
   onAddEnumValue,
@@ -1367,6 +1370,17 @@ export function TableView({
                       if (at) focusCell(afterEdit(at, how, count, fields.length));
                     }}
                     onAttach={onAttachFile ? () => onAttachFile(row.id, name) : undefined}
+                    formula={
+                      onSetCellFormula
+                        ? {
+                            fields: schema.fields,
+                            ...(grid ? { grid: { ...grid, here: row.id } } : {}),
+                            ...(ownFormula(cellFormulas, row.id, name) !== undefined ? { own: ownFormula(cellFormulas, row.id, name)! } : {}),
+                            syntax: formulaSyntax,
+                            onSet: (expr) => onSetCellFormula(row.id, name, expr),
+                          }
+                        : undefined
+                    }
                   />
                 ) : (
                   <CellValue
