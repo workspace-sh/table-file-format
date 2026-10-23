@@ -82,6 +82,7 @@ import {
   ownFormula,
   ownNote,
   hiddenPatch,
+  frozenColumnsOf,
 } from "@workspace.sh/table-ui/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -658,7 +659,7 @@ export function TableView({
   // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
   // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
   // How many columns stay put: the view's own (D58), else the first; always one left to scroll.
-  const frozenCount = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH ? Math.max(0, Math.min(view.frozen?.columns ?? 1, fields.length - 1)) : 0;
+  const frozenCount = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH ? Math.max(0, Math.min(frozenColumnsOf(view), fields.length - 1)) : 0;
   const freeze = frozenCount > 0;
   const frozenNames = fields.slice(0, frozenCount);
   const scrolling = fields.slice(frozenCount);
