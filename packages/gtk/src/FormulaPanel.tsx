@@ -4,10 +4,10 @@
 // `explainFormula`, as the web panel's does (D29, D34, D41).
 
 import * as Gtk from "@gtkx/gi/gtk";
-import { AdwDialog, AdwHeaderBar, AdwPreferencesGroup, AdwSwitchRow, AdwToolbarView } from "@gtkx/jsx/adw";
+import { AdwActionRow, AdwDialog, AdwHeaderBar, AdwPreferencesGroup, AdwSwitchRow, AdwToolbarView } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
 import { printFormula, type ComputeOptions, type Field, type Grid, type ParsedTable, type Row } from "@workspace.sh/table-core";
-import { explainFormula, formulaDraftOf, useDisplaySettings } from "@workspace.sh/table-ui/shared";
+import { explainFormula, formulaDraftOf, LOOP_ITERATION, loopNote, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { columnsFor, FormulaEntry } from "./FormulaEntry.js";
@@ -29,6 +29,8 @@ export interface FormulaPanelProps {
   own?: string;
   /** Save a formula for this row only, or (null) take this row's back to the column's. Absent: the column's only. */
   onSaveRow?: (expr: string | null) => void;
+  /** Work the table's loops out by repeating, or not (null) (D60). Absent: not offered. */
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
 }
 
 /** One line: what it's called, then its value as its cell shows it. */
@@ -43,7 +45,7 @@ function ValueLine({ label, field, value, relatedTables, emphasis }: { label: st
   );
 }
 
-export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClose, grid, allRows, computeOptions, own, onSaveRow }: FormulaPanelProps) {
+export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClose, grid, allRows, computeOptions, own, onSaveRow, onSetIteration }: FormulaPanelProps) {
   const { formulaSyntax } = useDisplaySettings();
   // Edited here, from any cell: the column's formula, saved for every row,
   // or (D52) this row's own, which a row that has one opens on.
@@ -121,6 +123,18 @@ export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClos
                   if (!!on !== rowOnly) setRowOnly(!!on);
                 }}
               />
+            </AdwPreferencesGroup>
+          ) : null}
+
+          {explained.loops && onSetIteration ? (
+            <AdwPreferencesGroup title="Loops">
+              <AdwActionRow title={loopNote(explained.loops)} titleLines={0} activatable={false}>
+                <GtkButton
+                  label={explained.loops === "stuck" ? "Repeat Until It Settles" : "Stop Repeating"}
+                  valign={Gtk.Align.CENTER}
+                  onClicked={() => onSetIteration(explained.loops === "stuck" ? LOOP_ITERATION : null)}
+                />
+              </AdwActionRow>
             </AdwPreferencesGroup>
           ) : null}
 
