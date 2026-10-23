@@ -583,6 +583,7 @@ export function App({
   settings,
   newFilesIn,
   pageStillMs,
+  departedMs = 3500,
   chooseFile = chooseFileToAttach,
   chooseToOpen = chooseToOpenFile,
   chooseSpreadsheet = chooseSpreadsheetToOpen,
@@ -604,6 +605,8 @@ export function App({
   newFilesIn?: string;
   /** How long a page being typed in is still before its changes go to its table's history as one event; a minute when absent. */
   pageStillMs?: number;
+  /** How long the toast counting rows taken out of the view stays after the last (3.5 s); a test that's slow under load needs longer. */
+  departedMs?: number;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
   /** Ask for something to open: a single-file `.table`, anything in a `.table` folder, or a spreadsheet. */
@@ -771,7 +774,7 @@ export function App({
       toastOverlay.current.addToast(made);
     }
     const shown = toast;
-    const timer = setTimeout(() => shown.dismiss(), 3500);
+    const timer = setTimeout(() => shown.dismiss(), departedMs);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.departed]);

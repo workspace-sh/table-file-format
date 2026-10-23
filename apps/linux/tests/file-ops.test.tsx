@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App.js";
+import { clickFresh } from "./clickFresh.js";
 import { loadClosed } from "../src/closedFiles.js";
 import { fixturesDir } from "../src/fixtures.js";
 
@@ -230,8 +231,8 @@ describe("the File menu on Linux", () => {
     await waitFor(() => expect(existsSync(file)).toBe(true));
     expect(readFileSync(file, "utf8")).toBe(theirs);
     // The archive's table is on screen: edit it.
-    await userEvent.click((await screen.findAllByText("Tasks")).at(-1)!);
-    await userEvent.click(await screen.findByText("Markdown editor polish"));
+    await clickFresh(async () => (await screen.findAllByText("Tasks")).at(-1)!);
+    await clickFresh(() => screen.findByText("Markdown editor polish"));
     const entry = (await screen.findByDisplayValue("Markdown editor polish")) as Gtk.Entry;
     await userEvent.clear(entry);
     await userEvent.type(entry, "Polished");
