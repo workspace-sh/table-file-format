@@ -126,7 +126,7 @@ Defines the fields of every row, their types, and any constraints.
 ### Field types
 
 `string`, `number`, `integer`, `boolean`, `date`, `datetime`, `time`,
-`year`, `array`, `object`, `duration`, `geopoint`, `geojson`.
+`year`, `array`, `object`, `duration`, `geopoint`, `geojson`, `any`.
 
 Field type names follow standard conventions used across text-first
 data formats. `.table/` is not aligned with any specific format —
@@ -153,6 +153,7 @@ of the format, not a reader's choice (DECISIONS D30).
 | `object` | object | `{"k": "v"}` |
 | `geopoint` | array `[longitude, latitude]` of two numbers, WGS 84 | `[-0.1276, 51.5072]` |
 | `geojson` | a GeoJSON object (RFC 7946) | `{"type": "Point", "coordinates": [-0.1276, 51.5072]}` |
+| `any` | any JSON value, each row its own kind (D56) | `42`, `"n/a"`, `true`, `[1, 2]` |
 
 Notes:
 
@@ -178,6 +179,12 @@ Notes:
   and the array form of Frictionless `geopoint`: longitude −180…180,
   latitude −90…90. The label `"lat, lon"` a UI shows is a display
   concern; the stored order is fixed.
+- **`any`** (D56) holds what a spreadsheet's column does: a number in
+  one row, text in the next. Each value keeps its own JSON kind; a
+  reader never coerces it. Sorted kind by kind (numbers, then text,
+  then `true`/`false`, then lists and objects by their JSON), each kind
+  in its own order. A filter compares like with like: `gt 5` matches
+  numbers above 5 and nothing else.
 - **`geojson`** earlier reference readers accepted only a string
   holding the GeoJSON text. Readers SHOULD still accept that form and
   parse it; writers MUST write the object.
@@ -496,7 +503,12 @@ that uses them: `#DIV/0!` (division by zero), `#VALUE!` (wrong kind of
 argument, or wrong number of arguments), `#NAME?` (unknown function
 or field), `#REF!` (a computed field that depends on itself, directly or through
 other rows, or a reference to a row or table that isn't there), `#NUM!`
-(a result too large to represent).
+(a result too large to represent). A loop is `#REF!` unless the table
+asks for iteration (D60, not built yet): `meta.json`'s
+`iteration: { "max": <steps>, "change": <smallest change> }` works a
+loop out again from empty, up to `max` times, until no value in it
+changes by more than `change`, as a spreadsheet's iterative
+calculation does.
 
 **Worked examples** (illustrative). Each row of this table is checked
 against the reference evaluator by `packages/core/src/spec-examples.test.ts`,
@@ -673,8 +685,12 @@ One line is one cell: the row's `id`, the field's `name`, and:
   of this row.
 - **`dialect`** (optional): as a computed field's; absent means
   `table-expr-v1`.
+- **`note`** (optional): a note on the cell, as a spreadsheet's cell
+  note: text, shown beside the cell and never in its value (D57). A
+  line may have a note and no `expr`: the cell then keeps its value.
+  Threaded discussion is the app's, not the file's.
 
-What the formula does:
+A line has an `expr`, a `note`, or both. What the formula does:
 
 - **In a stored field**, the cell shows the formula's result. The
   result is never stored: a writer leaves the field out of that row in
@@ -925,6 +941,21 @@ value that isn't a datetime compares as text.
   layout, for rows without their own in `rowHeights`. Each row shows
   as many lines of text as fit and clips the rest; absent means one
   line. Display-only.
+- `frozen: { columns?: <n>, rows?: <n> }` — the first `columns`
+  columns and the first `rows` rows of a table layout stay where they
+  are while the rest scroll (D58). Absent: the app's own choice (the
+  reference apps keep the first column). Display-only.
+- `hidden: ["<row id>", …]` — rows this view leaves out without a
+  filter, as a spreadsheet hides rows (D58). A Sheet view keeps their
+  numbers, as it does for filtered rows; formulas read them as ever.
+  Ids that match no row are ignored. A view's `fields` already hides
+  columns.
+- `merged: [{ "from": { "field": "<f>", "row": "<id>" }, "to": { … } }]`
+  — in a Sheet view, a block of cells shown as one, with the value of
+  its top-left cell (D58). The other cells keep their values, which are
+  shown again when the merge goes. A block whose rows aren't next to
+  each other in the grid (after a sort, say) isn't drawn merged.
+  Display-only.
 - `rowHeights: { "<row id>": <pixels> }` — the heights of single rows
   in a table layout, set by resizing a selected row. Rows not listed
   use `rowHeight`; ids that match no row are ignored. A row has one
@@ -1504,7 +1535,9 @@ CSV is the **only** format-specific converter that lives in core, via
   inferred conservatively: a column of ISO dates is `date`, digits that
   aren't a quantity (leading zeros, a `+`, more digits than a number
   keeps) stay text, and anything ambiguous (`03/04/2025`, `£1,200`)
-  stays text for the person who knows what it means.
+  stays text for the person who knows what it means. With `{ header:
+  false }` (D59), the first line is a row like the others, and the
+  fields are named for their columns, `A`, `B`, `C`…
 - `toCSV(table, { fields? })` — RFC 4180-correct quoting. **Lossy by
   definition**: relations serialise to raw id(s), attachments to their
   filename, bodies aren't represented. `csvExportWarnings(table)`

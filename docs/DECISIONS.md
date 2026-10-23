@@ -1361,3 +1361,37 @@ D32 left `today` and `now` out because a formula whose answer changes with the c
 - **Never stored, never remembered.** Results aren't stored anyway (D21). Nothing keeps them between computations either: a formula that reads the clock or chance isn't its row's alone, so a table that uses one is worked out whole each time it's read, and isn't held in an index, whose results would go stale.
 - **What D29 relies on still holds:** the stored form is the same; only the answer depends on when it's asked.
 
+## D56: an `any` field holds a value of any kind, as a spreadsheet column does
+
+**Drafted for Leslie (23 Oct 2026; "any value: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+
+A spreadsheet's column holds a number in one row and text in the next. Every `.table` field has one type, so an import had to choose one and lose the rest, or fall back to text and lose the numbers. `any` keeps each value's JSON kind as it is. Sorting goes kind by kind, and a filter compares like with like, so nothing is coerced behind a person's back.
+
+## D57: a cell may have a note
+
+**Drafted for Leslie (23 Oct 2026; "cell comments: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+
+A spreadsheet's cell note (Excel's notes, Sheets' notes, Numbers' comments) is text attached to one cell, outside its value. It goes on the cell's `cells/` line (D52) as `note`, beside or instead of an `expr`. A line with only a note leaves the value alone, so a reader that ignores `note` loses nothing it needs. Threaded comments with authors and replies are a collaboration feature: they belong to the app (Workspace's comments), not to the file.
+
+## D58: views freeze rows and columns, hide rows, and merge cells
+
+**Drafted for Leslie (23 Oct 2026; "merged cells, frozen panes, hidden rows and columns: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+
+- **Frozen** rows and columns are how a view is looked at, so they're the view's (`frozen`), as column widths are.
+- **Hidden rows** are the view's too (`hidden`): a row left out by hand, not by a rule. A Sheet view keeps their numbers, as it does for filtered rows. Hidden columns were already there: a view's `fields`.
+- **Merged cells** are layout, kept in the view (`merged`), in a Sheet view only, and by row id, so a sort can't merge the wrong cells. The cells under a merge keep their values. Nothing in the data changes, so a formula reads them as ever.
+
+## D59: a spreadsheet without a header row
+
+**Drafted for Leslie (23 Oct 2026; "no header: an option"). Open to revisit. Not built yet.**
+
+Not every sheet starts with headings. `tableFromCSV(csv, { header: false })` reads the first line as a row and names the fields for their columns (`A`, `B`, `C`…), each with that as its `title`, for the person to rename. It's a converter's option, not the format's: a `.table` always names its fields.
+
+## D60: circular references may be worked out by iteration
+
+**Drafted for Leslie (23 Oct 2026). Open to revisit. Not built yet.**
+
+A loop between formulas is `#REF!` (D32): no answer is better than a wrong one. A spreadsheet can instead iterate, repeating the calculation until it settles, for models that mean to loop (interest on a balance that includes the interest). A table may ask for that in `meta.json` (`iteration: { max, change }`), with the spreadsheet's meaning: start from empty, repeat up to `max` times, stop when nothing changes by more than `change`. Without it a loop stays `#REF!`.
+
+**Held, from the same list:** `LET`, `LAMBDA` and named ranges. The stored form takes a function only when a published standard defines it (D52), and OpenFormula 1.4 defines none of these (`LET` and `LAMBDA` are Excel's own). A named range is closest to a name for a place in a Sheet view (D41), which can be drafted when it's wanted.
+
