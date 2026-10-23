@@ -56,6 +56,28 @@ describe("a formula cell on Linux", () => {
     });
   });
 
+  it("This Row Only saves the formula as that row's own, and the column's stays for the rest (D52)", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const row = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Gtk.Switch)!;
+    await userEvent.click(row);
+    expect(await screen.findByText("Save for This Row")).toBeDefined();
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "=C1*2");
+    await userEvent.click(await screen.findByText("Save for This Row"));
+    await waitFor(async () => {
+      const t = await parseTable(join(bundle, "tables", "budget"));
+      expect(t.cells).toEqual([expect.objectContaining({ field: "quarter", expr: "(* jan 2)" })]);
+      expect(t.schema.fields.find((f) => f.name === "quarter")?.computed?.expr).toBe("(+ jan feb mar)");
+    });
+    // Rent's quarter is £2,900.00 now; reopened, it shows its own.
+    await userEvent.click(await screen.findByText("£2,900.00"));
+    expect(await screen.findByText("Use the Column's Formula")).toBeDefined();
+    await userEvent.click(await screen.findByText("Use the Column's Formula"));
+    await waitFor(async () => expect((await parseTable(join(bundle, "tables", "budget"))).cells).toBeUndefined());
+  });
+
   it("colours the formula as it is typed: what it reads, its functions, numbers and text", async () => {
     await openSheet();
     await userEvent.click(await screen.findByText("£4,350.00"));

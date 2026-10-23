@@ -1608,6 +1608,8 @@ export function TableView({
             fields={schema.fields}
             relatedTables={relatedTables}
             onSave={onUpdateField ? (patch) => onUpdateField(openFormula.name, patch) : undefined}
+            {...(ownFormula(cellFormulas, openFormula.rowId, openFormula.name) !== undefined ? { own: ownFormula(cellFormulas, openFormula.rowId, openFormula.name)! } : {})}
+            onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(openFormula.rowId, openFormula.name, expr) : undefined}
             onClose={() => setOpenFormula(null)}
             grid={grid ? { ...grid, here: openFormula.rowId } : undefined}
             allRows={allRows}

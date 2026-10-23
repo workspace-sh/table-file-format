@@ -4621,6 +4621,8 @@ export function TableView({
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
+            {...(ownFormula(cells, formulaCell.rowId, name) !== undefined ? { own: ownFormula(cells, formulaCell.rowId, name)! } : {})}
+            onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(formulaCell.rowId, name, expr) : undefined}
             // The cell under a click, named as a tap names it on iOS: its
             // coordinate in a sheet, else its column. Only a page has points.
             referenceAt={

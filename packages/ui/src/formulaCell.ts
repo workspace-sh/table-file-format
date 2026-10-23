@@ -72,6 +72,8 @@ export interface FormulaExplained {
   preview?: { value: unknown };
   /** What saving stores, when it can be saved: the formula, and a new type if its family changed. */
   save?: Partial<Field>;
+  /** For this row only (`rowOnly`): the cell's own formula saving stores, in the stored form (D52). */
+  saveRow?: string;
 }
 
 /**
@@ -89,9 +91,13 @@ export function explainFormula(options: {
   grid?: Grid;
   allRows?: Row[];
   computeOptions?: ComputeOptions;
+  /** The cell's own formula, when it has one: this row's exception to the column's (D52). */
+  own?: string;
+  /** The draft is for this row only: compared with, and saved as, the cell's own formula. */
+  rowOnly?: boolean;
 }): FormulaExplained {
   const { field, row, fields, draft, editable, grid, computeOptions } = options;
-  const stored = field.computed?.expr ?? "";
+  const stored = options.rowOnly ? (options.own ?? "") : (field.computed?.expr ?? "");
   const compiled = editable ? compileFormula(draft, { fields: fields.map((f) => f.name), grid }) : null;
   const changed = compiled?.ok === true && compiled.stored !== stored;
   const shownExpr = changed && compiled?.ok ? compiled.expr : null;
@@ -117,7 +123,14 @@ export function explainFormula(options: {
 
   let preview: { value: unknown } | undefined;
   let save: Partial<Field> | undefined;
-  if (changed && compiled?.ok) {
+  let saveRow: string | undefined;
+  if (changed && compiled?.ok && options.rowOnly) {
+    // This row's own formula (D52): the others keep the column's.
+    const table = computeOptions?.cells ?? (computeOptions?.self !== undefined ? computeOptions.tables?.[computeOptions.self]?.cells : undefined);
+    const cells = [...(table ?? []).filter((c) => !(c.id === rowId && c.field === field.name)), { id: rowId, field: field.name, expr: compiled.stored }];
+    preview = { value: computeRows({ fields }, tableRows, { ...computeOptions, cells }).rows.find((r) => r.id === rowId)?.[field.name] };
+    saveRow = compiled.stored;
+  } else if (changed && compiled?.ok) {
     const trial = fields.map((f) => (f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: FORMULA_DIALECT } } : f));
     preview = { value: computeRows({ fields: trial }, tableRows, computeOptions).rows.find((r) => r.id === rowId)?.[field.name] };
     // The field's type follows the formula only when the formula's type is
@@ -144,6 +157,7 @@ export function explainFormula(options: {
     otherRows,
     ...(preview ? { preview } : {}),
     ...(save ? { save } : {}),
+    ...(saveRow ? { saveRow } : {}),
   };
 }
 

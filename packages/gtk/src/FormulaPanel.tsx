@@ -4,9 +4,9 @@
 // `explainFormula`, as the web panel's does (D29, D34, D41).
 
 import * as Gtk from "@gtkx/gi/gtk";
-import { AdwDialog, AdwHeaderBar, AdwPreferencesGroup, AdwToolbarView } from "@gtkx/jsx/adw";
+import { AdwDialog, AdwHeaderBar, AdwPreferencesGroup, AdwSwitchRow, AdwToolbarView } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
-import type { ComputeOptions, Field, Grid, ParsedTable, Row } from "@workspace.sh/table-core";
+import { printFormula, type ComputeOptions, type Field, type Grid, type ParsedTable, type Row } from "@workspace.sh/table-core";
 import { explainFormula, formulaDraftOf, useDisplaySettings } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
 import { CellValue } from "./CellValue.js";
@@ -25,6 +25,10 @@ export interface FormulaPanelProps {
   grid?: Grid;
   allRows?: Row[];
   computeOptions?: ComputeOptions;
+  /** This cell's own formula, when it has one: its row's exception to the column's (D52). */
+  own?: string;
+  /** Save a formula for this row only, or (null) take this row's back to the column's. Absent: the column's only. */
+  onSaveRow?: (expr: string | null) => void;
 }
 
 /** One line: what it's called, then its value as its cell shows it. */
@@ -39,17 +43,20 @@ function ValueLine({ label, field, value, relatedTables, emphasis }: { label: st
   );
 }
 
-export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClose, grid, allRows, computeOptions }: FormulaPanelProps) {
+export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClose, grid, allRows, computeOptions, own, onSaveRow }: FormulaPanelProps) {
   const { formulaSyntax } = useDisplaySettings();
-  // Edited here, from any cell, but it is the column's formula: saving
-  // says "every row", and every row changes.
-  const [draft, setDraft] = useState(() => formulaDraftOf(field, grid, formulaSyntax));
-  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions });
+  // Edited here, from any cell: the column's formula, saved for every row,
+  // or (D52) this row's own, which a row that has one opens on.
+  const [rowOnly, setRowOnly] = useState(own !== undefined);
+  const [draft, setDraft] = useState(() => (own !== undefined ? printFormula(own, { grid, syntax: formulaSyntax }) : formulaDraftOf(field, grid, formulaSyntax)));
+  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions, rowOnly, ...(own !== undefined ? { own } : {}) });
   const byName = new Map(fields.map((f) => [f.name, f]));
   const status = explained.status;
+  const canSave = rowOnly ? !!onSaveRow && explained.saveRow !== undefined : !!onSave && !!explained.save;
   const save = () => {
-    if (!onSave || !explained.save) return;
-    onSave(explained.save);
+    if (!canSave) return;
+    if (rowOnly) onSaveRow!(explained.saveRow!);
+    else onSave!(explained.save!);
     onClose();
   };
 
@@ -59,14 +66,32 @@ export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClos
         topBar={<AdwHeaderBar />}
         bottomBar={
           <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12} halign={Gtk.Align.END}>
+            {own !== undefined && onSaveRow ? (
+              <GtkButton
+                label="Use the Column's Formula"
+                onClicked={() => {
+                  onSaveRow(null);
+                  onClose();
+                }}
+              />
+            ) : null}
             {onSave ? (
-              <GtkButton label="Save for Every Row" cssClasses={["suggested-action"]} sensitive={!!explained.save} onClicked={save} />
+              <GtkButton label={rowOnly ? "Save for This Row" : "Save for Every Row"} cssClasses={["suggested-action"]} sensitive={canSave} onClicked={save} />
             ) : null}
           </GtkBox>
         }
       >
         <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={18} marginStart={18} marginEnd={18} marginTop={6} marginBottom={6}>
-          <AdwPreferencesGroup title="Formula" description="One formula for the whole column. Every row is worked out the same way.">
+          <AdwPreferencesGroup
+            title="Formula"
+            description={
+              rowOnly
+                ? "A formula for this row only. Every other row is worked out by the column's."
+                : own !== undefined
+                  ? "This row has a formula of its own; the column's is shown. Saving it for every row leaves this row's as it is."
+                  : "One formula for the whole column. Every row is worked out the same way."
+            }
+          >
             {onSave ? (
               <FormulaEntry text={draft} onChange={setDraft} onActivate={save} error={status?.kind === "error"} columns={columnsFor(fields, grid, field.name)}>
                 {status?.kind === "error" ? (
@@ -86,6 +111,18 @@ export function FormulaPanel({ field, row, fields, relatedTables, onSave, onClos
               <GtkLabel label={draft} xalign={0} wrap selectable cssClasses={["monospace"]} />
             )}
           </AdwPreferencesGroup>
+
+          {onSave && onSaveRow ? (
+            <AdwPreferencesGroup>
+              <AdwSwitchRow
+                title="This Row Only"
+                active={rowOnly}
+                onNotifyActive={(on) => {
+                  if (!!on !== rowOnly) setRowOnly(!!on);
+                }}
+              />
+            </AdwPreferencesGroup>
+          ) : null}
 
           {explained.thisRow.length > 0 ? (
             <AdwPreferencesGroup title="In This Row">
