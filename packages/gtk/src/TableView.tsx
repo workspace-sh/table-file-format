@@ -657,8 +657,12 @@ export function TableView({
   // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
   // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
   // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
-  const freeze = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH;
-  const frozenWidth = freeze ? numberWidth + colWidth(fields[0]!) : 0;
+  // How many columns stay put: the view's own (D58), else the first; always one left to scroll.
+  const frozenCount = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH ? Math.max(0, Math.min(view.frozen?.columns ?? 1, fields.length - 1)) : 0;
+  const freeze = frozenCount > 0;
+  const frozenNames = fields.slice(0, frozenCount);
+  const scrolling = fields.slice(frozenCount);
+  const frozenWidth = freeze ? numberWidth + frozenNames.reduce((n, name) => n + colWidth(name), 0) : 0;
   const scrolledAcross = useRef(0);
   const pinned = useRef(new Map<string, { widget: Gtk.Widget; from: number }>());
   /** A ref for something that stays where it is across the table (`from` its start) however far it is scrolled. */
@@ -704,7 +708,7 @@ export function TableView({
     // Where the table is scrolled to with each column in turn starting at the edge. The first is there
     // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
     let at = sideMargin + 1 - pinAt + (freeze ? 0 : numberWidth);
-    for (const name of (freeze ? fields.slice(1) : fields).slice(0, -1)) {
+    for (const name of scrolling.slice(0, -1)) {
       at += colWidth(name);
       if (at < end) nearer(at);
     }
@@ -857,7 +861,7 @@ export function TableView({
     return fields.map((name, i) => {
       x += colWidth(name);
       const at = x;
-      const stays = freeze && i === 0;
+      const stays = freeze && i < frozenCount;
       return (
         <GtkBox
           key={name}
@@ -964,10 +968,10 @@ export function TableView({
       <GtkBox
         name="resize-row"
         // Under the first column where that stays put, the grip stays with it.
-        ref={freeze && gripName === fields[0] ? pin("grip", at) : undefined}
+        ref={freeze && frozenNames.includes(gripName) ? pin("grip", at) : undefined}
         halign={Gtk.Align.START}
         valign={Gtk.Align.END}
-        marginStart={at + (freeze && gripName === fields[0] ? scrolledAcross.current : 0)}
+        marginStart={at + (freeze && frozenNames.includes(gripName) ? scrolledAcross.current : 0)}
         marginBottom={grabbers ? 0 : 1}
         spacing={6}
       >
@@ -1062,13 +1066,13 @@ export function TableView({
           </HeaderMenu>
         );
   };
-  const headerStart = rowStart("header", HEADER_HEIGHT, [styles.frozenHeader], "", freeze ? headerCell(fields[0]!, 0) : null);
+  const headerStart = rowStart("header", HEADER_HEIGHT, [styles.frozenHeader], "", freeze ? frozenNames.map((name, i) => headerCell(name, i)) : null);
   const header = (
     <GtkBox>
     <GtkOverlay overlays={headerStart.frozen}>
     <GtkBox cssClasses={[styles.headerRow]}>
       {headerStart.inLine}
-      {(freeze ? fields.slice(1) : fields).map((name, i) => headerCell(name, freeze ? i + 1 : i))}
+      {scrolling.map((name, i) => headerCell(name, i + frozenCount))}
     </GtkBox>
     </GtkOverlay>
       {/* The "+" for a new field: after the last column, outside the table's lines, faint until pointed at. */}
@@ -1325,13 +1329,13 @@ export function TableView({
           {null}
         </Cell>
       );
-      const start = rowStart(`awaited:${index}`, height, [styles.frozen], "", freeze ? empty(fields[0]!) : null);
+      const start = rowStart(`awaited:${index}`, height, [styles.frozen], "", freeze ? frozenNames.map(empty) : null);
       return (
         <GtkBox key={`empty-${index}`} name="awaited-row" orientation={Gtk.Orientation.VERTICAL}>
           {heading}
           <BodyRow rowId="" menu={false} hasBody={false} canInsert={false} frozen={start.frozen}>
             {start.inLine}
-            {(freeze ? fields.slice(1) : fields).map(empty)}
+            {scrolling.map(empty)}
           </BodyRow>
         </GtkBox>
       );
@@ -1428,7 +1432,7 @@ export function TableView({
           );
     };
     // The frozen start covers the row's own background: it takes the row's colour too.
-    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, index)), freeze ? bodyCell(fields[0]!, 0) : null);
+    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, index)), freeze ? frozenNames.map((name, i) => bodyCell(name, i)) : null);
     return (
     <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
       {heading}
@@ -1462,7 +1466,7 @@ export function TableView({
         frozen={start.frozen}
       >
         {start.inLine}
-        {(freeze ? fields.slice(1) : fields).map((name, i) => bodyCell(name, freeze ? i + 1 : i))}
+        {scrolling.map((name, i) => bodyCell(name, i + frozenCount))}
       </BodyRow>
       </GtkOverlay>
     </GtkBox>
@@ -1561,12 +1565,12 @@ export function TableView({
           </GtkMenuButton>
         );
   };
-  const footerStart = rowStart("footer", HEADER_HEIGHT, [styles.frozen], "", freeze && showTotals ? totalCell(fields[0]!) : null, Gtk.Align.END);
+  const footerStart = rowStart("footer", HEADER_HEIGHT, [styles.frozen], "", freeze && showTotals ? frozenNames.map((name) => totalCell(name)) : null, Gtk.Align.END);
   const footer = showTotals ? (
     <GtkOverlay overlays={footerStart.frozen}>
     <GtkBox cssClasses={[quietTotals ? styles.totalsRowQuiet : styles.totalsRow]}>
       {footerStart.inLine}
-      {(freeze ? fields.slice(1) : fields).map((name) => totalCell(name))}
+      {scrolling.map((name) => totalCell(name))}
     </GtkBox>
     </GtkOverlay>
   ) : null;
