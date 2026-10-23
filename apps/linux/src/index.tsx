@@ -1,5 +1,6 @@
 import { createRoot } from "@gtkx/react";
-import { existsSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
@@ -9,11 +10,28 @@ import { App } from "./App.js";
 import { openWorkerIndexHost } from "@workspace.sh/table-gtk/embed";
 import { fixturesDir } from "./fixtures.js";
 
-// `.table` folders named on the command line, or the repo's fixtures.
-// Spliced out of argv: GTKX hands the rest to GApplication, which refuses
-// positional arguments it wasn't told to open.
+// What's named on the command line (a file manager names what it opens), or
+// the repo's fixtures. Spliced out of argv: GTKX hands the rest to
+// GApplication, which refuses options it doesn't know. `.table` folders are
+// read here, before the window is up; anything else (a single file, a
+// spreadsheet) goes back to GApplication, which hands it to App's onOpen.
 const args = process.argv.splice(2);
 const named = args.filter((arg) => !arg.startsWith("-"));
+const isFolder = (path: string) => existsSync(path) && statSync(path).isDirectory();
+
+/** Whether this app is running already: GApplication then makes this launch hand its files to it, and end. */
+function runningAlready(id: string): boolean {
+  try {
+    const reply = execFileSync("gdbus", ["call", "--session", "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method", "org.freedesktop.DBus.NameHasOwner", id], { encoding: "utf8", timeout: 2000 });
+    return reply.includes("true");
+  } catch {
+    return false;
+  }
+}
+const elsewhere = named.length > 0 && runningAlready("sh.workspace.TableDemo");
+// Read by the window that's open already, not here: every path goes to it.
+const readHere = elsewhere ? [] : named.filter(isFolder);
+process.argv.push(...(elsewhere ? named : named.filter((path) => !isFolder(path))));
 // `--open=crm/deals#pipeline`: the table, and optionally the view, shown
 // first. How the headless screenshots reach a particular view.
 const open = args.find((arg) => arg.startsWith("--open="))?.slice("--open=".length);
@@ -32,7 +50,7 @@ const examplesNow = () => {
   if (fixtures) copiesOf(fixtures, examples, loadClosed(settings));
   return existsSync(examples) ? bundlesIn(examples) : [];
 };
-const paths = named.length > 0 ? named : examplesNow();
+const paths = named.length > 0 ? readHere : examplesNow();
 
 // Drawn from each table's small files at once; their rows are read after (the window is up meanwhile).
 const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM, rowsLater: true });

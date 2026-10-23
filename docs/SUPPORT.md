@@ -26,6 +26,7 @@ Apple's only. What it lacks is listed in #429.
 |---|---|---|---|---|---|
 | Open a `.table` folder | No | Yes | Yes | Yes | The web's example tables are built in, and it opens single files (below). |
 | Open a single-file `.table` | Yes | Yes | Yes | Yes | iOS, the Mac and Linux edit it in place; the web edits its own copy. |
+| Open a `.table` from the file manager, with its icon | — | Yes | Yes | Yes | Linux: `apps/linux/scripts/install-user.sh`; a folder by Open With → Table (#621). |
 | Save a single-file `.table` in place (D49, D50) | No | Yes | Yes | Yes | Edited as a working folder in the app's own storage, packed back after each write, only the files that changed compressed again (#602). The web: #571. |
 | Export as a single file | Yes | Yes | Yes | Yes | For a folder; a single file already is one. Large tables up to 250,000 rows (#434). |
 | Open a CSV as a new table | Yes | Yes | Yes | Yes | |
