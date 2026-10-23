@@ -1,6 +1,6 @@
 {
   "format": "table",
-  "formatVersion": 2,
+  "formatVersion": 3,
   "title": "Household budget",
   "description": "A quarter's budget laid out as a sheet, and a ledger with a running balance.",
   "tables": [

@@ -26,7 +26,9 @@ import {
 } from "./expr.js";
 import { applyFilters } from "./arrange.js";
 import { arrangeGrid, isSheet, sheetColumns, type GridGroup } from "./grid.js";
-import type { Field, ParsedTable, Row, TableSchema, ValidationError, View } from "./types.js";
+import type { CellFormula, Field, ParsedTable, Row, TableSchema, ValidationError, View } from "./types.js";
+import { cellFormulas } from "./cells.js";
+import { holds } from "./validator.js";
 
 /** What computing a table can see beyond its own rows (D36). */
 export interface ComputeOptions {
@@ -42,6 +44,8 @@ export interface ComputeOptions {
    * (D41). Absent: its views in `tables`, if it's there.
    */
   views?: View[];
+  /** This table's cells' own formulas (D52). Absent: its cells in `tables`, if it's there. */
+  cells?: CellFormula[];
 }
 
 /** Something being worked out, and how deep in the stack it began. */
@@ -62,6 +66,8 @@ interface Sheet {
   byId?: Map<string, number>;
   known: Map<string, Field>;
   parsed: Map<string, Expr | null>;
+  /** Cells' own formulas (D52), by row index and field: null for one that can't be read (the cell is empty). */
+  own: Map<number, Map<string, Expr | null>>;
   views: Map<string, View>;
   /**
    * Fields that read this table's own Sheet views by place: which view,
@@ -131,14 +137,14 @@ class Workbook {
 
   constructor(
     private readonly tables: Record<string, ParsedTable>,
-    private readonly self: { name: string; schema: TableSchema; rows: Row[]; views: View[] },
+    private readonly self: { name: string; schema: TableSchema; rows: Row[]; views: View[]; cells?: CellFormula[] },
   ) {}
 
   /** A table by the name a relation or `linked` gives it, or null when it isn't there. */
   sheet(name: string): Sheet | null {
     if (this.sheets.has(name)) return this.sheets.get(name)!;
     const source = name === this.self.name ? this.self : this.tables[name];
-    const sheet = source ? build(name, source.schema, source.rows, source.views ?? []) : null;
+    const sheet = source ? build(name, source.schema, source.rows, source.views ?? [], source.cells) : null;
     this.sheets.set(name, sheet);
     return sheet;
   }
@@ -152,7 +158,9 @@ class Workbook {
   value(sheet: Sheet, i: number, name: string): Value {
     const def = sheet.known.get(name);
     if (!def) return new FormulaError("#NAME?", `no field named ${name}`);
-    if (!def.computed) return sheet.rows[i]![name] as Value;
+    // A cell's own formula is used over its field's value or formula (D52).
+    const own = sheet.own.get(i)?.get(name);
+    if (!def.computed && own === undefined) return sheet.rows[i]![name] as Value;
     let slots = sheet.results.get(name);
     if (!slots) sheet.results.set(name, (slots = new Array(sheet.rows.length)));
     const got = slots[i];
@@ -161,7 +169,7 @@ class Workbook {
       if (got instanceof Pending) return this.loop(got.depth, new FormulaError("#REF!", `${name} depends on itself`));
       return got;
     }
-    const expr = sheet.parsed.get(name);
+    const expr = own !== undefined ? own : sheet.parsed.get(name);
     if (!expr) return undefined;
     if (this.stack.length > MAX_DEPTH && sheet.places.has(name) && !sheet.warmed.has(name)) {
       throw new DeepChain(sheet, name);
@@ -171,6 +179,10 @@ class Workbook {
     let v: Value;
     try {
       v = evaluate(expr, new RowScope(this, sheet, i));
+      // What a cell's formula gives is checked as a typed value is: one the field can't hold is #VALUE! (D52).
+      if (own !== undefined && !(v instanceof FormulaError) && !holds(def, v)) {
+        v = new FormulaError("#VALUE!", `${name} can't hold ${JSON.stringify(v)}`);
+      }
     } catch (e) {
       slots[i] = undefined;
       throw e;
@@ -477,8 +489,28 @@ function placeUse(expr: Expr, table: string): { view: string; forward: boolean }
   return view === undefined ? undefined : { view, forward: forward && !back };
 }
 
-function build(name: string, schema: TableSchema, rows: Row[], views: View[]): Sheet {
+function build(name: string, schema: TableSchema, rows: Row[], views: View[], cells?: CellFormula[]): Sheet {
   const diagnostics: ValidationError[] = [];
+  const own = new Map<number, Map<string, Expr | null>>();
+  const applying = cellFormulas(schema, rows, cells);
+  if (applying.size > 0) {
+    const at = new Map(rows.map((r, i) => [r.id, i]));
+    for (const [id, byField] of applying) {
+      const i = at.get(id)!;
+      const mine = new Map<string, Expr | null>();
+      for (const [field, c] of byField) {
+        if ((c.dialect ?? "table-expr-v1") !== "table-expr-v1") {
+          diagnostics.push({ rowIndex: i, rowId: id, field, message: `unknown formula dialect ${String(c.dialect)}` });
+          mine.set(field, null);
+          continue;
+        }
+        const r = parseExpr(c.expr);
+        if (!r.ok) diagnostics.push({ rowIndex: i, rowId: id, field, message: `formula doesn't parse (${r.message} at ${r.at}): ${c.expr}` });
+        mine.set(field, r.ok ? r.expr : null);
+      }
+      own.set(i, mine);
+    }
+  }
   const parsed = new Map<string, Expr | null>();
   const places = new Map<string, { view: string; forward: boolean }>();
   for (const f of schema.fields) {
@@ -505,6 +537,7 @@ function build(name: string, schema: TableSchema, rows: Row[], views: View[]): S
     rows,
     known: new Map(schema.fields.map((f) => [f.name, f])),
     parsed,
+    own,
     views: new Map(views.map((v) => [v.id, v])),
     places,
     columns: new Map(),
@@ -520,7 +553,8 @@ function workbookFor(schema: TableSchema, rows: Row[], options: ComputeOptions):
   // A table name is never empty (D37), so "" stands for a table not in `tables`.
   const self = options.self ?? "";
   const views = options.views ?? options.tables?.[self]?.views ?? [];
-  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views });
+  const cells = options.cells ?? options.tables?.[self]?.cells;
+  const workbook = new Workbook(options.tables ?? {}, { name: self, schema, rows, views, ...(cells ? { cells } : {}) });
   return { workbook, sheet: workbook.sheet(self)! };
 }
 
@@ -536,10 +570,14 @@ export function computeRows(
   rows: Row[],
   options: ComputeOptions = {},
 ): { rows: Row[]; diagnostics: ValidationError[] } {
-  const computed = schema.fields.filter((f) => f.computed);
+  // Cells' own formulas (D52) fill their fields too; a table with any is worked out whole, without the memo.
+  const cells = options.cells ?? (options.self !== undefined ? options.tables?.[options.self]?.cells : undefined);
+  const withCells = cells !== undefined && cells.length > 0;
+  const ownFields = withCells ? new Set(cells.map((c) => c.field)) : undefined;
+  const computed = schema.fields.filter((f) => f.computed || ownFields?.has(f.name));
   if (computed.length === 0) return { rows, diagnostics: [] };
   const out: Row[] = new Array(rows.length);
-  const memo = rowLocal(schema, computed) ? memoFor(schema) : undefined;
+  const memo = !withCells && rowLocal(schema, computed) ? memoFor(schema) : undefined;
   let made: { workbook: Workbook; sheet: Sheet } | undefined;
   const book = () => (made ??= workbookFor(schema, rows, options));
   for (let i = 0; i < rows.length; i++) {
@@ -614,7 +652,7 @@ export interface SheetGrid {
  * isn't a Sheet view.
  */
 export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOptions = {}): SheetGrid | null {
-  const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...options });
+  const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...(table.cells ? { cells: table.cells } : {}), ...options });
   const grid = workbook.top(() => workbook.grid(sheet, viewId));
   if (grid instanceof FormulaError) return null;
   const computed = table.schema.fields.filter((f) => f.computed);
@@ -636,7 +674,7 @@ export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOp
  * in it count in (D41). Null when the view isn't a Sheet view.
  */
 export function sheetOrder(table: ParsedTable, viewId: string, options: ComputeOptions = {}): { ids: string[]; loop: boolean } | null {
-  const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...options });
+  const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...(table.cells ? { cells: table.cells } : {}), ...options });
   const grid = workbook.top(() => workbook.grid(sheet, viewId));
   if (grid instanceof FormulaError) return null;
   return { ids: grid.order.map((i) => sheet.rows[i]!.id), loop: grid.looped };

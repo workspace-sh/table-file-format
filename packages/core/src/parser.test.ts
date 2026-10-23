@@ -26,7 +26,7 @@ test("parseTable reads the projects table in projects.table", async () => {
 test("parseBundle reads the manifest and every table, in order (D37)", async () => {
   const b = await parseBundle(resolve(fixturesDir, "crm.table"));
   assert.equal(b.meta.format, "table");
-  assert.equal(b.meta.formatVersion, 2);
+  assert.equal(b.meta.formatVersion, 3);
   assert.equal(b.meta.title, "CRM");
   assert.deepEqual(b.meta.tables, ["companies", "contacts", "deals"]);
   assert.deepEqual(Object.keys(b.tables).sort(), ["companies", "contacts", "deals"]);

@@ -1,9 +1,12 @@
-import type { Field, Row, TableSchema, ValidationError } from "./types.js";
+import type { CellFormula, Field, Row, TableSchema, ValidationError } from "./types.js";
+import { cellFormulas } from "./cells.js";
 import { enumValues } from "./types.js";
 import { isDate, isDateTime, isDuration, isGeoJSON, isGeopoint, isTime } from "./encoding.js";
 
-export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
+export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]): ValidationError[] {
   const errors: ValidationError[] = [];
+  // A cell with its own formula is checked as a computed field's is: not at all, and it's filled (SPEC section 9, D52).
+  const own = cellFormulas(schema, rows, cells);
   const seenIds = new Set<string>();
   const pkSeen = new Map<string, number>();
   // `unique` fields: each value held, and the first row that held it. Empty values don't count (SPEC section 2).
@@ -21,6 +24,7 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
     }
 
     for (const e of fieldErrorsOf(schema, row)) {
+      if (own.get(row.id)?.has(e.field)) continue;
       errors.push({ rowIndex: i, rowId: row.id, field: e.field, message: e.message });
     }
 
@@ -48,7 +52,22 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
     }
   }
 
+  // A line of cells/ for a row or field the table hasn't: kept by the writer, but not valid (SPEC section 9).
+  const ids = new Set(rows.map((r) => r.id));
+  const names = new Set(schema.fields.map((f) => f.name));
+  for (const c of cells ?? []) {
+    if (!ids.has(c.id)) errors.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `cells/ has a formula for row ${c.id}, which isn't there` });
+    else if (!names.has(c.field) || c.field === "id") errors.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `cells/ has a formula for field ${c.field}, which isn't there` });
+  }
+
   return errors;
+}
+
+/** Whether `field` can hold `value` by its type: what a cell's formula's result is checked against (D52). Constraints aren't asked. */
+export function holds(field: Field, value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return true;
+  if (field.relation?.cardinality === "many") return Array.isArray(value) && value.every((v) => typeof v === "string");
+  return typeMatches(field.type, value);
 }
 
 /**

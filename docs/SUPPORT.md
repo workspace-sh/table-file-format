@@ -92,8 +92,10 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   public test cases check it (D38): LibreOffice's function tests, in
   [conformance/openformula/](../conformance/openformula/README.md),
   whose `REPORT.md` says what each engine meets.
-- **A cell's own formula** (`cells/`, D52): not
-  read or written yet (#640).
+- **A cell's own formula** (`cells/`, D52): read, written and worked
+  out by core on every platform, and kept through a save; validation and
+  history know it. Not yet: typing one in a cell in any app, and a large
+  table with one is held in memory, not in its index (#640).
 
 ## Views
 

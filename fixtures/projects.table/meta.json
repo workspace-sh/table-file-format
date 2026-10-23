@@ -1,6 +1,6 @@
 {
   "format": "table",
-  "formatVersion": 2,
+  "formatVersion": 3,
   "title": "Projects",
   "description": "Workspace product roadmap, and the tasks in each project.",
   "tables": [

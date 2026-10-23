@@ -4,7 +4,8 @@
 // run them over node:fs; a React Native app passes its own `TableFs`. Nothing
 // here imports Node, so Metro and browsers can load it.
 
-import type { BundleMeta, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
+import type { BundleMeta, CellFormula, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
+import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
@@ -202,8 +203,14 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
   const bodies = await readBodies(fs, joinPath(dir, TableEntry.bodies));
+  // Cells' own formulas (D52): read whole, however the rows are; what doesn't apply is kept and said.
+  const unreadCells: string[] = [];
+  const cells = await readCellsFiles(fs, dir, diagnostics, unreadCells);
+  if (!elsewhere && !later) diagnostics.push(...cellDiagnostics(schema, rows, cells));
 
   const parsed: ParsedTable = { schema, rows, views, meta, path: dir };
+  if (cells.length > 0) parsed.cells = cells;
+  if (unreadCells.length > 0) parsed.unreadCells = unreadCells;
   if (read.rowFiles.length > 0) parsed.rowFiles = read.rowFiles;
   if (elsewhere) parsed.indexed = { count: 0, version: 0 };
   if (later) parsed.loading = { estimate: await estimateTableRows(fs, dir) };
@@ -252,6 +259,17 @@ export async function readTableRows(
   const unread: UnreadLine[] = [];
   const read = await readRowsFiles(fs, dir, diagnostics, unread, options.onRows);
   return { ...read, unread, diagnostics };
+}
+
+/** A table's `cells/` lines, from its files in name order (D52). */
+async function readCellsFiles(fs: TableFs, dir: string, diagnostics: ValidationError[], unread: string[]): Promise<CellFormula[]> {
+  const listed = await fs.list(joinPath(dir, CELLS_DIR));
+  if (listed === null) return [];
+  const cells: CellFormula[] = [];
+  for (const name of rowsFileOrder(listed.filter((e) => !e.directory).map((e) => e.name))) {
+    for (const c of parseCellsText((await fs.readText(joinPath(dir, CELLS_DIR, name))) ?? "", diagnostics, unread, `${CELLS_DIR}/${name}`)) cells.push(c);
+  }
+  return cells;
 }
 
 /** A table's rows from its rows files, in file order, and which file held which rows (for writing them back). */
@@ -305,6 +323,10 @@ export interface WriteTableInput {
   bodies?: Record<string, string>;
   /** Lines of `rows.ndjson` that couldn't be read as rows, put back where they were (ParsedTable.unread). */
   unread?: UnreadLine[];
+  /** Cells' own formulas (ParsedTable.cells, D52). */
+  cells?: CellFormula[];
+  /** Lines of `cells/` that couldn't be read, put back (ParsedTable.unreadCells). */
+  unreadCells?: string[];
   /** Which rows each rows file held (ParsedTable.rowFiles): written back to the same files. */
   rowFiles?: { name: string; ids: string[] }[];
   /**
@@ -368,6 +390,8 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   const staged: Array<{ tmp: string; target: string }> = [];
   const rowsDir = joinPath(dir, ROWS_DIR);
   let rowsWritten: { name: string; text: string }[] | null = null;
+  const cellsDir = joinPath(dir, CELLS_DIR);
+  let cellsWritten: { name: string; text: string }[] | null = null;
   const stage = async (target: string, content: string) => {
     if ((await fs.readText(target)) === content) return;
     const tmp = target + ".tmp";
@@ -387,6 +411,10 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
       });
       await fs.mkdir(rowsDir);
       for (const file of rowsWritten) await stage(joinPath(rowsDir, file.name), file.text);
+      // Cells' own formulas, beside the rows they follow (D52).
+      cellsWritten = layoutCells(input.schema, input.rows, input.cells, input.unreadCells);
+      if (cellsWritten.length > 0) await fs.mkdir(cellsDir);
+      for (const file of cellsWritten) await stage(joinPath(cellsDir, file.name), file.text);
     }
     await stage(joinPath(dir, TableEntry.views), pretty(input.views ?? []));
     await stage(joinPath(dir, TableEntry.meta), pretty(meta));
@@ -420,6 +448,11 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     const kept = new Set(rowsWritten.map((f) => f.name));
     for (const name of rowsFileOrder(((await fs.list(rowsDir)) ?? []).map((e) => e.name))) if (!kept.has(name)) await fs.remove(joinPath(rowsDir, name));
     await fs.remove(joinPath(dir, LEGACY_ROWS_FILE));
+  }
+  if (cellsWritten) {
+    const kept = new Set(cellsWritten.map((f) => f.name));
+    for (const entry of (await fs.list(cellsDir)) ?? []) if (!entry.directory && !kept.has(entry.name)) await fs.remove(joinPath(cellsDir, entry.name));
+    if (cellsWritten.length === 0 && (await fs.list(cellsDir))?.length === 0) await fs.remove(cellsDir);
   }
   if (haveBodies) {
     for (const entry of (await fs.list(bodiesDir)) ?? []) {

@@ -67,12 +67,14 @@ export function withRowAt(table: ParsedTable, viewId: string, anchor: string, wh
   return { ...table, rows: placed.rows, views };
 }
 
-/** Without the row, and its body. */
+/** Without the row, its body, and its cells' own formulas (D52). */
 export function withoutRow(table: ParsedTable, rowId: string): ParsedTable {
-  if (!table.bodies) return { ...table, rows: table.rows.filter((r) => r.id !== rowId) };
+  const next: ParsedTable = { ...table, rows: table.rows.filter((r) => r.id !== rowId) };
+  if (table.cells?.some((c) => c.id === rowId)) next.cells = table.cells.filter((c) => c.id !== rowId);
+  if (!table.bodies) return next;
   const bodies = { ...table.bodies };
   delete bodies[rowId];
-  return { ...table, rows: table.rows.filter((r) => r.id !== rowId), bodies };
+  return { ...next, bodies };
 }
 
 /**
@@ -149,7 +151,8 @@ export function withoutField(table: ParsedTable, name: string): ParsedTable {
   const primaryKey = table.schema.primaryKey?.filter((k) => k !== name);
   const schema = { ...table.schema, fields, ...(table.schema.primaryKey ? { primaryKey } : {}) };
   const rows = table.rows.map((r) => (name in r ? withoutKey(r, name) : r));
-  return { ...table, schema: bumpSchemaVersion(schema), rows, views: table.views.map((v) => viewWithoutField(v, name)) };
+  const cells = table.cells?.filter((c) => c.field !== name);
+  return { ...table, schema: bumpSchemaVersion(schema), rows, views: table.views.map((v) => viewWithoutField(v, name)), ...(cells ? { cells } : {}) };
 }
 
 function viewWithoutField(view: View, name: string): View {

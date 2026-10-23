@@ -10,6 +10,8 @@ import type {
   ValidationError,
   View,
 } from "./types.js";
+import type { CellFormula } from "./types.js";
+import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
@@ -62,14 +64,14 @@ export interface ReadArchiveOptions {
    * has now taken to index. The table comes back with no rows and
    * `indexed` set, its count for the caller to fill in.
    */
-  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: Uint8Array) => boolean | Promise<boolean>;
+  rowsElsewhere?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[] }, rows: Uint8Array) => boolean | Promise<boolean>;
   /**
    * The same question, asked before a table with a large rows file (of `lazyFrom`
    * bytes or more, 1 MB when left out) is inflated at all: it is handed
    * still compressed, to be read a piece at a time, so its start can be
    * shown while the rest is read. False inflates and parses it as usual.
    */
-  rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string> }, rows: LazyZipEntry) => boolean | Promise<boolean>;
+  rowsLazily?: (name: string, table: { schema: TableSchema; views: View[]; bodies: Record<string, string>; cells?: CellFormula[] }, rows: LazyZipEntry) => boolean | Promise<boolean>;
   lazyFrom?: number;
   /**
    * "later": every table without its rows, none of them inflated, for
@@ -179,14 +181,23 @@ export async function readTableArchive(
       bodies[inner.slice(0, -BODY_EXTENSION.length)] = strFromU8(files.get(file)!);
     }
 
+    // Cells' own formulas (D52), from cells/ in name order; what doesn't apply is kept and said.
+    const inCells = `${prefix}${CELLS_DIR}/`;
+    const unreadCells: string[] = [];
+    const cells: CellFormula[] = [];
+    for (const n of rowsFileOrder([...files.keys(), ...compressed.keys()].filter((p) => p.startsWith(inCells) && !p.slice(inCells.length).includes("/")).map((p) => p.slice(inCells.length)))) {
+      const path = `${inCells}${n}`;
+      const raw = files.has(path) ? text(path) : strFromU8(whole(compressed.get(path)!));
+      for (const c of parseCellsText(raw ?? "", tableDiagnostics, unreadCells, `${CELLS_DIR}/${n}`)) cells.push(c);
+    }
     let elsewhere = false;
     const later = options.rows === "later";
     if (lazyRows && !later) {
-      elsewhere = (await options.rowsLazily!(name, { schema, views, bodies }, lazyRows)) === true;
+      elsewhere = (await options.rowsLazily!(name, { schema, views, bodies, cells }, lazyRows)) === true;
       // Not taken: read as any other.
       if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
     }
-    if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
+    if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies, cells }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
     const unread: UnreadLine[] = [];
     const rows: Row[] = [];
     const rowFiles: { name: string; ids: string[] }[] = [];
@@ -198,8 +209,11 @@ export async function readTableArchive(
         rowFiles.push({ name: f.name, ids: these.map((r) => r.id) });
       }
     }
+    if (!elsewhere && !later) tableDiagnostics.push(...cellDiagnostics(schema, rows, cells));
     const table: ParsedTable = { schema, rows, views, meta: tableMeta, path: `${root}/${tablePath(name)}` };
     if (rowFiles.length > 0) table.rowFiles = rowFiles;
+    if (cells.length > 0) table.cells = cells;
+    if (unreadCells.length > 0) table.unreadCells = unreadCells;
     if (unread.length > 0) table.unread = unread;
     if (elsewhere) table.indexed = { count: 0, version: 0 };
     if (later) table.loading = { estimate: lazyRows ? estimateRows(lazyRows.size, lazyRows.head(ESTIMATE_HEAD)) : 0 };
@@ -289,6 +303,7 @@ function parsedHere(path: string, tables: Record<string, unknown>): boolean {
   const inside = path.slice(`${tablePath(table)}/`.length);
   if (([TableEntry.schema, TableEntry.rows, TableEntry.views, TableEntry.meta, TableEntry.history] as string[]).includes(inside)) return true;
   if (inside.startsWith(`${TableEntry.rowsDir}/`) && isRowsFileName(inside.slice(TableEntry.rowsDir.length + 1))) return true;
+  if (inside.startsWith(`${CELLS_DIR}/`) && !inside.slice(CELLS_DIR.length + 1).includes("/")) return true;
   return inside.startsWith(`${TableEntry.bodies}/`) && inside.endsWith(BODY_EXTENSION) && !inside.slice(`${TableEntry.bodies}/`.length).includes("/");
 }
 
@@ -358,6 +373,8 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
         path: `${at}${TableEntry.rowsDir}/${f.name}`,
         content: f.text,
       })),
+      // Its cells' own formulas (D52), beside the rows.
+      ...layoutCells(t.schema, t.rows, t.cells, t.unreadCells).map((f) => ({ path: `${at}${CELLS_DIR}/${f.name}`, content: f.text })),
       { path: `${at}${TableEntry.views}`, content: pretty(t.views ?? []) },
       { path: `${at}${TableEntry.meta}`, content: pretty(tableMetaOnly(t.meta)) },
     );

@@ -314,7 +314,8 @@ export interface TableMeta {
   [key: string]: unknown;
 }
 
-export const TABLE_FORMAT_VERSION = 2;
+/** SPEC section 12: 3 since cells' own formulas (D52); 2 had no `cells/`, 1 one `rows.ndjson`. */
+export const TABLE_FORMAT_VERSION = 3;
 
 /**
  * The bundle's manifest: its root `meta.json` (SPEC section 5). A
@@ -351,6 +352,20 @@ export interface UnreadLine {
   text: string;
 }
 
+/**
+ * One line of a table's `cells/` (SPEC section 3, "A cell's own formula";
+ * D52): the cell's row and field, and its formula in the stored form.
+ * Keys this reader doesn't know are kept, for a writer to put back.
+ */
+export interface CellFormula {
+  id: string;
+  field: string;
+  expr: string;
+  /** Absent means `table-expr-v1`. */
+  dialect?: string;
+  [key: string]: unknown;
+}
+
 export interface ParsedTable {
   schema: TableSchema;
   rows: Row[];
@@ -376,6 +391,14 @@ export interface ParsedTable {
    * `0001`.
    */
   rowFiles?: { name: string; ids: string[] }[];
+  /**
+   * Its `cells/` lines (SPEC section 3, D52), in the order read: every
+   * one, a line whose row or field isn't there and a repeat included, for a
+   * writer keeps them all. Which applies is `cellFormulas()`'s to say.
+   */
+  cells?: CellFormula[];
+  /** Lines of `cells/` that couldn't be read, kept as they were. */
+  unreadCells?: string[];
   /**
    * Set when the table's rows are not in `rows` (it is empty) but in the
    * bundle's index (SPEC section 8), as an app holds a large table:
