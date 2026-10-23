@@ -94,8 +94,11 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   whose `REPORT.md` says what each engine meets.
 - **A cell's own formula** (`cells/`, D52): read, written and worked
   out by core on every platform, and kept through a save; validation and
-  history know it. Not yet: typing one in a cell in any app, and a large
-  table with one is held in memory, not in its index (#640).
+  history know it. Typed as `=…` in a stored field's cell: seen on Linux
+  and the web; iOS and the Mac share the web's code, not yet seen there.
+  Not yet: a cell's own formula in a computed column (that row's
+  exception), and a large table with one is held in memory, not in its
+  index (#640).
 
 ## Views
 

@@ -1189,6 +1189,7 @@ export function App() {
                     // they name (D36), within this bundle (D37).
                     relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
                     allRows: table.rows,
+                    cells: table.cells,
                     tableKey: tableNameOf(activeTablePath),
                     sheet,
                     onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
@@ -1250,6 +1251,8 @@ interface ViewCallbacks {
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  cells?: import("@workspace.sh/table-core").CellFormula[];
+  onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: { order: string[]; position: Map<string, number>; sheets: import("@workspace.sh/table-core").SheetRef[] };
@@ -1325,6 +1328,8 @@ function renderView(
           schema={schema}
           bodies={bodies}
           onUpdateRow={cb.onUpdateRow}
+          cells={cb.cells}
+          onSetCellFormula={cb.onSetCellFormula}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}

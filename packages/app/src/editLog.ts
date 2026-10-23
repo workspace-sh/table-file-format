@@ -5,7 +5,7 @@
 //
 // (`history.ts` here is Back and Forward. This is the other history.)
 
-import { pageChange, rowChanges, type EditChange, type ParsedTable } from "@workspace.sh/table-core";
+import { pageChange, rowChanges, type CellFormula, type EditChange, type ParsedTable, type RowCells } from "@workspace.sh/table-core";
 
 import type { IndexEdit } from "./indexed.ts";
 
@@ -37,17 +37,51 @@ const computedOf = (table: ParsedTable) => new Set(table.schema.fields.filter((f
  * so a row moved is not a change.
  */
 export function rowsChanges(before: ParsedTable, after: ParsedTable): EditChange[] {
-  if (before.rows === after.rows) return [];
+  if (before.rows === after.rows && before.cells === after.cells) return [];
   const computed = computedOf(after);
   const was = new Map(before.rows.map((row) => [row.id, row]));
+  const cellsWere = cellsByRow(before.cells);
+  const cellsNow = cellsByRow(after.cells);
   const changes: EditChange[] = [];
   for (const row of after.rows) {
     const old = was.get(row.id);
     was.delete(row.id);
-    if (old !== row) changes.push(...rowChanges(old, row, computed));
+    if (old !== row) {
+      for (const change of rowChanges(old, row, computed)) {
+        // A row added with cells' own formulas has them in its event (SPEC section 14).
+        if (change.op === "insert" && cellsNow.has(row.id)) change.cells = cellsNow.get(row.id)!;
+        changes.push(change);
+      }
+    }
+    // Each cell's own formula set, changed or taken away (D52): one event each.
+    if (old) {
+      const before = cellsWere.get(row.id) ?? {};
+      const now = cellsNow.get(row.id) ?? {};
+      for (const field of new Set([...Object.keys(before), ...Object.keys(now)])) {
+        const from = before[field]?.expr;
+        const to = now[field]?.expr;
+        if (from !== to) changes.push({ op: "formula", row: row.id, field, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) });
+      }
+    }
   }
-  for (const gone of was.values()) changes.push(...rowChanges(gone, undefined, computed));
+  for (const gone of was.values()) {
+    for (const change of rowChanges(gone, undefined, computed)) {
+      if (change.op === "delete" && cellsWere.has(gone.id)) change.cells = cellsWere.get(gone.id)!;
+      changes.push(change);
+    }
+  }
   return changes;
+}
+
+/** A table's cells' own formulas by row: each line without `id` and `field`, by the field's name, as history keeps them. */
+function cellsByRow(cells: readonly CellFormula[] | undefined): Map<string, RowCells> {
+  const out = new Map<string, RowCells>();
+  for (const { id, field, ...rest } of cells ?? []) {
+    let row = out.get(id);
+    if (!row) out.set(id, (row = {}));
+    row[field] ??= rest;
+  }
+  return out;
 }
 
 const withPending = (log: EditLogState, key: string, changes: EditChange[]): EditLogState =>

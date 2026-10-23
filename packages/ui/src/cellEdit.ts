@@ -3,7 +3,7 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
-import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { compileFormula, enumOptions, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { relationLabel } from "./display";
@@ -83,7 +83,30 @@ export type Commit =
    */
   | { kind: "problem"; check: CellCheck & { ok: false }; queried: string | null }
   /** Left by moving away with a draft the column can't hold: dropped, as there's no one to ask. */
-  | { kind: "dropped" };
+  | { kind: "dropped" }
+  /** `=…` typed: the cell's own formula (D52), in the stored form. */
+  | { kind: "formula"; expr: string };
+
+/** Typing `=…` in a cell gives it its own formula (D52): what that needs, and the formula it has now. */
+export interface CellFormulaEntry {
+  /** The table's fields, for the formula's names. */
+  fields: Field[];
+  /** The Sheet view's grid, for `=B7`. */
+  grid?: Grid;
+  /** The cell's own formula now, stored form: what an edit starts from. */
+  own?: string;
+}
+
+/** The cell's own formula, by row and field, among a table's `cells` (the first, D54). */
+export function ownFormula(cells: readonly CellFormula[] | undefined, rowId: string, field: string): string | undefined {
+  return cells?.find((c) => c.id === rowId && c.field === field)?.expr;
+}
+
+/** What a cell with its own formula shows when it's edited: `=` and the formula, in the reader's syntax. */
+export function cellFormulaDraft(own: string, grid?: Grid, syntax?: "excel" | "stored"): string {
+  const shown = printFormula(own, { grid, ...(syntax ? { syntax } : {}) });
+  return shown.startsWith("=") ? shown : `=${shown}`;
+}
 
 /**
  * Save `raw` into a cell holding `current`, from a key (Enter, Tab) or by
@@ -96,12 +119,21 @@ export function commitDraft(
   raw: string,
   how: "key" | "blur",
   queried: string | null,
+  formula?: CellFormulaEntry,
 ): Commit {
+  // `=` begins a formula, in a stored field's cell, where the view can give it one (D52).
+  if (formula && field && !field.computed && raw.trimStart().startsWith("=")) {
+    const compiled = compileFormula(raw, { fields: formula.fields.map((f) => f.name), ...(formula.grid ? { grid: formula.grid } : {}) });
+    if (!compiled.ok) return how === "blur" ? { kind: "dropped" } : { kind: "problem", check: { ok: false, message: compiled.message }, queried };
+    return compiled.stored === formula.own ? { kind: "unchanged" } : { kind: "formula", expr: compiled.stored };
+  }
   const check = checkEntry(field, raw, queried === raw || how === "blur");
   if (!check.ok) {
     if (how === "blur") return { kind: "dropped" };
     return { kind: "problem", check, queried: check.confirmable ? raw : queried };
   }
+  // A cell with its own formula: whatever's typed over it (nothing, too) is saved, and takes its place.
+  if (formula?.own !== undefined) return { kind: "save", value: check.value };
   return check.value !== current ? { kind: "save", value: check.value } : { kind: "unchanged" };
 }
 
