@@ -26,4 +26,7 @@ test("sorted kind by kind: numbers, then text, then true/false", () => {
 test("more or less than compares like with like: text is neither", () => {
   const more = applyView(table, { id: "f", name: "f", layout: "table", filter: [{ field: "v", operator: "gt", value: 5 }] });
   assert.deepEqual(more.map((r) => r.id), ["b"]);
+  // The text "10" is more than 5 to JavaScript; to an `any` field it's text, so neither.
+  const withText = { ...table, rows: [...table.rows, { id: "t", v: "10" }] };
+  assert.deepEqual(applyView(withText, { id: "f", name: "f", layout: "table", filter: [{ field: "v", operator: "gt", value: 5 }] }).map((r) => r.id), ["b"]);
 });
