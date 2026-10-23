@@ -10,9 +10,16 @@
  * RSD's strict prop whitelist rejects `onLayout`, so we can't listen
  * passively for layout changes. Instead the consumer calls
  * `remeasure()` at moments layout might have changed (drag-start,
- * post-state-change), and on initial ref attach. `measureInWindow`
- * fires the callback async on the native bridge but is cheap enough
- * for the small target counts a viewer ever shows (≤ a few dozen).
+ * post-state-change), and on initial ref attach. `measure` fires the
+ * callback async on the native bridge but is cheap enough for the small
+ * target counts a viewer ever shows (≤ a few dozen).
+ *
+ * A target's place is counted from the React root (`measure`'s pageX and
+ * pageY), as a drag's position is (DragHandle's absoluteX/Y; on macOS the
+ * gesture handler patch counts from the root too). On a phone the root is
+ * the window. On a Mac it can sit beside a native sidebar, and a place
+ * counted from the window (`measureInWindow`) was off by the sidebar's
+ * width: a card let go over one column went into the next.
  */
 import { useCallback, useRef } from "react";
 
@@ -51,10 +58,12 @@ type MeasureCallback = (
   y: number,
   width: number,
   height: number,
+  pageX: number,
+  pageY: number,
 ) => void;
 
 interface MeasurableNode {
-  measureInWindow?: (callback: MeasureCallback) => void;
+  measure?: (callback: MeasureCallback) => void;
 }
 
 export function useDropTargets<K>(): DropTargets<K> {
@@ -64,10 +73,10 @@ export function useDropTargets<K>(): DropTargets<K> {
 
   const measureOne = useCallback((key: K) => {
     const node = nodes.current.get(key);
-    if (!node?.measureInWindow) return;
-    node.measureInWindow((x, y, width, height) => {
+    if (!node?.measure) return;
+    node.measure((_x, _y, width, height, pageX, pageY) => {
       if (!nodes.current.has(key)) return;
-      rects.current.set(key, { x, y, width, height });
+      rects.current.set(key, { x: pageX, y: pageY, width, height });
     });
   }, []);
 
