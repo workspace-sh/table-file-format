@@ -350,6 +350,44 @@ const styles = css.create({
     position: "relative",
     zIndex: 5,
   },
+  // The header and a view's frozen rows (D58), over the rows scrolled up
+  // under the page's top: a place of no height that stays at the top of
+  // whatever scrolls the table, and the band hung from it.
+  bandAnchor: {
+    position: "sticky",
+    top: 0,
+    height: 0,
+    zIndex: 6,
+  },
+  band: {
+    position: "absolute",
+    top: 0,
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#0e0e10",
+    },
+    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.12)",
+    pointerEvents: "none",
+  },
+  bandRow: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  bandFrozen: {
+    flexShrink: 0,
+  },
+  bandRest: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  // On the web the table clips without being a place that scrolls, so the band can stay at the top.
+  tableClips: {
+    overflow: "clip",
+  },
   // A line of no height under the selected row, outside its row-actions
   // wrapper, that the grip hangs from. On iOS that wrapper is a native
   // context-menu view, which takes no touch outside its bounds, so a grip
@@ -4448,6 +4486,147 @@ export function TableView({
     return [entry?.row, entry?.starts?.label, entry?.starts?.count, selected, dragged];
   };
 
+  // The header and the view's frozen rows (D58), over the top of whatever scrolls the page once the
+  // table has gone up under it: drawn again, to look at, while the rows scroll on beneath; its columns
+  // kept with the pane's sideways scroll. At rest it isn't drawn, so nothing is there twice. On the
+  // web: native's page scrolls in the app, out of the table's reach.
+  const frozenRowCount = Math.max(0, Math.min(view.frozen?.rows ?? 0, total));
+  const [banded, setBanded] = useState(false);
+  const bandTop = useRef<HTMLDivElement | null>(null);
+  const bandBox = useRef<HTMLDivElement | null>(null);
+  // How far the columns' pane is scrolled sideways, which the band's columns follow.
+  const bandAcross = useRef(0);
+  const followAcross = () => {
+    bandBox.current?.querySelectorAll<HTMLElement>("[data-band-rest]").forEach((rest) => {
+      rest.style.transform = `translateX(${-bandAcross.current}px)`;
+    });
+  };
+  useEffect(() => {
+    const top = bandTop.current;
+    const table = top?.parentElement;
+    if (PLATFORM_OS !== "web" || !top || !table) return;
+    // Whatever scrolled: the page or a pane the table is in, up and down; the table's own pane, across.
+    let asked = 0;
+    const onScroll = (event: Event) => {
+      const by = event.target;
+      if (by instanceof Element && by !== table && table.contains(by)) {
+        bandAcross.current = by.scrollLeft;
+        followAcross();
+        return;
+      }
+      const isPage = by === document || by === document.documentElement || by === document.body;
+      if (!isPage && !(by instanceof Element && by.contains(top))) return;
+      cancelAnimationFrame(asked);
+      asked = requestAnimationFrame(() => {
+        const edge = isPage ? 0 : (by as Element).getBoundingClientRect().top;
+        setBanded(top.getBoundingClientRect().top < edge - 1);
+      });
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(asked);
+      document.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, []);
+  // Drawn, it starts where the pane is.
+  useEffect(() => {
+    if (banded) followAcross();
+  }, [banded]);
+  const bandCell = (name: string, idx: number, len: number, height: number | null, content: ReactNode, extra?: unknown) => (
+    <html.div
+      key={name}
+      style={[
+        styles.tableCell,
+        styles.cellWidth(colWidth(name)),
+        height === null ? styles.tableHeaderCell : styles.rowHeight(height),
+        cellAlignStyle(effectiveAlign(fieldMap.get(name))),
+        (idx !== len - 1 || closes(name)) && styles.tableCellSeparator,
+        extra as never,
+      ]}
+    >
+      {content}
+    </html.div>
+  );
+  const bandHeader = (name: string, idx: number, len: number) =>
+    bandCell(
+      name,
+      idx,
+      len,
+      null,
+      <>
+        {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+        <html.span>{fieldMap.get(name)?.title ?? name}</html.span>
+      </>,
+    );
+  const bandValue = (row: Row, name: string, idx: number, len: number) =>
+    bandCell(
+      name,
+      idx,
+      len,
+      heightOf(row.id),
+      <CellWidth.Provider value={colWidth(name) - 24}>
+        <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} lines={linesFor(heightOf(row.id))} />
+      </CellWidth.Provider>,
+      tintOf(colorsOf(row).cells[name]),
+    );
+  const bandRows: Row[] = [];
+  for (let place = 0; place < frozenRowCount; place++) {
+    const entry = entryAt(place);
+    if (entry) bandRows.push(entry.row);
+  }
+  const bandLine = (key: string, height: number | null, frozenPart: ReactNode, restPart: ReactNode, tint?: unknown) => (
+    <html.div key={key} style={[styles.bandRow, styles.tableRow, height === null ? styles.tableHeaderRow : styles.rowHeight(height), tint as never]}>
+      {frozenOn && <html.div style={[styles.bandRow, styles.bandFrozen, styles.frozenEdge]}>{frozenPart}</html.div>}
+      <html.div style={styles.bandRest}>
+        <html.div data-band-rest={true} style={styles.bandRow}>
+          {restPart}
+        </html.div>
+      </html.div>
+    </html.div>
+  );
+  const gutterCell = (corner: boolean, n?: number) => (
+    <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), corner && styles.rowNumberCorner]}>{n !== undefined && <html.span>{n}</html.span>}</html.div>
+  );
+  const band =
+    PLATFORM_OS === "web" ? (
+      <>
+        <html.div ref={bandTop} style={{ height: 0 } as never} />
+        <html.div style={styles.bandAnchor}>
+          {banded && (
+            <html.div ref={bandBox} data-testid="frozen-band" style={styles.band}>
+              {bandLine(
+                "header",
+                null,
+                <>
+                  {coords && gutterCell(true)}
+                  {frozenNames.map((name, idx) => bandHeader(name, idx, frozenNames.length))}
+                </>,
+                <>
+                  {coords && !frozenOn && gutterCell(true)}
+                  {restNames.map((name, idx) => bandHeader(name, idx, restNames.length))}
+                </>,
+              )}
+              {bandRows.map((row, i) =>
+                bandLine(
+                  row.id,
+                  heightOf(row.id),
+                  <>
+                    {coords && gutterCell(false, rowNumber(sheet?.position, row.id, i))}
+                    {frozenNames.map((name, idx) => bandValue(row, name, idx, frozenNames.length))}
+                  </>,
+                  <>
+                    {coords && !frozenOn && gutterCell(false, rowNumber(sheet?.position, row.id, i))}
+                    {restNames.map((name, idx) => bandValue(row, name, idx, restNames.length))}
+                  </>,
+                  tintOf(colorsOf(row).row),
+                ),
+              )}
+            </html.div>
+          )}
+        </html.div>
+      </>
+    ) : null;
+
   return (
     <>
     {/* "+" for a new field sits at the end of the header row, just outside
@@ -4474,7 +4653,8 @@ export function TableView({
       onKeyDown={onGridKey}
       style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
     >
-    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, PLATFORM_OS === "web" && styles.tableClips, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+      {band}
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
