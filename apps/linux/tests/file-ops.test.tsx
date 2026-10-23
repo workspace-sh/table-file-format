@@ -64,6 +64,19 @@ describe("the File menu on Linux", () => {
     expect(example.rows.some((r) => r.name === "Northwind Ltd")).toBe(false);
   });
 
+  it("Open… of a .table already open shows it, and doesn't open it twice (a file manager opening it again, #621)", async () => {
+    const crm = join(dir, "elsewhere", "crm.table");
+    cpSync(join(fixturesDir()!, "crm.table"), crm, { recursive: true });
+    await openExamples({ chooseToOpen: async () => crm });
+    await run("open");
+    expect(await screen.findByText("CRM (crm.table) › Companies")).toBeDefined();
+    await userEvent.click(await screen.findByText("Tasks"));
+    await waitFor(async () => expect(await screen.findAllByText("CRM (crm.table) › Companies").catch(() => [])).toHaveLength(0));
+    await run("open");
+    expect(await screen.findByText("CRM (crm.table) › Companies")).toBeDefined();
+    expect(await screen.findAllByText("CRM")).toHaveLength(1);
+  });
+
   it("Open… opens a single-file .table, and its edits are saved back into it, a single file still (D49)", async () => {
     const budget = await loadLibrary([join(fixturesDir()!, "household-budget.table")]);
     const file = join(dir, "budget.table");
