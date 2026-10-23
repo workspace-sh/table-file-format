@@ -18,6 +18,7 @@ import { remoteEdits, remoteViewRows, type RemoteViewRows } from "./remoteRows.t
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IndexDatabase } from "./indexHost.ts";
+import { heldText, withHeld, type HeldRows } from "./indexed.ts";
 
 export interface IndexedTables {
   /** The table on screen is held in the index, and it's being read into it: how far along. */
@@ -134,21 +135,19 @@ export function useIndexedTables(input: {
           // held, the table is read from it into memory instead, and says so. With
           // nothing to read it from (the app was started again), or an archive that
           // turns out damaged, its rows are lost to this device.
-          let rows: Row[] | null = null;
+          let held: HeldRows | null = null;
           try {
-            rows = (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));
+            held = (await hostOf(bundleOf(key))).heldRows(tableNameOf(key));
           } catch {
-            rows = null;
+            held = null;
           }
-          if (!rows) return setMade((was) => ({ ...was, [key]: "lost" }));
+          if (!held) return setMade((was) => ({ ...was, [key]: "lost" }));
           const { indexed: _indexed, ...rest } = table;
           asked.current.delete(key);
           setMade(({ [key]: _was, ...others }) => others);
-          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, rows } });
-          latest.current.tell(
-            "Opened without its index",
-            `${tableNameOf(key)} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`,
-          );
+          // Lines it couldn't read are kept, to be written back where they were, and said (#567).
+          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) } });
+          latest.current.tell("Opened without its index", heldText(tableNameOf(key), error, held));
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

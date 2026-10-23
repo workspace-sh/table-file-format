@@ -136,3 +136,43 @@ test("a large table's rows files are kept as they came, each row saved back to i
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a large table from an archive with a line it can't read isn't indexed: held in memory, the line kept and said (#567)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-index-host-"));
+  try {
+    const source = join(dir, "source.table");
+    cpSync(join(fixtures, "projects.table"), source, { recursive: true });
+    const bundle = await readBundle(nodeFs, source);
+    const schema = bundle.tables.tasks!.schema;
+    const many = Array.from({ length: 6000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ${"x".repeat(400)}`, priority: i % 7 }));
+    bundle.tables.tasks!.rows = [];
+    const files = unzipSync(await bundleToArchive("projects", bundle));
+    const rowsDir = "projects.table/tables/tasks/rows/";
+    const lines = (rows: typeof many) => rows.map((r) => `${JSON.stringify(r)}\n`).join("");
+    const broken = '{"id":"r9999","title":"Broken by a typo"\n';
+    const repeat = '{"id":"r5","title":"Edited on another branch"}\n';
+    files[`${rowsDir}0001.ndjson`] = strToU8(lines(many.slice(0, 3000)));
+    files[`${rowsDir}0002.ndjson`] = strToU8(lines(many.slice(3000, 4000)) + broken + repeat + lines(many.slice(4000)));
+
+    const host = createIndexHost(nodePlatform(join(dir, "home")));
+    const { opened } = await host.openZip(zipSync(files), [], 1000);
+    assert.ok(opened.bundle.tables.tasks!.indexed);
+    const db = host.openIndexDatabase(opened.key);
+    await assert.rejects(db.ensure("tasks", schema), /a line of rows\/0002.ndjson couldn't be read/);
+
+    // Read into memory instead, as a reader reads it: every row, and both lines kept where they were.
+    const held = db.heldRows("tasks")!;
+    assert.deepEqual(held.rows, many);
+    assert.deepEqual(held.unread, [
+      { after: "r3999", text: broken.trimEnd() },
+      { after: "r3999", text: repeat.trimEnd() },
+    ]);
+    assert.equal(held.diagnostics.length, 2);
+    assert.deepEqual(held.rowFiles.map((f) => [f.name, f.ids.length]), [["0001.ndjson", 3000], ["0002.ndjson", 3000]]);
+    // Taken once: the archive isn't held after.
+    assert.equal(db.heldRows("tasks"), null);
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

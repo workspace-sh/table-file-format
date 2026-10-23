@@ -6,16 +6,20 @@ import {
   applyView,
   buildIndex,
   memoryViewRows,
+  parseRowsText,
   putRows,
   queryIndex,
   removeRows,
   rowLocal,
   searchRows,
   type IndexQuery,
+  type LazyZipEntry,
   type ParsedTable,
   type Row,
   type SqlDriver,
   type TableSchema,
+  type UnreadLine,
+  type ValidationError,
   type View,
   type ViewRows,
 } from "@workspace.sh/table-core";
@@ -195,18 +199,22 @@ export function rowsInBytes(bytes: Uint8Array): Iterable<Row> {
  * Splits a `rows.ndjson` that comes in pieces into its rows: a line may run
  * across two pieces. `push` each piece in turn, then `end`.
  */
-function rowSplitter(onBytes?: (bytes: number) => void): { push(chunk: Uint8Array): Iterable<Row>; end(): Iterable<Row> } {
+function rowSplitter(onBytes?: (bytes: number) => void, strict?: () => string): { push(chunk: Uint8Array): Iterable<Row>; end(): Iterable<Row> } {
   const decoder = new TextDecoder();
   const rowOf = (line: Uint8Array): Row | undefined => {
     if (line.length === 0) return undefined;
     const text = decoder.decode(line);
     if (text.trim().length === 0) return undefined;
+    let row: unknown;
     try {
-      const row: unknown = JSON.parse(text);
-      return row !== null && typeof row === "object" && typeof (row as Row).id === "string" ? (row as Row) : undefined;
+      row = JSON.parse(text);
     } catch {
-      return undefined;
+      row = undefined;
     }
+    if (row !== null && typeof row === "object" && !Array.isArray(row) && typeof (row as Row).id === "string" && (row as Row).id !== "") return row as Row;
+    // Read for an index, a line that isn't a row stops it: the index writes the rows back, and would leave the line out (#567).
+    if (strict) throw new Error(`a line of ${strict()} couldn't be read`);
+    return undefined;
   };
   // The start of a line whose end is in the next piece.
   let carry: Uint8Array | null = null;
@@ -256,9 +264,13 @@ export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: nu
   yield* split.end();
 }
 
-/** The same, for pieces read as they come (a file read a piece at a time over an asynchronous API, as the Mac's is). */
-export async function* rowsInAsyncChunks(chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, onBytes?: (bytes: number) => void): AsyncIterable<Row> {
-  const split = rowSplitter(onBytes);
+/**
+ * The same, for pieces read as they come (a file read a piece at a time over
+ * an asynchronous API, as the Mac's is). Given `strict`, a line that isn't a
+ * row throws, naming the file `strict` says it's in.
+ */
+export async function* rowsInAsyncChunks(chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, onBytes?: (bytes: number) => void, strict?: () => string): AsyncIterable<Row> {
+  const split = rowSplitter(onBytes, strict);
   for await (const chunk of chunks) yield* split.push(chunk);
   yield* split.end();
 }
@@ -326,8 +338,11 @@ export async function buildIndexFromBytes(
   let read = 0;
   const total = () => (pieces ? (read > 0 ? Math.max(done, Math.round((done / read) * pieces.size)) : 0) : counted);
   options.onProgress?.(0, total());
+  // The rows file being read, for saying where a line that couldn't be read is.
+  let reading = "";
   async function* taken(): AsyncIterable<Uint8Array> {
     for (const file of pieces!.files ?? [{ name: "", chunks: pieces!.chunks ?? [] }]) {
+      reading = file.name;
       // Every row of the files before has been taken by now: a piece is asked for only once the last one's rows are.
       await pieces!.onFile?.(file.name, done + 1);
       let last = NEWLINE;
@@ -341,7 +356,8 @@ export async function buildIndexFromBytes(
     }
   }
   async function* streamed(): AsyncIterable<Row> {
-    for await (const row of whole ? rowsInBytes(whole) : rowsInAsyncChunks(taken(), (bytes) => (read += bytes))) {
+    const where = () => (reading ? `rows/${reading}` : "its rows");
+    for await (const row of whole ? rowsInAsyncChunks([whole], undefined, where) : rowsInAsyncChunks(taken(), (bytes) => (read += bytes), where)) {
       done++;
       if (done % 5000 === 0) options.onProgress?.(done, total());
       yield row;
@@ -360,3 +376,51 @@ export async function buildIndexFromBytes(
   options.onProgress?.(done, done);
   return done;
 }
+
+/** A large table's rows read into memory after all, with what couldn't be read kept (SPEC section 3): what a table held there needs. */
+export interface HeldRows {
+  rows: Row[];
+  rowFiles: { name: string; ids: string[] }[];
+  unread: UnreadLine[];
+  diagnostics: ValidationError[];
+}
+
+/**
+ * A table's rows from an archive's rows files, read as a reader reads them:
+ * a line that isn't a row, or repeats a row's id, is kept to be written back
+ * and said, not dropped (#567, D54). For holding a table in memory when its
+ * index can't be made.
+ */
+export function readHeldRows(rows: LazyZipEntry, firstFile: string): HeldRows {
+  const decoder = new TextDecoder();
+  const held: HeldRows = { rows: [], rowFiles: [], unread: [], diagnostics: [] };
+  const seen = new Map<string, Row>();
+  for (const part of rows.parts ?? [{ name: firstFile, entry: rows }]) {
+    let text = "";
+    for (const chunk of part.entry.chunks()) text += decoder.decode(chunk, { stream: true });
+    text += decoder.decode();
+    const these = parseRowsText(text, held.diagnostics, held.unread, { file: `rows/${part.name}`, after: held.rows.at(-1)?.id ?? null, seen });
+    for (const r of these) held.rows.push(r);
+    held.rowFiles.push({ name: part.name, ids: these.map((r) => r.id) });
+  }
+  return held;
+}
+
+/** What a table read into memory takes from HeldRows: its rows, and the rest only when there is any, as a reader sets them. */
+export function withHeld(held: HeldRows): Pick<ParsedTable, "rows" | "rowFiles" | "unread" | "diagnostics"> {
+  return {
+    rows: held.rows,
+    ...(held.rowFiles.length > 0 ? { rowFiles: held.rowFiles } : {}),
+    ...(held.unread.length > 0 ? { unread: held.unread } : {}),
+    ...(held.diagnostics.length > 0 ? { diagnostics: held.diagnostics } : {}),
+  };
+}
+
+/** What's said of a large table held in memory because no index could be made of it: why, and that the lines it couldn't read are kept. */
+export function heldText(table: string, error: unknown, held: HeldRows): string {
+  const why = `${table} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`;
+  const lines = held.unread.length;
+  if (lines === 0) return why;
+  return `${why} ${lines === 1 ? "A line of its rows couldn't be read; it's kept as it is." : `${lines} lines of its rows couldn't be read; they're kept as they are.`}`;
+}
+
