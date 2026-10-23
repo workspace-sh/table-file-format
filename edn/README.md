@@ -81,6 +81,12 @@ bundle, deliberately awkward values, and relations gone wrong
 (`js/src/evaluate.test.ts`). 21 of the fixtures' 22 formulas are the core's;
 the one reading a Sheet place (`at`) stays with `.table`'s workbook.
 
+The host (`.table`'s workbook) also works out a table that reads the clock
+or chance (`today`, `now`, `rand`), has cells with formulas of their own, or
+works its loops out by iteration, together with every table related to it
+either way (by a relation or a `linked`): a value read across from the
+host's table has to be the host's.
+
 100,000 deals pointing at 2,000 companies (a row formula, a lookup through
 the relation, two rollups back), everything included (columns in, results
 out):
