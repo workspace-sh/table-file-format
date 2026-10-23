@@ -198,6 +198,12 @@ function viewWithoutField(view: View, name: string): View {
     if (colors.length > 0) next.colors = colors;
     else delete next.colors;
   }
+  // A merged block with a corner in the field goes: without that corner it isn't the block it was (D58).
+  if (view.merged) {
+    const merged = view.merged.filter((m) => m.from.field !== name && m.to.field !== name);
+    if (merged.length > 0) next.merged = merged;
+    else delete next.merged;
+  }
   for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === name) delete next[k];
   return next;
 }

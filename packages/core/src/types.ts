@@ -219,6 +219,12 @@ export interface ViewGroup {
   field: string;
 }
 
+/** A block of a Sheet view's cells shown as one (D58): its corners, by field and row id. */
+export interface ViewMerge {
+  from: { field: string; row: string };
+  to: { field: string; row: string };
+}
+
 export interface View {
   id: string;
   name: string;
@@ -274,6 +280,12 @@ export interface View {
   hidden?: string[];
   /** Rows and columns that stay put while the rest scroll (D58). Absent: the app's own choice. */
   frozen?: { columns?: number; rows?: number };
+  /**
+   * In a Sheet view, blocks of cells shown as one, with the value of the
+   * top-left cell (SPEC section 4, D58): two corners, by field and row id.
+   * The cells under a merge keep their values. Display-only.
+   */
+  merged?: ViewMerge[];
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;

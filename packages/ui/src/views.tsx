@@ -78,6 +78,7 @@ import {
   formatValue as formatCellValue,
   hasColorRules,
   memoryViewRows,
+  mergedBlocks,
   rowColors,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
@@ -350,6 +351,32 @@ const styles = css.create({
     position: "relative",
     zIndex: 5,
   },
+  // A Sheet view's merged cells (D58): a place of no height where the rows
+  // start, and each block a box over its cells, placed from there.
+  mergeLayer: {
+    position: "relative",
+    height: 0,
+    zIndex: 2,
+  },
+  mergeBox: {
+    position: "absolute",
+    boxSizing: "border-box",
+    display: "flex",
+    alignItems: "center",
+    paddingInline: 16,
+    overflow: "hidden",
+    fontSize: 13,
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#0e0e10",
+    },
+  },
+  mergeAt: (left: number, top: number, width: number, height: number) => ({
+    insetInlineStart: left,
+    top,
+    width,
+    height,
+  }),
   // The header and a view's frozen rows (D58), over the rows scrolled up
   // under the page's top: a place of no height that stays at the top of
   // whatever scrolls the table, and the band hung from it.
@@ -4627,6 +4654,58 @@ export function TableView({
       </>
     ) : null;
 
+  // A Sheet view's merged cells (D58), over the rows as they're shown, in memory and not grouped (a
+  // group's heading would come between its rows): each block a box over its cells, with its top-left
+  // cell's value; a tap on it is a tap on that cell. A block is drawn in the pane its columns are in.
+  const mergedShown = coords && view.merged?.length && !indexed && !view.group ? inMemory.map((d) => d.row.id) : [];
+  const merges = mergedShown.length > 0 ? mergedBlocks(view, fields, mergedShown, sheet?.order ?? mergedShown, frozenNames.length) : [];
+  const mergeTop = merges.length > 0 ? layoutOf() : null;
+  const mergeLayer = (pane: "frozen" | "rest") => {
+    if (!mergeTop) return null;
+    const names = pane === "frozen" ? frozenNames : restNames;
+    const offset = pane === "frozen" ? 0 : frozenNames.length;
+    const gutter = coords && (pane === "frozen" || !frozenOn) ? numberWidth : 0;
+    const boxes = merges.filter((b) => (pane === "frozen" ? b.column < offset : b.column >= offset));
+    if (boxes.length === 0) return null;
+    return (
+      <html.div style={styles.mergeLayer}>
+        {boxes.map((block) => {
+          let left = gutter;
+          for (let c = offset; c < block.column; c++) left += colWidth(names[c - offset]!);
+          let width = -ROW_BORDER;
+          for (let c = block.column; c < block.column + block.columns; c++) width += colWidth(fields[c]!);
+          const last = block.row + block.rows - 1;
+          const top = mergeTop.topOf(block.row);
+          const height = mergeTop.topOf(last) + mergeTop.heightOf(last) - top - ROW_BORDER;
+          const entry = inMemory[block.row];
+          const field = fieldMap.get(block.field);
+          const selected = sel?.rowId === block.rowId && sel.name === block.field;
+          return (
+            <html.div
+              key={`${block.field}\u0000${block.rowId}`}
+              data-testid="merged-cells"
+              style={[
+                styles.mergeBox,
+                styles.mergeAt(left, top, width, height),
+                cellAlignStyle(effectiveAlign(field)),
+                entry && tintOf(colorsOf(entry.row).cells[block.field] ?? colorsOf(entry.row).row),
+                selected && styles.cellSelected,
+              ]}
+              onClick={() => {
+                setSel({ rowId: block.rowId, name: block.field });
+                keysRef.current?.focus();
+              }}
+            >
+              <CellWidth.Provider value={width - 32}>
+                <CellValue field={field} value={entry?.row[block.field]} relatedTables={relatedTables} lines={1} />
+              </CellWidth.Provider>
+            </html.div>
+          );
+        })}
+      </html.div>
+    );
+  };
+
   return (
     <>
     {/* "+" for a new field sits at the end of the header row, just outside
@@ -4667,6 +4746,7 @@ export function TableView({
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
               {frozenNames.map((name, idx) => headerCell(name, idx, frozenNames.length))}
             </html.div>
+            {mergeLayer("frozen")}
             <RowList
               items={places}
               keyOf={rowKeyOf}
@@ -4735,6 +4815,7 @@ export function TableView({
                 )}
                 {headerAddCell}
               </html.div>
+              {mergeLayer("rest")}
               <RowList
                 items={places}
                 keyOf={rowKeyOf}
