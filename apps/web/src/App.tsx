@@ -590,7 +590,7 @@ export function App() {
     const asking = state.asking;
     if (!asking) return;
     if (asking.kind === "name") {
-      const text = window.prompt(asking.prompt.heading);
+      const text = window.prompt(asking.prompt.heading, asking.prompt.value ?? "");
       dispatch({ type: "answer", response: text === null ? "cancel" : "create", ...(text !== null ? { text } : {}) });
       return;
     }
@@ -1254,6 +1254,7 @@ interface ViewCallbacks {
   allRows: Row[];
   cells?: import("@workspace.sh/table-core").CellFormula[];
   onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: { order: string[]; position: Map<string, number>; sheets: import("@workspace.sh/table-core").SheetRef[] };
@@ -1331,6 +1332,7 @@ function renderView(
           onUpdateRow={cb.onUpdateRow}
           cells={cb.cells}
           onSetCellFormula={cb.onSetCellFormula}
+          onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}

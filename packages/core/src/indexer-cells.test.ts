@@ -90,3 +90,22 @@ test("built again from its rows without cells given, it keeps the cells' formula
   const shown = await (await queryIndex(db, { name: "t", schema }))!.rows(0, 3);
   assert.equal(shown.find((r) => r.id === "b")!.qty, 10);
 });
+
+test("a cell's note in the index (D57): set, carried with its row, kept with its formula, and written back", async () => {
+  const { setIndexedCellNote, CELL_NOTES } = await import("./indexer.js");
+  const db = await built();
+  assert.deepEqual(await setIndexedCellNote(db, { name: "t", rowId: "b", field: "qty", note: "ten, by formula", key: "n1" }), { was: undefined });
+  await setIndexedCellNote(db, { name: "t", rowId: "a", field: "item", note: "fresh", key: "n2" });
+  const shown = await (await queryIndex(db, { name: "t", schema }))!.rows(0, 3);
+  assert.deepEqual(shown.find((r) => r.id === "b")![CELL_NOTES], { qty: "ten, by formula" });
+  assert.equal(shown.find((r) => r.id === "b")!.qty, 10);
+  assert.deepEqual(shown.find((r) => r.id === "a")![CELL_NOTES], { item: "fresh" });
+  const text = await storedCellsText(db, { name: "t", schema });
+  assert.match(text, /"id":"b","field":"qty","expr":"\(\+ 5 5\)","note":"ten, by formula"/);
+  assert.match(text, /"id":"a","field":"item","note":"fresh"/);
+  // Its formula taken away, the note stays; the note emptied, the line goes.
+  await setIndexedCellFormula(db, { name: "t", schema, rowId: "b", field: "qty", expr: null, key: "n3" });
+  assert.match(await storedCellsText(db, { name: "t", schema }), /"id":"b","field":"qty","note":"ten, by formula"/);
+  await setIndexedCellNote(db, { name: "t", rowId: "b", field: "qty", note: "", key: "n4" });
+  assert.doesNotMatch(await storedCellsText(db, { name: "t", schema }), /"id":"b"/);
+});

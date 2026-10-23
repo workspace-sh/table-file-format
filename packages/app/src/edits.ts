@@ -31,7 +31,7 @@ export function bumpSchemaVersion(schema: TableSchema): TableSchema {
 export function withCell(table: ParsedTable, rowId: string, field: string, value: unknown): ParsedTable {
   const next = { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
   // A value typed into a cell with its own formula takes its place (D52).
-  return table.cells?.some((c) => c.id === rowId && c.field === field) ? withCellFormula(next, rowId, field, null) : next;
+  return table.cells?.some((c) => c.id === rowId && c.field === field && c.expr !== undefined) ? withCellFormula(next, rowId, field, null) : next;
 }
 
 /**
@@ -40,8 +40,11 @@ export function withCell(table: ParsedTable, rowId: string, field: string, value
  * for it, and its result is never stored.
  */
 export function withCellFormula(table: ParsedTable, rowId: string, field: string, expr: string | null): ParsedTable {
+  const was = table.cells?.find((c) => c.id === rowId && c.field === field);
   const others = (table.cells ?? []).filter((c) => !(c.id === rowId && c.field === field));
-  const cells = expr === null ? others : [...others, { id: rowId, field, expr }];
+  // The cell's note stays, with or without a formula (D57).
+  const note = was?.note;
+  const cells = expr === null && note === undefined ? others : [...others, { id: rowId, field, ...(expr !== null ? { expr } : {}), ...(note !== undefined ? { note } : {}) }];
   const rows =
     expr === null
       ? table.rows
@@ -365,3 +368,16 @@ export function deletingRow(table: ParsedTable, rowId: string, openBody: string 
     closeBody: openBody === rowId,
   };
 }
+
+/** A cell's note set, or taken away (an empty note); its formula, if it has one, stays (D57). */
+export function withCellNote(table: ParsedTable, rowId: string, field: string, note: string): ParsedTable {
+  const was = table.cells?.find((c) => c.id === rowId && c.field === field);
+  const others = (table.cells ?? []).filter((c) => !(c.id === rowId && c.field === field));
+  const kept = note.trim() === "" ? undefined : note;
+  const line = was || kept !== undefined ? { ...(was ?? { id: rowId, field }), ...(kept !== undefined ? { note: kept } : {}) } : undefined;
+  if (line && kept === undefined) delete (line as { note?: string }).note;
+  const cells = line && (line.expr !== undefined || line.note !== undefined) ? [...others, line] : others;
+  const { cells: _was, ...rest } = table;
+  return { ...rest, ...(cells.length > 0 ? { cells } : {}) };
+}
+

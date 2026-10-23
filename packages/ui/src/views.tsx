@@ -36,7 +36,7 @@ import {
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { cellFormulaDraft, commitDraft, currencySymbolOf, draftOf, ownFormula, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
+import { cellFormulaDraft, commitDraft, currencySymbolOf, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
@@ -1345,6 +1345,13 @@ const styles = css.create({
   tintPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" } },
   tintPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" } },
   pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  // A cell with a note (D57): a small triangle in its top end corner, as spreadsheets mark one.
+  noted: {
+    backgroundImage: {
+      default: "linear-gradient(225deg, #e8a33d 9px, transparent 9px)",
+      "@media (prefers-color-scheme: dark)": "linear-gradient(225deg, #f5b94f 9px, transparent 9px)",
+    },
+  },
   choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
   choiceCheck: { width: 12, fontSize: 12 },
   relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
@@ -2846,6 +2853,7 @@ export function TableView({
   onPlaceMeasure,
   cells,
   onSetCellFormula,
+  onAskCellNote,
 }: ViewProps) {
   // Every prop as given, to tell a drawing the screen asked for from one
   // only the index's window caused (drawKey, below).
@@ -2892,6 +2900,9 @@ export function TableView({
   // platform's way: right-click on the web and macOS, touch and hold on a
   // phone. A host can replace the control (PlatformControlsProvider).
   const { RowActions } = usePlatformControls();
+  // Each row as last drawn, by id: what a key or a menu on a selected cell reads its note from (D57).
+  const drawnRows = useRef(new Map<string, Row>());
+  const noteFor = (rowId: string, name: string) => ownNote(cells, rowId, name, drawnRows.current.get(rowId));
   const actionsFor = (rowId: string) =>
     rowActions(rowId, {
       onOpenBody,
@@ -2900,6 +2911,7 @@ export function TableView({
       onFitRow: onUpdateView ? (id) => fitRow(id) : undefined,
       onResetRowHeight: onUpdateView && view.rowHeights?.[rowId] !== undefined ? (id) => resetRowHeight(id) : undefined,
       onDeleteRow,
+      ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
     });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -3832,6 +3844,9 @@ export function TableView({
     };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
+    drawnRows.current.set(row.id, row);
+    // A note on the cell (D57): a mark in its corner, and the note itself on hover.
+    const note = ownNote(cells, row.id, name, row);
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
       <html.div
@@ -3870,8 +3885,10 @@ export function TableView({
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
           tintOf(colorsOf(row).cells[name]),
+          note !== undefined && styles.noted,
           isSelected && styles.cellSelected,
         ]}
+        {...(note !== undefined ? { title: note } : {})}
       >
         <CellWidth.Provider value={colWidth(name) - 24}>
         {onUpdateRow ? (
@@ -4283,6 +4300,7 @@ export function TableView({
     e.preventDefault?.();
     if (action.kind === "select") return selectAt(action.at.row, action.at.col);
     if (!cur) return;
+    if (action.kind === "note") return onAskCellNote?.(cur.rowId, cur.name, noteFor(cur.rowId, cur.name));
     if (action.kind === "clear") return onUpdateRow!(cur.rowId, cur.name, undefined);
     void openCell(cur.rowId, cur.name, action.kind === "open" ? action.text : undefined);
   };

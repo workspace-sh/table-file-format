@@ -234,6 +234,8 @@ async function tableNumber(db: SqlDriver, name: string, create: boolean): Promis
 
 /** The key a row read out of the index carries its cells' own formulas under, by field: for an editor to start from. Never a field's name. */
 export const OWN_FORMULAS = "\u0000cells";
+/** The key a row read out of the index carries its cells' notes under, by field (D57). Never a field's name. */
+export const CELL_NOTES = "\u0000notes";
 
 async function cellsTable(db: SqlDriver): Promise<void> {
   await db.exec("create table if not exists _cells(n integer not null, seq integer not null, id text not null, field text not null, line text not null, primary key(n, seq)); create index if not exists _cells_id on _cells(n, id)");
@@ -291,18 +293,33 @@ async function withCellResults(db: SqlDriver, n: number, schema: TableSchema, ro
   const ids = rows.map((r) => r.id);
   const cells = await cellLinesOf(db, n, ids);
   if (cells.length === 0) return rows;
-  const shown = computeRows(schema, rows, { cells }).rows;
+  const formulas = cells.some((c) => c.expr !== undefined);
+  const shown = formulas ? computeRows(schema, rows, { cells }).rows : rows;
   const own = cellFormulas(schema, rows, cells);
+  // Each cell's note, the first line's for it (D57).
+  const notes = new Map<string, Record<string, string>>();
+  for (const c of cells) {
+    if (c.note === undefined) continue;
+    const mine = notes.get(c.id) ?? {};
+    mine[c.field] ??= c.note;
+    notes.set(c.id, mine);
+  }
   return shown.map((row) => {
     const mine = own.get(row.id);
-    return mine ? { ...row, [OWN_FORMULAS]: Object.fromEntries([...mine].map(([f, c]) => [f, c.expr])) } : row;
+    const noted = notes.get(row.id);
+    if (!mine && !noted) return row;
+    return {
+      ...row,
+      ...(mine ? { [OWN_FORMULAS]: Object.fromEntries([...mine].map(([f, c]) => [f, c.expr])) } : {}),
+      ...(noted ? { [CELL_NOTES]: noted } : {}),
+    };
   });
 }
 
 /** Whether cells' formulas read only their own row, as an index of row-at-a-time work needs. */
 export function cellsRowLocal(cells: readonly CellFormula[] | undefined): boolean {
   if (!cells || cells.length === 0) return true;
-  const fields = cells.map((c, i) => ({ name: `\u0000${i}`, type: "string" as const, computed: { expr: c.expr, dialect: c.dialect ?? "table-expr-v1" } }));
+  const fields = cells.flatMap((c, i) => (c.expr === undefined ? [] : [{ name: `\u0000${i}`, type: "string" as const, computed: { expr: c.expr, dialect: c.dialect ?? "table-expr-v1" } }]));
   return rowLocal({ fields }, fields);
 }
 
@@ -321,16 +338,41 @@ export async function setIndexedCellFormula(
   const found = (await db.all(`select j from r${n} where id = ?`, [options.rowId]))[0];
   if (!found) return null;
   await cellsTable(db);
-  const had = (await cellLinesOf(db, n, [options.rowId])).find((c) => c.field === options.field)?.expr;
+  const line = (await cellLinesOf(db, n, [options.rowId])).find((c) => c.field === options.field);
+  const had = line?.expr;
   await db.run("delete from _cells where n = ? and id = ? and field = ?", [n, options.rowId, options.field]);
-  if (options.expr !== null) {
+  // The cell's note stays, with or without a formula (D57).
+  const note = line?.note;
+  if (options.expr !== null || note !== undefined) {
     const seq = Number((await db.all("select coalesce(max(seq), 0) as m from _cells where n = ?", [n]))[0]!.m) + 1;
-    await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, seq, options.rowId, options.field, cellLine({ id: options.rowId, field: options.field, expr: options.expr })]);
+    const next: CellFormula = { id: options.rowId, field: options.field, ...(options.expr !== null ? { expr: options.expr } : {}), ...(note !== undefined ? { note } : {}) };
+    await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, seq, options.rowId, options.field, cellLine(next)]);
   }
   const row = JSON.parse(found.j as string) as Row;
   if (options.expr !== null && !options.schema.fields.find((f) => f.name === options.field)?.computed) delete row[options.field];
   await putRows(db, { name: options.name, schema: options.schema, rows: [row], key: options.key });
   return { was: had };
+}
+
+/** A cell of an indexed table's note set, or taken away (empty) (D57). Gives back the note it had; null when there's no such row. */
+export async function setIndexedCellNote(
+  db: SqlDriver,
+  options: { name: string; rowId: string; field: string; note: string; key: string },
+): Promise<{ was: string | undefined } | null> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  if ((await db.all(`select 1 from r${n} where id = ?`, [options.rowId])).length === 0) return null;
+  const line = (await cellLinesOf(db, n, [options.rowId])).find((c) => c.field === options.field);
+  const kept = options.note.trim() === "" ? undefined : options.note;
+  await db.run("delete from _cells where n = ? and id = ? and field = ?", [n, options.rowId, options.field]);
+  const { note: _was, ...rest } = line ?? { id: options.rowId, field: options.field };
+  const next: CellFormula = { ...rest, ...(kept !== undefined ? { note: kept } : {}) } as CellFormula;
+  if (next.expr !== undefined || next.note !== undefined) {
+    const seq = Number((await db.all("select coalesce(max(seq), 0) as m from _cells where n = ?", [n]))[0]!.m) + 1;
+    await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, seq, options.rowId, options.field, cellLine(next)]);
+  }
+  await db.run("update _tables set key = ?, built_at = ? where n = ?", [options.key, new Date().toISOString(), n]);
+  return { was: line?.note };
 }
 
 /** A table's cells' own formulas, out of its index: all its lines (D52). */
@@ -354,11 +396,18 @@ export async function storedCellsText(db: SqlDriver, options: { name: string; sc
   const found = await db.all(`select c.line as line, c.field as field, r.j as j from _cells c left join r${n} r on r.id = c.id where c.n = ? order by (r.pos is null), r.pos, c.seq`, [n]);
   let text = "";
   for (const r of found) {
+    let line = r.line as string;
     if (r.j !== null && r.j !== undefined && stored.has(r.field as string)) {
       const v = (JSON.parse(r.j as string) as Row)[r.field as string];
-      if (v !== undefined && v !== null && v !== "") continue;
+      const c = JSON.parse(line) as CellFormula;
+      if (c.expr !== undefined && v !== undefined && v !== null && v !== "") {
+        // A value typed over a formula takes its place; a note stays (D57).
+        if (c.note === undefined) continue;
+        const { expr: _gone, dialect: _with, ...rest } = c;
+        line = cellLine(rest as CellFormula);
+      }
     }
-    text += `${r.line as string}\n`;
+    text += `${line}\n`;
   }
   return text;
 }

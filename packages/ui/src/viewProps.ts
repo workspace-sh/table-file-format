@@ -38,6 +38,8 @@ export interface ViewProps {
   cells?: CellFormula[];
   /** Give a cell its own formula, in the stored form, or take it away (null). Absent: `=` is typed as text. */
   onSetCellFormula?: (rowId: string, fieldName: string, expr: string | null) => void;
+  /** Ask for a cell's note, starting from `note`, the one it has (D57). Absent: notes can't be edited. */
+  onAskCellNote?: (rowId: string, fieldName: string, note?: string) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice from a field; rows holding it lose it (the host asks first). */

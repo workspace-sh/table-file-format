@@ -335,6 +335,7 @@ interface ViewCallbacks {
   allRows: Row[];
   cells?: import("@workspace.sh/table-core").CellFormula[];
   onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: SheetGridShown;
@@ -380,6 +381,7 @@ function renderView(
           onUpdateRow={cb.onUpdateRow}
           cells={cb.cells}
           onSetCellFormula={cb.onSetCellFormula}
+          onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
@@ -443,7 +445,7 @@ function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () =>
       { text: prompt.action, onPress: (value) => then(value ?? "") },
     ],
     "plain-text",
-    [{ placeholder: prompt.placeholder }],
+    [{ placeholder: prompt.placeholder, ...(prompt.value ? { default: prompt.value } : {}) }],
   );
 }
 

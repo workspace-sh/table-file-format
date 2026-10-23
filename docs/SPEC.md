@@ -734,7 +734,7 @@ Rules:
 - **Other keys.** A reader ignores keys it doesn't know; a writer
   keeps them.
 - **Canonical form.** Lines in the rows' file order, then the schema's
-  field order; keys in the order `id`, `field`, `expr`, `dialect`.
+  field order; keys in the order `id`, `field`, `expr`, `dialect`, `note`.
 - **A version bump.** A reader that doesn't know `cells/` ignores it
   (section 1, unknown files) and shows such cells empty or with their
   field's formula, so `cells/` came with `formatVersion` 3 (section 12).
@@ -1801,6 +1801,9 @@ Ops:
 - `page`: a row's page (`bodies/{id}.md`, section 7) changed. `from`
   and `to` are the **complete** text before and after; `from` is absent
   for a new page and `to` is absent for a cleared one.
+- `note`: a cell's note (section 3, D57) was set, changed or removed.
+  `field` is the field key; `from` and `to` are the note before and
+  after, absent when it had none.
 - `formula`: a cell's own formula (section 3) was set, changed or
   removed. `field` is the field key; `from` and `to` are the `expr`
   before and after, absent when the cell had none. Setting a formula on

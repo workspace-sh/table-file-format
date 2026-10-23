@@ -120,3 +120,14 @@ test("history reads a formula event, and a row's cells with its deletion", () =>
   );
   assert.deepEqual(log.events.map((e) => e.op), ["formula", "delete"]);
 });
+
+test("a cell's note (D57): a line may be only a note, a note stays when a value is typed over a formula, and gives no formula", async () => {
+  const { parseCellsText, cellFormulas, layoutCells } = await import("./cells.js");
+  const read = parseCellsText('{"id":"a","field":"qty","note":"checked"}\n{"id":"b","field":"qty","expr":"2","note":"why two"}\n{"id":"c","field":"qty"}\n', [], [], "cells/0001.ndjson");
+  assert.equal(read.length, 2);
+  // A note alone gives the cell no formula: a keeps its value.
+  assert.equal(cellFormulas(schema, rows, read).get("a"), undefined);
+  // b has a typed value? No: b has no qty, so its formula applies; a value typed over it later keeps the note.
+  const typed = rows.map((r) => (r.id === "b" ? { ...r, qty: 9 } : r));
+  assert.equal(layoutCells(schema, typed, read, undefined)[0]!.text, '{"id":"a","field":"qty","note":"checked"}\n{"id":"b","field":"qty","note":"why two"}\n');
+});

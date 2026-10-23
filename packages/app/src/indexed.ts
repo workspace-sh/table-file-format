@@ -7,7 +7,9 @@ import {
   buildIndex,
   cellsRowLocal,
   OWN_FORMULAS,
+  CELL_NOTES,
   setIndexedCellFormula,
+  setIndexedCellNote,
   memoryViewRows,
   parseRowsText,
   putRows,
@@ -101,6 +103,7 @@ function storedOf(row: Row, table: ParsedTable, keep?: string): Row {
   const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
   // Always a copy: a caller changes it, and the row read stays what was there.
   const next: Row = { ...row };
+  delete next[CELL_NOTES];
   if (!own) return next;
   delete next[OWN_FORMULAS];
   for (const field of Object.keys(own)) {
@@ -174,7 +177,9 @@ export type IndexEdit =
   | { kind: "body"; rowId: string; content: string }
   | { kind: "restore"; rowId: string; row: Row; at: number; content?: string; cells?: CellFormula[] }
   /** A cell given its own formula (D52), or none (null). */
-  | { kind: "formula"; rowId: string; field: string; expr: string | null };
+  | { kind: "formula"; rowId: string; field: string; expr: string | null }
+  /** A cell's note set, or taken away (empty) (D57). */
+  | { kind: "note"; rowId: string; field: string; note: string };
 
 /**
  * Make queued edits in the index, in order. Says how many rows the table
@@ -202,6 +207,9 @@ export async function makeIndexEdits(
     } else if (edit.kind === "restore") {
       await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content, edit.cells);
       back.push({ kind: "remove", rowId: edit.rowId });
+    } else if (edit.kind === "note") {
+      const was = await setIndexedCellNote(db, { name, rowId: edit.rowId, field: edit.field, note: edit.note, key: editedKey() });
+      back.push(was && (was.was ?? "") !== edit.note.trim() ? { kind: "note", rowId: edit.rowId, field: edit.field, note: was.was ?? "" } : null);
     } else if (edit.kind === "formula") {
       const was = await setIndexedCellFormula(db, { name, schema: table.schema, rowId: edit.rowId, field: edit.field, expr: edit.expr, key: editedKey() });
       back.push(was && (was.was ?? null) !== edit.expr ? { kind: "formula", rowId: edit.rowId, field: edit.field, expr: was.was ?? null } : null);
@@ -472,8 +480,12 @@ export function storedTableRows(table: Pick<ParsedTable, "schema">, rows: readon
   const cells: CellFormula[] = [];
   const stored = rows.map((row) => {
     const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
-    if (!own) return row;
-    for (const [field, expr] of Object.entries(own)) cells.push({ id: row.id, field, expr });
+    const notes = row[CELL_NOTES] as Record<string, string> | undefined;
+    if (!own && !notes) return row;
+    // One line a cell: its formula, its note, or both (D52, D57).
+    for (const field of new Set([...Object.keys(own ?? {}), ...Object.keys(notes ?? {})])) {
+      cells.push({ id: row.id, field, ...(own?.[field] !== undefined ? { expr: own[field] } : {}), ...(notes?.[field] !== undefined ? { note: notes[field] } : {}) });
+    }
     return storedOf(row, table as ParsedTable);
   });
   return { rows: stored, ...(cells.length > 0 ? { cells } : {}) };

@@ -61,6 +61,10 @@ export function rowsChanges(before: ParsedTable, after: ParsedTable): EditChange
         const from = before[field]?.expr;
         const to = now[field]?.expr;
         if (from !== to) changes.push({ op: "formula", row: row.id, field, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }) });
+        // And its note (D57).
+        const noteFrom = before[field]?.note;
+        const noteTo = now[field]?.note;
+        if (noteFrom !== noteTo) changes.push({ op: "note", row: row.id, field, ...(noteFrom === undefined ? {} : { from: noteFrom }), ...(noteTo === undefined ? {} : { to: noteTo }) });
       }
     }
   }
@@ -145,6 +149,8 @@ export function indexChanges(edits: readonly (IndexEdit & { n: number })[], back
         changes.push({ op: "formula", row: edit.rowId, field: edit.field, ...(undone.expr === null ? {} : { from: undone.expr }) });
         changes.push(...rowChanges({ id: edit.rowId }, { id: edit.rowId, [edit.field]: edit.value }));
       }
+    } else if (edit.kind === "note") {
+      if (undone?.kind === "note") changes.push({ op: "note", row: edit.rowId, field: edit.field, ...(undone.note === "" ? {} : { from: undone.note }), ...(edit.note.trim() === "" ? {} : { to: edit.note }) });
     } else if (edit.kind === "formula") {
       if (undone?.kind === "formula") changes.push({ op: "formula", row: edit.rowId, field: edit.field, ...(undone.expr === null ? {} : { from: undone.expr }), ...(edit.expr === null ? {} : { to: edit.expr }) });
     } else if (edit.kind === "add") {
