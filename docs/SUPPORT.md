@@ -96,9 +96,10 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   out by core on every platform, and kept through a save; validation and
   history know it. Typed as `=…` in a stored field's cell: seen on Linux
   and the web; iOS and the Mac share the web's code, not yet seen there.
-  Not yet: a cell's own formula in a computed column (that row's
-  exception), and a large table with one is held in memory, not in its
-  index (#640).
+  A computed column's row exception: "This row only" in its formula's
+  panel, on the web, the Mac and Linux (iOS edits a formula in its bar,
+  which offers the column's only). Not yet: a large table with one is
+  held in memory, not in its index (#640).
 
 ## Views
 

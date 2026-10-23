@@ -1526,6 +1526,13 @@ interface FormulaCellPanelProps {
    * edited here, and the panel is read-only.
    */
   onSave?: (patch: Partial<Field>) => void;
+  /** This cell's own formula, when it has one: its row's exception to the column's (D52). */
+  own?: string;
+  /**
+   * Save a formula for this row only, or (null) take this row's back to
+   * the column's (D52). Absent: the panel offers only the column's.
+   */
+  onSaveRow?: (expr: string | null) => void;
   /** Open the column's full editor — title, alignment and the rest. */
   onMoreOptions?: () => void;
   onClose: () => void;
@@ -1564,6 +1571,8 @@ export function FormulaCellPanel({
   allRows,
   computeOptions,
   referenceAt,
+  own,
+  onSaveRow,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1576,11 +1585,14 @@ export function FormulaCellPanel({
   const { formulaSyntax } = useDisplaySettings();
   // Edited here, from any cell, as Grist does — but it is the column's
   // formula, so saving says "every row" and every row changes.
-  const [draft, setDraft] = useState(() => formulaDraftOf(field, grid, formulaSyntax));
-  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions });
+  // A row with its own formula opens on it, for this row only (D52).
+  const [rowOnly, setRowOnly] = useState(own !== undefined);
+  const [draft, setDraft] = useState(() => (own !== undefined ? printFormula(own, { grid, syntax: formulaSyntax }) : formulaDraftOf(field, grid, formulaSyntax)));
+  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions, rowOnly, ...(own !== undefined ? { own } : {}) });
   const { compiled, changed, thisRow, otherRows, preview } = explained;
   const save = () => {
-    if (onSave && explained.save) onSave(explained.save);
+    if (rowOnly && onSaveRow && explained.saveRow) onSaveRow(explained.saveRow);
+    else if (!rowOnly && onSave && explained.save) onSave(explained.save);
   };
   const input = useRef<HTMLInputElement | null>(null);
   // A click outside the panel closes it, unless the formula is waiting for
@@ -1624,7 +1636,7 @@ export function FormulaCellPanel({
           <html.span>{field.title ?? field.name}</html.span>
           <html.span style={styles.typeBadge}>
             <html.span>Formula</html.span>
-            <html.span style={styles.typeBadgeTechnical}>· every row</html.span>
+            <html.span style={styles.typeBadgeTechnical}>{rowOnly ? "· this row" : "· every row"}</html.span>
           </html.span>
         </html.div>
 
@@ -1686,8 +1698,19 @@ export function FormulaCellPanel({
           </html.div>
         )}
 
+        {onSaveRow && onSave && (
+          <html.div style={styles.checkRow}>
+            <Toggle role="setting" checked={rowOnly} onChange={setRowOnly} style={styles.checkRow}>
+              This row only
+            </Toggle>
+          </html.div>
+        )}
         <html.span style={styles.noteText}>
-          One formula for the whole column. Every row is worked out the same way.
+          {rowOnly
+            ? "A formula for this row only. Every other row is worked out by the column's."
+            : own !== undefined
+              ? "This row has a formula of its own; the column's is shown. Saving it for every row leaves this row's as it is."
+              : "One formula for the whole column. Every row is worked out the same way."}
         </html.span>
 
         <html.div style={styles.actionRow}>
@@ -1697,7 +1720,12 @@ export function FormulaCellPanel({
               onClick={save}
               style={[styles.button, changed && styles.primaryButton]}
             >
-              Save for every row
+              {rowOnly ? "Save for this row" : "Save for every row"}
+            </html.button>
+          )}
+          {own !== undefined && onSaveRow && (
+            <html.button onClick={() => onSaveRow(null)} style={styles.button}>
+              Use the column's formula
             </html.button>
           )}
           <html.button onClick={onClose} style={styles.button}>
