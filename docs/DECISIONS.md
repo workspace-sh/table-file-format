@@ -1338,3 +1338,16 @@ Seven apps were compared: Excel, Numbers, Google Sheets, LibreOffice Calc, Airta
 
 **Not adopted.** Styling single cells by hand (fills, bold, borders, fonts): only the spreadsheets have it. An importer reports what it can't carry.
 
+## D54: a repeated row `id` is one row, the first; a later copy that differs is kept as it is
+
+**Decided by Leslie (23 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
+
+New rows go at the end of the last rows file (D51), so two git branches that add rows conflict. Merging the rows files with `merge=union` keeps both sides' lines, and a row changed on both sides comes out twice (#620).
+
+- **The first copy is the row.** Not the last: a reader that hands rows on as it reads them (a large table into its index, a table drawn before its rows are read, #603) can't take back a row it has handed on. The same rule now holds for a cell's formula lines (D52).
+- **A later copy that differs is kept as it is,** as a line the reader can't read is (D25): the two copies are two people's edits, and dropping either quietly is the loss D25 exists to prevent. The person sees it when the table opens, and in the file.
+- **A later copy that is the same exactly is left out.** Union repeats unchanged lines next to changed ones; keeping those would leave every merge with lines to fix that lose nothing when they go.
+- **`merge=union` is advice, not the format.** It's how a person keeps a table in git; the format only says what a reader does with what a merge leaves.
+
+**Not adopted:** the last copy wins (D52's first rule for cells, changed to match); collapsing every repeat on the next save.
+

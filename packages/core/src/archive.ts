@@ -191,8 +191,9 @@ export async function readTableArchive(
     const rows: Row[] = [];
     const rowFiles: { name: string; ids: string[] }[] = [];
     if (!elsewhere && !later) {
+      const seen = new Map<string, Row>();
       for (const f of rowsFiles) {
-        const these = parseRowsText(text(f.path) ?? "", tableDiagnostics, unread, { file: f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`, after: rows.at(-1)?.id ?? null });
+        const these = parseRowsText(text(f.path) ?? "", tableDiagnostics, unread, { file: f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`, after: rows.at(-1)?.id ?? null, seen });
         for (const r of these) rows.push(r);
         rowFiles.push({ name: f.name, ids: these.map((r) => r.id) });
       }

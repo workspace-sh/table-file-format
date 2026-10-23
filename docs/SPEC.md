@@ -703,10 +703,11 @@ Rules:
 - **Files.** NDJSON, named and split as the rows files are (section 3,
   "The rows files"); a small table's is `cells/0001.ndjson`. The order
   of lines carries no meaning.
-- **One line per cell.** Two lines for one cell (after a merge, say):
-  the reader uses the last, in the files' name order and then line
-  order, and reports the others. A writer keeps them all until that
-  cell's formula is next set, which replaces them.
+- **One line per cell.** Two lines for one cell (after a merge, say)
+  are read as a row's repeated `id` is (section 3, "A repeated `id`"):
+  the first is used, a later one the same exactly is left out, and one
+  that differs is kept as it is, and said, until that cell's formula is
+  next set, which replaces them.
 - **Lines are never lost by accident.** A line whose row or field the
   reader can't find (a row that comes back in a merge, a field hidden
   by an index, section 8) is ignored but kept, as is a line the reader
@@ -756,6 +757,38 @@ sort numbers its rows in it (DECISIONS D41). How rows are shown is
 still each view's business (`sort`, `group`, `order`). Appending a new
 row to the end MUST be a valid edit, and so is inserting one at a
 position.
+
+### A repeated `id`
+
+Two lines with one `id` (both sides of a merge, say) are one row
+(DECISIONS D54). The **first**, in the files' name order and then line
+order, is the row. A later line that is the same row exactly (the same
+keys and values) is left out, and the reader says so. A later line that
+differs is a line the reader can't read (below): kept as it is, put
+back where it was, and said when the table is opened. Nothing either
+side wrote is lost, and the table is valid again once it's saved.
+
+### Keeping a table in git
+
+Not part of the format; a way to keep a table in git without conflicts.
+New rows go at the end of the last rows file, so two branches that each
+add rows change the same lines, and git calls it a conflict. A
+`.gitattributes` at the top of the repository merges these files by
+keeping both sides' lines, wherever a `.table` folder is in it:
+
+```
+**/*.table/tables/*/rows/*.ndjson   merge=union
+**/*.table/tables/*/cells/*.ndjson  merge=union
+**/*.table/tables/*/history.ndjson  merge=union
+```
+
+- Rows added on both branches all come through, ours then theirs: a
+  file order like any other.
+- A row changed on both branches comes through twice, and is read as
+  "A repeated `id`" says. So can a row neither changed, near one that
+  was: that copy is the same exactly, and is left out.
+- `history.ndjson` only ever has lines added (section 14), so a union is
+  what merging it means.
 
 ### Reader error contract
 
@@ -1301,6 +1334,9 @@ A `.table/` is **valid** when:
 3. If `primaryKey` is declared, no two rows share the same composite
    key.
 4. Every body file in `bodies/` has a matching row.
+   (A repeated `id` read as section 3 says is one row; its later lines
+   are lines the reader couldn't read, which don't make a table
+   invalid.)
 5. Every line in `cells/` names a row and a field the table has. A
    writer keeps one that doesn't (section 3), but the table isn't valid
    until it's resolved.
