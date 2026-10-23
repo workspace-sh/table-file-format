@@ -893,6 +893,10 @@ function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: Formula
     case "field":
       return of(expr.name);
     case "call": {
+      // The clock and chance (D55).
+      if (expr.fn === "today") return { type: "date", known: true };
+      if (expr.fn === "now") return { type: "datetime", known: true };
+      if (expr.fn === "rand") return { type: "number", known: true };
       if (TEXT_FNS.has(expr.fn)) return { type: "string", known: true };
       if (BOOLEAN_FNS.has(expr.fn)) return { type: "boolean", known: true };
       if (NUMBER_FNS.has(expr.fn)) return { type: "number", known: true };

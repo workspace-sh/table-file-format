@@ -757,7 +757,7 @@ one shown. The untaken branch of `if` is never evaluated, so
 `(if (= q 0) 0 (/ p q))` guards a division the way it does in a
 spreadsheet.
 
-**Left out on purpose:** `today`/`now`, because a formula whose value
+**Left out on purpose** (until D55, which brought `today` and `now` back): `today`/`now`, because a formula whose value
 changes with the clock is not pure (D29 relies on purity for
 recompute-on-read and for any future multi-value extension), and
 column totals, which stay deferred for the performance reasons in
@@ -1350,4 +1350,14 @@ New rows go at the end of the last rows file (D51), so two git branches that add
 - **`merge=union` is advice, not the format.** It's how a person keeps a table in git; the format only says what a reader does with what a merge leaves.
 
 **Not adopted:** the last copy wins (D52's first rule for cells, changed to match); collapsing every repeat on the next save.
+
+## D55: `today`, `now` and `rand` come back
+
+**Decided by Leslie (Oct 2026: "bring back"). Open to revisit.** Additive: no `formatVersion` change.
+
+D32 left `today` and `now` out because a formula whose answer changes with the clock isn't pure. Spreadsheet users expect them (a due date against today, a timestamp), and OpenFormula defines `TODAY()`, `NOW()` and `RAND()`.
+
+- **Read once for a computation.** Every cell worked out together sees the same moment and the same source of chance, as a spreadsheet recalculates. `today` is the reader's own date, as a `date` is stored (`YYYY-MM-DD`); `now` the instant in UTC; `rand` a number from 0 up to 1.
+- **Never stored, never remembered.** Results aren't stored anyway (D21). Nothing keeps them between computations either: a formula that reads the clock or chance isn't its row's alone, so a table that uses one is worked out whole each time it's read, and isn't held in an index, whose results would go stale.
+- **What D29 relies on still holds:** the stored form is the same; only the answer depends on when it's asked.
 
