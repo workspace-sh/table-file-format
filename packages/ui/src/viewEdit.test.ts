@@ -179,3 +179,12 @@ test("a view's frozen columns (D58): the first by default, none to all but one, 
   assert.deepEqual(frozenPatch({ frozen: { columns: 2, rows: 1 } }, 1), { frozen: { rows: 1 } });
   assert.deepEqual(frozenPatch({}, 0), { frozen: { columns: 0 } });
 });
+
+test("a view's frozen rows (D58): the header alone by default, up to five, none said by nothing, frozen columns kept", async () => {
+  const { frozenRowsOf, frozenRowOptions, frozenRowsPatch } = await import("./viewEdit.ts");
+  assert.equal(frozenRowsOf({}), 0);
+  assert.deepEqual(frozenRowOptions().map((o) => o.value), ["0", "1", "2", "3", "4", "5"]);
+  assert.deepEqual(frozenRowsPatch({}, 2), { frozen: { rows: 2 } });
+  assert.deepEqual(frozenRowsPatch({ frozen: { rows: 2 } }, 0), { frozen: undefined });
+  assert.deepEqual(frozenRowsPatch({ frozen: { columns: 2, rows: 1 } }, 0), { frozen: { columns: 2 } });
+});
