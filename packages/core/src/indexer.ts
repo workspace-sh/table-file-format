@@ -322,8 +322,14 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
         for (const f of e.bad) bad.set(f, (bad.get(f) ?? 0) + 1);
         return [String(row.id), JSON.stringify(row), e.search, ...e.values] as SqlValue[];
       });
-      if (db.batch) await db.batch(sql, lists);
-      else for (const params of lists) await db.run(sql, params);
+      try {
+        if (db.batch) await db.batch(sql, lists);
+        else for (const params of lists) await db.run(sql, params);
+      } catch (error) {
+        // A row's id on more than one line (D54): the reader keeps the later lines as they are, which the index can't.
+        if (/unique/i.test(error instanceof Error ? error.message : String(error))) throw new Error("two of its rows have the same id");
+        throw error;
+      }
     };
     let chunk: Row[] = [];
     for await (const row of source) {

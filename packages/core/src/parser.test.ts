@@ -133,10 +133,12 @@ test("git conflict markers degrade to reported skips, not total loss", async () 
   });
   try {
     const t = await parseTable(target);
-    // Both row variants parse (duplicate-id detection is validate()'s
-    // job); the three marker lines are reported skips.
-    assert.equal(t.rows.length, 2);
-    assert.equal(t.diagnostics?.length, 3);
+    // The first r1 is the row; the second repeats its id and, like the
+    // three marker lines, is a reported skip, kept as it is (D54).
+    assert.deepEqual(t.rows, [{ id: "r1", title: "ours" }]);
+    assert.equal(t.diagnostics?.length, 4);
+    assert.match(t.diagnostics![2]!.message, /line 4 repeats the id "r1" of a row before it, and is kept as it is/);
+    assert.deepEqual(t.unread?.map((u) => u.text), ["<<<<<<< HEAD", "=======", '{"id":"r1","title":"theirs"}', ">>>>>>> feature"]);
   } finally {
     await rm(dirname(target), { recursive: true, force: true });
   }
