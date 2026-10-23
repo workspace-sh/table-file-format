@@ -157,7 +157,11 @@ const styles = css.create({
     // --page-gutter (strict.css), so what bleeds over it knows how far.
     paddingInline: "var(--page-gutter)",
     paddingBlock: 20,
-    overflow: "auto",
+    // The page scrolls, not this: it clips what's wider without being a place
+    // that scrolls, so a table's header can stay at the page's top (D58).
+    minWidth: 0,
+    overflowX: "clip",
+    overflowY: "visible",
   },
   /**
    * Holds the sidebar at full width, or slides it to nothing when collapsed.
