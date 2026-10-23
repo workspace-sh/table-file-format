@@ -82,3 +82,21 @@ test("saving a lookup leaves a number field a number", () => {
   const name = explain(price, '=related("product", "name")', options);
   assert.equal(name.save!.type, "string");
 });
+
+test("for this row only, a formula is compared with and saved as the cell's own, and previews over the others' (D52)", async () => {
+  const { explainFormula } = await import("./formulaCell");
+  const fields = [
+    { name: "a", type: "number" as const },
+    { name: "b", type: "number" as const, computed: { expr: "(* a 2)", dialect: "table-expr-v1" } },
+  ];
+  const rows = [{ id: "r1", a: 3 }, { id: "r2", a: 5 }];
+  const row = { id: "r1", a: 3, b: 6 };
+  const only = explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows, rowOnly: true });
+  assert.equal(only.saveRow, "(* a 10)");
+  assert.equal(only.save, undefined);
+  assert.deepEqual(only.preview, { value: 30 });
+  // The same as its own formula: nothing to save.
+  assert.equal(explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows, rowOnly: true, own: "(* a 10)" }).changed, false);
+  // For every row, as before.
+  assert.deepEqual(explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows }).save?.computed, { expr: "(* a 10)", dialect: "table-expr-v1" });
+});
