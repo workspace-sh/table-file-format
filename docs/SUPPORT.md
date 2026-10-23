@@ -24,10 +24,10 @@ Apple's only. What it lacks is listed in #429.
 
 | | Web | iOS | Mac | Linux | Notes |
 |---|---|---|---|---|---|
-| Open a `.table` folder | No | No | Yes | Yes | The web's example tables are built in. iOS and the web open archives (below). |
-| Open a single-file `.table` | Yes | Yes | Partly | Yes | Linux edits it in place. The web and iOS edit their own copy for now; the Mac's Open takes folders until #571. |
-| Save a single-file `.table` in place (D49, D50) | No | No | No | Yes | Edited as a working folder in the cache, packed back after each write. Others: #571 |
-| Export as a single file | Yes | Yes | Yes | Yes | From a folder; Linux greys it out for a single file (the others with #571). Large tables up to 250,000 rows (#434). |
+| Open a `.table` folder | No | Yes | Yes | Yes | The web's example tables are built in, and it opens single files (below). |
+| Open a single-file `.table` | Yes | Yes | Yes | Yes | iOS, the Mac and Linux edit it in place; the web edits its own copy. |
+| Save a single-file `.table` in place (D49, D50) | No | Yes | Yes | Yes | Edited as a working folder in the app's own storage, packed back after each write, only the files that changed compressed again (#602). The web: #571. |
+| Export as a single file | Yes | Yes | Yes | Yes | For a folder; a single file already is one. Large tables up to 250,000 rows (#434). |
 | Open a CSV as a new table | Yes | Yes | Yes | Yes | |
 | Export a CSV | No | No | No | No | #574 |
 | Import a CSV into a table | No | No | No | No | #519 |
