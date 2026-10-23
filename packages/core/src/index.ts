@@ -71,6 +71,7 @@ export {
   csvExportWarnings,
   delimitedCells,
   tableFromCSV,
+  firstLineIsData,
   type TableFromCSV,
   type TableFromCSVOptions,
   type FromCSVResult,
