@@ -9,7 +9,7 @@
 import { newId } from "./id.js";
 import { TableEntry } from "./layout.js";
 import { normaliseBody } from "./serialize.js";
-import type { Row } from "./types.js";
+import type { CellFormula, Row } from "./types.js";
 
 /** The history's file, in its table's folder: `tables/{name}/history.ndjson`. */
 export const HISTORY_FILE = TableEntry.history;
@@ -23,18 +23,32 @@ export interface SetChange {
   to?: unknown;
 }
 
-/** A row was added: `values` is the row as written. */
+/** A row's cells' own formulas (D52): each cell's `cells/` line without `id` and `field`, by the field's name. */
+export type RowCells = Record<string, Omit<CellFormula, "id" | "field">>;
+
+/** A row was added: `values` is the row as written, and `cells` its cells' own formulas, when it has any. */
 export interface InsertChange {
   op: "insert";
   row: string;
   values: Row;
+  cells?: RowCells;
 }
 
-/** A row was removed: `values` is the whole row as it was, so it can be restored. */
+/** A row was removed: `values` is the whole row as it was, and `cells` its cells' own formulas, so it can be restored. */
 export interface DeleteChange {
   op: "delete";
   row: string;
   values: Row;
+  cells?: RowCells;
+}
+
+/** A cell's own formula set, changed or removed (D52): `from` and `to` are its `expr`, absent for none. */
+export interface FormulaChange {
+  op: "formula";
+  row: string;
+  field: string;
+  from?: string;
+  to?: string;
 }
 
 /** A row's page changed: the complete text before and after; absent for none. */
@@ -46,7 +60,7 @@ export interface PageChange {
 }
 
 /** What happened, before it is given an id, a time and a writer. */
-export type EditChange = SetChange | InsertChange | DeleteChange | PageChange;
+export type EditChange = SetChange | InsertChange | DeleteChange | PageChange | FormulaChange;
 
 /** An event as `history.ndjson` holds it. */
 export type EditEvent = EditChange & {
@@ -160,9 +174,11 @@ function readable(value: unknown): value is EditEvent {
       return typeof value.field === "string";
     case "insert":
     case "delete":
-      return isObject(value.values);
+      return isObject(value.values) && (value.cells === undefined || isObject(value.cells));
     case "page":
       return textOrAbsent(value.from) && textOrAbsent(value.to);
+    case "formula":
+      return typeof value.field === "string" && textOrAbsent(value.from) && textOrAbsent(value.to);
     default:
       return false;
   }

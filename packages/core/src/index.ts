@@ -122,9 +122,13 @@ export {
   type EditEvent,
   type EditLog,
   type EditStamp,
+  type FormulaChange,
   type InsertChange,
+  type RowCells,
   type PageChange,
   type SetChange,
 } from "./edit-log.js";
 export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";
 export { hasColorRules, knownColor, rowColors, type RowColors } from "./colors.js";
+export { CELLS_DIR, cellDiagnostics, cellFormulas, cellLine, layoutCells, parseCellsText } from "./cells.js";
+export { holds } from "./validator.js";
