@@ -140,13 +140,20 @@ export function indexChanges(edits: readonly (IndexEdit & { n: number })[], back
     const undone = back?.[edit.n];
     if (edit.kind === "cell") {
       if (undone?.kind === "cell") changes.push(...rowChanges({ id: edit.rowId, [edit.field]: undone.value }, { id: edit.rowId, [edit.field]: edit.value }));
+      // Typed over a cell's own formula: the formula goes, and the value is set (D52).
+      if (undone?.kind === "formula") {
+        changes.push({ op: "formula", row: edit.rowId, field: edit.field, ...(undone.expr === null ? {} : { from: undone.expr }) });
+        changes.push(...rowChanges({ id: edit.rowId }, { id: edit.rowId, [edit.field]: edit.value }));
+      }
+    } else if (edit.kind === "formula") {
+      if (undone?.kind === "formula") changes.push({ op: "formula", row: edit.rowId, field: edit.field, ...(undone.expr === null ? {} : { from: undone.expr }), ...(edit.expr === null ? {} : { to: edit.expr }) });
     } else if (edit.kind === "add") {
       // A new row is its id and nothing else.
       if (undone) changes.push({ op: "insert", row: edit.rowId, values: { id: edit.rowId } });
     } else if (edit.kind === "remove") {
-      if (undone?.kind === "restore") changes.push({ op: "delete", row: edit.rowId, values: undone.row });
+      if (undone?.kind === "restore") changes.push({ op: "delete", row: edit.rowId, values: undone.row, ...(undone.cells ? { cells: rowCellsOf(undone.cells) } : {}) });
     } else if (edit.kind === "restore") {
-      if (undone) changes.push({ op: "insert", row: edit.rowId, values: edit.row });
+      if (undone) changes.push({ op: "insert", row: edit.rowId, values: edit.row, ...(edit.cells ? { cells: rowCellsOf(edit.cells) } : {}) });
     }
   }
   return changes;
@@ -197,4 +204,9 @@ export function written(log: EditLogState, key: string, count: number): EditLogS
   const { [key]: _, ...others } = log.pending;
   const left = pending.slice(count);
   return { ...log, pending: left.length > 0 ? { ...others, [key]: left } : others };
+}
+
+/** One row's cells' own formulas as history keeps them: each line without `id` and `field`, by the field's name. */
+function rowCellsOf(cells: readonly CellFormula[]): RowCells {
+  return cellsByRow(cells).values().next().value ?? {};
 }

@@ -3,7 +3,7 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
-import { compileFormula, enumOptions, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
+import { compileFormula, enumOptions, OWN_FORMULAS, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { relationLabel } from "./display";
@@ -97,8 +97,13 @@ export interface CellFormulaEntry {
   own?: string;
 }
 
-/** The cell's own formula, by row and field, among a table's `cells` (the first, D54). */
-export function ownFormula(cells: readonly CellFormula[] | undefined, rowId: string, field: string): string | undefined {
+/**
+ * The cell's own formula, by row and field: the one a row read out of an
+ * index carries (OWN_FORMULAS), else the first among a table's `cells` (D54).
+ */
+export function ownFormula(cells: readonly CellFormula[] | undefined, rowId: string, field: string, row?: Record<string, unknown>): string | undefined {
+  const carried = row?.[OWN_FORMULAS] as Record<string, string> | undefined;
+  if (carried) return carried[field];
   return cells?.find((c) => c.id === rowId && c.field === field)?.expr;
 }
 

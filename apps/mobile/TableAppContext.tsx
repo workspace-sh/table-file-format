@@ -49,6 +49,7 @@ import {
   type Confirm,
   type Derived,
   type KeyValueStore,
+  storedTableRows,
 } from "@workspace.sh/table-app";
 import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
@@ -383,7 +384,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
             return tell(heading, body);
           }
           const { indexed: _index, ...rest } = held;
-          whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+          whole[key] = { ...rest, ...storedTableRows(held, await indexed.everyRow(key, held)) };
         }
         // Each table's history goes with it, everything written so far included (SPEC section 14);
         // and an opened document's attachments and files no reader knows.

@@ -73,6 +73,7 @@ import {
   type Place,
   loadingViewRows,
   departedText,
+  storedTableRows,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
@@ -890,7 +891,7 @@ export function App({
           return tell(heading, `${body} The .table folder itself can be copied as it is.`);
         }
         const { indexed: _held, ...rest } = t;
-        whole[k] = { ...rest, rows: await indexed.everyRow(k) };
+        whole[k] = { ...rest, ...storedTableRows(t, await indexed.everyRow(k)) };
       }
       // Each table's edit history goes with it, as its file holds it once what is still to write is written.
       await flush();

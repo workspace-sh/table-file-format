@@ -98,8 +98,10 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   and the web; iOS and the Mac share the web's code, not yet seen there.
   A computed column's row exception: "This row only" in its formula's
   panel, on the web, the Mac and Linux (iOS edits a formula in its bar,
-  which offers the column's only). Not yet: a large table with one is
-  held in memory, not in its index (#640).
+  which offers the column's only). A large table with them is held in
+  its index when each reads only its own row (Linux tested; iOS, the Mac
+  and the web share the host code): 1,000,000 rows with 250,000 in
+  LARGE-TABLES.md. One that reads other rows keeps the table in memory.
 
 ## Views
 

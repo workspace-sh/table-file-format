@@ -5,6 +5,9 @@
 import {
   applyView,
   buildIndex,
+  cellsRowLocal,
+  OWN_FORMULAS,
+  setIndexedCellFormula,
   memoryViewRows,
   parseRowsText,
   putRows,
@@ -12,6 +15,7 @@ import {
   removeRows,
   rowLocal,
   searchRows,
+  type CellFormula,
   type IndexQuery,
   type LazyZipEntry,
   type ParsedTable,
@@ -46,8 +50,8 @@ export function viewQuery(view: View, search = ""): IndexQuery {
  */
 export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views" | "cells">): boolean {
   if (table.views.some((v) => v.coordinates === true)) return false;
-  // The index doesn't hold cells' own formulas yet (D52, #640): such a table is held in memory.
-  if (table.cells && table.cells.length > 0) return false;
+  // Cells' own formulas are worked out a row at a time with their rows, so each must read only its own (D52).
+  if (!cellsRowLocal(table.cells)) return false;
   const computed = table.schema.fields.filter((f) => f.computed);
   return computed.length === 0 || rowLocal(table.schema, computed);
 }
@@ -87,6 +91,24 @@ let edits = 0;
 /** A key no saved file has: an edited index is stale until its rows are saved and it's stamped again. */
 const editedKey = () => `edited:${Date.now()}:${++edits}`;
 
+/**
+ * A row read out of the index as it's written back: without its cells' own
+ * formulas' results (D52), which are never stored, and without the
+ * formulas it carries for an editor. `keep` is a field whose result stays:
+ * the one a value is being typed into.
+ */
+function storedOf(row: Row, table: ParsedTable, keep?: string): Row {
+  const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
+  // Always a copy: a caller changes it, and the row read stays what was there.
+  const next: Row = { ...row };
+  if (!own) return next;
+  delete next[OWN_FORMULAS];
+  for (const field of Object.keys(own)) {
+    if (field !== keep && !table.schema.fields.find((f) => f.name === field)?.computed) delete next[field];
+  }
+  return next;
+}
+
 /** A cell of an indexed table's row set. Gives back what the cell held ({ value }), or null when there's no such row. */
 export async function setIndexedCell(
   db: SqlDriver,
@@ -95,15 +117,18 @@ export async function setIndexedCell(
   rowId: string,
   field: string,
   value: unknown,
-): Promise<{ value: unknown } | null> {
+): Promise<{ value: unknown; formula?: string } | null> {
   const all = await queryIndex(db, { name, schema: table.schema });
   const row = await all?.row(rowId);
   if (!row) return null;
-  const next = { ...row };
+  // A value typed over a cell's own formula takes its place (D52): the formula goes, and undo brings it back.
+  const formula = (row[OWN_FORMULAS] as Record<string, string> | undefined)?.[field];
+  const next = storedOf(row, table, field);
   if (value === undefined) delete next[field];
   else next[field] = value as never;
   await putRows(db, { name, schema: table.schema, rows: [next], key: editedKey() });
-  return { value: row[field] };
+  if (formula !== undefined) await setIndexedCellFormula(db, { name, schema: table.schema, rowId, field, expr: null, key: editedKey() });
+  return { value: row[field], ...(formula !== undefined ? { formula } : {}) };
 }
 
 /** A new, empty row at the end of an indexed table. */
@@ -112,7 +137,7 @@ export async function addIndexedRow(db: SqlDriver, name: string, table: ParsedTa
 }
 
 /** A row of an indexed table removed. Gives back the row and its place in the file order, or null when there's no such row. */
-export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<{ row: Row; at: number } | null> {
+export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<{ row: Row; at: number; cells?: CellFormula[] } | null> {
   return (await removeRows(db, { name, schema: table.schema, ids: [rowId], key: editedKey() }))[0] ?? null;
 }
 
@@ -121,17 +146,18 @@ export async function setIndexedBody(db: SqlDriver, name: string, table: ParsedT
   const all = await queryIndex(db, { name, schema: table.schema });
   const row = await all?.row(rowId);
   if (!row) return;
-  await putRows(db, { name, schema: table.schema, rows: [row], bodies: { [rowId]: content }, key: editedKey() });
+  await putRows(db, { name, schema: table.schema, rows: [storedOf(row, table)], bodies: { [rowId]: content }, key: editedKey() });
 }
 
 /** A row removed from an indexed table put back where it was, with its page. */
-export async function restoreIndexedRow(db: SqlDriver, name: string, table: ParsedTable, row: Row, at: number, content?: string): Promise<void> {
+export async function restoreIndexedRow(db: SqlDriver, name: string, table: ParsedTable, row: Row, at: number, content?: string, cells?: CellFormula[]): Promise<void> {
   await putRows(db, {
     name,
     schema: table.schema,
     rows: [row],
     at: { [row.id]: at },
     ...(content !== undefined ? { bodies: { [row.id]: content } } : {}),
+    ...(cells ? { cells } : {}),
     key: editedKey(),
   });
 }
@@ -146,7 +172,9 @@ export type IndexEdit =
   | { kind: "add"; rowId: string }
   | { kind: "remove"; rowId: string }
   | { kind: "body"; rowId: string; content: string }
-  | { kind: "restore"; rowId: string; row: Row; at: number; content?: string };
+  | { kind: "restore"; rowId: string; row: Row; at: number; content?: string; cells?: CellFormula[] }
+  /** A cell given its own formula (D52), or none (null). */
+  | { kind: "formula"; rowId: string; field: string; expr: string | null };
 
 /**
  * Make queued edits in the index, in order. Says how many rows the table
@@ -164,16 +192,19 @@ export async function makeIndexEdits(
   for (const edit of edits) {
     if (edit.kind === "cell") {
       const was = await setIndexedCell(db, name, table, edit.rowId, edit.field, edit.value);
-      back.push(was ? { kind: "cell", rowId: edit.rowId, field: edit.field, value: was.value } : null);
+      back.push(!was ? null : was.formula !== undefined ? { kind: "formula", rowId: edit.rowId, field: edit.field, expr: was.formula } : { kind: "cell", rowId: edit.rowId, field: edit.field, value: was.value });
     } else if (edit.kind === "add") {
       await addIndexedRow(db, name, table, edit.rowId);
       back.push({ kind: "remove", rowId: edit.rowId });
     } else if (edit.kind === "remove") {
       const was = await removeIndexedRow(db, name, table, edit.rowId);
-      back.push(was ? { kind: "restore", rowId: edit.rowId, row: was.row, at: was.at } : null);
+      back.push(was ? { kind: "restore", rowId: edit.rowId, row: was.row, at: was.at, ...(was.cells ? { cells: was.cells } : {}) } : null);
     } else if (edit.kind === "restore") {
-      await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content);
+      await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content, edit.cells);
       back.push({ kind: "remove", rowId: edit.rowId });
+    } else if (edit.kind === "formula") {
+      const was = await setIndexedCellFormula(db, { name, schema: table.schema, rowId: edit.rowId, field: edit.field, expr: edit.expr, key: editedKey() });
+      back.push(was && (was.was ?? null) !== edit.expr ? { kind: "formula", rowId: edit.rowId, field: edit.field, expr: was.was ?? null } : null);
     } else {
       await setIndexedBody(db, name, table, edit.rowId, edit.content);
       back.push(null);
@@ -326,6 +357,8 @@ export async function buildIndexFromBytes(
           onFile?: (file: string, first: number) => unknown;
         };
     bodies?: Record<string, string>;
+    /** Cells' own formulas (D52), kept with the rows. */
+    cells?: CellFormula[];
     key: string;
     onProgress?: (done: number, total: number) => void;
     /** Rows per transaction and per batch, as buildIndex takes them: for a device that stalls on a long commit or a long batch. */
@@ -370,6 +403,7 @@ export async function buildIndexFromBytes(
     schema: options.schema,
     rows: streamed(),
     bodies: options.bodies,
+    ...(options.cells ? { cells: options.cells } : {}),
     key: options.key,
     search: "later",
     ...(options.commitEvery !== undefined ? { commitEvery: options.commitEvery } : {}),
@@ -382,6 +416,8 @@ export async function buildIndexFromBytes(
 /** A large table's rows read into memory after all, with what couldn't be read kept (SPEC section 3): what a table held there needs. */
 export interface HeldRows {
   rows: Row[];
+  /** Its cells' own formulas, as the file had them (D52). */
+  cells?: CellFormula[];
   rowFiles: { name: string; ids: string[] }[];
   unread: UnreadLine[];
   diagnostics: ValidationError[];
@@ -409,9 +445,10 @@ export function readHeldRows(rows: LazyZipEntry, firstFile: string): HeldRows {
 }
 
 /** What a table read into memory takes from HeldRows: its rows, and the rest only when there is any, as a reader sets them. */
-export function withHeld(held: HeldRows): Pick<ParsedTable, "rows" | "rowFiles" | "unread" | "diagnostics"> {
+export function withHeld(held: HeldRows): Pick<ParsedTable, "rows" | "rowFiles" | "unread" | "diagnostics" | "cells"> {
   return {
     rows: held.rows,
+    ...(held.cells && held.cells.length > 0 ? { cells: held.cells } : {}),
     ...(held.rowFiles.length > 0 ? { rowFiles: held.rowFiles } : {}),
     ...(held.unread.length > 0 ? { unread: held.unread } : {}),
     ...(held.diagnostics.length > 0 ? { diagnostics: held.diagnostics } : {}),
@@ -424,5 +461,21 @@ export function heldText(table: string, error: unknown, held: HeldRows): string 
   const lines = held.unread.length;
   if (lines === 0) return why;
   return `${why} ${lines === 1 ? "The line it couldn't read is kept as it is." : `The ${lines} lines it couldn't read are kept as they are.`}`;
+}
+
+/**
+ * A table's rows read out of its index, as a file holds them: each row
+ * without its cells' own formulas' results, and those formulas as the
+ * table's `cells` (D52). For writing an indexed table out whole (export).
+ */
+export function storedTableRows(table: Pick<ParsedTable, "schema">, rows: readonly Row[]): { rows: Row[]; cells?: CellFormula[] } {
+  const cells: CellFormula[] = [];
+  const stored = rows.map((row) => {
+    const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
+    if (!own) return row;
+    for (const [field, expr] of Object.entries(own)) cells.push({ id: row.id, field, expr });
+    return storedOf(row, table as ParsedTable);
+  });
+  return { rows: stored, ...(cells.length > 0 ? { cells } : {}) };
 }
 

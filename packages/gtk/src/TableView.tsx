@@ -1375,7 +1375,7 @@ export function TableView({
                         ? {
                             fields: schema.fields,
                             ...(grid ? { grid: { ...grid, here: row.id } } : {}),
-                            ...(ownFormula(cellFormulas, row.id, name) !== undefined ? { own: ownFormula(cellFormulas, row.id, name)! } : {}),
+                            ...(ownFormula(cellFormulas, row.id, name, row) !== undefined ? { own: ownFormula(cellFormulas, row.id, name, row)! } : {}),
                             syntax: formulaSyntax,
                             onSet: (expr) => onSetCellFormula(row.id, name, expr),
                           }
@@ -1608,7 +1608,7 @@ export function TableView({
             fields={schema.fields}
             relatedTables={relatedTables}
             onSave={onUpdateField ? (patch) => onUpdateField(openFormula.name, patch) : undefined}
-            {...(ownFormula(cellFormulas, openFormula.rowId, openFormula.name) !== undefined ? { own: ownFormula(cellFormulas, openFormula.rowId, openFormula.name)! } : {})}
+            {...(ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow) !== undefined ? { own: ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow)! } : {})}
             onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(openFormula.rowId, openFormula.name, expr) : undefined}
             onClose={() => setOpenFormula(null)}
             grid={grid ? { ...grid, here: openFormula.rowId } : undefined}

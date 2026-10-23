@@ -24,6 +24,7 @@
 import {
   BUNDLE_EXTENSION,
   BundleEntry,
+  CELLS_DIR,
   FIRST_ROWS_FILE,
   LEGACY_ROWS_FILE,
   ROWS_DIR,
@@ -36,8 +37,10 @@ import {
   setIndexKey,
   isRowsFileName,
   rowsFileOrder,
+  storedCellsText,
   storedRowLines,
   utf8Length,
+  type CellFormula,
   type LazyZipEntry,
   type Row,
   type SqlDriver,
@@ -192,7 +195,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   // When the screen last asked for something: the search index's steps wait for a quiet moment.
   let lastAsked = 0;
   // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
-  const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+  const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
 
   function open(bundle: string): Promise<Held> {
     let on = held.get(bundle);
@@ -278,7 +281,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   async function openZip(bytes: Uint8Array, taken: Iterable<string>, from: number = INDEXED_FROM): Promise<OpenedLarge> {
     const first: Record<string, Row[]> = {};
     const counts: Record<string, number> = {};
-    const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+    const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
     const opened = await openArchive(bytes, taken, {
       // A large table's rows are left compressed: only their start is read here, so the
       // screen has rows to show at once, however large the table. The rest is read by `ensure`.
@@ -291,7 +294,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         const figures = 10 ** Math.max(0, String(judged).length - 2);
         const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
         if (count < from) return false;
-        large.set(name, { rows, bodies: table.bodies });
+        large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}) });
         first[name] = firstRowsInBytes(head, FIRST_ROWS);
         counts[name] = count;
         return true;
@@ -344,6 +347,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
             },
           },
           bodies: fresh.bodies,
+          ...(fresh.cells ? { cells: fresh.cells } : {}),
           key: "saved",
           commitEvery: COMMIT_EVERY,
           ...BATCH,
@@ -446,6 +450,8 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     let stopped = false;
     // The index's key as these rows have it: the files are this index and no later one.
     let key: string | null = null;
+    // Its cells' own formulas (D52), read in the same transaction as the rows.
+    let cellsText = "";
     try {
       // The reader's first look is what fixes what it sees, so it takes a turn of
       // the bundle's own queue: every edit asked before this save has had its
@@ -484,6 +490,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         sizes.set(file, 0);
         out = await platform.writer(staged(file));
       }
+      if (!stopped) cellsText = await storedCellsText(reader, { name, schema });
       await reader.exec("commit");
     } finally {
       await (out as FileWriter | null)?.close();
@@ -500,6 +507,15 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     const now = new Set(files.map((f) => f.name));
     for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && isRowsFileName(entry.name) && !now.has(entry.name)) await fs.remove(joinPath(dir, entry.name));
     await fs.remove(joinPath(tableDir(bundle, name), LEGACY_ROWS_FILE));
+    // Cells' own formulas into cells/, beside the rows; none, no cells/ (D52).
+    const cellsDir = joinPath(tableDir(bundle, name), CELLS_DIR);
+    if (cellsText) {
+      await fs.mkdir(cellsDir);
+      await fs.writeText(joinPath(cellsDir, `${FIRST_ROWS_FILE}.tmp`), cellsText);
+      await fs.rename(joinPath(cellsDir, `${FIRST_ROWS_FILE}.tmp`), joinPath(cellsDir, FIRST_ROWS_FILE));
+    }
+    for (const entry of (await fs.list(cellsDir)) ?? []) if (!entry.directory && (!cellsText || entry.name !== FIRST_ROWS_FILE)) await fs.remove(joinPath(cellsDir, entry.name));
+    if (!cellsText && (await fs.list(cellsDir)) !== null) await fs.remove(cellsDir);
     return { files: files.map((f) => ({ ...f, bytes: sizes.get(f.name) ?? 0 })), key };
   }
 
@@ -590,7 +606,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       heldRows: (name) => {
         const entry = waiting.get(`${bundle}/${name}`);
         if (!entry) return null;
-        const rows = readHeldRows(entry.rows, FIRST_ROWS_FILE);
+        const rows = { ...readHeldRows(entry.rows, FIRST_ROWS_FILE), ...(entry.cells ? { cells: entry.cells } : {}) };
         waiting.delete(`${bundle}/${name}`);
         return rows;
       },

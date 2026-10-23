@@ -709,8 +709,10 @@ function step(state: AppState, action: AppAction): AppState {
       }
       return edit(state, cellEditName(state, action.field), (t) => withCell(t, action.rowId, action.field, action.value));
     case "setCellFormula":
-      // The index doesn't hold cells' own formulas (#640): a table in it isn't offered one.
-      if (state.tables[state.active]?.indexed) return state;
+      if (state.tables[state.active]?.indexed) {
+        // Made in the index, which knows what it had: undo is the edit it gives back.
+        return queued(state, state.active, { kind: "formula", rowId: action.rowId, field: action.field, expr: action.expr }, { name: cellEditName(state, action.field), back: null });
+      }
       return edit(state, cellEditName(state, action.field), (t) => withCellFormula(t, action.rowId, action.field, action.expr));
     case "addRow":
       if (state.tables[state.active]?.indexed) {
