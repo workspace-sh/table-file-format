@@ -13,7 +13,9 @@ export type FieldType =
   | "object"
   | "duration"
   | "geopoint"
-  | "geojson";
+  | "geojson"
+  /** Any JSON value, each row its own kind, as a spreadsheet's column holds (D56). */
+  | "any";
 
 /**
  * Symbolic enum-chip color: one of 14 names (DECISIONS D43). Symbolic

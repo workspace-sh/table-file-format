@@ -1363,7 +1363,7 @@ D32 left `today` and `now` out because a formula whose answer changes with the c
 
 ## D56: an `any` field holds a value of any kind, as a spreadsheet column does
 
-**Drafted for Leslie (23 Oct 2026; "any value: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+**Drafted for Leslie (23 Oct 2026; "any value: yes"). Open to revisit.** Built: "Any value" in the type picker, and a spreadsheet column mostly of numbers with some words opens as one. Additive: no `formatVersion` change.
 
 A spreadsheet's column holds a number in one row and text in the next. Every `.table` field has one type, so an import had to choose one and lose the rest, or fall back to text and lose the numbers. `any` keeps each value's JSON kind as it is. Sorting goes kind by kind, and a filter compares like with like, so nothing is coerced behind a person's back.
 
