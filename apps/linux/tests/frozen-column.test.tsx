@@ -38,6 +38,26 @@ function startIn(widget: Gtk.Widget, scroller: Gtk.ScrolledWindow): number {
 }
 
 describe("a wide table's first column on Linux", () => {
+  it("a view that freezes two columns keeps both where they are (D58), and one that freezes none scrolls them all", async () => {
+    const views = join(dir, "projects.table", "tables", "projects", "views.json");
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const all = JSON.parse(readFileSync(views, "utf8")) as { id: string; frozen?: { columns: number } }[];
+    writeFileSync(views, JSON.stringify(all.map((v) => (v.id === "v4" ? { ...v, frozen: { columns: 2 } } : v))));
+    const library = await loadLibrary([join(dir, "projects.table")]);
+    await render(<App library={library} initialTable="projects/projects" initialView="v4" />);
+    const title = (await screen.findAllByText("Workspace v1"))[0]!;
+    const second = await screen.findByText("status");
+    const later = await screen.findByText("owner");
+    const scroller = scrollerOf(title);
+    const across = scroller.getHadjustment();
+    await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
+    const before = { second: startIn(second, scroller), later: startIn(later, scroller) };
+    across.setValue(200);
+    await waitFor(() => expect(startIn(later, scroller)).toBe(before.later - 200));
+    // The second column has moved only as far as the first does: up to the window's edge.
+    expect(before.second - startIn(second, scroller)).toBeLessThanOrEqual(13);
+  });
+
   it("stays where it is while the other columns scroll sideways, header and all", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
     // Seven columns: wider than the window, so it scrolls sideways.
