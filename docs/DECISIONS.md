@@ -1369,7 +1369,7 @@ A spreadsheet's column holds a number in one row and text in the next. Every `.t
 
 ## D57: a cell may have a note
 
-**Drafted for Leslie (23 Oct 2026; "cell comments: yes"). Open to revisit. Not built yet.** Additive: no `formatVersion` change.
+**Drafted for Leslie (23 Oct 2026; "cell comments: yes"). Open to revisit.** Built: Shift+F2, as spreadsheets have it, or a row's Cell Note…; a mark in the cell's corner and the note on hover. Additive: no `formatVersion` change.
 
 A spreadsheet's cell note (Excel's notes, Sheets' notes, Numbers' comments) is text attached to one cell, outside its value. It goes on the cell's `cells/` line (D52) as `note`, beside or instead of an `expr`. A line with only a note leaves the value alone, so a reader that ignores `note` loses nothing it needs. Threaded comments with authors and replies are a collaboration feature: they belong to the app (Workspace's comments), not to the file.
 

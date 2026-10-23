@@ -2,7 +2,7 @@
 // table-app's namePrompt: a small sheet with a text box, the same on iOS
 // and Android, which has no system text prompt.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "react-native";
 import { html, css } from "react-strict-dom";
 import type { NamePrompt } from "@workspace.sh/table-app";
@@ -24,6 +24,8 @@ function focusBox(el: { focus?: () => void; getNativeRef?: () => { focus?: () =>
 
 export function NameSheet({ prompt, onAnswer }: NameSheetProps) {
   const [name, setName] = useState("");
+  // Each question starts from what it gives (a note being edited), or empty.
+  useEffect(() => setName(prompt?.value ?? ""), [prompt]);
   // Focused once as the sheet opens, not on every keystroke.
   const focused = useRef(false);
   if (prompt === null) focused.current = false;

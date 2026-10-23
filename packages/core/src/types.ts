@@ -360,7 +360,10 @@ export interface UnreadLine {
 export interface CellFormula {
   id: string;
   field: string;
-  expr: string;
+  /** Its formula, in the stored form: absent for a line that's only a note. */
+  expr?: string;
+  /** A note on the cell, outside its value (D57). */
+  note?: string;
   /** Absent means `table-expr-v1`. */
   dialect?: string;
   [key: string]: unknown;

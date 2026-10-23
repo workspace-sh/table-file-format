@@ -153,6 +153,8 @@ export const styles = {
     "&:focus-within": { boxShadow: "none", outline: "none" },
   }),
   /** The cell the keyboard is on. */
+  // A cell with a note (D57): a small triangle in its top end corner, as spreadsheets mark one.
+  noted: css({ backgroundImage: "linear-gradient(225deg, #e8a33d 9px, transparent 9px)" }),
   selectedCell: css({ boxShadow: "inset 0 0 0 2px @accent_bg_color", outline: "none" }),
   /** Cards (board, gallery): the sizes the table's cells have, as on every platform. */
   card: css({ padding: "10px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: "400" }),

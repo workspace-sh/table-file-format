@@ -19,7 +19,7 @@ interface Action<Id extends string> {
 }
 
 /** Something that can be done to a row as a whole, from its row menu. */
-export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "fit-row" | "reset-row-height" | "delete">;
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "fit-row" | "reset-row-height" | "delete">;
 
 /** Something that can be done to a column, from its header's menu (columnActions). */
 export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
@@ -268,10 +268,12 @@ export function rowActions(
     /** Only for a row the user has resized: back to the view's height. */
     onResetRowHeight?: (rowId: string) => void;
     onDeleteRow?: (rowId: string) => void;
+    /** The selected cell's note, in this row (D57). */
+    onCellNote?: () => void;
   },
 ): RowAction[] {
   const actions: RowAction[] = [];
-  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow } = can;
+  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote } = can;
   // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
@@ -284,6 +286,9 @@ export function rowActions(
   if (onInsertRow) {
     actions.push({ id: "insert-above", label: "Insert Row Above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
     actions.push({ id: "insert-below", label: "Insert Row Below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
+  }
+  if (onCellNote) {
+    actions.push({ id: "cell-note", label: "Cell Note…", symbol: { sf: "note.text", material: "sticky_note_2" }, onSelect: onCellNote });
   }
   if (onFitRow) {
     actions.push({ id: "fit-row", label: "Fit Row to Content", symbol: { sf: "arrow.up.and.down", material: "height" }, onSelect: () => onFitRow(rowId) });

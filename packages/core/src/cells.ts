@@ -30,8 +30,10 @@ export function parseCellsText(raw: string, diagnostics: ValidationError[], unre
       obj = null;
     }
     const c = obj as CellFormula | null;
-    if (c === null || typeof c !== "object" || Array.isArray(c) || typeof c.id !== "string" || c.id === "" || typeof c.field !== "string" || c.field === "" || typeof c.expr !== "string") {
-      diagnostics.push({ rowIndex: i, message: `${file}: line ${i + 1} isn't a cell's formula, and is kept as it is: ${line.slice(0, 60)}` });
+    // A cell's formula, its note, or both (D52, D57).
+    const what = c !== null && typeof c === "object" && !Array.isArray(c) && (typeof c.expr === "string" || typeof c.note === "string") && (c.expr === undefined || typeof c.expr === "string") && (c.note === undefined || typeof c.note === "string");
+    if (!what || typeof c!.id !== "string" || c!.id === "" || typeof c!.field !== "string" || c!.field === "") {
+      diagnostics.push({ rowIndex: i, message: `${file}: line ${i + 1} isn't a cell's formula or note, and is kept as it is: ${line.slice(0, 60)}` });
       unread.push(line);
       continue;
     }
@@ -55,6 +57,8 @@ export function cellFormulas(schema: TableSchema, rows: readonly Row[], cells: r
   const fields = new Map(schema.fields.map((f) => [f.name, f]));
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const c of cells) {
+    // A line that's only a note gives the cell no formula (D57).
+    if (c.expr === undefined) continue;
     const field = fields.get(c.field);
     const row = byId.get(c.id);
     if (!field || !row || c.field === "id") continue;
@@ -80,7 +84,7 @@ export function cellDiagnostics(schema: TableSchema, rows: readonly Row[], cells
     if (!row) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is kept, but there's no row ${c.id}` });
     else if (!field || c.field === "id") out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is kept, but there's no field ${c.field}` });
     else if (seen.has(cellKey(c.id, c.field))) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is there twice; the first is used, and line ${i + 1} is kept` });
-    else if (!field.computed && !isEmptyValue(row[c.field])) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} has a value typed over it, which is used; the formula goes when the table is saved` });
+    else if (c.expr !== undefined && !field.computed && !isEmptyValue(row[c.field])) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} has a value typed over it, which is used; the formula goes when the table is saved` });
     seen.add(cellKey(c.id, c.field));
   });
   return out;
@@ -88,8 +92,8 @@ export function cellDiagnostics(schema: TableSchema, rows: readonly Row[], cells
 
 /** One cell's line, keys in the canonical order: `id`, `field`, `expr`, `dialect`, then any others as they came. */
 export function cellLine(c: CellFormula): string {
-  const { id, field, expr, dialect, ...rest } = c;
-  return JSON.stringify({ id, field, expr, ...(dialect === undefined ? {} : { dialect }), ...rest });
+  const { id, field, expr, dialect, note, ...rest } = c;
+  return JSON.stringify({ id, field, ...(expr === undefined ? {} : { expr }), ...(dialect === undefined ? {} : { dialect }), ...(note === undefined ? {} : { note }), ...rest });
 }
 
 /**
@@ -107,8 +111,14 @@ export function layoutCells(schema: TableSchema, rows: readonly Row[], cells: re
   (cells ?? []).forEach((c, read) => {
     const r = order.get(c.id);
     const f = fields.get(c.field);
-    if (r && f && !f.field.computed && !isEmptyValue(r.row[c.field])) return;
-    placed.push({ line: cellLine(c), row: r ? r.at : Infinity, field: f ? f.at : Infinity, read });
+    // A value typed over a stored field's formula takes its place: the formula goes, a note stays (D57).
+    let kept = c;
+    if (c.expr !== undefined && r && f && !f.field.computed && !isEmptyValue(r.row[c.field])) {
+      if (c.note === undefined) return;
+      const { expr: _gone, dialect: _with, ...rest } = c;
+      kept = rest as CellFormula;
+    }
+    placed.push({ line: cellLine(kept), row: r ? r.at : Infinity, field: f ? f.at : Infinity, read });
   });
   placed.sort((a, b) => a.row - b.row || a.field - b.field || a.read - b.read);
   const lines = [...placed.map((p) => p.line), ...(unread ?? [])];
