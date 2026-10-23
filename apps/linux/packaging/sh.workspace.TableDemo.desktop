@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Table
+Comment=Open and edit .table files
+# Written by scripts/install-user.sh, which puts this checkout's build here.
+Exec=@EXEC@ %F
+Icon=sh.workspace.TableDemo
+Terminal=false
+StartupNotify=true
+StartupWMClass=sh.workspace.TableDemo
+Categories=Office;Spreadsheet;
+Keywords=table;spreadsheet;database;
+MimeType=application/vnd.workspace-sh.table;

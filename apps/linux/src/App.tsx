@@ -828,8 +828,15 @@ export function App({
   // Open…: a .table folder is edited where it is; a single-file .table or a spreadsheet becomes a .table folder beside the new files.
   const open = async () => {
     const picked = await chooseToOpen();
-    if (!picked) return;
+    if (picked) await openPath(picked);
+  };
+  // What Open… picked, or a file manager asked to open (onOpen): one already open is shown, not opened again.
+  const openPath = async (picked: string) => {
     const path = tableFolderOf(picked);
+    const held = Object.entries({ ...state.opened, ...state.singleFiles }).find(([, at]) => at === path)?.[0];
+    const first = held === undefined ? undefined : Object.keys(state.tables).find((key) => bundleOf(key) === held);
+    if (first !== undefined) return dispatch({ type: "showTable", key: first });
+    if (!existsSync(path)) return tell(openFailedText(basename(path), "it isn't there"));
     if (statSync(path).isDirectory()) return openFolder(path);
     if (isSpreadsheetFile(path)) return openFile(path);
     return openSingle(path);
@@ -991,6 +998,19 @@ export function App({
 
   return (
     <AdwApplication
+      // A file manager opening a .table while this runs: the second launch hands its files here (index.tsx).
+      flags={Gio.ApplicationFlags.HANDLES_OPEN}
+      onOpen={(files, _n, _hint, self) => {
+        void (async () => {
+          for (const file of files) {
+            const path = file.getPath();
+            if (path) await openPath(path);
+          }
+          // Opening isn't activating: at launch the window comes up only now, and later this brings it forward.
+          self.activate();
+          windowRef.current?.present();
+        })();
+      }}
       actionAccels={[
         ...commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] })),
         { detailedActionName: "win.new-field", accels: ["<Control><Shift><Alt>n"] },

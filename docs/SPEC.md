@@ -1638,6 +1638,11 @@ an app that opens it declares it in shared-mime-info as
 `application/vnd.workspace-sh.table`, with the glob `*.table`, the
 comment "Table", and no `sub-class-of` a zip type, for the reason the
 Apple file type isn't one: a file manager would offer to extract it.
+Its icon is `application-vnd.workspace-sh.table`, the name
+shared-mime-info gives that type. The folder form can't be matched
+(Linux's file managers type every directory `inode/directory`), so an
+app that opens it MAY offer itself for directories without becoming
+their default: a file manager's Open With.
 On the web a file input accepts `.table` (the file form); the folder
 form needs a directory picker.
 
