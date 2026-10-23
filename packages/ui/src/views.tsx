@@ -2854,6 +2854,7 @@ export function TableView({
   onPlaceMeasure,
   cells,
   onSetCellFormula,
+  onSetIteration,
   onAskCellNote,
 }: ViewProps) {
   // Every prop as given, to tell a drawing the screen asked for from one
@@ -4646,6 +4647,8 @@ export function TableView({
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
             {...(ownFormula(cells, formulaCell.rowId, name, openRow) !== undefined ? { own: ownFormula(cells, formulaCell.rowId, name, openRow)! } : {})}
             onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(formulaCell.rowId, name, expr) : undefined}
+            // Rows from an index are worked out a row at a time: a table that repeats its loops is held whole (D60).
+            onSetIteration={indexed ? undefined : onSetIteration}
             // The cell under a click, named as a tap names it on iOS: its
             // coordinate in a sheet, else its column. Only a page has points.
             referenceAt={

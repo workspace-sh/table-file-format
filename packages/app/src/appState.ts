@@ -30,6 +30,7 @@ import {
   withCell,
   withCellFormula,
   withCellNote,
+  withIteration,
   withChoice,
   withField,
   withFieldMoved,
@@ -220,6 +221,8 @@ export type AppAction =
   | { type: "setCellFormula"; rowId: string; field: string; expr: string | null }
   /** A cell's note (D57); empty takes it away. */
   | { type: "setCellNote"; rowId: string; field: string; note: string }
+  /** The table's loops worked out by repeating (D60); null, a loop is #REF!. */
+  | { type: "setIteration"; iteration: { max: number; change: number } | null }
   /** Ask for a cell's note, starting from the one it has (D57). */
   | { type: "askCellNote"; rowId: string; field: string; note?: string }
   | { type: "addRow"; id: string }
@@ -720,6 +723,10 @@ function step(state: AppState, action: AppAction): AppState {
         return queued(state, state.active, { kind: "formula", rowId: action.rowId, field: action.field, expr: action.expr }, { name: cellEditName(state, action.field), back: null });
       }
       return edit(state, cellEditName(state, action.field), (t) => withCellFormula(t, action.rowId, action.field, action.expr));
+    case "setIteration":
+      // An index works a row out at a time: a table that iterates is held in memory (canBeIndexed), so one in an index can't.
+      if (state.tables[state.active]?.indexed) return state;
+      return edit(state, action.iteration ? "Repeat Loops" : "Stop Repeating Loops", (t) => withIteration(t, action.iteration));
     case "askCellNote": {
       const table = state.tables[state.active];
       if (!table) return state;
@@ -1252,6 +1259,7 @@ export type ViewCallbacks = Required<
     ViewProps,
     | "onUpdateRow"
     | "onSetCellFormula"
+    | "onSetIteration"
     | "onAskCellNote"
     | "onUpdateField"
     | "onAddEnumValue"
@@ -1278,6 +1286,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
   return {
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
     onSetCellFormula: (rowId, field, expr) => dispatch({ type: "setCellFormula", rowId, field, expr }),
+    onSetIteration: (iteration) => dispatch({ type: "setIteration", iteration }),
     onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),

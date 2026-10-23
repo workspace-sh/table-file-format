@@ -56,6 +56,23 @@ describe("a formula cell on Linux", () => {
     });
   });
 
+  it("a loop is offered Repeat Until It Settles, which works it out and is written to the table's meta, and Stop Repeating takes it back (D60)", async () => {
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const schemaFile = join(bundle, "tables", "budget", "schema.json");
+    const schema = JSON.parse(readFileSync(schemaFile, "utf8")) as { fields: { name: string; computed?: { expr: string } }[] };
+    // The quarter reads itself (times nothing): a loop, which repeating settles at the months' sum.
+    schema.fields.find((f) => f.name === "quarter")!.computed!.expr = "(+ jan feb mar (* quarter 0))";
+    writeFileSync(schemaFile, JSON.stringify(schema));
+    await openSheet();
+    await userEvent.click((await screen.findAllByText("#REF!"))[0]!);
+    await userEvent.click(await screen.findByText("Repeat Until It Settles"));
+    const iteration = async () => (await parseTable(join(bundle, "tables", "budget"))).meta?.iteration;
+    await waitFor(async () => expect(await iteration()).toEqual({ max: 100, change: 0.001 }));
+    expect((await screen.findAllByText("£4,350.00")).length).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByText("Stop Repeating"));
+    await waitFor(async () => expect(await iteration()).toBeUndefined());
+  });
+
   it("This Row Only saves the formula as that row's own, and the column's stays for the rest (D52)", async () => {
     await openSheet();
     await userEvent.click(await screen.findByText("£4,350.00"));

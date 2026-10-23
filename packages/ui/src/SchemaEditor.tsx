@@ -13,7 +13,7 @@ import {
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { PLATFORM_OS } from "./internal/platformOS";
-import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
+import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder, LOOP_ITERATION, loopNote } from "./formulaCell";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -1533,6 +1533,8 @@ interface FormulaCellPanelProps {
    * the column's (D52). Absent: the panel offers only the column's.
    */
   onSaveRow?: (expr: string | null) => void;
+  /** Work the table's loops out by repeating, or not (null) (D60). Absent: not offered. */
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
   /** Open the column's full editor — title, alignment and the rest. */
   onMoreOptions?: () => void;
   onClose: () => void;
@@ -1573,6 +1575,7 @@ export function FormulaCellPanel({
   referenceAt,
   own,
   onSaveRow,
+  onSetIteration,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1712,6 +1715,14 @@ export function FormulaCellPanel({
               ? "This row has a formula of its own; the column's is shown. Saving it for every row leaves this row's as it is."
               : "One formula for the whole column. Every row is worked out the same way."}
         </html.span>
+        {explained.loops && onSetIteration && (
+          <>
+            <html.span style={styles.noteText}>{loopNote(explained.loops)}</html.span>
+            <html.button onClick={() => onSetIteration(explained.loops === "stuck" ? LOOP_ITERATION : null)} style={styles.linkButton}>
+              {explained.loops === "stuck" ? "Repeat until it settles" : "Stop repeating"}
+            </html.button>
+          </>
+        )}
 
         <html.div style={styles.actionRow}>
           {onSave && (

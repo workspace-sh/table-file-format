@@ -369,6 +369,16 @@ export function deletingRow(table: ParsedTable, rowId: string, openBody: string 
   };
 }
 
+/**
+ * A table's loops worked out by repeating the calculation (D60): at most
+ * `max` passes, until nothing changes by more than `change`; null, a loop
+ * is #REF! again.
+ */
+export function withIteration(table: ParsedTable, iteration: { max: number; change: number } | null): ParsedTable {
+  const { iteration: _was, ...meta } = table.meta ?? {};
+  return { ...table, meta: iteration ? { ...meta, iteration } : meta };
+}
+
 /** A cell's note set, or taken away (an empty note); its formula, if it has one, stays (D57). */
 export function withCellNote(table: ParsedTable, rowId: string, field: string, note: string): ParsedTable {
   const was = table.cells?.find((c) => c.id === rowId && c.field === field);

@@ -92,8 +92,11 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   (D36, D41, D48).
 - **Loops by iteration** (D60): a table whose own `meta.json` has
   `iteration: { max, change }` works its loops out as a spreadsheet's
-  iterative calculation does; worked out whole, it's held in memory. No
-  app sets it yet.
+  iterative calculation does; worked out whole, it's held in memory. A
+  looping cell's formula panel offers Repeat Until It Settles (100
+  passes, to 0.001), and Stop Repeating once it does; not for a table in
+  an index. Seen on Linux and the web; iOS and the Mac share the web's
+  code.
 - **The clock and chance:** `today`, `now`, `rand` (D55). No public
   case can fix a clock, so `.table`'s own tests check them. A table
   that uses them is held in memory, not in an index.

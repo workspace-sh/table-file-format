@@ -416,3 +416,12 @@ test("a cell's note (D57): asked with the one it has, saved and said, kept when 
   const cleared = run(noted, { type: "askCellNote", rowId: "p1", field: "budget" }, { type: "answer", response: "create", text: "" });
   assert.equal(cleared.tables[KEY]!.cells, undefined);
 });
+
+test("a table set to repeat its loops: its meta says so, the file is to be written, nothing goes in history, and undo takes it back (D60)", () => {
+  const s = run(start(), { type: "setIteration", iteration: { max: 100, change: 0.001 } });
+  assert.deepEqual(s.tables[KEY]!.meta?.iteration, { max: 100, change: 0.001 });
+  assert.deepEqual(s.dirty, ["projects"]);
+  assert.deepEqual(kept(s), []);
+  assert.equal(run(s, { type: "undo" }).tables[KEY]!.meta?.iteration, undefined);
+  assert.equal(run(s, { type: "setIteration", iteration: null }).tables[KEY]!.meta?.iteration, undefined);
+});
