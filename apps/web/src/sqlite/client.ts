@@ -2,7 +2,7 @@
 // work on a large table's rows that goes with it, so a build or a query
 // never runs on the thread that draws.
 
-import type { RowsRequest } from "@workspace.sh/table-app";
+import type { HeldRows, RowsRequest } from "@workspace.sh/table-app";
 import type { Row, SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
 import type { OpenedLarge, Request, Response } from "./worker";
 
@@ -13,6 +13,13 @@ export interface WebDatabase extends SqlDriver {
   storage(): Promise<"kept" | "elsewhere" | "none">;
   /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /**
+   * Every row of a table just read from an archive and not yet in the index,
+   * with the lines that couldn't be read kept: for holding the table in
+   * memory when no index can be made of it. Null when the archive is no
+   * longer held; throws when it's damaged.
+   */
+  heldRows(name: string): Promise<HeldRows | null>;
   /** Make it again from the rows kept here: after a change to its fields it can't `alter`. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
@@ -108,6 +115,7 @@ function database(bundle: string): WebDatabase {
     batch: (sql, params) => ask({ op: "batch", sql, params }),
     ensure: (name, schema, onProgress) => ask<number>({ op: "ensure", name, schema }, onProgress),
     build: (name, schema, onProgress) => ask<number>({ op: "build", name, schema }, onProgress),
+    heldRows: (name) => ask<HeldRows | null>({ op: "held", name }),
     save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
     alter: (name, from, to, options) => ask<boolean>({ op: "alter", name, from, to, ...(options?.restore ? { restore: options.restore } : {}) }),

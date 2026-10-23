@@ -12,8 +12,9 @@
 // page gets the first rows to show meanwhile, and how far the reading is.
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
 import {
+  FIRST_ROWS_FILE,
   alterIndex,
   buildSearchIndex,
   fillIndex,
@@ -40,6 +41,7 @@ export type Request = { id: number } & (
       | { op: "all"; sql: string; params: SqlValue[] }
       | { op: "batch"; sql: string; params: SqlValue[][] }
       | { op: "ensure"; name: string; schema: TableSchema }
+      | { op: "held"; name: string }
       | { op: "build"; name: string; schema: TableSchema }
       | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[]; whole?: boolean }
       | { op: "search"; name: string }
@@ -310,6 +312,14 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
   if (req.op === "open") return undefined;
   if (req.op === "persistent") return persistent;
   if (req.op === "storage") return persistent ? "kept" : (noStorage ?? "none");
+  if (req.op === "held") {
+    // No index to be had: the table's rows from the archive just read, into the page's memory, with the lines they couldn't read kept (#567).
+    const entry = waiting.get(`${req.bundle}/${req.name}`);
+    if (!entry) return null;
+    const held = readHeldRows(entry.rows, FIRST_ROWS_FILE);
+    waiting.delete(`${req.bundle}/${req.name}`);
+    return held;
+  }
   if (!driver) throw new Error("the database is not open");
   switch (req.op) {
     case "exec":
