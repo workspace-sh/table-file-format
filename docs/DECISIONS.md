@@ -1340,7 +1340,7 @@ Seven apps were compared: Excel, Numbers, Google Sheets, LibreOffice Calc, Airta
 
 ## D54: a repeated row `id` is one row, the first; a later copy that differs is kept as it is
 
-**Proposed (23 Oct 2026), for Leslie.** Additive: no `formatVersion` change.
+**Decided by Leslie (23 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
 
 New rows go at the end of the last rows file (D51), so two git branches that add rows conflict. Merging the rows files with `merge=union` keeps both sides' lines, and a row changed on both sides comes out twice (#620).
 
