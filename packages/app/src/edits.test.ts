@@ -223,3 +223,15 @@ test("withField: beside a field, in the schema and the view that lists its field
   assert.equal(after.schema.fields[2]!.name, "extra");
   assert.equal(after.views[0]!.fields![2], "extra");
 });
+
+test("deleting a field takes the merged blocks with a corner in it, and keeps the rest (D58)", () => {
+  const companies = tables["companies"]!;
+  const [first, ...others] = companies.views;
+  const merged = [
+    { from: { field: "industry", row: "a" }, to: { field: "name", row: "b" } },
+    { from: { field: "name", row: "a" }, to: { field: "name", row: "b" } },
+  ];
+  const table = { ...companies, views: [{ ...first!, merged }, ...others] };
+  assert.deepEqual(withoutField(table, "industry").views[0]!.merged, [merged[1]]);
+  assert.equal("merged" in withoutField({ ...table, views: [{ ...first!, merged: [merged[0]!] }] }, "industry").views[0]!, false);
+});
