@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { bundles } from "@workspace.sh/table-fixtures";
 import { fromBundle } from "./bundles.ts";
-import { EMBED_COUNT_MAX, embedCount, embedIn, embedLeftOut, embedMoreText, embedRoom, embedSize } from "./embed.ts";
+import { EMBED_COUNT_MAX, EMBED_FOOT_HEIGHT, embedCount, embedIn, embedLeftOut, embedMoreText, embedRoom, embedSize, tableEmbedRoom } from "./embed.ts";
 import type { Library } from "./library.ts";
 
 // One `.table` file as an app reads it: its tables by `bundle/table` key.
@@ -160,6 +160,12 @@ test("an embed keeps the room its link says it will take while it's read", () =>
   assert.equal(embedRoom("projects.table#table=tasks&rows=40&embed=1", 480, 44), 480);
   assert.equal(embedRoom("projects.table#table=tasks&embed=1", 480, 44), 480);
   assert.equal(embedRoom(undefined, 480, 44), null);
+});
+
+test("a document keeps an embed's room, and the line under it when it has one, before it has drawn", () => {
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&rows=3&embed=1"), 44 * 4);
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&rows=3&embed=1", { caption: true }), 44 * 4 + EMBED_FOOT_HEIGHT);
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&embed=1", { open: true }), 480 + EMBED_FOOT_HEIGHT);
 });
 
 test("a document's embeds read each file once, and again after a write", async () => {
