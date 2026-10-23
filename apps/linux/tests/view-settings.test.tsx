@@ -42,6 +42,22 @@ async function shownChoices(): Promise<string[]> {
 }
 
 describe("view settings on Linux", () => {
+  it("Colours: a rule added colours the whole row in a colour not yet used, and its colour is chosen from the list (D53)", async () => {
+    await openSettings();
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Colour" }));
+    await waitFor(async () => {
+      const rules = (await tasksOnDisk()).views.find((v) => v.id === "v1")?.colors;
+      expect(rules).toHaveLength(1);
+      expect(rules![0]!.color).toBe("red");
+      expect(rules![0]!.field).toBeUndefined();
+    });
+    // Its colour, from the drop-down showing Red.
+    const downs = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Gtk.DropDown) as Gtk.DropDown[];
+    const colour = downs.find((d) => (d.getSelectedItem() as Gtk.StringObject | null)?.getString() === "Red")!;
+    colour.setSelected(4);
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.colors?.[0]?.color).toBe("green"));
+  });
+
   it("shows the view's own filter and sort, not each picker's first choice", async () => {
     const library = await loadLibrary([bundle]);
     await render(<App library={library} initialTable="projects/projects" initialView="v2" />);
