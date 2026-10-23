@@ -13,7 +13,9 @@ export function applyFilters(rows: Row[], filters: ViewFilter[], schema?: TableS
   if (!filters.length) return rows;
   // Which filters are on a datetime field: those compare instants, as a sort does.
   const datetime = new Set(schema?.fields.filter((f) => f.type === "datetime").map((f) => f.name) ?? []);
-  return rows.filter((row) => filters.every((f) => matchesFilter(row, f, datetime.has(f.field))));
+  // And which on an `any` field: those compare like with like (D56).
+  const any = new Set(schema?.fields.filter((f) => f.type === "any").map((f) => f.name) ?? []);
+  return rows.filter((row) => filters.every((f) => matchesFilter(row, f, datetime.has(f.field), any.has(f.field))));
 }
 
 /**
@@ -47,8 +49,8 @@ export function applySort(
 
 /** A value as a sort compares it, worked out once per row; null when empty. */
 export type SortKey = {
-  /** Numbers, then text, then true/false (SPEC "Sort behaviour"). */
-  kind: 0 | 1 | 2;
+  /** Numbers, then text, then true/false (SPEC "Sort behaviour"); in an `any` field, then lists and objects (D56). */
+  kind: 0 | 1 | 2 | 3;
   isString: boolean;
   num: number;
   text: string;
@@ -165,19 +167,21 @@ function sortOrder(field: Field | undefined, text: TextOrder | undefined) {
   const enumAt = new Map(declared.map((v, i) => [v, i]));
   const hasEnum = declared.length > 0;
   const isDatetime = field?.type === "datetime";
+  const isAny = field?.type === "any";
   return {
     hasEnum,
     isDatetime,
     key(v: unknown): SortKey {
       if (v === undefined || v === null || v === "") return null;
       const isString = typeof v === "string";
-      const kind = typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : 1;
-      const str = kind === 1 ? String(v) : "";
+      // In an `any` field a list or an object is a kind of its own, last, by its JSON (D56).
+      const kind = typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : isAny && typeof v === "object" ? 3 : 1;
+      const str = kind === 1 ? String(v) : kind === 3 ? JSON.stringify(v) : "";
       const folded = text || kind !== 1 ? "" : str.toLowerCase();
       return {
         kind,
         isString,
-        num: kind === 1 ? 0 : Number(v),
+        num: kind === 1 || kind === 3 ? 0 : Number(v),
         text: str,
         folded,
         wide: WIDE.test(str) || WIDE.test(folded),
@@ -196,6 +200,7 @@ function sortOrder(field: Field | undefined, text: TextOrder | undefined) {
       if (!Number.isNaN(a.instant) && !Number.isNaN(b.instant) && a.instant !== b.instant) return a.instant - b.instant;
       // Different kinds in one field: numbers, then text, then true/false.
       if (a.kind !== b.kind) return a.kind - b.kind;
+      if (a.kind === 3) return codePoints(a.text, a.wide, b.text, b.wide);
       if (a.kind !== 1) return a.num - b.num;
       if (text) return text(a.text, b.text);
       // compareText, with each side's lower case worked out once.
@@ -264,8 +269,10 @@ export function inOrder<T>(items: T[], order: string[] | undefined, id: (item: T
 
 const isEmpty = (v: unknown) => v === undefined || v === null || v === "";
 
-export function matchesFilter(row: Row, f: ViewFilter, datetime = false): boolean {
+export function matchesFilter(row: Row, f: ViewFilter, datetime = false, likeWithLike = false): boolean {
   const v = row[f.field];
+  // In an `any` field, more or less than asks only values of the same kind: 7 is more than 5, "n/a" is neither (D56).
+  if (likeWithLike && (f.operator === "gt" || f.operator === "gte" || f.operator === "lt" || f.operator === "lte") && typeof v !== typeof f.value) return false;
   const [x, y] = ordered(v, f.value, datetime) as [number, number];
   switch (f.operator) {
     case "eq": return v === f.value;

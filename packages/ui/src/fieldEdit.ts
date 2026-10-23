@@ -40,6 +40,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   duration: "Duration",
   geopoint: "Location",
   geojson: "Map shape",
+  any: "Any value",
 };
 
 export function friendlyType(type: FieldType): string {
@@ -281,7 +282,7 @@ export function fieldFormula(field: Field, fields: Field[], draft: string, grid?
 export type AddableChoice = FieldType | "formula";
 
 /** The types a new field can be, in the picker's order. */
-export const ADDABLE_TYPES: FieldType[] = ["string", "integer", "number", "boolean", "date", "datetime"];
+export const ADDABLE_TYPES: FieldType[] = ["string", "integer", "number", "boolean", "date", "datetime", "any"];
 
 export function addableChoices(): { value: AddableChoice; label: string }[] {
   return [...ADDABLE_TYPES.map((t) => ({ value: t as AddableChoice, label: friendlyType(t) })), { value: "formula", label: "Formula" }];
