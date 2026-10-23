@@ -29,6 +29,8 @@ const DATES: FieldType[] = ["date", "datetime", "time"];
 export function operatorsFor(field: Field | undefined): FilterOperator[] {
   const type = field?.type ?? "string";
   if (type === "boolean") return ["eq", "neq", "empty", "not_empty"];
+  // Any kind of value (D56): what text and numbers are asked, more or less than comparing like with like.
+  if (type === "any") return ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "not_contains", "empty", "not_empty", "in", "not_in"];
   // A list (a multi-select, say) is asked about its items (D35).
   if (type === "array") return ["contains", "not_contains", "in", "not_in", "empty", "not_empty"];
   if (NUMERIC.includes(type) || DATES.includes(type)) {
@@ -51,6 +53,8 @@ function one(field: Field | undefined, raw: string): unknown {
     const n = Number(text);
     return text !== "" && Number.isFinite(n) ? n : text;
   }
+  // Any kind (D56): a number typed is a number, so more or less than compares numbers.
+  if (type === "any" && /^-?(0|[1-9]\d{0,14})(\.\d+)?$/.test(text)) return Number(text);
   return text;
 }
 

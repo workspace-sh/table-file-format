@@ -53,3 +53,14 @@ test("a year, a non-finite number and GeoJSON are taken as their types are store
   // And edited from its JSON, not "[object Object]".
   assert.equal(draftOf({ type: "Point", coordinates: [1, 2] }), '{"type":"Point","coordinates":[1,2]}');
 });
+
+test("an `any` cell keeps what's typed as what it is: a number, a list, or text (D56)", async () => {
+  const { coerceValue } = await import("./cellCheck");
+  const any = { name: "v", type: "any" as const };
+  assert.equal(coerceValue(any, "42"), 42);
+  assert.equal(coerceValue(any, "n/a"), "n/a");
+  assert.deepEqual(coerceValue(any, "[1, 2]"), [1, 2]);
+  // Digits that aren't an amount stay as written.
+  assert.equal(coerceValue(any, "007"), "007");
+  assert.equal(coerceValue(any, ""), null);
+});

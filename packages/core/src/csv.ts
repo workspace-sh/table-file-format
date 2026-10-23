@@ -141,6 +141,11 @@ function coerce(cell: string, field: Field | undefined): unknown {
       const n = Number(cell);
       return Number.isFinite(n) ? n : cell;
     }
+    case "any": {
+      // Each cell as what it is (D56): a plain number a number, anything else its text.
+      const t = cell.trim();
+      return PLAIN_NUMBER.test(t) ? Number(t) : cell;
+    }
     case "boolean": {
       const t = cell.trim().toLowerCase();
       if (t === "true" || t === "1") return true;
@@ -301,8 +306,12 @@ export function tableFromCSV(csv: string, options: TableFromCSVOptions = {}): Ta
     taken.add(name);
     const values = column(at);
     const guessed = inferType(values);
-    const type: Field["type"] =
-      values.length > 0 && values.every((v) => ISO_DATE.test(v.trim()))
+    // Mostly plain numbers, with some words among them ("n/a", "TBC"): each kept as what it is (D56).
+    const numbers = values.filter((v) => PLAIN_NUMBER.test(v.trim())).length;
+    const mixed = guessed === "string" && numbers > 0 && numbers * 2 >= values.length && numbers < values.length;
+    const type: Field["type"] = mixed
+      ? "any"
+      : values.length > 0 && values.every((v) => ISO_DATE.test(v.trim()))
         ? "date"
         : values.length > 0 && values.every((v) => ISO_DATETIME.test(v.trim()))
           ? "datetime"

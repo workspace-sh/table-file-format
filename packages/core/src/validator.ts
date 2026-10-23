@@ -179,6 +179,9 @@ function typeMatches(type: Field["type"], value: unknown): boolean {
       return typeof value === "string" && isDuration(value);
     case "geojson":
       return isGeoJSON(value);
+    case "any":
+      // Any JSON value (D56): only a number JSON can't write is refused.
+      return typeof value !== "number" || Number.isFinite(value);
     case "number":
       // Infinity and NaN have no JSON form: written, they'd become null.
       return typeof value === "number" && Number.isFinite(value);

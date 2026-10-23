@@ -29,6 +29,20 @@ export function coerceValue(field: Field | undefined, raw: string): unknown {
     case "datetime":
       // The native inputs omit seconds; the format stores them (SPEC "Value encodings").
       return completeSeconds(field.type, raw);
+    case "any": {
+      // Kept as what's typed (D56): a number a number, a list or object its JSON, anything else its text.
+      const t = raw.trim();
+      if (t === "") return null;
+      if (/^-?(0|[1-9]\d{0,14})(\.\d+)?$/.test(t)) return Number(t);
+      if (t.startsWith("[") || t.startsWith("{")) {
+        try {
+          return JSON.parse(t) as unknown;
+        } catch {
+          return raw;
+        }
+      }
+      return raw;
+    }
     case "geojson":
     case "object": {
       // Typed as JSON, stored as the object it spells (SPEC "Value encodings": GeoJSON is written as an object).

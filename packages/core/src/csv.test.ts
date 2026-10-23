@@ -259,3 +259,13 @@ test("a first line of data, not headings, is told apart (D59)", async () => {
   assert.equal(firstLineIsData("name,city\nAda,Paris\n"), false);
   assert.equal(firstLineIsData("one line\n"), false);
 });
+
+test("a column mostly of numbers, with words among them, is `any`: each kept as what it is (D56)", async () => {
+  const { tableFromCSV } = await import("./csv.js");
+  const t = tableFromCSV("item,qty\nApples,3\nBread,n/a\nCheese,5\n");
+  assert.equal(t.schema.fields.find((f) => f.name === "qty")!.type, "any");
+  assert.deepEqual(t.rows.map((r) => r.qty), [3, "n/a", 5]);
+  // All words, or all numbers: as before.
+  assert.equal(tableFromCSV("a\nx\ny\n").schema.fields[0]!.type, "string");
+  assert.equal(tableFromCSV("a\n1\n2\n").schema.fields[0]!.type, "integer");
+});

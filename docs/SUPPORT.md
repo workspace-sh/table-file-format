@@ -58,7 +58,7 @@ What a cell shows, and whether it can be typed in.
 | `duration` | Yes | Yes | Yes | Yes | Typed as ISO 8601 (`PT1H30M`). |
 | `geopoint` | Partly | Partly | Partly | Partly | Shown as two numbers; not editable (#572). |
 | `geojson` | Partly | Partly | Partly | Partly | Shown as JSON; a typed value is stored as text, not an object (#568). |
-| `any` (D56) | No | No | No | No | Drafted; #658 |
+| `any` (D56) | Yes | Yes | Yes | Yes | "Any value" in the type picker; a number typed is a number, anything else its text. A spreadsheet column mostly of numbers with some words opens as one. Sorted and filtered in memory, not by an index. |
 
 ## Field settings
 

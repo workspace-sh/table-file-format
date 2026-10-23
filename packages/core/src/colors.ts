@@ -31,11 +31,12 @@ export function rowColors(view: Pick<View, "colors">, row: Row, schema?: TableSc
   const rules = view.colors;
   if (!Array.isArray(rules) || rules.length === 0) return out;
   const datetime = new Set(schema?.fields.filter((f) => f.type === "datetime").map((f) => f.name) ?? []);
+  const any = new Set(schema?.fields.filter((f) => f.type === "any").map((f) => f.name) ?? []);
   for (const rule of rules) {
     if (!rule || !Array.isArray(rule.filter)) continue;
     const at = typeof rule.field === "string" ? rule.field : undefined;
     if (at === undefined ? out.row !== undefined : out.cells[at] !== undefined) continue;
-    if (!rule.filter.every((f) => matchesFilter(row, f, datetime.has(f.field)))) continue;
+    if (!rule.filter.every((f) => matchesFilter(row, f, datetime.has(f.field), any.has(f.field)))) continue;
     if (at === undefined) out.row = knownColor(rule.color);
     else out.cells[at] = knownColor(rule.color);
   }
