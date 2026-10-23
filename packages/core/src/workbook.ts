@@ -674,6 +674,8 @@ export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOp
   for (let p = 0; p < rows.length; p++) position.set(rows[p]!.id, p + 1);
   const hidden = new Set<string>();
   const filters = grid.view.filter ?? [];
+  // Rows hidden by hand keep their numbers, as filtered ones do (D58).
+  for (const id of grid.view.hidden ?? []) if (position.has(id)) hidden.add(id);
   if (filters.length > 0) {
     const shown = new Set(applyFilters(rows, filters, table.schema));
     for (const r of rows) if (!shown.has(r)) hidden.add(r.id);

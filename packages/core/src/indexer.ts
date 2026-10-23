@@ -47,6 +47,8 @@ export interface IndexQuery {
   group?: string;
   /** The view's totals, by field. */
   totals?: Record<string, ViewTotal>;
+  /** Rows the view hides by hand, by id (D58). */
+  hidden?: string[];
 }
 
 /** The rows a query matches, as a view reads them (a ViewRows), every answer a promise. */
@@ -1246,6 +1248,12 @@ export async function queryIndex(
     if (!compiled) return null;
     where.push(compiled.sql);
     whereParams.push(...compiled.params);
+  }
+
+  // Rows hidden by hand (D58).
+  if (query.hidden && query.hidden.length > 0) {
+    where.push(`r.id not in (${query.hidden.map(() => "?").join(", ")})`);
+    whereParams.push(...query.hidden);
   }
 
   const needle = (query.search ?? "").trim().toLowerCase();

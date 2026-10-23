@@ -256,6 +256,20 @@ export function colorTargetPatch(rule: ViewColorRule, target: string): ViewColor
   return target ? { ...rest, field: target } : rest;
 }
 
+/** A row hidden by hand in a view (D58): its id added; none left is no `hidden`. */
+export function hiddenPatch(view: Pick<View, "hidden">, rowId: string, hide: boolean): Partial<View> {
+  const now = new Set(view.hidden ?? []);
+  if (hide) now.add(rowId);
+  else now.delete(rowId);
+  return { hidden: now.size > 0 ? [...now] : undefined };
+}
+
+/** What a view says of the rows it hides by hand: "2 rows hidden", or null for none. */
+export function hiddenRowsText(view: Pick<View, "hidden">): string | null {
+  const n = view.hidden?.length ?? 0;
+  return n === 0 ? null : `${n} ${n === 1 ? "row" : "rows"} hidden`;
+}
+
 /** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */
 export interface ViewSettingsProps {
   view: View;

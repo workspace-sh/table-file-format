@@ -37,6 +37,7 @@ export const INDEXED_FROM = 50_000;
 export function viewQuery(view: View, search = ""): IndexQuery {
   return {
     ...(view.filter ? { filter: view.filter } : {}),
+    ...(view.hidden && view.hidden.length > 0 ? { hidden: view.hidden } : {}),
     ...(view.sort ? { sort: view.sort } : {}),
     ...(view.order ? { order: view.order } : {}),
     ...(search.trim().length > 0 ? { search } : {}),

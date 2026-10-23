@@ -123,7 +123,8 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
 | Column widths, single rows' heights | Yes | Yes | Yes | Yes | |
 | A view's default row height, a calendar's range | Partly | Partly | Partly | Partly | Honoured; can't be set (#573). |
 | Personal arrangements, Save for Everyone | Yes | Yes | Yes | Yes | |
-| Frozen rows and columns, hidden rows, merged cells (D58) | No | No | No | No | Drafted; #658. Hidden columns are there: a view's columns. |
+| Hidden rows (`hidden`, D58) | Yes | Yes | Yes | Yes | Hide Row in a row's menu; View Settings shows them all again. A Sheet view keeps their numbers. Hidden columns are a view's columns. |
+| Frozen rows and columns, merged cells (D58) | No | No | No | No | Drafted; #658 |
 | Colour rules (`colors`, D53) | Yes | Yes | Yes | Yes | A row or one cell, in every layout; set in View Settings, one condition each (a rule with more, from another app, keeps the rest). iOS and the Mac share the web's code, not yet seen on either. |
 
 ## Rows and pages

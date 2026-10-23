@@ -81,6 +81,7 @@ import {
   useDisplaySettings,
   ownFormula,
   ownNote,
+  hiddenPatch,
 } from "@workspace.sh/table-ui/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
@@ -191,6 +192,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "insert-above": "row.above",
   "insert-below": "row.below",
   "cell-note": "row.note",
+  "hide-row": "row.hide",
   "fit-row": "row.fit",
   "reset-row-height": "row.reset-height",
   delete: "row.delete",
@@ -203,7 +205,7 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-page", "add-page", "cell-note"]), section(["insert-above", "insert-below"]), section(["fit-row", "reset-row-height"]), section(["delete"])]
+  return [section(["open-page", "add-page", "cell-note"]), section(["insert-above", "insert-below"]), section(["hide-row", "fit-row", "reset-row-height"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
@@ -290,6 +292,7 @@ function BodyRow({
   onFitRow,
   onResetRowHeight,
   onCellNote,
+  onHideRow,
   menuRef,
   frozen,
   tint = [],
@@ -308,6 +311,8 @@ function BodyRow({
   onResetRowHeight?: (rowId: string) => void;
   /** The note of this row's selected cell (D57). */
   onCellNote?: () => void;
+  /** Leave the row out of this view by hand (D58). */
+  onHideRow?: (rowId: string) => void;
   menuRef?: (button: Gtk.MenuButton | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
@@ -336,6 +341,7 @@ function BodyRow({
               <GSimpleAction name="fit" enabled={!!onFitRow} onActivate={() => onFitRow?.(rowId)} />
               <GSimpleAction name="reset-height" enabled={!!onResetRowHeight} onActivate={() => onResetRowHeight?.(rowId)} />
               <GSimpleAction name="note" enabled={!!onCellNote} onActivate={() => onCellNote?.()} />
+              <GSimpleAction name="hide" enabled={!!onHideRow} onActivate={() => onHideRow?.(rowId)} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
             </>
           }
@@ -358,7 +364,7 @@ function BodyRow({
             <GtkPopoverMenu
               flags={Gtk.PopoverMenuFlags.NESTED}
               hasArrow={false}
-              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}) }))} />}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}), ...(onHideRow ? { onHideRow } : {}) }))} />}
             />
           }
         />
@@ -1445,6 +1451,7 @@ export function TableView({
         onInsertRow={onInsertRow}
         onFitRow={onUpdateView ? fitRow : undefined}
         onResetRowHeight={onUpdateView && view.rowHeights?.[row.id] !== undefined ? resetRowHeight : undefined}
+        {...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {})}
         {...(onAskCellNote && focusedCell?.startsWith(`${row.id}\u0000`)
           ? { onCellNote: () => onAskCellNote(row.id, focusedCell.slice(row.id.length + 1), ownNote(cellFormulas, row.id, focusedCell.slice(row.id.length + 1), row)) }
           : {})}

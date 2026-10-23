@@ -37,6 +37,7 @@ import {
   orderNote,
   RULE_COLORS,
   colorLabel,
+  hiddenRowsText,
   colorRulesOf,
   colorRulesPatch,
   colorTargetPatch,
@@ -190,6 +191,14 @@ export function ViewSettings({
         + Add filter
       </html.button>
       {filters.length > 1 && <html.span style={styles.note}>Rows must match every filter.</html.span>}
+      {hiddenRowsText(view) && (
+        <html.div style={styles.row}>
+          <html.span style={styles.note}>{hiddenRowsText(view)}</html.span>
+          <html.button style={styles.add} onClick={() => onChange({ hidden: undefined })}>
+            Show all
+          </html.button>
+        </html.div>
+      )}
 
       <html.span style={styles.section}>Colours</html.span>
       {colorRulesOf(view).map((rule, i) => {
@@ -550,6 +559,11 @@ function viewSettingsSections({
     ],
   });
 
+  // Rows hidden by hand (D58): said, and put back in one go.
+  const hiddenText = hiddenRowsText(view);
+  if (hiddenText) {
+    sections.push({ id: "hidden", footer: hiddenText, rows: [{ kind: "action", id: "show-hidden", label: "Show Hidden Rows", onPress: () => onChange({ hidden: undefined }) }] });
+  }
   sections.push({
     id: "colors",
     title: "Colours",
