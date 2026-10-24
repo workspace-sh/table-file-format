@@ -523,3 +523,19 @@ fn from_json(v: &serde_json::Value) -> Value {
         serde_json::Value::Object(_) => Value::Empty,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TABLE: &str = r#"{"tables":[{"name":"t","ids":["r1"],"fields":[{"name":"d","formula":"(today)"}]}]CLOCK}"#;
+
+    #[test]
+    fn the_clock_is_the_hosts_unless_it_gives_the_moment() {
+        let without = workbook_from(&TABLE.replace("CLOCK", ""), &[]).unwrap();
+        assert!(without.needs_host(0));
+        let with = workbook_from(&TABLE.replace("CLOCK", r#","clock":{"today":"2026-10-24","now":"2026-10-24T12:00:00Z","seed":1}"#), &[]).unwrap();
+        assert!(!with.needs_host(0));
+        assert_eq!(with.column(0, 0), vec![Value::Str("2026-10-24".into())]);
+    }
+}
