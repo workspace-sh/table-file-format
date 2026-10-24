@@ -2,7 +2,8 @@
 
 use crate::eval::Value;
 use crate::formula::json_string;
-use crate::workbook::Workbook;
+use crate::fxhash::FxHashMap as HashMap;
+use crate::workbook::{Iteration, Workbook};
 
 /// Results for a binding to hand over without crossing per row: a kind per
 /// row (0 empty, 1 number, 2 true, 3 false, 4 in `extra`), the numbers (`NaN`
@@ -41,7 +42,7 @@ pub fn encode(results: &[Value]) -> Encoded {
     Encoded { kinds, numbers, extra }
 }
 
-fn json_value(out: &mut String, v: &Value) {
+pub fn json_value(out: &mut String, v: &Value) {
     match v {
         Value::Empty => out.push_str("null"),
         Value::Number(n) => out.push_str(&crate::eval::js_number(*n)),
@@ -89,23 +90,63 @@ pub fn compute(book: &Workbook) -> Computed {
             index.push_str(":{\"host\":true}");
             continue;
         }
-        book.fresh_pass();
-        index.push_str(":{\"fields\":{");
-        let mut first = true;
-        for (f, field) in table.fields.iter().enumerate() {
-            if field.formula.is_none() {
-                continue;
+        let computed: Vec<usize> = (0..table.fields.len()).filter(|&f| book.is_computed(t, f)).collect();
+        let results = match table.iteration {
+            Some(it) => iterated(book, t, &computed, it),
+            None => {
+                book.fresh_pass();
+                computed.iter().map(|&f| book.column(t, f)).collect()
             }
-            if !first {
+        };
+        index.push_str(":{\"fields\":{");
+        for (k, (&f, column)) in computed.iter().zip(results).enumerate() {
+            if k > 0 {
                 index.push(',');
             }
-            first = false;
-            json_string(&mut index, &field.name);
+            json_string(&mut index, &table.fields[f].name);
             index.push_str(&format!(":[{},{}]", all.len(), table.ids.len()));
-            all.extend(book.column(t, f));
+            all.extend(column);
         }
         index.push_str("}}");
     }
     index.push('}');
     Computed { index, encoded: encode(&all) }
+}
+
+/// Table `t` worked out by iteration (D60): a loop reads what the pass before gave (0 on the first), and
+/// passes repeat, at most `max`, until no number changes by more than `change`, as a spreadsheet's
+/// iterative calculation does. Every pass reads the same moment; chance goes on drawing.
+fn iterated(book: &Workbook, t: usize, computed: &[usize], it: Iteration) -> Vec<Vec<Value>> {
+    let mut previous: HashMap<(usize, usize), Value> = HashMap::default();
+    let mut out = Vec::new();
+    for pass in 0..it.max {
+        book.fresh_pass();
+        book.set_previous(Some((t, previous.clone())));
+        out = computed.iter().map(|&f| book.column(t, f)).collect::<Vec<_>>();
+        let mut next: HashMap<(usize, usize), Value> = HashMap::default();
+        for (&f, column) in computed.iter().zip(&out) {
+            for (i, v) in column.iter().enumerate() {
+                next.insert((f, i), v.clone());
+            }
+        }
+        let settled = pass > 0
+            && next.iter().all(|(k, v)| match (v, previous.get(k)) {
+                (Value::Number(a), Some(Value::Number(b))) => (a - b).abs() <= it.change,
+                (v, was) => was.map_or(matches!(v, Value::Empty), |w| same_json(v, w)),
+            });
+        previous = next;
+        if settled {
+            break;
+        }
+    }
+    book.set_previous(None);
+    out
+}
+
+/// Whether two values print the same JSON (`JSON.stringify`), as the host compares a pass with the last.
+fn same_json(a: &Value, b: &Value) -> bool {
+    let (mut x, mut y) = (String::new(), String::new());
+    json_value(&mut x, a);
+    json_value(&mut y, b);
+    x == y
 }

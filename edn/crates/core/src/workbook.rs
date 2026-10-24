@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 use crate::eval::{evaluate, linked_tables, needs_host, ErrorCode, Scope, Value};
 use crate::formula::{read_formula, Expr};
+use crate::holds::{checked_by_host, holds, Kind};
 use crate::Error;
 
 /// A stored column: numbers (`NaN` for empty), or any values.
@@ -45,15 +46,51 @@ pub struct Field {
     pub relation: Option<String>,
     /// Its stored values, when it isn't computed.
     pub column: Option<Column>,
+    /// What a cell's own formula's value is checked against (D52).
+    pub kind: Kind,
 }
 
 pub struct Table {
     pub name: String,
     pub ids: Vec<String>,
     pub fields: Vec<Field>,
-    /// The host says it works this table out itself: its cells have formulas of their own (D52), or it
-    /// works its loops out by iteration (D60).
+    /// The host says it works this table out itself.
     pub host: bool,
+    /// Its cells' own formulas (D52), by row and field: the ones that apply. `None` inside: it didn't
+    /// read (the host reports why), and the cell is empty.
+    pub own: HashMap<(usize, usize), Option<Expr>>,
+    /// Its loops worked out by iteration (D60): at most `max` passes, until no number changes by more
+    /// than `change`.
+    pub iteration: Option<Iteration>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Iteration {
+    pub max: u32,
+    pub change: f64,
+}
+
+/// The one moment, and source of chance, every formula reads (D55): given by the host.
+pub struct Clock {
+    /// The reader's own date, `YYYY-MM-DD`.
+    pub today: Rc<str>,
+    /// The instant, in UTC, to the second: `2026-10-24T12:00:00Z`.
+    pub now: Rc<str>,
+    /// Where `rand` draws from (SplitMix64): seeded by the host.
+    pub state: RefCell<u64>,
+}
+
+impl Clock {
+    fn rand(&self) -> f64 {
+        let mut s = self.state.borrow_mut();
+        *s = s.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = *s;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        // The top 53 bits, as a number from 0 up to (not including) 1.
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    }
 }
 
 #[derive(Clone)]
@@ -80,14 +117,17 @@ pub struct Workbook {
     depth: RefCell<usize>,
     /// Per table: whether the host works it out (`needs_host`).
     hosted: Vec<bool>,
+    clock: Option<Clock>,
+    /// Iterating (D60): the table being worked out, and what the last pass gave, by field and row.
+    previous: RefCell<Option<(usize, HashMap<(usize, usize), Value>)>>,
 }
 
 impl Workbook {
-    pub fn new(tables: Vec<Table>) -> Self {
+    pub fn new(tables: Vec<Table>, clock: Option<Clock>) -> Self {
         let by_name = tables.iter().enumerate().map(|(i, t)| (t.name.clone(), i)).collect();
         let slots = tables.iter().map(|t| t.fields.iter().map(|_| RefCell::new(Vec::new())).collect()).collect();
         let fields = tables.iter().map(|t| t.fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect()).collect();
-        let hosted = hosted(&tables, &by_name);
+        let hosted = hosted(&tables, &by_name, clock.is_some());
         Self {
             tables,
             by_name,
@@ -98,6 +138,8 @@ impl Workbook {
             backlinks: RefCell::new(HashMap::default()),
             depth: RefCell::new(0),
             hosted,
+            clock,
+            previous: RefCell::new(None),
         }
     }
 
@@ -124,6 +166,16 @@ impl Workbook {
         self.by_name.get(name).copied()
     }
 
+    /// Whether field `f` of table `t` is worked out: it has a formula, or a cell of it has its own.
+    pub fn is_computed(&self, t: usize, f: usize) -> bool {
+        self.tables[t].fields[f].formula.is_some() || self.tables[t].own.keys().any(|&(_, g)| g == f)
+    }
+
+    /// Iterating (D60): what the last pass of table `t` gave (`None`: not iterating).
+    pub fn set_previous(&self, previous: Option<(usize, HashMap<(usize, usize), Value>)>) {
+        *self.previous.borrow_mut() = previous;
+    }
+
     /// Every row's value of computed field `f` of table `t`.
     pub fn column(&self, t: usize, f: usize) -> Vec<Value> {
         (0..self.tables[t].ids.len()).map(|i| self.value(t, i, f)).collect()
@@ -142,15 +194,30 @@ impl Workbook {
 
     fn value(&self, t: usize, i: usize, f: usize) -> Value {
         let field = &self.tables[t].fields[f];
-        let Some(formula) = &field.formula else {
-            return field.column.as_ref().map_or(Value::Empty, |c| c.at(i));
+        // A cell's own formula is used over its field's value or formula (D52).
+        let own = self.tables[t].own.get(&(i, f));
+        let formula = match (own, &field.formula) {
+            (Some(own), _) => own,
+            (None, Some(formula)) => formula,
+            (None, None) => return field.column.as_ref().map_or(Value::Empty, |c| c.at(i)),
         };
         {
             let s = self.slots[t][f].borrow();
             if let Some(slot) = s.get(i) {
                 match slot {
                     Slot::Done(v) => return v.clone(),
-                    Slot::Pending => return Value::Error(ErrorCode::Ref, format!("{} depends on itself", field.name)),
+                    Slot::Pending => {
+                        // Iterating (D60): a loop reads what the last pass gave, 0 on the first, as a spreadsheet does.
+                        if let Some((it, previous)) = &*self.previous.borrow() {
+                            if *it == t {
+                                return match previous.get(&(f, i)) {
+                                    None | Some(Value::Empty) => Value::Number(0.0),
+                                    Some(v) => v.clone(),
+                                };
+                            }
+                        }
+                        return Value::Error(ErrorCode::Ref, format!("{} depends on itself", field.name));
+                    }
                     Slot::Unset => {}
                 }
             }
@@ -161,8 +228,14 @@ impl Workbook {
         }
         self.set(t, f, i, Slot::Pending);
         *self.depth.borrow_mut() += 1;
-        let v = evaluate(expr, &RowScope { book: self, t, i });
+        let mut v = evaluate(expr, &RowScope { book: self, t, i });
         *self.depth.borrow_mut() -= 1;
+        // What a cell's formula gives is checked as a typed value is: one the field can't hold is #VALUE! (D52).
+        if own.is_some() && !matches!(v, Value::Error(..)) && !holds(&field.kind, &v) {
+            let mut shown = String::new();
+            crate::column::json_value(&mut shown, &v);
+            v = Value::Error(ErrorCode::Value, format!("{} can't hold {shown}", field.name));
+        }
         self.set(t, f, i, Slot::Done(v.clone()));
         v
     }
@@ -298,11 +371,20 @@ impl Scope for RowScope<'_> {
     fn linked(&self, table: &str, relation: &str, name: &str) -> Value {
         self.book.linked(self.t, self.i, table, relation, name)
     }
+    fn clock(&self, what: &str) -> Value {
+        // Without a clock, `needs_host` has given the table to the host: nothing here reads it.
+        let Some(clock) = &self.book.clock else { return Value::Empty };
+        match what {
+            "today" => Value::Str(clock.today.clone()),
+            "now" => Value::Str(clock.now.clone()),
+            _ => Value::Number(clock.rand()),
+        }
+    }
 }
 
 /// Which tables the host works out. One that needs it takes every table it's related to with it, by a
 /// relation or a `linked` either way: a value read across from the host's table has to be the host's.
-fn hosted(tables: &[Table], by_name: &HashMap<String, usize>) -> Vec<bool> {
+fn hosted(tables: &[Table], by_name: &HashMap<String, usize>, clocked: bool) -> Vec<bool> {
     let mut group: Vec<usize> = (0..tables.len()).collect();
     fn top(group: &mut [usize], mut t: usize) -> usize {
         while group[t] != t {
@@ -311,7 +393,7 @@ fn hosted(tables: &[Table], by_name: &HashMap<String, usize>) -> Vec<bool> {
         }
         t
     }
-    let mut join = |group: &mut Vec<usize>, a: usize, b: usize| {
+    let join = |group: &mut Vec<usize>, a: usize, b: usize| {
         let (ra, rb) = (top(group, a), top(group, b));
         if ra != rb {
             group[ra] = rb;
@@ -322,18 +404,21 @@ fn hosted(tables: &[Table], by_name: &HashMap<String, usize>) -> Vec<bool> {
             if let Some(other) = f.relation.as_deref().and_then(|n| by_name.get(n)) {
                 join(&mut group, t, *other);
             }
-            if let Some(Some(e)) = &f.formula {
-                let mut named = Vec::new();
-                linked_tables(e, &mut named);
-                for n in named {
-                    if let Some(other) = by_name.get(n) {
-                        join(&mut group, t, *other);
-                    }
+        }
+        for e in formulas(table) {
+            let mut named = Vec::new();
+            linked_tables(e, &mut named);
+            for n in named {
+                if let Some(other) = by_name.get(n) {
+                    join(&mut group, t, *other);
                 }
             }
         }
     }
-    let own: Vec<bool> = tables.iter().map(|t| t.host || t.fields.iter().any(|f| matches!(&f.formula, Some(Some(e)) if needs_host(e)))).collect();
+    let own: Vec<bool> = tables
+        .iter()
+        .map(|t| t.host || formulas(t).any(|e| needs_host(e, clocked)) || t.own.keys().any(|&(_, f)| checked_by_host(&t.fields[f].kind)))
+        .collect();
     let mut groups_hosted = vec![false; tables.len()];
     for (t, h) in own.iter().enumerate() {
         if *h {
@@ -344,10 +429,26 @@ fn hosted(tables: &[Table], by_name: &HashMap<String, usize>) -> Vec<bool> {
     (0..tables.len()).map(|t| groups_hosted[top(&mut group, t)]).collect()
 }
 
+/// Every formula of a table that reads: its fields' and its cells' own.
+fn formulas(t: &Table) -> impl Iterator<Item = &Expr> {
+    t.fields.iter().filter_map(|f| f.formula.as_ref().and_then(Option::as_ref)).chain(t.own.values().filter_map(Option::as_ref))
+}
+
 // -- Arriving and leaving ----------------------------------------------------
 
-/// A workbook from JSON (`{"tables":[{"name","ids":[…],"fields":[{"name","formula"?,"relation"?,"values"?:[…],"numbers"?:k}]}]}`)
-/// and the number columns it refers to by index (`numbers[k*rows..]`, each table's own row count).
+/// A workbook from JSON and the number columns it refers to by index (`numbers[k*rows..]`, each table's
+/// own row count):
+///
+/// ```text
+/// {"clock"?: {"today", "now", "seed"},
+///  "tables": [{"name", "ids": […], "host"?, "iteration"?: {"max", "change"},
+///              "fields": [{"name", "type"?, "many"?, "formula"?, "relation"?, "values"?: […], "numbers"?: k}],
+///              "cells"?: [{"id", "field", "formula"}]}]}
+/// ```
+///
+/// A field's `formula` and a cell's are null when they're in a dialect the core doesn't read. Cells are
+/// every line with a formula, in the order read: which apply is decided here (`.table`'s `cellFormulas`).
+/// Without a clock, a formula reading it is the host's.
 pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
     let bad = |m: String| Error { message: m, line: None, column: None };
     let root: serde_json::Value = serde_json::from_str(json).map_err(|e| bad(format!("the workbook isn't JSON: {e}")))?;
@@ -368,12 +469,48 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
             } else {
                 f.get("values").and_then(|v| v.as_array()).map(|vs| Column::Values(vs.iter().map(from_json).collect()))
             };
-            fields.push(Field { name: f["name"].as_str().unwrap_or_default().to_string(), formula, relation, column });
+            let kind = Kind { ty: f["type"].as_str().unwrap_or("string").to_string(), many: f["many"].as_bool().unwrap_or(false) };
+            fields.push(Field { name: f["name"].as_str().unwrap_or_default().to_string(), formula, relation, column, kind });
         }
         let host = t.get("host").and_then(|v| v.as_bool()).unwrap_or(false);
-        tables.push(Table { name, ids, fields, host });
+        let iteration = t.get("iteration").and_then(|it| {
+            let max = it["max"].as_f64()?;
+            (max > 0.0).then(|| Iteration { max: max as u32, change: it["change"].as_f64().unwrap_or(0.0) })
+        });
+        let own = applying(&ids, &fields, t.get("cells").and_then(|c| c.as_array()).map_or(&[][..], |c| c.as_slice()));
+        tables.push(Table { name, ids, fields, host, own, iteration });
     }
-    Ok(Workbook::new(tables))
+    let clock = root.get("clock").filter(|c| c.is_object()).map(|c| Clock {
+        today: c["today"].as_str().unwrap_or_default().into(),
+        now: c["now"].as_str().unwrap_or_default().into(),
+        state: RefCell::new(c["seed"].as_u64().unwrap_or(0)),
+    });
+    Ok(Workbook::new(tables, clock))
+}
+
+/// The formula each cell has of its own (`.table`'s `cellFormulas`): the first line for a cell, on a row
+/// and a field the table has, never `id`. A stored field whose row holds a value as well has none: the
+/// value was typed after the formula and wins (D52).
+fn applying(ids: &[String], fields: &[Field], cells: &[serde_json::Value]) -> HashMap<(usize, usize), Option<Expr>> {
+    let mut out: HashMap<(usize, usize), Option<Expr>> = HashMap::default();
+    if cells.is_empty() {
+        return out;
+    }
+    let rows: HashMap<&str, usize> = ids.iter().enumerate().map(|(i, id)| (id.as_str(), i)).collect();
+    let by_name: HashMap<&str, usize> = fields.iter().enumerate().map(|(i, f)| (f.name.as_str(), i)).collect();
+    for c in cells {
+        let (Some(id), Some(name)) = (c["id"].as_str(), c["field"].as_str()) else { continue };
+        let (Some(&i), Some(&f)) = (rows.get(id), by_name.get(name)) else { continue };
+        if name == "id" || out.contains_key(&(i, f)) {
+            continue;
+        }
+        let field = &fields[f];
+        if field.formula.is_none() && field.column.as_ref().is_some_and(|col| !col.at(i).is_empty()) {
+            continue;
+        }
+        out.insert((i, f), c["formula"].as_str().and_then(|s| read_formula(s).ok()));
+    }
+    out
 }
 
 fn from_json(v: &serde_json::Value) -> Value {

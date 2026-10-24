@@ -66,16 +66,20 @@ pub trait Scope {
     fn values(&self, name: &str) -> Value;
     fn related(&self, relation: &str, name: &str) -> Value;
     fn linked(&self, table: &str, relation: &str, name: &str) -> Value;
+    /// The clock and chance (D55): `today`, `now` or `rand`, as the host's one moment gives them.
+    fn clock(&self, what: &str) -> Value;
 }
 
-/// The functions only the host can answer: they read a Sheet view's places
-/// (D41), or the clock and chance, which are the host's to give (D55).
-const HOST_ONLY: [&str; 7] = ["at", "range", "row", "rows", "today", "now", "rand"];
+/// The functions only the host can answer: they read a Sheet view's places (D41).
+const HOST_ONLY: [&str; 4] = ["at", "range", "row", "rows"];
+/// The clock and chance (D55): the core's when the host gives it the moment, the host's when it doesn't.
+const CLOCK: [&str; 3] = ["today", "now", "rand"];
 
-/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places, or the clock.
-pub fn needs_host(expr: &Expr) -> bool {
+/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places, or the clock when there's
+/// none (`clocked` false).
+pub fn needs_host(expr: &Expr, clocked: bool) -> bool {
     match expr {
-        Expr::Call(name, args) => HOST_ONLY.contains(&name.as_str()) || args.iter().any(needs_host),
+        Expr::Call(name, args) => HOST_ONLY.contains(&name.as_str()) || (!clocked && CLOCK.contains(&name.as_str())) || args.iter().any(|a| needs_host(a, clocked)),
         _ => false,
     }
 }
@@ -417,6 +421,13 @@ fn call(name: &str, args: &[Expr], scope: &dyn Scope) -> Value {
             [Expr::Str(name), Expr::Str(row)] => scope.field_of(row, name),
             _ => err(ErrorCode::Value, "field takes a name and, optionally, a row id: (field \"unit price\" \"r7\")"),
         },
+        // The reader's own date, as a date is stored (YYYY-MM-DD); the instant, in UTC; a number from 0 up to 1.
+        "today" | "now" | "rand" => {
+            if !args.is_empty() {
+                return err(ErrorCode::Value, format!("{name} takes no arguments"));
+            }
+            scope.clock(name)
+        }
         _ => err(ErrorCode::Name, format!("unknown function {name}")),
     }
 }
@@ -434,7 +445,7 @@ pub fn js_string(v: &Value) -> String {
 }
 
 /// JavaScript's `JSON.stringify(v)`, for the messages that quote a value.
-fn json_of(v: &Value) -> String {
+pub fn json_of(v: &Value) -> String {
     match v {
         Value::Str(s) => {
             let mut out = String::new();
