@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/wasm", "crates/node"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/workspace-sh/table-file-format"
+
+[profile.release]
+# Speed over size: measured 21 Oct 2026, the size build ("z", 82 KB gzipped)
+# read formulas slower than the TypeScript reader it replaces on the web;
+# this one (99 KB gzipped) reads them as fast. See README, "Measured".
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

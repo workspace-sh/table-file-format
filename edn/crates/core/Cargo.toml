@@ -1,0 +1,14 @@
+[package]
+name = "workspace-edn"
+version = "0.1.0"
+description = "EDN for Workspace: one reader and one canonical printer for .table formulas and Workspace actions (table-file-format#626)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The reader: zero-copy, no recursion, errors with line and column. Pinned: we carry it if it goes quiet.
+clojure-reader = { version = "=0.7.0", default-features = false, features = ["std", "floats", "arbitrary-nums"] }
+
+# Mixed columns arrive as JSON (numbers-only ones as typed arrays).
+serde_json = { version = "1", features = ["float_roundtrip"] }
