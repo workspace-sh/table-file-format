@@ -81,11 +81,14 @@ bundle, deliberately awkward values, and relations gone wrong
 (`js/src/evaluate.test.ts`). 21 of the fixtures' 22 formulas are the core's;
 the one reading a Sheet place (`at`) stays with `.table`'s workbook.
 
-The host (`.table`'s workbook) also works out a table that reads the clock
-or chance (`today`, `now`, `rand`), has cells with formulas of their own, or
-works its loops out by iteration, together with every table related to it
-either way (by a relation or a `linked`): a value read across from the
-host's table has to be the host's.
+Cells' own formulas (D52), with the same type check a typed value gets,
+loops worked out by iteration (D60), and the clock and chance (`today`,
+`now`, `rand`, D55) are the core's too. The host gives the one moment
+(its own date, and the instant in UTC) and a seed for chance. A host that
+gives no moment leaves a table reading the clock to its own evaluator, and
+so does a cell's formula in a GeoJSON field. Either way every table
+related to it goes with it (by a relation or a `linked`): a value read
+across from the host's table has to be the host's.
 
 100,000 deals pointing at 2,000 companies (a row formula, a lookup through
 the relation, two rollups back), everything included (columns in, results
