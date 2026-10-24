@@ -48,10 +48,13 @@ export interface Edn {
   /**
    * Every formula of a bundle's tables, computed inside the core: the same
    * results as `.table`'s workbook (computeRows), field by field and row by
-   * row. A table whose formulas read a Sheet view's places is the host's:
-   * it comes back as "host", for `.table`'s own workbook to compute.
+   * row: fields' formulas, cells' own (D52), loops worked out by iteration
+   * (D60), and the clock and chance (D55), read at `now` (absent: the time
+   * it's asked) with chance drawn from `seed`. A table whose formulas read a
+   * Sheet view's places is the host's, and so is every table related to it:
+   * they come back as "host", for `.table`'s own workbook to compute.
    */
-  computeTables(tables: Record<string, TableIn>): Record<string, Record<string, FormulaResult[]> | "host">;
+  computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }): Record<string, Record<string, FormulaResult[]> | "host">;
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
@@ -63,13 +66,15 @@ type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; 
 
 /** A table as `computeTables` takes it: `.table`'s schema fields (only what's read) and rows. */
 export interface TableIn {
-  schema: { fields: { name: string; computed?: { expr: string; dialect: string }; relation?: { table: string } }[] };
+  schema: { fields: { name: string; type?: string; computed?: { expr: string; dialect: string }; relation?: { table: string; cardinality?: string } }[] };
   rows: readonly ({ id: string } & Record<string, unknown>)[];
-  /** Its cells' own formulas and notes (D52, D57): a table with a formula among them is the host's to work out. */
-  cells?: readonly { expr?: string }[];
-  /** Its meta: a table that works its loops out by iteration (D60) is the host's. */
-  meta?: { iteration?: unknown };
+  /** Its cells' own formulas and notes (D52, D57). */
+  cells?: readonly { id: string; field: string; expr?: string; dialect?: string }[];
+  /** Its meta: how it works its loops out by iteration (D60), if it does. */
+  meta?: { iteration?: { max: number; change: number } | unknown };
 }
+
+const two = (n: number) => String(n).padStart(2, "0");
 
 type Calls = {
   read(text: string): string;
@@ -106,21 +111,36 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
   canonical: (text) => call(c.canonical, text),
   formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
-  computeTables: (tables) => {
+  computeTables: (tables, clock = {}) => {
     const parts: Float64Array[] = [];
+    // One moment for the whole computation (D55): the reader's own date, and the instant in UTC.
+    const now = clock.now ?? new Date();
     const json = {
-      tables: Object.entries(tables).map(([name, t]) => ({
-        name,
-        ...(t.cells?.some((c) => c.expr !== undefined) || t.meta?.iteration ? { host: true } : {}),
-        ids: t.rows.map((r) => r.id),
-        fields: t.schema.fields.map((f) => {
-          if (f.computed) return { name: f.name, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };
-          const cells = t.rows.map((r) => r[f.name]);
-          const numbers = numbersOnly(cells, cells.length);
-          const stored = numbers ? (parts.push(numbers), { numbers: parts.length - 1 }) : { values: cells.map((v) => (v === undefined ? null : v)) };
-          return { name: f.name, ...(f.relation ? { relation: f.relation.table } : {}), ...stored };
-        }),
-      })),
+      clock: {
+        today: `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
+        now: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        seed: clock.seed ?? Math.floor(Math.random() * 2 ** 53),
+      },
+      tables: Object.entries(tables).map(([name, t]) => {
+        const iteration = t.meta?.iteration as { max?: unknown; change?: unknown } | undefined;
+        return {
+          name,
+          ...(iteration && typeof iteration.max === "number" ? { iteration: { max: iteration.max, change: typeof iteration.change === "number" ? iteration.change : 0 } } : {}),
+          ids: t.rows.map((r) => r.id),
+          fields: t.schema.fields.map((f) => {
+            const kind = { type: f.type ?? "string", ...(f.relation?.cardinality === "many" ? { many: true } : {}) };
+            if (f.computed) return { name: f.name, ...kind, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };
+            const cells = t.rows.map((r) => r[f.name]);
+            const numbers = numbersOnly(cells, cells.length);
+            const stored = numbers ? (parts.push(numbers), { numbers: parts.length - 1 }) : { values: cells.map((v) => (v === undefined ? null : v)) };
+            return { name: f.name, ...kind, ...(f.relation ? { relation: f.relation.table } : {}), ...stored };
+          }),
+          // Every line with a formula, as read (a note alone is none, D57): which apply is the core's to say.
+          ...(t.cells?.some((c) => c.expr !== undefined)
+            ? { cells: t.cells.filter((c) => c.expr !== undefined).map((c) => ({ id: c.id, field: c.field, formula: (c.dialect ?? "table-expr-v1") === "table-expr-v1" ? c.expr : null })) }
+            : {}),
+        };
+      }),
     };
     const numbers = new Float64Array(parts.reduce((n, p) => n + p.length, 0));
     let at = 0;
