@@ -221,6 +221,11 @@ for (const binding of ["native", "wasm"] as const) {
       const n = same(edn, { t, reader }, `iteration ${iteration.max}`);
       assert.equal(n.host, 0);
     }
+    // A loop that settles exactly, beside a counter of the passes: with no change allowed, it stops the pass it settles on.
+    const exact = { ...table([f("z", "(min 5 (+ z 1))"), f("passes", "(+ passes 1)")], [{ id: "r1" }]), meta: { iteration: { max: 100, change: 0 } } } as unknown as ParsedTable;
+    same(edn, { exact }, "settles exactly");
+    const passes = (edn.computeTables({ exact } as never)["exact"] as Record<string, FormulaResult[]>)["passes"];
+    assert.deepEqual(passes, [6]);
   });
 
   test(`${binding}: a cell's own formula in a GeoJSON field is the host's, with every table related to it`, async () => {
