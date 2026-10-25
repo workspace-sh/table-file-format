@@ -159,7 +159,7 @@ export interface Pill {
  */
 export type CellShow =
   | { kind: "relations"; links: RelationLink[] }
-  /** A formula that failed: `text` is its code in Excel style, plain words otherwise (#685). */
+  /** A formula that failed: plain words, and its code where Excel style shows it (#685). */
   | ({ kind: "error" } & FormulaErrorShow)
   | { kind: "pills"; pills: Pill[] }
   | { kind: "attachment"; fileName: string }
@@ -184,9 +184,11 @@ function linkFor(relation: { table: string; field: string }, id: string, related
 export interface FormulaErrorShow {
   /** The spreadsheet code: `#DIV/0!`. */
   code: string;
-  /** What the cell says: the code in Excel style, else a few plain words ("Divides by zero"). */
+  /** What the cell says, in every syntax: a few plain words ("Divides by zero"). */
   text: string;
-  /** What went wrong, and where the fix is: for a hover, or a tap where there's no hover. */
+  /** What the formula's panel says: the words, and in Excel style the code too ("Divides by zero · #DIV/0!"). */
+  withCode: string;
+  /** What went wrong, and where the fix is, for a hover or (with no hover) the selected cell's details. In Excel style it begins with the code. */
   explanation: string;
   /** What fixes it: the loop's "Repeat Until It Settles", or editing the formula. Both are in the formula's panel. */
   fix: "repeat" | "edit";
@@ -215,16 +217,18 @@ const FIX = {
 
 /**
  * A failed formula in plain words (#685), from its code and the evaluator's
- * message, which the TypeScript workbook and the EDN core word alike. With
- * formulas shown in Excel style the cell keeps the code a spreadsheet user
- * knows; the explanation is plain either way.
+ * message, which the TypeScript workbook and the EDN core word alike. The
+ * cell says the words in either syntax; in Excel style the code a
+ * spreadsheet user knows is in the hover and the formula's panel.
  */
 export function formulaErrorShow(error: FormulaError, field: Field | undefined, syntax?: FormulaSyntax): FormulaErrorShow {
   const { code, message } = error;
+  const excel = syntax !== "stored";
   const said = (words: string, why: string, fix: "repeat" | "edit" = "edit"): FormulaErrorShow => ({
     code,
-    text: syntax === "stored" ? words : code,
-    explanation: `${why} ${FIX[fix]}`,
+    text: words,
+    withCode: excel ? `${words} · ${code}` : words,
+    explanation: `${excel ? `${code}: ` : ""}${why} ${FIX[fix]}`,
     fix,
   });
   let m: RegExpExecArray | null;
@@ -272,7 +276,7 @@ export function describeCell(
   if (field?.relation && typeof value === "string" && value.length > 0) {
     return { kind: "relations", links: [linkFor(field.relation, value, relatedTables)] };
   }
-  // A formula that failed: its spreadsheet code in Excel style, plain words otherwise (#685).
+  // A formula that failed: plain words, and its code in Excel style's hover and panel (#685).
   if (value instanceof FormulaError) return { kind: "error", ...formulaErrorShow(value, field, display.formulaSyntax) };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
