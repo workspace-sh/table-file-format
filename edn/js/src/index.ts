@@ -276,7 +276,9 @@ async function loadNative(): Promise<Calls | null> {
   const { existsSync } = await import("node:fs");
   // Beside this package's source (../native), or beside a bundle built from it (./native).
   const name = `edn.${process.platform}-${process.arch}.node`;
-  const file = [new URL(`../native/${name}`, import.meta.url), new URL(`./native/${name}`, import.meta.url)].find((f) => existsSync(f));
+  // Through a variable: a web bundler copies what `new URL(…, import.meta.url)` names, and this is no web's.
+  const here = import.meta.url;
+  const file = [new URL(`../native/${name}`, here), new URL(`./native/${name}`, here)].find((f) => existsSync(f));
   if (!file) return null;
   return createRequire(import.meta.url)(file.pathname) as Calls;
 }

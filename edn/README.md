@@ -20,8 +20,8 @@ edn/
 
 | Platform | Binding | Status |
 | --- | --- | --- |
-| Web | WebAssembly (`js/`) | Built; the corpus passes in Firefox |
-| Linux (Node, GTKX) | WebAssembly (`js/`) | Built; the corpus passes in Node |
+| Web | WebAssembly (`js/`) | Works out the web app's formulas once loaded (Firefox checked) |
+| Linux (Node, GTKX) | Native (N-API, `js/native/`) | Works out the Linux app's formulas |
 | macOS, iOS (Hermes) | C interface → JSI | To do: Hermes has no WebAssembly |
 | Android | C interface → JSI | To do |
 | Bare | native addon over the C interface | To do |
@@ -110,7 +110,9 @@ and results out.
 - **WebAssembly** is at parity for text, slower when whole trees cross into
   JavaScript. Evaluating inside the core (text in, results out) is meant to
   remove that crossing; until then the web keeps today's reader.
-- **Size:** WebAssembly 268 KB, 99 KB gzipped (speed build). The
-  arbitrary-precision numbers are about 68 KB of it, and recoverable.
+- **Size:** WebAssembly 539 KB, 198 KB gzipped (speed build, 25 Oct 2026,
+  with the workbook and Sheet places; 268 KB and 99 KB when it only read
+  EDN). The arbitrary-precision numbers are about 68 KB of it, and
+  recoverable.
 - **Large single inputs** (9.7 MB, 100,000 maps): natively under a second,
   through WebAssembly about 3.8 s. Not profiled yet.
