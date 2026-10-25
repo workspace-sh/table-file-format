@@ -15,6 +15,8 @@ export default defineConfig(() => ({
     // `npm run core:build` refreshes — so after a pull, the web demo
     // built against stale core or failed outright.
     conditions: ["source", ...defaultClientConditions],
+    // The EDN core's TypeScript API, beside its WebAssembly (not a workspace member: it has its own build).
+    alias: { "@workspace.sh/edn": new URL("../../edn/js/src/index.ts", import.meta.url).pathname },
     extensions: [".web.tsx", ".web.ts", ".web.jsx", ".web.js", ".mjs", ".js", ".mts", ".ts", ".jsx", ".tsx", ".json"],
   },
   plugins: [
