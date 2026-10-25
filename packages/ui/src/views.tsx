@@ -2567,6 +2567,18 @@ function EditableCell({
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
         options={[{ value: "", label: EMPTY_TEXT }, ...choiceOpts]}
+        // Where the choices open from the cell itself (the Mac's popover), the
+        // cell keeps showing its value, its tag, while they're open, rather
+        // than turning into a button of its label.
+        {...(kind === "choice" && SelectControl.opensFromTrigger
+          ? {
+              trigger: (
+                <html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+                  <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+                </html.div>
+              ),
+            }
+          : {})}
         onChange={(next) => {
           commit(next);
           onEditEnd?.("done");
