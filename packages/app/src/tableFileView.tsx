@@ -56,6 +56,22 @@ export interface TableFileChrome {
   redoName: string | null;
   undo: () => void;
   redo: () => void;
+  /** Where the table lives, as the .table app's window says it under its title ("Shop (shop.table) › Orders"). */
+  breadcrumb: string;
+  /** Whether its rows meet its schema, said ("schema valid"), and what that means. */
+  valid: boolean;
+  validity: string;
+  validityHint: string;
+  /** Back and Forward through the places gone to in the file (its tables, views and rows). */
+  canGoBack: boolean;
+  canGoForward: boolean;
+  goBack: () => void;
+  goForward: () => void;
+  /** A new row; a new field, in a table layout only (from its header). Neither when it's to look at only. */
+  canAddRow: boolean;
+  canAddField: boolean;
+  newRow: () => void;
+  newField: () => void;
 }
 
 export interface TableFileViewProps {
@@ -99,6 +115,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
+  // New Field, asked of the table's header by count.
+  const [newFieldAsk, setNewFieldAsk] = useState(0);
   const goTo = (address: string) => {
     const parsed = parseAddress(address);
     if (!parsed) return;
@@ -159,6 +177,22 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
     redoName: derived.redoName,
     undo: () => dispatch({ type: "undo" }),
     redo: () => dispatch({ type: "redo" }),
+    breadcrumb: derived.breadcrumb.text,
+    valid: derived.summary.valid,
+    validity: derived.summary.validity,
+    validityHint: derived.summary.validityHint,
+    canGoBack: derived.canGoBack,
+    canGoForward: derived.canGoForward,
+    goBack: () => dispatch({ type: "back" }),
+    goForward: () => dispatch({ type: "forward" }),
+    canAddRow: !lookOnly,
+    canAddField: !lookOnly && view.layout === "table",
+    newRow: () => {
+      if (!lookOnly) void callbacks.onAddRow?.();
+    },
+    newField: () => {
+      if (!lookOnly && view.layout === "table") setNewFieldAsk((n) => n + 1);
+    },
   };
 
   return (
@@ -179,6 +213,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
         {...(lookOnly ? {} : callbacks)}
         onOpenRelation={followLink}
         restorePlace={select}
+        newFieldRequest={newFieldAsk}
       />
       {state.settingsOpen && !lookOnly ? (
         <ViewSettings
