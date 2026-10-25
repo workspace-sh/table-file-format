@@ -4,7 +4,7 @@
 > confirmation / alignment pass over the whole corpus (SPEC,
 > DECISIONS, ARCHITECTURE, STORAGE-AND-SYNC, PRIOR-ART, PERMISSIONS,
 > README) plus the reference implementation and the
-> `workspace-p2p-spike` findings. Read-only: this document changes no
+> `workspace-p2p-spike` findings (that repo is now `workspace-protocol`). Read-only: this document changes no
 > code and merges no PRs. It records findings, verdicts, decisions the
 > maintainer must make, and an apply-ready patch appendix.
 
