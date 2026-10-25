@@ -39,16 +39,16 @@ function labels(root: Gtk.Widget, out: string[] = []): string[] {
 async function openSheet(merged: unknown[]) {
   const viewsFile = join(budget, "views.json");
   const views = JSON.parse(readFileSync(viewsFile, "utf8")) as { id: string }[];
-  writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "sheet" ? { ...v, merged } : v))));
+  writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "kifpjiq34nhz8k95rc3uezwqu5" ? { ...v, merged } : v))));
   const library = await loadLibrary([join(dir, "household-budget.table")]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="sheet" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="kifpjiq34nhz8k95rc3uezwqu5" />);
   const cell = (await screen.findAllByText("Rent"))[0]!;
   return cell.getRoot() as unknown as Gtk.Widget;
 }
 
 describe("merged cells on Linux", () => {
   it("a block of Jan and Feb over Rent and Energy is drawn as one, two columns wide and two rows tall, showing Rent's January", async () => {
-    const root = await openSheet([{ from: { field: "jan", row: "rent" }, to: { field: "feb", row: "energy" } }]);
+    const root = await openSheet([{ from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "feb", row: "f8o7dzw4cpk4zgd38togwz7n4w" } }]);
     const box = await waitFor(() => {
       const found = all(root, "merged-cells");
       expect(found).toHaveLength(1);
@@ -88,19 +88,19 @@ describe("merged cells on Linux", () => {
     entry.setPosition(-1);
     await userEvent.type(entry, "D2");
     await userEvent.click(await screen.findByText("Merge"));
-    await waitFor(() => expect(views().find((v) => v.id === "sheet")?.merged).toEqual([{ from: { field: "jan", row: "rent" }, to: { field: "feb", row: "energy" } }]));
+    await waitFor(() => expect(views().find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")?.merged).toEqual([{ from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "feb", row: "f8o7dzw4cpk4zgd38togwz7n4w" } }]));
     await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(1));
     // From the block: its top-left cell is selected, and the menu offers to take it apart.
     await userEvent.click(all(root, "merged-cells")[0]!);
     (await rowMenu()).activateAction("row.unmerge", null);
-    await waitFor(() => expect(views().find((v) => v.id === "sheet")?.merged).toBeUndefined());
+    await waitFor(() => expect(views().find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")?.merged).toBeUndefined());
     await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(0));
   });
 
   it("a block that isn't one (a single cell, a corner that isn't there, outside a Sheet view) isn't drawn", async () => {
     const root = await openSheet([
-      { from: { field: "jan", row: "rent" }, to: { field: "jan", row: "rent" } },
-      { from: { field: "jan", row: "rent" }, to: { field: "nope", row: "energy" } },
+      { from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" } },
+      { from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "nope", row: "f8o7dzw4cpk4zgd38togwz7n4w" } },
     ]);
     await screen.findAllByText("£1,450.00");
     expect(all(root, "merged-cells")).toHaveLength(0);

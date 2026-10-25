@@ -28,11 +28,11 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const totalsOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).views.find((v) => v.id === "v1")!.totals;
+const totalsOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!.totals;
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
 }
 
 function labels(model: Gio.MenuModel): string[] {

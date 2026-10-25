@@ -58,19 +58,19 @@ async function textView(): Promise<Gtk.TextView> {
 
 describe("edit history on Linux", () => {
   it("a table that was only looked at has no history file", async () => {
-    await open("tasks", "v1");
+    await open("tasks", "ffaisc1zows4dzhy7aq5jrebkx");
     await screen.findAllByText("Land .table extension");
     await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(existsSync(historyFile("tasks"))).toBe(false);
   });
 
   it("a cell edited is one set event, with what it held and what it holds, beside the saved row", async () => {
-    await open("tasks", "v1");
+    await open("tasks", "ffaisc1zows4dzhy7aq5jrebkx");
     await retype("Land .table extension", "Renamed task");
-    await waitFor(() => expect(said(history("tasks"))).toEqual([{ op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Renamed task" }]));
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Renamed task"));
+    await waitFor(() => expect(said(history("tasks"))).toEqual([{ op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Land .table extension", to: "Renamed task" }]));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Renamed task"));
     const [event] = history("tasks");
-    expect(event!.id).toMatch(/^[0-9a-z]{25}$/);
+    expect(event!.id).toMatch(/^[ybndrfg8ejkmcpqxot1uwisza345h769]{26}$/);
     expect(Math.abs(Date.parse(event!.at) - Date.now())).toBeLessThan(60_000);
     expect("by" in event!).toBe(false);
     // One line, ending in a newline; no other table has a history.
@@ -79,15 +79,15 @@ describe("edit history on Linux", () => {
   });
 
   it("undo is a new event that sets it back; the first event stays", async () => {
-    const window = await open("tasks", "v1");
+    const window = await open("tasks", "ffaisc1zows4dzhy7aq5jrebkx");
     await retype("Land .table extension", "Renamed task");
     await waitFor(() => expect(history("tasks")).toHaveLength(1));
     const first = readFileSync(historyFile("tasks"), "utf8");
     window.activateAction("win.undo", null);
     await waitFor(() =>
       expect(said(history("tasks"))).toEqual([
-        { op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Renamed task" },
-        { op: "set", row: "t1", field: "title", from: "Renamed task", to: "Land .table extension" },
+        { op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Land .table extension", to: "Renamed task" },
+        { op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Renamed task", to: "Land .table extension" },
       ]),
     );
     // Only added to.
@@ -95,7 +95,7 @@ describe("edit history on Linux", () => {
   });
 
   it("a row added is an insert, and what is typed into it a set", async () => {
-    await open("tasks", "v1");
+    await open("tasks", "ffaisc1zows4dzhy7aq5jrebkx");
     await userEvent.click(await screen.findByText("+ New row"));
     const entry = (await screen.findAllByDisplayValue("")).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
     await userEvent.type(entry, "Fresh task");
@@ -110,9 +110,9 @@ describe("edit history on Linux", () => {
   });
 
   it("a history that is already there is only added to, whatever is in it", async () => {
-    const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"t1","field":"title","to":"Land .table extension"}\nnot a line this reads';
+    const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"ytjc8tj8w8ftnbf9h86s5k9jfk","field":"title","to":"Land .table extension"}\nnot a line this reads';
     writeFileSync(historyFile("tasks"), theirs);
-    await open("tasks", "v1");
+    await open("tasks", "ffaisc1zows4dzhy7aq5jrebkx");
     await retype("Land .table extension", "Renamed task");
     await waitFor(() => expect(history("tasks")).toHaveLength(2));
     const text = readFileSync(historyFile("tasks"), "utf8");
@@ -121,31 +121,31 @@ describe("edit history on Linux", () => {
   });
 
   it("a page typed in is one event when it is closed, with the whole text before and after", async () => {
-    await open("projects", "v7");
-    const before = readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8");
+    await open("projects", "u5fpdkwh5w9thdq8o368a9t4nw");
+    const before = readFileSync(join(bundle, "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md"), "utf8");
     await userEvent.click(await screen.findByText("Table file format spike"));
     const view = await textView();
     await userEvent.type(view, " One.");
     // Saved as it is typed, but not yet said.
-    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8")).toContain("One."), { timeout: 5000 });
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md"), "utf8")).toContain("One."), { timeout: 5000 });
     await userEvent.type(view, " Two.");
-    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8")).toContain("Two."), { timeout: 5000 });
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md"), "utf8")).toContain("Two."), { timeout: 5000 });
     expect(history("projects")).toEqual([]);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
     await waitFor(() => expect(history("projects")).toHaveLength(1));
     const [event] = history("projects");
     expect(event!.op).toBe("page");
-    expect(event!.row).toBe("p2");
+    expect(event!.row).toBe("1h38m5st7rwanz3hyjb6dy8igr");
     if (event!.op !== "page") throw new Error("not a page event");
     expect(event!.from).toBe(before);
-    expect(event!.to).toBe(readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8"));
+    expect(event!.to).toBe(readFileSync(join(bundle, "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md"), "utf8"));
     expect(event!.to).toContain("One. Two.");
     await new Promise((resolve) => setTimeout(resolve, 800));
     expect(history("projects")).toHaveLength(1);
   });
 
   it("a page left open and still is said without being closed", async () => {
-    await open("projects", "v7", 900);
+    await open("projects", "u5fpdkwh5w9thdq8o368a9t4nw", 900);
     await userEvent.click(await screen.findByText("Table file format spike"));
     await userEvent.type(await textView(), " Still.");
     await waitFor(() => expect(history("projects").map((e) => e.op)).toEqual(["page"]), { timeout: 6000 });

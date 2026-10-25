@@ -648,13 +648,18 @@ export function App({
     // `--open` names where to start (a link lands on the Tables side);
     // otherwise table-app's first table, and the side the viewer left.
     const startKey = initialTable && library.tables[initialTable] ? initialTable : undefined;
+    // A view by its id, or by its name as the viewer sees it ("Pipeline"): ids are opaque (D23).
+    const startView = startKey && initialView
+      ? (library.tables[startKey]!.views.find((v) => v.id === initialView) ??
+          library.tables[startKey]!.views.find((v) => v.name.toLowerCase() === initialView.toLowerCase()))?.id
+      : undefined;
     return initialAppState({
       tables: library.tables,
       bundles: library.bundles,
       opened: Object.fromEntries(Object.entries(library.paths).filter(([, path]) => !inExamples(path))),
       ...(library.singleFiles ? { singleFiles: library.singleFiles } : {}),
       stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
-      ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
+      ...(startKey ? { start: { tablePath: startKey, ...(startView ? { viewId: startView } : {}) } } : {}),
       // Each edit goes to its table's history.ndjson (SPEC section 14).
       writesHistory: true,
       closed: loadClosed(store),

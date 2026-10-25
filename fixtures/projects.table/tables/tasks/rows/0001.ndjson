@@ -1,8 +1,8 @@
-{"id":"t1","title":"Land .table extension","project":"p2","status":"done","priority":1,"assignee":"leslie"}
-{"id":"t2","title":"Wire RSD + StyleX","project":"p2","status":"doing","priority":2,"assignee":"leslie"}
-{"id":"t3","title":"Fixtures + tests","project":"p2","status":"doing","priority":3,"assignee":"claude"}
-{"id":"t4","title":"Settings panel","project":"p1","status":"todo","priority":2,"assignee":"leslie"}
-{"id":"t5","title":"Markdown editor polish","project":"p1","status":"doing","priority":1,"assignee":"sam"}
-{"id":"t6","title":"App icon","project":"p3","status":"todo","priority":3,"assignee":"sam"}
-{"id":"t7","title":"Sync conflict resolution","project":"p5","status":"todo","priority":4,"assignee":"claude"}
-{"id":"t8","title":"OG images","project":"p7","status":"done","priority":5,"assignee":"sam"}
+{"id":"ytjc8tj8w8ftnbf9h86s5k9jfk","title":"Land .table extension","project":"1h38m5st7rwanz3hyjb6dy8igr","status":"done","priority":1,"assignee":"leslie"}
+{"id":"wpzuom5b9k3k4g6co658ozwerw","title":"Wire RSD + StyleX","project":"1h38m5st7rwanz3hyjb6dy8igr","status":"doing","priority":2,"assignee":"leslie"}
+{"id":"18pfutsbnrkppxrwxxn1ideokr","title":"Fixtures + tests","project":"1h38m5st7rwanz3hyjb6dy8igr","status":"doing","priority":3,"assignee":"claude"}
+{"id":"7rese5ziapr9ih41puficyt9ay","title":"Settings panel","project":"xsdxifzn73ohismzm8q5uri8fe","status":"todo","priority":2,"assignee":"leslie"}
+{"id":"imua9kjffc83wirjcotinputgj","title":"Markdown editor polish","project":"xsdxifzn73ohismzm8q5uri8fe","status":"doing","priority":1,"assignee":"sam"}
+{"id":"abk93zgaattfxeony4hqsf457r","title":"App icon","project":"4csppbyqkcmq3kf4y7zbxeeumg","status":"todo","priority":3,"assignee":"sam"}
+{"id":"3dk5j8ame7mcdhys4cnf47buka","title":"Sync conflict resolution","project":"o65fjfegds8n54xqbkg9hkf5cq","status":"todo","priority":4,"assignee":"claude"}
+{"id":"36qw33ippkn6aue5er5hgt1scp","title":"OG images","project":"knapbng9n8qtguzrxfj7n6uudd","status":"done","priority":5,"assignee":"sam"}

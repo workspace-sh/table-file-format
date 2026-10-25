@@ -1,6 +1,6 @@
 [
   {
-    "id": "catalogue",
+    "id": "mmaar1kws5dfnw1i6a7z6q3tyx",
     "name": "Catalogue",
     "layout": "table",
     "totals": {
@@ -10,7 +10,7 @@
     }
   },
   {
-    "id": "by-category",
+    "id": "c7ae39md7putcu3qkdfiitc1z1",
     "name": "By category",
     "layout": "board",
     "board_field": "category",
@@ -21,7 +21,7 @@
     ]
   },
   {
-    "id": "best-sellers",
+    "id": "kgj9fs8mkb6zdo3w9wy8okm5q4",
     "name": "Best sellers",
     "layout": "table",
     "sort": [
