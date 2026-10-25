@@ -4,7 +4,7 @@ import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { readTableDocument, writeTableFileTo } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 
-import { packTableFile, restampTableFile, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { ChangedElsewhere, packTableFile, restampTableFile, unpackTableFile, workDirFor } from "./singleFile.ts";
 
 const fs = () => {
   const m = memoryFs();
@@ -53,4 +53,28 @@ test("a single-file .table is edited in a working folder and packed back into it
   assert.equal(await m.readText(`${work}/index.sqlite`), "an index");
   await unpackTableFile(m, (await m.readBytes!("/docs/crm.table"))!, work, "v3");
   assert.equal(await m.readText(`${work}/index.sqlite`), null);
+});
+
+test("a file changed elsewhere since it was opened isn't saved over: the edits stay in the working folder", async () => {
+  const m = fs();
+  await m.mkdir("/docs");
+  const original = { tables: { tasks: tables["tasks"]! } };
+  await writeTableFileTo(m, "/docs/t.table", original);
+  const work = workDirFor("/app", "/docs/t.table");
+  await unpackTableFile(m, (await m.readBytes!("/docs/t.table"))!, work, "opened");
+
+  // Meanwhile another copy of the app, or a sync, writes a newer file.
+  const newer = { tables: { tasks: { ...tables["tasks"]!, rows: tables["tasks"]!.rows.slice(0, 1) } } };
+  await writeTableFileTo(m, "/docs/t.table", newer);
+  const theirs = await m.readBytes!("/docs/t.table");
+
+  // An edit here is written to the working folder, then packed: refused, the newer file left as it is.
+  await writeBundleTo(m, work, { tables: { tasks: { ...tables["tasks"]!, rows: tables["tasks"]!.rows.slice(1) } } });
+  await assert.rejects(packTableFile(m, work, "/docs/t.table", "changed"), (e: unknown) => e instanceof ChangedElsewhere && /t\.table was changed somewhere else/.test(e.message));
+  assert.deepEqual(await m.readBytes!("/docs/t.table"), theirs);
+  assert.equal((await readTableDocument(m, work)).bundle.tables.tasks!.rows.length, tables["tasks"]!.rows.length - 1, "the edit is kept");
+
+  // As it was opened, it packs.
+  await packTableFile(m, work, "/docs/t.table", "opened");
+  assert.notDeepEqual(await m.readBytes!("/docs/t.table"), theirs);
 });
