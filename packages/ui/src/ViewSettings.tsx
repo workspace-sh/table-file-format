@@ -496,9 +496,8 @@ function viewSettingsSections({
   if (view.layout === "gallery") {
     viewRows.push(choice("gallery", "Card lead", view.gallery_field, fieldOptions(live, "Nothing"), (f) => onChange({ gallery_field: f || undefined })));
   }
-  if (view.layout === "table") {
-    viewRows.push(choice("freeze", "Freeze", String(frozenColumnsOf(view)), frozenOptions(shownColumns(view, schema).size), (n) => onChange(frozenPatch(view, Number(n)))));
-  }
+  // No Freeze here yet: iOS and the Mac draw a table edge to edge, with no
+  // frozen columns or rows to set (#674).
   if (view.layout === "table" || view.layout === "list") {
     viewRows.push(
       choice("group", "Group by", view.group?.field, fieldOptions(choices.group, "No grouping"), (f) => arrange({ group: f ? { field: f } : undefined })),
