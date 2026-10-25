@@ -124,6 +124,21 @@ export interface ChooseManyProps {
 /** A ChooseMany control, or null where the views draw their own. */
 export type ChooseManySlot = ((props: ChooseManyProps) => ReactElement | null) | null;
 
+/**
+ * One of a list, picked from a popover pointing at the element whose `id` is
+ * `anchor` (the Mac's, the same as ChooseMany's): the rows of a calendar's
+ * day, say. A pick or a click outside closes it.
+ */
+export interface ChooseOneProps {
+  options: { value: string; label: string; color?: string }[];
+  anchor: string;
+  onPick: (value: string) => void;
+  onClose: () => void;
+}
+
+/** A ChooseOne control, or null where the views draw their own (a sheet). */
+export type ChooseOneSlot = ((props: ChooseOneProps) => ReactElement | null) | null;
+
 /** A DateInput control; `available` false where cells type their dates instead. */
 export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
 
@@ -278,6 +293,7 @@ export interface PlatformControls {
   SettingsForm: SettingsFormSlot;
   /** Several choices over a cell; absent or null, the views' own menu. */
   ChooseMany?: ChooseManySlot;
+  ChooseOne?: ChooseOneSlot;
 }
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
