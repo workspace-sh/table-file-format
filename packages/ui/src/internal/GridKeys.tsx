@@ -20,6 +20,10 @@ export interface GridKeysProps {
     preventDefault?: () => void;
   }) => void;
   children: ReactNode;
+  /** Grow to the width of the row it's in (a table filling the page), where it's a view of its own. */
+  grow?: boolean;
+  /** The widest it grows: the table's columns at their natural widths. */
+  most?: number;
 }
 
 export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridKeys({ children }, _ref) {

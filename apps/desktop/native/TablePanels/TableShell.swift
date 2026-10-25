@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import TableMacControls
 
 @objc(TableShell)
 public class TableShell: NSObject {

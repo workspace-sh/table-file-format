@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { bundles } from "@workspace.sh/table-fixtures";
 import { fromBundle } from "./bundles.ts";
-import { EMBED_COUNT_MAX, embedCount, embedIn, embedLeftOut, embedMoreText, embedRoom, embedSize } from "./embed.ts";
+import { EMBED_COUNT_MAX, EMBED_FOOT_HEIGHT, embedCount, embedIn, embedLeftOut, embedMoreText, embedRoom, embedSize, tableEmbedRoom } from "./embed.ts";
 import type { Library } from "./library.ts";
 
 // One `.table` file as an app reads it: its tables by `bundle/table` key.
@@ -66,6 +66,11 @@ test("an address says how many rows or cards to show at once, and only a whole n
   for (const not of ["0", "-2", "2.5", "five", "5px", "", "05"]) assert.deepEqual(embedSize({ extra: { rows: not, cards: not } }), {}, not);
   // No more than the cap, however many are asked for.
   assert.deepEqual(embedSize({ extra: { rows: "100000" } }), { rows: EMBED_COUNT_MAX });
+});
+
+test("an address may ask for a table the whole width, and nothing else widens it", () => {
+  assert.deepEqual(embedSize({ extra: { width: "full", rows: "5" } }), { rows: 5, width: "full" });
+  for (const not of ["", "100%", "wide", "FULL", "auto"]) assert.deepEqual(embedSize({ extra: { width: not } }), {}, not);
 });
 
 test("what is drawn carries the size its address asked for", () => {
@@ -160,6 +165,12 @@ test("an embed keeps the room its link says it will take while it's read", () =>
   assert.equal(embedRoom("projects.table#table=tasks&rows=40&embed=1", 480, 44), 480);
   assert.equal(embedRoom("projects.table#table=tasks&embed=1", 480, 44), 480);
   assert.equal(embedRoom(undefined, 480, 44), null);
+});
+
+test("a document keeps an embed's room, and the line under it when it has one, before it has drawn", () => {
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&rows=3&embed=1"), 44 * 4);
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&rows=3&embed=1", { caption: true }), 44 * 4 + EMBED_FOOT_HEIGHT);
+  assert.equal(tableEmbedRoom("projects.table#table=tasks&embed=1", { open: true }), 480 + EMBED_FOOT_HEIGHT);
 });
 
 test("a document's embeds read each file once, and again after a write", async () => {
