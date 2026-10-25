@@ -510,6 +510,10 @@ formulas out in whole passes, a loop reading what the pass before gave
 (0 on the first), up to `max` passes, until no number changes by more
 than `change`, as a spreadsheet's iterative calculation does.
 
+How an app shows an error is its own choice: the code is the value, and
+what anything that uses it sees. Workspace's apps show a few plain words
+and a mark for the kind of problem, with the code in the hover (D61).
+
 **Worked examples** (illustrative). Each row of this table is checked
 against the reference evaluator by `packages/core/src/spec-examples.test.ts`,
 so an example here can't drift from what the evaluator does. `→` is the
@@ -1387,6 +1391,13 @@ Stable addressing for rows, views, and tables — used by:
   linking to a row elsewhere, an external markdown file linking into
   a `.table/`, etc.)
 - Application-level deep links (URL hashes, share links)
+
+These addresses are the format's own, and work without Workspace.
+Inside a Workspace, its `workspace://` links address a document and a
+place in it; a table's rows are addressed there by their system `id`
+(the Workspace Protocol's
+[URI scheme](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/format/uri-scheme.md),
+"Tables").
 
 ### Address grammar
 

@@ -263,7 +263,7 @@ because the web and mobile have no files to hash.
 
 ## D17: Sync posture — op-log transport, files as materialisation
 
-For multi-writer sync (Hypercore/Autobase per workspace-p2p-spike),
+For multi-writer sync (Hypercore/Autobase per the [Workspace Protocol](https://github.com/workspace-sh/workspace-protocol), formerly workspace-p2p-spike),
 the intended model is an op log per writer, Autobase linearisation,
 per-field last-writer-wins, and the `.table/` directory materialised
 from the log as a deterministic checkout. Within a synced workspace
@@ -1395,3 +1395,22 @@ A loop between formulas is `#REF!` (D32): no answer is better than a wrong one. 
 
 **Held, from the same list:** `LET`, `LAMBDA` and named ranges. The stored form takes a function only when a published standard defines it (D52), and OpenFormula 1.4 defines none of these (`LET` and `LAMBDA` are Excel's own). A named range is closest to a name for a place in a Sheet view (D41), which can be drafted when it's wanted.
 
+
+## D61: a failed formula is shown in plain words, marked by its kind
+
+**Leslie (25 Oct 2026, #685).** Built on the web, Linux, iOS and the Mac (#688, #689, #690, #691).
+
+The file and every evaluator keep the spreadsheet codes (`#DIV/0!`, `#VALUE!`, `#NAME?`, `#REF!`, `#NUM!`, D32): they are what a failed formula is, and what reaches anything that uses it. What an app shows is another matter. A code says something went wrong, not what, nor that it can be fixed. So Workspace's apps show a few plain words in every formula syntax, and keep the code where a spreadsheet user looks for it: first in the hover, and beside the words in the formula's panel when formulas are shown Excel style.
+
+The words come from the code and the evaluator's message. Both evaluators (the workbook and the EDN core, #638) give the same messages, and the check that compares them covers the messages too. The words are table-ui's `formulaErrorShow`; each renderer only draws them.
+
+Each kind has its own mark, so a column of errors can be read at a glance before anyone opens one. The kinds are sorted by what fixing one takes:
+
+| Kind | The cell says | Mark (Lucide on the web and Linux / SF Symbol on iOS and the Mac) |
+| --- | --- | --- |
+| Loop | Loops back on itself | `refresh-cw` / `arrow.triangle.2.circlepath` |
+| Points at something gone | No field "price", No table "deals", No view "by-date", Row is gone, No row there, Column isn't in the view | `unlink` / `questionmark.square.dashed` |
+| Doesn't fit the column | Not a date, Not a whole number, Not true or false, Not text, Not a map point (and the like, by the field's type), Number too big | `equal-not` / `notequal` |
+| Can't be worked out | Divides by zero, Wrong kind of value, Wrong number of inputs, Unknown function | `triangle-alert` / `exclamationmark.triangle` |
+
+Hovering, or on iOS the selected cell's details, says what went wrong and where the fix is: opening the formula, whose panel offers Repeat Until It Settles for a loop (D60). A true/false cell whose formula failed shows its error, not an unticked box, which would read as false.
