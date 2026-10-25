@@ -40,10 +40,10 @@ test("a choice is a pill with its label and colour, a list is one pill each", ()
 test("a failed formula says plain words in either syntax; Excel style's hover and panel add its code (#685)", () => {
   const error = new FormulaError("#DIV/0!", "division by zero");
   const why = "The formula divides by zero for this row. Open the formula to change it.";
-  const excel = { kind: "error", code: "#DIV/0!", text: "Divides by zero", withCode: "Divides by zero · #DIV/0!", explanation: `#DIV/0!: ${why}`, fix: "edit" };
+  const excel = { kind: "error", group: "calculation", code: "#DIV/0!", text: "Divides by zero", withCode: "Divides by zero · #DIV/0!", explanation: `#DIV/0!: ${why}`, fix: "edit" };
   assert.deepEqual(describeCell(undefined, error, plain), excel);
   assert.deepEqual(describeCell(undefined, error, { formulaSyntax: "excel" }), excel);
-  assert.deepEqual(describeCell(undefined, error, { formulaSyntax: "stored" }), { kind: "error", code: "#DIV/0!", text: "Divides by zero", withCode: "Divides by zero", explanation: why, fix: "edit" });
+  assert.deepEqual(describeCell(undefined, error, { formulaSyntax: "stored" }), { kind: "error", group: "calculation", code: "#DIV/0!", text: "Divides by zero", withCode: "Divides by zero", explanation: why, fix: "edit" });
 });
 
 test("every error the workbook gives has its plain words (#685)", () => {
@@ -60,6 +60,7 @@ test("every error the workbook gives has its plain words (#685)", () => {
     { name: "a", type: "number", computed: { expr: "(+ b 1)", dialect: "table-expr-v1" } },
     { name: "b", type: "number", computed: { expr: "(+ a 1)", dialect: "table-expr-v1" } },
     { name: "sum", type: "number", computed: { expr: '(+ n "x")', dialect: "table-expr-v1" } },
+    { name: "few", type: "number", computed: { expr: "(round)", dialect: "table-expr-v1" } },
     { name: "there", type: "number", computed: { expr: '(field "n" "r9")', dialect: "table-expr-v1" } },
     { name: "deals", type: "number", computed: { expr: '(linked "deals" "company" "value")', dialect: "table-expr-v1" } },
   ];
@@ -73,11 +74,12 @@ test("every error the workbook gives has its plain words (#685)", () => {
     assert.ok(v instanceof FormulaError, `${name} failed`);
     return formulaErrorShow(v, fields.find((f) => f.name === name), "stored");
   };
-  assert.deepEqual(words("when"), { code: "#VALUE!", text: "Not a date", withCode: "Not a date", explanation: "The formula gave 4, and this column holds dates. Open the formula to change it.", fix: "edit" });
+  assert.deepEqual(words("when"), { group: "mismatch", code: "#VALUE!", text: "Not a date", withCode: "Not a date", explanation: "The formula gave 4, and this column holds dates. Open the formula to change it.", fix: "edit" });
   assert.equal(words("whole").text, "Not a whole number");
   assert.equal(words("half").text, "Divides by zero");
   assert.equal(words("huge").text, "Number too big");
   assert.deepEqual(words("price"), {
+    group: "missing",
     code: "#NAME?",
     text: 'No field "cost"',
     withCode: 'No field "cost"',
@@ -86,6 +88,7 @@ test("every error the workbook gives has its plain words (#685)", () => {
   });
   assert.equal(words("odd").text, "Unknown function");
   assert.deepEqual(words("a"), {
+    group: "loop",
     code: "#REF!",
     text: "Loops back on itself",
     withCode: "Loops back on itself",
@@ -94,8 +97,24 @@ test("every error the workbook gives has its plain words (#685)", () => {
   });
   assert.equal(words("sum").text, "Wrong kind of value");
   assert.match(words("sum").explanation, /^\+ needs numbers, got "x"\. Open the formula/);
+  assert.deepEqual([words("few").text, words("few").explanation], ["Wrong number of inputs", "Round takes 1–2 arguments. Open the formula to change it."]);
   assert.equal(words("there").text, "Row is gone");
   assert.equal(words("deals").text, 'No table "deals"');
+  // Each kind has its mark (ERROR_MARKS), for reading a column of them at a glance.
+  const groups = Object.fromEntries(["when", "whole", "half", "huge", "price", "odd", "a", "sum", "few", "there", "deals"].map((n) => [n, words(n).group]));
+  assert.deepEqual(groups, {
+    when: "mismatch",
+    whole: "mismatch",
+    huge: "mismatch",
+    half: "calculation",
+    odd: "calculation",
+    sum: "calculation",
+    few: "calculation",
+    price: "missing",
+    there: "missing",
+    deals: "missing",
+    a: "loop",
+  });
   // Excel style says the same words, and the code beside them in the panel and first in the hover.
   for (const name of ["when", "half", "price", "a", "deals"]) {
     const error = row[name] as FormulaError;
