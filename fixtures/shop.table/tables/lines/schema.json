@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "jubpyw8ycy4ek",
       "name": "order",
       "type": "string",
       "title": "Order",
@@ -13,6 +14,7 @@
       }
     },
     {
+      "id": "e5ftmj6ihzran",
       "name": "product",
       "type": "string",
       "title": "Product",
@@ -25,6 +27,7 @@
       }
     },
     {
+      "id": "buzu1few1xqz4",
       "name": "quantity",
       "type": "integer",
       "title": "Quantity",
@@ -33,6 +36,7 @@
       }
     },
     {
+      "id": "8bm6engmac1ih",
       "name": "unit_price",
       "type": "number",
       "title": "Unit price",
@@ -44,6 +48,7 @@
       }
     },
     {
+      "id": "8nj5bdwnbdxp4",
       "name": "line_total",
       "type": "number",
       "title": "Line total",

@@ -31,7 +31,7 @@ const schemaOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
 }
 
 /**
@@ -118,7 +118,10 @@ describe("fields on Linux", () => {
     await userEvent.type(await entryRow("Name"), "Due soon");
     await userEvent.click((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" })).at(-1)!);
     await waitFor(async () => {
-      expect((await schemaOnDisk()).fields.at(-1)).toEqual({ name: "due_soon", title: "Due soon", type: "string" });
+      // With a random id of its own (D62).
+      const { id, ...added } = (await schemaOnDisk()).fields.at(-1)!;
+      expect(added).toEqual({ name: "due_soon", title: "Due soon", type: "string" });
+      expect(id).toMatch(/^[ybndrfg8ejkmcpqxot1uwisza345h769]{13}$/);
     });
   });
 });

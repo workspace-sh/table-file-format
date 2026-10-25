@@ -25,7 +25,7 @@ npm run dev        # the demo, with fast refresh
 npm start -- ~/Documents/crm.table   # a build, on your own tables
 ```
 
-`--open=crm/deals#all` starts on a table, and optionally a view. A
+`--open=crm/deals#Pipeline` starts on a table, and optionally a view, named as the app shows it (or by its id). A
 `.table` named while the app is running opens in its window.
 
 ## Open .table files from the file manager
@@ -48,7 +48,7 @@ either.
 
 ```sh
 npm run check      # typecheck, lint, tests, build (covers packages/gtk too)
-SCHEME=dark npm run shot -- out.png --open=household-budget/budget#sheet
+SCHEME=dark npm run shot -- out.png --open=household-budget/budget#Sheet
 ```
 
 `shot` runs the build on a headless sway and saves a screenshot (needs

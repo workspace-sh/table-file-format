@@ -31,14 +31,14 @@ test("a single-file .table opened in Node is edited in its working folder and pa
 
     // An edit saved: in the file, which stays a single file.
     const tasks = `${key}/tasks`;
-    const edited = { ...library.tables, [tasks]: withCell(library.tables[tasks]!, "t1", "title", "Packed") };
+    const edited = { ...library.tables, [tasks]: withCell(library.tables[tasks]!, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Packed") };
     await saveBundle(library, edited, library.bundles, key);
     assert.equal(statSync(file).isFile(), true);
     const after = await readTableArchive(new Uint8Array(readFileSync(file)));
-    assert.equal(after.tables.tasks!.rows.find((r) => r.id === "t1")!.title, "Packed");
+    assert.equal(after.tables.tasks!.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Packed");
 
     // A history appended: in the file too.
-    await appendHistory(join(library.paths[key]!, "tables", "tasks"), [{ op: "set", at: "2026-10-15T00:00:00Z", table: "tasks", row: "t1", field: "title", from: "x", to: "Packed" } as never]);
+    await appendHistory(join(library.paths[key]!, "tables", "tasks"), [{ op: "set", at: "2026-10-15T00:00:00Z", table: "tasks", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "x", to: "Packed" } as never]);
     const withHistory = await readTableArchive(new Uint8Array(readFileSync(file)));
     assert.match(withHistory.tables.tasks!.history ?? "", /"Packed"/);
 

@@ -34,7 +34,7 @@ afterEach(async () => {
 
 async function editTitle(to: string): Promise<Gtk.Window> {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
   await userEvent.click(await screen.findByText("Land .table extension"));
   const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
   await userEvent.clear(entry);
@@ -48,7 +48,7 @@ const events = (table: string) => {
   const file = join(bundle, "tables", table, "history.ndjson");
   return existsSync(file) ? parseEditLog(readFileSync(file, "utf8")).events : [];
 };
-const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.id === "t1")?.title;
+const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title;
 
 describe("closing the window on Linux", () => {
   it("writes an edit made just before, then quits", async () => {
@@ -63,7 +63,7 @@ describe("closing the window on Linux", () => {
 
   it("with a page open, closing closes the page first, and its typing is in the history by the time the app quits", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="v7" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="u5fpdkwh5w9thdq8o368a9t4nw" />);
     await userEvent.click(await screen.findByText("Table file format spike"));
     let view: Gtk.TextView | undefined;
     await waitFor(async () => {
@@ -71,7 +71,7 @@ describe("closing the window on Linux", () => {
       expect(view).toBeDefined();
     });
     await userEvent.type(view!, " Typed, then closed.");
-    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "p2.md"), "utf8")).toContain("Typed, then closed."), { timeout: 5000 });
+    await waitFor(() => expect(readFileSync(join(bundle, "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md"), "utf8")).toContain("Typed, then closed."), { timeout: 5000 });
     // Its history waits for the page to be left.
     expect(events("projects")).toEqual([]);
     const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.Window;

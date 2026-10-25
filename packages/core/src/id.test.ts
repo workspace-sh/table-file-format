@@ -14,9 +14,9 @@ test("newId produces unique values across many calls", () => {
   assert.equal(ids.size, 1000);
 });
 
-test("minted ids are 25-char lowercase base36 (case-safe for filenames)", () => {
+test("minted ids are 26 z-base-32 characters, lowercase (case-safe for filenames)", () => {
   for (let i = 0; i < 200; i++) {
-    assert.match(newId(), /^[0-9a-z]{25}$/);
+    assert.match(newId(), /^[ybndrfg8ejkmcpqxot1uwisza345h769]{26}$/);
   }
 });
 
@@ -26,7 +26,7 @@ test("alphabet contains no case-fold ambiguity", () => {
   // alphabet is safe exactly when lowercasing it changes nothing.
   assert.equal(ID_ALPHABET, ID_ALPHABET.toLowerCase());
   assert.equal(new Set(ID_ALPHABET).size, ID_ALPHABET.length);
-  assert.equal(ID_LENGTH, 25);
+  assert.equal(ID_LENGTH, 26);
 });
 
 test("ids remain distinct under case-insensitive path comparison", () => {

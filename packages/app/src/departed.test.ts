@@ -17,7 +17,7 @@ const start = (): AppState => {
     Object.assign(tables, fromBundle(key, b));
     bundles[key] = b.meta;
   }
-  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: BOOKS, viewId: "unread" });
+  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: BOOKS, viewId: "eho3sibxpturhakhgqn8zdnsza" });
 };
 
 const run = (state: AppState, ...actions: AppAction[]): AppState => actions.reduce(tableApp, state);
@@ -64,11 +64,11 @@ test("Put back returns every counted row as one step, which undo takes back and 
 test("An edit between two ticks isn't undone by the put back", () => {
   const s = start();
   const [a, b] = unread(s);
-  const after = run(s, read(a!.id), { type: "updateRow", rowId: "b1", field: "rating", value: 5 }, read(b!.id));
+  const after = run(s, read(a!.id), { type: "updateRow", rowId: "ik9jdn1jye4ajepnxiimo3xc6a", field: "rating", value: 5 }, read(b!.id));
   // A typed value ends the toast: only the tick after it is counted.
   assert.deepEqual(after.departed?.rows.map((r) => r.rowId), [b!.id]);
   const back = run(after, { type: "putBackDeparted" });
-  assert.equal(back.tables[BOOKS]!.rows.find((r) => r.id === "b1")!.rating, 5);
+  assert.equal(back.tables[BOOKS]!.rows.find((r) => r.id === "ik9jdn1jye4ajepnxiimo3xc6a")!.rating, 5);
   assert.equal(back.tables[BOOKS]!.rows.find((r) => r.id === a!.id)!.read, true);
   assert.equal(back.tables[BOOKS]!.rows.find((r) => r.id === b!.id)!.read, false);
 });
@@ -84,12 +84,12 @@ test("Another view or the toast's end clears it", () => {
   const s = start();
   const [a] = unread(s);
   const ticked = run(s, read(a!.id));
-  assert.equal(run(ticked, { type: "showView", key: BOOKS, viewId: "all" }).departed, null);
+  assert.equal(run(ticked, { type: "showView", key: BOOKS, viewId: "9gcz9d8ctoqamitkgwfhiu7sru" }).departed, null);
   assert.equal(run(ticked, { type: "departedDone" }).departed, null);
 });
 
 test("In a view without a filter, ticking takes nothing out", () => {
-  const s = run(start(), { type: "showView", key: BOOKS, viewId: "all" });
+  const s = run(start(), { type: "showView", key: BOOKS, viewId: "9gcz9d8ctoqamitkgwfhiu7sru" });
   const [a] = unread(s);
   assert.equal(run(s, read(a!.id)).departed, null);
 });

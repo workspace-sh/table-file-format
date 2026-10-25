@@ -1,6 +1,6 @@
 [
   {
-    "id": "all",
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
     "name": "All companies",
     "layout": "table",
     "fields": [
@@ -20,7 +20,7 @@
     "rowHeight": 44
   },
   {
-    "id": "logos",
+    "id": "7cpm7hu37hhoyip8dqp5xrikgi",
     "name": "Logos",
     "layout": "gallery",
     "gallery_field": "logo",
@@ -31,7 +31,7 @@
     ]
   },
   {
-    "id": "by-industry",
+    "id": "r13o6oqo7xmpbc7bdmo3t6zcgx",
     "name": "By industry",
     "layout": "board",
     "board_field": "industry",
@@ -41,7 +41,7 @@
     ]
   },
   {
-    "id": "customers",
+    "id": "surkeym1tjrn97wm3xdrg9qufr",
     "name": "Customers",
     "layout": "table",
     "filter": [

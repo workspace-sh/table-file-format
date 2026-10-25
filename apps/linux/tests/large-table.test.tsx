@@ -21,7 +21,7 @@ beforeEach(() => {
   bundle = join(dir, "projects.table");
   cpSync(join(fixturesDir()!, "projects.table"), bundle, { recursive: true });
   let more = "";
-  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "p1", status: "todo", priority: 9, assignee: "sam" })}\n`;
+  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "xsdxifzn73ohismzm8q5uri8fe", status: "todo", priority: 9, assignee: "sam" })}\n`;
   appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
 });
 
@@ -32,7 +32,7 @@ afterEach(async () => {
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
 }
 
 async function cellOf(text: string): Promise<Gtk.Widget> {

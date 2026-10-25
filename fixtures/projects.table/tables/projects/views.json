@@ -1,6 +1,6 @@
 [
   {
-    "id": "v1",
+    "id": "ffaisc1zows4dzhy7aq5jrebkx",
     "name": "All projects",
     "layout": "table",
     "fields": [
@@ -11,7 +11,7 @@
     ]
   },
   {
-    "id": "v2",
+    "id": "gzrqtgo1p3gfehto7tani3jzz4",
     "name": "Active by owner",
     "layout": "table",
     "filter": [
@@ -29,7 +29,7 @@
     ]
   },
   {
-    "id": "v3",
+    "id": "tsaw1n3171mm9pu8zugkzm9pog",
     "name": "Roadmap",
     "layout": "table",
     "fields": [
@@ -45,7 +45,7 @@
     ]
   },
   {
-    "id": "v4",
+    "id": "r1mmz6bdngh1qjdyc7a3u3n58c",
     "name": "By owner",
     "layout": "table",
     "group": {
@@ -53,7 +53,7 @@
     }
   },
   {
-    "id": "v5",
+    "id": "f185otbhy1gqy4e6e8fk9ehbz9",
     "name": "Board by status",
     "layout": "board",
     "board_field": "status",
@@ -64,7 +64,7 @@
     ]
   },
   {
-    "id": "v6",
+    "id": "yxqsjf1fmbakwepxpx4ta44xks",
     "name": "Gallery",
     "layout": "gallery",
     "gallery_field": "summary",
@@ -75,7 +75,7 @@
     ]
   },
   {
-    "id": "v7",
+    "id": "u5fpdkwh5w9thdq8o368a9t4nw",
     "name": "Quick list",
     "layout": "list",
     "fields": [
@@ -84,13 +84,13 @@
     ]
   },
   {
-    "id": "v8",
+    "id": "m9ha81uuwcoba6qb1y36jexyy4",
     "name": "Calendar",
     "layout": "calendar",
     "calendar_field": "launched"
   },
   {
-    "id": "v9",
+    "id": "mjgwimtp1b49fgtgp5zdr5pzq9",
     "name": "Q1 2026",
     "layout": "calendar",
     "calendar_field": "launched",
@@ -100,7 +100,7 @@
     }
   },
   {
-    "id": "v10",
+    "id": "9o3aahftejwwkwbs4si48zmqwo",
     "name": "Budgets",
     "layout": "table",
     "fields": [

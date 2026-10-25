@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "kaomy8kbn9pfk",
       "name": "date",
       "type": "date",
       "title": "Date",
@@ -9,11 +10,13 @@
       }
     },
     {
+      "id": "yy5drhhq5u1dz",
       "name": "item",
       "type": "string",
       "title": "Item"
     },
     {
+      "id": "pbbjj1y86736f",
       "name": "amount",
       "type": "number",
       "title": "Amount",
@@ -21,13 +24,14 @@
       "description": "Money in is positive, money out negative."
     },
     {
+      "id": "xygoknprkk9ku",
       "name": "balance",
       "type": "number",
       "title": "Balance",
       "format": "currency:GBP",
       "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
       "computed": {
-        "expr": "(sum (at \"balance\" -1 \"by-date\") amount)",
+        "expr": "(sum (at \"balance\" -1 \"7wxsrxd9g5oa5smry9tmfahdzs\") amount)",
         "dialect": "table-expr-v1"
       }
     }

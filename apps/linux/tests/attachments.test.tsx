@@ -16,7 +16,7 @@ describe("attachments on Linux", () => {
   it("a gallery leads with each row's image, read from its table's attachments folder", async () => {
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
     const companies: ParsedTable = library.tables["crm/companies"]!;
-    const shown = showView(library.tables, "crm/companies", companies.views.find((v) => v.id === "logos")!);
+    const shown = showView(library.tables, "crm/companies", companies.views.find((v) => v.id === "7cpm7hu37hhoyip8dqp5xrikgi")!);
     await render(
       <DisplaySettingsProvider value={{}}>
         <AttachmentsProvider value={(file) => attachmentPath(companies, file)}>
@@ -34,7 +34,7 @@ describe("attachments on Linux", () => {
   it("without a way to find the files, a gallery shows the file names instead", async () => {
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
     const companies = library.tables["crm/companies"]!;
-    const shown = showView(library.tables, "crm/companies", companies.views.find((v) => v.id === "logos")!);
+    const shown = showView(library.tables, "crm/companies", companies.views.find((v) => v.id === "7cpm7hu37hhoyip8dqp5xrikgi")!);
     await render(
       <DisplaySettingsProvider value={{}}>
         <GalleryView view={shown.view} rows={shown.rows} schema={companies.schema} />
@@ -47,7 +47,7 @@ describe("attachments on Linux", () => {
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
     const companies = library.tables["crm/companies"]!;
     const rows = companies.rows.slice(0, 2).map((r, i) => ({ ...r, logo: i === 0 ? "gone.png" : "contract.pdf" }));
-    const shown = showView({ ...library.tables, "crm/companies": { ...companies, rows } }, "crm/companies", companies.views.find((v) => v.id === "logos")!);
+    const shown = showView({ ...library.tables, "crm/companies": { ...companies, rows } }, "crm/companies", companies.views.find((v) => v.id === "7cpm7hu37hhoyip8dqp5xrikgi")!);
     await render(
       <DisplaySettingsProvider value={{}}>
         <AttachmentsProvider value={(file) => attachmentPath(companies, file)}>

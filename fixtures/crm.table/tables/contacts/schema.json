@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "rghwqogkxjjs8",
       "name": "name",
       "type": "string",
       "title": "Name",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "mabuakau8tjug",
       "name": "company",
       "type": "string",
       "title": "Company",
@@ -18,6 +20,7 @@
       }
     },
     {
+      "id": "rrw119rwcjag3",
       "name": "email",
       "type": "string",
       "title": "Email",
@@ -27,6 +30,7 @@
       }
     },
     {
+      "id": "ew5t3j3xky8qc",
       "name": "phone",
       "type": "string",
       "title": "Phone",
@@ -34,11 +38,13 @@
       "description": "Stored as text: a phone number is not a number."
     },
     {
+      "id": "8hq1hqqttndpp",
       "name": "role",
       "type": "string",
       "title": "Role"
     },
     {
+      "id": "mbexdidzxnusp",
       "name": "last_contacted",
       "type": "datetime",
       "title": "Last contacted",

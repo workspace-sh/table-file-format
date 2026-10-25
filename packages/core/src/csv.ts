@@ -14,6 +14,7 @@
  * represented at all. Call `csvExportWarnings()` to surface what a
  * given table would lose before exporting.
  */
+import { withFieldIds } from "./fieldIds.js";
 import type { Field, ParsedTable, Row, TableSchema } from "./types.js";
 import Papa from "papaparse";
 import { newId } from "./id.js";
@@ -333,6 +334,7 @@ export function tableFromCSV(csv: string, options: TableFromCSVOptions = {}): Ta
     }
     return row;
   });
-  return { schema: { fields: columns.map((c) => c.field) }, rows, extraCells };
+  // Each field with its id (D62), from its name: a sheet read twice reads the same.
+  return { schema: withFieldIds({ fields: columns.map((c) => c.field) }), rows, extraCells };
 }
 
