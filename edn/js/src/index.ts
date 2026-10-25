@@ -66,7 +66,17 @@ type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; 
 
 /** A table as `computeTables` takes it: `.table`'s schema fields (only what's read) and rows. */
 export interface TableIn {
-  schema: { fields: { name: string; type?: string; computed?: { expr: string; dialect: string }; relation?: { table: string; cardinality?: string } }[] };
+  schema: {
+    fields: {
+      name: string;
+      type?: string;
+      computed?: { expr: string; dialect: string };
+      relation?: { table: string; cardinality?: string };
+      constraints?: { enum?: readonly (string | { value: string })[] };
+    }[];
+  };
+  /** Its views: the Sheet views among them are grids its formulas, and others', read by place (D41). */
+  views?: readonly { id: string; layout?: string; coordinates?: boolean; fields?: readonly string[]; order?: readonly string[]; sort?: readonly { field: string; direction: string }[]; group?: { field: string } }[];
   rows: readonly ({ id: string } & Record<string, unknown>)[];
   /** Its cells' own formulas and notes (D52, D57). */
   cells?: readonly { id: string; field: string; expr?: string; dialect?: string }[];
@@ -131,8 +141,13 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
           ...(objects ? { host: true } : {}),
           ...(iteration && typeof iteration.max === "number" ? { iteration: { max: iteration.max, change: typeof iteration.change === "number" ? iteration.change : 0 } } : {}),
           ids: t.rows.map((r) => r.id),
+          // Its Sheet views: a table layout with lettered columns and numbered rows (D41).
+          views: (t.views ?? [])
+            .filter((v) => v.layout === "table" && v.coordinates === true)
+            .map((v) => ({ id: v.id, ...(v.fields ? { fields: v.fields } : {}), order: v.order ?? [], sort: v.sort ?? [], ...(v.group ? { group: v.group.field } : {}) })),
           fields: t.schema.fields.map((f) => {
-            const kind = { type: f.type ?? "string", ...(f.relation?.cardinality === "many" ? { many: true } : {}) };
+            const values = f.constraints?.enum?.map((e) => (typeof e === "string" ? e : e.value));
+            const kind = { type: f.type ?? "string", ...(f.relation?.cardinality === "many" ? { many: true } : {}), ...(values?.length ? { enum: values } : {}) };
             if (f.computed) return { name: f.name, ...kind, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };
             const cells = t.rows.map((r) => r[f.name]);
             const numbers = numbersOnly(cells, cells.length);

@@ -61,7 +61,7 @@ export interface ComputeOptions {
  */
 export interface FormulaEngine {
   computeTables(
-    tables: Record<string, { schema: TableSchema; rows: readonly Row[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } }>,
+    tables: Record<string, { schema: TableSchema; rows: readonly Row[]; views?: readonly View[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } }>,
     clock?: { now?: Date },
     only?: readonly string[],
   ): Record<string, Record<string, unknown[]> | "host">;
@@ -692,7 +692,7 @@ function byEngine(
   const iteration = iterationOf(options);
   const tables = {
     ...options.tables,
-    [self]: { schema, rows, ...(cells ? { cells } : {}), meta: iteration ? { iteration } : {} },
+    [self]: { schema, rows, views: options.views ?? options.tables?.[self]?.views ?? [], ...(cells ? { cells } : {}), meta: iteration ? { iteration } : {} },
   };
   const got = e.computeTables(tables, options.now ? { now: options.now } : {}, [self])[self];
   if (!got || got === "host") return null;

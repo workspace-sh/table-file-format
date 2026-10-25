@@ -223,10 +223,10 @@ fn compare(a: &Key, b: &Key, f: &SortField) -> Ordering {
 
 /// A Sheet view's grid order, as the file index of the row at each place, and its groups (start from 1,
 /// count). `read` gives a row's value of a field; `id` its id.
-pub fn arrange(
+pub fn arrange<'a>(
     count: usize,
     view: &SheetView,
-    field: &dyn Fn(&str) -> SortField,
+    field: &dyn Fn(&str) -> SortField<'a>,
     read: &mut dyn FnMut(usize, &str) -> Value,
     id: &dyn Fn(usize) -> String,
 ) -> Vec<usize> {
@@ -270,13 +270,14 @@ pub fn arrange(
     let mut keys: Vec<String> = Vec::new();
     let mut buckets: HashMap<String, Vec<usize>> = HashMap::default();
     for i in arranged {
-        let v = read(i, group);
-        let k = if v.is_empty() || matches!(&v, Value::List(items) if items.is_empty()) { EMPTY.to_string() } else { js_string(&v) };
-        buckets.entry(k.clone()).or_insert_with(|| {
-            keys.push(k);
-            Vec::new()
-        });
-        buckets.get_mut(&js_key(&v)).map(|b| b.push(i));
+        let k = group_key(&read(i, group));
+        buckets
+            .entry(k.clone())
+            .or_insert_with(|| {
+                keys.push(k);
+                Vec::new()
+            })
+            .push(i);
     }
     let declared = field(group).enum_values.to_vec();
     let mut order = Vec::new();
@@ -287,7 +288,8 @@ pub fn arrange(
     order
 }
 
-fn js_key(v: &Value) -> String {
+/// A row's group: its value as text, `(empty)` for an empty one or an empty list.
+fn group_key(v: &Value) -> String {
     if v.is_empty() || matches!(v, Value::List(items) if items.is_empty()) {
         "(empty)".to_string()
     } else {
@@ -343,8 +345,11 @@ mod tests {
     #[test]
     fn instants_as_date_parse_gives_them() {
         assert_eq!(instant_of("1970-01-01T00:00:00Z"), 0.0);
-        assert_eq!(instant_of("2026-10-24T12:00:00.5+02:00"), 1_761_300_000_500.0);
-        assert_eq!(instant_of("2026-10-24T10:00:00"), 1_761_300_000_000.0);
+        assert_eq!(instant_of("2026-10-24T12:00:00.5+02:00"), 1_792_836_000_500.0);
+        assert_eq!(instant_of("2026-10-24T10:00:00"), 1_792_836_000_000.0);
+        assert_eq!(instant_of("2026-10-24t10:00:00z"), 1_792_836_000_000.0);
+        assert_eq!(instant_of("2026-10-24T12:00:00.123456Z"), 1_792_843_200_123.0);
+        assert!(instant_of("2026-01-01T23:59:60Z").is_nan());
         assert!(instant_of("2026-10-24").is_nan());
     }
 }
