@@ -200,3 +200,18 @@ describe("resolveRow", () => {
     assert.equal(row?.id, "p1");
   });
 });
+
+describe("escaping (SPEC section 10)", () => {
+  it("an id any string may be survives the round trip", () => {
+    const addr: Address = { tablePath: "crm.table", tableName: "deals & co", rowId: "a&b=c#d%e/f", fieldName: "net = gross" };
+    const text = formatAddress(addr);
+    assert.equal(text, "crm.table#table=deals%20%26%20co&row=a%26b%3Dc%23d%25e%2Ff&field=net%20%3D%20gross");
+    assert.deepEqual(parseAddress(text), addr);
+  });
+
+  it("a writer's own ids read the same, encoded or not", () => {
+    assert.equal(formatAddress({ tablePath: "crm.table", tableName: "deals", rowId: "dl-1" }), "crm.table#table=deals&row=dl-1");
+    // Written before values were encoded, and not valid percent-encoding: read as it stands.
+    assert.equal(parseAddress("crm.table#row=50%off")?.rowId, "50%off");
+  });
+});
