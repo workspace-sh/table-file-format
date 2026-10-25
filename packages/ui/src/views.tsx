@@ -69,6 +69,7 @@ import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
 import { fieldHint, fieldHintText } from "./fieldHintFacts";
 import { FieldHint, Hinted } from "./FieldHint";
+import { ErrorMark } from "./internal/ErrorMark";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
 import { AttachmentImage } from "./internal/AttachmentImage";
 import {
@@ -2003,10 +2004,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
         );
       }
     case "error":
-      // A warning mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
+      // Its kind's mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
       return (
-        <Hinted hint={shown.explanation}>
-          <html.span style={styles.formulaError}>{`\u26A0\uFE0E ${inPanel ? shown.withCode : shown.text}`}</html.span>
+        <Hinted hint={shown.explanation} style={styles.formulaError} box>
+          <ErrorMark group={shown.group} />
+          <html.span style={styles.formulaError}>{inPanel ? shown.withCode : shown.text}</html.span>
         </Hinted>
       );
     case "pills": {
