@@ -64,14 +64,16 @@ describe("a formula cell on Linux", () => {
     schema.fields.find((f) => f.name === "quarter")!.computed!.expr = "(+ jan feb mar (* quarter 0))";
     writeFileSync(schemaFile, JSON.stringify(schema));
     await openSheet();
-    // Excel style, the default: the same plain words, marked; the hover begins with the code (#685).
-    const loop = (await screen.findAllByText("\u26A0\uFE0E Loops back on itself"))[0]!;
-    expect(loop.getTooltipText()).toBe(
+    // Excel style, the default: the same plain words after their kind's mark; the hover begins with the code (#685).
+    const loop = (await screen.findAllByText("Loops back on itself"))[0]!;
+    // The loop's mark before it (#685).
+    expect(loop.getPrevSibling()).toBeInstanceOf(Gtk.Image);
+    expect(loop.getParent()!.getTooltipText()).toBe(
       "#REF!: This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.",
     );
     await userEvent.click(loop);
     // The panel says the code beside the words.
-    expect((await screen.findAllByText("\u26A0\uFE0E Loops back on itself · #REF!")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Loops back on itself · #REF!")).length).toBeGreaterThan(0);
     await userEvent.click(await screen.findByText("Repeat Until It Settles"));
     const iteration = async () => (await parseTable(join(bundle, "tables", "budget"))).meta?.iteration;
     await waitFor(async () => expect(await iteration()).toEqual({ max: 100, change: 0.001 }));
@@ -180,7 +182,7 @@ describe("a formula cell on Linux", () => {
     mkdirSync(join(table, "cells"), { recursive: true });
     writeFileSync(join(table, "cells", "0001.ndjson"), JSON.stringify({ id: "rent", field: "paid", expr: "(+ 1 1)" }) + "\n");
     await openSheet();
-    const paid = await screen.findByText("\u26A0\uFE0E Not true or false");
-    expect(paid.getTooltipText()).toBe("#VALUE!: The formula gave 2, and this column holds true or false. Open the formula to change it.");
+    const paid = await screen.findByText("Not true or false");
+    expect(paid.getParent()!.getTooltipText()).toBe("#VALUE!: The formula gave 2, and this column holds true or false. Open the formula to change it.");
   });
 });
