@@ -74,21 +74,22 @@ have a formula of their own: 250,000 distinct formulas. Read once each
 
 ### Formulas computed inside the core
 
-Whole bundles go in once (row ids, stored columns, formulas, relations) and
-every formula column comes out once. Same results as `.table`'s workbook
-(`computeRows`), value for value and message for message: every fixture
-bundle, deliberately awkward values, and relations gone wrong
-(`js/src/evaluate.test.ts`). 21 of the fixtures' 22 formulas are the core's;
-the one reading a Sheet place (`at`) stays with `.table`'s workbook.
+Whole bundles go in once (row ids, stored columns, formulas, relations,
+Sheet views) and every formula column comes out once. Same results as
+`.table`'s workbook (`computeRows`), value for value and message for
+message: every fixture bundle, deliberately awkward values, relations gone
+wrong, and Sheet places down 3,000-row grids (`js/src/evaluate.test.ts`).
+In table-core's own tests every formula is checked the same way
+(`node --import tsx --import ../../edn/js/src/check-engine.ts --test
+src/**/*.test.ts` in packages/core).
 
-Cells' own formulas (D52), with the same type check a typed value gets,
-loops worked out by iteration (D60), and the clock and chance (`today`,
-`now`, `rand`, D55) are the core's too. The host gives the one moment
-(its own date, and the instant in UTC) and a seed for chance. A host that
-gives no moment leaves a table reading the clock to its own evaluator, and
-so does a cell's formula in a GeoJSON field. Either way every table
-related to it goes with it (by a relation or a `linked`): a value read
-across from the host's table has to be the host's.
+What the core works out: fields' formulas, cells' own (D52, with the type
+check a typed value gets), loops by iteration (D60), the clock and chance
+(D55: the host gives the moment and a seed), and Sheet places (D41: `at`,
+`range`, `row`, `rows`, a long running total worked down its grid rather
+than by recursion). The host's evaluator still works out a table holding
+objects or a cell's formula in a GeoJSON field, and a table reading the
+clock when the host gives no moment, with every table related to it.
 
 100,000 deals pointing at 2,000 companies (a row formula, a lookup through
 the relation, two rollups back), everything included (columns in, results
