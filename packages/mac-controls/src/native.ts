@@ -19,6 +19,7 @@ interface TableMacControlsModule {
   setSettingsForm(json: string): void;
   setInspectorShown(shown: boolean): void;
   chooseMany(options: { value: string; label: string; color?: string }[], selected: string[], rect: { x: number; y: number; width: number; height: number }, anchor: string | null): Promise<null>;
+  chooseOne(options: { value: string; label: string; color?: string }[], selected: string | null, anchor: string | null, at: { x: number; y: number } | null): Promise<string | null>;
   chooseManyClose(): void;
 }
 
@@ -121,6 +122,21 @@ export function chooseMany(
     () => sub?.remove(),
     () => sub?.remove(),
   );
+}
+
+/**
+ * One choice, in the same popover as several, pointing at the view whose
+ * `nativeID` is `anchor`, else at `at`, else at the last click. Resolves the
+ * value picked, or null when it closed without one.
+ */
+export function chooseOne(
+  options: { value: string; label: string; color?: string }[],
+  selected: string | null,
+  anchor: string | null,
+  at: { x: number; y: number } | null = null,
+): Promise<string | null> {
+  if (!native) return Promise.resolve(null);
+  return native.chooseOne(options, selected, anchor, at);
 }
 
 /** Close the popover of several choices, if one is open. */

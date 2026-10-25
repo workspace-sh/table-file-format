@@ -3,6 +3,10 @@
 // with its tick and its tag, toggled as it's clicked, the list staying
 // open until a click outside, Escape or Return. It's a quick choice, so a
 // popover, not the inspector. src/index.tsx's MacChooseMany opens it.
+//
+// One choice (MacSelect) is the same list, so a choice looks the same
+// whichever kind of field it is: its tags and its tick, and a click that
+// picks it and closes.
 
 import AppKit
 import SwiftUI
@@ -24,17 +28,43 @@ public final class TableChoicePicker: NSObject, NSPopoverDelegate {
     toggled: @escaping (String) -> Void,
     done: @escaping () -> Void
   ) {
+    present(options: options, selected: selected, rect: rect, in: view, single: false, toggled: toggled, done: done)
+  }
+
+  /// One of `options`, `selected` ticked: a click picks it (`chosen`) and closes.
+  @objc public func showOne(
+    options: [[String: Any]],
+    selected: String?,
+    rect: NSRect,
+    in view: NSView,
+    chosen: @escaping (String) -> Void,
+    done: @escaping () -> Void
+  ) {
+    present(options: options, selected: selected.map { [$0] } ?? [], rect: rect, in: view, single: true, toggled: chosen, done: done)
+  }
+
+  private func present(
+    options: [[String: Any]],
+    selected: [String],
+    rect: NSRect,
+    in view: NSView,
+    single: Bool,
+    toggled: @escaping (String) -> Void,
+    done: @escaping () -> Void
+  ) {
     close()
     let model = ChoicesModel(
       options: options.compactMap { o in
         guard let value = o["value"] as? String else { return nil }
         return Choice(value: value, label: o["label"] as? String ?? value, color: o["color"] as? String)
       },
-      selected: Set(selected)
+      selected: Set(selected),
+      single: single
     )
     model.toggled = toggled
     let popover = NSPopover()
     let host = NSHostingController(rootView: ChoicesList(model: model, close: { [weak self] in self?.close() }))
+    if single { model.picked = { [weak self] in self?.close() } }
     host.sizingOptions = .preferredContentSize
     popover.contentViewController = host
     popover.behavior = .transient
@@ -68,14 +98,24 @@ private struct Choice: Identifiable, Equatable {
 private final class ChoicesModel: ObservableObject {
   let options: [Choice]
   @Published var selected: Set<String>
+  /// One choice: a click picks it and the list closes.
+  let single: Bool
   var toggled: (String) -> Void = { _ in }
+  var picked: () -> Void = {}
 
-  init(options: [Choice], selected: Set<String>) {
+  init(options: [Choice], selected: Set<String>, single: Bool = false) {
     self.options = options
     self.selected = selected
+    self.single = single
   }
 
   func toggle(_ value: String) {
+    if single {
+      selected = [value]
+      toggled(value)
+      picked()
+      return
+    }
     if selected.contains(value) { selected.remove(value) } else { selected.insert(value) }
     toggled(value)
   }
@@ -130,7 +170,8 @@ private struct ChoicesList: View {
     }
     .onKeyPress(.return) { close(); return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .onAppear { focused = model.options.first?.value }
+    // On the chosen one, when there is one, as a pop-up menu opens on its tick.
+    .onAppear { focused = model.options.first { model.selected.contains($0.value) }?.value ?? model.options.first?.value }
   }
 
   private func move(_ by: Int) {
@@ -147,12 +188,20 @@ private struct Tag: View {
 
   var body: some View {
     let tint = colour(choice.color)
-    Text(choice.label)
-      .font(.system(size: 12, weight: .medium))
-      .foregroundStyle(choice.color == nil ? Color.primary : tint)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 2)
-      .background(Capsule().fill(tint.opacity(choice.color == nil ? 0.12 : 0.22)))
+    if choice.value.isEmpty {
+      // No choice: its word, not a tag.
+      Text(choice.label)
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 2)
+    } else {
+      Text(choice.label)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(choice.color == nil ? Color.primary : tint)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(tint.opacity(choice.color == nil ? 0.12 : 0.22)))
+    }
   }
 
   /// The table's choice colours (EnumColor) as the system's.

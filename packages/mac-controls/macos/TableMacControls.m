@@ -401,4 +401,44 @@ RCT_EXPORT_METHOD(chooseManyClose)
   [TableChoicePicker.shared close];
 }
 
+/// One of `options` ({value, label, color?}) in the same popover as several, `selected` ticked,
+/// pointing at the view React marked `anchor`, else at `at` (a point in the surface React
+/// measures in), else at the last click. Resolves the value picked, or null when it closed
+/// without one.
+RCT_EXPORT_METHOD(chooseOne:(NSArray<NSDictionary *> *)options
+                  selected:(nullable NSString *)selected
+                  anchor:(nullable NSString *)anchor
+                  at:(nullable NSDictionary *)at
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  __block NSString *picked = nil;
+  void (^chosen)(NSString *) = ^(NSString *value) {
+    picked = value;
+  };
+  void (^done)(void) = ^{
+    resolve(picked ?: (id)[NSNull null]);
+  };
+  NSWindow *window = CurrentWindow();
+  NSView *anchored = AnchorIn(window, anchor);
+  if (anchored != nil) {
+    [TableChoicePicker.shared showOneWithOptions:options selected:selected rect:anchored.bounds in:anchored chosen:chosen done:done];
+    return;
+  }
+  NSView *root = CurrentReactRoot();
+  if (at != nil && root != nil) {
+    double y = [at[@"y"] doubleValue];
+    NSRect rect = NSMakeRect([at[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y, 1, 1);
+    [TableChoicePicker.shared showOneWithOptions:options selected:selected rect:rect in:root chosen:chosen done:done];
+    return;
+  }
+  NSView *view = window.contentView;
+  if (view == nil) {
+    resolve([NSNull null]);
+    return;
+  }
+  NSPoint point = [view convertPoint:RecentClickIn(window) ? lastClick : window.mouseLocationOutsideOfEventStream fromView:nil];
+  [TableChoicePicker.shared showOneWithOptions:options selected:selected rect:NSMakeRect(point.x, point.y, 1, 1) in:view chosen:chosen done:done];
+}
+
 @end

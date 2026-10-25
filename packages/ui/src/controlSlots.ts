@@ -46,6 +46,8 @@ export interface SelectOption {
   value: string;
   label: string;
   disabled?: boolean;
+  /** A choice's colour (EnumColor), for a control that draws choices as tags. */
+  color?: string;
 }
 
 /**
