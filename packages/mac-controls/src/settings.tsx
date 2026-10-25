@@ -1,13 +1,50 @@
 // The Mac's settings forms, for table-ui's Sheet and SettingsForm slots:
 // a field's settings, a new field, and the view's settings are described
-// by table-ui as sections of rows, which the inspector draws as the
-// system's own form (native/TablePanels/TableSettingsForm.swift), as the
-// iOS app does with SwiftUI's. Nothing is drawn here: the form on screen
-// is sent to the inspector, and what's done in it comes back by row.
+// by table-ui as sections of rows, which the window's inspector draws as
+// the system's own form (macos/TableSettingsForm.swift), as the iOS app
+// does with SwiftUI's. Nothing is drawn here: the form on screen is sent
+// to the inspector, and what's done in it comes back by row.
+//
+// The inspector is the package's own (macos/TableInspector.swift), which a
+// host adds to its window; an app with an inspector of its own (the .table
+// demo) hands its way there instead (setSettingsTransport).
 
 import { createContext, useContext, useEffect, useId, useRef, type ReactElement } from "react";
 import type { SettingsFormProps, SettingsRow, SettingsSection, SheetProps, SheetSlot } from "@workspace.sh/table-ui/shared";
-import { setInspectorShown, setSettingsForm, type SettingsFormEvent } from "./nativeSidebar";
+import { onSettingsForm, setInspectorShown as nativeShown, setSettingsForm as nativeForm } from "./native";
+
+/** What the inspector's settings form reports: a row changed, submitted, toggled or pressed; a compound row removed or moved; Cancel or the confirming button; the inspector closed. */
+export interface SettingsFormEvent {
+  what: "change" | "submit" | "toggle" | "press" | "remove" | "move" | "cancel" | "confirm" | "closed";
+  /** The row it was on. */
+  id?: string;
+  value?: string | boolean;
+  /** The section a compound row was removed from or moved in, and where. */
+  section?: string;
+  index?: number;
+  from?: number;
+  to?: number;
+}
+
+/** How a form reaches the inspector: the package's own, unless the app has its own inspector. */
+export interface SettingsTransport {
+  /** The form to show, as JSON (TableSettingsForm.swift); null for none. */
+  setForm: (json: string | null) => void;
+  setShown: (shown: boolean) => void;
+}
+
+let transport: SettingsTransport = { setForm: (json) => nativeForm(json ?? ""), setShown: nativeShown };
+let stopListening: (() => void) | null = onSettingsForm<SettingsFormEvent>(onSettingsFormEvent);
+
+/**
+ * An app whose inspector is its own: forms go there, and it passes what's
+ * done in them to onSettingsFormEvent. Once, before anything is drawn.
+ */
+export function setSettingsTransport(own: SettingsTransport): void {
+  transport = own;
+  stopListening?.();
+  stopListening = null;
+}
 
 type SheetFacts = Pick<SheetProps, "title" | "cancel" | "confirm" | "onDismiss">;
 
@@ -50,6 +87,7 @@ function find(rows: SettingsRow[], id: string): SettingsRow | undefined {
 export function onSettingsFormEvent(e: SettingsFormEvent): void {
   if (!shown) return;
   const { sections, sheet } = shown;
+  if (e.what === "closed") return sheet.onDismiss();
   if (e.what === "cancel") return sheet.cancel?.onPress();
   if (e.what === "confirm") return sheet.confirm?.onPress();
   if (e.what === "remove" || e.what === "move") {
@@ -122,16 +160,16 @@ function SettingsFormView({ sections }: SettingsFormProps): ReactElement {
     const next = json(owner, sections, sheet);
     if (next !== sent.current) {
       sent.current = next;
-      setSettingsForm(next);
+      transport.setForm(next);
     }
   });
   useEffect(() => {
-    setInspectorShown(true);
+    transport.setShown(true);
     return () => {
       // Unless another form has taken its place since.
       if (shown?.owner === owner) {
         shown = null;
-        setSettingsForm(null);
+        transport.setForm(null);
       }
     };
   }, [owner]);

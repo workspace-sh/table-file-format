@@ -71,7 +71,7 @@ import {
   type ShownFile,
   storedTableRows,
 } from "@workspace.sh/table-app";
-import { useTableApp } from "@workspace.sh/table-app/react";
+import { useSearchBehind, useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
@@ -560,14 +560,16 @@ export function App() {
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there, in a worker.
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: browserLocale, attachmentsOf }).shown.view, tell });
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: browserLocale, attachmentsOf }).shown.view, tell });
   saveIndexed.current = indexed.save;
   // A table's history, as this browser keeps it beside the table: the Files side lists and shows it.
   const historyText = (key: string): string | undefined => {
     const store = browserStore();
     return (store && storedHistory(store, key)) || undefined;
   };
-  const derived = derive(state, {
+  const derived = derive(behind, {
     locale: browserLocale,
     attachmentsOf,
     hasHistory: (key) => historyText(key) !== undefined,

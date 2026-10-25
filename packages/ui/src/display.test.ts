@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -77,6 +77,9 @@ test("columns fill the table exactly, resized ones keep their width, and narrow 
   // Not asked to squeeze, columns keep the comfortable width: the same four in 642 scroll.
   assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2)("a"), 180);
   assert.equal(scrolls("a"), 180);
+  // Asked to hold the squeezed width past it (a framed table), they stay 140 and the table scrolls.
+  assert.equal(columnWidths(["a", "b", "c", "d"], {}, 558, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH)("a"), 140);
+  assert.equal(columnWidths(["a", "b", "c", "d"], {}, 642, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH)("a"), 160);
 });
 
 test("widening a column makes the table wider, and leaves the others as they were", () => {
@@ -121,4 +124,79 @@ test("a sheet's row numbers fit on one line: the gutter is as wide as the larges
   // 1,000,001 has seven digits: room for seven tabular figures at 11 points, with the padding.
   assert.ok(rowNumberWidth(1_000_001) >= 7 * 6.6 + 12);
   assert.equal(rowNumberWidth(1_000_001), rowNumberWidth(9_999_999));
+});
+
+test("columns fill the table when none overflows it, so the layout can share its width", () => {
+  // Shared exactly, squeezed or not, and with a column narrowed.
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 1002, 2), true);
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 642, 2, SQUEEZED_CELL_WIDTH), true);
+  assert.equal(columnsFill(["a", "b", "c", "d"], { a: 100 }, 1002, 2), true);
+  // Wider than the table (it scrolls): comfortable columns, or one widened.
+  assert.equal(columnsFill(["a", "b", "c", "d"], {}, 558, 2, SQUEEZED_CELL_WIDTH), false);
+  assert.equal(columnsFill(["a", "b", "c", "d"], { a: 400 }, 1002, 2), false);
+  // Not measured yet, or nothing left to share.
+  assert.equal(columnsFill(["a", "b"], {}, 0, 2), false);
+  assert.equal(columnsFill(["a", "b"], { a: 300, b: 300 }, 602, 2), false);
+});
+
+test("each column squeezes as far as what it holds allows, the narrow ones first", () => {
+  const schema = {
+    fields: [
+      { name: "title", type: "string" as const },
+      { name: "done", type: "boolean" as const },
+      { name: "stage", type: "string" as const, constraints: { enum: ["Lead", "Won"] } },
+      { name: "value", type: "number" as const, format: "currency:USD" },
+      { name: "notes", type: "string" as const, format: "markdown" },
+      { name: "due", type: "date" as const },
+    ],
+  };
+  const f = (name: string) => schema.fields.find((x) => x.name === name);
+  assert.deepEqual(
+    ["title", "done", "stage", "value", "notes", "due"].map((n) => squeezedWidthOf(f(n), schema, n === "title")),
+    [180, 100, 110, 150, 180, 110],
+  );
+  const least = (n: string) => squeezedWidthOf(f(n), schema, n === "title");
+  const names = ["title", "done", "stage", "value"];
+  // Room for 200 each: an even share.
+  const roomy = columnWidths(names, {}, 802, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(roomy), [200, 200, 200, 200]);
+  // 560: the title holds 180, the amount 150, and the checkbox and choice share the rest.
+  const tight = columnWidths(names, {}, 562, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(tight), [180, 115, 115, 150]);
+  assert.equal(names.map(tight).reduce((a, b) => a + b, 0), 560);
+  // Past their sum (540), each holds its own and the table scrolls.
+  const scrolls = columnWidths(names, {}, 500, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(scrolls), [180, 100, 110, 150]);
+  // A column dragged wider widens the table; the others keep what they had.
+  const wider = columnWidths(names, { title: 400 }, 802, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least);
+  assert.deepEqual(names.map(wider), [400, 200, 200, 200]);
+});
+
+test("a table's columns stop at their natural widths, and share less by them", () => {
+  const schema = {
+    fields: [
+      { name: "title", type: "string" as const },
+      { name: "done", type: "boolean" as const },
+      { name: "stage", type: "string" as const, constraints: { enum: ["Lead", "Won"] } },
+      { name: "value", type: "number" as const, format: "currency:USD" },
+    ],
+  };
+  const f = (name: string) => schema.fields.find((x) => x.name === name);
+  const names = ["title", "done", "stage", "value"];
+  const least = (n: string) => squeezedWidthOf(f(n), schema, n === "title");
+  const most = (n: string) => roomiestWidthOf(f(n), schema, n === "title");
+  assert.deepEqual(names.map(most), [240, 100, 180, 180]);
+  // A wide window: each at its natural width, and the table (700) ends there.
+  const wide = columnWidths(names, {}, 1602, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least, most);
+  assert.deepEqual(names.map(wide), [240, 100, 180, 180]);
+  // Less room than that: shared by those widths, none under its least, filling it.
+  const tight = columnWidths(names, {}, 602, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least, most);
+  assert.equal(names.map(tight).reduce((a, b) => a + b, 0), 600);
+  for (const n of names) assert.ok(tight(n) >= least(n) && tight(n) <= most(n), n);
+  // A resized column keeps its width; the others still stop at theirs.
+  const resized = columnWidths(names, { stage: 300 }, 1602, 2, SQUEEZED_CELL_WIDTH, SQUEEZED_CELL_WIDTH, least, most);
+  assert.deepEqual(names.map(resized), [240, 100, 300, 180]);
+  // Without the squeezed widths (a phone), never past the comfortable width or a title's.
+  const phone = columnWidths(names, {}, 1602, 2, SQUEEZED_CELL_WIDTH, undefined, undefined, most);
+  assert.deepEqual(names.map(phone), [240, 180, 180, 180]);
 });

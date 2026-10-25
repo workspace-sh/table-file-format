@@ -1,5 +1,6 @@
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
+import { KeyboardOnShow } from "./keyboardOnShow";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
@@ -25,6 +26,8 @@ import {
   MIN_RESIZED_COLUMN_WIDTH,
   rowNumberWidth,
   SQUEEZED_CELL_WIDTH,
+  squeezedWidthOf,
+  roomiestWidthOf,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
@@ -115,6 +118,7 @@ import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { onWindowResize } from "./internal/onWindowResize";
 import { useCompactSide, useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
+import { passThrough } from "./internal/passThrough";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
@@ -192,6 +196,11 @@ function hasWindowSize(): boolean {
 const GROUP_ROW_HEIGHT = 32;
 /** The line under each row (tableRow's borderBottomWidth). */
 const ROW_BORDER = 1;
+/** The line at the frozen column's end (frozenEdge's borderInlineEndWidth). */
+const FROZEN_EDGE = 1;
+
+/** A board column's width: one width, whatever the board's, so a scroll comes to rest on one (with BOARD_GAP between). */
+const BOARD_COLUMN_WIDTH = 280;
 
 const styles = css.create({
   // Table
@@ -230,6 +239,10 @@ const styles = css.create({
   tablePaneFit: {
     display: "flex",
     flexDirection: "column",
+  },
+  // Edge to edge, filling the width: grown to what's around it.
+  fitGrow: {
+    flexGrow: 1,
   },
   bleedRow: {
     display: "flex",
@@ -290,25 +303,36 @@ const styles = css.create({
   // The line between the frozen column and the scrolling pane. On the
   // frozen pane's rows, not the pane, so it stops at the last row: the
   // "+ New row" band under it is open space, not another row.
-  // The column lines' strips (columnLines): a box of no size over the pane,
-  // each strip a zero-width line at its column's end, its handle on the end
-  // edge as a header's is.
+  // The column lines' strips (columnLines): a row over the pane laid out as
+  // its rows are, a slot for each column that clicks pass through, each
+  // strip a zero-width line at its slot's end, its handle on the end edge as
+  // a header's is. Laid out with the columns, the lines move with them as a
+  // window is resized, not once the table is measured again.
   columnLines: {
     position: "absolute",
     top: 0,
     bottom: 0,
     insetInlineStart: 0,
-    width: 0,
+    insetInlineEnd: 0,
+    display: "flex",
+    flexDirection: "row",
     zIndex: 4,
+  },
+  columnLineSlot: {
+    position: "relative",
+    flexShrink: 0,
   },
   columnLine: {
     position: "absolute",
     top: 0,
     bottom: 0,
+    insetInlineEnd: 0,
     width: 0,
+    pointerEvents: "auto",
   },
-  columnLineAt: (x: number) => ({
-    insetInlineStart: x,
+  // The frozen column's rows end in its line (frozenEdge).
+  columnLinesEnd: (w: number) => ({
+    marginInlineEnd: w,
   }),
   frozenEdge: {
     borderInlineEndWidth: 1,
@@ -322,12 +346,32 @@ const styles = css.create({
   // content unless told it may shrink; without minWidth 0 it takes the
   // whole table's width, HScroll inside it never overflows, and the
   // table's rounded overflow: hidden cuts the far columns off.
-  tableScrollOuter: {
+  tableScrollBeside: {
     display: "flex",
     flexDirection: "column",
-    flex: 1,
     minWidth: 0,
   },
+  // Beside the frozen column: as wide as its columns' shares (`grow`, one
+  // each) and what it holds at a fixed width (`basis`).
+  paneShare: (grow: number, basis: number) => ({
+    flexGrow: grow,
+    flexShrink: 1,
+    flexBasis: basis,
+  }),
+  // The frozen column, when its column shares the width: one share, on what
+  // it holds at a fixed width (`basis`: row numbers, its line); never
+  // narrower than a column can be squeezed to.
+  frozenShare: (basis: number, least: number, grow: number) => ({
+    flexGrow: grow,
+    flexShrink: 0,
+    flexBasis: basis,
+    minWidth: least,
+  }),
+  // The columns that scroll are never narrower than they can be squeezed
+  // to: past that, the pane is wider than its frame and scrolls.
+  paneLeast: (w: number) => ({
+    minWidth: w,
+  }),
   tableScrollPane: {
     display: "flex",
     flexDirection: "column",
@@ -339,6 +383,42 @@ const styles = css.create({
   // Applied at use-site to both header and body cells so columns align.
   cellWidth: (w: number) => ({
     width: w,
+  }),
+  // A table grows with its space only as far as its columns' natural widths.
+  frameMost: (w: number) => ({
+    maxWidth: w,
+  }),
+  // A column that shares the table's width with the others nobody resized,
+  // in the layout: it follows the window as it's resized, in the same pass
+  // as the text around it, rather than once the table is measured again.
+  // Never narrower than `least` (as narrow as a column can be squeezed):
+  // past that, it holds its width and the columns beside the frozen one scroll.
+  // No width of its own (width and basis 0), so what's in a cell never
+  // widens it: every row of a table shares its width the same way, its
+  // header, its rows and its totals alike, whatever each holds.
+  // Columns grow by their natural widths (`grow`), so a frame as wide as
+  // those (`frameMost`) has each at its own.
+  columnShare: (least: number, grow: number) => ({
+    flexGrow: grow,
+    flexShrink: 1,
+    flexBasis: 0,
+    width: 0,
+    minWidth: least,
+  }),
+  // A column's header slot (headerCell): what's in it is as wide as it is.
+  headerSlot: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    flexShrink: 0,
+  },
+  // A header in its slot: as tall as the header row.
+  slotFill: {
+    flexGrow: 1,
+  },
+  // A row that stops short of the "+" column after it.
+  rowStopsBefore: (w: number) => ({
+    marginInlineEnd: w,
   }),
   rowHeight: (h: number) => ({
     height: h,
@@ -573,6 +653,13 @@ const styles = css.create({
   tableRowLast: {
     borderBottomWidth: 0,
   },
+  // Edge to edge, the header row is the frame's top: its background takes
+  // the frame's corners (the frame's radius less its border), which on the
+  // Mac the frame doesn't clip it to.
+  tableHeaderRound: {
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+  },
   tableHeaderRow: {
     backgroundColor: {
       default: "#f5f5f7",
@@ -678,11 +765,14 @@ const styles = css.create({
     overflowX: "auto",
     paddingBottom: 8,
   },
+  // One width, whatever the board's: a narrower window shows fewer of them
+  // and the board scrolls, rather than every card wrapping again as the
+  // window is resized.
   boardColumn: {
     display: "flex",
     flexDirection: "column",
-    minWidth: 240,
-    maxWidth: 280,
+    width: BOARD_COLUMN_WIDTH,
+    flexShrink: 0,
     padding: 12,
     borderRadius: 8,
     backgroundColor: {
@@ -697,7 +787,7 @@ const styles = css.create({
   // Used when the board renders as a column carousel on narrow
   // viewports — the column takes a fixed width sized to ~84% of the
   // viewport so the next column peeks. min/max from `boardColumn`
-  // would clamp this to 240-280 which defeats the purpose; override.
+  // would hold it at 280, which defeats the purpose; override.
   boardColumnCarouselWidth: (w: number) => ({
     // The width includes the padding and border, so a column is as wide
     // as the snap step expects and the next one peeks. Measured on iOS,
@@ -1238,8 +1328,19 @@ const styles = css.create({
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
   /** A footer cell inside a menu button: fills the row's height, as the others do. */
+  // A total in its slot (a menu's trigger): as wide and tall as the slot.
   totalCellFill: {
     alignSelf: "stretch",
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+  },
+  // A total's slot: the column's width, around the menu that wraps the cell.
+  totalSlot: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "stretch",
   },
   /** Pills cut to one line, with a "+N" for the rest. */
   pillListOneLine: {
@@ -1422,6 +1523,8 @@ const styles = css.create({
   choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
   choiceCheck: { width: 12, fontSize: 12 },
   relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
+  /** Links cut to one line, with a "+N" for the rest; the last one shown is cut short if it must be. */
+  relationListOneLine: { flexWrap: "nowrap", overflow: "hidden", alignItems: "center", minWidth: 0 },
   link: {
     textDecorationLine: "underline",
     textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
@@ -1443,6 +1546,7 @@ const styles = css.create({
     backgroundColor: "transparent",
     cursor: "pointer",
     textAlign: "start",
+    maxWidth: "100%",
     fontSize: 13,
     color: {
       default: "#3478f6",
@@ -1510,6 +1614,16 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
+  },
+  // A column's title, on one line however narrow its column: cut short
+  // with an ellipsis (the full title is in the hover hint), never broken
+  // across two. On native the button's nowrap doesn't reach the text;
+  // lineClamp does (numberOfLines).
+  headerTitle: {
+    lineClamp: 1,
+    overflow: "hidden",
+    minWidth: 0,
+    flexShrink: 1,
   },
   headerCellButtonCenter: {
     textAlign: "center",
@@ -1622,6 +1736,11 @@ const styles = css.create({
     // pushed out of the cell.
     minWidth: 0,
     minHeight: 22,
+  },
+  // On the web a cell shows the text cursor. Not on the Mac, as in Numbers
+  // and Finder's lists: there each view with a cursor of its own is one
+  // more region the window walks at every step of a resize.
+  cellIdleCursor: {
     cursor: "text",
   },
 
@@ -1802,6 +1921,22 @@ function pillsThatFit(pills: Pill[], width: number): Pill[] {
   return out;
 }
 
+/** A related row's name, roughly: its label at 13 pt and the gap after it. */
+const linkWidth = (l: RelationLink) => String(l.label ?? l.id).length * 7 + 8;
+/** The links that fit in `width`, leaving room for a "+N" when some don't; the first always shows, cut short if it must be. */
+function linksThatFit(links: RelationLink[], width: number): RelationLink[] {
+  let used = 0;
+  const out: RelationLink[] = [];
+  for (let i = 0; i < links.length; i++) {
+    const w = linkWidth(links[i]!);
+    const reserve = i < links.length - 1 ? 40 : 0;
+    if (out.length > 0 && used + w + reserve > width) break;
+    out.push(links[i]!);
+    used += w;
+  }
+  return out;
+}
+
 interface CellValueProps {
   field: Field | undefined;
   value: unknown;
@@ -1828,13 +1963,25 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
     case "relations":
       // One related row reads as itself; many sit in a row of links.
       if (!Array.isArray(value)) return <RelationCellValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
-      return (
-        <html.div style={styles.relationList}>
-          {shown.links.map((link) => (
-            <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
-          ))}
-        </html.div>
-      );
+      {
+        // On one line in a table, as many as fit and then "+2", as choices
+        // are: a row's height stays the row's, not its longest list's.
+        const oneLine = width !== undefined && (lines ?? 1) <= 1;
+        const shownLinks = oneLine ? linksThatFit(shown.links, width) : shown.links;
+        const more = shown.links.length - shownLinks.length;
+        return (
+          <html.div style={[styles.relationList, oneLine && styles.relationListOneLine]}>
+            {shownLinks.map((link) => (
+              <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
+            ))}
+            {more > 0 ? (
+              <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
+                +{more}
+              </html.span>
+            ) : null}
+          </html.div>
+        );
+      }
     case "error":
       return <html.span style={styles.formulaError}>{shown.code}</html.span>;
     case "pills": {
@@ -2004,7 +2151,7 @@ function RelationCellValue({
   // and a second opens the picker (CellLink).
   return (
     <CellLink onOpen={() => onOpenRelation(link.address)} label={`Open ${link.label}`} style={styles.relationLink}>
-      {link.label}
+      <html.span style={styles.clamp(1)}>{link.label}</html.span>
     </CellLink>
   );
 }
@@ -2044,6 +2191,13 @@ interface EditableCellProps {
    * only the innermost pressable, never the table's own handler.
    */
   onSelect?: () => void;
+  /**
+   * The cell around it takes the clicks (selects, and edits once selected),
+   * so the idle value has no handler of its own: a view that only lays out
+   * is folded into the one around it on native, one view fewer for every
+   * cell a table draws, each moved again at every step of a window resize.
+   */
+  clicksFromCell?: boolean;
   /**
    * For an attachment column: what editing does instead of typing a name,
    * such as choosing a file to copy into the table's folder. Absent, the
@@ -2095,6 +2249,7 @@ function EditableCell({
   autoEdit,
   selected,
   onSelect,
+  clicksFromCell,
   onAttach,
   editRequest,
   onEditHeard,
@@ -2192,6 +2347,8 @@ function EditableCell({
     else if (kind === "attachment" && onAttach) onAttach();
     else startEdit();
   };
+  // The idle value's own click, unless the cell around it takes them.
+  const idleClick = clicksFromCell ? undefined : clickToEdit;
 
   /**
    * Save the draft if the column can hold it (D42). Returns false, and
@@ -2261,7 +2418,7 @@ function EditableCell({
   // Being edited outside the cell: show what is typed, as it is typed.
   if (outsideDraft !== undefined) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
       </html.div>
     );
@@ -2291,7 +2448,7 @@ function EditableCell({
     ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
   ) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
       </html.div>
     );
@@ -2369,12 +2526,12 @@ function EditableCell({
               onEditEnd?.("done");
             }}
             label={field?.title ?? field?.name}
-            trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+            trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
           />
         );
       }
       return (
-        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
           {shown}
         </html.div>
       );
@@ -2429,12 +2586,12 @@ function EditableCell({
             onEditEnd?.("done");
           }}
           label={field?.title ?? field?.name}
-          trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+          trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
         />
       );
     }
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         {shown}
       </html.div>
     );
@@ -2464,7 +2621,7 @@ function EditableCell({
               void measureAnchor(el).then(setLongAt);
             }
           }}
-          style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}
+          style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}
         >
           <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
         </html.span>
@@ -2609,6 +2766,12 @@ function ListCell({
   const items = listItems(value);
   const options = choices ?? enumOptions(field);
   const [open, setOpen] = useState(false);
+  // The platform's own list of several choices, where it has one (a popover on a Mac).
+  const { ChooseMany } = usePlatformControls();
+  const anchorId = `choices-${useId()}`;
+  // The value as last toggled: toggles come faster than the table draws again.
+  const latest = useRef(value);
+  latest.current = value;
   const [text, setText] = useState("");
   // Whether the text box was focused since it opened: once, not on every keystroke.
   const textFocused = useRef(false);
@@ -2653,6 +2816,7 @@ function ListCell({
   };
   const shown = (
     <html.div
+      id={anchorId}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         anchor.current = el;
@@ -2661,7 +2825,7 @@ function ListCell({
         if (selected !== false) void openPicker();
         else onSelect?.();
       }}
-      style={styles.cellEditableIdle}
+      style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor]}
     >
       <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
     </html.div>
@@ -2699,6 +2863,29 @@ function ListCell({
     );
   }
   const toggle = (choice: string) => onCommit(toggled ? toggled(choice) : listToggled(field, value, choice));
+  if (ChooseMany) {
+    return (
+      <>
+        {shown}
+        <ChooseMany
+          options={options.map((o) => {
+            // A relation's rows are named, not coloured choices.
+            const color = choices ? undefined : (o as { color?: string }).color;
+            return { value: o.value, label: o.label ?? o.value, ...(color ? { color } : {}) };
+          })}
+          selected={items}
+          onToggle={(choice) => {
+            const next = toggled ? toggled(choice) : listToggled(field, latest.current, choice);
+            latest.current = next;
+            onCommit(next);
+          }}
+          anchor={anchorId}
+          rect={rect}
+          onClose={() => close("done")}
+        />
+      </>
+    );
+  }
   return (
     <>
       {shown}
@@ -2799,12 +2986,12 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
-function EdgeToEdge({ on, children, snapTo }: { on: boolean; children: ReactNode; snapTo?: readonly number[] }) {
+function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolean; children: ReactNode; snapTo?: readonly number[] }) {
   if (!on) return <>{children}</>;
   return (
     <Bleed>
-      <HScroll snapTo={snapTo}>
-        <html.div style={styles.bleedRow}>
+      <HScroll snapTo={snapTo} scrollProps={fill ? { contentContainerStyle: PANE_CONTENT } : undefined}>
+        <html.div style={[styles.bleedRow, fill && styles.fitGrow]}>
           <GutterSpacer />
           {children}
           <GutterSpacer />
@@ -2812,6 +2999,13 @@ function EdgeToEdge({ on, children, snapTo }: { on: boolean; children: ReactNode
       </HScroll>
     </Bleed>
   );
+}
+
+const PANE_CONTENT = { flexGrow: 1 };
+
+/** A board's columns, side by side: a sideways scroller of their own on React Native; the web's board scrolls itself. */
+function BoardScroll({ children, snapTo }: { children: ReactNode; snapTo?: readonly number[] }) {
+  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo}>{children}</HScroll>;
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
@@ -2835,6 +3029,9 @@ function PaneScroll({
         scroll &&
         ({
           ref: scroll.ref,
+          // What it holds is at least as wide as the pane, for columns that
+          // share the width to fill it; wider (at their narrowest), it scrolls.
+          contentContainerStyle: PANE_CONTENT,
           onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
           scrollEventThrottle: 16,
         } as any)
@@ -2891,6 +3088,8 @@ const NO_ENTRIES: RowEntry[] = [];
 export function TableView({
   view,
   cut,
+  fillWidth,
+  onWidest,
   rows,
   schema,
   bodies,
@@ -3104,9 +3303,11 @@ export function TableView({
   const keysRef = useRef<GridKeysHandle | null>(null);
   // On the Mac, a table that comes into view takes the keyboard, so the first
   // arrow selects its first cell (gridKey) without a click first. Not on the
-  // web, where focusing would scroll the page, nor on a phone.
+  // web, where focusing would scroll the page, nor on a phone; nor where the
+  // host says not to (a document's embeds: KeyboardOnShow).
+  const keyboardOnShow = useContext(KeyboardOnShow);
   useEffect(() => {
-    if (PLATFORM_OS !== "macos") return;
+    if (PLATFORM_OS !== "macos" || !keyboardOnShow) return;
     const t = setTimeout(() => keysRef.current?.focus(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3260,7 +3461,7 @@ export function TableView({
           {names.map((name, idx) => (
             <html.div
               key={name}
-              style={[styles.tableCell, styles.cellWidth(colWidth(name)), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
+              style={[styles.tableCell, columnStyle(name), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
             />
           ))}
         </html.div>
@@ -3373,7 +3574,18 @@ export function TableView({
   // portrait viewports it ate too much real estate (the title column
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
-  const freezePrimary = !useCompactViewport(TOUCH_VIEWPORT_MAX);
+  // On the Mac a table is laid out for a pointer however narrow its window:
+  // a window dragged under the touch width took the phone's layout a moment
+  // after the drag, when the window's size reached it, and the table jumped
+  // to columns of another width.
+  const compact = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const wide = PLATFORM_OS === "macos" || !compact;
+  // Frozen columns are, for now, the web's wide layout. Elsewhere a table is
+  // edge to edge, as the markdown library's tables are and the phone's always
+  // were: it fills the width when it fits, and when it doesn't it scrolls
+  // sideways over the page's margins, to its edges, rather than inside a
+  // frame with a margin either side.
+  const freezePrimary = wide && PLATFORM_OS === "web";
   // The frozen columns are the first in the visible order: the view's
   // `frozen.columns` of them (D58), the title field alone when it doesn't
   // say, and never all of them, so something is left to scroll. Empty
@@ -3392,7 +3604,10 @@ export function TableView({
   // Container-measured (not viewport-measured) so a sidebar-narrowed
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  // In a frame, the layout keeps the columns right as its width changes
+  // (columnShare): the table isn't drawn again at each step of a window
+  // being resized, only once it's still.
+  const { measureProps, width: containerWidth } = useContainerWidth(() => wide);
 
   // Column-width model. The earlier version divided the container by
   // `fields + 1` (counting the "+ Field" slot) but then rendered that
@@ -3430,13 +3645,54 @@ export function TableView({
   const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
   // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
   const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
-  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW, SQUEEZED_CELL_WIDTH);
+  const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
+  // Squeezed past fitting, a framed table's columns hold the squeezed width
+  // and scroll, rather than growing to the comfortable one as its space shrinks.
+  // How narrow each column may go, by what it holds: a checkbox or a
+  // choice gives its room before the title or an amount does.
+  const leastOf = (name: string) => squeezedWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  // How wide each grows when there's room, and no wider: the table stops
+  // there. Asked to fill its width (`width=full`), none stops, and they
+  // share it evenly.
+  const mostOf = (name: string) => roomiestWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  const growOf = (name: string) => (fillWidth ? 1 : mostOf(name));
+  const colWidth = columnWidths(
+    fields,
+    setWidths,
+    containerWidth,
+    chrome + addFieldW,
+    SQUEEZED_CELL_WIDTH,
+    wide ? SQUEEZED_CELL_WIDTH : undefined,
+    wide ? leastOf : undefined,
+    fillWidth ? undefined : mostOf,
+  );
+  // In a frame, the columns nobody resized share its width in the layout
+  // (columnShare), down to the squeezed width; past that they hold it and
+  // the columns beside the frozen one scroll. The layout does it, in the
+  // same pass as everything around the table: a window being resized moves
+  // them with it, and crossing from fitting to scrolling changes no view,
+  // where it had been a different table, built again, a moment after the
+  // window moved. `colWidth` is what they were when last measured: what
+  // grips and scroll positions go by, a step behind at most.
+  const shares = (name: string) => wide && typeof setWidths[name] !== "number";
+  // As narrow as a sharing column can be: the squeezed width, or, when a
+  // column dragged wider has made the table scroll, what they had before
+  // (a column dragged wider widens the table, rather than taking the
+  // others' room).
+  const flexibleWidth = fields.find((name) => typeof setWidths[name] !== "number");
+  const overflows =
+    containerWidth > 0 && fields.reduce((n, name) => n + colWidth(name), 0) > containerWidth - chrome - addFieldW;
+  const shareLeast = (name: string) =>
+    overflows && flexibleWidth !== undefined ? Math.max(leastOf(name), colWidth(name)) : leastOf(name);
+  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast(name), growOf(name)) : styles.cellWidth(colWidth(name)));
   // Where the "+" column is, the scrolling pane's rows are as wide as their
   // columns and stop there: no row line, group band or total runs under the
   // "+", which is a place a column could go, not a column.
   const restRowWidth = () =>
     addFieldW > 0
-      ? styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !frozenOn ? numberWidth : 0))
+      ? !edgeToEdge || fills
+        ? styles.rowStopsBefore(addFieldW)
+        : styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !frozenOn ? numberWidth : 0))
       : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
@@ -3453,21 +3709,19 @@ export function TableView({
   const byLines = RESIZE_BY_LINES && !!onUpdateView;
   // The lines of `names`' columns, as strips over a pane, each at the end of
   // its column: it shows a line on hover, drags to resize, and a double
-  // click puts the column back to its share. Placed in a box of no size, so
-  // only the strips take the pointer.
-  const columnLines = (names: string[], from: number) => {
+  // click puts the column back to its share. In a row laid out as the
+  // pane's rows are (`from` before the columns, `end` after them), whose
+  // clicks pass through, so only the strips take the pointer.
+  const columnLines = (names: string[], from: number, end: number) => {
     if (!byLines) return null;
-    let x = from;
     return (
-      <html.div style={styles.columnLines}>
-        {names.map((name) => {
-          x += colWidth(name);
-          return (
-            <html.div key={name} style={[styles.columnLine, styles.columnLineAt(x)]}>
-              {columnResizer(name, true)}
-            </html.div>
-          );
-        })}
+      <html.div style={[styles.columnLines, passThrough, end > 0 && styles.columnLinesEnd(end)]}>
+        {from > 0 && <html.div style={[styles.columnLineSlot, passThrough, styles.cellWidth(from)]} />}
+        {names.map((name) => (
+          <html.div key={name} style={[styles.columnLineSlot, passThrough, columnStyle(name)]}>
+            <html.div style={styles.columnLine}>{columnResizer(name, true)}</html.div>
+          </html.div>
+        ))}
       </html.div>
     );
   };
@@ -3659,12 +3913,42 @@ export function TableView({
   };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
+  // Fitting or scrolling, the same two panes: sharing the frame's width, the
+  // frozen columns take their share and the pane beside them the rest
+  // (frozenShare, paneShare), so they're as even as in one pane.
   // Tables are edge to edge, as the markdown library's are: the framed
   // grid rests on the page's margin and scrolls sideways over it to the
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
-  const edgeToEdge = !frozenOn;
+  const edgeToEdge = !frozenOn || fields.length === 0;
+  // Edge to edge on a wide screen, the columns share the page's width in
+  // the layout, as they do beside a pinned column: the scroller's content
+  // is at least as wide as the page, and the frame and its pane grow to it.
+  const fills = wide && edgeToEdge;
+  // As wide as the frame grows: its columns at their natural widths (or
+  // what a resized one was given), with its lines, row numbers and "+".
+  const frameMostWidth = fields.reduce((n, name) => n + (shares(name) ? mostOf(name) : colWidth(name)), 0) + chrome + addFieldW;
+  const frameMost = styles.frameMost(frameMostWidth);
+  const widest = wide && !fillWidth ? frameMostWidth : null;
+  useEffect(() => {
+    onWidest?.(widest);
+  }, [onWidest, widest]);
   const restNames = fields.slice(frozenNames.length);
+  // The frozen columns' share of the width: theirs that share it (at their
+  // natural widths, as the columns grow by), on what they hold at a fixed
+  // width and at their narrowest.
+  const frozenSharing = frozenNames.filter(shares).reduce((n, name) => n + growOf(name), 0);
+  const frozenFixed = frozenNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0);
+  const frozenLeast = frozenNames.reduce((n, name) => n + (shares(name) ? shareLeast(name) : colWidth(name)), 0);
+  // Beside the frozen columns: a share for each of its columns that shares
+  // the width (its natural width, as the columns grow by), on what it holds
+  // at a fixed width; or, when none does and the frozen ones don't either,
+  // the rest of the frame.
+  const restSharing = restNames.filter(shares).reduce((n, name) => n + growOf(name), 0);
+  const restFixed = restNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0) + addFieldW;
+  const paneShare = styles.paneShare(restSharing > 0 || !frozenOn || frozenSharing === 0 ? Math.max(1, restSharing) : 0, restFixed);
+  // Its columns at their narrowest: past that, it scrolls.
+  const restLeast = restNames.reduce((n, name) => n + (shares(name) ? shareLeast(name) : colWidth(name)), 0) + addFieldW;
   // Where each column of the sideways-scrolling part starts, from that
   // part's own start: a scroll comes to rest on one, so no column is left
   // cut in half at the edge with its title out of sight. (Row numbers,
@@ -3703,7 +3987,7 @@ export function TableView({
           text={hintText}
           style={[
             styles.tableCell,
-            styles.cellWidth(colWidth(name)),
+            styles.slotFill,
             styles.tableHeaderCell,
             styles.positioned,
             cellAlignStyle(align),
@@ -3712,7 +3996,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
           {!byLines && columnResizer(name)}
         </Hinted>
       );
@@ -3733,7 +4017,7 @@ export function TableView({
         text={isEditing ? undefined : hintText}
         style={[
           styles.headerCellWrapper,
-          styles.cellWidth(colWidth(name)),
+          styles.slotFill,
           (!isLast || closes(name)) && styles.tableCellSeparator,
         ]}
       >
@@ -3759,7 +4043,7 @@ export function TableView({
         >
           {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
         {isEditing && field && anchorRect && (
           <SchemaFieldEditor
@@ -3808,7 +4092,14 @@ export function TableView({
       </RowActions>
     );
   };
-  const headerCell = renderHeaderCell;
+  // Each header in a slot of its column's width, straight in the row: what
+  // wraps a header (its right-click menu, its tooltip) are views of their
+  // own on a Mac, and a width given inside them never reached the row.
+  const headerCell = (name: string, idxInPane: number, paneLen: number) => (
+    <html.div key={name} style={[styles.headerSlot, columnStyle(name)]}>
+      {renderHeaderCell(name, idxInPane, paneLen)}
+    </html.div>
+  );
   // The "+" for a new field, in the header after the last column.
   const headerAddCell = addFieldW > 0 && <html.div style={[styles.headerAddCell, styles.cellWidth(addFieldW)]}>{addFieldButton(true)}</html.div>;
 
@@ -3832,9 +4123,8 @@ export function TableView({
     ) : onUpdateView ? (
       <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
     ) : null;
-    const cellStyle = [
+    const cellLook = [
       styles.tableCell,
-      styles.cellWidth(colWidth(name)),
       cellAlignStyle(effectiveAlign(field)),
       (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
       styles.totalCell,
@@ -3842,27 +4132,26 @@ export function TableView({
     // On a phone the footer cell is itself the system's menu of totals, as a
     // choice cell is its menu of choices; elsewhere it opens the popover below.
     if (onUpdateView && TotalsSelect.opensFromTrigger) {
+      // The menu wraps the cell in a view of its own, which the row lays
+      // out: the column's width goes on a slot around it, as a header's
+      // does, and the cell fills the slot. On the menu's own view, the
+      // totals took an even share of the row whatever the columns above.
       return (
-        <Select
-          key={name}
-          value={kind ?? ""}
-          options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
-          onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
-          label={`Calculate ${field?.title ?? name}`}
-          trigger={<html.div style={[...cellStyle, styles.totalCellFill]}>{content}</html.div>}
-        />
+        <html.div key={name} style={[styles.totalSlot, columnStyle(name)]}>
+          <Select
+            value={kind ?? ""}
+            options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
+            onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
+            label={`Calculate ${field?.title ?? name}`}
+            trigger={<html.div style={[...cellLook, styles.totalCellFill]}>{content}</html.div>}
+          />
+        </html.div>
       );
     }
     return (
       <html.div
         key={name}
-        style={[
-          styles.tableCell,
-          styles.cellWidth(colWidth(name)),
-          cellAlignStyle(effectiveAlign(field)),
-          (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
-          styles.totalCell,
-        ]}
+        style={[...cellLook.slice(0, 1), columnStyle(name), ...cellLook.slice(1)]}
         onClick={
           onUpdateView
             ? (e: { pageX: number; pageY: number }) =>
@@ -3927,6 +4216,9 @@ export function TableView({
     drawnRows.current.set(row.id, row);
     // A note on the cell (D57): a mark in its corner, and the note itself on hover.
     const note = ownNote(cells, row.id, name, row);
+    // The cell takes the clicks for an editable value's idle view (EditableCell's
+    // clicksFromCell); a checkbox keeps its own.
+    const cellClicks = !!onUpdateRow && field?.type !== "boolean";
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
       <html.div
@@ -3953,11 +4245,17 @@ export function TableView({
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
               }
+            : cellClicks
+            ? () => {
+                // Selected, a click edits it, as a key does (openCell).
+                if (isSelected) void openCell(row.id, name);
+                else select();
+              }
             : select
         }
         style={[
           styles.tableCell,
-          styles.cellWidth(colWidth(name)),
+          columnStyle(name),
           cellAlignStyle(align),
           (!isLast || closes(name)) && styles.tableCellSeparator,
           isFormula && styles.formulaCellClickable,
@@ -3984,6 +4282,7 @@ export function TableView({
             autoEdit={row.id === focusRowId && name === fields[0]}
             selected={isSelected}
             onSelect={select}
+            clicksFromCell={cellClicks}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
             onEditHeard={editHeard}
@@ -4499,6 +4798,8 @@ export function TableView({
     editor,
     facts,
     frozenCount,
+    freezePrimary,
+    wide,
     containerWidth,
     pageReveal,
   ];
@@ -4725,8 +5026,8 @@ export function TableView({
         <html.div {...measureProps} style={styles.tableGrow} />
       </html.div>
     )}
-    <EdgeToEdge on={edgeToEdge} snapTo={columnStarts}>
-    <GridKeys ref={keysRef} onKeyDown={onGridKey}>
+    <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
+    <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills} most={wide && !fillWidth ? frameMostWidth : undefined}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
@@ -4739,9 +5040,9 @@ export function TableView({
       // mask to a bitmap, and for thousands of rows it took gigabytes.
       tabIndex={PLATFORM_OS === "web" ? 0 : undefined}
       onKeyDown={onGridKey}
-      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
+      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit, fills && styles.fitGrow, wide && !fillWidth && frameMost]}
     >
-    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, PLATFORM_OS === "web" && styles.tableClips, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, PLATFORM_OS === "web" && styles.tableClips, edgeToEdge ? styles.tableFit : styles.tableGrow, fills && styles.fitGrow, wide && !fillWidth && frameMost]}>
       {band}
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
@@ -4749,8 +5050,14 @@ export function TableView({
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
         {frozenOn && (
-          <html.div style={[styles.tableFrozenColumn, byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane)]}>
-            {columnLines(frozenNames, numberWidth)}
+          <html.div
+            style={[
+              styles.tableFrozenColumn,
+              frozenSharing > 0 && styles.frozenShare(numberWidth + FROZEN_EDGE + frozenFixed, numberWidth + FROZEN_EDGE + frozenLeast, frozenSharing),
+              byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
+            ]}
+          >
+            {columnLines(frozenNames, numberWidth, FROZEN_EDGE)}
             <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
               {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
               {frozenNames.map((name, idx) => headerCell(name, idx, frozenNames.length))}
@@ -4813,11 +5120,16 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
+        <html.div style={edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow] : [styles.tableScrollBeside, paneShare]}>
           <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
-            <html.div style={[edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane, byLines && styles.positioned]}>
-              {columnLines(restNames, coords && !frozenOn ? numberWidth : 0)}
-              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
+            <html.div
+              style={[
+                edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow, fills && styles.paneLeast(restLeast)] : [styles.tableScrollPane, styles.paneLeast(restLeast)],
+                byLines && styles.positioned,
+              ]}
+            >
+              {columnLines(restNames, coords && !frozenOn ? numberWidth : 0, edgeToEdge && !fills ? 0 : addFieldW)}
+              <html.div style={[styles.tableRow, styles.tableHeaderRow, edgeToEdge && styles.tableHeaderRound]}>
                 {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
                   headerCell(name, idx, restNames.length),
@@ -5075,6 +5387,7 @@ export function BoardView({
   onOpenBody,
   relatedTables,
   onOpenRelation,
+  onWidest,
 }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const board = boardColumns(view, rows, schema);
@@ -5389,6 +5702,13 @@ export function BoardView({
       );
     })();
 
+  // As wide as its columns, side by side: what sits with it (an embed's
+  // caption line) ends where it does. A phone's carousel takes the width.
+  const boardWidest = isTouchViewport ? null : board.keys.length * BOARD_COLUMN_WIDTH + Math.max(0, board.keys.length - 1) * BOARD_GAP;
+  useEffect(() => {
+    onWidest?.(boardWidest);
+  }, [onWidest, boardWidest]);
+
   // Phone: snap-paging carousel — one column dominates the viewport,
   // peek of next at the right edge, swipe horizontally to advance.
   // Above the touch breakpoint: keep the free-scrolling multi-column
@@ -5414,11 +5734,14 @@ export function BoardView({
   return (
     <>
       <Bleed>
-        <html.div {...cards.containerProps} style={styles.board}>
-          <GutterSpacer gap={BOARD_GAP} />
-          {columnsContent}
-          <GutterSpacer gap={BOARD_GAP} />
-        </html.div>
+        {/* The web's board scrolls itself (overflowX); React Native's needs a scroller. */}
+        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))}>
+          <html.div {...cards.containerProps} style={styles.board}>
+            <GutterSpacer gap={BOARD_GAP} />
+            {columnsContent}
+            <GutterSpacer gap={BOARD_GAP} />
+          </html.div>
+        </BoardScroll>
       </Bleed>
       {ghost}
     </>

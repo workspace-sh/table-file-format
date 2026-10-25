@@ -58,7 +58,10 @@ it), an app places one drop-in and gives it the link:
   to be shown at once (SPEC section 10), for the drop-in to size itself by.
   With `rest=more` in it the drop-in draws only that many: `embedCount`
   says which count the layout shows, `embedLeftOut` how many it leaves
-  out, and `embedMoreText` what the line that shows them says.
+  out, and `embedMoreText` what the line that shows them says. With
+  `width=full` (`size.width`) a table's columns share the whole width
+  rather than stopping at their natural widths: the drop-in passes
+  `fillWidth` to the view.
 - **`useEmbeddedTable(shown, files)`** in `table-app/react` holds what it
   names over the app reducer: the views' props and callbacks, with edits
   written through `files` (how the platform writes a bundle and appends

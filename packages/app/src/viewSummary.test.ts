@@ -22,6 +22,14 @@ test("counts rows out of the table, or out of the view while searching", () => {
   assert.equal(viewSummary(table([{ title: "a" }]), { shown: 1, inView: 1, searching: false }).count, "1 of 1 row");
 });
 
+test("a search says what it found, short enough for the field", () => {
+  const t = table([{ title: "a" }, { title: "b" }, { title: "c" }]);
+  assert.equal(viewSummary(t, { shown: 2, inView: 3, searching: true }).found, "2 rows");
+  assert.equal(viewSummary(t, { shown: 1, inView: 3, searching: true }).found, "1 row");
+  assert.equal(viewSummary(t, { shown: 0, inView: 3, searching: true }).found, "No rows");
+  assert.equal(viewSummary(t, { shown: 3, inView: 3, searching: false }).found, undefined);
+});
+
 test("large counts are grouped as the reader writes numbers", () => {
   const big: ParsedTable = { ...table([]), indexed: { count: 1_000_000 } as ParsedTable["indexed"] };
   const n = (x: number) => x.toLocaleString();
