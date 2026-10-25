@@ -20,6 +20,7 @@ pub mod column;
 pub mod eval;
 pub mod formula;
 pub mod holds;
+pub mod places;
 mod fxhash;
 pub mod workbook;
 

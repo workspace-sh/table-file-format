@@ -68,18 +68,19 @@ pub trait Scope {
     fn linked(&self, table: &str, relation: &str, name: &str) -> Value;
     /// The clock and chance (D55): `today`, `now` or `rand`, as the host's one moment gives them.
     fn clock(&self, what: &str) -> Value;
+    /// A place in a Sheet view (D41): one cell's value, or a range's as a list.
+    fn place(&self, p: &crate::places::Place) -> Value;
+    /// Where a place is: its top row, how many rows, and how many the grid has.
+    fn where_(&self, p: &crate::places::Place) -> Result<(i64, i64, i64), Value>;
 }
 
-/// The functions only the host can answer: they read a Sheet view's places (D41).
-const HOST_ONLY: [&str; 4] = ["at", "range", "row", "rows"];
 /// The clock and chance (D55): the core's when the host gives it the moment, the host's when it doesn't.
 const CLOCK: [&str; 3] = ["today", "now", "rand"];
 
-/// Whether `expr` needs the host's evaluator: it reads a Sheet view's places, or the clock when there's
-/// none (`clocked` false).
+/// Whether `expr` needs the host's evaluator: it reads the clock, and there's none (`clocked` false).
 pub fn needs_host(expr: &Expr, clocked: bool) -> bool {
     match expr {
-        Expr::Call(name, args) => HOST_ONLY.contains(&name.as_str()) || (!clocked && CLOCK.contains(&name.as_str())) || args.iter().any(|a| needs_host(a, clocked)),
+        Expr::Call(name, args) => (!clocked && CLOCK.contains(&name.as_str())) || args.iter().any(|a| needs_host(a, clocked)),
         _ => false,
     }
 }
@@ -420,6 +421,17 @@ fn call(name: &str, args: &[Expr], scope: &dyn Scope) -> Value {
             [Expr::Str(name)] => scope.field(name),
             [Expr::Str(name), Expr::Str(row)] => scope.field_of(row, name),
             _ => err(ErrorCode::Value, "field takes a name and, optionally, a row id: (field \"unit price\" \"r7\")"),
+        },
+        // Reading by place in a Sheet view (D41).
+        "at" | "range" => match crate::places::place_of(name, args) {
+            Ok(p) => scope.place(&p),
+            Err(e) => e,
+        },
+        "row" | "rows" => match crate::places::place_arg(name, args).and_then(|p| scope.where_(&p)) {
+            Err(e) => e,
+            Ok((_, height, _)) if name == "rows" => Value::Number(height as f64),
+            Ok((top, height, size)) if height > 0 && top >= 1 && top <= size => Value::Number(top as f64),
+            Ok(_) => err(ErrorCode::Ref, "that row is off the grid"),
         },
         // The reader's own date, as a date is stored (YYYY-MM-DD); the instant, in UTC; a number from 0 up to 1.
         "today" | "now" | "rand" => {

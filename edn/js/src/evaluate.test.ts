@@ -238,9 +238,55 @@ for (const binding of ["native", "wasm"] as const) {
     assert.notEqual(out["alone"], "host");
   });
 
-  test(`${binding}: a table whose formulas read a Sheet place is left to the host`, async () => {
+  test(`${binding}: Sheet places give today's results: running totals down long grids, groups, sorts, manual order, other tables`, async () => {
     const edn = await loadEdn({ binding });
-    const table = { schema: { fields: [{ name: "x", type: "number", computed: { expr: '(at "x" -1 "v")', dialect: "table-expr-v1" } }] }, rows: [{ id: "r1" }] };
-    assert.equal(edn.computeTables({ t: table })["t"], "host");
+    const sheet = (id: string, more: object = {}) => ({ id, name: id, layout: "table", coordinates: true, ...more });
+    const n = 3000;
+    const ledger = {
+      ...table(
+        [
+          { name: "when", type: "datetime" }, { name: "amount", type: "number" },
+          { name: "kind", type: "string", constraints: { enum: ["rent", "food", { value: "fun" }] } },
+          f("balance", '(+ amount (at "balance" -1 "by-date"))'),
+          f("left", '(+ amount (at "left" 1 "by-date"))'),
+          f("place", '(row (at "amount" 0 "by-date"))'),
+          f("above", '(sum (range "amount" nil "amount" -1 "by-date"))'),
+          f("block", '(range "amount" 0 "kind" 1 "by-kind")'),
+          f("count", '(rows (range "amount" nil "amount" nil "by-kind"))'),
+          f("pinned", '(at "amount" "r7" "by-date")'),
+          f("off", '(row (at "amount" -5000 "by-date"))'),
+          f("bykind", '(at "balance" 0 "by-kind")'),
+          f("manual", '(at "amount" 1 "manual")'),
+          f("noview", '(at "amount" 0 "nope")'),
+          f("notsheet", '(at "amount" 0 "plain")'),
+          f("nofield", '(at "ghost" 0 "by-date")'),
+          f("notcolumn", '(range "amount" 0 "when" 0 "narrow")'),
+          f("byown", '(at "amount" 0 "by-own")'),
+          f("ownplace", '(at "amount" -1 "by-own")'),
+          f("bad", '(at "amount" "by-date")'),
+          f("badrow", "(row 1)"),
+        ],
+        Array.from({ length: n }, (_, i) => ({
+          id: `r${i}`,
+          when: `2026-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 28) + 1).padStart(2, "0")}T${String(i % 24).padStart(2, "0")}:00:00${i % 3 === 0 ? "+02:00" : "Z"}`,
+          amount: i % 7 === 0 ? "" : (i * 37) % 101 - 50,
+          kind: ["rent", "food", "fun", "", "other"][i % 5],
+        })),
+      ),
+      views: [
+        sheet("by-date", { sort: [{ field: "when", direction: "asc" }] }),
+        sheet("by-kind", { group: { field: "kind" }, sort: [{ field: "amount", direction: "desc" }] }),
+        sheet("manual", { order: ["r9", "r3", "r400"] }),
+        sheet("narrow", { fields: ["amount", "kind"] }),
+        sheet("by-own", { sort: [{ field: "ownplace", direction: "asc" }] }),
+        { id: "plain", name: "plain", layout: "table" },
+      ],
+    } as unknown as ParsedTable;
+    const reader = table(
+      [f("there", '(at "amount" "r12" "by-date" "ledger")'), f("sum", '(sum (range "amount" "r1" "amount" "r30" "by-date" "ledger"))'), f("offset", '(at "amount" 1 "by-date" "ledger")'), f("gone", '(at "amount" 0 "by-date" "nowhere")')],
+      [{ id: "x" }],
+    );
+    const counted = same(edn, { ledger, reader }, "places");
+    assert.equal(counted.host, 0);
   });
 }

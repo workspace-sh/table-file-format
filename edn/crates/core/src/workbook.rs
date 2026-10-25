@@ -17,6 +17,7 @@ use std::rc::Rc;
 use crate::eval::{evaluate, linked_tables, needs_host, ErrorCode, Scope, Value};
 use crate::formula::{read_formula, Expr};
 use crate::holds::{checked_by_host, holds, Kind};
+use crate::places::{arrange, place_tables, place_use, Place, PlaceRow, SheetView, SortField};
 use crate::Error;
 
 /// A stored column: numbers (`NaN` for empty), or any values.
@@ -48,6 +49,8 @@ pub struct Field {
     pub column: Option<Column>,
     /// What a cell's own formula's value is checked against (D52).
     pub kind: Kind,
+    /// Its enum's values, in declared order: how a Sheet view sorts and groups by it.
+    pub enum_values: Vec<String>,
 }
 
 pub struct Table {
@@ -62,6 +65,8 @@ pub struct Table {
     /// Its loops worked out by iteration (D60): at most `max` passes, until no number changes by more
     /// than `change`.
     pub iteration: Option<Iteration>,
+    /// Its Sheet views (D41), whose places its formulas and others' read.
+    pub views: Vec<SheetView>,
 }
 
 #[derive(Clone, Copy)]
@@ -96,12 +101,46 @@ impl Clock {
 #[derive(Clone)]
 enum Slot {
     Unset,
-    Pending,
+    /// Being worked out, begun at this depth of the stack.
+    Pending(usize),
     Done(Value),
 }
 
 /// How deep a chain of computed values may go before it's refused rather than overflow the stack.
 const MAX_DEPTH: usize = 2000;
+
+/**
+ * How deep formulas may nest before a chain of places, like a running total, is worked out down its
+ * grid instead of by recursion (`.table`'s workbook: MAX_DEPTH, DeepChain).
+ */
+const PLACE_DEPTH: usize = 400;
+
+/// A Sheet view's grid (D41).
+struct Grid {
+    columns: Vec<String>,
+    /// The file index of the row at each place: `order[0]` is row 1.
+    order: Vec<usize>,
+    /// Each row's place (from 1), by file index.
+    place: Vec<i64>,
+    /// Sorted or grouped by its own places: numbered in file order, and every place read in it is #REF!.
+    looped: bool,
+}
+
+enum GridSlot {
+    /// Being built, begun at this depth of the stack.
+    Pending(usize),
+    Ready(Rc<Grid>),
+    Missing(Value),
+}
+
+/// Where a place is: its table, its grid, its rows top to bottom (possibly off the grid), its fields.
+struct Resolved {
+    there: usize,
+    grid: Rc<Grid>,
+    top: i64,
+    bottom: i64,
+    fields: Vec<String>,
+}
 
 pub struct Workbook {
     tables: Vec<Table>,
@@ -114,7 +153,16 @@ pub struct Workbook {
     by_id: RefCell<HashMap<usize, Rc<HashMap<String, usize>>>>,
     columns: RefCell<HashMap<(usize, usize), Value>>,
     backlinks: RefCell<HashMap<(usize, usize), Rc<HashMap<String, Vec<usize>>>>>,
-    depth: RefCell<usize>,
+    /// What is being worked out, fields (`None`) and grids (`Some`: whether a loop ran through it), innermost last.
+    stack: RefCell<Vec<Option<bool>>>,
+    grids: RefCell<HashMap<(usize, String), GridSlot>>,
+    /// Per table and field: the Sheet view of its own table it reads by place, and whether only rows below.
+    places: Vec<Vec<Option<(String, bool)>>>,
+    /// Place-reading fields already worked out down their grid.
+    warmed: RefCell<std::collections::HashSet<(usize, usize)>>,
+    /// A chain of places too deep: unwinding to the top, to work this field out down its grid. Nothing is
+    /// kept on the way.
+    deep: RefCell<Option<(usize, usize)>>,
     /// Per table: whether the host works it out (`needs_host`).
     hosted: Vec<bool>,
     clock: Option<Clock>,
@@ -130,6 +178,10 @@ impl Workbook {
         let slots = tables.iter().map(|t| t.fields.iter().map(|_| RefCell::new(Vec::new())).collect()).collect();
         let fields = tables.iter().map(|t| t.fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect()).collect();
         let hosted = hosted(&tables, &by_name, clock.is_some());
+        let places = tables
+            .iter()
+            .map(|t| t.fields.iter().map(|f| f.formula.as_ref().and_then(Option::as_ref).and_then(|e| place_use(e, &t.name))).collect())
+            .collect();
         Self {
             tables,
             by_name,
@@ -138,7 +190,11 @@ impl Workbook {
             by_id: RefCell::new(HashMap::default()),
             columns: RefCell::new(HashMap::default()),
             backlinks: RefCell::new(HashMap::default()),
-            depth: RefCell::new(0),
+            stack: RefCell::new(Vec::new()),
+            grids: RefCell::new(HashMap::default()),
+            places,
+            warmed: RefCell::new(Default::default()),
+            deep: RefCell::new(None),
             hosted,
             clock,
             only: None,
@@ -163,6 +219,9 @@ impl Workbook {
         }
         self.columns.borrow_mut().clear();
         self.backlinks.borrow_mut().clear();
+        self.grids.borrow_mut().clear();
+        self.warmed.borrow_mut().clear();
+        *self.deep.borrow_mut() = None;
     }
 
     pub fn table_index(&self, name: &str) -> Option<usize> {
@@ -181,7 +240,196 @@ impl Workbook {
 
     /// Every row's value of computed field `f` of table `t`.
     pub fn column(&self, t: usize, f: usize) -> Vec<Value> {
-        (0..self.tables[t].ids.len()).map(|i| self.value(t, i, f)).collect()
+        (0..self.tables[t].ids.len()).map(|i| self.top_value(t, i, f)).collect()
+    }
+
+    /// `value`, from the top: a chain of places too deep unwinds to here, is worked out down its grid,
+    /// and the value is asked again.
+    fn top_value(&self, t: usize, i: usize, f: usize) -> Value {
+        loop {
+            let v = self.value(t, i, f);
+            let deep = self.deep.borrow_mut().take();
+            match deep {
+                Some((dt, df)) => self.warm(dt, df),
+                None => return v,
+            }
+        }
+    }
+
+    /// A field that reads its own Sheet view by place, worked out row by row in that grid's order (bottom
+    /// up when it reads only rows below), so each row finds the one it reads done.
+    fn warm(&self, t: usize, f: usize) {
+        self.warmed.borrow_mut().insert((t, f));
+        let (view, forward) = self.places[t][f].clone().expect("a field that reads places");
+        let grid = loop {
+            let g = self.grid(t, &view);
+            let deep = self.deep.borrow_mut().take();
+            match deep {
+                Some((dt, df)) => self.warm(dt, df),
+                None => break g,
+            }
+        };
+        let order: Vec<usize> = match grid {
+            Ok(g) => g.order.clone(),
+            Err(_) => (0..self.tables[t].ids.len()).collect(),
+        };
+        if forward {
+            for &i in order.iter().rev() {
+                self.top_value(t, i, f);
+            }
+        } else {
+            for &i in &order {
+                self.top_value(t, i, f);
+            }
+        }
+    }
+
+    /// A loop back to what began at `depth`: every grid being built since then is sorted by its own places.
+    fn looped(&self, depth: usize, error: Value) -> Value {
+        for entry in self.stack.borrow_mut().iter_mut().skip(depth) {
+            if let Some(looped) = entry {
+                *looped = true;
+            }
+        }
+        error
+    }
+
+    /// A Sheet view of table `t` as a grid, or #REF! when there's no such Sheet view (D41).
+    fn grid(&self, t: usize, view: &str) -> Result<Rc<Grid>, Value> {
+        let key = (t, view.to_string());
+        match self.grids.borrow().get(&key) {
+            Some(GridSlot::Pending(depth)) => {
+                let depth = *depth;
+                return Err(self.looped(depth, Value::Error(ErrorCode::Ref, format!("the Sheet view {view} is sorted by its own places"))));
+            }
+            Some(GridSlot::Ready(g)) => return Ok(g.clone()),
+            Some(GridSlot::Missing(e)) => return Err(e.clone()),
+            None => {}
+        }
+        let table = &self.tables[t];
+        let Some(sheet) = table.views.iter().find(|v| v.id == view) else {
+            let missing = Value::Error(ErrorCode::Ref, format!("no Sheet view {view}"));
+            self.grids.borrow_mut().insert(key, GridSlot::Missing(missing.clone()));
+            return Err(missing);
+        };
+        let depth = self.stack.borrow().len();
+        self.grids.borrow_mut().insert(key.clone(), GridSlot::Pending(depth));
+        self.stack.borrow_mut().push(Some(false));
+        let empty: &[String] = &[];
+        let field = |name: &str| match self.fields[t].get(name) {
+            Some(&f) => {
+                let field = &table.fields[f];
+                SortField { enum_values: &field.enum_values, datetime: field.kind.ty == "datetime", any: field.kind.ty == "any" }
+            }
+            None => SortField { enum_values: empty, datetime: false, any: false },
+        };
+        let order = arrange(table.ids.len(), sheet, &field, &mut |i, name| self.value_by_name(t, i, name), &|i| table.ids[i].clone());
+        let looped = self.stack.borrow_mut().pop() == Some(Some(true));
+        if self.deep.borrow().is_some() {
+            self.grids.borrow_mut().remove(&key);
+            return Err(Value::Empty);
+        }
+        let order = if looped { (0..table.ids.len()).collect() } else { order };
+        let mut place = vec![0i64; order.len()];
+        for (p, &i) in order.iter().enumerate() {
+            place[i] = p as i64 + 1;
+        }
+        let columns = sheet.fields.clone().unwrap_or_else(|| table.fields.iter().map(|f| f.name.clone()).collect());
+        let grid = Rc::new(Grid { columns, order, place, looped });
+        self.grids.borrow_mut().insert(key, GridSlot::Ready(grid.clone()));
+        Ok(grid)
+    }
+
+    /// A corner's place in a grid: a number (maybe off the grid), `None` for an open end, or why it can't be read.
+    fn corner(&self, there: usize, here: bool, grid: &Grid, i: usize, row: &PlaceRow) -> Result<Option<i64>, Value> {
+        match row {
+            PlaceRow::Open => Ok(None),
+            PlaceRow::Id(id) => match self.index_by_id(there).get(id.as_str()) {
+                Some(&pinned) => Ok(Some(grid.place[pinned])),
+                None => Err(Value::Error(ErrorCode::Ref, format!("no row {id}"))),
+            },
+            PlaceRow::Offset(_) if !here => Err(Value::Error(ErrorCode::Value, "another table's Sheet view is read by row id, not by offset".into())),
+            PlaceRow::Offset(n) => Ok(Some(grid.place[i] + n)),
+        }
+    }
+
+    fn resolve(&self, t: usize, i: usize, p: &Place) -> Result<Resolved, Value> {
+        let here = p.table.as_deref().is_none_or(|n| n == self.tables[t].name);
+        let there = if here {
+            t
+        } else {
+            let name = p.table.as_deref().unwrap_or_default();
+            self.table_index(name).ok_or_else(|| Value::Error(ErrorCode::Ref, format!("no table {name}")))?
+        };
+        let grid = self.grid(there, &p.view)?;
+        if grid.looped {
+            return Err(Value::Error(ErrorCode::Ref, format!("the Sheet view {} is sorted by its own places", p.view)));
+        }
+        for f in [&p.from.0, &p.to.0] {
+            if !self.fields[there].contains_key(f) {
+                return Err(Value::Error(ErrorCode::Name, format!("no field named {f}")));
+            }
+        }
+        let a = self.corner(there, here, &grid, i, &p.from.1)?;
+        let b = if p.single { a } else { self.corner(there, here, &grid, i, &p.to.1)? };
+        // Corners either way round name the same block. An open end runs to the grid's edge on its side
+        // and is never swapped: "the top down to the row above" is no rows at all in row 1.
+        let (top, bottom) = match (a, b) {
+            (Some(a), Some(b)) => (a.min(b), a.max(b)),
+            (a, b) => (a.unwrap_or(1), b.unwrap_or(grid.order.len() as i64)),
+        };
+        let mut fields = vec![p.from.0.clone()];
+        if p.to.0 != p.from.0 {
+            let f = grid.columns.iter().position(|c| *c == p.from.0);
+            let to = grid.columns.iter().position(|c| *c == p.to.0);
+            let (Some(f), Some(to)) = (f, to) else {
+                let missing = if f.is_none() { &p.from.0 } else { &p.to.0 };
+                return Err(Value::Error(ErrorCode::Ref, format!("{missing} isn't a column of {}", p.view)));
+            };
+            fields = grid.columns[f.min(to)..=f.max(to)].to_vec();
+        }
+        Ok(Resolved { there, grid, top, bottom, fields })
+    }
+
+    fn place(&self, t: usize, i: usize, p: &Place) -> Value {
+        // One cell, by offset, in this table: the running total's case, read without building anything.
+        if let (true, PlaceRow::Offset(n), true) = (p.single, &p.from.1, p.table.as_deref().is_none_or(|n| n == self.tables[t].name)) {
+            let grid = match self.grid(t, &p.view) {
+                Ok(g) => g,
+                Err(e) => return e,
+            };
+            if grid.looped {
+                return Value::Error(ErrorCode::Ref, format!("the Sheet view {} is sorted by its own places", p.view));
+            }
+            let Some(&f) = self.fields[t].get(&p.from.0) else {
+                return Value::Error(ErrorCode::Name, format!("no field named {}", p.from.0));
+            };
+            let at = grid.place[i] + n;
+            return if at < 1 || at > grid.order.len() as i64 { Value::Empty } else { self.value(t, grid.order[at as usize - 1], f) };
+        }
+        let r = match self.resolve(t, i, p) {
+            Ok(r) => r,
+            Err(e) => return e,
+        };
+        let size = r.grid.order.len() as i64;
+        if p.single {
+            return if r.top < 1 || r.top > size { Value::Empty } else { self.value_by_name(r.there, r.grid.order[r.top as usize - 1], &r.fields[0]) };
+        }
+        // Cells off the grid are empty, and every function that takes a list skips empties, so the list
+        // holds only the cells on the grid.
+        let mut out = Vec::new();
+        for at in r.top.max(1)..=r.bottom.min(size) {
+            let target = r.grid.order[at as usize - 1];
+            for f in &r.fields {
+                out.push(self.value_by_name(r.there, target, f));
+            }
+        }
+        Value::List(Rc::new(out))
+    }
+
+    fn where_(&self, t: usize, i: usize, p: &Place) -> Result<(i64, i64, i64), Value> {
+        let r = self.resolve(t, i, p)?;
+        Ok((r.top, (r.bottom - r.top + 1).max(0), r.grid.order.len() as i64))
     }
 
     pub fn tables(&self) -> &[Table] {
@@ -196,6 +444,10 @@ impl Workbook {
     }
 
     fn value(&self, t: usize, i: usize, f: usize) -> Value {
+        // Unwinding to the top (a chain too deep): nothing more is worked out on the way.
+        if self.deep.borrow().is_some() {
+            return Value::Empty;
+        }
         let field = &self.tables[t].fields[f];
         // A cell's own formula is used over its field's value or formula (D52).
         let own = self.tables[t].own.get(&(i, f));
@@ -209,7 +461,7 @@ impl Workbook {
             if let Some(slot) = s.get(i) {
                 match slot {
                     Slot::Done(v) => return v.clone(),
-                    Slot::Pending => {
+                    Slot::Pending(depth) => {
                         // Iterating (D60): a loop reads what the last pass gave, 0 on the first, as a spreadsheet does.
                         if let Some((it, previous)) = &*self.previous.borrow() {
                             if *it == t {
@@ -219,20 +471,31 @@ impl Workbook {
                                 };
                             }
                         }
-                        return Value::Error(ErrorCode::Ref, format!("{} depends on itself", field.name));
+                        let depth = *depth;
+                        drop(s);
+                        return self.looped(depth, Value::Error(ErrorCode::Ref, format!("{} depends on itself", field.name)));
                     }
                     Slot::Unset => {}
                 }
             }
         }
         let Some(expr) = formula else { return Value::Empty };
-        if *self.depth.borrow() > MAX_DEPTH {
+        let depth = self.stack.borrow().len();
+        if depth > PLACE_DEPTH && self.places[t][f].is_some() && !self.warmed.borrow().contains(&(t, f)) {
+            *self.deep.borrow_mut() = Some((t, f));
+            return Value::Empty;
+        }
+        if depth > MAX_DEPTH {
             return Value::Error(ErrorCode::Ref, format!("{} reads a chain of values too long to follow", field.name));
         }
-        self.set(t, f, i, Slot::Pending);
-        *self.depth.borrow_mut() += 1;
+        self.set(t, f, i, Slot::Pending(depth));
+        self.stack.borrow_mut().push(None);
         let mut v = evaluate(expr, &RowScope { book: self, t, i });
-        *self.depth.borrow_mut() -= 1;
+        self.stack.borrow_mut().pop();
+        if self.deep.borrow().is_some() {
+            self.set(t, f, i, Slot::Unset);
+            return Value::Empty;
+        }
         // What a cell's formula gives is checked as a typed value is: one the field can't hold is #VALUE! (D52).
         if own.is_some() && !matches!(v, Value::Error(..)) && !holds(&field.kind, &v) {
             let mut shown = String::new();
@@ -268,8 +531,10 @@ impl Workbook {
         if let Some(v) = self.columns.borrow().get(&(t, f)) {
             return v.clone();
         }
-        let list = Value::List(Rc::new(self.column(t, f)));
-        self.columns.borrow_mut().insert((t, f), list.clone());
+        let list = Value::List(Rc::new((0..self.tables[t].ids.len()).map(|i| self.value(t, i, f)).collect()));
+        if self.deep.borrow().is_none() {
+            self.columns.borrow_mut().insert((t, f), list.clone());
+        }
         list
     }
 
@@ -306,7 +571,7 @@ impl Workbook {
             }
         }
         let index = Rc::new(index);
-        if let Some(f) = key {
+        if let (Some(f), true) = (key, self.deep.borrow().is_none()) {
             self.backlinks.borrow_mut().insert((there, f), index.clone());
         }
         index
@@ -374,6 +639,12 @@ impl Scope for RowScope<'_> {
     fn linked(&self, table: &str, relation: &str, name: &str) -> Value {
         self.book.linked(self.t, self.i, table, relation, name)
     }
+    fn place(&self, p: &Place) -> Value {
+        self.book.place(self.t, self.i, p)
+    }
+    fn where_(&self, p: &Place) -> Result<(i64, i64, i64), Value> {
+        self.book.where_(self.t, self.i, p)
+    }
     fn clock(&self, what: &str) -> Value {
         // Without a clock, `needs_host` has given the table to the host: nothing here reads it.
         let Some(clock) = &self.book.clock else { return Value::Empty };
@@ -411,6 +682,7 @@ fn hosted(tables: &[Table], by_name: &HashMap<String, usize>, clocked: bool) -> 
         for e in formulas(table) {
             let mut named = Vec::new();
             linked_tables(e, &mut named);
+            place_tables(e, &mut named);
             for n in named {
                 if let Some(other) = by_name.get(n) {
                     join(&mut group, t, *other);
@@ -445,7 +717,8 @@ fn formulas(t: &Table) -> impl Iterator<Item = &Expr> {
 /// ```text
 /// {"clock"?: {"today", "now", "seed"}, "only"?: ["name", …],
 ///  "tables": [{"name", "ids": […], "host"?, "iteration"?: {"max", "change"},
-///              "fields": [{"name", "type"?, "many"?, "formula"?, "relation"?, "values"?: […], "numbers"?: k}],
+///              "fields": [{"name", "type"?, "many"?, "enum"?: […], "formula"?, "relation"?, "values"?: […], "numbers"?: k}],
+///              "views"?: [{"id", "fields"?, "order"?, "sort"?: [{"field", "direction"}], "group"?}],  (Sheet views only)
 ///              "cells"?: [{"id", "field", "formula"}]}]}
 /// ```
 ///
@@ -474,7 +747,8 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
                 f.get("values").and_then(|v| v.as_array()).map(|vs| Column::Values(vs.iter().map(from_json).collect()))
             };
             let kind = Kind { ty: f["type"].as_str().unwrap_or("string").to_string(), many: f["many"].as_bool().unwrap_or(false) };
-            fields.push(Field { name: f["name"].as_str().unwrap_or_default().to_string(), formula, relation, column, kind });
+            let enum_values = f["enum"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            fields.push(Field { name: f["name"].as_str().unwrap_or_default().to_string(), formula, relation, column, kind, enum_values });
         }
         let host = t.get("host").and_then(|v| v.as_bool()).unwrap_or(false);
         let iteration = t.get("iteration").and_then(|it| {
@@ -482,7 +756,22 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
             (max > 0.0).then(|| Iteration { max: max as u32, change: it["change"].as_f64().unwrap_or(0.0) })
         });
         let own = applying(&ids, &fields, t.get("cells").and_then(|c| c.as_array()).map_or(&[][..], |c| c.as_slice()));
-        tables.push(Table { name, ids, fields, host, own, iteration });
+        let strings = |v: &serde_json::Value| -> Vec<String> { v.as_array().map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default() };
+        let views = t["views"]
+            .as_array()
+            .map(|vs| {
+                vs.iter()
+                    .map(|v| SheetView {
+                        id: v["id"].as_str().unwrap_or_default().to_string(),
+                        fields: v.get("fields").filter(|f| f.is_array()).map(strings),
+                        order: strings(&v["order"]),
+                        sort: v["sort"].as_array().map(|ss| ss.iter().map(|s| (s["field"].as_str().unwrap_or_default().to_string(), s["direction"].as_str() == Some("desc"))).collect()).unwrap_or_default(),
+                        group: v["group"].as_str().map(str::to_string),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        tables.push(Table { name, ids, fields, host, own, iteration, views });
     }
     let clock = root.get("clock").filter(|c| c.is_object()).map(|c| Clock {
         today: c["today"].as_str().unwrap_or_default().into(),
