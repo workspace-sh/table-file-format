@@ -7,7 +7,8 @@
   "workspaces": [
     "packages/*",
     "apps/web",
-    "apps/mobile"
+    "apps/mobile",
+    "edn/js"
   ],
   "//workspaces": "apps/desktop is intentionally NOT a workspace member — bare RN doesn't compose with npm hoisting. See apps/desktop/README.md.",
   "scripts": {

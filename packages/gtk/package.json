@@ -20,6 +20,7 @@
     "src"
   ],
   "dependencies": {
+    "@workspace.sh/edn": "file:../../edn/js",
     "@workspace.sh/table-app": "file:../app",
     "@workspace.sh/table-core": "file:../core",
     "@workspace.sh/table-ui": "file:../ui"
