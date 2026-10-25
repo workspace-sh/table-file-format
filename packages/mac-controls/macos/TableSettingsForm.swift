@@ -34,6 +34,8 @@ public struct SettingsRowData: Decodable, Equatable, Identifiable {
   /// An action's: "add" or "destructive".
   var role: String?
   var disabled: Bool?
+  /// An info's buttons, at its trailing edge; given (even empty), its value goes under its label.
+  var actions: [SettingsRowData]?
 }
 
 public struct SettingsSectionData: Decodable, Equatable, Identifiable {
@@ -142,7 +144,21 @@ private struct RowView: View {
     case "choice":
       ChoiceRow(row: row, compact: compact, send: send)
     case "info":
-      LabeledContent(row.label ?? "", value: row.value ?? "")
+      if let actions = row.actions {
+        // Its buttons at the row's end, as System Settings has them, and its
+        // value under its label (a row that may have none keeps that layout).
+        LabeledContent {
+          HStack(spacing: 6) {
+            ForEach(actions) { action in RowView(row: action, send: send) }
+          }
+          .fixedSize()
+        } label: {
+          Text(row.label ?? "")
+          if let value = row.value { Text(value) }
+        }
+      } else {
+        LabeledContent(row.label ?? "", value: row.value ?? "")
+      }
     case "toggle":
       Toggle(row.label ?? "", isOn: Binding(
         get: { row.on == true },
