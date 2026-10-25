@@ -633,8 +633,8 @@ export function computeRows(
   if (computed.length === 0) return { rows, diagnostics: [] };
   const iterating = (iterationOf(options)?.max ?? 0) > 0;
   const memo = !withCells && !iterating && rowLocal(schema, computed) ? memoFor(schema) : undefined;
-  // Formulas that read only their own row keep the memo, so an edit computes one row; the rest go to the
-  // engine when there is one. A given source of chance is this workbook's to draw from.
+  // Every formula goes to the engine when there is one. Those that read only their own row keep the memo
+  // there too, so an edit computes one row. A given source of chance is this workbook's to draw from.
   if (engine && !options.random) {
     if (!memo) {
       const done = byEngine(engine, schema, rows, options, computed, cells);
@@ -642,12 +642,12 @@ export function computeRows(
         if (checking) checkEngine(done.rows, () => byWorkbook(schema, rows, options, computed), chancy(schema, cells));
         return done;
       }
-    } else if (checking) {
-      // Checking: the engine works the memo's tables out too, and the memo's rows are what's given.
-      const mine = byWorkbook(schema, rows, options, computed, memo);
-      const done = byEngine(engine, schema, rows, options, computed, cells);
-      if (done) checkEngine(done.rows, () => mine, chancy(schema, cells));
-      return mine;
+    } else {
+      const done = byEngineMemo(engine, schema, rows, options, computed, memo);
+      if (done) {
+        if (checking) checkEngine(done.rows, () => byWorkbook(schema, rows, options, computed), chancy(schema, cells));
+        return done;
+      }
     }
   }
   return byWorkbook(schema, rows, options, computed, memo);
@@ -718,6 +718,41 @@ function byEngine(
     out[i] = next;
   }
   return { rows: out, diagnostics: build(self, schema, rows, options.views ?? options.tables?.[self]?.views ?? [], cells).diagnostics };
+}
+
+/**
+ * Formulas that read only their own row, by the engine: only the rows the memo doesn't have are sent,
+ * which can't change what any of them gives. Null when the engine leaves them to this workbook.
+ */
+function byEngineMemo(
+  e: FormulaEngine,
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  memo: { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] },
+): { rows: Row[]; diagnostics: ValidationError[] } | null {
+  const out: Row[] = new Array(rows.length);
+  const fresh: Row[] = [];
+  const at: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const cached = memo.rows.get(rows[i]!);
+    if (cached) out[i] = cached;
+    else {
+      fresh.push(rows[i]!);
+      at.push(i);
+    }
+  }
+  if (fresh.length > 0 || !memo.diagnostics) {
+    const done = byEngine(e, schema, fresh, { ...(options.now ? { now: options.now } : {}), views: [] }, computed, undefined);
+    if (!done) return null;
+    for (let k = 0; k < fresh.length; k++) {
+      memo.rows.set(fresh[k]!, done.rows[k]!);
+      out[at[k]!] = done.rows[k]!;
+    }
+    memo.diagnostics ??= done.diagnostics;
+  }
+  return { rows: out, diagnostics: memo.diagnostics! };
 }
 
 /** An engine's result as this workbook's value: an error as a FormulaError, in lists too. */
