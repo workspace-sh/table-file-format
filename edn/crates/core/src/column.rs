@@ -81,10 +81,15 @@ pub struct Computed {
 pub fn compute(book: &Workbook) -> Computed {
     let mut all: Vec<Value> = Vec::new();
     let mut index = String::from("{");
+    let mut first_table = true;
     for (t, table) in book.tables().iter().enumerate() {
-        if t > 0 {
+        if book.only.as_ref().is_some_and(|only| !only.contains(&table.name)) {
+            continue;
+        }
+        if !first_table {
             index.push(',');
         }
+        first_table = false;
         json_string(&mut index, &table.name);
         if book.needs_host(t) {
             index.push_str(":{\"host\":true}");

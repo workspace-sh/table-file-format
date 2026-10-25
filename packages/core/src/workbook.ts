@@ -54,6 +54,33 @@ export interface ComputeOptions {
   iteration?: { max: number; change: number };
 }
 
+/**
+ * Another evaluator a host can plug in (#638: the EDN core, in Rust),
+ * shaped as `@workspace.sh/edn`'s `computeTables`: the same results, for
+ * the tables it gives back; one it gives back as "host" is this workbook's.
+ */
+export interface FormulaEngine {
+  computeTables(
+    tables: Record<string, { schema: TableSchema; rows: readonly Row[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } }>,
+    clock?: { now?: Date },
+    only?: readonly string[],
+  ): Record<string, Record<string, unknown[]> | "host">;
+}
+
+let engine: FormulaEngine | null = null;
+/** Whether every result the engine gives is checked against this workbook's, and a difference thrown. */
+let checking = false;
+
+/**
+ * Formulas computed by `next` from now on, wherever it can (null: by this
+ * workbook). With `check`, this workbook works each one out as well, and a
+ * difference is thrown: for tests.
+ */
+export function setFormulaEngine(next: FormulaEngine | null, options: { check?: boolean } = {}): void {
+  engine = next;
+  checking = options.check ?? false;
+}
+
 /** Something being worked out, and how deep in the stack it began. */
 class Pending {
   constructor(readonly depth: number) {}
@@ -597,11 +624,39 @@ export function computeRows(
   const ownFields = withCells ? new Set(cells.map((c) => c.field)) : undefined;
   const computed = schema.fields.filter((f) => f.computed || ownFields?.has(f.name));
   if (computed.length === 0) return { rows, diagnostics: [] };
+  const iterating = (iterationOf(options)?.max ?? 0) > 0;
+  const memo = !withCells && !iterating && rowLocal(schema, computed) ? memoFor(schema) : undefined;
+  // Formulas that read only their own row keep the memo, so an edit computes one row; the rest go to the
+  // engine when there is one. A given source of chance is this workbook's to draw from.
+  if (engine && !options.random) {
+    if (!memo) {
+      const done = byEngine(engine, schema, rows, options, computed, cells);
+      if (done) {
+        if (checking) checkEngine(done.rows, () => byWorkbook(schema, rows, options, computed), chancy(schema, cells));
+        return done;
+      }
+    } else if (checking) {
+      // Checking: the engine works the memo's tables out too, and the memo's rows are what's given.
+      const mine = byWorkbook(schema, rows, options, computed, memo);
+      const done = byEngine(engine, schema, rows, options, computed, cells);
+      if (done) checkEngine(done.rows, () => mine, chancy(schema, cells));
+      return mine;
+    }
+  }
+  return byWorkbook(schema, rows, options, computed, memo);
+}
+
+function byWorkbook(
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  memo?: { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] },
+): { rows: Row[]; diagnostics: ValidationError[] } {
   // Loops worked out by iteration (D60): whole passes, each reading the last, until they settle.
-  const iteration = options.iteration ?? (options.self !== undefined ? (options.tables?.[options.self]?.meta?.iteration as ComputeOptions["iteration"]) : undefined);
+  const iteration = iterationOf(options);
   if (iteration && iteration.max > 0) return iterated(schema, rows, options, computed, iteration);
   const out: Row[] = new Array(rows.length);
-  const memo = !withCells && rowLocal(schema, computed) ? memoFor(schema) : undefined;
   let made: { workbook: Workbook; sheet: Sheet } | undefined;
   const book = () => (made ??= workbookFor(schema, rows, options));
   for (let i = 0; i < rows.length; i++) {
@@ -617,6 +672,79 @@ export function computeRows(
   // The diagnostics are the formulas' own (one doesn't parse): the same for every row of this schema.
   if (memo) memo.diagnostics ??= book().sheet.diagnostics;
   return { rows: out, diagnostics: memo ? memo.diagnostics! : book().sheet.diagnostics };
+}
+
+/** How the table being computed works its loops out by iteration (D60), if it does. */
+const iterationOf = (options: ComputeOptions): ComputeOptions["iteration"] =>
+  options.iteration ?? (options.self !== undefined ? (options.tables?.[options.self]?.meta?.iteration as ComputeOptions["iteration"]) : undefined);
+
+/** The engine's results as rows, or null when the table is this workbook's ("host"). */
+function byEngine(
+  e: FormulaEngine,
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  cells: CellFormula[] | undefined,
+): { rows: Row[]; diagnostics: ValidationError[] } | null {
+  // A table name is never empty (D37), so "" stands for a table not in `tables`.
+  const self = options.self ?? "";
+  const iteration = iterationOf(options);
+  const tables = {
+    ...options.tables,
+    [self]: { schema, rows, ...(cells ? { cells } : {}), meta: iteration ? { iteration } : {} },
+  };
+  const got = e.computeTables(tables, options.now ? { now: options.now } : {}, [self])[self];
+  if (!got || got === "host") return null;
+  // A stored field takes a result only in the cells with a formula of their own (D52).
+  const own = cells && cells.length > 0 ? cellFormulas(schema, rows, cells) : undefined;
+  const out: Row[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const next: Row = { ...row };
+    for (const f of computed) {
+      if (!f.computed && !own?.get(row.id)?.has(f.name)) continue;
+      const v = fromEngine(got[f.name]?.[i]);
+      if (v === undefined) delete next[f.name];
+      else next[f.name] = v;
+    }
+    out[i] = next;
+  }
+  return { rows: out, diagnostics: build(self, schema, rows, options.views ?? options.tables?.[self]?.views ?? [], cells).diagnostics };
+}
+
+/** An engine's result as this workbook's value: an error as a FormulaError, in lists too. */
+function fromEngine(v: unknown): Value {
+  if (Array.isArray(v)) return v.map(fromEngine) as Value;
+  if (typeof v === "object" && v !== null && "code" in v) return new FormulaError((v as FormulaError).code, (v as FormulaError).message);
+  return v as Value;
+}
+
+/** How many tables the engine has answered while checking. */
+export let engineAnswered = 0;
+
+/** The fields whose formulas draw on chance, which two evaluators draw differently (a field's own, or a cell's). */
+function chancy(schema: TableSchema, cells: CellFormula[] | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const f of schema.fields) if (f.computed?.expr.includes("rand")) out.add(f.name);
+  for (const c of cells ?? []) if (c.expr?.includes("rand")) out.add(c.field);
+  return out;
+}
+
+/** Checking (tests): the engine's rows against this workbook's, value for value; a difference is thrown. */
+function checkEngine(mine: Row[], theirs: () => { rows: Row[] }, skip: Set<string>): void {
+  engineAnswered++;
+  const want = theirs().rows;
+  const plain = (v: unknown): unknown => (v instanceof FormulaError ? `${v.code} ${v.message}` : Array.isArray(v) ? v.map(plain) : v === "" || v === null ? undefined : v);
+  for (let i = 0; i < want.length; i++) {
+    const keys = new Set([...Object.keys(want[i]!), ...Object.keys(mine[i]!)]);
+    for (const k of keys) {
+      if (skip.has(k)) continue;
+      const a = JSON.stringify(plain(mine[i]![k]));
+      const b = JSON.stringify(plain(want[i]![k]));
+      if (a !== b) throw new Error(`the formula engine gives ${a} for ${k} in row ${want[i]!.id}, the workbook ${b}`);
+    }
+  }
 }
 
 /**

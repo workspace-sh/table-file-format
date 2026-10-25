@@ -99,7 +99,7 @@ export {
   type Place,
   type PlaceRow,
 } from "./expr.js";
-export { computeRows, rowLocal, sheetGrid, sheetOrder, type ComputeOptions, type SheetGrid } from "./workbook.js";
+export { computeRows, rowLocal, setFormulaEngine, sheetGrid, sheetOrder, type ComputeOptions, type FormulaEngine, type SheetGrid } from "./workbook.js";
 export { mergedBlocks, mergeOfRange, mergeOver, withMerge, type MergedBlock } from "./merged.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";
 export {
