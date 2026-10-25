@@ -6,6 +6,7 @@
 
 import AppKit
 import SwiftUI
+import TableMacControls
 
 @objc(TableSettingsWindow)
 public final class TableSettingsWindow: NSObject {

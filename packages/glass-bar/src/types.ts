@@ -11,7 +11,21 @@ export type GlassBarState =
    * A selected cell: its label ("Owner · iOS Pro launch") and value or
    * formula; a line about the field when it has one; `info`, an ⓘ for more.
    */
-  | { kind: "selected"; label: string; value: string; monospaced?: boolean; about?: string; info?: boolean }
+  | {
+      kind: "selected";
+      label: string;
+      value: string;
+      monospaced?: boolean;
+      about?: string;
+      info?: boolean;
+      /**
+       * What the field is, a line or two ("Choice · 4 choices · required"),
+       * with `factsTitle` (its name) over it: the ⓘ shows them in a popover
+       * (#704). Absent, the ⓘ calls `onInfo`.
+       */
+      facts?: string;
+      factsTitle?: string;
+    }
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
@@ -86,6 +100,20 @@ export type GlassBarWorking = {
 /** A stretch of a formula to colour, by UTF-16 offsets. */
 export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
+/**
+ * A file's details, shown in a popover from More (More › Details, #704):
+ * what it is and where, and its last few changes. `more` goes on to deeper
+ * work, such as the whole history, which is a sheet.
+ */
+export type GlassBarDetails = {
+  title: string;
+  subtitle?: string;
+  rows: { label: string; value: string }[];
+  /** A second list under a line: the last few changes, say. */
+  recent?: { label: string; value: string }[];
+  more?: { label: string; onPress: () => void };
+};
+
 /** One action in the More menu. */
 export type GlassBarAction = {
   label: string;
@@ -118,6 +146,10 @@ export type GlassBarProps = {
   toast?: GlassBarToast | null;
   /** More's menu. Without it, More calls `onMore`. */
   moreActions?: GlassBarAction[];
+  /** Shown: the file's details, in a popover from More. */
+  details?: GlassBarDetails | null;
+  /** The details' popover was closed (a tap outside it). */
+  onDetailsClose?: () => void;
   ref?: import("react").Ref<GlassBarHandle>;
   onFilter?: () => void;
   /**
@@ -129,6 +161,16 @@ export type GlassBarProps = {
   onMore?: () => void;
   /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
+  /**
+   * How Search sits at rest. `field` (the default): a capsule across the bar.
+   * `button`: a circle beside More, minimised as iOS minimises a toolbar's
+   * search, which leaves the bar's middle to the content. Pressing it opens
+   * the field with the keyboard up. Either way, while there's a query the
+   * field stays open, so what was found stays in reach.
+   */
+  searchStyle?: "field" | "button";
+  /** What Search is called, as the placeholder and for VoiceOver ("Search rows"). Default: Search. */
+  searchLabel?: string;
   onQueryChange?: (query: string) => void;
   /** Searching: Close, or Return. The query stays. */
   onSearchEnd?: () => void;
@@ -146,6 +188,8 @@ export type GlassBarProps = {
   onDeselect?: () => void;
   /** Selected: the ⓘ, for what the field is. */
   onInfo?: () => void;
+  /** Selected, in the ⓘ's popover: open the field's settings. Absent: the popover has no button. */
+  onInfoSettings?: () => void;
   /** Expanded, under a formula's working: open the field's settings. */
   onFieldSettings?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */

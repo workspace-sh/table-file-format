@@ -34,6 +34,7 @@ import {
   Image,
   Menu,
   Namespace,
+  Popover,
   ScrollView,
   Spacer,
   Text,
@@ -68,7 +69,7 @@ import {
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
-import type { GlassBarAction, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+import type { GlassBarAction, GlassBarDetails, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 
 const SIZE = 48;
 const GAP = 8;
@@ -288,7 +289,7 @@ function Lead({ state, ns, onFilter, restLead, onDeselect, onCancel, expansion }
   );
 }
 
-function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
+function Trail({ state, ns, onMore, onSearchEnd, moreActions, details, onDetailsClose }: Part) {
   if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
@@ -302,7 +303,7 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
       else groups[groups.length - 1]!.push(a);
     }
     const shown = groups.reverse().map((g) => [...g].reverse());
-    return (
+    const menu = (
       <Menu
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
@@ -320,6 +321,12 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
           )),
         ])}
       </Menu>
+    );
+    return (
+      <Popover isPresented={!!details} onIsPresentedChange={(on) => { if (!on) onDetailsClose?.(); }} arrowEdge="bottom">
+        <Popover.Trigger>{menu}</Popover.Trigger>
+        <Popover.Content>{details ? <Details details={details} onDone={onDetailsClose} /> : <Spacer />}</Popover.Content>
+      </Popover>
     );
   }
   return (
@@ -525,27 +532,49 @@ function Capsule(props: Part) {
     case "rest":
       // No search: the two buttons at the ends, and nothing between them.
       if (!props.onSearch) return <Spacer />;
+      // Minimised: a circle beside More. It keeps the capsule's glass identity,
+      // so pressing it grows the field out of the circle.
+      if (props.searchStyle === "button" && !state.query)
+        return (
+          <HStack spacing={0}>
+            <Spacer />
+            <Image
+              systemName="magnifyingglass"
+              size={18}
+              onPress={props.onSearch}
+              modifiers={[frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("capsule", ns), contentShape(shapes.circle()), accessibilityLabel(props.searchLabel ?? "Search")]}
+            />
+          </HStack>
+        );
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape, onTapGesture(() => props.onSearch?.()), accessibilityLabel("Search")]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || "Search"}</Text>
+          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || (props.searchLabel ?? "Search")}</Text>
           <Spacer />
-          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
-          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
+          {/* The keyboard away, a document's matches can still be stepped
+              through. Clear then waits in the open field (a tap away), so the
+              query and its count keep their room. */}
+          {state.query ? <Steps {...props} /> : null}
+          {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "searching":
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <TextField key="search" defaultValue={state.query} placeholder="Search" autoFocus onValueChange={props.onQueryChange} />
-          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1)]}>{props.searchResult}</Text> : null}
-          {state.query && props.onSearchStep ? (
-            <>
-              <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
-              <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
-            </>
-          ) : null}
+          {/* Focused as it opens, so typing starts at once. Return puts the
+              keyboard away and keeps the query. */}
+          <TextField
+            key="search"
+            defaultValue={state.query}
+            placeholder={props.searchLabel ?? "Search"}
+            autoFocus
+            onValueChange={props.onQueryChange}
+            modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
+          />
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
+          {state.query ? <Steps {...props} /> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -559,7 +588,9 @@ function Capsule(props: Part) {
             {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
           </VStack>
           <Spacer />
-          {state.info ? (
+          {state.facts ? (
+            <Info title={state.factsTitle ?? state.label} facts={state.facts} onSettings={props.onInfoSettings} />
+          ) : state.info ? (
             <Image
               systemName="info.circle"
               size={19}
@@ -589,6 +620,88 @@ function Capsule(props: Part) {
     case "editing":
       return <Editor {...props} state={state} shape={shape} />;
   }
+}
+
+/** Previous and next match: a document's or a canvas's find, not a table's (its rows are filtered). */
+function Steps(props: Part) {
+  if (!props.onSearchStep) return null;
+  return (
+    <>
+      <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
+      <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
+    </>
+  );
+}
+
+/**
+ * The ⓘ on a selected cell: what the field is, in a popover from it, not an
+ * alert (an alert is for a warning). Field Settings… goes on to the field's
+ * settings, which are a sheet: configuration.
+ */
+function Info({ title, facts, onSettings }: { title: string; facts: string; onSettings?: () => void }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <Popover isPresented={shown} onIsPresentedChange={setShown} arrowEdge="bottom">
+      <Popover.Trigger>
+        <Image
+          systemName="info.circle"
+          size={19}
+          onPress={() => setShown(true)}
+          modifiers={[frame({ width: 32, height: 32 }), secondary, contentShape(shapes.circle()), accessibilityLabel("About this field")]}
+        />
+      </Popover.Trigger>
+      <Popover.Content>
+        <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 300, alignment: "leading" })]}>
+          <Text modifiers={[font({ size: 17, weight: "semibold" })]}>{title}</Text>
+          <Text modifiers={[font({ size: 15 }), secondary, fixedSize({ horizontal: false, vertical: true })]}>{facts}</Text>
+          {onSettings ? (
+            <Button
+              label="Field Settings…"
+              onPress={() => {
+                setShown(false);
+                // Once the popover has gone: a sheet presented while it's
+                // still leaving isn't shown.
+                setTimeout(onSettings, 350);
+              }}
+            />
+          ) : null}
+        </VStack>
+      </Popover.Content>
+    </Popover>
+  );
+}
+
+/** A file's details, as More › Details shows them: facts, then the last few changes. */
+function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () => void }) {
+  const row = (r: { label: string; value: string }, key: string) => (
+    <HStack key={key} spacing={12}>
+      <Text modifiers={[font({ size: 15 }), secondary]}>{r.label}</Text>
+      <Spacer />
+      <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{r.value}</Text>
+    </HStack>
+  );
+  return (
+    <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 320, alignment: "leading" })]}>
+      <VStack alignment="leading" spacing={2}>
+        <Text modifiers={[font({ size: 17, weight: "semibold" }), lineLimit(1)]}>{details.title}</Text>
+        {details.subtitle ? <Text modifiers={[font({ size: 13 }), secondary, lineLimit(1)]}>{details.subtitle}</Text> : null}
+      </VStack>
+      {details.rows.map((r, i) => row(r, `r${i}`))}
+      {details.recent?.length ? <Divider /> : null}
+      {details.recent?.map((r, i) => row(r, `h${i}`))}
+      {details.more ? (
+        <Button
+          label={details.more.label}
+          onPress={() => {
+            const go = details.more!.onPress;
+            onDone?.();
+            // Once the popover has gone: a sheet presented while it's still leaving isn't shown.
+            setTimeout(go, 350);
+          }}
+        />
+      ) : null}
+    </VStack>
+  );
 }
 
 type ChipLook = { on: boolean; tone?: { bg: string; fg: string } };

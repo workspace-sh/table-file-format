@@ -1,21 +1,22 @@
 // A settings form in the inspector: the system's grouped form, as the
-// iOS app's is. table-ui describes a field's settings, a new field and a
+// iOS app's is (any Mac app drawing the .table library's views: the demo
+// and Workspace). table-ui describes a field's settings, a new field and a
 // view's settings as sections of rows (its SettingsForm slot); the app
 // sends them here as JSON with their words, and what's changed, pressed,
 // removed or moved comes back as an event naming the row.
 
 import SwiftUI
 
-struct SettingsOptionData: Decodable, Equatable {
+public struct SettingsOptionData: Decodable, Equatable {
   var value: String
   var label: String
   var disabled: Bool?
 }
 
 /// One row, of any kind: "text", "info", "choice", "toggle", "compound" or "action".
-struct SettingsRowData: Decodable, Equatable, Identifiable {
+public struct SettingsRowData: Decodable, Equatable, Identifiable {
   var kind: String
-  var id: String
+  public var id: String
   var label: String?
   /// A text's, an info's or a choice's value.
   var value: String?
@@ -35,8 +36,8 @@ struct SettingsRowData: Decodable, Equatable, Identifiable {
   var disabled: Bool?
 }
 
-struct SettingsSectionData: Decodable, Equatable, Identifiable {
-  var id: String
+public struct SettingsSectionData: Decodable, Equatable, Identifiable {
+  public var id: String
   var title: String?
   var footer: String?
   var rows: [SettingsRowData]
@@ -45,7 +46,7 @@ struct SettingsSectionData: Decodable, Equatable, Identifiable {
   var movable: Bool
 }
 
-struct SettingsFormData: Decodable, Equatable {
+public struct SettingsFormData: Decodable, Equatable {
   /// Changes with the form shown, so what was typed in one isn't carried to the next.
   var key: String
   var title: String
@@ -58,11 +59,12 @@ struct SettingsFormData: Decodable, Equatable {
   var sections: [SettingsSectionData]
 }
 
-final class TableSettingsFormModel: ObservableObject {
-  @Published var data: SettingsFormData?
+public final class TableSettingsFormModel: ObservableObject {
+  @Published public var data: SettingsFormData?
+  public init() {}
   /// What happened: `what` ("change", "submit", "toggle", "press",
   /// "remove", "move", "cancel", "confirm"), the row or section it was on, and its value.
-  var send: ([String: Any]) -> Void = { _ in }
+  public var send: ([String: Any]) -> Void = { _ in }
 }
 
 private struct TextRow: View {
@@ -163,10 +165,12 @@ private struct RowView: View {
   }
 }
 
-struct TableSettingsFormView: View {
+public struct TableSettingsFormView: View {
   @ObservedObject var model: TableSettingsFormModel
 
-  var body: some View {
+  public init(model: TableSettingsFormModel) { self.model = model }
+
+  public var body: some View {
     if let data = model.data {
       VStack(spacing: 0) {
         Form {

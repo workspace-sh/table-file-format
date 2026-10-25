@@ -4,6 +4,7 @@
 
 import AppKit
 import React
+import TableMacControls
 
 @objc(TableSidebar)
 class TableSidebar: RCTEventEmitter {
@@ -94,7 +95,7 @@ class TableSidebar: RCTEventEmitter {
     }
   }
 
-  /// The settings form for the inspector to show (TableSettingsForm.swift); "" for none.
+  /// The settings form for the inspector to show (@workspace.sh/table-mac-controls, TableSettingsForm.swift); "" for none.
   @objc func setSettingsForm(_ json: String) {
     var data: SettingsFormData?
     if let bytes = json.data(using: .utf8), !json.isEmpty {

@@ -283,6 +283,89 @@ export const MIN_RESIZED_COLUMN_WIDTH = 60;
  */
 export const SQUEEZED_CELL_WIDTH = 140;
 
+/**
+ * How narrow a column of `field` may be squeezed to keep its table whole,
+ * by what its cells hold: a checkbox needs room for its header, a choice's pill or a
+ * date a little more, an amount room for its total ("SUM US$732,800.00"),
+ * and the title or a text column the comfortable width. In a table that
+ * doesn't fit, the columns that can spare it give their room first.
+ */
+export function squeezedWidthOf(field: Field | undefined, schema: TableSchema, primary = false): number {
+  if (primary || field === undefined) return MIN_CELL_WIDTH;
+  if (field.type === "boolean") return 100;
+  if (field.relation || field.attachment) return SQUEEZED_CELL_WIDTH;
+  if (enumOptions(field).length > 0) return field.type === "array" ? SQUEEZED_CELL_WIDTH : 110;
+  switch (field.type) {
+    case "date":
+    case "time":
+      return 110;
+    case "datetime":
+      return 150;
+    case "integer":
+    case "number": {
+      const format = effectiveFormat(field, schema) ?? "";
+      return format.startsWith("currency") ? 150 : 110;
+    }
+    case "string":
+      return stringFormatKind(field) === "markdown" ? MIN_CELL_WIDTH : SQUEEZED_CELL_WIDTH;
+    default:
+      return SQUEEZED_CELL_WIDTH;
+  }
+}
+
+/** The title column's natural width: room for a name of a few words. */
+export const TITLE_CELL_WIDTH = 240;
+
+/**
+ * How wide a column of `field` grows, at most, when there's room: a table
+ * stops at its columns' natural widths rather than stretching across a
+ * wide window, as a spreadsheet's or Notion's does. The title has room for
+ * a few words, a checkbox for its header, and the rest the comfortable
+ * width, or their squeezed width when that's more.
+ */
+export function roomiestWidthOf(field: Field | undefined, schema: TableSchema, primary = false): number {
+  if (primary) return TITLE_CELL_WIDTH;
+  if (field?.type === "boolean") return squeezedWidthOf(field, schema);
+  return Math.max(MIN_CELL_WIDTH, squeezedWidthOf(field, schema));
+}
+
+/**
+ * Widths for `names` sharing `room`, each by its weight (`most`, its
+ * natural width, or alike), none under its `least`: those whose share
+ * would be less hold their least, and the rest share what's left, the
+ * `floor()` remainder a pixel at a time to the leftmost. What the layout
+ * does with columns that grow from nothing by their weights, each with a
+ * least width (`columnShare`). Null when their leasts don't fit.
+ */
+function sharedOut(
+  names: string[],
+  room: number,
+  least: (name: string) => number,
+  most?: (name: string) => number,
+): Map<string, number> | null {
+  const out = new Map<string, number>();
+  if (names.reduce((n, name) => n + least(name), 0) > room) return null;
+  const weight = (name: string) => (most ? most(name) : 1);
+  let open = [...names];
+  let left = room;
+  const weightOf = (them: string[]) => them.reduce((n, name) => n + weight(name), 0);
+  for (;;) {
+    const total = weightOf(open);
+    const held = open.filter((name) => least(name) > (total > 0 ? (left * weight(name)) / total : 0));
+    if (held.length === 0) break;
+    for (const name of held) {
+      out.set(name, least(name));
+      left -= least(name);
+    }
+    open = open.filter((name) => !held.includes(name));
+  }
+  const total = weightOf(open);
+  const shares = open.map((name) => (total > 0 ? Math.floor((left * weight(name)) / total) : 0));
+  const remainder = Math.max(0, left - shares.reduce((n, w) => n + w, 0));
+  open.forEach((name, i) => out.set(name, shares[i]! + (i < remainder ? 1 : 0)));
+  return out;
+}
+
 /** The "+" for a new field: the width of its header cell after the last column, taken from the columns'. */
 export const ADD_FIELD_WIDTH = 40;
 /** A sheet's row-number gutter (`coordinates`): its narrowest, for up to three digits. */
@@ -321,7 +404,31 @@ export function columnWidths(
   chrome: number,
   /** How narrow flexible columns may be made to keep the table whole; the comfortable width when not given (no squeezing). */
   squeezeTo: number = MIN_CELL_WIDTH,
+  /**
+   * What they're given when the table can't be whole even squeezed: the
+   * comfortable width, or (`squeezeTo`) the squeezed one, held as the
+   * table starts to scroll, so its columns don't grow as its space shrinks.
+   */
+  past: number = MIN_CELL_WIDTH,
+  /**
+   * Each column's own squeezed width (`squeezedWidthOf`), in place of
+   * `squeezeTo`: the table is whole while their sum fits, the columns that
+   * would be narrower than theirs holding it; past that, each has its own
+   * (`past` squeezed) or the comfortable width, and the table scrolls.
+   */
+  least?: (name: string) => number,
+  /**
+   * Each column's natural width (`roomiestWidthOf`): with room to spare
+   * they stop there, and the table is narrower than its space; with less,
+   * they share it by these widths, so each gives up room alike.
+   */
+  most?: (name: string) => number,
 ): (name: string) => number {
+  if (least) return columnWidthsByLeast(fields, setWidths, containerWidth, chrome, past, least, most);
+  if (most) {
+    const even = columnWidths(fields, setWidths, containerWidth, chrome, squeezeTo, past);
+    return (name) => (typeof setWidths[name] === "number" ? even(name) : Math.min(even(name), Math.max(most(name), MIN_CELL_WIDTH)));
+  }
   const fixedWidth = (name: string) => {
     const w = setWidths[name];
     return typeof w === "number" ? Math.max(MIN_RESIZED_COLUMN_WIDTH, w) : undefined;
@@ -332,7 +439,7 @@ export function columnWidths(
   // Whole in its space when it can be, down to the squeezed width; past that, comfortable and scrolling.
   const shared = (room: number, count: number) => {
     const raw = count > 0 && containerWidth > 0 ? Math.floor(room / count) : MIN_CELL_WIDTH;
-    return raw >= Math.min(squeezeTo, MIN_CELL_WIDTH) ? raw : MIN_CELL_WIDTH;
+    return raw >= Math.min(squeezeTo, MIN_CELL_WIDTH) ? raw : past;
   };
   // What each column would be with none resized: the least a flexible one is given.
   const unresized = shared(Math.max(0, containerWidth - chrome), fields.length);
@@ -352,6 +459,64 @@ export function columnWidths(
     const i = among.indexOf(name);
     return cellW + (i >= 0 && i < remainder ? 1 : 0);
   };
+}
+
+/** `columnWidths` with a squeezed width for each column. */
+function columnWidthsByLeast(
+  fields: string[],
+  setWidths: Record<string, number | undefined>,
+  containerWidth: number,
+  chrome: number,
+  past: number,
+  least: (name: string) => number,
+  most?: (name: string) => number,
+): (name: string) => number {
+  const fixedWidth = (name: string) => {
+    const w = setWidths[name];
+    return typeof w === "number" ? Math.max(MIN_RESIZED_COLUMN_WIDTH, w) : undefined;
+  };
+  // Not fitting even squeezed: each its own squeezed width, or the comfortable one.
+  const held = (name: string) => (past < MIN_CELL_WIDTH ? least(name) : Math.max(least(name), MIN_CELL_WIDTH));
+  if (containerWidth <= 0) return (name) => fixedWidth(name) ?? MIN_CELL_WIDTH;
+  const flexible = fields.filter((name) => fixedWidth(name) === undefined);
+  const fixedTotal = fields.reduce((sum, name) => sum + (fixedWidth(name) ?? 0), 0);
+  // With none resized, and sharing what the resized ones leave: a flexible
+  // column has the more of the two, so widening one column widens the
+  // table rather than taking the others' room.
+  // No more room than their natural widths take: past that, the table stops.
+  const roomFor = (them: string[], room: number) =>
+    most ? Math.min(room, them.reduce((n, name) => n + Math.max(least(name), most(name)), 0)) : room;
+  const unresized = sharedOut(fields, roomFor(fields, Math.max(0, containerWidth - chrome)), least, most);
+  const leftover = sharedOut(flexible, roomFor(flexible, Math.max(0, containerWidth - chrome - fixedTotal)), least, most);
+  return (name: string) => {
+    const fixed = fixedWidth(name);
+    if (fixed !== undefined) return fixed;
+    const a = unresized?.get(name) ?? held(name);
+    const b = leftover?.get(name);
+    return b !== undefined ? Math.max(a, b) : a;
+  };
+}
+
+/**
+ * Whether the columns `columnWidths` gives fill the table exactly, as when
+ * none is too wide to fit: then the columns nobody resized can share the
+ * table's width as it changes, in the layout, rather than waiting to be
+ * measured again (a window resized on a Mac). Not when the table is wider
+ * than its room and scrolls, nor before it's measured, nor when every
+ * column has been given a width.
+ */
+export function columnsFill(
+  fields: string[],
+  setWidths: Record<string, number | undefined>,
+  containerWidth: number,
+  chrome: number,
+  squeezeTo: number = MIN_CELL_WIDTH,
+): boolean {
+  if (containerWidth <= 0) return false;
+  if (!fields.some((name) => typeof setWidths[name] !== "number")) return false;
+  const width = columnWidths(fields, setWidths, containerWidth, chrome, squeezeTo);
+  const total = fields.reduce((sum, name) => sum + width(name), 0);
+  return total === Math.max(0, containerWidth - chrome);
 }
 
 /** What an empty cell shows, and a choice picker's "no value" option. */

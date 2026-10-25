@@ -411,7 +411,7 @@
 				DEAD_CODE_STRIPPING = NO;
 				INFOPLIST_FILE = "TableDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -434,7 +434,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "TableDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

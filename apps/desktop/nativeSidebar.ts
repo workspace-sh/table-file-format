@@ -44,7 +44,7 @@ export type SidebarEvent =
   | { type: "inspectorCell"; action: "edit" | "settings" }
   // Escape pressed in the window while no text is being typed (TableShell.watchEscape).
   | { type: "escape" }
-  /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
+  /** Something done in the inspector's settings form (@workspace.sh/table-mac-controls reads these). */
   | SettingsFormEvent
   /** Something typed or pressed in the inspector's formula editor (MacFormulaEditor.ts reads these). */
   | FormulaEditorEvent
@@ -159,7 +159,7 @@ export interface SettingsFormEvent {
   to?: number;
 }
 
-/** The settings form for the inspector to show, as its JSON (TableSettingsForm.swift); null for none. */
+/** The settings form for the inspector to show, as its JSON (@workspace.sh/table-mac-controls, TableSettingsForm.swift); null for none. */
 export function setSettingsForm(json: string | null): void {
   TableSidebar?.setSettingsForm(json ?? "");
 }

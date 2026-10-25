@@ -59,7 +59,7 @@ import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZi
 import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
 import { pickDocument, releaseDocument, type HeldDocument } from "./modules/table-files";
 import { File } from "expo-file-system";
-import { useIndexedTables, type IndexedTables } from "@workspace.sh/table-app/react";
+import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";
 import { expoFs } from "./expoFs";
 import { writeBundleTo } from "@workspace.sh/table-core/io";
@@ -259,14 +259,16 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
     historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
   // The first rows of large documents reopened at launch, shown while the rest is read (documents.ts).
   useEffect(() => {
     indexed.hold(reopened.first);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const derived = derive(state, {
+  const derived = derive(behind, {
     locale: systemLocale,
     hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
