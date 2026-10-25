@@ -135,6 +135,8 @@ async function openDocuments(paths: string[], held: Iterable<string>, store: Key
           for (const [table, rows] of Object.entries(shown)) first[`${opened.key}/${table}`] = rows;
           documents.set(dir, path);
           keys[path] = opened.key;
+          // What the file was when its folder was made: a save checks it's still that (packTableFile).
+          await desktopFs.writeText(`${dir}.stamp`, await stampOf(path));
           continue;
         }
         // Judged large, read as not: unpacked as any.
@@ -236,7 +238,7 @@ export function useFolders({
     entry.done = (async () => {
       do {
         entry.again = false;
-        await packTableFile(desktopFs, workDir, file);
+        await packTableFile(desktopFs, workDir, file, await stampOf(file));
         await restampTableFile(desktopFs, workDir, await stampOf(file));
       } while (entry.again);
     })().finally(() => {

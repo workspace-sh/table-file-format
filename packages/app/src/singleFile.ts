@@ -48,12 +48,32 @@ export async function unpackTableFile(fs: TableFs, bytes: Uint8Array, workDir: s
 }
 
 /**
+ * The file changed since its working folder was made from it (or last
+ * packed into it): another app, another copy of this one, a sync. Packing
+ * would write over that, so it isn't packed; the edits stay in the working
+ * folder.
+ */
+export class ChangedElsewhere extends Error {
+  constructor(readonly target: string) {
+    super(`${target.slice(target.lastIndexOf("/") + 1)} was changed somewhere else since it was opened here, so it wasn't saved over. Open it again to see it as it is now.`);
+    this.name = "ChangedElsewhere";
+  }
+}
+
+/**
  * Pack a working folder back into the single file at `target`: every file
  * of the document's (its tables, histories, attachments and files no reader
  * knows, never the index), those unchanged since the file was written
  * copied from it as they are; written beside the file and renamed over it.
+ * `now` is the file's stamp as it is now: when it isn't the one the working
+ * folder was made from, the file changed elsewhere, and it's left as it is
+ * (ChangedElsewhere).
  */
-export async function packTableFile(fs: TableFs, workDir: string, target: string): Promise<void> {
+export async function packTableFile(fs: TableFs, workDir: string, target: string, now?: string): Promise<void> {
+  if (now !== undefined) {
+    const made = await fs.readText(stampOf(workDir));
+    if (made !== null && made !== now) throw new ChangedElsewhere(target);
+  }
   await packTableFileFrom(fs, workDir, target);
 }
 

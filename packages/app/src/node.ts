@@ -123,7 +123,7 @@ export function packSingleFile(path: string): Promise<void> {
   const run = async (): Promise<void> => {
     do {
       held.again = false;
-      await packTableFile(nodeFs, dir, held.target);
+      await packTableFile(nodeFs, dir, held.target, stampOf(held.target));
       await restampTableFile(nodeFs, dir, stampOf(held.target));
     } while (held.again);
   };
