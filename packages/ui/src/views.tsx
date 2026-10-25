@@ -2499,7 +2499,7 @@ function EditableCell({
   const singleRelation = kind === "relation" && !relatesMany(field);
   const choiceOpts = singleRelation
     ? relationOptions(field, relatedTables)
-    : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }));
+    : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value, ...((opt as { color?: string }).color ? { color: (opt as { color?: string }).color } : {}) }));
   if (kind === "choice" || singleRelation) {
     if (!editing) {
       const shown = (
