@@ -24,6 +24,7 @@ import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedSh
 import { rowTitleFor } from "./edits.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
+import { askName } from "./askName";
 
 /** What the host draws around the view: the file's tables and views, and what can be done to them. */
 export interface TableFileChrome {
@@ -143,6 +144,9 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
   const asking = state.asking;
   useEffect(() => {
     if (asking?.kind === "confirm") questions(asking.confirm, (response) => dispatch({ type: "answer", response }));
+    // A name to type (a cell's note, a range of cells to merge): the system's own text prompt.
+    else if (asking?.kind === "name")
+      askName(asking.prompt, (text) => dispatch({ type: "answer", response: "create", text }), () => dispatch({ type: "answer", response: "cancel" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asking]);
   const telling = state.telling;
