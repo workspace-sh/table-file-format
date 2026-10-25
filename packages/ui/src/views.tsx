@@ -1349,9 +1349,19 @@ const styles = css.create({
   pillListOneLine: {
     flexWrap: "nowrap",
     overflow: "hidden",
+    minWidth: 0,
   },
   pillMore: {
     flexShrink: 0,
+  },
+  pillShrinks: {
+    // On the row's centre line, as the pills beside it.
+    alignSelf: "center",
+    flexShrink: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
   },
   pill: {
     paddingInline: 10,
@@ -1515,7 +1525,7 @@ const styles = css.create({
   tintIndigo: { backgroundColor: { default: "#e1e4fb", "@media (prefers-color-scheme: dark)": "#1f2347" } },
   tintPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" } },
   tintPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" } },
-  pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 },
   // A cell with a note (D57): a small triangle in its top end corner, as spreadsheets mark one.
   noted: {
     backgroundImage: {
@@ -1905,18 +1915,23 @@ function headerAlignStyle(align: FieldAlignment) {
 
 
 
+/** A table cell's padding at each side (tableCell's paddingInline). */
+const CELL_PADDING_INLINE = 16;
+
 /** The width a table cell's content has, for pills to know how many fit. */
 const CellWidth = createContext<number | undefined>(undefined);
 
-/** A pill's width, roughly: its label, padding and the gap after it. */
-const pillWidth = (p: Pill) => String(p.label).length * 7.6 + 30;
+/** A pill's width, roughly: its label at 11 pt medium (about 6.2 pt a character), its padding and the gap after it. */
+const pillWidth = (p: Pill) => String(p.label).length * 6.2 + 24;
+/** A "+N" pill's width, with the gap before it. */
+const moreWidth = (n: number) => (String(n).length + 1) * 6.2 + 24;
 /** The pills that fit in `width`, leaving room for a "+N" when some don't. */
 function pillsThatFit(pills: Pill[], width: number): Pill[] {
   let used = 0;
   const out: Pill[] = [];
   for (let i = 0; i < pills.length; i++) {
     const w = pillWidth(pills[i]!);
-    const reserve = i < pills.length - 1 ? 40 : 0;
+    const reserve = i < pills.length - 1 ? moreWidth(pills.length - i - 1) : 0;
     if (out.length > 0 && used + w + reserve > width) break;
     out.push(pills[i]!);
     used += w;
@@ -1932,7 +1947,7 @@ function linksThatFit(links: RelationLink[], width: number): RelationLink[] {
   const out: RelationLink[] = [];
   for (let i = 0; i < links.length; i++) {
     const w = linkWidth(links[i]!);
-    const reserve = i < links.length - 1 ? 40 : 0;
+    const reserve = i < links.length - 1 ? moreWidth(links.length - i - 1) : 0;
     if (out.length > 0 && used + w + reserve > width) break;
     out.push(links[i]!);
     used += w;
@@ -1994,9 +2009,15 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
       const shownPills = width !== undefined && (lines ?? 1) <= 1 ? pillsThatFit(shown.pills, width) : shown.pills;
       const more = shown.pills.length - shownPills.length;
       return (
-        <html.div style={[styles.pillList, more > 0 && styles.pillListOneLine]}>
+        <html.div style={[styles.pillList, width !== undefined && (lines ?? 1) <= 1 && styles.pillListOneLine]}>
           {shownPills.map((pill, i) => (
-            <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
+            <EnumPill
+              key={`${i}\u0000${String(pill.value)}`}
+              pill={pill}
+              // Only a pill too wide for the cell on its own gives way, so the
+              // "+N" after it is never cut off at the cell's edge.
+              shrinks={width !== undefined && i === 0 && pillWidth(pill) + (more > 0 ? moreWidth(more) : 0) > width}
+            />
           ))}
           {more > 0 ? (
             <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
@@ -2093,10 +2114,11 @@ function linkLabel(href: string, text: string): string {
 }
 
 /** A choice as the schema describes it: its label, in its colour. */
-function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
+function EnumPill({ pill, atStart, shrinks }: { pill: Pill; atStart?: boolean; shrinks?: boolean }) {
   // No colour, or a name this reader doesn't know, is gray (SPEC section 4).
   const color = pill.color && Object.hasOwn(PILL_COLORS, pill.color) ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : styles.pillGray;
-  return <html.span style={[styles.pill, color, atStart && styles.pillAtStart]}>{pill.label}</html.span>;
+  // Too wide for its cell in a list on one line: its label is cut short.
+  return <html.span style={[styles.pill, color, atStart && styles.pillAtStart, shrinks && styles.pillShrinks]}>{pill.label}</html.span>;
 }
 
 /** A board column's heading: the choice's label when it has one. */
@@ -4280,7 +4302,7 @@ export function TableView({
         ]}
         {...(note !== undefined ? { title: note } : {})}
       >
-        <CellWidth.Provider value={colWidth(name) - 24}>
+        <CellWidth.Provider value={colWidth(name) - CELL_PADDING_INLINE * 2}>
         {onUpdateRow ? (
           <EditableCell
             rowKey={row.id}
@@ -4913,7 +4935,7 @@ export function TableView({
       idx,
       len,
       heightOf(row.id),
-      <CellWidth.Provider value={colWidth(name) - 24}>
+      <CellWidth.Provider value={colWidth(name) - CELL_PADDING_INLINE * 2}>
         <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} lines={linesFor(heightOf(row.id))} />
       </CellWidth.Provider>,
       tintOf(colorsOf(row).cells[name]),
