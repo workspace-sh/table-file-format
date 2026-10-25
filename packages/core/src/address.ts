@@ -42,6 +42,19 @@ export interface Address {
 }
 
 /**
+ * A key or value as written: percent-decoded (SPEC section 10). One that
+ * isn't valid percent-encoding, as an address written before values were
+ * encoded may be, is read as it stands.
+ */
+function decoded(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
  * Parse an address string. Returns `null` when the input is empty or
  * has no path component (the path is the only required part).
  *
@@ -66,8 +79,8 @@ export function parseAddress(input: string): Address | null {
     if (!pair) continue;
     const eqIdx = pair.indexOf("=");
     if (eqIdx === -1) continue;
-    const key = pair.slice(0, eqIdx);
-    const value = pair.slice(eqIdx + 1);
+    const key = decoded(pair.slice(0, eqIdx));
+    const value = decoded(pair.slice(eqIdx + 1));
     if (!key || !value) continue;
     switch (key) {
       case "table":
@@ -97,14 +110,13 @@ export function parseAddress(input: string): Address | null {
  */
 export function formatAddress(addr: Address): string {
   const parts: string[] = [];
-  if (addr.tableName) parts.push(`table=${addr.tableName}`);
-  if (addr.rowId) parts.push(`row=${addr.rowId}`);
-  if (addr.viewId) parts.push(`view=${addr.viewId}`);
-  if (addr.fieldName) parts.push(`field=${addr.fieldName}`);
+  const pair = (key: string, value: string) => parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+  if (addr.tableName) pair("table", addr.tableName);
+  if (addr.rowId) pair("row", addr.rowId);
+  if (addr.viewId) pair("view", addr.viewId);
+  if (addr.fieldName) pair("field", addr.fieldName);
   if (addr.extra) {
-    for (const [k, v] of Object.entries(addr.extra)) {
-      parts.push(`${k}=${v}`);
-    }
+    for (const [k, v] of Object.entries(addr.extra)) pair(k, v);
   }
   return parts.length === 0 ? addr.tablePath : `${addr.tablePath}#${parts.join("&")}`;
 }
