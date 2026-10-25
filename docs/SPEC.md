@@ -1425,7 +1425,10 @@ fragment:
     which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
-strings). Order is not significant. Unknown keys MUST be tolerated
+strings). Keys and values are percent-encoded (as `encodeURIComponent`
+does), since an `id` may be any string: a row `a&b` is `row=a%26b`.
+Readers decode them, and read one that isn't valid percent-encoding as
+it stands. Order is not significant. Unknown keys MUST be tolerated
 by readers — apps MAY define additional keys (e.g. `query=`,
 `highlight=`) but consumers that don't recognise them should
 silently ignore.
