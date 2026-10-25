@@ -221,15 +221,23 @@ fn compare(a: &Key, b: &Key, f: &SortField) -> Ordering {
     }
 }
 
-/// A Sheet view's grid order, as the file index of the row at each place, and its groups (start from 1,
-/// count). `read` gives a row's value of a field; `id` its id.
+/// A group in a grid: its key, the place (from 1) of its first row, and how many rows it has.
+#[derive(Clone, Debug)]
+pub struct GridGroup {
+    pub key: String,
+    pub start: usize,
+    pub count: usize,
+}
+
+/// A Sheet view's grid order, as the file index of the row at each place, and its groups. `read` gives
+/// a row's value of a field; `id` its id.
 pub fn arrange<'a>(
     count: usize,
     view: &SheetView,
     field: &dyn Fn(&str) -> SortField<'a>,
     read: &mut dyn FnMut(usize, &str) -> Value,
     id: &dyn Fn(usize) -> String,
-) -> Vec<usize> {
+) -> (Vec<usize>, Vec<GridGroup>) {
     let all: Vec<usize> = (0..count).collect();
     let mut arranged = if view.order.is_empty() {
         all.clone()
@@ -264,7 +272,7 @@ pub fn arrange<'a>(
         });
         arranged = keyed.into_iter().map(|(i, _)| i).collect();
     }
-    let Some(group) = &view.group else { return arranged };
+    let Some(group) = &view.group else { return (arranged, Vec::new()) };
     // Enum values first, in their declared order; then the rest as they arrive; empties last.
     const EMPTY: &str = "(empty)";
     let mut keys: Vec<String> = Vec::new();
@@ -281,11 +289,14 @@ pub fn arrange<'a>(
     }
     let declared = field(group).enum_values.to_vec();
     let mut order = Vec::new();
+    let mut groups = Vec::new();
     let ordered = declared.iter().filter(|k| buckets.contains_key(*k)).cloned().chain(keys.iter().filter(|k| *k != EMPTY && !declared.contains(k)).cloned()).chain(buckets.contains_key(EMPTY).then(|| EMPTY.to_string()));
     for k in ordered.collect::<Vec<_>>() {
-        order.extend(buckets.remove(&k).unwrap_or_default());
+        let bucket = buckets.remove(&k).unwrap_or_default();
+        groups.push(GridGroup { key: k, start: order.len() + 1, count: bucket.len() });
+        order.extend(bucket);
     }
-    order
+    (order, groups)
 }
 
 /// A row's group: its value as text, `(empty)` for an empty one or an empty list.

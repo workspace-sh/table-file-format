@@ -55,12 +55,32 @@ export interface Edn {
    * they come back as "host", for `.table`'s own workbook to compute.
    */
   computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, FormulaResult[]> | "host">;
+  /**
+   * A Sheet view's grid (D41), as an app numbers its rows by: each view's
+   * order (file indexes, row 1 first), groups and whether it's sorted by its
+   * own places (null: not a Sheet view), and, with `columns`, the table's
+   * formula columns worked out in the same pass, as `.table`'s sheetGrid
+   * does. "host" when the table is the host's.
+   */
+  computeGrids(
+    tables: Record<string, TableIn>,
+    table: string,
+    views: readonly string[],
+    options?: { now?: Date; seed?: number; columns?: boolean },
+  ): { fields: Record<string, FormulaResult[]>; grids: Record<string, SheetGridOut | null> } | "host";
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
 
 /** A formula's result: `.table`'s `Value`, with an error as its code and message. */
 export type FormulaResult = number | string | boolean | undefined | { code: string; message: string } | FormulaResult[];
+
+/** A Sheet view's grid as the core gives it. */
+export interface SheetGridOut {
+  order: number[];
+  groups: { key: string; start: number; count: number }[];
+  loop: boolean;
+}
 
 type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; index: string };
 
@@ -122,11 +142,30 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   canonical: (text) => call(c.canonical, text),
   formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
   computeTables: (tables, clock = {}, only) => {
+    const { out } = run(c, tables, clock, only ? { only } : {});
+    return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v === "host" ? "host" : v.fields]));
+  },
+  computeGrids: (tables, table, views, options = {}) => {
+    const { out } = run(c, tables, options, { only: [table], grids: { [table]: views }, columns: options.columns ?? true });
+    const got = out[table];
+    if (!got || got === "host") return "host";
+    return { fields: got.fields, grids: got.grids ?? {} };
+  },
+  binding,
+});
+
+/** The core asked once: every table's columns (and any grids asked for), or "host". */
+function run(
+  c: Calls,
+  tables: Record<string, TableIn>,
+  clock: { now?: Date; seed?: number },
+  extra: { only?: readonly string[]; grids?: Record<string, readonly string[]>; columns?: boolean },
+): { out: Record<string, { fields: Record<string, FormulaResult[]>; grids?: Record<string, SheetGridOut | null> } | "host"> } {
     const parts: Float64Array[] = [];
     // One moment for the whole computation (D55): the reader's own date, and the instant in UTC.
     const now = clock.now ?? new Date();
     const json = {
-      ...(only ? { only } : {}),
+      ...extra,
       clock: {
         today: `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
         now: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
@@ -169,16 +208,21 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
     }
     const r = callWith(() => c.computeWorkbook(JSON.stringify(json), numbers));
     const all = decode(r, r.kinds.length);
-    const index = JSON.parse(r.index) as Record<string, { host: true } | { fields: Record<string, [number, number]> }>;
-    const out: Record<string, Record<string, FormulaResult[]> | "host"> = {};
+    type Raw = { order: number[]; groups: [string, number, number][]; loop: boolean } | null;
+    const index = JSON.parse(r.index) as Record<string, { host: true } | { fields: Record<string, [number, number]>; grids?: Record<string, Raw> }>;
+    const out: Record<string, { fields: Record<string, FormulaResult[]>; grids?: Record<string, SheetGridOut | null> } | "host"> = {};
     for (const [name, entry] of Object.entries(index)) {
       if ("host" in entry) out[name] = "host";
-      else out[name] = Object.fromEntries(Object.entries(entry.fields).map(([f, [start, rows]]) => [f, all.slice(start, start + rows)]));
+      else
+        out[name] = {
+          fields: Object.fromEntries(Object.entries(entry.fields).map(([f, [start, rows]]) => [f, all.slice(start, start + rows)])),
+          ...(entry.grids
+            ? { grids: Object.fromEntries(Object.entries(entry.grids).map(([v, g]) => [v, g && { order: g.order, groups: g.groups.map(([key, start, count]) => ({ key, start, count })), loop: g.loop }])) }
+            : {}),
+        };
     }
-    return out;
-  },
-  binding,
-});
+    return { out };
+}
 
 /** Whether a stored value is, or holds, an object (JSON's `{…}`). */
 const holdsObject = (v: unknown): boolean => typeof v === "object" && v !== null && (!Array.isArray(v) || v.some(holdsObject));

@@ -17,7 +17,7 @@ use std::rc::Rc;
 use crate::eval::{evaluate, linked_tables, needs_host, ErrorCode, Scope, Value};
 use crate::formula::{read_formula, Expr};
 use crate::holds::{checked_by_host, holds, Kind};
-use crate::places::{arrange, place_tables, place_use, Place, PlaceRow, SheetView, SortField};
+use crate::places::{arrange, place_tables, place_use, GridGroup, Place, PlaceRow, SheetView, SortField};
 use crate::Error;
 
 /// A stored column: numbers (`NaN` for empty), or any values.
@@ -122,6 +122,7 @@ struct Grid {
     order: Vec<usize>,
     /// Each row's place (from 1), by file index.
     place: Vec<i64>,
+    groups: Vec<GridGroup>,
     /// Sorted or grouped by its own places: numbered in file order, and every place read in it is #REF!.
     looped: bool,
 }
@@ -168,6 +169,11 @@ pub struct Workbook {
     clock: Option<Clock>,
     /// The tables the host asked for (`None`: every one); the rest are read only through them.
     pub only: Option<Vec<String>>,
+    /// Sheet views whose grids the host asked for, by table name; then every formula column is worked out
+    /// in the same pass, after them, without iteration (`.table`'s `sheetGrid`).
+    pub wanted_grids: HashMap<String, Vec<String>>,
+    /// Whether formula columns are wanted (false: grids only, `sheetOrder`).
+    pub columns_wanted: bool,
     /// Iterating (D60): the table being worked out, and what the last pass gave, by field and row.
     previous: RefCell<Option<(usize, HashMap<(usize, usize), Value>)>>,
 }
@@ -198,6 +204,8 @@ impl Workbook {
             hosted,
             clock,
             only: None,
+            wanted_grids: HashMap::default(),
+            columns_wanted: true,
             previous: RefCell::new(None),
         }
     }
@@ -284,6 +292,20 @@ impl Workbook {
         }
     }
 
+    /// A Sheet view of table `t` as an app numbers its rows by (`sheetGrid`): its order (file indexes),
+    /// its groups, and whether it's sorted by its own places; `None` when it isn't a Sheet view.
+    pub fn sheet_grid(&self, t: usize, view: &str) -> Option<(Vec<usize>, Vec<GridGroup>, bool)> {
+        let grid = loop {
+            let g = self.grid(t, view);
+            let deep = self.deep.borrow_mut().take();
+            match deep {
+                Some((dt, df)) => self.warm(dt, df),
+                None => break g,
+            }
+        };
+        grid.ok().map(|g| (g.order.clone(), g.groups.clone(), g.looped))
+    }
+
     /// A loop back to what began at `depth`: every grid being built since then is sorted by its own places.
     fn looped(&self, depth: usize, error: Value) -> Value {
         for entry in self.stack.borrow_mut().iter_mut().skip(depth) {
@@ -323,19 +345,19 @@ impl Workbook {
             }
             None => SortField { enum_values: empty, datetime: false, any: false },
         };
-        let order = arrange(table.ids.len(), sheet, &field, &mut |i, name| self.value_by_name(t, i, name), &|i| table.ids[i].clone());
+        let (order, groups) = arrange(table.ids.len(), sheet, &field, &mut |i, name| self.value_by_name(t, i, name), &|i| table.ids[i].clone());
         let looped = self.stack.borrow_mut().pop() == Some(Some(true));
         if self.deep.borrow().is_some() {
             self.grids.borrow_mut().remove(&key);
             return Err(Value::Empty);
         }
-        let order = if looped { (0..table.ids.len()).collect() } else { order };
+        let (order, groups) = if looped { ((0..table.ids.len()).collect(), Vec::new()) } else { (order, groups) };
         let mut place = vec![0i64; order.len()];
         for (p, &i) in order.iter().enumerate() {
             place[i] = p as i64 + 1;
         }
         let columns = sheet.fields.clone().unwrap_or_else(|| table.fields.iter().map(|f| f.name.clone()).collect());
-        let grid = Rc::new(Grid { columns, order, place, looped });
+        let grid = Rc::new(Grid { columns, order, place, groups, looped });
         self.grids.borrow_mut().insert(key, GridSlot::Ready(grid.clone()));
         Ok(grid)
     }
@@ -779,6 +801,10 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
         state: RefCell::new(c["seed"].as_u64().unwrap_or(0)),
     });
     let mut book = Workbook::new(tables, clock);
+    if let Some(g) = root.get("grids").and_then(|g| g.as_object()) {
+        book.wanted_grids = g.iter().map(|(t, vs)| (t.clone(), vs.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default())).collect();
+    }
+    book.columns_wanted = root.get("columns").and_then(|c| c.as_bool()).unwrap_or(true);
     book.only = root.get("only").and_then(|o| o.as_array()).map(|o| o.iter().filter_map(|n| n.as_str().map(str::to_string)).collect());
     Ok(book)
 }
