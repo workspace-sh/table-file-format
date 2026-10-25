@@ -290,11 +290,17 @@ export const SQUEEZED_CELL_WIDTH = 140;
  * and the title or a text column the comfortable width. In a table that
  * doesn't fit, the columns that can spare it give their room first.
  */
+/** How narrow a column of several choices or links may go: a tag of about ten letters and a "+N" fit. */
+export const LIST_SQUEEZED_WIDTH = 170;
+
 export function squeezedWidthOf(field: Field | undefined, schema: TableSchema, primary = false): number {
   if (primary || field === undefined) return MIN_CELL_WIDTH;
   if (field.type === "boolean") return 100;
+  // A list (several choices, links to several rows) keeps room for a
+  // tag or a name of a word or two and its "+N", on one line.
+  if (field.type === "array" && (field.relation || enumOptions(field).length > 0)) return LIST_SQUEEZED_WIDTH;
   if (field.relation || field.attachment) return SQUEEZED_CELL_WIDTH;
-  if (enumOptions(field).length > 0) return field.type === "array" ? SQUEEZED_CELL_WIDTH : 110;
+  if (enumOptions(field).length > 0) return 110;
   switch (field.type) {
     case "date":
     case "time":
