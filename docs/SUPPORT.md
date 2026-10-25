@@ -97,6 +97,12 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
   passes, to 0.001), and Stop Repeating once it does; not for a table in
   an index. Seen on Linux and the web; iOS and the Mac share the web's
   code.
+- **Errors in plain words** (D61): a failed formula's cell says what's
+  wrong ("Divides by zero", "No field "price"", "Loops back on itself")
+  after a mark for its kind, in either formula syntax; Excel style puts
+  the code in the hover and the formula's panel. Lucide marks on the web
+  and Linux, SF Symbols on iOS and the Mac. Seen on the web and Linux;
+  the Mac's symbols are built (#691) and not yet seen on screen.
 - **The clock and chance:** `today`, `now`, `rand` (D55). No public
   case can fix a clock, so `.table`'s own tests check them. A table
   that uses them is held in memory, not in an index.
