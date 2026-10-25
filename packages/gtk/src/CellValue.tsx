@@ -20,6 +20,8 @@ export interface CellValueProps {
   lines?: number;
   /** Start, centre or end, as the field aligns (`effectiveAlign`). */
   xalign?: number;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
 /** Markup-safe text: GTK parses `&`, `<` and `>` in a markup label. */
@@ -99,7 +101,7 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
   );
 }
 
-export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0 }: CellValueProps) {
+export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0, inPanel }: CellValueProps) {
   const display = useDisplaySettings();
   const dark = useDark();
   const shown = describeCell(field, value, display, relatedTables);
@@ -125,7 +127,7 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
       );
     case "error":
       // A warning mark and what's wrong; hovering says why, and where the fix is (#685).
-      return <CellText text={`\u26A0\uFE0E ${shown.text}`} xalign={xalign} cssClasses={[styles.formulaError]} tooltip={shown.explanation} />;
+      return <CellText text={`\u26A0\uFE0E ${inPanel ? shown.withCode : shown.text}`} xalign={xalign} cssClasses={[styles.formulaError]} tooltip={shown.explanation} />;
     case "pills":
       return (
         <Clipped>

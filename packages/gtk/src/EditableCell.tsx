@@ -21,7 +21,7 @@ import {
   GtkPopover,
   GtkSpinButton,
 } from "@gtkx/jsx/gtk";
-import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { enumOptions, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { styles } from "./theme.js";
 import { type GridEditEnd, inputHints, cellFormulaDraft, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
@@ -269,7 +269,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     );
   }
 
-  if (kind === "boolean") {
+  // A formula that failed shows why, not an unticked box.
+  if (kind === "boolean" && !(value instanceof FormulaError)) {
     return (
       <GtkCheckButton
         active={value === true}
