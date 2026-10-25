@@ -14,6 +14,7 @@ import type { CellFormula } from "./types.js";
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import type { WriteBundleInput } from "./io.js";
 import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
+import { withFieldIds } from "./fieldIds.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { estimateRows, FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layoutRows, ROWS_DIR, rowsFileOrder } from "./rowFiles.js";
 
@@ -166,7 +167,8 @@ export async function readTableArchive(
       : undefined;
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
-    const schema = JSON.parse(schemaRaw) as TableSchema;
+    // Every field has its id (D62): one written without takes the id its name derives.
+    const schema = withFieldIds(JSON.parse(schemaRaw) as TableSchema);
     const views =
       parseOptionalJsonText<View[]>(TableEntry.views, text(`${prefix}${TableEntry.views}`), tableDiagnostics) ?? [];
     const tableMeta =
@@ -368,7 +370,7 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
     const t = input.tables[tableName]!;
     const at = `${tablePath(tableName)}/`;
     files.push(
-      { path: `${at}${TableEntry.schema}`, content: pretty(t.schema) },
+      { path: `${at}${TableEntry.schema}`, content: pretty(withFieldIds(t.schema)) },
       // Its rows, each in its file (D51).
       ...layoutRows(t.rows, rowLine(t.schema), { ...(t.rowFiles ? { files: t.rowFiles } : {}), ...(t.unread ? { unread: t.unread } : {}) }).map((f) => ({
         path: `${at}${TableEntry.rowsDir}/${f.name}`,

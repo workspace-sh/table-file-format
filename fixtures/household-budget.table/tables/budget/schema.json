@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "yy5drhhq5u1dz",
       "name": "item",
       "type": "string",
       "title": "Item",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "eszjd9en1u3er",
       "name": "category",
       "type": "string",
       "title": "Category",
@@ -42,24 +44,28 @@
       }
     },
     {
+      "id": "earkzrfi77x7y",
       "name": "jan",
       "type": "number",
       "title": "Jan",
       "format": "currency:GBP"
     },
     {
+      "id": "dbyyda85ram1b",
       "name": "feb",
       "type": "number",
       "title": "Feb",
       "format": "currency:GBP"
     },
     {
+      "id": "g3t3wtejisupo",
       "name": "mar",
       "type": "number",
       "title": "Mar",
       "format": "currency:GBP"
     },
     {
+      "id": "87hkfpyh4bnhx",
       "name": "quarter",
       "type": "number",
       "title": "Q1",
@@ -70,17 +76,19 @@
       }
     },
     {
+      "id": "qcciqt6okp8ub",
       "name": "share",
       "type": "number",
       "title": "Share",
       "format": "percent",
       "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/$F$7: $F$7 pins the Income row by its id, so sorting never breaks it.",
       "computed": {
-        "expr": "(/ quarter (field \"quarter\" \"income\"))",
+        "expr": "(/ quarter (field \"quarter\" \"d7obaaj5dfw5bexxt8xmgrwbra\"))",
         "dialect": "table-expr-v1"
       }
     },
     {
+      "id": "mkt8w7zz1ayy7",
       "name": "spend",
       "type": "number",
       "title": "Spend",
@@ -92,6 +100,7 @@
       }
     },
     {
+      "id": "f47epm8m9qd95",
       "name": "of_spending",
       "type": "number",
       "title": "Of spending",

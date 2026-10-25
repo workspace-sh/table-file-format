@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "rghwqogkxjjs8",
       "name": "name",
       "type": "string",
       "title": "Customer",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "rrw119rwcjag3",
       "name": "email",
       "type": "string",
       "title": "Email",
@@ -18,16 +20,19 @@
       }
     },
     {
+      "id": "q7es69q4j14e6",
       "name": "city",
       "type": "string",
       "title": "City"
     },
     {
+      "id": "xmeqq5g45mirc",
       "name": "since",
       "type": "date",
       "title": "Customer since"
     },
     {
+      "id": "8oeaytgn4b3t8",
       "name": "order_count",
       "type": "number",
       "title": "Orders",
@@ -38,6 +43,7 @@
       }
     },
     {
+      "id": "puzgc95iwatw5",
       "name": "lifetime_value",
       "type": "number",
       "title": "Lifetime value",

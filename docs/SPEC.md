@@ -103,16 +103,19 @@ Defines the fields of every row, their types, and any constraints.
 {
   "fields": [
     {
+      "id": "kq3ufmy8b9xpe",
       "name": "title",
       "type": "string",
       "constraints": { "required": true }
     },
     {
+      "id": "7n1wsgc4hedra",
       "name": "status",
       "type": "string",
       "constraints": { "enum": ["planning", "active", "done"] }
     },
     {
+      "id": "za5jto9mx6cbi",
       "name": "summary",
       "type": "string",
       "format": "markdown"
@@ -122,6 +125,23 @@ Defines the fields of every row, their types, and any constraints.
   "schema-version": 1
 }
 ```
+
+### A field's id
+
+Every field has an `id`: 13 characters of z-base-32 (the alphabet
+`ybndrfg8ejkmcpqxot1uwisza345h769`, 65 bits), minted when the field is
+made, never shown, never changed, and unique among its table's fields
+(D62). It is the field's identity, whatever it is called: links and
+merges hold on to it. A field's `name` is the key its values have in
+every row and the word formulas use; its `title` is what people see.
+
+Writers MUST write an `id` on every field. A reader that finds a field
+without one gives it the id its name derives (reference:
+`derivedFieldId` in `@workspace.sh/table-core`: FNV-1a of the name,
+mixed by MurmurHash3's finaliser, as 13 z-base-32 characters), so a
+file from another tool opens, and the same file gets the same ids on
+every device. Two fields with one id are invalid (section 9); a writer
+gives the second the id its name derives.
 
 ### Field types
 
@@ -755,10 +775,10 @@ within the table. Readable ids (`p1`, `budget-2026`) are legal — a
 `.table/` written by another tool, or by an agent outside a managed
 workspace, should not need opaque identifiers.
 
-**Writer-minted ids** SHOULD be 25 characters from the lowercase
-base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
-`@workspace.sh/table-core`). The alphabet is deliberately
-**case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
+**Writer-minted ids** SHOULD be 26 characters of z-base-32, the
+alphabet `ybndrfg8ejkmcpqxot1uwisza345h769` (130 bits; reference:
+`newId()` in `@workspace.sh/table-core`), as a view's id and a history
+entry's are. The alphabet is deliberately **case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
 and on case-insensitive filesystems (default APFS, NTFS) two ids
 differing only in letter case would resolve to the same path and
 silently overwrite each other. For the same reason, all ids — minted
@@ -1376,6 +1396,8 @@ A `.table/` is **valid** when:
 5. Every line in `cells/` names a row and a field the table has. A
    writer keeps one that doesn't (section 3), but the table isn't valid
    until it's resolved.
+6. No two fields share an `id` (section 2, "A field's id"). A field
+   without one isn't invalid: readers give it the id its name derives.
 
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
@@ -1417,7 +1439,8 @@ fragment:
     It MAY be omitted when the bundle holds exactly one table.
   - `row=<id>` — the row with this system `id`
   - `view=<id>` — the view with this id
-  - `field=<name>` — a specific field on the row (cell-level
+  - `field=<id or name>` — a specific field on the row, by its `id`
+    (section 2, "A field's id") or, failing that, its `name` (cell-level
     addressing for future affordances; reserved)
   - `rows=<n>`, `cards=<n>`, `rest=more`, `width=full`: how much of a
     view to show at once, and how wide, where the address is drawn in

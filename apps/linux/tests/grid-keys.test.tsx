@@ -30,7 +30,7 @@ const tasksOnDisk = () => parseTable(join(bundle, "tables", "tasks"));
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
 }
 
 /** The cell a piece of text is in: the focusable box around it. */
@@ -64,7 +64,7 @@ describe("the keyboard in a table on Linux", () => {
     const entry = (await screen.findByPlaceholderText("A note on this cell")) as Gtk.Entry;
     await userEvent.type(entry, "Shipped in 0.3");
     await userEvent.click(await screen.findByText("Save"));
-    await waitFor(async () => expect((await tasksOnDisk()).cells).toEqual([{ id: "t1", field: "title", note: "Shipped in 0.3" }]));
+    await waitFor(async () => expect((await tasksOnDisk()).cells).toEqual([{ id: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", note: "Shipped in 0.3" }]));
     // The cell says so on hover.
     await waitFor(async () => expect((await cellOf("Land .table extension")).getTooltipText()).toBe("Shipped in 0.3"));
   });
@@ -98,7 +98,7 @@ describe("the keyboard in a table on Linux", () => {
     const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
     await userEvent.type(entry, "ed");
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Zed"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Zed"));
     // The grid has the keyboard again, a row down.
     await waitFor(() => {
       const now = focused(first)!;
@@ -115,7 +115,7 @@ describe("the keyboard in a table on Linux", () => {
     const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
     await userEvent.keyboard(entry, "{Escape}");
     await waitFor(async () => expect(focused(await cellOf("Land .table extension"))).toBe(await cellOf("Land .table extension")));
-    expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Land .table extension");
+    expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Land .table extension");
   });
 
   it("Tab in an editor saves and moves along the row", async () => {
@@ -127,7 +127,7 @@ describe("the keyboard in a table on Linux", () => {
     await userEvent.clear(entry);
     await userEvent.type(entry, "Tabbed");
     await userEvent.keyboard(entry, "{Tab}");
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Tabbed"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Tabbed"));
     await waitFor(() => expect(focusedText(first)).toContain("Table file format spike"));
   });
 
@@ -138,7 +138,7 @@ describe("the keyboard in a table on Linux", () => {
     await userEvent.keyboard(first, "{End}");
     await waitFor(() => expect(focusedText(first)).toContain("leslie"));
     await userEvent.keyboard(focused(first)!, "{Delete}");
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.assignee).toBeUndefined());
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.assignee).toBeUndefined());
   });
 });
 

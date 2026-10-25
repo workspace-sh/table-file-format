@@ -1,6 +1,6 @@
 [
   {
-    "id": "all",
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
     "name": "All contacts",
     "layout": "table",
     "sort": [
@@ -11,7 +11,7 @@
     ]
   },
   {
-    "id": "call-list",
+    "id": "wa68ong5p9463hzwn1wngk1yrh",
     "name": "Call list",
     "layout": "list",
     "fields": [
@@ -20,10 +20,10 @@
       "company"
     ],
     "order": [
-      "ct-maya",
-      "ct-ines",
-      "ct-kofi",
-      "ct-priya"
+      "3zaq9e5my1rrbywrdnfwsfcf4n",
+      "6rq1xikzpbz5wrsspdg7faqrku",
+      "pd3c7tryk9dq3p5obiywnish9h",
+      "7xbtoiywn5ahzyyehydb8ds6fc"
     ]
   }
 ]

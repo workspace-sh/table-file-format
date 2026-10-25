@@ -28,7 +28,7 @@ afterEach(async () => {
 
 async function openSheet() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="sheet" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="kifpjiq34nhz8k95rc3uezwqu5" />);
 }
 
 describe("a formula cell on Linux", () => {
@@ -154,7 +154,7 @@ describe("a formula cell on Linux", () => {
 
   it("in a field's settings on a table that isn't a sheet, a column is added by its name", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="household-budget/budget" initialView="spending" />);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="wsohm6y8imnngf9dirsm38je7w" />);
     await userEvent.click(await screen.findByText("Q1"));
     await screen.findByText("One formula for the whole column.");
     const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
@@ -176,11 +176,11 @@ describe("a formula cell on Linux", () => {
     schema.fields.push({ name: "paid", type: "boolean" });
     writeFileSync(join(table, "schema.json"), JSON.stringify(schema));
     const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8")) as { id: string; fields?: string[] }[];
-    views.find((v) => v.id === "sheet")!.fields!.push("paid");
+    views.find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")!.fields!.push("paid");
     writeFileSync(join(table, "views.json"), JSON.stringify(views));
     // Rent's own formula gives a number, which a true/false column can't hold (D52).
     mkdirSync(join(table, "cells"), { recursive: true });
-    writeFileSync(join(table, "cells", "0001.ndjson"), JSON.stringify({ id: "rent", field: "paid", expr: "(+ 1 1)" }) + "\n");
+    writeFileSync(join(table, "cells", "0001.ndjson"), JSON.stringify({ id: "yzqhrmxgwi1k3ur81b7epdbim5", field: "paid", expr: "(+ 1 1)" }) + "\n");
     await openSheet();
     const paid = await screen.findByText("Not true or false");
     expect(paid.getParent()!.getTooltipText()).toBe("#VALUE!: The formula gave 2, and this column holds true or false. Open the formula to change it.");

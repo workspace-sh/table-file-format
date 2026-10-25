@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { toCSV, fromCSV, csvExportWarnings, delimitedCells, tableFromCSV } from "./csv.js";
+import { derivedFieldId } from "./fieldIds.js";
 import type { ParsedTable, Row, TableSchema } from "./types.js";
 
 const schema: TableSchema = {
@@ -135,7 +136,9 @@ const keyOf = (heading: string, taken: ReadonlySet<string>) => {
 test("a spreadsheet's headings become fields, titled as written and keyed by the app's rule; its lines become rows", () => {
   const csv = "First Name,Close Date,Amount,Paid,Notes\nAda,2026-03-01,1200.5,true,\"Said \"\"yes\"\", twice\"\nGrace,2026-04-15,80,false,\n";
   const { schema, rows, extraCells } = tableFromCSV(csv, { keyOf });
-  assert.deepEqual(schema.fields, [
+  // Each field's id comes from its name (D62): the same sheet read twice gives the same ids.
+  for (const f of schema.fields) assert.equal(f.id, derivedFieldId(f.name));
+  assert.deepEqual(schema.fields.map(({ id: _, ...f }) => f), [
     { name: "first_name", title: "First Name", type: "string" },
     { name: "close_date", title: "Close Date", type: "date" },
     { name: "amount", title: "Amount", type: "number" },
@@ -177,7 +180,7 @@ test("without an app's rule a heading is its field's name, numbered when it repe
 
 test("a column headed id gives the rows their ids when every row has its own", () => {
   const { schema, rows } = tableFromCSV("id,title\nr1,One\nr2,Two\n");
-  assert.deepEqual(schema.fields, [{ name: "title", type: "string" }]);
+  assert.deepEqual(schema.fields, [{ id: derivedFieldId("title"), name: "title", type: "string" }]);
   assert.deepEqual(rows, [
     { id: "r1", title: "One" },
     { id: "r2", title: "Two" },
