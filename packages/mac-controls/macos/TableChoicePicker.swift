@@ -146,18 +146,25 @@ private struct ChoicesList: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .contentShape(Rectangle())
+            // The row under the pointer, or the keyboard's: a neutral wash, as
+            // a list's hover is, which leaves each tag its own colour. The
+            // chosen one is its tick.
             .background(
               RoundedRectangle(cornerRadius: 6)
-                .fill(focused == choice.value ? Color.accentColor.opacity(0.18) : .clear)
+                .fill(focused == choice.value ? Color.primary.opacity(0.07) : .clear)
             )
           }
           .buttonStyle(.plain)
+          .onHover { inside in if inside { focused = choice.value } }
           .accessibilityAddTraits(on ? .isSelected : [])
         }
       }
       .padding(6)
     }
     .frame(minWidth: 180, idealWidth: 220, maxWidth: 320, maxHeight: 360)
+    // The popover's own glass lets the table under it show through the
+    // tags; a thicker material behind the list keeps them on one ground.
+    .background(.thickMaterial)
     .fixedSize(horizontal: false, vertical: true)
     // The keyboard, as a menu's: up and down move, Space toggles, Return and Escape close.
     .focusable()
