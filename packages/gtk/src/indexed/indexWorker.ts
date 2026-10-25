@@ -5,7 +5,8 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 import { openIndexHost } from "@workspace.sh/table-app/node";
-import { alterIndex, buildSearchIndex, fillIndex } from "@workspace.sh/table-core";
+import { alterIndex, buildSearchIndex, fillIndex, setFormulaEngine } from "@workspace.sh/table-core";
+import { loadEdn } from "@workspace.sh/edn";
 import type { RowsRequest } from "@workspace.sh/table-app";
 import type { SqlValue, TableSchema } from "@workspace.sh/table-core";
 
@@ -30,8 +31,13 @@ export type IndexResponse =
   | { id: number; ok: false; error: string }
   | { id: number; progress: [done: number, total: number] };
 
-// One at a time, in the order asked.
-let last: Promise<unknown> = Promise.resolve();
+// One at a time, in the order asked; the first once the EDN core is in, so
+// every formula this worker works out is the core's (the window's are too).
+// `TABLE_FORMULA_CHECK=1` checks each against the workbook, as the app's tests do.
+let last: Promise<unknown> = loadEdn({ binding: "native" }).then(
+  (edn) => setFormulaEngine(edn, { check: process.env.TABLE_FORMULA_CHECK === "1" }),
+  (e: unknown) => console.warn(`index worker formulas: the workbook's own, not the EDN core: ${String(e)}`),
+);
 let lastAsked = 0;
 const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
   const turn = last.then(run);
