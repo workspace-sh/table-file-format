@@ -1577,15 +1577,11 @@ const styles = css.create({
    */
   /** A computed field whose formula failed (#DIV/0!, #VALUE!, …). */
   formulaError: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: 12,
     color: {
       default: "#c00",
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
     },
   },
-  // Plain words read as text, not code.
-  formulaErrorWords: { fontFamily: "inherit", fontSize: 13 },
   relationBroken: {
     fontStyle: "italic",
     opacity: 0.55,
@@ -1974,9 +1970,11 @@ interface CellValueProps {
    * column stretches its children. On the web it's inline there already.
    */
   inColumn?: boolean;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
-function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
+function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn, inPanel }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   const width = useContext(CellWidth);
   const display = useDisplaySettings();
@@ -2008,7 +2006,7 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
       // A warning mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
       return (
         <Hinted hint={shown.explanation}>
-          <html.span style={[styles.formulaError, shown.text !== shown.code && styles.formulaErrorWords]}>{`\u26A0\uFE0E ${shown.text}`}</html.span>
+          <html.span style={styles.formulaError}>{`\u26A0\uFE0E ${inPanel ? shown.withCode : shown.text}`}</html.span>
         </Hinted>
       );
     case "pills": {
@@ -2458,8 +2456,8 @@ function EditableCell({
     );
   }
 
-  // Boolean: toggle on click, no draft state
-  if (kind === "boolean") {
+  // Boolean: toggle on click, no draft state. A formula that failed shows why, not an unticked box.
+  if (kind === "boolean" && !(value instanceof FormulaError)) {
     return (
       <Toggle
         role="cell"
@@ -5282,6 +5280,7 @@ export function TableView({
                 value={value}
                 relatedTables={relatedTables}
                 lines={1}
+                inPanel
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}

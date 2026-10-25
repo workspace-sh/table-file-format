@@ -39,7 +39,7 @@ function ValueLine({ label, field, value, relatedTables, emphasis }: { label: st
     <GtkBox spacing={12}>
       <GtkLabel label={label} xalign={0} widthRequest={140} cssClasses={emphasis ? ["heading"] : ["dim-label"]} />
       <GtkBox hexpand>
-        <CellValue field={field} value={value} relatedTables={relatedTables} lines={1} />
+        <CellValue field={field} value={value} relatedTables={relatedTables} lines={1} inPanel />
       </GtkBox>
     </GtkBox>
   );
