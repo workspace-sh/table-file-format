@@ -7,6 +7,7 @@ import { Portal } from "./internal/Portal";
 import {
   bodyExcerpt,
   describeCell,
+  formulaErrorShow,
   fieldsByName,
   fittedRowHeight,
   formatValue,
@@ -79,6 +80,7 @@ import {
   computeRows,
   coordinateOf,
   formatValue as formatCellValue,
+  FormulaError,
   hasColorRules,
   memoryViewRows,
   mergedBlocks,
@@ -1582,6 +1584,8 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
     },
   },
+  // Plain words read as text, not code.
+  formulaErrorWords: { fontFamily: "inherit", fontSize: 13 },
   relationBroken: {
     fontStyle: "italic",
     opacity: 0.55,
@@ -2001,7 +2005,12 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
         );
       }
     case "error":
-      return <html.span style={styles.formulaError}>{shown.code}</html.span>;
+      // A warning mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
+      return (
+        <Hinted hint={shown.explanation}>
+          <html.span style={[styles.formulaError, shown.text !== shown.code && styles.formulaErrorWords]}>{`\u26A0\uFE0E ${shown.text}`}</html.span>
+        </Hinted>
+      );
     case "pills": {
       // A single choice is its pill; a list sits in a row of them.
       if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} atStart={inColumn} />;
@@ -3299,7 +3308,10 @@ export function TableView({
       // What the web's header hover says, for a platform with no hover.
       facts: (() => {
         const hint = fieldHint({ field, name: sel.name, schema, editable: false, formulaSyntax });
-        return [hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
+        // A formula that failed: what's wrong first, as a hover says it on the web (#685).
+        const value = row[sel.name];
+        const problem = value instanceof FormulaError ? formulaErrorShow(value, field, formulaSyntax).explanation : undefined;
+        return [problem, hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
       })(),
     });
   });

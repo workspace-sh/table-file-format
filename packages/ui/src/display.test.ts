@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -37,8 +37,64 @@ test("a choice is a pill with its label and colour, a list is one pill each", ()
   assert.deepEqual(describeCell(tags, [], plain), { kind: "text", text: "—", oneToken: false });
 });
 
-test("a failed formula shows its code", () => {
-  assert.deepEqual(describeCell(undefined, new FormulaError("#DIV/0!", "divided by zero"), plain), { kind: "error", code: "#DIV/0!" });
+test("a failed formula shows its code in Excel style, plain words in the stored form (#685)", () => {
+  const error = new FormulaError("#DIV/0!", "division by zero");
+  const explanation = "The formula divides by zero for this row. Open the formula to change it.";
+  assert.deepEqual(describeCell(undefined, error, plain), { kind: "error", code: "#DIV/0!", text: "#DIV/0!", explanation, fix: "edit" });
+  assert.deepEqual(describeCell(undefined, error, { formulaSyntax: "excel" }), { kind: "error", code: "#DIV/0!", text: "#DIV/0!", explanation, fix: "edit" });
+  assert.deepEqual(describeCell(undefined, error, { formulaSyntax: "stored" }), { kind: "error", code: "#DIV/0!", text: "Divides by zero", explanation, fix: "edit" });
+});
+
+test("every error the workbook gives has its plain words (#685)", () => {
+  // Real errors, from the workbook: its messages are what the words are read from.
+  const fields: Field[] = [
+    { name: "n", type: "number" },
+    // A cell's own formula gives what its field must hold (D52).
+    { name: "when", type: "date" },
+    { name: "whole", type: "integer" },
+    { name: "half", type: "number", computed: { expr: "(/ n 0)", dialect: "table-expr-v1" } },
+    { name: "huge", type: "number", computed: { expr: "(* 1e300 1e300)", dialect: "table-expr-v1" } },
+    { name: "price", type: "number", computed: { expr: "(* cost 2)", dialect: "table-expr-v1" } },
+    { name: "odd", type: "number", computed: { expr: "(frobnicate n)", dialect: "table-expr-v1" } },
+    { name: "a", type: "number", computed: { expr: "(+ b 1)", dialect: "table-expr-v1" } },
+    { name: "b", type: "number", computed: { expr: "(+ a 1)", dialect: "table-expr-v1" } },
+    { name: "sum", type: "number", computed: { expr: '(+ n "x")', dialect: "table-expr-v1" } },
+    { name: "there", type: "number", computed: { expr: '(field "n" "r9")', dialect: "table-expr-v1" } },
+    { name: "deals", type: "number", computed: { expr: '(linked "deals" "company" "value")', dialect: "table-expr-v1" } },
+  ];
+  const cells = [
+    { id: "r1", field: "when", expr: "(+ n 1)" },
+    { id: "r1", field: "whole", expr: "(/ n 4)" },
+  ];
+  const row = computeRows({ fields }, [{ id: "r1", n: 3 }], { cells }).rows[0]!;
+  const words = (name: string) => {
+    const v = row[name];
+    assert.ok(v instanceof FormulaError, `${name} failed`);
+    return formulaErrorShow(v, fields.find((f) => f.name === name), "stored");
+  };
+  assert.deepEqual(words("when"), { code: "#VALUE!", text: "Not a date", explanation: "The formula gave 4, and this column holds dates. Open the formula to change it.", fix: "edit" });
+  assert.equal(words("whole").text, "Not a whole number");
+  assert.equal(words("half").text, "Divides by zero");
+  assert.equal(words("huge").text, "Number too big");
+  assert.deepEqual(words("price"), {
+    code: "#NAME?",
+    text: 'No field "cost"',
+    explanation: `The formula reads "cost", and there's no field by that name. Open the formula to change it.`,
+    fix: "edit",
+  });
+  assert.equal(words("odd").text, "Unknown function");
+  assert.deepEqual(words("a"), {
+    code: "#REF!",
+    text: "Loops back on itself",
+    explanation: "This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.",
+    fix: "repeat",
+  });
+  assert.equal(words("sum").text, "Wrong kind of value");
+  assert.match(words("sum").explanation, /^\+ needs numbers, got "x"\. Open the formula/);
+  assert.equal(words("there").text, "Row is gone");
+  assert.equal(words("deals").text, 'No table "deals"');
+  // Each is still its code in Excel style.
+  for (const name of ["when", "half", "price", "a", "deals"]) assert.equal(formulaErrorShow(row[name] as FormulaError, undefined, "excel").text, (row[name] as FormulaError).code);
 });
 
 test("links, attachments, formats and plain values", () => {
