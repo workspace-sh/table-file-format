@@ -34,7 +34,7 @@ async function name(text: string) {
 describe("making tables and files on Linux", () => {
   it("a new table goes into its bundle and the manifest's order", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
     // Asked in table-app's words, the same on the web and macOS; the name is trimmed.
     expect(await screen.findByText("New table in Projects")).toBeDefined();
@@ -48,7 +48,7 @@ describe("making tables and files on Linux", () => {
 
   it("a new .table file is made in the new-files folder", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
     await name("Garden");
     await waitFor(async () => {
@@ -64,7 +64,7 @@ describe("making tables and files on Linux", () => {
     mkdirSync(join(dir, "garden.table"));
     writeFileSync(join(dir, "garden.table", "keep.txt"), "someone else's");
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
     await name("Garden");
     await waitFor(async () => {
@@ -77,7 +77,7 @@ describe("making tables and files on Linux", () => {
 
   it("a blank name makes nothing", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
     await name("   ");
     // A table made would be shown at once; the one open is still open.
@@ -87,7 +87,7 @@ describe("making tables and files on Linux", () => {
 
   it("a new view opens its settings, where it's made into what's wanted", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     expect(screen.queryByText("Filters")).toBeNull();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New View" }));
     expect(await screen.findByText("Filters")).toBeDefined();

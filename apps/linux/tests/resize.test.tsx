@@ -30,7 +30,7 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const viewOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).views.find((v) => v.id === "v1")!;
+const viewOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!;
 
 async function drag(name: string, dx: number, dy: number) {
   const handle = (await screen.findAllByName(name))[0]!;
@@ -43,7 +43,7 @@ async function drag(name: string, dx: number, dy: number) {
 describe("resizing on Linux", () => {
   it("a column dragged wider keeps its width, saved to the view, and grows from there", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await drag("resize-column-title", 80, 0);
     let first = 0;
     await waitFor(async () => {
@@ -56,7 +56,7 @@ describe("resizing on Linux", () => {
 
   it("widening a column leaves the others as wide as they were, and the table scrolls sideways", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     const widthOf = async (name: string) => {
       let at: Gtk.Widget | null = await screen.findByText(name);
       while (at && !(at instanceof Gtk.Overlay)) at = at.getParent();
@@ -85,7 +85,7 @@ describe("resizing on Linux", () => {
 
   it("every column has a line down the table at its end, as tall as the rows together", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     const table = await parseTable(join(bundle, "tables", "tasks"));
     let scroller: Gtk.Widget | null = await screen.findByText("status");
     while (scroller && !(scroller instanceof Gtk.ScrolledWindow)) scroller = scroller.getParent();
@@ -112,7 +112,7 @@ describe("resizing on Linux", () => {
 
   it("a column's line dragged resizes the column, and a double click on it puts the column back", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     const drag = getController(await columnLine("status"), Gtk.GestureDrag);
     await fireEvent(drag, "drag-begin", 0, 0);
     await fireEvent(drag, "drag-update", 70, 0);
@@ -140,7 +140,7 @@ describe("resizing on Linux", () => {
 
   it("a column's line is faint when pointed at and full only while it is dragged, with its header's edge", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     // Drawn over the rows: seen as part of them (not the header, whose own edge lights with it).
     const table = async () => (await columnLine("status")).getParent()!;
@@ -168,7 +168,7 @@ describe("resizing on Linux", () => {
 
   it("never narrower than a column can be", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await drag("resize-column-title", -1000, 0);
     await waitFor(async () => expect((await viewOnDisk()).columnWidths?.title).toBe(60));
   });
@@ -181,7 +181,7 @@ describe("resizing on Linux", () => {
 
   it("a row has no grip until one of its cells is selected, and then only that row does", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
     await selectFirstRow();
@@ -190,7 +190,7 @@ describe("resizing on Linux", () => {
 
   it("the grip hangs under the selected cell, wherever in the row it is", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
     while (cell && !cell.getFocusable()) cell = cell.getParent();
     cell!.grabFocus();
@@ -208,7 +208,7 @@ describe("resizing on Linux", () => {
 
   it("the selected row dragged taller keeps its own height, in whole lines, within bounds", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await selectFirstRow();
     await drag("resize-row-grip", 0, 20);
     await waitFor(async () => {
@@ -224,7 +224,7 @@ describe("resizing on Linux", () => {
 
   it("a double click on the grip fits the row to what it holds", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await selectFirstRow();
     await drag("resize-row-grip", 0, 60);
     await waitFor(async () => expect(Object.values((await viewOnDisk()).rowHeights ?? {})).toEqual([104]));
@@ -264,7 +264,7 @@ describe("resizing on Linux", () => {
 
   it("the row menu fits a row to what it holds, and puts a resized row back to the view's height", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     const landed = (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.title === "Land .table extension")!;
     const menu = () => rowMenuOf("Land .table extension");
     expect(menuLabels(await menu())).toContain("Fit Row to Content");
@@ -287,7 +287,7 @@ describe("resizing on Linux", () => {
   it("Display's Resize handles: as Grabbers the selected row's grip is a short bar centred under its cell, and that is kept", async () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" settings={settings} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" settings={settings} />);
     await selectFirstRow();
     const grip = async () => (await screen.findAllByName("resize-row-grip"))[0]!;
     const sizeOf = async () => {
@@ -340,7 +340,7 @@ describe("resizing on Linux", () => {
 
   it("every row has a line under it to drag, selected or not, and the selected row keeps its grip", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
     expect(screen.queryAllByName("resize-row-grip")).toHaveLength(0);
@@ -358,7 +358,7 @@ describe("resizing on Linux", () => {
 
   it("a row's line dragged resizes that row in whole lines, counting them at the row's start as it goes", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
     // The third row's, with nothing selected.
@@ -379,7 +379,7 @@ describe("resizing on Linux", () => {
 
   it("a double click on a row's line fits the row to what it holds; a single press changes nothing", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
     const first = (await tasks()).find((r) => r.title === "Land .table extension")!;
@@ -397,7 +397,7 @@ describe("resizing on Linux", () => {
 
   it("the line under a row is faint when pointed at, and full only while it is dragged", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     await screen.findAllByText("Land .table extension");
     await waitFor(async () => expect(lines()).toHaveLength((await tasks()).length));
     const drawn = async (pointedAt: boolean) => {
@@ -427,7 +427,7 @@ describe("resizing on Linux", () => {
 
   it("a column's edge is faint when pointed at, and full only while it is dragged", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
     const handle = async () => (await screen.findAllByName("resize-column-status"))[0]!;
     const drawn = async (pointedAt: boolean) => {
       const edge = await handle();

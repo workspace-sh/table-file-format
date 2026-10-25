@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "j49tkemwbf17r",
       "name": "title",
       "type": "string",
       "constraints": {
@@ -8,6 +9,7 @@
       }
     },
     {
+      "id": "ct5d6ndk38c8d",
       "name": "status",
       "type": "string",
       "constraints": {
@@ -20,24 +22,29 @@
       }
     },
     {
+      "id": "yr8ozrtbxgqew",
       "name": "owner",
       "type": "string"
     },
     {
+      "id": "pio7bjir814ui",
       "name": "budget",
       "type": "number",
       "format": "currency:USD"
     },
     {
+      "id": "eh7e4khtyxy3q",
       "name": "launched",
       "type": "date"
     },
     {
+      "id": "ej3mhf9y1u1bq",
       "name": "summary",
       "type": "string",
       "format": "markdown"
     },
     {
+      "id": "q7pgmobychcd7",
       "name": "per_month",
       "title": "Budget / month",
       "type": "number",

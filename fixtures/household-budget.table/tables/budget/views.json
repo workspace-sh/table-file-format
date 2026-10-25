@@ -1,6 +1,6 @@
 [
   {
-    "id": "sheet",
+    "id": "kifpjiq34nhz8k95rc3uezwqu5",
     "name": "Sheet",
     "layout": "table",
     "coordinates": true,
@@ -30,7 +30,7 @@
     }
   },
   {
-    "id": "spending",
+    "id": "wsohm6y8imnngf9dirsm38je7w",
     "name": "Spending",
     "layout": "table",
     "filter": [
@@ -55,7 +55,7 @@
     ]
   },
   {
-    "id": "by-category",
+    "id": "c7ae39md7putcu3qkdfiitc1z1",
     "name": "By category",
     "layout": "board",
     "board_field": "category",

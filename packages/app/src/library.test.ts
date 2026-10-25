@@ -17,10 +17,10 @@ test("a library opens over any file system, keys bundles by folder, and saves ba
   assert.equal(library.bundles["missing"] !== undefined, true);
   assert.equal(Object.keys(library.tables).some((k) => k.startsWith("missing/")), false);
 
-  const edited = { ...library.tables, "Work/tasks": withCell(library.tables["Work/tasks"]!, "t1", "title", "Saved") };
+  const edited = { ...library.tables, "Work/tasks": withCell(library.tables["Work/tasks"]!, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Saved") };
   await writeLibraryBundle(fs, library, edited, library.bundles, "Work");
   const again = await openLibrary(fs, ["/docs/Work.table"]);
-  assert.equal(again.tables["Work/tasks"]!.rows.find((r) => r.id === "t1")!.title, "Saved");
+  assert.equal(again.tables["Work/tasks"]!.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Saved");
 });
 
 test("bundle keys come from the folder name, made unique", () => {
@@ -62,7 +62,7 @@ test("a line of a table's rows that couldn't be read is said when the file opens
   assert.equal(library.problems["Work"]?.length, 1);
   assert.match(library.problems["Work"]![0]!, /^tasks: rows\/0001.ndjson: line \d+ isn't JSON .*kept as it is/);
   // Edited and saved, as an app saves: the line is still there.
-  const edited = { ...library.tables, "Work/tasks": withCell(library.tables["Work/tasks"]!, "t1", "title", "Saved") };
+  const edited = { ...library.tables, "Work/tasks": withCell(library.tables["Work/tasks"]!, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Saved") };
   await writeLibraryBundle(fs, library, edited, library.bundles, "Work");
   const after = (await fs.readText(rowsPath))!;
   assert.ok(after.includes('{"id":"t9","title":"Broken because of a typo"'), "the damaged line is kept");

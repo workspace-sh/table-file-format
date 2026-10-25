@@ -1,6 +1,6 @@
 [
   {
-    "id": "all",
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
     "name": "All books",
     "layout": "table",
     "sort": [
@@ -11,7 +11,7 @@
     ]
   },
   {
-    "id": "genre",
+    "id": "fx19qhz358zdh8qa4bf531ts14",
     "name": "By genre",
     "layout": "board",
     "board_field": "genre",
@@ -22,7 +22,7 @@
     ]
   },
   {
-    "id": "unread",
+    "id": "eho3sibxpturhakhgqn8zdnsza",
     "name": "To read",
     "layout": "table",
     "filter": [
@@ -40,7 +40,7 @@
     ]
   },
   {
-    "id": "recent",
+    "id": "8kwi18giesuwmpo56g65od3t4t",
     "name": "Recently added",
     "layout": "table",
     "sort": [

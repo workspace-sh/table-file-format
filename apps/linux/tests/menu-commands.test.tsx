@@ -31,7 +31,7 @@ const tasksOnDisk = () => parseTable(join(bundle, "tables", "tasks"));
 
 async function openTasks(): Promise<Gtk.ApplicationWindow> {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
   return (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow;
 }
 
@@ -65,9 +65,9 @@ describe("the table's commands in the main menu on Linux", () => {
     await screen.findByText("Filters");
     const sheet = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Adw.SwitchRow && w.getTitle() === "Sheet") as Adw.SwitchRow;
     sheet.setActive(true);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.coordinates).toBe(true));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.coordinates).toBe(true));
     (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Cancel" }) as Gtk.Button).activate();
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "v1")?.coordinates).toBeUndefined());
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.coordinates).toBeUndefined());
     await waitFor(() => expect(screen.queryAllByText("Filters")).toHaveLength(0));
   });
 });

@@ -27,7 +27,7 @@ afterEach(async () => {
 
 async function openTasks() {
   const library = await loadLibrary([join(dir, "projects.table")]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={dir} />);
 }
 
 function up<T extends Gtk.Widget>(from: Gtk.Widget, kind: abstract new (...args: never[]) => T): T {

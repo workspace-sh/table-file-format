@@ -379,6 +379,16 @@ human-facing "the schema changed" signal.
 
 ## D23: Ids are case-safe; validity is loose, minting is opinionated
 
+**Amended 25 Oct 2026 (Leslie):** the alphabet is z-base-32
+(`ybndrfg8ejkmcpqxot1uwisza345h769`), 26 characters, 130 bits, for every
+id `.table` mints: rows, views and history entries, and fields' ids
+(D62) at 13 characters. It is lowercase, so the reasoning below stands;
+it has no look-alikes (`0`/`o`, `1`/`l`); and it is the alphabet
+Workspace and Holepunch write keys and invite codes in, so one alphabet
+runs through `.table` and the protocol under it. Every fixture's ids
+were rewritten to it. Validity stays loose. What follows is the
+original decision, which chose lowercase base36.
+
 Writer-minted ids are 25 chars of lowercase base36 (`0-9a-z`,
 ~129 bits) via `customAlphabet` — no uppercase anywhere in the
 alphabet. Validity stays loose: any non-empty string unique within
@@ -1414,3 +1424,62 @@ Each kind has its own mark, so a column of errors can be read at a glance before
 | Can't be worked out | Divides by zero, Wrong kind of value, Wrong number of inputs, Unknown function | `triangle-alert` / `exclamationmark.triangle` |
 
 Hovering, or on iOS the selected cell's details, says what went wrong and where the fix is: opening the formula, whose panel offers Repeat Until It Settles for a loop (D60). A true/false cell whose formula failed shows its error, not an unticked box, which would read as false.
+
+## D62: every field has an id, and every id is z-base-32
+
+**Leslie (25 Oct 2026).** Built in table-core; every fixture rewritten.
+
+A field was identified by its `name`, kept stable by never renaming it
+(section 2, "Schema evolution"). That made the name do two jobs: the
+readable key in rows and formulas, and the field's identity. Now each
+field also has an `id` (SPEC section 2, "A field's id"): 13 z-base-32
+characters, minted when the field is made, never shown, never changed.
+`name` stays the key, so files stay readable as text, and `title` the
+label. Ids are added beside names, not in their place: rows keyed by
+id would read `{"k3x9q2m7v1pa": 12}` in a text editor, a diff or
+another tool.
+
+**What an id gives, with or without peer-to-peer sync:**
+
+- A link to a field that survives anything done to it, renaming
+  included, once renaming lands.
+- Two people adding "notes" on two devices, or two git branches, make
+  two fields, not one field with two meanings: a new field's id is
+  random.
+- A field removed and another added with its name are different
+  fields, so old values can't be read as the new one's.
+- A field whose name is itself sensitive can be referred to by its id
+  alone, its name kept sealed (the Workspace Protocol's hidden schema
+  entries, `workspace-format.md`).
+
+**Older files.** A field without an id takes one derived from its name
+(FNV-1a, mixed by MurmurHash3's finaliser): the same on every device
+and at every save, so a file opened on two devices doesn't get two sets
+of ids. Readers do this, so a file another tool wrote still opens.
+
+**Cost.** On the rig, a random field id takes about 1 µs, a row id
+about 2 µs, a derived field id about 3 µs, once per field; a phone a
+few times that. Ids are made once, when the thing is made.
+
+**The alphabet** (D23, amended), weighed against the others, at about
+62 bits:
+
+| Alphabet | Characters | Length | Against it |
+| --- | --- | --- | --- |
+| Decimal | `0-9` | 19 | long; tools read it as a number |
+| Hex | `0-9a-f` | 16 | long |
+| RFC 4648 base32 | `A-Z2-7` | 13 | upper case by convention |
+| Crockford base32 | `0-9A-Z` less `ILOU` | 13 | a second alphabet beside the protocol's |
+| **z-base-32** (chosen) | `ybndrfg8ejkmcpqxot1uwisza345h769` | 13 | one character longer than base36 |
+| Base36 (D23 as first made) | `0-9a-z` | 12 | look-alikes; not the protocol's |
+| Base58 | no `0OIl` | 11 | mixed case: unsafe as file names |
+| Base62 | `0-9a-zA-Z` | 11 | mixed case |
+| Base64url | `A-Za-z0-9-_` | 11 | mixed case, punctuation |
+| Base85 | printable ASCII | 10 | quotes and slashes break JSON and links |
+| Proquints | syllables | 4 groups | long; for reading aloud |
+| Word lists | words | 6 words | longest |
+
+z-base-32 is lowercase, has no look-alikes, wastes none of the random
+bits (32 is a power of two), and is what Workspace and Holepunch
+already write.
+

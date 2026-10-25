@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { strToU8, unzipSync, zipSync } from "fflate";
 
-import { newBundle, newTable } from "@workspace.sh/table-core";
+import { derivedFieldId, newBundle, newTable } from "@workspace.sh/table-core";
 import type { ParsedBundle } from "@workspace.sh/table-core";
 import { singleFileName, bundleToArchive, importSkippedText, isSpreadsheetFile, openArchive, openFailedText, openSpreadsheet, spreadsheetText, type OpenedBundle, exportFailedText } from "./tableFiles.ts";
 
@@ -20,7 +20,7 @@ function sample(): ParsedBundle {
         ...books,
         rows: [
           { id: "a1", title: "The Dispossessed" },
-          { id: "b2", title: "Braiding Sweetgrass" },
+          { id: "6i545yqiuux4ferr3a9ycgp3f7", title: "Braiding Sweetgrass" },
         ],
         // Bodies end with a newline, as the writer writes them.
         bodies: { a1: "# Notes\n\nAnarres.\n" },
@@ -105,7 +105,9 @@ test("a spreadsheet opens as a new .table file: one table named after the file, 
   const table = opened.bundle.tables["q4-invoices-2026"]!;
   assert.equal(table.meta.title, "Q4 invoices 2026");
   // Keys as the app's own new fields get them, so formulas read plainly; the headings stay as titles.
-  assert.deepEqual(table.schema.fields, [
+  // Each with its id (D62), from its name.
+  for (const f of table.schema.fields) assert.equal(f.id, derivedFieldId(f.name));
+  assert.deepEqual(table.schema.fields.map(({ id: _id, ...f }) => f), [
     { name: "client_name", title: "Client Name", type: "string" },
     { name: "due_date", title: "Due Date", type: "date" },
     { name: "amount_gbp", title: "Amount (GBP)", type: "number" },

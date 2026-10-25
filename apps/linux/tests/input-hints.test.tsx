@@ -27,7 +27,7 @@ afterEach(async () => {
 
 async function editorFor(shown: string): Promise<Gtk.Entry> {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
   await userEvent.click((await screen.findAllByText(shown))[0]!);
   return (await screen.findByDisplayValue(shown)) as Gtk.Entry;
 }

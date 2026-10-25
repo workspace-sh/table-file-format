@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "rghwqogkxjjs8",
       "name": "name",
       "type": "string",
       "title": "Product",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "dut55job7adfd",
       "name": "sku",
       "type": "string",
       "title": "SKU",
@@ -18,6 +20,7 @@
       }
     },
     {
+      "id": "eszjd9en1u3er",
       "name": "category",
       "type": "string",
       "title": "Category",
@@ -47,6 +50,7 @@
       }
     },
     {
+      "id": "xiyakxmw7ii5m",
       "name": "price",
       "type": "number",
       "title": "Price",
@@ -56,6 +60,7 @@
       }
     },
     {
+      "id": "mwducew9zqd66",
       "name": "stock",
       "type": "integer",
       "title": "In stock",
@@ -64,6 +69,7 @@
       }
     },
     {
+      "id": "g8iukiwnptueh",
       "name": "units_sold",
       "type": "number",
       "title": "Units sold",
@@ -74,6 +80,7 @@
       }
     },
     {
+      "id": "pet45mnhqbk7n",
       "name": "revenue",
       "type": "number",
       "title": "Revenue",

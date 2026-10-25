@@ -32,7 +32,7 @@ describe("rows a checkbox takes out of the view", () => {
   it("are counted in one toast, and Undo puts them all back", async () => {
     const library = await loadLibrary([bundle]);
     // The toast stays until Undo, however slow the machine (#649).
-    await render(<App library={library} initialTable="library/books" initialView="unread" departedMs={60_000} />);
+    await render(<App library={library} initialTable="library/books" initialView="eho3sibxpturhakhgqn8zdnsza" departedMs={60_000} />);
     const before = await count();
     const ticks = async () => (await screen.findAllByRole(Gtk.AccessibleRole.CHECKBOX)).filter((b) => (b as Gtk.CheckButton).getTooltipText() === "read");
     // Read, one book: it leaves To read, and the toast names it.

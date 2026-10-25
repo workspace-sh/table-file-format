@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const crmBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 2,
+    "formatVersion": 3,
     "title": "CRM",
     "description": "Companies, the people there, and the deals in progress.",
     "tables": [
@@ -22,6 +22,7 @@ export const crmBundle: ParsedBundle = {
       "schema": {
         "fields": [
           {
+            "id": "rghwqogkxjjs8",
             "name": "name",
             "type": "string",
             "title": "Company",
@@ -30,6 +31,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "8c9dqd6zp7tyu",
             "name": "domain",
             "type": "string",
             "title": "Domain",
@@ -40,12 +42,14 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "ctbjed8gnxh9z",
             "name": "website",
             "type": "string",
             "title": "Website",
             "format": "url"
           },
           {
+            "id": "cbs3num9xuqbe",
             "name": "industry",
             "type": "string",
             "title": "Industry",
@@ -80,12 +84,14 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "8kggyzjcrbp75",
             "name": "customer",
             "type": "boolean",
             "title": "Customer",
             "description": "Has signed at least one deal."
           },
           {
+            "id": "rj9n8y9apsroy",
             "name": "employees",
             "type": "integer",
             "title": "Employees",
@@ -94,6 +100,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "gnsjpcnghb1xg",
             "name": "growth",
             "type": "number",
             "title": "Growth",
@@ -101,12 +108,14 @@ export const crmBundle: ParsedBundle = {
             "description": "Headcount growth over the last year."
           },
           {
+            "id": "pmiidt4zkgr5y",
             "name": "logo",
             "type": "string",
             "title": "Logo",
             "attachment": true
           },
           {
+            "id": "pmf5osu9sjqmk",
             "name": "tags",
             "type": "array",
             "title": "Tags",
@@ -149,6 +158,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "c84gaouo69mpf",
             "name": "open_pipeline",
             "type": "number",
             "title": "Open pipeline",
@@ -160,6 +170,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "jx6u8xw3y4u1a",
             "name": "deal_count",
             "type": "number",
             "title": "Deals",
@@ -174,7 +185,7 @@ export const crmBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "co-northwind",
+          "id": "znqnjiyryfpbdjfb57fzm6119k",
           "name": "Northwind Traders",
           "domain": "northwind.example",
           "website": "https://northwind.example",
@@ -189,7 +200,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "co-lumen",
+          "id": "yuj6mtu1akbnxbb5k9nmfrh5p6",
           "name": "Lumen Health",
           "domain": "lumenhealth.example",
           "website": "https://lumenhealth.example",
@@ -203,7 +214,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "co-atlas",
+          "id": "wexwuo344aoowkqiieeb8fk56z",
           "name": "Atlas Freight",
           "domain": "atlasfreight.example",
           "website": "https://atlasfreight.example",
@@ -219,7 +230,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "co-quill",
+          "id": "w5bqp8gjqebacfc6gnjgp93a98",
           "name": "Quill & Co",
           "domain": "quill.example",
           "website": "https://quill.example",
@@ -233,7 +244,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "co-tidal",
+          "id": "ihka6ego6oyrkacacjngf3y7od",
           "name": "Tidal Energy",
           "domain": "tidal.example",
           "website": "https://tidal.example",
@@ -248,7 +259,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "co-fern",
+          "id": "j3qx6ayq43nqjoogmd7b6jedyi",
           "name": "Fern Studio",
           "domain": "fernstudio.example",
           "website": "https://fernstudio.example",
@@ -265,7 +276,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "all",
+          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
           "name": "All companies",
           "layout": "table",
           "fields": [
@@ -285,7 +296,7 @@ export const crmBundle: ParsedBundle = {
           "rowHeight": 44
         },
         {
-          "id": "logos",
+          "id": "7cpm7hu37hhoyip8dqp5xrikgi",
           "name": "Logos",
           "layout": "gallery",
           "gallery_field": "logo",
@@ -296,7 +307,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "by-industry",
+          "id": "r13o6oqo7xmpbc7bdmo3t6zcgx",
           "name": "By industry",
           "layout": "board",
           "board_field": "industry",
@@ -306,7 +317,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "customers",
+          "id": "surkeym1tjrn97wm3xdrg9qufr",
           "name": "Customers",
           "layout": "table",
           "filter": [
@@ -335,23 +346,24 @@ export const crmBundle: ParsedBundle = {
         {
           "name": "0001.ndjson",
           "ids": [
-            "co-northwind",
-            "co-lumen",
-            "co-atlas",
-            "co-quill",
-            "co-tidal",
-            "co-fern"
+            "znqnjiyryfpbdjfb57fzm6119k",
+            "yuj6mtu1akbnxbb5k9nmfrh5p6",
+            "wexwuo344aoowkqiieeb8fk56z",
+            "w5bqp8gjqebacfc6gnjgp93a98",
+            "ihka6ego6oyrkacacjngf3y7od",
+            "j3qx6ayq43nqjoogmd7b6jedyi"
           ]
         }
       ],
       "bodies": {
-        "co-atlas": "# Atlas Freight\n\nOur largest account. Renewal talks start in Q4.\n\n- Champion: Maya Okafor\n- Risk: procurement wants a three-year term\n"
+        "wexwuo344aoowkqiieeb8fk56z": "# Atlas Freight\n\nOur largest account. Renewal talks start in Q4.\n\n- Champion: Maya Okafor\n- Risk: procurement wants a three-year term\n"
       }
     },
     "contacts": {
       "schema": {
         "fields": [
           {
+            "id": "rghwqogkxjjs8",
             "name": "name",
             "type": "string",
             "title": "Name",
@@ -360,6 +372,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "mabuakau8tjug",
             "name": "company",
             "type": "string",
             "title": "Company",
@@ -369,6 +382,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "rrw119rwcjag3",
             "name": "email",
             "type": "string",
             "title": "Email",
@@ -378,6 +392,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "ew5t3j3xky8qc",
             "name": "phone",
             "type": "string",
             "title": "Phone",
@@ -385,11 +400,13 @@ export const crmBundle: ParsedBundle = {
             "description": "Stored as text: a phone number is not a number."
           },
           {
+            "id": "8hq1hqqttndpp",
             "name": "role",
             "type": "string",
             "title": "Role"
           },
           {
+            "id": "mbexdidzxnusp",
             "name": "last_contacted",
             "type": "datetime",
             "title": "Last contacted",
@@ -400,72 +417,72 @@ export const crmBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "ct-maya",
+          "id": "3zaq9e5my1rrbywrdnfwsfcf4n",
           "name": "Maya Okafor",
-          "company": "co-atlas",
+          "company": "wexwuo344aoowkqiieeb8fk56z",
           "email": "maya@atlasfreight.example",
           "phone": "+44 20 7946 0101",
           "role": "Head of Operations",
           "last_contacted": "2026-09-22T14:30:00Z"
         },
         {
-          "id": "ct-jonas",
+          "id": "7t7w54pit8zj8swt9ihwbfxbpb",
           "name": "Jonas Weber",
-          "company": "co-atlas",
+          "company": "wexwuo344aoowkqiieeb8fk56z",
           "email": "jonas@atlasfreight.example",
           "phone": "+49 30 901820",
           "role": "Procurement",
           "last_contacted": "2026-09-10T09:00:00Z"
         },
         {
-          "id": "ct-priya",
+          "id": "7xbtoiywn5ahzyyehydb8ds6fc",
           "name": "Priya Nair",
-          "company": "co-northwind",
+          "company": "znqnjiyryfpbdjfb57fzm6119k",
           "email": "priya@northwind.example",
           "phone": "+1 415 555 0142",
           "role": "Buyer",
           "last_contacted": "2026-09-18T16:15:00Z"
         },
         {
-          "id": "ct-sam",
+          "id": "tug935z61my86gih83fu8gyd4o",
           "name": "Sam Carter",
-          "company": "co-lumen",
+          "company": "yuj6mtu1akbnxbb5k9nmfrh5p6",
           "email": "sam@lumenhealth.example",
           "phone": "+1 212 555 0199",
           "role": "CTO",
           "last_contacted": "2026-08-30T11:00:00Z"
         },
         {
-          "id": "ct-ines",
+          "id": "6rq1xikzpbz5wrsspdg7faqrku",
           "name": "Inês Duarte",
-          "company": "co-tidal",
+          "company": "ihka6ego6oyrkacacjngf3y7od",
           "email": "ines@tidal.example",
           "phone": "+351 21 555 0123",
           "role": "Partnerships",
           "last_contacted": "2026-09-25T10:45:00Z"
         },
         {
-          "id": "ct-leo",
+          "id": "xffpuxujsk76qitnr9fr1xo7f7",
           "name": "Léo Martin",
-          "company": "co-quill",
+          "company": "w5bqp8gjqebacfc6gnjgp93a98",
           "email": "leo@quill.example",
           "phone": "+33 1 55 55 01 23",
           "role": "Founder",
           "last_contacted": "2026-07-14T13:20:00Z"
         },
         {
-          "id": "ct-ada",
+          "id": "8i1cnu1czbitbof4e5ezitpht3",
           "name": "Ada Lindqvist",
-          "company": "co-fern",
+          "company": "j3qx6ayq43nqjoogmd7b6jedyi",
           "email": "ada@fernstudio.example",
           "phone": "+46 8 555 010 10",
           "role": "Studio lead",
           "last_contacted": "2026-09-01T08:30:00Z"
         },
         {
-          "id": "ct-kofi",
+          "id": "pd3c7tryk9dq3p5obiywnish9h",
           "name": "Kofi Mensah",
-          "company": "co-tidal",
+          "company": "ihka6ego6oyrkacacjngf3y7od",
           "email": "kofi@tidal.example",
           "phone": "+233 30 255 0101",
           "role": "Finance",
@@ -474,7 +491,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "all",
+          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
           "name": "All contacts",
           "layout": "table",
           "sort": [
@@ -485,7 +502,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "call-list",
+          "id": "wa68ong5p9463hzwn1wngk1yrh",
           "name": "Call list",
           "layout": "list",
           "fields": [
@@ -494,10 +511,10 @@ export const crmBundle: ParsedBundle = {
             "company"
           ],
           "order": [
-            "ct-maya",
-            "ct-ines",
-            "ct-kofi",
-            "ct-priya"
+            "3zaq9e5my1rrbywrdnfwsfcf4n",
+            "6rq1xikzpbz5wrsspdg7faqrku",
+            "pd3c7tryk9dq3p5obiywnish9h",
+            "7xbtoiywn5ahzyyehydb8ds6fc"
           ]
         }
       ],
@@ -512,14 +529,14 @@ export const crmBundle: ParsedBundle = {
         {
           "name": "0001.ndjson",
           "ids": [
-            "ct-maya",
-            "ct-jonas",
-            "ct-priya",
-            "ct-sam",
-            "ct-ines",
-            "ct-leo",
-            "ct-ada",
-            "ct-kofi"
+            "3zaq9e5my1rrbywrdnfwsfcf4n",
+            "7t7w54pit8zj8swt9ihwbfxbpb",
+            "7xbtoiywn5ahzyyehydb8ds6fc",
+            "tug935z61my86gih83fu8gyd4o",
+            "6rq1xikzpbz5wrsspdg7faqrku",
+            "xffpuxujsk76qitnr9fr1xo7f7",
+            "8i1cnu1czbitbof4e5ezitpht3",
+            "pd3c7tryk9dq3p5obiywnish9h"
           ]
         }
       ]
@@ -528,6 +545,7 @@ export const crmBundle: ParsedBundle = {
       "schema": {
         "fields": [
           {
+            "id": "j49tkemwbf17r",
             "name": "title",
             "type": "string",
             "title": "Deal",
@@ -536,6 +554,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "mabuakau8tjug",
             "name": "company",
             "type": "string",
             "title": "Company",
@@ -545,6 +564,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "pbpftmn36sxnq",
             "name": "contacts",
             "type": "array",
             "title": "Contacts",
@@ -555,6 +575,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "md7yzo3kw3d81",
             "name": "stage",
             "type": "string",
             "title": "Stage",
@@ -595,6 +616,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "yenis3phpcrn1",
             "name": "value",
             "type": "number",
             "title": "Value",
@@ -602,6 +624,7 @@ export const crmBundle: ParsedBundle = {
             "align": "end"
           },
           {
+            "id": "gqhzunramagty",
             "name": "probability",
             "type": "number",
             "title": "Probability",
@@ -612,6 +635,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "x638q3pmppoye",
             "name": "weighted",
             "type": "number",
             "title": "Weighted",
@@ -622,6 +646,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "ckjab9fcna5nf",
             "name": "open_value",
             "type": "number",
             "title": "Open value",
@@ -632,16 +657,19 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "r57wxgpofr4hg",
             "name": "close_date",
             "type": "date",
             "title": "Close date"
           },
           {
+            "id": "gm95w4ffnqbgi",
             "name": "renewal",
             "type": "boolean",
             "title": "Renewal"
           },
           {
+            "id": "cbs3num9xuqbe",
             "name": "industry",
             "type": "string",
             "title": "Industry",
@@ -652,6 +680,7 @@ export const crmBundle: ParsedBundle = {
             }
           },
           {
+            "id": "nczi59m8iph3w",
             "name": "company_pipeline",
             "type": "number",
             "title": "Company pipeline",
@@ -667,12 +696,12 @@ export const crmBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "dl-1",
+          "id": "jddy8scd44w9r1kqur3j4meoii",
           "title": "Atlas: 3-year renewal",
-          "company": "co-atlas",
+          "company": "wexwuo344aoowkqiieeb8fk56z",
           "contacts": [
-            "ct-maya",
-            "ct-jonas"
+            "3zaq9e5my1rrbywrdnfwsfcf4n",
+            "7t7w54pit8zj8swt9ihwbfxbpb"
           ],
           "stage": "negotiation",
           "value": 180000,
@@ -681,11 +710,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": true
         },
         {
-          "id": "dl-2",
+          "id": "neh69ghtrhcnhgnbbzqnfwjb4h",
           "title": "Northwind: store rollout",
-          "company": "co-northwind",
+          "company": "znqnjiyryfpbdjfb57fzm6119k",
           "contacts": [
-            "ct-priya"
+            "7xbtoiywn5ahzyyehydb8ds6fc"
           ],
           "stage": "proposal",
           "value": 64000,
@@ -694,11 +723,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-3",
+          "id": "gpfguzziutn64mew4ecgey6rkz",
           "title": "Lumen: pilot",
-          "company": "co-lumen",
+          "company": "yuj6mtu1akbnxbb5k9nmfrh5p6",
           "contacts": [
-            "ct-sam"
+            "tug935z61my86gih83fu8gyd4o"
           ],
           "stage": "qualified",
           "value": 22000,
@@ -707,12 +736,12 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-4",
+          "id": "x4ch1jcqawdk7y1e7i9hzu9piu",
           "title": "Tidal: grid analytics",
-          "company": "co-tidal",
+          "company": "ihka6ego6oyrkacacjngf3y7od",
           "contacts": [
-            "ct-ines",
-            "ct-kofi"
+            "6rq1xikzpbz5wrsspdg7faqrku",
+            "pd3c7tryk9dq3p5obiywnish9h"
           ],
           "stage": "won",
           "value": 96000,
@@ -721,11 +750,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-5",
+          "id": "mig4q54k4a75gcqa5x916yxizf",
           "title": "Quill: newsroom seats",
-          "company": "co-quill",
+          "company": "w5bqp8gjqebacfc6gnjgp93a98",
           "contacts": [
-            "ct-leo"
+            "xffpuxujsk76qitnr9fr1xo7f7"
           ],
           "stage": "lost",
           "value": 12000,
@@ -734,11 +763,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-6",
+          "id": "4j8dtp7k1t8aspbaoty3wyzbac",
           "title": "Fern: studio plan",
-          "company": "co-fern",
+          "company": "j3qx6ayq43nqjoogmd7b6jedyi",
           "contacts": [
-            "ct-ada"
+            "8i1cnu1czbitbof4e5ezitpht3"
           ],
           "stage": "lead",
           "value": 4800,
@@ -747,11 +776,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-7",
+          "id": "gaa48gxz31obqmgf3amrad45xk",
           "title": "Atlas: EU expansion",
-          "company": "co-atlas",
+          "company": "wexwuo344aoowkqiieeb8fk56z",
           "contacts": [
-            "ct-maya"
+            "3zaq9e5my1rrbywrdnfwsfcf4n"
           ],
           "stage": "lead",
           "value": 250000,
@@ -760,11 +789,11 @@ export const crmBundle: ParsedBundle = {
           "renewal": false
         },
         {
-          "id": "dl-8",
+          "id": "ijfqsuz3j8oyju3imqb9b37uq6",
           "title": "Tidal: renewal",
-          "company": "co-tidal",
+          "company": "ihka6ego6oyrkacacjngf3y7od",
           "contacts": [
-            "ct-kofi"
+            "pd3c7tryk9dq3p5obiywnish9h"
           ],
           "stage": "proposal",
           "value": 104000,
@@ -775,7 +804,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "pipeline",
+          "id": "oxycwiuri87bqu1s89cpt836n1",
           "name": "Pipeline",
           "layout": "board",
           "board_field": "stage",
@@ -787,7 +816,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "open",
+          "id": "hc9yis984a6wnajx7rgoi476ay",
           "name": "Open deals",
           "layout": "table",
           "filter": [
@@ -808,13 +837,13 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "closing",
+          "id": "oztz56jo4yid66csmo63wamhsn",
           "name": "Closing",
           "layout": "calendar",
           "calendar_field": "close_date"
         },
         {
-          "id": "all",
+          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
           "name": "All deals",
           "layout": "table",
           "totals": {
@@ -835,19 +864,19 @@ export const crmBundle: ParsedBundle = {
         {
           "name": "0001.ndjson",
           "ids": [
-            "dl-1",
-            "dl-2",
-            "dl-3",
-            "dl-4",
-            "dl-5",
-            "dl-6",
-            "dl-7",
-            "dl-8"
+            "jddy8scd44w9r1kqur3j4meoii",
+            "neh69ghtrhcnhgnbbzqnfwjb4h",
+            "gpfguzziutn64mew4ecgey6rkz",
+            "x4ch1jcqawdk7y1e7i9hzu9piu",
+            "mig4q54k4a75gcqa5x916yxizf",
+            "4j8dtp7k1t8aspbaoty3wyzbac",
+            "gaa48gxz31obqmgf3amrad45xk",
+            "ijfqsuz3j8oyju3imqb9b37uq6"
           ]
         }
       ],
       "bodies": {
-        "dl-1": "# Atlas: 3-year renewal\n\nThey want a three-year term with a price lock.\n\n## Next\n\n1. Legal review of the MSA\n2. Security questionnaire\n"
+        "jddy8scd44w9r1kqur3j4meoii": "# Atlas: 3-year renewal\n\nThey want a three-year term with a price lock.\n\n## Next\n\n1. Legal review of the MSA\n2. Security questionnaire\n"
       }
     }
   },

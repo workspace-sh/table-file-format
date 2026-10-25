@@ -8,11 +8,14 @@ const NOW = new Date("2026-09-25T20:00:00Z");
 
 test("a new table has one text field, one table view and no rows", () => {
   const t = newTable("Reading list", "reading-list.table", NOW);
-  assert.deepEqual(t.schema.fields, [{ name: "title", type: "string" }]);
+  const [{ id, ...title }] = t.schema.fields as [{ id?: string }];
+  assert.deepEqual(title, { name: "title", type: "string" });
+  // A new field's id is random (D62).
+  assert.match(id ?? "", /^[ybndrfg8ejkmcpqxot1uwisza345h769]{13}$/);
   assert.equal(t.rows.length, 0);
   assert.equal(t.views.length, 1);
   assert.equal(t.views[0]!.layout, "table");
-  assert.match(t.views[0]!.id, /^[0-9a-z]{25}$/);
+  assert.match(t.views[0]!.id, /^[ybndrfg8ejkmcpqxot1uwisza345h769]{26}$/);
   assert.equal(t.path, "reading-list.table");
 });
 

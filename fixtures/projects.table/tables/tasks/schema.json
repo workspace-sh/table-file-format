@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "j49tkemwbf17r",
       "name": "title",
       "type": "string",
       "constraints": {
@@ -8,6 +9,7 @@
       }
     },
     {
+      "id": "knaba835qfmuj",
       "name": "project",
       "type": "string",
       "relation": {
@@ -16,6 +18,7 @@
       }
     },
     {
+      "id": "ct5d6ndk38c8d",
       "name": "status",
       "type": "string",
       "constraints": {
@@ -27,6 +30,7 @@
       }
     },
     {
+      "id": "nqhx3hc8c9a4i",
       "name": "priority",
       "type": "integer",
       "constraints": {
@@ -35,6 +39,7 @@
       }
     },
     {
+      "id": "g9rhycojwqyba",
       "name": "assignee",
       "type": "string"
     }
