@@ -64,7 +64,10 @@ describe("a formula cell on Linux", () => {
     schema.fields.find((f) => f.name === "quarter")!.computed!.expr = "(+ jan feb mar (* quarter 0))";
     writeFileSync(schemaFile, JSON.stringify(schema));
     await openSheet();
-    await userEvent.click((await screen.findAllByText("#REF!"))[0]!);
+    // Excel style, the default: the code, marked, and why on hover (#685).
+    const loop = (await screen.findAllByText("\u26A0\uFE0E #REF!"))[0]!;
+    expect(loop.getTooltipText()).toBe("This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.");
+    await userEvent.click(loop);
     await userEvent.click(await screen.findByText("Repeat Until It Settles"));
     const iteration = async () => (await parseTable(join(bundle, "tables", "budget"))).meta?.iteration;
     await waitFor(async () => expect(await iteration()).toEqual({ max: 100, change: 0.001 }));
