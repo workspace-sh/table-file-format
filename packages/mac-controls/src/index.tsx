@@ -8,10 +8,10 @@
 // once, and link the TableMacControls pod.
 
 import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef, type ReactElement } from "react";
-import { Pressable, type View } from "react-native";
+import { Pressable, requireNativeComponent, type View, type ViewProps } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot } from "@workspace.sh/table-ui/shared";
+import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
 import { chooseMany, chooseManyClose, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
 
 export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
@@ -168,9 +168,41 @@ function ChooseManyView({ options, selected, onToggle, anchor, rect, onClose }: 
 export const MacChooseMany: ChooseManySlot = ChooseManyView;
 
 /** The Mac's controls, for PlatformControlsProvider. One object, so the views' rows aren't remounted. */
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany };
+/** The system's checkbox (macos/TableCheckbox.m). */
+const NativeCheckbox = requireNativeComponent<ViewProps & { checked: boolean; label?: string; onChange: (event: { nativeEvent: { checked: boolean } }) => void }>("TableCheckbox");
+
+/**
+ * A boolean cell or a setting, as the system's checkbox: in a cell alone,
+ * in a setting with its text beside it, which flips it too.
+ */
+function ToggleView({ checked, onChange, label, children, style }: ToggleProps): ReactElement {
+  const box = <NativeCheckbox checked={checked} label={label ?? children} onChange={(e) => onChange(e.nativeEvent.checked)} style={{ width: 18, height: 18 }} />;
+  if (children === undefined) return box;
+  return (
+    <html.div style={[styles.toggleRow, style as never]}>
+      {box}
+      <html.span onClick={() => onChange(!checked)} style={styles.toggleText}>
+        {children}
+      </html.span>
+    </html.div>
+  );
+}
+
+export const MacToggle: ToggleSlot = ToggleView;
+
+export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, Toggle: MacToggle };
 
 const styles = css.create({
+  toggleRow: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  toggleText: {
+    flexShrink: 1,
+    cursor: "default",
+  },
   button: {
     cursor: "pointer",
     textAlign: "start",
