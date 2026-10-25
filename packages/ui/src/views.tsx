@@ -105,6 +105,9 @@ import {
   SchemaFieldEditor,
 } from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
+
+/** No place yet: for field settings shown apart from the header, which don't point at it. */
+const NO_ANCHOR: AnchorRect = { top: 0, left: 0, width: 0, height: 0 };
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
@@ -3168,7 +3171,10 @@ export function TableView({
   // A row's actions (open its page, insert, delete), offered the
   // platform's way: right-click on the web and macOS, touch and hold on a
   // phone. A host can replace the control (PlatformControlsProvider).
-  const { RowActions } = usePlatformControls();
+  const { RowActions, Sheet: SheetControl } = usePlatformControls();
+  // Field settings shown apart from the header (an inspector, a sheet) don't
+  // point at it, so they open on the click, not after it's measured.
+  const settingsApart = !!SheetControl.presentsSettings;
   // Each row as last drawn, by id: what a key or a menu on a selected cell reads its note from (D57).
   const drawnRows = useRef(new Map<string, Row>());
   const noteFor = (rowId: string, name: string) => ownNote(cells, rowId, name, drawnRows.current.get(rowId));
@@ -4019,6 +4025,8 @@ export function TableView({
           styles.headerCellWrapper,
           styles.slotFill,
           (!isLast || closes(name)) && styles.tableCellSeparator,
+          // Its settings open: the header is selected, as a cell is.
+          isEditing && styles.cellSelected,
         ]}
       >
         <html.button
@@ -4029,6 +4037,10 @@ export function TableView({
           onClick={async () => {
             if (isEditing) {
               setEditingFieldName(null);
+            } else if (settingsApart) {
+              setEditingFieldName(name);
+              const rect = await measureAnchor(headerButtonRefs.current[name]);
+              if (rect) setAnchorRect(rect);
             } else {
               const rect = await measureAnchor(headerButtonRefs.current[name]);
               if (rect) setAnchorRect(rect);
@@ -4045,7 +4057,7 @@ export function TableView({
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
-        {isEditing && field && anchorRect && (
+        {isEditing && field && (anchorRect || settingsApart) && (
           <SchemaFieldEditor
             // The field as the file has it. fieldMap's copy carries the
             // format it is *shown* with, which for a formula may be an
@@ -4055,7 +4067,7 @@ export function TableView({
             fieldIndex={fieldIndex}
             totalFields={schema.fields.length}
             align={opensTowardStart(name) !== rtl ? "right" : "left"}
-            anchorRect={anchorRect}
+            anchorRect={anchorRect ?? NO_ANCHOR}
             onUpdate={(patch) => onUpdateField!(name, patch)}
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onRemoveEnumValue={onRemoveEnumValue ? (value) => onRemoveEnumValue(name, value) : undefined}
