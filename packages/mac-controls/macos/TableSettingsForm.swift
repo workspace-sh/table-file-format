@@ -183,8 +183,14 @@ private struct RowView: View {
 
 public struct TableSettingsFormView: View {
   @ObservedObject var model: TableSettingsFormModel
+  /// Its sections' margin from the sides. A grouped form in an inspector
+  /// item has none of its own; the demo's pane gives its own.
+  let sideMargin: CGFloat
 
-  public init(model: TableSettingsFormModel) { self.model = model }
+  public init(model: TableSettingsFormModel, sideMargin: CGFloat = 0) {
+    self.model = model
+    self.sideMargin = sideMargin
+  }
 
   public var body: some View {
     if let data = model.data {
@@ -248,9 +254,7 @@ public struct TableSettingsFormView: View {
           }
         }
         .formStyle(.grouped)
-        // In a pane as narrow as an inspector the grouped form has no side
-        // margin of its own, and its sections ran to the pane's edges.
-        .contentMargins(.horizontal, 12, for: .scrollContent)
+        .contentMargins(.horizontal, sideMargin, for: .scrollContent)
         // On the pane's own material, not a second background.
         .scrollContentBackground(.hidden)
         .clipped()

@@ -76,7 +76,8 @@ private struct InspectorPane: View {
 
   var body: some View {
     if form.data != nil {
-      TableSettingsFormView(model: form)
+      // A narrow margin from the pane's sides, as the demo's own pane has.
+      TableSettingsFormView(model: form, sideMargin: 3)
     } else {
       Text("No Selection")
         .font(.title3)

@@ -8,22 +8,19 @@
 // once, and link the TableMacControls pod.
 
 import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef, type ReactElement } from "react";
-import { Pressable, requireNativeComponent, type View, type ViewProps } from "react-native";
+import { Pressable, requireNativeComponent, View as ReactNativeView, type View, type ViewProps } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
 import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
-import { chooseMany, chooseManyClose, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
+import { chooseMany, chooseManyClose, chooseOne, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
 
 export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
 export { datePickerClose, datePickerSet, datePickerShown, onContextMenu, pickDate, popUpChoose, popUpMenu, popUpTitles, type PopUpItem } from "./native";
 
-/** No choice: an id of its own, as a menu item needs one. */
-const NONE = "\u0000none";
-
 /**
- * One choice from a list, in the system's pop-up menu: the chosen one is
- * ticked and opens under the pointer, as a pop-up button's does. Given a
- * `trigger` (a selected table cell's value), a click on that opens it.
+ * One choice from a list, in the same popover as several (MacChooseMany):
+ * each choice as its tag, the chosen one ticked, pointing at the control.
+ * Given a `trigger` (a selected table cell's value), a click on that opens it.
  */
 const SelectView = forwardRef<SelectHandle, SelectProps>(function MacSelect(
   { value, options, onChange, onBlur, style, label, trigger },
@@ -31,35 +28,34 @@ const SelectView = forwardRef<SelectHandle, SelectProps>(function MacSelect(
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anchor = useRef<any>(null);
+  // The popover points at this view itself, wherever it has scrolled (an
+  // embed's native scroll view is out of React's measurements).
+  const anchorId = `select-${useId()}`;
+  // The same popover as several choices (TableChoicePicker): the choices as
+  // their tags, the chosen one ticked; a click picks and closes.
   const choose = async (at: { x: number; y: number } | null) => {
-    const items: PopUpItem[] = options.map((o) => ({
-      id: o.value === "" ? NONE : o.value,
-      title: o.label,
-      checked: o.value === value,
-      disabled: o.disabled,
-    }));
-    const id = await popUpMenu(items, at);
-    if (id === null) onBlur?.();
-    else onChange(id === NONE ? "" : id);
+    const shown = options.filter((o) => !o.disabled).map((o) => ({ value: o.value, label: o.label, ...(o.color ? { color: o.color } : {}) }));
+    const picked = await chooseOne(shown, value ?? null, at ? null : anchorId, at);
+    if (picked === null) onBlur?.();
+    else onChange(picked);
   };
   // Opened from the keyboard (Return on a selected cell): over the cell,
   // since the pointer may be anywhere.
+  // Opened from the keyboard (Return on a selected cell) or as the cell's
+  // editor: pointing at the control, by its anchor.
   useImperativeHandle(ref, () => ({
-    focus: () => {
-      const el = anchor.current as View | null;
-      if (typeof el?.measure !== "function") return void choose(null);
-      el.measure((_x, _y, _width, _height, pageX, pageY) => void choose({ x: pageX, y: pageY }));
-    },
+    focus: () => void choose(null),
   }));
   if (trigger) {
     return (
-      <Pressable onPress={() => void choose(null)} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
+      <Pressable nativeID={anchorId} onPress={() => void choose(null)} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
         {trigger}
       </Pressable>
     );
   }
   const chosen = options.find((o) => o.value === value);
   return (
+    <ReactNativeView nativeID={anchorId} style={{ alignSelf: "stretch", flexDirection: "row" }}>
     <html.button
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
@@ -73,6 +69,7 @@ const SelectView = forwardRef<SelectHandle, SelectProps>(function MacSelect(
       {/* One string, so it takes the caller's text style as a button's own label does. */}
       {`${chosen?.label ?? ""}  ▾`}
     </html.button>
+    </ReactNativeView>
   );
 });
 
