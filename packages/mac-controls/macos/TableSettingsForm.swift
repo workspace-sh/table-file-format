@@ -232,6 +232,9 @@ public struct TableSettingsFormView: View {
           }
         }
         .formStyle(.grouped)
+        // In a pane as narrow as an inspector the grouped form has no side
+        // margin of its own, and its sections ran to the pane's edges.
+        .contentMargins(.horizontal, 12, for: .scrollContent)
         // On the pane's own material, not a second background.
         .scrollContentBackground(.hidden)
         .clipped()
