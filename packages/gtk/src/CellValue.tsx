@@ -34,7 +34,7 @@ function escapeMarkup(text: string): string {
  * character, so a long value can't widen its column: the cell's own width
  * decides, and the text ends in "…" there, as it does on the web.
  */
-function CellText({ text, lines, xalign = 0, cssClasses }: { text: string; lines?: number; xalign?: number; cssClasses?: string[] }) {
+function CellText({ text, lines, xalign = 0, cssClasses, tooltip }: { text: string; lines?: number; xalign?: number; cssClasses?: string[]; tooltip?: string }) {
   const wraps = lines !== undefined && lines > 1;
   return (
     <GtkLabel
@@ -47,7 +47,7 @@ function CellText({ text, lines, xalign = 0, cssClasses }: { text: string; lines
       wrapMode={Pango.WrapMode.WORD_CHAR}
       lines={wraps ? lines : -1}
       cssClasses={cssClasses}
-      tooltipText={text.length > 24 ? text : undefined}
+      tooltipText={tooltip ?? (text.length > 24 ? text : undefined)}
     />
   );
 }
@@ -124,7 +124,8 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
         </Clipped>
       );
     case "error":
-      return <CellText text={shown.code} xalign={xalign} cssClasses={[styles.formulaError]} />;
+      // A warning mark and what's wrong; hovering says why, and where the fix is (#685).
+      return <CellText text={`\u26A0\uFE0E ${shown.text}`} xalign={xalign} cssClasses={[styles.formulaError]} tooltip={shown.explanation} />;
     case "pills":
       return (
         <Clipped>

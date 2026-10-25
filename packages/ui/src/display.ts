@@ -9,6 +9,7 @@ import {
   formatValue as formatWithFieldFormat,
   FormulaError,
   stringFormatKind,
+  type FormulaSyntax,
   viewTotal,
   type DisplayOptions,
   type Field,
@@ -158,7 +159,8 @@ export interface Pill {
  */
 export type CellShow =
   | { kind: "relations"; links: RelationLink[] }
-  | { kind: "error"; code: string }
+  /** A formula that failed: `text` is its code in Excel style, plain words otherwise (#685). */
+  | ({ kind: "error" } & FormulaErrorShow)
   | { kind: "pills"; pills: Pill[] }
   | { kind: "attachment"; fileName: string }
   | { kind: "link"; text: string; href: string; external: boolean }
@@ -178,19 +180,100 @@ function linkFor(relation: { table: string; field: string }, id: string, related
   return { id, label: relationLabel(relation, id, relatedTables), address: formatAddress({ tablePath: relation.table, rowId: id }) };
 }
 
+/** How a failed formula shows in its cell (#685). */
+export interface FormulaErrorShow {
+  /** The spreadsheet code: `#DIV/0!`. */
+  code: string;
+  /** What the cell says: the code in Excel style, else a few plain words ("Divides by zero"). */
+  text: string;
+  /** What went wrong, and where the fix is: for a hover, or a tap where there's no hover. */
+  explanation: string;
+  /** What fixes it: the loop's "Repeat Until It Settles", or editing the formula. Both are in the formula's panel. */
+  fix: "repeat" | "edit";
+}
+
+/** What a column of each type holds, for "Not a date" and "this column holds dates". */
+const HOLDS: Record<string, [not: string, holds: string]> = {
+  string: ["Not text", "text"],
+  number: ["Not a number", "numbers"],
+  integer: ["Not a whole number", "whole numbers"],
+  year: ["Not a year", "years"],
+  boolean: ["Not true or false", "true or false"],
+  date: ["Not a date", "dates"],
+  datetime: ["Not a date and time", "dates and times"],
+  time: ["Not a time", "times"],
+  duration: ["Not a duration", "durations"],
+  array: ["Not a list", "lists"],
+  geopoint: ["Not a map point", "map points"],
+  geojson: ["Not a map shape", "map shapes"],
+};
+
+const FIX = {
+  repeat: "Open the formula to repeat the calculation until it settles.",
+  edit: "Open the formula to change it.",
+};
+
+/**
+ * A failed formula in plain words (#685), from its code and the evaluator's
+ * message, which the TypeScript workbook and the EDN core word alike. With
+ * formulas shown in Excel style the cell keeps the code a spreadsheet user
+ * knows; the explanation is plain either way.
+ */
+export function formulaErrorShow(error: FormulaError, field: Field | undefined, syntax?: FormulaSyntax): FormulaErrorShow {
+  const { code, message } = error;
+  const said = (words: string, why: string, fix: "repeat" | "edit" = "edit"): FormulaErrorShow => ({
+    code,
+    text: syntax === "stored" ? words : code,
+    explanation: `${why} ${FIX[fix]}`,
+    fix,
+  });
+  let m: RegExpExecArray | null;
+  if (code === "#VALUE!" && (m = /^.+ can't hold (.+)$/s.exec(message))) {
+    // Any JSON value but a number JSON can't write (D56).
+    if (field?.type === "any") return said("Number too big", `The formula gave ${m[1]}, which a file can't store.`);
+    const [not, holds] = field?.relation ? ["Not a list of rows", "links to rows"] : (HOLDS[field?.type ?? ""] ?? ["Wrong kind of value", `values of type ${field?.type}`]);
+    return said(not, `The formula gave ${m[1]}, and this column holds ${holds}.`);
+  }
+  if (code === "#DIV/0!") return said("Divides by zero", "The formula divides by zero for this row.");
+  if (code === "#NUM!") return said("Number too big", "The formula's answer is too large for a number.");
+  if (code === "#NAME?" && (m = /^no field named (.+)$/s.exec(message))) {
+    return said(`No field "${m[1]}"`, `The formula reads "${m[1]}", and there's no field by that name.`);
+  }
+  if (code === "#NAME?" && (m = /^unknown function (.+)$/s.exec(message))) {
+    return said("Unknown function", `The formula calls "${m[1]}", which isn't a formula function.`);
+  }
+  if (code === "#REF!") {
+    if (/ depends on itself$/.test(message)) {
+      return said("Loops back on itself", "This formula reads itself, through the formulas it reads, so it has no answer.", "repeat");
+    }
+    if ((m = /^the Sheet view (.+) is sorted by its own places$/s.exec(message))) {
+      return said("Loops back on itself", `The Sheet view "${m[1]}" is sorted by what its formulas give, so they have no answer.`);
+    }
+    if ((m = /^no table (.+)$/s.exec(message))) return said(`No table "${m[1]}"`, `The formula reads the table "${m[1]}", and there's no table by that name.`);
+    if ((m = /^no Sheet view (.+)$/s.exec(message))) return said(`No view "${m[1]}"`, `The formula reads the Sheet view "${m[1]}", and there's no view by that name.`);
+    if ((m = /^(.+) isn't a column of (.+)$/s.exec(message))) {
+      return said("Column isn't in the view", `The formula reads "${m[1]}" by its place in "${m[2]}", and that view doesn't show it.`);
+    }
+    if (message === "that row is off the grid") return said("No row there", "The formula reads a place past the edge of its Sheet view.");
+    if (message.startsWith("no row ")) return said("Row is gone", "The formula reads a row that's no longer there.");
+  }
+  // Anything else (a function given the wrong kind of value): the evaluator's own words.
+  return said("Wrong kind of value", `${message.charAt(0).toUpperCase()}${message.slice(1)}.`);
+}
+
 /** What `value`, stored in `field`, shows as. */
 export function describeCell(
   field: Field | undefined,
   value: unknown,
-  display: DisplayOptions,
+  display: DisplayOptions & { formulaSyntax?: FormulaSyntax },
   relatedTables?: Record<string, ParsedTable>,
 ): CellShow {
   // A relation: the related row, or its id marked broken when dangling.
   if (field?.relation && typeof value === "string" && value.length > 0) {
     return { kind: "relations", links: [linkFor(field.relation, value, relatedTables)] };
   }
-  // A formula that failed shows its spreadsheet-style code (#DIV/0!).
-  if (value instanceof FormulaError) return { kind: "error", code: value.code };
+  // A formula that failed: its spreadsheet code in Excel style, plain words otherwise (#685).
+  if (value instanceof FormulaError) return { kind: "error", ...formulaErrorShow(value, field, display.formulaSyntax) };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
     if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
