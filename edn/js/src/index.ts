@@ -54,7 +54,7 @@ export interface Edn {
    * Sheet view's places is the host's, and so is every table related to it:
    * they come back as "host", for `.table`'s own workbook to compute.
    */
-  computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }): Record<string, Record<string, FormulaResult[]> | "host">;
+  computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, FormulaResult[]> | "host">;
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
@@ -111,11 +111,12 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
   canonical: (text) => call(c.canonical, text),
   formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
-  computeTables: (tables, clock = {}) => {
+  computeTables: (tables, clock = {}, only) => {
     const parts: Float64Array[] = [];
     // One moment for the whole computation (D55): the reader's own date, and the instant in UTC.
     const now = clock.now ?? new Date();
     const json = {
+      ...(only ? { only } : {}),
       clock: {
         today: `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
         now: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
@@ -123,8 +124,11 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
       },
       tables: Object.entries(tables).map(([name, t]) => {
         const iteration = t.meta?.iteration as { max?: unknown; change?: unknown } | undefined;
+        // A value the core has no kind for (an object, as an `object` field holds) is read only by the host.
+        const objects = t.schema.fields.some((f) => !f.computed && t.rows.some((r) => holdsObject(r[f.name])));
         return {
           name,
+          ...(objects ? { host: true } : {}),
           ...(iteration && typeof iteration.max === "number" ? { iteration: { max: iteration.max, change: typeof iteration.change === "number" ? iteration.change : 0 } } : {}),
           ids: t.rows.map((r) => r.id),
           fields: t.schema.fields.map((f) => {
@@ -160,6 +164,9 @@ const api = (c: Calls, binding: "native" | "wasm"): Edn => ({
   },
   binding,
 });
+
+/** Whether a stored value is, or holds, an object (JSON's `{…}`). */
+const holdsObject = (v: unknown): boolean => typeof v === "object" && v !== null && (!Array.isArray(v) || v.some(holdsObject));
 
 /** A column's cells as numbers (`NaN` for an empty cell), or null when any cell isn't a number or empty. */
 function numbersOnly(cells: readonly unknown[], rows: number): Float64Array | null {

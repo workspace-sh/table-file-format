@@ -118,6 +118,8 @@ pub struct Workbook {
     /// Per table: whether the host works it out (`needs_host`).
     hosted: Vec<bool>,
     clock: Option<Clock>,
+    /// The tables the host asked for (`None`: every one); the rest are read only through them.
+    pub only: Option<Vec<String>>,
     /// Iterating (D60): the table being worked out, and what the last pass gave, by field and row.
     previous: RefCell<Option<(usize, HashMap<(usize, usize), Value>)>>,
 }
@@ -139,6 +141,7 @@ impl Workbook {
             depth: RefCell::new(0),
             hosted,
             clock,
+            only: None,
             previous: RefCell::new(None),
         }
     }
@@ -440,7 +443,7 @@ fn formulas(t: &Table) -> impl Iterator<Item = &Expr> {
 /// own row count):
 ///
 /// ```text
-/// {"clock"?: {"today", "now", "seed"},
+/// {"clock"?: {"today", "now", "seed"}, "only"?: ["name", …],
 ///  "tables": [{"name", "ids": […], "host"?, "iteration"?: {"max", "change"},
 ///              "fields": [{"name", "type"?, "many"?, "formula"?, "relation"?, "values"?: […], "numbers"?: k}],
 ///              "cells"?: [{"id", "field", "formula"}]}]}
@@ -448,7 +451,8 @@ fn formulas(t: &Table) -> impl Iterator<Item = &Expr> {
 ///
 /// A field's `formula` and a cell's are null when they're in a dialect the core doesn't read. Cells are
 /// every line with a formula, in the order read: which apply is decided here (`.table`'s `cellFormulas`).
-/// Without a clock, a formula reading it is the host's.
+/// Without a clock, a formula reading it is the host's. With `only`, just those tables' formulas are
+/// worked out and given back (and what they read).
 pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
     let bad = |m: String| Error { message: m, line: None, column: None };
     let root: serde_json::Value = serde_json::from_str(json).map_err(|e| bad(format!("the workbook isn't JSON: {e}")))?;
@@ -485,7 +489,9 @@ pub fn workbook_from(json: &str, numbers: &[f64]) -> Result<Workbook, Error> {
         now: c["now"].as_str().unwrap_or_default().into(),
         state: RefCell::new(c["seed"].as_u64().unwrap_or(0)),
     });
-    Ok(Workbook::new(tables, clock))
+    let mut book = Workbook::new(tables, clock);
+    book.only = root.get("only").and_then(|o| o.as_array()).map(|o| o.iter().filter_map(|n| n.as_str().map(str::to_string)).collect());
+    Ok(book)
 }
 
 /// The formula each cell has of its own (`.table`'s `cellFormulas`): the first line for a cell, on a row
