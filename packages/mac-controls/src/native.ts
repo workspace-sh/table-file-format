@@ -21,6 +21,10 @@ interface TableMacControlsModule {
   chooseMany(options: { value: string; label: string; color?: string }[], selected: string[], rect: { x: number; y: number; width: number; height: number }, anchor: string | null): Promise<null>;
   chooseOne(options: { value: string; label: string; color?: string }[], selected: string | null, anchor: string | null, at: { x: number; y: number } | null): Promise<string | null>;
   chooseManyClose(): void;
+  showProblem(message: string, confirmable: boolean, suggestion: string | null, rect: { x: number; y: number; width: number; height: number }): void;
+  closeProblem(): void;
+  setFormulaEditor(json: string): void;
+  insertInFormula(text: string, cursorBack: number): void;
 }
 
 const native = NativeModules.TableMacControls as TableMacControlsModule | undefined;
@@ -139,7 +143,44 @@ export function chooseOne(
   return native.chooseOne(options, selected, anchor, at);
 }
 
+/**
+ * Why a cell's draft wasn't saved, in a popover at `rect` that leaves the
+ * keyboard in the cell; `suggestion` is a button's title, its click going to
+ * `onUse`. Returns the way to close it.
+ */
+export function showProblem(
+  message: string,
+  confirmable: boolean,
+  suggestion: string | null,
+  rect: { x: number; y: number; width: number; height: number },
+  onUse: () => void,
+): () => void {
+  if (!native) return () => {};
+  const sub = events?.addListener("problemSuggestion", onUse);
+  native.showProblem(message, confirmable, suggestion, rect);
+  return () => {
+    sub?.remove();
+    native.closeProblem();
+  };
+}
+
 /** Close the popover of several choices, if one is open. */
 export function chooseManyClose(): void {
   native?.chooseManyClose();
+}
+
+/** The formula being written, for the inspector's editor (macos/TableFormulaEditor.swift), as JSON; "" for none. */
+export function setFormulaEditor(json: string): void {
+  native?.setFormulaEditor(json);
+}
+
+/** Put text into the formula at its cursor, the cursor then `cursorBack` characters back. */
+export function insertInFormula(text: string, cursorBack = 0): void {
+  native?.insertInFormula(text, cursorBack);
+}
+
+/** What's typed and pressed in the inspector's formula editor. */
+export function onFormulaEditor<E>(then: (event: E) => void): () => void {
+  const sub = events?.addListener("formulaEditor", then);
+  return () => sub?.remove();
 }
