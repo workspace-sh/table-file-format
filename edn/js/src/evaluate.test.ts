@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { FormulaError } from "../../../packages/core/src/expr.ts";
-import { computeRows } from "../../../packages/core/src/workbook.ts";
+import { computeRows, sheetGrid } from "../../../packages/core/src/workbook.ts";
 import { readBundle } from "../../../packages/core/src/io.ts";
 import { nodeFs } from "../../../packages/core/src/node-fs.ts";
 import type { ParsedTable } from "../../../packages/core/src/types.ts";
@@ -290,5 +290,24 @@ for (const binding of ["native", "wasm"] as const) {
     );
     const counted = same(edn, { ledger, reader }, "places");
     assert.equal(counted.host, 0);
+
+    // Each view's grid as an app numbers its rows: order, groups, whether it's sorted by its own places, rows filled.
+    for (const v of ["by-date", "by-kind", "manual", "narrow", "by-own", "kind-sort", "plain", "nope"]) {
+      const want = sheetGrid(ledger, v, { tables: { ledger, reader }, self: "ledger", now: MOMENT });
+      const got = edn.computeGrids({ ledger, reader } as never, "ledger", [v], { now: MOMENT });
+      assert.notEqual(got, "host");
+      const g = (got as Exclude<typeof got, "host">).grids[v];
+      if (!want) {
+        assert.equal(g, null, v);
+        continue;
+      }
+      assert.deepEqual(g!.order.map((i) => ledger.rows[i]!.id), want.rows.map((r) => r.id), `${v}: order`);
+      assert.deepEqual(g!.groups, want.groups, `${v}: groups`);
+      assert.equal(g!.loop, want.loop, `${v}: loop`);
+      const fields = (got as Exclude<typeof got, "host">).fields;
+      for (const f of ["balance", "above", "byown"]) {
+        assert.deepEqual(g!.order.map((i) => plain(fields[f]![i])), want.rows.map((r) => plain(r[f])), `${v}: ${f}`);
+      }
+    }
   });
 }

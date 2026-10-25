@@ -95,12 +95,44 @@ pub fn compute(book: &Workbook) -> Computed {
             index.push_str(":{\"host\":true}");
             continue;
         }
-        let computed: Vec<usize> = (0..table.fields.len()).filter(|&f| book.is_computed(t, f)).collect();
-        let results = match table.iteration {
-            Some(it) => iterated(book, t, &computed, it),
-            None => {
-                book.fresh_pass();
-                computed.iter().map(|&f| book.column(t, f)).collect()
+        let computed: Vec<usize> = if book.columns_wanted { (0..table.fields.len()).filter(|&f| book.is_computed(t, f)).collect() } else { Vec::new() };
+        let views = book.wanted_grids.get(&table.name);
+        let mut grids = String::new();
+        let results = if let Some(views) = views {
+            // As `sheetGrid`: the grids first, then the columns, in one pass and without iteration.
+            book.fresh_pass();
+            for (k, v) in views.iter().enumerate() {
+                if k > 0 {
+                    grids.push(',');
+                }
+                json_string(&mut grids, v);
+                grids.push(':');
+                match book.sheet_grid(t, v) {
+                    None => grids.push_str("null"),
+                    Some((order, groups, looped)) => {
+                        grids.push_str("{\"order\":[");
+                        grids.push_str(&order.iter().map(usize::to_string).collect::<Vec<_>>().join(","));
+                        grids.push_str("],\"groups\":[");
+                        for (g, group) in groups.iter().enumerate() {
+                            if g > 0 {
+                                grids.push(',');
+                            }
+                            grids.push('[');
+                            json_string(&mut grids, &group.key);
+                            grids.push_str(&format!(",{},{}]", group.start, group.count));
+                        }
+                        grids.push_str(&format!("],\"loop\":{looped}}}"));
+                    }
+                }
+            }
+            computed.iter().map(|&f| book.column(t, f)).collect()
+        } else {
+            match table.iteration {
+                Some(it) => iterated(book, t, &computed, it),
+                None => {
+                    book.fresh_pass();
+                    computed.iter().map(|&f| book.column(t, f)).collect()
+                }
             }
         };
         index.push_str(":{\"fields\":{");
@@ -112,7 +144,13 @@ pub fn compute(book: &Workbook) -> Computed {
             index.push_str(&format!(":[{},{}]", all.len(), table.ids.len()));
             all.extend(column);
         }
-        index.push_str("}}");
+        index.push('}');
+        if views.is_some() {
+            index.push_str(",\"grids\":{");
+            index.push_str(&grids);
+            index.push('}');
+        }
+        index.push('}');
     }
     index.push('}');
     Computed { index, encoded: encode(&all) }
