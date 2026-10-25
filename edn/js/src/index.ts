@@ -215,8 +215,10 @@ export function fieldsOf(expr: FormulaExpr): string[] {
 async function loadNative(): Promise<Calls | null> {
   const { createRequire } = await import("node:module");
   const { existsSync } = await import("node:fs");
-  const file = new URL(`../native/edn.${process.platform}-${process.arch}.node`, import.meta.url);
-  if (!existsSync(file)) return null;
+  // Beside this package's source (../native), or beside a bundle built from it (./native).
+  const name = `edn.${process.platform}-${process.arch}.node`;
+  const file = [new URL(`../native/${name}`, import.meta.url), new URL(`./native/${name}`, import.meta.url)].find((f) => existsSync(f));
+  if (!file) return null;
   return createRequire(import.meta.url)(file.pathname) as Calls;
 }
 
@@ -242,5 +244,6 @@ const isNode = (): boolean => typeof process !== "undefined" && !!process.versio
 
 async function readNodeFile(url: URL): Promise<Uint8Array> {
   const { readFile } = await import("node:fs/promises");
-  return new Uint8Array(await readFile(url));
+  const { fileURLToPath } = await import("node:url");
+  return new Uint8Array(await readFile(fileURLToPath(url.href)));
 }
