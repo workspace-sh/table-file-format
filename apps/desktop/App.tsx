@@ -1526,6 +1526,15 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
                     </Hinted>
                   </>
                 )}
+                {/* Its index couldn't be made: said here, on the table, not as an alert. */}
+                {summary.held && (
+                  <>
+                    <html.span>·</html.span>
+                    <Hinted hint={summary.held.hint} style={styles.schemaBumpBadge}>
+                      {summary.held.label}
+                    </Hinted>
+                  </>
+                )}
               </html.div>
 
               <CellEditorContext.Provider value={glass.editor}>

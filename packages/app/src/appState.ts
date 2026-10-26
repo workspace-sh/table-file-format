@@ -116,6 +116,8 @@ export interface AppState {
   singleFiles?: Record<string, string>;
   /** Each table's schema-version when it was opened, for "schema changed" (D22). */
   openedAt: Record<string, number>;
+  /** Tables held in memory because their index couldn't be made: why, by key (said in their summary). */
+  held?: Record<string, string>;
   /** The file shown from the Files side (`sidebar.files`). */
   shownFile: ShownFile | null;
   /** Folders on the Files side the viewer opened or closed, by `bundle/path`. */
@@ -306,8 +308,12 @@ export type AppAction =
   /** Put back every row the toast counted, as they were before, as one step (#598). */
   | { type: "putBackDeparted" }
   | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
-  /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
-  | { type: "reloaded"; key: string; table: ParsedTable }
+  /**
+   * A table read again, to hold in place of the one held: an indexed table
+   * whose index couldn't be made, now in memory. `held` says why, on the
+   * table (its summary), not as an alert.
+   */
+  | { type: "reloaded"; key: string; table: ParsedTable; held?: string }
   /**
    * A table opened without its rows (`loading`, a reader's rows: "later")
    * has them now, with what the reader said of them: it can be edited.
@@ -1028,6 +1034,9 @@ function step(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         tables: { ...state.tables, [action.key]: action.table },
+        ...(action.held !== undefined || state.held?.[action.key] !== undefined
+          ? { held: { ...without(state.held ?? {}, [action.key]), ...(action.held !== undefined ? { [action.key]: action.held } : {}) } }
+          : {}),
         indexWork: state.indexWork.filter((w) => w.key !== action.key),
         undo: without(state.undo, [action.key]),
       };
@@ -1268,8 +1277,8 @@ function lastAnswer<A extends unknown[], R>(f: (...args: A) => R): (...args: A) 
 }
 
 const summaryLast = lastAnswer(
-  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined) =>
-    viewSummary(table, { shown, inView, searching, openedAt }),
+  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined, held: string | undefined) =>
+    viewSummary(table, { shown, inView, searching, openedAt, ...(held !== undefined ? { held } : {}) }),
 );
 
 let lastShown: { asked: unknown[]; answer: ShownView } | undefined;
@@ -1330,6 +1339,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
       shown.inView,
       state.search.trim().length > 0,
       state.openedAt[state.active],
+      state.held?.[state.active],
     ),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
     mode,

@@ -863,6 +863,10 @@ test("undo: a reset, a file opened over a table, and a table read again let its 
   assert.deepEqual(run(edited, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" }).undo, {});
   assert.equal(run(edited, { type: "opened", library: examples() }).undo[key], undefined);
   assert.equal(run(edited, { type: "reloaded", key, table: edited.tables[key]! }).undo[key], undefined);
+  // Why it's held in memory is said in its summary, not as an alert; read again with an index, it's gone.
+  const held = run(edited, { type: "reloaded", key, table: edited.tables[key]!, held: "too big to index" });
+  assert.equal(held.held?.[key], "too big to index");
+  assert.equal(run(held, { type: "reloaded", key, table: edited.tables[key]! }).held?.[key], undefined);
   // A table whose rows have just gone to the index: the steps listed them as they were here.
   assert.equal(run(edited, { type: "indexed", key, count: 18 }).undo[key], undefined);
 });

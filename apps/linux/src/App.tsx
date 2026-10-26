@@ -333,6 +333,13 @@ function TablePane({
                 <GtkLabel label={summary.schemaChangedLabel} tooltipText={summary.schemaChangedHint} cssClasses={["warning"]} />
               </>
             ) : null}
+            {/* Its index couldn't be made: said here, on the table, not as an alert. */}
+            {summary.held ? (
+              <>
+                <GtkLabel label="·" cssClasses={["dim-label"]} />
+                <GtkLabel name="held-in-memory" label={summary.held.label} tooltipText={summary.held.hint} cssClasses={["warning"]} />
+              </>
+            ) : null}
           </GtkBox>
           <GtkSearchEntry ref={searchRef} placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
