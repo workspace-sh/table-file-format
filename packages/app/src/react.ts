@@ -14,7 +14,7 @@ import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type 
 import { bundleOf, relatedTables, tableNameOf } from "./bundles.ts";
 import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
 import { heldFile, noteWriting, tellHeld } from "./heldFiles.ts";
-import { saveDisplay, viewerLocale } from "./displaySettings.ts";
+import { displayFor, saveDisplay, viewerLocale } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 import { saveSidebarPrefs } from "./sidebarPrefs.ts";
 
@@ -233,7 +233,8 @@ export function useTableApp(init: () => AppState, adapter: TableAppAdapter, loca
   }, [state.editLog.pages, state.tables, adapter.pageStillMs]);
 
   const direction = textDirection(viewerLocale(state.display, locale));
-  const display = useMemo(() => ({ ...state.display, direction }), [state.display, direction]);
+  // Formulas in the syntax chosen for the table on screen.
+  const display = useMemo(() => ({ ...displayFor(state.display, state.active), direction }), [state.display, state.active, direction]);
   const flush = useCallback(() => {
     // After any history write under way, so nothing is written twice or out of order.
     historyWrites.current = historyWrites.current.then(() => flushNow(latestState.current, latest.current, dispatch, setSaving, sent.current));
