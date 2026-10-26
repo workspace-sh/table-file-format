@@ -11,15 +11,16 @@ import { bundles, tables } from "./loadFixture";
 
 // What a document in /ws/docs could link to, and what each should show.
 const CASES: { address: string; caption?: string; note: string }[] = [
-  { address: "../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1", caption: "All tasks", note: "a table's view" },
+  { address: "../tables/projects.table#table=tasks&view=All%20tasks%20by%20priority&embed=1", caption: "All tasks", note: "a table's view" },
+  { address: "../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1", caption: "All tasks", note: "the same view by its id: a link may name a view either way" },
   { address: "../tables/projects.table#table=tasks&rows=3&embed=1", caption: "Three rows, then it scrolls", note: "rows=3" },
   { address: "../tables/projects.table#table=tasks&rows=3&rest=more&embed=1", note: "rows=3, the rest behind a line" },
   { address: "../tables/crm.table#table=deals&cards=1&rest=more&embed=1", note: "a board, one card a column, the rest behind a line" },
-  { address: "../tables/crm.table#table=deals&view=9gcz9d8ctoqamitkgwfhiu7sru&rows=2&rest=more&embed=1", note: "two deals of eight; the totals beneath are of all eight" },
-  { address: "../tables/projects.table#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&cards=1&rest=more&embed=1", note: "a board one card deep; each column says how many it has, and how many more" },
-  { address: "../tables/projects.table#table=projects&view=r1mmz6bdngh1qjdyc7a3u3n58c&rows=3&rest=more&embed=1", note: "a grouped table cut inside its first group; the group's count is of all its rows" },
-  { address: "../tables/projects.table#table=projects&view=u5fpdkwh5w9thdq8o368a9t4nw&rows=4&rest=more&embed=1", note: "a list of four" },
-  { address: "../tables/projects.table#table=projects&view=yxqsjf1fmbakwepxpx4ta44xks&cards=2&rest=more&embed=1", note: "a gallery of two cards" },
+  { address: "../tables/crm.table#table=deals&view=All%20deals&rows=2&rest=more&embed=1", note: "two deals of eight; the totals beneath are of all eight" },
+  { address: "../tables/projects.table#table=tasks&view=Board%20by%20status&cards=1&rest=more&embed=1", note: "a board one card deep; each column says how many it has, and how many more" },
+  { address: "../tables/projects.table#table=projects&view=By%20owner&rows=3&rest=more&embed=1", note: "a grouped table cut inside its first group; the group's count is of all its rows" },
+  { address: "../tables/projects.table#table=projects&view=Quick%20list&rows=4&rest=more&embed=1", note: "a list of four" },
+  { address: "../tables/projects.table#table=projects&view=Gallery&cards=2&rest=more&embed=1", note: "a gallery of two cards" },
   { address: "../tables/crm.table#table=deals&embed=1", note: "the CRM's deals" },
   { address: "../tables/projects.table#table=projects&embed=1", note: "a large page-heavy table" },
   { address: "../tables/nowhere.table#embed=1", caption: "Missing", note: "no such file" },
