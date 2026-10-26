@@ -18,6 +18,8 @@ export interface CellEditorSelection {
   rowLabel: string;
   /** The value as text, or the formula as typed. */
   text: string;
+  /** Drawn before `text`, apart from it: the `=` of a cell's own formula (D52). */
+  prefix?: string;
   /** A formula column: `text` is its formula. */
   formula: boolean;
   /** The field's description (SPEC section 2: its help), if it has one. */
@@ -67,6 +69,13 @@ export interface CellEditSession {
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
   /** Shown before the typed value, as the web's cell shows it: a currency's symbol. */
   prefix?: string;
+  /**
+   * The prefix is the reader's to take away: a cell's own formula's `=`
+   * (D52), dropped by tapping it or with Backspace at the very start. Once
+   * dropped, every save (the bar's, or a tap on another cell) saves the text
+   * alone, a plain value. Absent: the prefix stays (a currency's symbol).
+   */
+  dropPrefix?(): void;
   /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
   suggestions?: boolean;
   /** A choice field: picked, not typed. Each in its colours, as its pill is drawn. */
