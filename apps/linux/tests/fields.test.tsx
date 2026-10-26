@@ -112,6 +112,29 @@ describe("fields on Linux", () => {
     await waitFor(async () => expect((await schemaOnDisk()).fields.some((f) => f.name === "status")).toBe(false));
   });
 
+  it("a field renamed in its editor is renamed in its rows and in the formulas that read it; the editor stays on it", async () => {
+    const library = await loadLibrary([bundle]);
+    // Active by owner shows every field.
+    await render(<App library={library} initialTable="projects/projects" initialView="gzrqtgo1p3gfehto7tani3jzz4" />);
+    const projectsOnDisk = () => parseTable(join(bundle, "tables", "projects"));
+    await userEvent.click((await screen.findAllByText("budget"))[0]!);
+    const name = await entryRow("Name");
+    // A name in use is refused, and says why.
+    name.setText("status");
+    name.emit("apply");
+    await waitFor(async () => expect((await screen.findAllByText(/There's already a field “status”/)).length).toBeGreaterThan(0));
+    name.setText("spend");
+    name.emit("apply");
+    await waitFor(async () => {
+      const t = await projectsOnDisk();
+      expect(t.schema.fields.find((f) => f.name === "per_month")?.computed?.expr).toBe("(round (/ spend 12) 0)");
+      expect(t.rows.some((r) => "spend" in r)).toBe(true);
+      expect(t.rows.some((r) => "budget" in r)).toBe(false);
+    });
+    // Still its editor, now on the new name.
+    expect((await entryRow("Name")).getText()).toBe("spend");
+  });
+
   it("a field added with a name gets a key from it and is saved", async () => {
     await openTasks();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
