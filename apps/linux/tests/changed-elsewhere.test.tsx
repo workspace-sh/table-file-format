@@ -1,4 +1,3 @@
-import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { bundleToArchive } from "@workspace.sh/table-app";
@@ -15,7 +14,8 @@ import { fixturesDir } from "../src/fixtures.js";
 import { clickFresh } from "./clickFresh.js";
 
 // A single-file .table changed somewhere else while it's open here: an edit isn't saved over it, and
-// the viewer is asked whether to keep their edits as a copy beside it or let them go.
+// it says so in place, above the table, with what can be done with the edits: kept as a copy beside
+// it, or let go. Never a blocking alert for a file's state.
 
 let dir: string;
 let file: string;
@@ -34,7 +34,7 @@ afterEach(async () => {
 
 const companiesIn = async (path: string) => (await readTableArchive(new Uint8Array(readFileSync(path)))).tables.companies!.rows.map((r) => r.name);
 
-async function editAfterTheyChangedIt(): Promise<Adw.AlertDialog> {
+async function editAfterTheyChangedIt(): Promise<(label: string) => Promise<void>> {
   const library = await openSingleFile(file, [], { home: join(dir, "cache") });
   await render(<App library={library} initialTable="crm/companies" />);
   // Meanwhile, someone else's copy is written over the file: a company renamed.
@@ -47,21 +47,19 @@ async function editAfterTheyChangedIt(): Promise<Adw.AlertDialog> {
   await userEvent.clear(entry);
   await userEvent.type(entry, "Atlas Shipping");
   await userEvent.keyboard(entry, "{Enter}");
-  let asked: Adw.AlertDialog | undefined;
-  await waitFor(async () => {
-    asked = (await screen.findAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
-    expect(asked?.getHeading()).toBe("“crm.table” was changed somewhere else");
-  }, { timeout: 15000 });
+  // Said in place, with no alert.
+  await waitFor(() => screen.findByText("“crm.table” was changed somewhere else"), { timeout: 15000 });
+  expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toEqual([]);
   // Not saved over.
   expect(await companiesIn(file)).toContain("Fern Studios Ltd");
   expect(await companiesIn(file)).not.toContain("Atlas Shipping");
-  return asked!;
+  return async (label) => userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: label }));
 }
 
 describe("a single file changed elsewhere, on Linux", () => {
   it("keeps the edits as a copy beside it, shown, and the file read again as they left it", async () => {
-    const asked = await editAfterTheyChangedIt();
-    asked.emit("response", "copy");
+    const choose = await editAfterTheyChangedIt();
+    await choose("Keep my edits as a copy");
     const copy = join(dir, "crm (edited here).table");
     await waitFor(() => expect(existsSync(copy)).toBe(true), { timeout: 10000 });
     expect(await companiesIn(copy)).toContain("Atlas Shipping");
@@ -72,10 +70,12 @@ describe("a single file changed elsewhere, on Linux", () => {
   }, 60_000);
 
   it("lets the edits go, and the file is read again as they left it", async () => {
-    const asked = await editAfterTheyChangedIt();
-    asked.emit("response", "discard");
+    const choose = await editAfterTheyChangedIt();
+    await choose("Discard my edits");
     await waitFor(async () => expect((await screen.findAllByText("Fern Studios Ltd")).length).toBeGreaterThan(0), { timeout: 10000 });
     expect(existsSync(join(dir, "crm (edited here).table"))).toBe(false);
     expect(await companiesIn(file)).not.toContain("Atlas Shipping");
+    // Answered: no longer said.
+    await waitFor(() => expect(screen.queryByText("“crm.table” was changed somewhere else")).toBeNull());
   }, 60_000);
 });
