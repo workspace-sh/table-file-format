@@ -1,0 +1,259 @@
+// The core's API over a binding (WebAssembly, Node's native library, or the
+// iOS and Mac apps' JSI module): whatever answers, the same calls and results.
+
+export type EdnValue =
+  | { t: "nil" }
+  | { t: "bool"; v: boolean }
+  | { t: "str" | "char" | "int" | "float" | "decimal" | "sym" | "kw"; v: string }
+  | { t: "list" | "vec" | "set"; v: EdnValue[] }
+  | { t: "map"; v: [EdnValue, EdnValue][] }
+  | { t: "tag"; tag: string; v: EdnValue };
+
+/** A `.table` formula's expression: the shape `.table`'s evaluator takes (table-core's `Expr`). */
+export type FormulaExpr =
+  | { kind: "number"; value: number }
+  | { kind: "string"; value: string }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "nil" }
+  | { kind: "field"; name: string }
+  | { kind: "call"; fn: string; args: FormulaExpr[] };
+
+/** Why a text couldn't be read, and where (lines and columns count from 1). */
+export class EdnError extends Error {
+  readonly line: number | null;
+  readonly column: number | null;
+  constructor(message: string, line: number | null, column: number | null) {
+    super(line !== null && column !== null ? `${message} (line ${line}, column ${column})` : message);
+    this.name = "EdnError";
+    this.line = line;
+    this.column = column;
+  }
+}
+
+export interface Edn {
+  /** One EDN value from `text`, or throws an EdnError. */
+  read(text: string): EdnValue;
+  /** `text`'s canonical form, or throws an EdnError. */
+  canonical(text: string): string;
+  /** A `.table` formula, read into the expression its evaluator takes, or throws an EdnError. */
+  formula(text: string): FormulaExpr;
+  /**
+   * Every formula of a bundle's tables, computed inside the core: the same
+   * results as `.table`'s workbook (computeRows), field by field and row by
+   * row: fields' formulas, cells' own (D52), loops worked out by iteration
+   * (D60), and the clock and chance (D55), read at `now` (absent: the time
+   * it's asked) with chance drawn from `seed`. A table whose formulas read a
+   * Sheet view's places is the host's, and so is every table related to it:
+   * they come back as "host", for `.table`'s own workbook to compute.
+   */
+  computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, FormulaResult[]> | "host">;
+  /**
+   * A Sheet view's grid (D41), as an app numbers its rows by: each view's
+   * order (file indexes, row 1 first), groups and whether it's sorted by its
+   * own places (null: not a Sheet view), and, with `columns`, the table's
+   * formula columns worked out in the same pass, as `.table`'s sheetGrid
+   * does. "host" when the table is the host's.
+   */
+  computeGrids(
+    tables: Record<string, TableIn>,
+    table: string,
+    views: readonly string[],
+    options?: { now?: Date; seed?: number; columns?: boolean },
+  ): { fields: Record<string, FormulaResult[]>; grids: Record<string, SheetGridOut | null> } | "host";
+  /** Which binding is answering: the native library, or WebAssembly. */
+  readonly binding: "native" | "wasm";
+}
+
+/** A formula's result: `.table`'s `Value`, with an error as its code and message. */
+export type FormulaResult = number | string | boolean | undefined | { code: string; message: string } | FormulaResult[];
+
+/** A Sheet view's grid as the core gives it. */
+export interface SheetGridOut {
+  order: number[];
+  groups: { key: string; start: number; count: number }[];
+  loop: boolean;
+}
+
+export type ColumnResults = { kinds: Uint8Array; numbers: Float64Array; extra: string; index: string };
+
+/** A table as `computeTables` takes it: `.table`'s schema fields (only what's read) and rows. */
+export interface TableIn {
+  schema: {
+    fields: {
+      name: string;
+      type?: string;
+      computed?: { expr: string; dialect: string };
+      relation?: { table: string; cardinality?: string };
+      constraints?: { enum?: readonly (string | { value: string })[] };
+    }[];
+  };
+  /** Its views: the Sheet views among them are grids its formulas, and others', read by place (D41). */
+  views?: readonly { id: string; layout?: string; coordinates?: boolean; fields?: readonly string[]; order?: readonly string[]; sort?: readonly { field: string; direction: string }[]; group?: { field: string } }[];
+  rows: readonly ({ id: string } & Record<string, unknown>)[];
+  /** Its cells' own formulas and notes (D52, D57). */
+  cells?: readonly { id: string; field: string; expr?: string; dialect?: string }[];
+  /** Its meta: how it works its loops out by iteration (D60), if it does. */
+  meta?: { iteration?: { max: number; change: number } | unknown };
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** The four calls a binding answers. */
+export type Calls = {
+  read(text: string): string;
+  canonical(text: string): string;
+  formula(text: string): string;
+  computeWorkbook(json: string, numbers: Float64Array): ColumnResults;
+};
+
+
+export const engineFrom = (c: Calls, binding: "native" | "wasm"): Edn => ({
+  read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
+  canonical: (text) => call(c.canonical, text),
+  formula: (text) => JSON.parse(call(c.formula, text)) as FormulaExpr,
+  computeTables: (tables, clock = {}, only) => {
+    const { out } = run(c, tables, clock, only ? { only } : {});
+    return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v === "host" ? "host" : v.fields]));
+  },
+  computeGrids: (tables, table, views, options = {}) => {
+    const { out } = run(c, tables, options, { only: [table], grids: { [table]: views }, columns: options.columns ?? true });
+    const got = out[table];
+    if (!got || got === "host") return "host";
+    return { fields: got.fields, grids: got.grids ?? {} };
+  },
+  binding,
+});
+
+/** The core asked once: every table's columns (and any grids asked for), or "host". */
+function run(
+  c: Calls,
+  tables: Record<string, TableIn>,
+  clock: { now?: Date; seed?: number },
+  extra: { only?: readonly string[]; grids?: Record<string, readonly string[]>; columns?: boolean },
+): { out: Record<string, { fields: Record<string, FormulaResult[]>; grids?: Record<string, SheetGridOut | null> } | "host"> } {
+    const parts: Float64Array[] = [];
+    // One moment for the whole computation (D55): the reader's own date, and the instant in UTC.
+    const now = clock.now ?? new Date();
+    const json = {
+      ...extra,
+      clock: {
+        today: `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
+        now: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        seed: clock.seed ?? Math.floor(Math.random() * 2 ** 53),
+      },
+      tables: Object.entries(tables).map(([name, t]) => {
+        const iteration = t.meta?.iteration as { max?: unknown; change?: unknown } | undefined;
+        // A value the core has no kind for (an object, as an `object` field holds) is read only by the host.
+        const objects = t.schema.fields.some((f) => !f.computed && t.rows.some((r) => holdsObject(r[f.name])));
+        return {
+          name,
+          ...(objects ? { host: true } : {}),
+          ...(iteration && typeof iteration.max === "number" ? { iteration: { max: iteration.max, change: typeof iteration.change === "number" ? iteration.change : 0 } } : {}),
+          ids: t.rows.map((r) => r.id),
+          // Its Sheet views: a table layout with lettered columns and numbered rows (D41).
+          views: (t.views ?? [])
+            .filter((v) => v.layout === "table" && v.coordinates === true)
+            .map((v) => ({ id: v.id, ...(v.fields ? { fields: v.fields } : {}), order: v.order ?? [], sort: v.sort ?? [], ...(v.group ? { group: v.group.field } : {}) })),
+          fields: t.schema.fields.map((f) => {
+            const values = f.constraints?.enum?.map((e) => (typeof e === "string" ? e : e.value));
+            const kind = { type: f.type ?? "string", ...(f.relation?.cardinality === "many" ? { many: true } : {}), ...(values?.length ? { enum: values } : {}) };
+            if (f.computed) return { name: f.name, ...kind, formula: f.computed.dialect === "table-expr-v1" ? f.computed.expr : null };
+            const cells = t.rows.map((r) => r[f.name]);
+            const numbers = numbersOnly(cells, cells.length);
+            const stored = numbers ? (parts.push(numbers), { numbers: parts.length - 1 }) : { values: cells.map((v) => (v === undefined ? null : v)) };
+            return { name: f.name, ...kind, ...(f.relation ? { relation: f.relation.table } : {}), ...stored };
+          }),
+          // Every line with a formula, as read (a note alone is none, D57): which apply is the core's to say.
+          ...(t.cells?.some((c) => c.expr !== undefined)
+            ? { cells: t.cells.filter((c) => c.expr !== undefined).map((c) => ({ id: c.id, field: c.field, formula: (c.dialect ?? "table-expr-v1") === "table-expr-v1" ? c.expr : null })) }
+            : {}),
+        };
+      }),
+    };
+    const numbers = new Float64Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      numbers.set(p, at);
+      at += p.length;
+    }
+    const r = callWith(() => c.computeWorkbook(JSON.stringify(json), numbers));
+    const all = decode(r, r.kinds.length);
+    type Raw = { order: number[]; groups: [string, number, number][]; loop: boolean } | null;
+    const index = JSON.parse(r.index) as Record<string, { host: true } | { fields: Record<string, [number, number]>; grids?: Record<string, Raw> }>;
+    const out: Record<string, { fields: Record<string, FormulaResult[]>; grids?: Record<string, SheetGridOut | null> } | "host"> = {};
+    for (const [name, entry] of Object.entries(index)) {
+      if ("host" in entry) out[name] = "host";
+      else
+        out[name] = {
+          fields: Object.fromEntries(Object.entries(entry.fields).map(([f, [start, rows]]) => [f, all.slice(start, start + rows)])),
+          ...(entry.grids
+            ? { grids: Object.fromEntries(Object.entries(entry.grids).map(([v, g]) => [v, g && { order: g.order, groups: g.groups.map(([key, start, count]) => ({ key, start, count })), loop: g.loop }])) }
+            : {}),
+        };
+    }
+    return { out };
+}
+
+/** Whether a stored value is, or holds, an object (JSON's `{…}`). */
+const holdsObject = (v: unknown): boolean => typeof v === "object" && v !== null && (!Array.isArray(v) || v.some(holdsObject));
+
+/** A column's cells as numbers (`NaN` for an empty cell), or null when any cell isn't a number or empty. */
+function numbersOnly(cells: readonly unknown[], rows: number): Float64Array | null {
+  const out = new Float64Array(rows);
+  for (let i = 0; i < rows; i++) {
+    const v = cells[i];
+    if (typeof v === "number") out[i] = v;
+    else if (v === undefined || v === null || v === "") out[i] = NaN;
+    else return null;
+  }
+  return out;
+}
+
+function decode(r: ColumnResults, rows: number): FormulaResult[] {
+  // Each read once: through WebAssembly, every read of `kinds` or `numbers` copies the whole array.
+  const kinds = r.kinds;
+  const numbers = r.numbers;
+  const extra = JSON.parse(r.extra) as unknown[];
+  const out: FormulaResult[] = new Array(rows);
+  let next = 0;
+  for (let i = 0; i < rows; i++) {
+    const k = kinds[i];
+    out[i] = k === 1 ? numbers[i] : k === 2 ? true : k === 3 ? false : k === 4 ? fromJson(extra[next++]) : undefined;
+  }
+  return out;
+}
+
+const fromJson = (v: unknown): FormulaResult =>
+  v === null ? undefined : Array.isArray(v) ? v.map(fromJson) : (v as FormulaResult);
+
+/** The fields a formula reads: its bare words and `(field "…")`s, and the columns its `(values "…")` read. */
+export function fieldsOf(expr: FormulaExpr): string[] {
+  const out = new Set<string>();
+  const walk = (e: FormulaExpr): void => {
+    if (e.kind === "field") out.add(e.name);
+    else if (e.kind === "call") {
+      if ((e.fn === "field" || e.fn === "values") && e.args[0]?.kind === "string") out.add(e.args[0].value);
+      e.args.forEach(walk);
+    }
+  };
+  walk(expr);
+  return [...out];
+}
+
+function call(fn: (text: string) => string, text: string): string {
+  return callWith(() => fn(text));
+}
+
+function callWith<T>(run: () => T): T {
+  try {
+    return run();
+  } catch (thrown) {
+    // WebAssembly throws the JSON itself; the native library throws an Error carrying it.
+    const json = typeof thrown === "string" ? thrown : thrown instanceof Error && thrown.message.startsWith("{") ? thrown.message : null;
+    if (json !== null) {
+      const e = JSON.parse(json) as { message: string; line: number | null; column: number | null };
+      throw new EdnError(e.message, e.line, e.column);
+    }
+    throw thrown;
+  }
+}
