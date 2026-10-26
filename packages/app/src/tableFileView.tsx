@@ -21,7 +21,7 @@ import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
-import { rowTitleFor } from "./edits.ts";
+import { rowTitleFor, sheetReaders } from "./edits.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
 import { askName } from "./askName";
@@ -233,6 +233,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, f
           view={derived.shown.view}
           schema={table.schema}
           onChange={(patch) => dispatch({ type: "updateView", patch })}
+          sheetReaders={sheetReaders(state.tables, state.active, view)}
           onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
           onClose={() => dispatch({ type: "settings", open: false })}
           onCancel={() => dispatch({ type: "settings", open: false, revert: true })}

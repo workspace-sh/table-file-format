@@ -317,6 +317,11 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
   return rowId;
 }
 
+/** How many formulas read view `view` of table `key` by place (D41): none unless it's a Sheet view. */
+export function sheetReaders(tables: Record<string, ParsedTable>, key: string, view: View): number {
+  return isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+}
+
 /**
  * What to ask before changing a view's settings, or null when nothing is
  * lost and the change can simply be made. Turning a Sheet view into
@@ -330,7 +335,7 @@ export function viewPatchPrompt(
   patch: Partial<View>,
 ): Confirm | null {
   if (!isSheet(view) || isSheet({ ...view, ...patch })) return null;
-  const readers = sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length;
+  const readers = sheetReaders(tables, key, view);
   if (readers === 0) return null;
   return {
     heading: `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
@@ -348,7 +353,7 @@ export function viewPatchPrompt(
 export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): Confirm | null {
   const table = tables[key];
   if (!table || table.views.length <= 1) return null;
-  const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+  const readers = sheetReaders(tables, key, view);
   const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
   return {
     heading: `Delete the view “${view.name}”?`,

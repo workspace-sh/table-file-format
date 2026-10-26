@@ -116,6 +116,7 @@ import {
   type Making,
   type NamePrompt,
   type SheetGridShown,
+  sheetReaders,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
@@ -1021,6 +1022,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
             personal: derived.arranged,
             onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
             onReset: () => dispatch({ type: "resetArrangement" }),
+            sheetReaders: sheetReaders(state.tables, state.active, settingsView),
             onDelete: viewCount > 1 ? () => dispatch({ type: "deleteView" }) : undefined,
             onClose: () => dispatch({ type: "settings", open: false }),
             onCancel: () => dispatch({ type: "settings", open: false, revert: true }),
