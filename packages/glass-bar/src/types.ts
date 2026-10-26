@@ -62,8 +62,9 @@ export type GlassBarEditing = {
   prefix?: string;
   /**
    * The prefix can be taken away (a cell's own formula's `=`): tapping it, or
-   * Backspace at the very start, calls `onPrefixRemove`. The field is then the
-   * bar's own native one, which reports that Backspace.
+   * Backspace at the very start, calls `onPrefixRemove`. `false` once it has
+   * gone. Either way, set means the field is the bar's own native one, which
+   * reports that Backspace, so the edit keeps its field when the prefix goes.
    */
   prefixRemovable?: boolean;
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
