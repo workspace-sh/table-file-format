@@ -9,6 +9,7 @@
 // binding throws it.
 
 #import <React/RCTBridgeModule.h>
+#import <ReactCommon/RCTTurboModule.h>
 #import <ReactCommon/RCTTurboModuleWithJSIBindings.h>
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
 #include <jsi/jsi.h>
@@ -19,7 +20,7 @@
 
 using namespace facebook;
 
-@interface WorkspaceEdn : NSObject <RCTBridgeModule, RCTTurboModuleWithJSIBindings>
+@interface WorkspaceEdn : NSObject <RCTBridgeModule, RCTTurboModule, RCTTurboModuleWithJSIBindings>
 @end
 
 namespace {
@@ -94,6 +95,14 @@ RCT_EXPORT_MODULE()
 + (BOOL)requiresMainQueueSetup
 {
   return NO;
+}
+
+// React Native installs a module's JSI bindings only for a TurboModule, one
+// that answers getTurboModule: (RCTTurboModuleManager). It has no methods of
+// its own: its calls are the bindings.
+- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:(const facebook::react::ObjCTurboModule::InitParams &)params
+{
+  return std::make_shared<facebook::react::ObjCTurboModule>(params);
 }
 
 // React Native asks for one of these two (the second is older, and is what

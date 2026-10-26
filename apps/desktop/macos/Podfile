@@ -22,8 +22,6 @@ target 'TableDesktop-macOS' do
   pod 'TablePanels', :path => '../native/TablePanels'
   # The system's menus and date picker for the .table library's views.
   pod 'TableMacControls', :path => '../../../packages/mac-controls/macos'
-  # The EDN core (#638): run edn/js/build-apple.sh first.
-  pod 'WorkspaceEdn', :path => '../../../edn/js'
 
   use_react_native!(
     :path => rn_macos_rel_path,
