@@ -13,7 +13,7 @@ import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
-import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
+import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, sheetReaders, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
 import { useDepartedToast } from "@workspace.sh/table-app/react";
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
@@ -348,6 +348,7 @@ export default function TableScreen() {
               personal={derived.arranged}
               onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
               onReset={() => dispatch({ type: "resetArrangement" })}
+              sheetReaders={sheetReaders(state.tables, state.active, view)}
               onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
               onClose={() => dispatch({ type: "settings", open: false })}
               onCancel={() => dispatch({ type: "settings", open: false, revert: true })}

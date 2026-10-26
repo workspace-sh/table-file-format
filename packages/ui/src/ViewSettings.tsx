@@ -33,6 +33,7 @@ import {
   columnShownPatch,
   takesValue,
   viewFieldChoices,
+  sheetNote,
   sheetPatch,
   orderNote,
   RULE_COLORS,
@@ -67,6 +68,7 @@ export function ViewSettings({
   personal,
   onSaveForEveryone,
   onReset,
+  sheetReaders,
 }: ViewSettingsProps) {
   const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
   const arrange = onArrange ?? onChange;
@@ -141,7 +143,7 @@ export function ViewSettings({
               onChange={(checked) => onChange(sheetPatch(checked))}
               style={styles.check}
             >
-              Letter the columns and number the rows, so formulas can use =B7
+              {sheetNote(view, sheetReaders)}
             </Toggle>
           </FieldRow>
         )}
@@ -361,7 +363,7 @@ export function ViewSettings({
         fill
       >
         <SettingsForm
-          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset, reorderHint: SettingsForm.reorderHint })}
+          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset, sheetReaders, reorderHint: SettingsForm.reorderHint })}
         />
       </SheetControl>
     );
@@ -419,8 +421,9 @@ function viewSettingsSections({
   personal,
   onSaveForEveryone,
   onReset,
+  sheetReaders,
   reorderHint = "Touch and hold to reorder.",
-}: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset"> & {
+}: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset" | "sheetReaders"> & {
   arrange: ViewSettingsProps["onChange"];
   /** How the form's rows are reordered, said under the sorts: a phone's gesture unless the form says otherwise. */
   reorderHint?: string;
@@ -558,7 +561,7 @@ function viewSettingsSections({
   if (view.layout === "table") {
     sections.push({
       id: "sheet",
-      footer: "Letter the columns and number the rows, so formulas can use =B7.",
+      footer: sheetNote(view, sheetReaders),
       rows: [{ kind: "toggle", id: "sheet", label: "Sheet", value: view.coordinates === true, onChange: (on) => onChange(sheetPatch(on)) }],
     });
   }
