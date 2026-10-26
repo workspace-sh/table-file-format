@@ -1425,6 +1425,8 @@ Each kind has its own mark, so a column of errors can be read at a glance before
 
 Hovering, or on iOS the selected cell's details, says what went wrong and where the fix is: opening the formula, whose panel offers Repeat Until It Settles for a loop (D60). A true/false cell whose formula failed shows its error, not an unticked box, which would read as false.
 
+Every one of these is in `fixtures/formula-errors.table`: a row each, its cell's own formula giving that error, for seeing them all at once on each platform.
+
 ## D62: every field has an id, and every id is z-base-32
 
 **Leslie (25 Oct 2026).** Built in table-core; every fixture rewritten.

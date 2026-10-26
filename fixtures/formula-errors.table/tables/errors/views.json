@@ -1,0 +1,35 @@
+[
+  {
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+    "name": "All errors",
+    "layout": "table",
+    "fields": [
+      "problem",
+      "result",
+      "date",
+      "whole",
+      "yes_no",
+      "text",
+      "point"
+    ],
+    "columnWidths": {
+      "problem": 230,
+      "result": 200,
+      "date": 170,
+      "whole": 190,
+      "yes_no": 170,
+      "text": 150,
+      "point": 170
+    }
+  },
+  {
+    "id": "xi8na68irhrtm8yqnaiawpt7i1",
+    "name": "Grid",
+    "layout": "table",
+    "coordinates": true,
+    "fields": [
+      "problem",
+      "n"
+    ]
+  }
+]
