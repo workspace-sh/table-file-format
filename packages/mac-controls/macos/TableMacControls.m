@@ -164,7 +164,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"contextMenu", @"settingsForm", @"choiceToggled" ];
+  return @[ @"contextMenu", @"settingsForm", @"choiceToggled", @"formulaEditor", @"problemSuggestion" ];
 }
 
 - (void)startObserving
@@ -175,6 +175,11 @@ RCT_EXPORT_MODULE();
   [TableInspector listen:^(NSDictionary *event) {
     TableMacControls *controls = weakForm;
     if (controls != nil && controls->_observed) [controls sendEventWithName:@"settingsForm" body:event];
+  }];
+  // What's typed and pressed in the inspector's formula editor (TableFormulaEditor.swift), for src/formula.ts.
+  [TableInspector listenToFormula:^(NSDictionary *event) {
+    TableMacControls *controls = weakForm;
+    if (controls != nil && controls->_observed) [controls sendEventWithName:@"formulaEditor" body:event];
   }];
   if (contextMenus != nil) return;
   __weak TableMacControls *weakSelf = self;
@@ -354,6 +359,18 @@ RCT_EXPORT_METHOD(setSettingsForm:(NSString *)json)
   [TableInspector setForm:json];
 }
 
+/// The formula being written, for the inspector's editor (TableFormulaEditor.swift); "" for none.
+RCT_EXPORT_METHOD(setFormulaEditor:(NSString *)json)
+{
+  [TableInspector setFormula:json];
+}
+
+/// Put text into the formula at its cursor, the cursor then `cursorBack` characters back.
+RCT_EXPORT_METHOD(insertInFormula:(NSString *)text cursorBack:(nonnull NSNumber *)cursorBack)
+{
+  [TableInspector insertInFormula:text cursorBack:cursorBack.integerValue];
+}
+
 /// Open or close the inspector.
 RCT_EXPORT_METHOD(setInspectorShown:(BOOL)shown)
 {
@@ -393,6 +410,33 @@ RCT_EXPORT_METHOD(chooseMany:(NSArray<NSDictionary *> *)options
   double y = [rect[@"y"] doubleValue];
   NSRect at = NSMakeRect([rect[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y - height, [rect[@"width"] doubleValue], height);
   [TableChoicePicker.shared showWithOptions:options selected:selected rect:at in:root toggled:toggled done:done];
+}
+
+/// Why a cell's draft wasn't saved, in a popover pointing at `rect` (as React
+/// measures in its surface) that leaves the keyboard in the cell
+/// (TableProblemNote.swift). `suggestion`, when given, is a button's title; a
+/// click on it is sent as a `problemSuggestion` event.
+RCT_EXPORT_METHOD(showProblem:(NSString *)message
+                  confirmable:(BOOL)confirmable
+                  suggestion:(nullable NSString *)suggestion
+                  rect:(NSDictionary *)rect)
+{
+  NSView *root = CurrentReactRoot();
+  if (root == nil) return;
+  __weak TableMacControls *weakSelf = self;
+  double height = [rect[@"height"] doubleValue];
+  double y = [rect[@"y"] doubleValue];
+  NSRect at = NSMakeRect([rect[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y - height, [rect[@"width"] doubleValue], height);
+  [TableProblemNote.shared showWithMessage:message confirmable:confirmable suggestion:suggestion rect:at in:root use:^{
+    TableMacControls *controls = weakSelf;
+    if (controls != nil && controls->_observed) [controls sendEventWithName:@"problemSuggestion" body:@{}];
+  }];
+}
+
+/// Close the popover of why a draft wasn't saved, if one is open.
+RCT_EXPORT_METHOD(closeProblem)
+{
+  [TableProblemNote.shared close];
 }
 
 /// Close the popover of several choices, if one is open.

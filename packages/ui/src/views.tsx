@@ -2344,7 +2344,7 @@ function EditableCell({
     closed.current = true;
   }
   const hints = inputHints(field);
-  const { Select: SelectControl, DateInput: DateInputControl } = usePlatformControls();
+  const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
@@ -2738,6 +2738,30 @@ function EditableCell({
     input
   );
   if (!problem || !problemAt) return field_;
+  if (CellProblem) {
+    const suggestion = problem.suggestion;
+    return (
+      <>
+        {field_}
+        <CellProblem
+          message={problem.message}
+          confirmable={problem.confirmable === true}
+          suggestion={
+            suggestion
+              ? {
+                  label: `Use ${suggestion.slice(0, 4)}`,
+                  onUse: () => {
+                    setDraft(suggestion);
+                    if (commit(suggestion)) onEditEnd?.("done");
+                  },
+                }
+              : undefined
+          }
+          rect={problemAt}
+        />
+      </>
+    );
+  }
   return (
     <>
       {field_}

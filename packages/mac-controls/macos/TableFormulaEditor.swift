@@ -12,30 +12,30 @@
 import AppKit
 import SwiftUI
 
-struct FormulaEditorData: Decodable, Equatable {
-  struct Span: Decodable, Equatable {
+public struct FormulaEditorData: Decodable, Equatable {
+  public struct Span: Decodable, Equatable {
     var start: Int
     var end: Int
     /// "ref", "fn", "str", "num" or "op".
     var kind: String
   }
-  struct Row: Decodable, Equatable {
+  public struct Row: Decodable, Equatable {
     var label: String
     var value: String
     var strong: Bool?
   }
-  struct Working: Decodable, Equatable {
+  public struct Working: Decodable, Equatable {
     var title: String?
     var rows: [Row]
   }
-  struct Chip: Decodable, Equatable {
+  public struct Chip: Decodable, Equatable {
     var id: String
     var label: String
     /// Put in at the cursor when pressed, the cursor then `cursorBack` characters back.
     var insert: String?
     var cursorBack: Int?
   }
-  struct Problem: Decodable, Equatable {
+  public struct Problem: Decodable, Equatable {
     var message: String
     var fixLabel: String?
   }
@@ -57,8 +57,8 @@ struct FormulaEditorData: Decodable, Equatable {
   var settingsLabel: String?
 }
 
-final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDelegate {
-  @Published var data: FormulaEditorData? {
+public final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDelegate {
+  @Published public var data: FormulaEditorData? {
     didSet {
       guard let data else { return }
       if data.key != oldValue?.key { start(data) }
@@ -68,13 +68,13 @@ final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDeleg
   /// Goes up as the text changes, so the form asks the field its height again.
   @Published var revision = 0
   /// What was typed or pressed: `what` and, with it, `text` or `id`.
-  var send: ([String: Any]) -> Void = { _ in }
+  public var send: ([String: Any]) -> Void = { _ in }
 
   /// The formula's field: the system's text view, plain text in one
   /// monospaced size, its parts coloured over the text (so the colours are
   /// never part of what's typed, copied or undone). One for the editor's
   /// life: each edit starts it again.
-  let textView: NSTextView = {
+  public let textView: NSTextView = {
     let view = NSTextView()
     view.isRichText = false
     view.allowsUndo = true
@@ -97,7 +97,7 @@ final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDeleg
     return view
   }()
 
-  override init() {
+  public override init() {
     super.init()
     textView.delegate = self
   }
@@ -113,7 +113,7 @@ final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDeleg
   }
 
   /// Put `text` in at the cursor (an operator, or a clicked column's name) and step back.
-  func insert(_ text: String, cursorBack: Int = 0) {
+  public func insert(_ text: String, cursorBack: Int = 0) {
     textView.window?.makeFirstResponder(textView)
     textView.insertText(text, replacementRange: textView.selectedRange())
     if cursorBack > 0 {
@@ -123,19 +123,19 @@ final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDeleg
   }
 
   /// Development only: replace the whole formula, as selecting it all and typing would.
-  func type(_ text: String) {
+  public func type(_ text: String) {
     textView.window?.makeFirstResponder(textView)
     textView.insertText(text, replacementRange: NSRange(location: 0, length: (textView.string as NSString).length))
   }
 
-  func textDidChange(_ notification: Notification) {
+  public func textDidChange(_ notification: Notification) {
     // The old colours are for the old text: gone until the app sends the new ones.
     textView.layoutManager?.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: (textView.string as NSString).length))
     revision += 1
     send(["what": "change", "text": textView.string])
   }
 
-  func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
+  public func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
     if selector == #selector(NSResponder.insertNewline(_:)) {
       send(["what": "submit", "text": view.string])
       return true
@@ -166,10 +166,12 @@ final class TableFormulaEditorModel: NSObject, ObservableObject, NSTextViewDeleg
   ]
 }
 
-struct TableFormulaEditorView: View {
+public struct TableFormulaEditorView: View {
   @ObservedObject var model: TableFormulaEditorModel
 
-  var body: some View {
+  public init(model: TableFormulaEditorModel) { self.model = model }
+
+  public var body: some View {
     if let data = model.data {
       Form {
         Section {
