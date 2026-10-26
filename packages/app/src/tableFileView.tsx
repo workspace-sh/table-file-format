@@ -26,6 +26,7 @@ import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
 import type { IndexDatabase } from "./indexHost.ts";
 import { useIndexedTables } from "./useIndexedTables.ts";
+import { readingText } from "./reading.ts";
 import { askName } from "./askName";
 
 /** What the host draws around the view: the file's tables and views, and what can be done to them. */
@@ -42,6 +43,8 @@ export interface TableFileChrome {
   showView: (id: string) => void;
   /** The rows shown, as a count says it ("8 of 8 rows"). */
   count: string;
+  /** While a large table is read into its index: how far along, as said ("Reading 120,000 of 1,000,000 rows"). */
+  reading?: string;
   /** While searching, what was found, for the search field ("2 rows"). */
   found?: string;
   query: string;
@@ -207,6 +210,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
     view: view.id,
     showView: (id) => id !== view.id && dispatch({ type: "showView", key: state.active, viewId: id }),
     count: derived.summary.count,
+    ...(indexed.building ? { reading: readingText(indexed.building) } : {}),
     found: derived.summary.found,
     query: state.search,
     search: (text) => dispatch({ type: "search", text }),
