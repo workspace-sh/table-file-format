@@ -166,6 +166,9 @@ private struct ChoicesList: View {
       .padding(6)
     }
     .frame(minWidth: 180, idealWidth: 220, maxWidth: 320, maxHeight: 360)
+    // The popover's own glass lets the table under it show through the
+    // tags; a thicker material behind the list keeps them on one ground.
+    .background(.thickMaterial)
     .fixedSize(horizontal: false, vertical: true)
     // The keyboard, as a menu's: up and down move, Space toggles, Return and Escape close.
     .focusable()
