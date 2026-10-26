@@ -120,4 +120,13 @@ test("`=` typed in a stored field's cell is its own formula; typed over one, a v
   assert.equal(commitDraft(qty, 3, "=price * 2", "key", null).kind, "problem");
   assert.equal(cellFormulaDraft("(* price 2)"), "=price * 2");
   assert.equal(cellFormulaDraft("(* price 2)", undefined, "stored"), "=(* price 2)");
+  // Edited without its `=`, which the editor draws before the box: the stored form exactly as stored.
+  const { cellFormulaText, FORMULA_PREFIX } = await import("./cellEdit");
+  assert.equal(cellFormulaText("(* price 2)"), "price * 2");
+  assert.equal(cellFormulaText("(* price   2)", undefined, "stored"), "(* price   2)");
+  // Saved with its `=` put back, in either syntax, it's the same formula.
+  for (const [text, syntax] of [["price * 2", "excel"], ["(* price 2)", "stored"]] as const) {
+    const r = commitDraft({ name: "n", type: "number" }, 1, FORMULA_PREFIX + text, "key", null, { fields: [{ name: "price", type: "number" }, { name: "n", type: "number" }] });
+    assert.deepEqual(r, { kind: "formula", expr: "(* price 2)" }, syntax);
+  }
 });

@@ -65,8 +65,14 @@ export interface CellEditSession {
   /** `line`: a value, Return saves; `formula`: grows, Return saves; `text`: grows, Return is a new line. */
   mode: "line" | "formula" | "text";
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
-  /** Shown before the typed value, as the web's cell shows it: a currency's symbol. */
+  /** Shown before the typed value, as the web's cell shows it: a currency's symbol, or a formula's `=`. */
   prefix?: string;
+  /**
+   * The reader dropped the prefix (tapped it, or Backspace before the first character): a formula's
+   * `=`, whose going makes the text a plain value (D52). Present means the prefix can be dropped; a
+   * currency's symbol can't. Every save after it saves the text alone.
+   */
+  dropPrefix?(): void;
   /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
   suggestions?: boolean;
   /** A choice field: picked, not typed. Each in its colours, as its pill is drawn. */
