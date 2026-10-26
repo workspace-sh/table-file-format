@@ -74,10 +74,11 @@ import {
   loadingViewRows,
   departedText,
   storedTableRows,
+  changedElsewherePrompt,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
-import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, discardSingleFileEdits, keepSingleFileEdits, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
@@ -799,6 +800,8 @@ export function App({
   const [displayOpen, setDisplayOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  // The save that found a single file changed elsewhere, once it's been answered (so it's asked once).
+  const [answeredElsewhere, setAnsweredElsewhere] = useState<SaveState | null>(null);
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
 
@@ -859,6 +862,25 @@ export function App({
       dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
     } catch (error) {
       tell(openFailedText(basename(path), error));
+    }
+  };
+  // A single file changed elsewhere since it was opened, so not saved over: its edits kept as a copy beside it
+  // (opened, and shown), or let go; either way the file is read again as it now is.
+  const settleChangedElsewhere = async (file: string, how: "copy" | "discard") => {
+    try {
+      const key = Object.entries(state.singleFiles ?? {}).find(([, at]) => at === file)?.[0];
+      if (key !== undefined) await closeIndexed.current(key);
+      const copy = how === "copy" ? await keepSingleFileEdits(file) : null;
+      if (how === "discard") await discardSingleFileEdits(file);
+      if (key !== undefined) {
+        const fresh = await openSingleFile(file, Object.keys(bundles).filter((b) => b !== key), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
+        dispatch({ type: "replaced", library: fresh });
+      }
+      if (copy) await openSingle(copy);
+      // Nothing of it is left to write: the warning goes.
+      await flush();
+    } catch (error) {
+      tell(`Couldn't ${how === "copy" ? "keep your edits" : "let your edits go"}`, error instanceof Error ? error.message : String(error));
     }
   };
   // A .table folder from disk, edited where it is.
@@ -1213,6 +1235,15 @@ export function App({
               onResponse={(response) => {
                 setConfirmReset(false);
                 if (response === "reset") void reset();
+              }}
+            />
+          ) : null}
+          {saving.kind === "failed" && saving.changedElsewhere && answeredElsewhere !== saving ? (
+            <ConfirmDialog
+              prompt={changedElsewherePrompt(saving.changedElsewhere)}
+              onResponse={(response) => {
+                setAnsweredElsewhere(saving);
+                if (response === "copy" || response === "discard") void settleChangedElsewhere(saving.changedElsewhere!, response);
               }}
             />
           ) : null}

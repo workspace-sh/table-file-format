@@ -6,6 +6,7 @@ import type { EditChange, EditEvent, ParsedTable } from "@workspace.sh/table-cor
 import { initialAppState, tableApp, type AppAction } from "./appState.ts";
 import { NO_EDIT_LOG } from "./editLog.ts";
 import { flushNow, scheduleWrite, writeHistoryNow, writeNow, type SaveState } from "./react.ts";
+import { ChangedElsewhere } from "./singleFile.ts";
 
 const table = (title: string): ParsedTable => ({ path: "", schema: { fields: [] }, rows: [], views: [], meta: { title } });
 const state = { dirty: ["crm"], tables: { "crm/deals": table("Deals") }, bundles: { crm: { title: "CRM" } } };
@@ -116,6 +117,9 @@ test("writing now: at once, true once written; false and still to write when hel
   const failed: SaveState[] = [];
   assert.equal(await writeNow(state, { write: async () => { throw new Error("read-only"); } }, (a) => seen.push(a), (s) => failed.push(s)), false);
   assert.deepEqual(failed.at(-1), { kind: "failed", message: "read-only" });
+  // A single file changed elsewhere says which, so the app can offer to keep the edits or let them go.
+  await writeNow(state, { write: async () => { throw new ChangedElsewhere("/docs/t.table"); } }, () => {}, (s) => failed.push(s));
+  assert.deepEqual(failed.at(-1), { kind: "failed", message: new ChangedElsewhere("/docs/t.table").message, changedElsewhere: "/docs/t.table" });
   assert.equal(seen.length, 0);
   let called = false;
   assert.equal(await writeNow({ ...state, dirty: [] }, { write: async () => { called = true; } }, () => {}, () => {}), true);

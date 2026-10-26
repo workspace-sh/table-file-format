@@ -262,6 +262,13 @@ export type AppAction =
   | { type: "create"; making: Making }
   | { type: "opened"; library: Library; skipped?: string[] }
   /**
+   * Files read again in place of what's held of them: their tables are
+   * the ones read, and edits not yet written are let go. After a save
+   * found the file changed elsewhere (ChangedElsewhere), for the file as
+   * it now is.
+   */
+  | { type: "replaced"; library: Library }
+  /**
    * Close a file: asks first, then it leaves what's held and is marked to
    * write (closing.ts). `fromFolder` is for an app that knows better than
    * `opened` where the file lives (one whose every file is a folder on
@@ -922,6 +929,12 @@ function step(state: AppState, action: AppAction): AppState {
         },
         firstTableKey(library.tables),
       );
+    }
+    case "replaced": {
+      const keys = Object.keys(action.library.bundles);
+      const held = (key: string) => keys.includes(bundleOf(key));
+      const cleared = { ...state, tables: Object.fromEntries(Object.entries(state.tables).filter(([key]) => !held(key))), dirty: state.dirty.filter((b) => !keys.includes(b)) };
+      return tableApp(cleared, { type: "opened", library: action.library });
     }
     case "close": {
       const meta = state.bundles[action.bundle];
