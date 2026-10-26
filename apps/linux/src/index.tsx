@@ -14,7 +14,7 @@ import { loadEdn } from "@workspace.sh/edn";
 
 // Formulas are worked out by the EDN core (Rust, natively), but those it leaves to `.table`'s own
 // workbook (#638). Without it, the workbook works them all out, as before.
-setFormulaEngine(await loadEdn({ binding: "native" }).catch((e: unknown) => (console.warn(`formulas: the workbook's own, not the EDN core: ${String(e)}`), null)));
+setFormulaEngine(await loadEdn({ binding: "native" }).catch((e: unknown) => (console.warn(`formulas aren't worked out, the EDN core didn't load: ${String(e)}`), null)));
 
 // What's named on the command line (a file manager names what it opens), or
 // the repo's fixtures. Spliced out of argv: GTKX hands the rest to
