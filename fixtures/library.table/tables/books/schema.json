@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "j49tkemwbf17r",
       "name": "title",
       "type": "string",
       "constraints": {
@@ -8,10 +9,12 @@
       }
     },
     {
+      "id": "jgw4ard9b6nci",
       "name": "author",
       "type": "string"
     },
     {
+      "id": "pkhqf1sx4nwz8",
       "name": "genre",
       "type": "string",
       "constraints": {
@@ -28,6 +31,7 @@
       }
     },
     {
+      "id": "yhazecfsxqunw",
       "name": "year",
       "type": "integer",
       "constraints": {
@@ -36,6 +40,7 @@
       }
     },
     {
+      "id": "cub3qt6k1zq9w",
       "name": "pages",
       "type": "integer",
       "constraints": {
@@ -43,11 +48,13 @@
       }
     },
     {
+      "id": "xiyakxmw7ii5m",
       "name": "price",
       "type": "number",
       "format": "currency:GBP"
     },
     {
+      "id": "86pc86xy4iexg",
       "name": "rating",
       "type": "integer",
       "constraints": {
@@ -56,10 +63,12 @@
       }
     },
     {
+      "id": "qm8a5mq5ygbpt",
       "name": "read",
       "type": "boolean"
     },
     {
+      "id": "c18xmu3b4epsb",
       "name": "added",
       "type": "date"
     }

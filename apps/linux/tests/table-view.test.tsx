@@ -66,20 +66,20 @@ describe("a sheet's row numbers on GTK", () => {
 
 describe("TableView on GTK", () => {
   it("shows each row's values, and a choice as its label", async () => {
-    await renderView("crm/companies", "all");
+    await renderView("crm/companies", "9gcz9d8ctoqamitkgwfhiu7sru");
     expect(await screen.findByText("Northwind Traders")).toBeDefined();
     expect(await screen.findByText("Company")).toBeDefined();
     expect(await screen.findByText("Retail")).toBeDefined();
   });
 
   it("shows only the rows the view's filter keeps", async () => {
-    await renderView("crm/companies", "customers");
+    await renderView("crm/companies", "surkeym1tjrn97wm3xdrg9qufr");
     expect(await screen.findByText("Atlas Freight")).toBeDefined();
     expect(screen.queryByText("Lumen Health")).toBeNull();
   });
 
   it("letters a sheet's columns, numbers its rows, and totals them", async () => {
-    await renderView("household-budget/budget", "sheet");
+    await renderView("household-budget/budget", "kifpjiq34nhz8k95rc3uezwqu5");
     expect(await screen.findByText("C  Jan")).toBeDefined();
     expect(await screen.findByText("7")).toBeDefined();
     expect(await screen.findByText("£6,387.00")).toBeDefined();
@@ -87,13 +87,13 @@ describe("TableView on GTK", () => {
   });
 
   it("shows a formula's result, worked out from the rows", async () => {
-    await renderView("household-budget/ledger", "by-date");
+    await renderView("household-budget/ledger", "7wxsrxd9g5oa5smry9tmfahdzs");
     // The running balance after the last entry (D41's ledger).
     expect(await screen.findByText("£4,188.00")).toBeDefined();
   });
 
   it("shows a related row by its title, and a choice by its label rather than its stored value", async () => {
-    await renderView("crm/deals", "all");
+    await renderView("crm/deals", "9gcz9d8ctoqamitkgwfhiu7sru");
     expect((await screen.findAllByText("Northwind Traders")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("Negotiation")).length).toBeGreaterThan(0);
     expect(screen.queryByText("negotiation")).toBeNull();
@@ -102,7 +102,7 @@ describe("TableView on GTK", () => {
 
 describe("the card views on GTK", () => {
   it("a board has a column per choice, by label, with its cards", async () => {
-    await renderView("crm/deals", "pipeline", BoardView);
+    await renderView("crm/deals", "oxycwiuri87bqu1s89cpt836n1", BoardView);
     expect(await screen.findByText("Negotiation")).toBeDefined();
     expect(await screen.findByText("Qualified")).toBeDefined();
     expect(await screen.findByText("Lumen: pilot")).toBeDefined();
@@ -110,25 +110,25 @@ describe("the card views on GTK", () => {
 
   it("a board's cards leave out the field their column already says", async () => {
     // The tasks board lists no fields, so it shows them all, less status.
-    await renderView("projects/tasks", "v2", BoardView);
+    await renderView("projects/tasks", "gzrqtgo1p3gfehto7tani3jzz4", BoardView);
     expect((await screen.findAllByText("PRIORITY")).length).toBeGreaterThan(0);
     expect(screen.queryByText("STATUS")).toBeNull();
   });
 
   it("a gallery leads each card with its hero field and shows a page's opening", async () => {
-    await renderView("projects/projects", "v6", GalleryView);
+    await renderView("projects/projects", "yxqsjf1fmbakwepxpx4ta44xks", GalleryView);
     expect(await screen.findByText("Open .table format research")).toBeDefined();
     expect((await screen.findAllByText(/^Table file format spike Open/)).length).toBe(1);
   });
 
   it("a list shows each row by its title, marking those with a page", async () => {
-    await renderView("projects/projects", "v7", ListView);
+    await renderView("projects/projects", "u5fpdkwh5w9thdq8o368a9t4nw", ListView);
     expect(await screen.findByText("Plugin SDK")).toBeDefined();
     expect((await screen.findAllByText("Page")).length).toBeGreaterThan(0);
   });
 
   it("a calendar opens on its first dated row's month, and keeps inside its range", async () => {
-    await renderView("projects/projects", "v9", CalendarView);
+    await renderView("projects/projects", "mjgwimtp1b49fgtgp5zdr5pzq9", CalendarView);
     expect(await screen.findByText("January 2026")).toBeDefined();
     expect(await screen.findByText("Workspace v1")).toBeDefined();
     const previous = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Previous month" });
@@ -139,7 +139,7 @@ describe("the card views on GTK", () => {
 describe("rows on their way from an index, on GTK", () => {
   it("are drawn as empty rows in the table's own columns: the grid is whole before the values arrive", async () => {
     const table = held["projects/tasks"]!;
-    const view = table.views.find((v) => v.id === "v1")!;
+    const view = table.views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!;
     // A source that has said how many rows there are, and none of them yet.
     const source: ViewRows = {
       count: 30,

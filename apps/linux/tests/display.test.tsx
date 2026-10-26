@@ -26,7 +26,7 @@ describe("display settings on Linux", () => {
   it("choosing long dates reformats date cells, and is kept for next time", async () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
-    await render(<App library={library} initialTable="crm/deals" initialView="all" settings={settings} />);
+    await render(<App library={library} initialTable="crm/deals" initialView="9gcz9d8ctoqamitkgwfhiu7sru" settings={settings} />);
     expect(await screen.findByText("2026-12-20")).toBeDefined();
     // Display… is in the main menu.
     ((await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.display", null);
@@ -45,14 +45,14 @@ describe("display settings on Linux", () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     settings.setItem("table-demo:display", JSON.stringify({ locale: "ar-EG" }));
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
-    await render(<App library={library} initialTable="crm/deals" initialView="all" settings={settings} />);
+    await render(<App library={library} initialTable="crm/deals" initialView="9gcz9d8ctoqamitkgwfhiu7sru" settings={settings} />);
     await screen.findAllByText("Deals");
     expect(Gtk.Widget.getDefaultDirection()).toBe(Gtk.TextDirection.RTL);
   });
 
   it("About Tables says which build this is", async () => {
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
-    await render(<App library={library} initialTable="crm/deals" initialView="all" />);
+    await render(<App library={library} initialTable="crm/deals" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
     ((await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.about", null);
     // A date, the day's count and the commit; a test run has no build, and says so.
     expect(await screen.findByText(/^(\d{4}\.\d+\.\d+\.\d+(\+dev)? · [0-9a-f]{7}|unnumbered build)$/)).toBeDefined();

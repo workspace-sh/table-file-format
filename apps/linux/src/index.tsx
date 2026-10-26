@@ -38,7 +38,7 @@ const elsewhere = named.length > 0 && runningAlready("sh.workspace.TableDemo");
 // Read by the window that's open already, not here: every path goes to it.
 const readHere = elsewhere ? [] : named.filter(isFolder);
 process.argv.push(...(elsewhere ? named : named.filter((path) => !isFolder(path))));
-// `--open=crm/deals#pipeline`: the table, and optionally the view, shown
+// `--open=crm/deals#Pipeline`: the table, and optionally the view (by its name or id), shown
 // first. How the headless screenshots reach a particular view.
 const open = args.find((arg) => arg.startsWith("--open="))?.slice("--open=".length);
 const [openTable, openView] = open ? open.split("#") : [];

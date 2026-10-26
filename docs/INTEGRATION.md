@@ -203,7 +203,8 @@ case-insensitive checkout notes.
 
 ## Sync comes later — and changes nothing here
 
-The P2P layer (Hypercore/Autobase, docs/STORAGE-AND-SYNC.md)
+The P2P layer (Hypercore/Autobase, docs/STORAGE-AND-SYNC.md, specified in the
+[Workspace Protocol](https://github.com/workspace-sh/workspace-protocol))
 materialises **the same files** this guide reads and writes. Code
 written against `parseTable`/`writeTable` and the contracts above
 will not change when sync lands — files are the interface, by

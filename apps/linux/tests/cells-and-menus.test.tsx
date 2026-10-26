@@ -70,7 +70,7 @@ describe("the row menu on Linux", () => {
   });
 
   it("a table view that isn't a sheet doesn't", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "63occwsg8oxgutjn9s5jxyqfkf");
     const menu = await firstRowMenu();
     expect(menu).toContain("Delete Row");
     expect(menu).not.toContain("Insert Row Above");
@@ -79,7 +79,7 @@ describe("the row menu on Linux", () => {
 
 describe("a short year typed into a date", () => {
   it("says so once, and its Use 2026 icon saves the year it meant", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "63occwsg8oxgutjn9s5jxyqfkf");
     const cell = (await screen.findAllByText(/2026/))[0]!;
     await userEvent.click(cell);
     const entry = (await screen.findByDisplayValue("2026-01-01")) as Gtk.Entry;
@@ -92,14 +92,14 @@ describe("a short year typed into a date", () => {
     await fireEvent(entry, "icon-press", Gtk.EntryIconPosition.SECONDARY);
     await waitFor(async () => {
       const t = await parseTable(join(bundle, "tables", "ledger"));
-      expect(t.rows.find((r) => r.id === "opening")?.date).toBe("2026-01-02");
+      expect(t.rows.find((r) => r.id === "z4bfkjkfy5csqpyjgrj8ctqz4o")?.date).toBe("2026-01-02");
     });
   });
 });
 
 describe("a cell being edited", () => {
   it("keeps to its column: the next cell doesn't move", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "63occwsg8oxgutjn9s5jxyqfkf");
     const next = await screen.findByText("Opening balance");
     const x = () => {
       const [ok, point] = next.computeBounds(next.getRoot() as unknown as Gtk.Widget);

@@ -75,6 +75,13 @@ export interface FieldConstraints {
 export type FieldAlignment = "start" | "center" | "end";
 
 export interface Field {
+  /**
+   * Its permanent identity (D62): minted by a writer, never shown, never
+   * changed, unique among the table's fields. Links and merges hold on to it
+   * whatever the field is called. Absent in a file written before D62; a
+   * writer gives it one (`withFieldIds`).
+   */
+  id?: string;
   name: string;
   type: FieldType;
   title?: string;

@@ -35,7 +35,7 @@ afterEach(async () => {
 /** The examples, as the demo opens them: projects shown, new files made beside them. */
 async function openExamples(props: Partial<Parameters<typeof App>[0]> = {}) {
   const library = await loadLibrary([join(examples, "projects.table")]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={examples} {...props} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={examples} {...props} />);
 }
 
 async function run(action: string) {
@@ -97,7 +97,7 @@ describe("the File menu on Linux", () => {
     await waitFor(async () => {
       expect(statSync(file).isFile()).toBe(true);
       const saved = await readTableArchive(new Uint8Array(readFileSync(file)));
-      expect(saved.tables.budget!.rows.find((r) => r.id === "groceries")?.item).toBe("Food shop");
+      expect(saved.tables.budget!.rows.find((r) => r.id === "gkr1q69yxhwfb3ju1u961igyy8")?.item).toBe("Food shop");
     });
     expect(existsSync(join(examples, "budget.table"))).toBe(false);
     expect(existsSync(join(examples, "household-budget-2.table"))).toBe(false);
@@ -207,7 +207,7 @@ describe("the File menu on Linux", () => {
     expect(opened.bundle.tables.tasks!.history).toBe(onDisk);
     // The table that was never edited has none.
     expect("history" in opened.bundle.tables.projects!).toBe(false);
-    expect(opened.bundle.tables.tasks!.rows.find((r) => r.id === "t1")?.title).toBe("Renamed task");
+    expect(opened.bundle.tables.tasks!.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Renamed task");
 
     // Opened: edited where it is, its working folder has the history it came with.
     await run("open");
@@ -219,7 +219,7 @@ describe("the File menu on Linux", () => {
   });
 
   it("an edit to a table that came with a history is added after it", async () => {
-    const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"t1","field":"title","to":"Land .table extension"}\n';
+    const theirs = '{"id":"theirs","at":"2026-01-01T00:00:00Z","by":"someone","op":"set","row":"ytjc8tj8w8ftnbf9h86s5k9jfk","field":"title","to":"Land .table extension"}\n';
     const projects = await loadLibrary([join(fixturesDir()!, "projects.table")]);
     const tables = { ...projects.tables, "projects/tasks": { ...projects.tables["projects/tasks"]!, history: theirs } };
     const zip = join(dir, "with-history.table");
@@ -267,7 +267,7 @@ describe("the File menu on Linux", () => {
   it("closing an example asks first; Close takes it out of the sidebar and removes the app's copy, and it stays closed", async () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     const library = await loadLibrary([join(examples, "projects.table"), join(examples, "crm.table")]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={examples} settings={settings} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={examples} settings={settings} />);
     const copy = join(examples, "crm.table");
     expect(existsSync(copy)).toBe(true);
     (await fileMenu("CRM"))!.activateAction("file.close", null);
@@ -357,14 +357,14 @@ describe("the File menu on Linux", () => {
     await userEvent.clear(entry);
     await userEvent.type(entry, "Edited");
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(async () => expect((await parseTable(tasks)).rows.find((r) => r.id === "t1")?.title).toBe("Edited"));
+    await waitFor(async () => expect((await parseTable(tasks)).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Edited"));
     await run("open");
     await screen.findByText("CRM (crm.table) › Companies");
     await run("reset-data");
     // The question says the opened folder isn't touched.
     expect(await screen.findByText(/Folders you opened from disk aren't touched\.$/)).toBeDefined();
     await userEvent.click(await screen.findByText("Reset"));
-    await waitFor(async () => expect((await parseTable(tasks)).rows.find((r) => r.id === "t1")?.title).toBe("Land .table extension"));
+    await waitFor(async () => expect((await parseTable(tasks)).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Land .table extension"));
     // Once the reset shows (the examples' first table), the opened folder is still there.
     expect(await screen.findByText("Projects (projects.table)")).toBeDefined();
     expect(await screen.findByText("Companies")).toBeDefined();

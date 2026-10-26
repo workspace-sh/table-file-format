@@ -4,7 +4,7 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
-import { isSheet } from "@workspace.sh/table-core";
+import { isSheet, newFieldId } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -273,7 +273,9 @@ export function withField(table: ParsedTable, field: Field, fromView?: string, p
       ? { ...v, fields: insertBeside(v.fields, field.name, (n) => n, place) }
       : v,
   );
-  const fields = insertBeside(table.schema.fields, field, (f) => f.name, place);
+  // A new field's id is random (D62): two people adding "notes" on two devices make two fields.
+  const added: Field = field.id ? field : { id: newFieldId(), ...field };
+  const fields = insertBeside(table.schema.fields, added, (f) => f.name, place);
   return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }), views };
 }
 

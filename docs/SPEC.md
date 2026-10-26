@@ -103,16 +103,19 @@ Defines the fields of every row, their types, and any constraints.
 {
   "fields": [
     {
+      "id": "kq3ufmy8b9xpe",
       "name": "title",
       "type": "string",
       "constraints": { "required": true }
     },
     {
+      "id": "7n1wsgc4hedra",
       "name": "status",
       "type": "string",
       "constraints": { "enum": ["planning", "active", "done"] }
     },
     {
+      "id": "za5jto9mx6cbi",
       "name": "summary",
       "type": "string",
       "format": "markdown"
@@ -122,6 +125,23 @@ Defines the fields of every row, their types, and any constraints.
   "schema-version": 1
 }
 ```
+
+### A field's id
+
+Every field has an `id`: 13 characters of z-base-32 (the alphabet
+`ybndrfg8ejkmcpqxot1uwisza345h769`, 65 bits), minted when the field is
+made, never shown, never changed, and unique among its table's fields
+(D62). It is the field's identity, whatever it is called: links and
+merges hold on to it. A field's `name` is the key its values have in
+every row and the word formulas use; its `title` is what people see.
+
+Writers MUST write an `id` on every field. A reader that finds a field
+without one gives it the id its name derives (reference:
+`derivedFieldId` in `@workspace.sh/table-core`: FNV-1a of the name,
+mixed by MurmurHash3's finaliser, as 13 z-base-32 characters), so a
+file from another tool opens, and the same file gets the same ids on
+every device. Two fields with one id are invalid (section 9); a writer
+gives the second the id its name derives.
 
 ### Field types
 
@@ -510,6 +530,10 @@ formulas out in whole passes, a loop reading what the pass before gave
 (0 on the first), up to `max` passes, until no number changes by more
 than `change`, as a spreadsheet's iterative calculation does.
 
+How an app shows an error is its own choice: the code is the value, and
+what anything that uses it sees. Workspace's apps show a few plain words
+and a mark for the kind of problem, with the code in the hover (D61).
+
 **Worked examples** (illustrative). Each row of this table is checked
 against the reference evaluator by `packages/core/src/spec-examples.test.ts`,
 so an example here can't drift from what the evaluator does. `→` is the
@@ -751,10 +775,10 @@ within the table. Readable ids (`p1`, `budget-2026`) are legal — a
 `.table/` written by another tool, or by an agent outside a managed
 workspace, should not need opaque identifiers.
 
-**Writer-minted ids** SHOULD be 25 characters from the lowercase
-base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
-`@workspace.sh/table-core`). The alphabet is deliberately
-**case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
+**Writer-minted ids** SHOULD be 26 characters of z-base-32, the
+alphabet `ybndrfg8ejkmcpqxot1uwisza345h769` (130 bits; reference:
+`newId()` in `@workspace.sh/table-core`), as a view's id and a history
+entry's are. The alphabet is deliberately **case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
 and on case-insensitive filesystems (default APFS, NTFS) two ids
 differing only in letter case would resolve to the same path and
 silently overwrite each other. For the same reason, all ids — minted
@@ -1372,6 +1396,8 @@ A `.table/` is **valid** when:
 5. Every line in `cells/` names a row and a field the table has. A
    writer keeps one that doesn't (section 3), but the table isn't valid
    until it's resolved.
+6. No two fields share an `id` (section 2, "A field's id"). A field
+   without one isn't invalid: readers give it the id its name derives.
 
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
@@ -1387,6 +1413,13 @@ Stable addressing for rows, views, and tables — used by:
   linking to a row elsewhere, an external markdown file linking into
   a `.table/`, etc.)
 - Application-level deep links (URL hashes, share links)
+
+These addresses are the format's own, and work without Workspace.
+Inside a Workspace, its `workspace://` links address a document and a
+place in it; a table's rows are addressed there by their system `id`
+(the Workspace Protocol's
+[URI scheme](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/format/uri-scheme.md),
+"Tables").
 
 ### Address grammar
 
@@ -1405,8 +1438,12 @@ fragment:
   - `table=<name>`: the table in the bundle with this name (section 1).
     It MAY be omitted when the bundle holds exactly one table.
   - `row=<id>` — the row with this system `id`
-  - `view=<id>` — the view with this id
-  - `field=<name>` — a specific field on the row (cell-level
+  - `view=<id or name>` — the view with this `id`, or failing that the
+    first view (in `views.json` order) whose `name` matches it, ignoring
+    case. Ids are opaque (D23); a name is what a person writes by hand. A
+    link an app writes uses the id, which survives a rename
+  - `field=<id or name>` — a specific field on the row, by its `id`
+    (section 2, "A field's id") or, failing that, its `name` (cell-level
     addressing for future affordances; reserved)
   - `rows=<n>`, `cards=<n>`, `rest=more`, `width=full`: how much of a
     view to show at once, and how wide, where the address is drawn in
@@ -1414,7 +1451,10 @@ fragment:
     which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
-strings). Order is not significant. Unknown keys MUST be tolerated
+strings). Keys and values are percent-encoded (as `encodeURIComponent`
+does), since an `id` may be any string: a row `a&b` is `row=a%26b`.
+Readers decode them, and read one that isn't valid percent-encoding as
+it stands. Order is not significant. Unknown keys MUST be tolerated
 by readers — apps MAY define additional keys (e.g. `query=`,
 `highlight=`) but consumers that don't recognise them should
 silently ignore.
@@ -1425,7 +1465,7 @@ silently ignore.
 docs/crm.table                                   # the whole bundle
 docs/crm.table#table=deals                       # one table in it
 docs/crm.table#table=deals&row=dl-1              # a row in that table
-docs/crm.table#table=deals&view=pipeline         # a view of that table
+docs/crm.table#table=deals&view=pipeline         # a view of that table, by its name
 docs/projects.table#row=p1                       # a one-table bundle may omit table=
 ../suppliers.table#table=suppliers&row=ACME_CORP # another bundle
 ```
@@ -1484,10 +1524,10 @@ width they are given, and ignore it. A column resized in the view
 (`columnWidths`) keeps its width either way.
 
 ```
-docs/projects.table#table=tasks&view=v1&rows=5             # five rows of a table view, then it scrolls
-docs/projects.table#table=tasks&view=v2&cards=3            # a board, three cards down each column
-docs/projects.table#table=tasks&view=v1&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
-docs/projects.table#table=tasks&view=v1&width=full         # the whole width of the document
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5            # five rows of a table view, then it scrolls
+docs/projects.table#table=tasks&view=Board%20by%20status&cards=3                    # a board, three cards down each column
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
+docs/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&width=full          # the same view by its id, the whole width of the document
 ```
 
 ### Resolution

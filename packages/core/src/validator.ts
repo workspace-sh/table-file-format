@@ -52,6 +52,14 @@ export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]
     }
   }
 
+  // Two fields with one id (D62): a writer gives the second another, but as read it isn't valid.
+  const fieldIds = new Set<string>();
+  for (const f of schema.fields) {
+    if (typeof f.id !== "string") continue;
+    if (fieldIds.has(f.id)) errors.push({ rowIndex: -1, field: f.name, message: `field ${f.name} has the id ${f.id}, which another field has` });
+    fieldIds.add(f.id);
+  }
+
   // A line of cells/ for a row or field the table hasn't: kept by the writer, but not valid (SPEC section 9).
   const ids = new Set(rows.map((r) => r.id));
   const names = new Set(schema.fields.map((f) => f.name));

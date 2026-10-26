@@ -26,7 +26,7 @@ afterEach(async () => {
 
 async function openFiles() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="crm/companies" initialView="all" />);
+  await render(<App library={library} initialTable="crm/companies" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
   await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Files" }));
 }
 
@@ -49,7 +49,7 @@ describe("the Files side on Linux", () => {
 
   it("a table's history isn't listed until it has one; after an edit it is, and shows the file's own text", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="crm/companies" initialView="all" />);
+    await render(<App library={library} initialTable="crm/companies" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
     const file = join(bundle, "tables", "companies", "history.ndjson");
     const files = await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Files" });
     const tablesSide = await screen.findByRole(Gtk.AccessibleRole.TOGGLE_BUTTON, { name: "Tables" });

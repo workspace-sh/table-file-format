@@ -28,14 +28,14 @@ afterEach(async () => {
 describe("list cells on Linux", () => {
   it("ticking a choice saves the list in the schema's order", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="crm/companies" initialView="all" />);
+    await render(<App library={library} initialTable="crm/companies" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
     // Rows in file order: Northwind, Lumen, Atlas. Atlas is enterprise, emea, priority.
     const pickers = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose Tags" });
     await userEvent.click(pickers[2]!);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.CHECKBOX, { name: "startup" }));
     await waitFor(async () => {
       const t = await parseTable(join(bundle, "tables", "companies"));
-      expect(t.rows.find((r) => r.id === "co-atlas")?.tags).toEqual(["enterprise", "startup", "emea", "priority"]);
+      expect(t.rows.find((r) => r.id === "wexwuo344aoowkqiieeb8fk56z")?.tags).toEqual(["enterprise", "startup", "emea", "priority"]);
     });
   });
 });

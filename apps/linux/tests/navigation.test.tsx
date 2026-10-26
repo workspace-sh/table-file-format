@@ -36,7 +36,7 @@ function memoryStore(): KeyValueStore {
 
 async function openTasks(settings?: KeyValueStore) {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" settings={settings} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" settings={settings} />);
 }
 
 const button = (name: string) => screen.findByRole(Gtk.AccessibleRole.BUTTON, { name }) as Promise<Gtk.Button>;
@@ -118,7 +118,7 @@ describe("the app's commands on Linux", () => {
     await openTasks();
     (await window()).activateAction("win.copy-link", null);
     const text = await Gdk.Display.getDefault()!.getClipboard().readTextAsync();
-    expect(text).toBe("projects.table#table=tasks&view=v1");
+    expect(text).toBe("projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx");
   });
 
   it("Ctrl+B's command hides the sidebar, and it stays hidden next time", async () => {
@@ -164,11 +164,11 @@ describe("leaving a view on Linux", () => {
 
   it("Copy Link to View carries the row whose page is open", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="v7" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="u5fpdkwh5w9thdq8o368a9t4nw" />);
     await userEvent.click(await screen.findByText("Table file format spike"));
-    await screen.findByText("bodies/p2.md");
+    await screen.findByText("bodies/1h38m5st7rwanz3hyjb6dy8igr.md");
     (await window()).activateAction("win.copy-link", null);
-    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=p2&view=v7");
+    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=1h38m5st7rwanz3hyjb6dy8igr&view=u5fpdkwh5w9thdq8o368a9t4nw");
   });
 });
 

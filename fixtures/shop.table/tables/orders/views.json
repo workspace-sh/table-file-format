@@ -1,6 +1,6 @@
 [
   {
-    "id": "all",
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
     "name": "All orders",
     "layout": "table",
     "sort": [
@@ -28,7 +28,7 @@
     ]
   },
   {
-    "id": "fulfilment",
+    "id": "gbzbk1bf5hktu8fua1948abgwg",
     "name": "Fulfilment",
     "layout": "board",
     "board_field": "status",
@@ -40,13 +40,13 @@
     ]
   },
   {
-    "id": "calendar",
+    "id": "doreg51aza5kubnriw76qjh6rd",
     "name": "Calendar",
     "layout": "calendar",
     "calendar_field": "ordered"
   },
   {
-    "id": "to-ship",
+    "id": "31cjom1jbtic4gara7pxjq7q5k",
     "name": "To ship",
     "layout": "table",
     "filter": [

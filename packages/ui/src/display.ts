@@ -159,7 +159,7 @@ export interface Pill {
  */
 export type CellShow =
   | { kind: "relations"; links: RelationLink[] }
-  /** A formula that failed: `text` is its code in Excel style, plain words otherwise (#685). */
+  /** A formula that failed: plain words, and its code where Excel style shows it (#685). */
   | ({ kind: "error" } & FormulaErrorShow)
   | { kind: "pills"; pills: Pill[] }
   | { kind: "attachment"; fileName: string }
@@ -184,13 +184,58 @@ function linkFor(relation: { table: string; field: string }, id: string, related
 export interface FormulaErrorShow {
   /** The spreadsheet code: `#DIV/0!`. */
   code: string;
-  /** What the cell says: the code in Excel style, else a few plain words ("Divides by zero"). */
+  /** What the cell says, in every syntax: a few plain words ("Divides by zero"). */
   text: string;
-  /** What went wrong, and where the fix is: for a hover, or a tap where there's no hover. */
+  /** What the formula's panel says: the words, and in Excel style the code too ("Divides by zero · #DIV/0!"). */
+  withCode: string;
+  /** What went wrong, and where the fix is, for a hover or (with no hover) the selected cell's details. In Excel style it begins with the code. */
   explanation: string;
   /** What fixes it: the loop's "Repeat Until It Settles", or editing the formula. Both are in the formula's panel. */
   fix: "repeat" | "edit";
+  /** Which kind of problem: each has its own mark, so a column of them can be read at a glance (ERROR_MARKS). */
+  group: FormulaErrorGroup;
 }
+
+/**
+ * The kinds of problem, by what fixing one takes: a loop to settle or
+ * break; something the formula points at that's gone; an answer its column
+ * can't hold; a calculation that can't be done.
+ */
+export type FormulaErrorGroup = "loop" | "missing" | "mismatch" | "calculation";
+
+/**
+ * Each kind's mark: an SF Symbol on iOS and the Mac, and on the web and
+ * Linux a Lucide icon (https://lucide.dev, ISC licence), whose paths are
+ * here (24 × 24, stroked 2 wide, round ends) so both draw the same one.
+ */
+export const ERROR_MARKS: Record<FormulaErrorGroup, { lucide: string; paths: readonly string[]; sf: string; label: string }> = {
+  loop: {
+    lucide: "refresh-cw",
+    paths: ["M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", "M21 3v5h-5", "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", "M8 16H3v5"],
+    sf: "arrow.triangle.2.circlepath",
+    label: "Loop",
+  },
+  missing: {
+    lucide: "unlink",
+    paths: [
+      "m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71",
+      "m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71",
+      "M8 2v3",
+      "M2 8h3",
+      "M16 19v3",
+      "M19 16h3",
+    ],
+    sf: "questionmark.square.dashed",
+    label: "Missing",
+  },
+  mismatch: { lucide: "equal-not", paths: ["M5 9h14", "M5 15h14", "M19 5 5 19"], sf: "notequal", label: "Doesn't fit" },
+  calculation: {
+    lucide: "triangle-alert",
+    paths: ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"],
+    sf: "exclamationmark.triangle",
+    label: "Can't be worked out",
+  },
+};
 
 /** What a column of each type holds, for "Not a date" and "this column holds dates". */
 const HOLDS: Record<string, [not: string, holds: string]> = {
@@ -215,50 +260,56 @@ const FIX = {
 
 /**
  * A failed formula in plain words (#685), from its code and the evaluator's
- * message, which the TypeScript workbook and the EDN core word alike. With
- * formulas shown in Excel style the cell keeps the code a spreadsheet user
- * knows; the explanation is plain either way.
+ * message, which the TypeScript workbook and the EDN core word alike. The
+ * cell says the words in either syntax; in Excel style the code a
+ * spreadsheet user knows is in the hover and the formula's panel.
  */
 export function formulaErrorShow(error: FormulaError, field: Field | undefined, syntax?: FormulaSyntax): FormulaErrorShow {
   const { code, message } = error;
-  const said = (words: string, why: string, fix: "repeat" | "edit" = "edit"): FormulaErrorShow => ({
+  const excel = syntax !== "stored";
+  const said = (group: FormulaErrorGroup, words: string, why: string, fix: "repeat" | "edit" = "edit"): FormulaErrorShow => ({
+    group,
     code,
-    text: syntax === "stored" ? words : code,
-    explanation: `${why} ${FIX[fix]}`,
+    text: words,
+    withCode: excel ? `${words} · ${code}` : words,
+    explanation: `${excel ? `${code}: ` : ""}${why} ${FIX[fix]}`,
     fix,
   });
   let m: RegExpExecArray | null;
   if (code === "#VALUE!" && (m = /^.+ can't hold (.+)$/s.exec(message))) {
     // Any JSON value but a number JSON can't write (D56).
-    if (field?.type === "any") return said("Number too big", `The formula gave ${m[1]}, which a file can't store.`);
+    if (field?.type === "any") return said("mismatch", "Number too big", `The formula gave ${m[1]}, which a file can't store.`);
     const [not, holds] = field?.relation ? ["Not a list of rows", "links to rows"] : (HOLDS[field?.type ?? ""] ?? ["Wrong kind of value", `values of type ${field?.type}`]);
-    return said(not, `The formula gave ${m[1]}, and this column holds ${holds}.`);
+    return said("mismatch", not, `The formula gave ${m[1]}, and this column holds ${holds}.`);
   }
-  if (code === "#DIV/0!") return said("Divides by zero", "The formula divides by zero for this row.");
-  if (code === "#NUM!") return said("Number too big", "The formula's answer is too large for a number.");
+  if (code === "#DIV/0!") return said("calculation", "Divides by zero", "The formula divides by zero for this row.");
+  if (code === "#NUM!") return said("mismatch", "Number too big", "The formula's answer is too large for a number.");
   if (code === "#NAME?" && (m = /^no field named (.+)$/s.exec(message))) {
-    return said(`No field "${m[1]}"`, `The formula reads "${m[1]}", and there's no field by that name.`);
+    return said("missing", `No field "${m[1]}"`, `The formula reads "${m[1]}", and there's no field by that name.`);
   }
   if (code === "#NAME?" && (m = /^unknown function (.+)$/s.exec(message))) {
-    return said("Unknown function", `The formula calls "${m[1]}", which isn't a formula function.`);
+    return said("calculation", "Unknown function", `The formula calls "${m[1]}", which isn't a formula function.`);
   }
   if (code === "#REF!") {
     if (/ depends on itself$/.test(message)) {
-      return said("Loops back on itself", "This formula reads itself, through the formulas it reads, so it has no answer.", "repeat");
+      return said("loop", "Loops back on itself", "This formula reads itself, through the formulas it reads, so it has no answer.", "repeat");
     }
     if ((m = /^the Sheet view (.+) is sorted by its own places$/s.exec(message))) {
-      return said("Loops back on itself", `The Sheet view "${m[1]}" is sorted by what its formulas give, so they have no answer.`);
+      return said("loop", "Loops back on itself", `The Sheet view "${m[1]}" is sorted by what its formulas give, so they have no answer.`);
     }
-    if ((m = /^no table (.+)$/s.exec(message))) return said(`No table "${m[1]}"`, `The formula reads the table "${m[1]}", and there's no table by that name.`);
-    if ((m = /^no Sheet view (.+)$/s.exec(message))) return said(`No view "${m[1]}"`, `The formula reads the Sheet view "${m[1]}", and there's no view by that name.`);
+    if ((m = /^no table (.+)$/s.exec(message))) return said("missing", `No table "${m[1]}"`, `The formula reads the table "${m[1]}", and there's no table by that name.`);
+    if ((m = /^no Sheet view (.+)$/s.exec(message))) return said("missing", `No view "${m[1]}"`, `The formula reads the Sheet view "${m[1]}", and there's no view by that name.`);
     if ((m = /^(.+) isn't a column of (.+)$/s.exec(message))) {
-      return said("Column isn't in the view", `The formula reads "${m[1]}" by its place in "${m[2]}", and that view doesn't show it.`);
+      return said("missing", "Column isn't in the view", `The formula reads "${m[1]}" by its place in "${m[2]}", and that view doesn't show it.`);
     }
-    if (message === "that row is off the grid") return said("No row there", "The formula reads a place past the edge of its Sheet view.");
-    if (message.startsWith("no row ")) return said("Row is gone", "The formula reads a row that's no longer there.");
+    if (message === "that row is off the grid") return said("missing", "No row there", "The formula reads a place past the edge of its Sheet view.");
+    if (message.startsWith("no row ")) return said("missing", "Row is gone", "The formula reads a row that's no longer there.");
   }
+  const sentence = `${message.charAt(0).toUpperCase()}${message.slice(1)}.`;
+  // A function given too many or too few: "round takes 1–2 arguments".
+  if (code === "#VALUE!" && / takes (?:no|[\d–-]+(?: or \d+)?) arguments?$/.test(message)) return said("calculation", "Wrong number of inputs", sentence);
   // Anything else (a function given the wrong kind of value): the evaluator's own words.
-  return said("Wrong kind of value", `${message.charAt(0).toUpperCase()}${message.slice(1)}.`);
+  return said("calculation", "Wrong kind of value", sentence);
 }
 
 /** What `value`, stored in `field`, shows as. */
@@ -272,7 +323,7 @@ export function describeCell(
   if (field?.relation && typeof value === "string" && value.length > 0) {
     return { kind: "relations", links: [linkFor(field.relation, value, relatedTables)] };
   }
-  // A formula that failed: its spreadsheet code in Excel style, plain words otherwise (#685).
+  // A formula that failed: plain words, and its code in Excel style's hover and panel (#685).
   if (value instanceof FormulaError) return { kind: "error", ...formulaErrorShow(value, field, display.formulaSyntax) };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {

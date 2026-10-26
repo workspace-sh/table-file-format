@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "ek788rsnx5gzi",
       "name": "number",
       "type": "string",
       "title": "Order",
@@ -10,6 +11,7 @@
       }
     },
     {
+      "id": "8kggyzjcrbp75",
       "name": "customer",
       "type": "string",
       "title": "Customer",
@@ -19,11 +21,13 @@
       }
     },
     {
+      "id": "qs5wtma53wsox",
       "name": "ordered",
       "type": "date",
       "title": "Ordered"
     },
     {
+      "id": "ct5d6ndk38c8d",
       "name": "status",
       "type": "string",
       "title": "Status",
@@ -58,12 +62,14 @@
       }
     },
     {
+      "id": "nm9efu6zgd3zo",
       "name": "shipping",
       "type": "number",
       "title": "Shipping",
       "format": "currency:GBP"
     },
     {
+      "id": "nqjnkkiyyier1",
       "name": "items",
       "type": "number",
       "title": "Items",
@@ -74,6 +80,7 @@
       }
     },
     {
+      "id": "b8qqo6ndauzug",
       "name": "subtotal",
       "type": "number",
       "title": "Subtotal",
@@ -85,6 +92,7 @@
       }
     },
     {
+      "id": "y9cxdk3dhxqur",
       "name": "total",
       "type": "number",
       "title": "Total",
@@ -96,6 +104,7 @@
       }
     },
     {
+      "id": "q7es69q4j14e6",
       "name": "city",
       "type": "string",
       "title": "City",

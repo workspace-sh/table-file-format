@@ -23,7 +23,7 @@ export { pageSave, type PageSave } from "./pageEdit";
 export { fieldHint, fieldHintText, type FieldHintFacts } from "./fieldHintFacts";
 export { afterEdit, cellPicks, clampPlace, gridKey, mirroredKey, type EditEnd as GridEditEnd, type GridAction, type GridCell, type GridKey, type GridPlace } from "./gridNav";
 export { inputHints, inputModeOf, type InputHintKind, type InputHints } from "./inputHints";
-export { columnActions, rowActions, type ChooseManyProps, type ChooseManySlot, type DateInputProps, type DateInputSlot, type FieldAction, type MenuAction, type PlatformControls, type RowAction, type RowActionsProps, type RowActionsSlot, type SelectHandle, type SelectOption, type SelectProps, type SelectSlot, type SettingsFormProps, type SettingsFormSlot, type SettingsRow, type SettingsSection, type SheetProps, type SheetSlot, type ToggleProps, type ToggleSlot } from "./controlSlots";
+export { columnActions, rowActions, type CellProblemProps, type CellProblemSlot, type ChooseManyProps, type ChooseManySlot, type ChooseOneProps, type ChooseOneSlot, type DateInputProps, type DateInputSlot, type FieldAction, type MenuAction, type PlatformControls, type RowAction, type RowActionsProps, type RowActionsSlot, type SelectHandle, type SelectOption, type SelectProps, type SelectSlot, type SettingsFormProps, type SettingsFormSlot, type SettingsRow, type SettingsSection, type SheetProps, type SheetSlot, type ToggleProps, type ToggleSlot } from "./controlSlots";
 export { dateOfStored, localDate, storedOfDate, type DateKind } from "./dateEntry";
 export { rowLayout, type RowLayout, type RowMark } from "./rowLayout";
 export { isImmediate, useViewFacts, useViewWindow, VIEW_PAGE, type ViewFacts } from "./useViewRows";

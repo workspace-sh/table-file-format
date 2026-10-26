@@ -69,7 +69,7 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
   },
-  /** An on-disk name beside a title: a folder, or a view's id. */
+  /** An on-disk name beside a title: a table's folder. */
   diskName: {
     fontSize: 11,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -505,10 +505,9 @@ export function Sidebar({
                             style={[styles.item, styles.viewItem, active && styles.itemActive]}
                             onClick={() => onSelect(id)}
                           >
-                            <html.span style={[styles.itemName, styles.titleAndName]}>
-                              <html.span dir="auto" style={styles.titleText}>{name}</html.span>
-                              {/* Its id in views.json, as the address bar names it. */}
-                              <html.span dir="ltr" style={styles.diskName}>{id}</html.span>
+                            {/* Its name only: a view's id is opaque (D23), for links, not for reading. */}
+                            <html.span dir="auto" style={[styles.itemName, styles.titleText]}>
+                              {name}
                             </html.span>
                             <html.span style={styles.itemLayout}>{layout}</html.span>
                           </html.div>
