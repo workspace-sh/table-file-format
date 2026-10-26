@@ -1242,7 +1242,7 @@ export function App({
               <AdwToolbarView topBar={<AdwHeaderBar />}>
                 <AdwPreferencesPage>
                   <DisplayControls
-                    rows={displayChoices(state.display, ownLocale, "System")}
+                    rows={displayChoices(state.display, ownLocale, "System", state.active || undefined)}
                     onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </AdwPreferencesPage>
