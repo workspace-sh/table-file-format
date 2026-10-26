@@ -9,6 +9,7 @@ import { BoardView, CalendarView, GalleryView, ListView, TableView } from "@work
 export interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue: (fieldName: string, value: string) => void;
   onRemoveEnumValue: (fieldName: string, value: string) => void;
   onDeleteField: (fieldName: string) => void;
@@ -89,6 +90,7 @@ export function renderView(
           onUnmerge={cb.onUnmerge}
           onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
