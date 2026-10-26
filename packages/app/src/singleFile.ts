@@ -11,7 +11,7 @@
 
 import { packTableFileFrom, unpackTableFileTo } from "@workspace.sh/table-core";
 import { joinPath, type TableFs } from "@workspace.sh/table-core/io";
-import { CANCEL, type Confirm } from "./confirm.ts";
+import type { Confirm } from "./confirm.ts";
 
 /** A short, stable name for a path, for its working folder: FNV-1a, 32 bits, as hex. */
 function hashOf(text: string): string {
@@ -118,16 +118,18 @@ export async function takeFileAsItIs(fs: TableFs, workDir: string): Promise<void
 }
 
 /**
- * What's asked after ChangedElsewhere: keep the edits as a copy beside the
- * file (`copy`, keepEditsAsCopy), let them go and show the file as it is
- * now (`discard`, takeFileAsItIs), or neither yet (`cancel`), the edits
- * staying in the working folder.
+ * What's said after ChangedElsewhere, in place (a banner over the table),
+ * never as a blocking alert: a file's state isn't something the viewer did
+ * (workspace#711). Its choices: keep the edits as a copy beside the file
+ * (`copy`, keepEditsAsCopy), or let them go and show the file as it is now
+ * (`discard`, takeFileAsItIs). Until one is chosen, the edits stay in the
+ * working folder.
  */
 export function changedElsewherePrompt(target: string): Confirm {
   const name = target.slice(target.lastIndexOf("/") + 1);
   return {
     heading: `“${name}” was changed somewhere else`,
     body: "Your edits weren't saved into it, so nothing was lost. Keep your edits as a copy beside it, or let them go and see it as it is now.",
-    responses: [{ ...CANCEL, label: "Not now" }, { id: "discard", label: "Discard my edits", destructive: true }, { id: "copy", label: "Keep my edits as a copy" }],
+    responses: [{ id: "discard", label: "Discard my edits", destructive: true }, { id: "copy", label: "Keep my edits as a copy" }],
   };
 }

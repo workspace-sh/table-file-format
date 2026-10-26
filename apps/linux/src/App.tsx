@@ -4,6 +4,7 @@
 // sidebar has them. What a view shows comes from table-app's `showView`,
 // the same function the web demo calls.
 
+import { css } from "@gtkx/css";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import * as Adw from "@gtkx/gi/adw";
@@ -229,6 +230,7 @@ function TablePane({
   callbacks,
   saving,
   onRetrySave,
+  onSettleElsewhere,
   viewActions,
   onSearch,
   settingsOpen,
@@ -260,6 +262,8 @@ function TablePane({
   };
   saving: SaveState;
   onRetrySave: () => void;
+  /** A save found this single file changed elsewhere: what's done with the edits, asked in place. */
+  onSettleElsewhere: (file: string, how: "copy" | "discard") => void;
   viewActions: ViewActions;
   onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
@@ -307,6 +311,7 @@ function TablePane({
       }
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+        {saving.kind === "failed" && saving.changedElsewhere ? <ChangedElsewhereBar file={saving.changedElsewhere} onAnswer={onSettleElsewhere} /> : null}
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
           {/* While a large table is read, how far that has got is in the count's place. */}
           {building ? (
@@ -565,6 +570,30 @@ function SaveStatus({ state, onRetry }: { state: SaveState; onRetry: () => void 
   return <GtkButton iconName="dialog-warning-symbolic" cssClasses={["flat", "error"]} tooltipText={`Not saved: ${state.message}. Try Again`} onClicked={onRetry} />;
 }
 
+/**
+ * A single file changed elsewhere, so a save didn't write over it: said in
+ * place, above the table, with what can be done with the edits. Nothing
+ * waits on it (no blocking alert for a file's state); it stays until one is
+ * chosen, and the edits stay in the working folder meanwhile.
+ */
+function ChangedElsewhereBar({ file, onAnswer }: { file: string; onAnswer: (file: string, how: "copy" | "discard") => void }) {
+  const prompt = changedElsewherePrompt(file);
+  const choices = prompt.responses.filter((r): r is typeof r & { id: "copy" | "discard" } => r.id === "copy" || r.id === "discard");
+  return (
+    <GtkBox name="changed-elsewhere" spacing={12} cssClasses={[elsewhereBar]}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand valign={Gtk.Align.CENTER}>
+        <GtkLabel label={prompt.heading} xalign={0} wrap cssClasses={["heading"]} />
+        <GtkLabel label={prompt.body} xalign={0} wrap />
+      </GtkBox>
+      {choices.map((r) => (
+        <GtkButton key={r.id} label={r.label} valign={Gtk.Align.CENTER} cssClasses={r.destructive ? ["destructive-action"] : ["suggested-action"]} onClicked={() => onAnswer(file, r.id)} />
+      ))}
+    </GtkBox>
+  );
+}
+
+const elsewhereBar = css({ padding: "10px 12px", backgroundColor: "alpha(@warning_bg_color, 0.18)", borderBottom: "1px solid alpha(@warning_bg_color, 0.4)" });
+
 /** How long after the last edit its bundle is written. */
 const SAVE_DELAY_MS = 400;
 
@@ -800,8 +829,6 @@ export function App({
   const [displayOpen, setDisplayOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  // The save that found a single file changed elsewhere, once it's been answered (so it's asked once).
-  const [answeredElsewhere, setAnsweredElsewhere] = useState<SaveState | null>(null);
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
 
@@ -1162,6 +1189,7 @@ export function App({
                 callbacks={callbacks}
                 saving={saving}
                 onRetrySave={() => void flush()}
+                onSettleElsewhere={(file, how) => void settleChangedElsewhere(file, how)}
                 viewActions={viewActions}
                 onSearch={(text) => dispatch({ type: "search", text })}
                 settingsOpen={state.settingsOpen}
@@ -1235,15 +1263,6 @@ export function App({
               onResponse={(response) => {
                 setConfirmReset(false);
                 if (response === "reset") void reset();
-              }}
-            />
-          ) : null}
-          {saving.kind === "failed" && saving.changedElsewhere && answeredElsewhere !== saving ? (
-            <ConfirmDialog
-              prompt={changedElsewherePrompt(saving.changedElsewhere)}
-              onResponse={(response) => {
-                setAnsweredElsewhere(saving);
-                if (response === "copy" || response === "discard") void settleChangedElsewhere(saving.changedElsewhere!, response);
               }}
             />
           ) : null}
