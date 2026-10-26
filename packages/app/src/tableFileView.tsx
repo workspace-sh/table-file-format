@@ -11,7 +11,7 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
 import { addressedView, newId, parseAddress, type View } from "@workspace.sh/table-core";
@@ -93,6 +93,11 @@ export interface TableFileViewProps {
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
   /** What goes around the view, drawn by the host. */
   chrome?: (file: TableFileChrome) => ReactNode;
+  /**
+   * Which syntax this file's formulas are shown in, as the host's viewer chose for it (Excel style by
+   * default). The viewer's, kept by the host, never in the file (SPEC section 4).
+   */
+  formulaSyntax?: "excel" | "stored";
 }
 
 function alertAsk(confirm: Confirm, answer: (response: string) => void) {
@@ -107,8 +112,10 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
+  // This file's formula syntax, as the host chose it, over the viewer's display settings (the same object while neither changes).
+  const shownDisplay = useMemo(() => (formulaSyntax ? { ...display, formulaSyntax } : display), [display, formulaSyntax]);
   const { table, view } = derived;
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = !!readOnly || fromArchive;
@@ -201,7 +208,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
   };
 
   return (
-    <DisplaySettingsProvider value={display}>
+    <DisplaySettingsProvider value={shownDisplay}>
       {chrome?.(file)}
       <LayoutView
         key={`${state.active}\u0000${view.id}`}

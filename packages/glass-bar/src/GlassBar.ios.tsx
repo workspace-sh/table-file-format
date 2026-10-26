@@ -583,7 +583,10 @@ function Capsule(props: Part) {
         <HStack spacing={8} modifiers={[padding({ leading: 16, trailing: state.info ? 10 : 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
           <VStack alignment="leading" spacing={1}>
             <Label text={state.label} size={11} />
-            <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            <HStack spacing={6}>
+              {state.prefix ? <PrefixBadge text={state.prefix} size={14} /> : null}
+              <Text modifiers={[font({ size: state.monospaced || state.prefix ? 14 : 16, design: state.monospaced || state.prefix ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            </HStack>
             {/* The field's own help, as the web shows it on hover. */}
             {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
           </VStack>
@@ -744,6 +747,27 @@ function DateCard({ state, ns, onPickDate, onClear }: { state: Extract<GlassBarS
 }
 
 /** A label, its leading "ƒ " drawn as the system's function symbol. */
+/**
+ * A cell's own formula's "=", drawn as a small badge apart from the formula
+ * so it never reads as part of the text (the stored form has no "=").
+ */
+function PrefixBadge({ text, size, onRemove, label }: { text: string; size: number; onRemove?: () => void; label?: string }) {
+  return (
+    <Text
+      modifiers={[
+        font({ size: size - 2, weight: "semibold", design: "monospaced" }),
+        secondary,
+        padding({ horizontal: 6, vertical: 1 }),
+        background(PlatformColor("tertiarySystemFill"), shapes.capsule()),
+        ...(onRemove ? [onTapGesture(onRemove)] : []),
+        ...(label ? [accessibilityLabel(label)] : []),
+      ]}
+    >
+      {text}
+    </Text>
+  );
+}
+
 function Label({ text, size }: { text: string; size: number }) {
   if (!text.startsWith("ƒ ")) return <Text modifiers={[font({ size }), secondary, lineLimit(1), layoutPriority(1)]}>{text}</Text>;
   return (
@@ -813,7 +837,7 @@ const LINE = { mono: 19, prose: 22 };
 /** The expanded capsule's header, its actions along the foot, and padding. */
 const EXPANDED_CHROME = 116;
 
-function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, onPrefixRemove, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
   // Expo UI's TextField, or for a formula the bar's own coloured field: the same commands.
   const field = useRef<TextFieldRef>(null);
   const [spansFor, setSpansFor] = useState(state.initialValue);
@@ -847,7 +871,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
   });
   // Text wraps and grows; a number or a date stays on one line.
   const grows = state.mode !== "line" || !!state.expandable;
-  const mono = state.mode === "formula";
+  const mono = state.mode === "formula" || state.prefixRemovable !== undefined;
   const tall = !!expansion?.on;
   // The modifiers below keep one shape in both sizes, so SwiftUI keeps the
   // same field. Should it make a new one anyway, the new one starts from the
@@ -899,17 +923,26 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     >
       <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
-        {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
-        {state.prefix ? (
+        {/* A currency's symbol, or a cell's own formula's "=", in the field's own type, as the web's cell shows it.
+            The "=" can go: a tap, or Backspace at the start, and what's typed is a plain value. */}
+        {state.prefix && state.prefixRemovable ? (
+          <PrefixBadge
+            text={state.prefix}
+            size={15}
+            onRemove={onPrefixRemove}
+            label={`${state.prefix}, formula. Tap to type a value instead`}
+          />
+        ) : state.prefix ? (
           <Text modifiers={[font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }), secondary, padding({ vertical: 4 })]}>{state.prefix}</Text>
         ) : null}
-        {state.highlight ? (
+        {state.highlight || state.prefixRemovable !== undefined ? (
           <FormulaField
             key={state.editKey}
             ref={field}
             defaultValue={state.initialValue}
             autoFocus
-            spans={state.highlight(spansFor)}
+            onDeleteAtStart={state.prefixRemovable ? onPrefixRemove : undefined}
+            spans={state.highlight ? state.highlight(spansFor) : []}
             spansFor={spansFor}
             fontSize={15}
             minLines={tall && !working ? lines : 1}
