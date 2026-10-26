@@ -1,0 +1,26 @@
+{
+  "name": "@workspace.sh/edn",
+  "version": "0.1.0",
+  "description": "EDN for Workspace: the Rust core as WebAssembly (web), a native library (Node, Linux's app) or through JSI (iOS and the Mac), behind one TypeScript API (table-file-format#626)",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsi": "./src/jsi.ts"
+  },
+  "files": [
+    "src",
+    "wasm",
+    "native",
+    "apple",
+    "WorkspaceEdn.podspec"
+  ],
+  "scripts": {
+    "build:wasm": "sh ./build-wasm.sh",
+    "build:native": "sh ./build-native.sh",
+    "test": "node --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build:apple": "sh ./build-apple.sh"
+  }
+}

@@ -21,6 +21,7 @@
       "@workspace.sh/table-app": ["../../packages/app/src/index.ts"],
       "@workspace.sh/table-app/node": ["../../packages/app/src/node.ts"],
       "@workspace.sh/table-app/react": ["../../packages/app/src/react.ts"],
+      "@workspace.sh/edn": ["../../edn/js/src/index.ts"],
       "@workspace.sh/table-gtk": ["../../packages/gtk/src/index.ts"],
       "@workspace.sh/table-gtk/embed": ["../../packages/gtk/src/embed.ts"],
       "react": ["./node_modules/@types/react"],

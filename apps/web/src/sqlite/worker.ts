@@ -12,6 +12,7 @@
 // page gets the first rows to show meanwhile, and how far the reading is.
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
+import { loadEdn } from "@workspace.sh/edn";
 import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
 import {
   FIRST_ROWS_FILE,
@@ -22,6 +23,7 @@ import {
   oo1Driver,
   queryIndex,
   rowsBeingBuilt,
+  setFormulaEngine,
   setIndexKey,
   storedRows,
   type CellFormula,
@@ -527,10 +529,17 @@ function take(req: Request): void {
   });
 }
 
-self.onmessage = (e: MessageEvent<Request>) => {
+// Nothing is taken before the EDN core is in, so every formula this worker works out is the core's, as
+// the page's are. Requests still go in the order they came.
+const formulas = loadEdn().then(
+  (edn) => setFormulaEngine(edn),
+  (e: unknown) => console.warn(`index worker formulas: the workbook's own, not the EDN core: ${String(e)}`),
+);
+
+self.onmessage = (e: MessageEvent<Request>) => void formulas.then(() => {
   const req = e.data;
   // A write to a bundle that is being built waits for the build.
   const busy = "bundle" in req && writes(req) ? building.get(req.bundle) : undefined;
   if (busy) void busy.then(() => take(req));
   else take(req);
-};
+});
