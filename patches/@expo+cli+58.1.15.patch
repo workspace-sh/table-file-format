@@ -1,0 +1,15 @@
+diff --git a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+--- a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
++++ b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+@@ -301,7 +301,10 @@
+     if (props.device && (!props.isSimulator || (0, _simulatorCodeSigning.simulatorBuildRequiresCodeSigning)(props.projectRoot))) {
+         const developmentTeamId = await (0, _configureCodeSigning.ensureDeviceIsCodeSignedForDeploymentAsync)(props.projectRoot);
+         if (developmentTeamId) {
+-            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`, '-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration');
++            // Never let xcodebuild create or revoke certificates or profiles on
++            // the shared Apple account: each machine that mints one revokes
++            // the others'. Sign with what's already installed, or fail.
++            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`);
+         }
+     }
+     // Add last
