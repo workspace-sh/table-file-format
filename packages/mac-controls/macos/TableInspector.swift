@@ -22,6 +22,8 @@ public final class TableInspector: NSObject {
   static var send: ([String: Any]) -> Void = { _ in }
 
   private static weak var item: NSSplitViewItem?
+  /// The pane was opened for the formula being written, so closes when it ends.
+  private static var openedForFormula = false
   private static var watch: NSKeyValueObservation?
 
   /// The pane, closed, for the host's split view.
@@ -86,6 +88,12 @@ public final class TableInspector: NSObject {
     formula.data = data
     if data != nil, let item, item.isCollapsed {
       item.animator().isCollapsed = false
+      openedForFormula = true
+    }
+    // Opened for it, the pane goes with the formula, unless a form has come in since.
+    if data == nil, openedForFormula {
+      openedForFormula = false
+      if form.data == nil, let item, !item.isCollapsed { item.animator().isCollapsed = true }
     }
     // The edit is over: the keyboard back to the window's content, not the
     // next field that takes it (the toolbar's search).
