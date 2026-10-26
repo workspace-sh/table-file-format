@@ -12,12 +12,15 @@
   "files": [
     "src",
     "wasm",
-    "native"
+    "native",
+    "apple",
+    "WorkspaceEdn.podspec"
   ],
   "scripts": {
     "build:wasm": "sh ./build-wasm.sh",
     "build:native": "sh ./build-native.sh",
     "test": "node --import tsx --test src/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:apple": "sh ./build-apple.sh"
   }
 }

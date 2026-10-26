@@ -3,5 +3,7 @@
 import "react-native-get-random-values";
 // Before anything formats a date: see intl.ts.
 import "./intl";
+// Before any table is read: formulas by the EDN core, where this build has it.
+import "./formulaEngine";
 // Then the app: expo-router's entry, which loads app/.
 import "expo-router/entry";

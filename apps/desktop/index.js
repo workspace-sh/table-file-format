@@ -7,6 +7,8 @@ import "react-native-get-random-values";
 import "fast-text-encoding";
 // Before anything formats a date or a currency name: see intl.ts.
 import "./intl";
+// Before any table is read: formulas by the EDN core, where this build has it.
+import "./formulaEngine";
 // Before App, whose styles are made as it's imported: see quietWarnings.js.
 import "./quietWarnings";
 import { AppRegistry } from "react-native";

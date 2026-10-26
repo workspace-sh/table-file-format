@@ -22,7 +22,7 @@ edn/
 | --- | --- | --- |
 | Web | WebAssembly (`js/`) | Works out the web app's formulas once loaded (Firefox checked) |
 | Linux (Node, GTKX) | Native (N-API, `js/native/`) | Works out the Linux app's formulas |
-| macOS, iOS (Hermes) | C interface → JSI | To do: Hermes has no WebAssembly |
+| macOS, iOS (Hermes) | C interface (`crates/ffi`) → JSI (`js/apple`, `@workspace.sh/edn/jsi`) | Built and tested on Linux through C and Node; the apps load it, but no Mac build has run yet |
 | Android | C interface → JSI | To do |
 | Bare | native addon over the C interface | To do |
 
@@ -51,6 +51,8 @@ cargo test -p workspace-edn                 # the core and the corpus
 (cd js && sh build-wasm.sh)                 # needs the wasm32 target,
                                             # wasm-bindgen 0.2.121, wasm-opt
 node --import tsx --test js/src/*.test.ts   # the corpus through WebAssembly
+(cd js && sh build-apple.sh)                # on a Mac: the C binding for iOS and the Mac,
+                                            # into js/apple/WorkspaceEdn.xcframework
 cargo run --release -p workspace-edn --example big   # timing, 100,000 maps
 python3 bench/formulas.py /tmp && cargo run --release -p workspace-edn --example many -- /tmp/formulas-250k.json
 ```
