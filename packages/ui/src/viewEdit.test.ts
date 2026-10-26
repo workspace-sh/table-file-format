@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { Field, TableSchema } from "@workspace.sh/table-core";
+import type { Field, TableSchema, View } from "@workspace.sh/table-core";
 import {
+  sheetNote,
   canUseLayout,
   filterOnField,
   filtersPatch,
@@ -187,4 +188,13 @@ test("a view's frozen rows (D58): the header alone by default, up to five, none 
   assert.deepEqual(frozenRowsPatch({}, 2), { frozen: { rows: 2 } });
   assert.deepEqual(frozenRowsPatch({ frozen: { rows: 2 } }, 0), { frozen: undefined });
   assert.deepEqual(frozenRowsPatch({ frozen: { columns: 2, rows: 1 } }, 0), { frozen: { columns: 2 } });
+});
+
+test("the Sheet switch says what it means, and, while formulas read the sheet by place, that they depend on it (D41)", () => {
+  const sheet = { id: "v", name: "v", layout: "table", coordinates: true } as View;
+  assert.equal(sheetNote(sheet), "Letter the columns and number the rows, so formulas can use =B7.");
+  assert.match(sheetNote(sheet, 1), /A formula reads this sheet by place: it shows #REF! if this stops being a sheet\.$/);
+  assert.match(sheetNote(sheet, 3), /3 formulas read this sheet by place/);
+  // Not a sheet: nothing reads it by place, whatever the count says.
+  assert.equal(sheetNote({ ...sheet, coordinates: undefined }, 3), "Letter the columns and number the rows, so formulas can use =B7.");
 });
