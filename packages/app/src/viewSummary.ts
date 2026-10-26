@@ -23,6 +23,12 @@ export interface ViewSummary {
   schemaChangedHint: string;
   /** The validation errors themselves, for an app that lists them its own way. */
   errors: ValidationError[];
+  /**
+   * A large table held in memory because its index couldn't be made: said
+   * beside the count (`held in memory`, with why as its hint), on the table
+   * itself, never as an alert to answer (workspace#711).
+   */
+  held?: { label: string; hint: string };
 }
 
 export interface ViewSummaryInput {
@@ -34,6 +40,8 @@ export interface ViewSummaryInput {
   searching: boolean;
   /** The table's schema-version when it was opened, from `schemaVersionOf`. */
   openedAt?: number;
+  /** Why the table is held in memory, when its index couldn't be made (heldText). */
+  held?: string;
 }
 
 /** A count as the reader writes numbers: `1,000,000` in English, as the reading line says them. */
@@ -53,6 +61,7 @@ const foundText = (input: ViewSummaryInput) =>
 const HINT_ERRORS = 5;
 
 export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSummary {
+  const held = input.held ? { held: { label: "held in memory", hint: input.held } } : {};
   const errors = validate(table.schema, table.rows);
   // Rows held in the index aren't here to count, or to check.
   const total = table.indexed ? table.indexed.count : table.rows.length;
@@ -69,6 +78,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
       schemaChangedHint:
         "A column was added, moved, retyped or given new rules since this table was opened. The table's schema-version goes up by one for each such change (D22).",
       errors,
+      ...held,
     };
   }
   return {
@@ -87,6 +97,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
     schemaChangedHint:
       "A column was added, moved, retyped or given new rules since this table was opened. The table's schema-version goes up by one for each such change (D22).",
     errors,
+    ...held,
   };
 }
 

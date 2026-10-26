@@ -146,8 +146,8 @@ export function useIndexedTables(input: {
           asked.current.delete(key);
           setMade(({ [key]: _was, ...others }) => others);
           // Lines it couldn't read are kept, to be written back where they were, and said (#567).
-          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) } });
-          latest.current.tell("Opened without its index", heldText(tableNameOf(key), error, held));
+          // Said on the table, as its summary's "held in memory", not as an alert (workspace#711).
+          latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) }, held: heldText(tableNameOf(key), error, held) });
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

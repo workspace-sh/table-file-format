@@ -140,8 +140,8 @@ export function useIndexedTables(input: {
             const { indexed: _indexed, ...rest } = table;
             asked.current.delete(key);
             setMade(({ [key]: _was, ...others }) => others);
-            latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) } });
-            latest.current.tell("Opened without its index", heldText(tableNameOf(key), error, held));
+            // Said on the table, as its summary's "held in memory", not as an alert (workspace#711).
+            latest.current.dispatch({ type: "reloaded", key, table: { ...rest, ...withHeld(held) }, held: heldText(tableNameOf(key), error, held) });
             return;
           }
           setMade((was) => ({ ...was, [key]: "lost" }));

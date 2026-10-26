@@ -113,8 +113,8 @@ export function useIndexedTables(input: {
             try {
               const table = await readTable(nodeFs, dirOf(key));
               if (gone.current) return;
-              latest.current.dispatch({ type: "reloaded", key, table });
-              latest.current.tell("Opened without its index", `${tableNameOf(key)} is large, and its index couldn't be made (${why}). It's held in memory instead, and may be slow.`);
+              // Said on the table, as its summary's "held in memory", not as an alert (workspace#711).
+              latest.current.dispatch({ type: "reloaded", key, table, held: `${tableNameOf(key)} is large, and its index couldn't be made (${why}). It's held in memory instead, and may be slow.` });
             } catch (unread) {
               // Nor can the file be read: it has gone from where it was, or can't be read.
               if (gone.current) return;
