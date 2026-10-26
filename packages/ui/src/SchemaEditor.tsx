@@ -10,6 +10,7 @@ import {
   defaultAlignFor,
   enumOptions,
   printFormula,
+  renameProblem,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
 import { PLATFORM_OS } from "./internal/platformOS";
@@ -152,7 +153,15 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
   },
+  // The name being edited takes the row's room; the type badge keeps its own.
+  nameInRow: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    marginInlineEnd: 8,
+  },
   typeBadge: {
+    flexShrink: 0,
     display: "flex",
     flexDirection: "row",
     alignItems: "baseline",
@@ -670,6 +679,11 @@ interface SchemaFieldEditorProps {
   onCancel?: () => void;
   /** The table's fields, so a formula can warn about a name that doesn't exist. */
   fields?: Field[];
+  /**
+   * Rename the field: its name (the key formulas read it by) becomes `to`
+   * everywhere it's used. Absent: the name is shown, not edited.
+   */
+  onRename?: (to: string) => void;
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
   grid?: Grid;
 }
@@ -712,6 +726,7 @@ export function SchemaFieldEditor({
   onClose,
   onCancel,
   fields,
+  onRename,
   grid,
 }: SchemaFieldEditorProps) {
   const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
@@ -723,7 +738,8 @@ export function SchemaFieldEditor({
   const [beforeIndex] = useState(fieldIndex);
   const cancel = () => {
     if (onCancel) return onCancel();
-    const patch = revertPatch(before, field);
+    // A rename isn't put back here: it changed more than this field (Undo takes it back whole).
+    const { name: _renamed, ...patch } = revertPatch(before, field);
     if (Object.keys(patch).length > 0) onUpdate(patch);
     for (const delta of movesBack(beforeIndex, fieldIndex)) onMove(delta);
     onClose();
@@ -742,6 +758,13 @@ export function SchemaFieldEditor({
   const formulaChanged = formulaEdit?.save !== undefined;
   const saveFormula = () => {
     if (formulaEdit?.save) onUpdate(formulaEdit.save);
+  };
+  // The name, as it's being typed; renamed on Enter or on leaving the box, when it can be.
+  const [nameDraft, setNameDraft] = useState(field.name);
+  useEffect(() => setNameDraft(field.name), [field.name]);
+  const nameProblem = nameDraft === field.name ? null : renameProblem({ schema: { fields: fields ?? [field] } }, field.name, nameDraft);
+  const rename = () => {
+    if (onRename && nameDraft !== field.name && nameProblem === null) onRename(nameDraft);
   };
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -781,12 +804,31 @@ export function SchemaFieldEditor({
   const body = (
     <>
         <html.div style={styles.identity}>
-          <html.span>{field.name}</html.span>
+          {onRename ? (
+            <html.input
+              dir="auto"
+              type="text"
+              aria-label="Name in formulas"
+              value={nameDraft}
+              onChange={(e: { target: { value: string } }) => setNameDraft(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") rename();
+                if (e.key === "Escape") setNameDraft(field.name);
+              }}
+              onBlur={rename}
+              style={[styles.input, styles.fieldNameInput, styles.nameInRow]}
+            />
+          ) : (
+            <html.span>{field.name}</html.span>
+          )}
           <html.span style={styles.typeBadge}>
             <html.span>{typeShown(field)}</html.span>
             <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
           </html.span>
         </html.div>
+        {onRename ? (
+          <html.span style={nameProblem ? styles.errorText : styles.noteText}>{nameProblem ?? "Formulas read the field by this name. Renaming it renames it in every formula."}</html.span>
+        ) : null}
 
         {field.computed && (
           <>
@@ -961,8 +1003,11 @@ export function SchemaFieldEditor({
     const sections: SettingsSection[] = [
       {
         id: "identity",
+        ...(onRename ? { footer: nameProblem ?? "Formulas read the field by this name. Renaming it renames it in every formula." } : {}),
         rows: [
-          { kind: "info", id: "name", label: "Stored as", value: field.name },
+          onRename
+            ? { kind: "text", id: "name", label: "Name", value: nameDraft, onChange: setNameDraft, onSubmit: () => rename() }
+            : { kind: "info", id: "name", label: "Stored as", value: field.name },
           { kind: "info", id: "type", label: "Type", value: typeShown(field) },
         ],
       },

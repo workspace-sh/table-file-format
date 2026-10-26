@@ -295,10 +295,9 @@ labels apply to each item.
 ### Field annotations
 
 - `title: "<text>"` — the column's display name. Defaults to `name`.
-  Unlike `name`, it MAY change freely: `name` is the stored key that
-  rows, views, relations and computed-field expressions refer to, and
-  schema evolution never renames it (below). Renaming a column in a UI
-  means changing its `title`.
+  It MAY change freely, and changing it changes nothing else. `name` is
+  the stored key that rows, views, relations and computed-field
+  expressions refer to: changing it is renaming the field (below).
 - `align: "start" | "center" | "end"` — column alignment in grid
   layouts, relative to the reading direction: `start` is the left in a
   left-to-right layout and the right in a right-to-left one (D40).
@@ -627,10 +626,22 @@ computed fields. The Excel-style authoring surface D29 describes is
 
 ### Schema evolution
 
-Schema evolution is **append-only**. Never remove or rename a field.
-Add new fields; mark old ones `deprecated: true` to retire them. To
-show a field under a new name, change its `title` (above); its `name`
-stays.
+A field MAY be added, removed or renamed.
+
+- **Removed:** its values go from every row, and its uses from every
+  view. A formula that read it shows its error until it's changed. To
+  retire a field and keep its values, mark it `deprecated: true`.
+- **Renamed** (DECISIONS D63): its `name` is rewritten everywhere the
+  `.table` uses it, in one save. That is the rows' keys, `primaryKey`,
+  every view key that names a field, `cells/` lines, every formula that
+  reads it (in its table or another), and every relation whose `field`
+  is it. Its `id` stays, so a link that names it by `id` still finds
+  it. A writer MUST NOT save a rename with some uses rewritten and
+  others not. `history.ndjson` isn't rewritten: what it recorded
+  before the rename names the field as it was then.
+- To show a field under another name and change nothing else, change
+  its `title` (above).
+
 Reordering enum values changes sort/group semantics and SHOULD bump
 `schema-version`.
 
