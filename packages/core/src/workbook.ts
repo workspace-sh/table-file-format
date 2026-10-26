@@ -54,6 +54,40 @@ export interface ComputeOptions {
   iteration?: { max: number; change: number };
 }
 
+/**
+ * Another evaluator a host can plug in (#638: the EDN core, in Rust),
+ * shaped as `@workspace.sh/edn`'s `computeTables`: the same results, for
+ * the tables it gives back; one it gives back as "host" is this workbook's.
+ */
+export interface FormulaEngine {
+  computeTables(
+    tables: Record<string, { schema: TableSchema; rows: readonly Row[]; views?: readonly View[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } }>,
+    clock?: { now?: Date },
+    only?: readonly string[],
+  ): Record<string, Record<string, unknown[]> | "host">;
+  /** A Sheet view's grid, and with `columns` the table's formula columns in the same pass (as sheetGrid). */
+  computeGrids?(
+    tables: Record<string, { schema: TableSchema; rows: readonly Row[]; views?: readonly View[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } }>,
+    table: string,
+    views: readonly string[],
+    options?: { now?: Date; columns?: boolean },
+  ): { fields: Record<string, unknown[]>; grids: Record<string, { order: number[]; groups: GridGroup[]; loop: boolean } | null> } | "host";
+}
+
+let engine: FormulaEngine | null = null;
+/** Whether every result the engine gives is checked against this workbook's, and a difference thrown. */
+let checking = false;
+
+/**
+ * Formulas computed by `next` from now on, wherever it can (null: by this
+ * workbook). With `check`, this workbook works each one out as well, and a
+ * difference is thrown: for tests.
+ */
+export function setFormulaEngine(next: FormulaEngine | null, options: { check?: boolean } = {}): void {
+  engine = next;
+  checking = options.check ?? false;
+}
+
 /** Something being worked out, and how deep in the stack it began. */
 class Pending {
   constructor(readonly depth: number) {}
@@ -597,11 +631,39 @@ export function computeRows(
   const ownFields = withCells ? new Set(cells.map((c) => c.field)) : undefined;
   const computed = schema.fields.filter((f) => f.computed || ownFields?.has(f.name));
   if (computed.length === 0) return { rows, diagnostics: [] };
+  const iterating = (iterationOf(options)?.max ?? 0) > 0;
+  const memo = !withCells && !iterating && rowLocal(schema, computed) ? memoFor(schema) : undefined;
+  // Every formula goes to the engine when there is one. Those that read only their own row keep the memo
+  // there too, so an edit computes one row. A given source of chance is this workbook's to draw from.
+  if (engine && !options.random) {
+    if (!memo) {
+      const done = byEngine(engine, schema, rows, options, computed, cells);
+      if (done) {
+        if (checking) checkEngine(done.rows, () => byWorkbook(schema, rows, options, computed), chancy(schema, cells));
+        return done;
+      }
+    } else {
+      const done = byEngineMemo(engine, schema, rows, options, computed, memo);
+      if (done) {
+        if (checking) checkEngine(done.rows, () => byWorkbook(schema, rows, options, computed), chancy(schema, cells));
+        return done;
+      }
+    }
+  }
+  return byWorkbook(schema, rows, options, computed, memo);
+}
+
+function byWorkbook(
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  memo?: { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] },
+): { rows: Row[]; diagnostics: ValidationError[] } {
   // Loops worked out by iteration (D60): whole passes, each reading the last, until they settle.
-  const iteration = options.iteration ?? (options.self !== undefined ? (options.tables?.[options.self]?.meta?.iteration as ComputeOptions["iteration"]) : undefined);
+  const iteration = iterationOf(options);
   if (iteration && iteration.max > 0) return iterated(schema, rows, options, computed, iteration);
   const out: Row[] = new Array(rows.length);
-  const memo = !withCells && rowLocal(schema, computed) ? memoFor(schema) : undefined;
   let made: { workbook: Workbook; sheet: Sheet } | undefined;
   const book = () => (made ??= workbookFor(schema, rows, options));
   for (let i = 0; i < rows.length; i++) {
@@ -617,6 +679,114 @@ export function computeRows(
   // The diagnostics are the formulas' own (one doesn't parse): the same for every row of this schema.
   if (memo) memo.diagnostics ??= book().sheet.diagnostics;
   return { rows: out, diagnostics: memo ? memo.diagnostics! : book().sheet.diagnostics };
+}
+
+/** How the table being computed works its loops out by iteration (D60), if it does. */
+const iterationOf = (options: ComputeOptions): ComputeOptions["iteration"] =>
+  options.iteration ?? (options.self !== undefined ? (options.tables?.[options.self]?.meta?.iteration as ComputeOptions["iteration"]) : undefined);
+
+/** The engine's results as rows, or null when the table is this workbook's ("host"). */
+function byEngine(
+  e: FormulaEngine,
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  cells: CellFormula[] | undefined,
+): { rows: Row[]; diagnostics: ValidationError[] } | null {
+  // A table name is never empty (D37), so "" stands for a table not in `tables`.
+  const self = options.self ?? "";
+  const iteration = iterationOf(options);
+  const tables = {
+    ...options.tables,
+    [self]: { schema, rows, views: options.views ?? options.tables?.[self]?.views ?? [], ...(cells ? { cells } : {}), meta: iteration ? { iteration } : {} },
+  };
+  const got = e.computeTables(tables, options.now ? { now: options.now } : {}, [self])[self];
+  if (!got || got === "host") return null;
+  // A stored field takes a result only in the cells with a formula of their own (D52).
+  const own = cells && cells.length > 0 ? cellFormulas(schema, rows, cells) : undefined;
+  const out: Row[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const next: Row = { ...row };
+    for (const f of computed) {
+      if (!f.computed && !own?.get(row.id)?.has(f.name)) continue;
+      const v = fromEngine(got[f.name]?.[i]);
+      if (v === undefined) delete next[f.name];
+      else next[f.name] = v;
+    }
+    out[i] = next;
+  }
+  return { rows: out, diagnostics: build(self, schema, rows, options.views ?? options.tables?.[self]?.views ?? [], cells).diagnostics };
+}
+
+/**
+ * Formulas that read only their own row, by the engine: only the rows the memo doesn't have are sent,
+ * which can't change what any of them gives. Null when the engine leaves them to this workbook.
+ */
+function byEngineMemo(
+  e: FormulaEngine,
+  schema: TableSchema,
+  rows: Row[],
+  options: ComputeOptions,
+  computed: Field[],
+  memo: { rows: WeakMap<Row, Row>; diagnostics?: ValidationError[] },
+): { rows: Row[]; diagnostics: ValidationError[] } | null {
+  const out: Row[] = new Array(rows.length);
+  const fresh: Row[] = [];
+  const at: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const cached = memo.rows.get(rows[i]!);
+    if (cached) out[i] = cached;
+    else {
+      fresh.push(rows[i]!);
+      at.push(i);
+    }
+  }
+  if (fresh.length > 0 || !memo.diagnostics) {
+    const done = byEngine(e, schema, fresh, { ...(options.now ? { now: options.now } : {}), views: [] }, computed, undefined);
+    if (!done) return null;
+    for (let k = 0; k < fresh.length; k++) {
+      memo.rows.set(fresh[k]!, done.rows[k]!);
+      out[at[k]!] = done.rows[k]!;
+    }
+    memo.diagnostics ??= done.diagnostics;
+  }
+  return { rows: out, diagnostics: memo.diagnostics! };
+}
+
+/** An engine's result as this workbook's value: an error as a FormulaError, in lists too. */
+function fromEngine(v: unknown): Value {
+  if (Array.isArray(v)) return v.map(fromEngine) as Value;
+  if (typeof v === "object" && v !== null && "code" in v) return new FormulaError((v as FormulaError).code, (v as FormulaError).message);
+  return v as Value;
+}
+
+/** How many tables the engine has answered while checking. */
+export let engineAnswered = 0;
+
+/** The fields whose formulas draw on chance, which two evaluators draw differently (a field's own, or a cell's). */
+function chancy(schema: TableSchema, cells: CellFormula[] | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const f of schema.fields) if (f.computed?.expr.includes("rand")) out.add(f.name);
+  for (const c of cells ?? []) if (c.expr?.includes("rand")) out.add(c.field);
+  return out;
+}
+
+/** Checking (tests): the engine's rows against this workbook's, value for value; a difference is thrown. */
+function checkEngine(mine: Row[], theirs: () => { rows: Row[] }, skip: Set<string>): void {
+  engineAnswered++;
+  const want = theirs().rows;
+  const plain = (v: unknown): unknown => (v instanceof FormulaError ? `${v.code} ${v.message}` : Array.isArray(v) ? v.map(plain) : v === "" || v === null ? undefined : v);
+  for (let i = 0; i < want.length; i++) {
+    const keys = new Set([...Object.keys(want[i]!), ...Object.keys(mine[i]!)]);
+    for (const k of keys) {
+      if (skip.has(k)) continue;
+      const a = JSON.stringify(plain(mine[i]![k]));
+      const b = JSON.stringify(plain(want[i]![k]));
+      if (a !== b) throw new Error(`the formula engine gives ${a} for ${k} in row ${want[i]!.id}, the workbook ${b}`);
+    }
+  }
 }
 
 /**
@@ -704,22 +874,83 @@ export interface SheetGrid {
  * isn't a Sheet view.
  */
 export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOptions = {}): SheetGrid | null {
+  const viaEngine = gridByEngine(table, viewId, options, true);
+  if (viaEngine !== undefined) {
+    if (checking) checkGrid(viaEngine, byWorkbookGrid(table, viewId, options));
+    return viaEngine;
+  }
+  return byWorkbookGrid(table, viewId, options);
+}
+
+function byWorkbookGrid(table: ParsedTable, viewId: string, options: ComputeOptions): SheetGrid | null {
   const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...(table.cells ? { cells: table.cells } : {}), ...options });
   const grid = workbook.top(() => workbook.grid(sheet, viewId));
   if (grid instanceof FormulaError) return null;
   const computed = table.schema.fields.filter((f) => f.computed);
   const rows = grid.order.map((i) => (computed.length === 0 ? sheet.rows[i]! : workbook.fill(sheet, i, computed)));
+  return withHidden(table, grid.view, { view: viewId, columns: grid.columns, rows, groups: grid.groups, loop: grid.looped });
+}
+
+/** A grid's numbers by row id, and the rows its saved filters, or a hand, hide: they keep their numbers (D58). */
+function withHidden(table: ParsedTable, view: View, grid: Omit<SheetGrid, "position" | "hidden">): SheetGrid {
+  const { rows } = grid;
   const position = new Map<string, number>();
   for (let p = 0; p < rows.length; p++) position.set(rows[p]!.id, p + 1);
   const hidden = new Set<string>();
-  const filters = grid.view.filter ?? [];
-  // Rows hidden by hand keep their numbers, as filtered ones do (D58).
-  for (const id of grid.view.hidden ?? []) if (position.has(id)) hidden.add(id);
+  const filters = view.filter ?? [];
+  for (const id of view.hidden ?? []) if (position.has(id)) hidden.add(id);
   if (filters.length > 0) {
     const shown = new Set(applyFilters(rows, filters, table.schema));
     for (const r of rows) if (!shown.has(r)) hidden.add(r.id);
   }
-  return { view: viewId, columns: grid.columns, rows, position, hidden, groups: grid.groups, loop: grid.looped };
+  return { ...grid, position, hidden };
+}
+
+/** The tables the engine is given for one of them: the rest of the bundle, and this one as `table` has it. */
+function engineTables(table: ParsedTable, options: ComputeOptions, self: string) {
+  const cells = options.cells ?? table.cells;
+  return { ...options.tables, [self]: { schema: table.schema, rows: table.rows, views: options.views ?? table.views, ...(cells ? { cells } : {}), meta: {} } };
+}
+
+/**
+ * A Sheet view's grid from the engine; with `fill`, its rows' computed fields too. Undefined when there's
+ * no engine for it (none, chance given, or the table is the host's).
+ */
+function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: true): SheetGrid | null | undefined;
+function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: false): { ids: string[]; loop: boolean } | null | undefined;
+function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: boolean): SheetGrid | { ids: string[]; loop: boolean } | null | undefined {
+  if (!engine?.computeGrids || options.random) return undefined;
+  const self = options.self ?? "";
+  const got = engine.computeGrids(engineTables(table, options, self), self, [viewId], { ...(options.now ? { now: options.now } : {}), columns: fill });
+  if (got === "host") return undefined;
+  const grid = got.grids[viewId];
+  if (!grid) return null;
+  if (!fill) return { ids: grid.order.map((i) => table.rows[i]!.id), loop: grid.loop };
+  // Its computed fields, as sheetGrid fills them: the fields' formulas (not the cells' own).
+  const computed = table.schema.fields.filter((f) => f.computed);
+  const rows = grid.order.map((i) => {
+    const row = table.rows[i]!;
+    if (computed.length === 0) return row;
+    const next: Row = { ...row };
+    for (const f of computed) {
+      const v = fromEngine(got.fields[f.name]?.[i]);
+      if (v === undefined) delete next[f.name];
+      else next[f.name] = v;
+    }
+    return next;
+  });
+  const view = (options.views ?? table.views).find((v) => v.id === viewId)!;
+  return withHidden(table, view, { view: viewId, columns: view.fields ?? table.schema.fields.map((f) => f.name), rows, groups: grid.groups, loop: grid.loop });
+}
+
+/** Checking (tests): the engine's grid against this workbook's; a difference is thrown. */
+function checkGrid(mine: { ids?: string[]; rows?: Row[]; groups?: GridGroup[]; loop: boolean } | null, want: typeof mine): void {
+  engineAnswered++;
+  const plain = (g: typeof mine) =>
+    g && JSON.stringify({ ids: g.ids ?? g.rows!.map((r) => r.id), groups: g.groups ?? [], loop: g.loop, rows: g.rows?.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v instanceof FormulaError ? `${v.code} ${v.message}` : v]))) });
+  const a = plain(mine);
+  const b = plain(want);
+  if (a !== b) throw new Error(`the formula engine's grid differs from the workbook's:\n${a}\n${b}`);
 }
 
 /**
@@ -728,6 +959,15 @@ export function sheetGrid(table: ParsedTable, viewId: string, options: ComputeOp
  * in it count in (D41). Null when the view isn't a Sheet view.
  */
 export function sheetOrder(table: ParsedTable, viewId: string, options: ComputeOptions = {}): { ids: string[]; loop: boolean } | null {
+  const viaEngine = gridByEngine(table, viewId, options, false);
+  if (viaEngine !== undefined) {
+    if (checking) checkGrid(viaEngine, byWorkbookOrder(table, viewId, options));
+    return viaEngine;
+  }
+  return byWorkbookOrder(table, viewId, options);
+}
+
+function byWorkbookOrder(table: ParsedTable, viewId: string, options: ComputeOptions): { ids: string[]; loop: boolean } | null {
   const { workbook, sheet } = workbookFor(table.schema, table.rows, { views: table.views, ...(table.cells ? { cells: table.cells } : {}), ...options });
   const grid = workbook.top(() => workbook.grid(sheet, viewId));
   if (grid instanceof FormulaError) return null;

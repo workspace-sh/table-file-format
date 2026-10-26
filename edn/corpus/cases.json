@@ -1,0 +1,240 @@
+{
+ "about": "EDN conformance cases for table-file-format#626: each input reads to its canonical form, or fails with a message containing `error`. Every binding runs these.",
+ "cases": [
+  {
+   "name": "nil",
+   "input": "nil",
+   "canonical": "nil"
+  },
+  {
+   "name": "true",
+   "input": "true",
+   "canonical": "true"
+  },
+  {
+   "name": "false",
+   "input": "false",
+   "canonical": "false"
+  },
+  {
+   "name": "integer",
+   "input": "42",
+   "canonical": "42"
+  },
+  {
+   "name": "negative integer",
+   "input": "-7",
+   "canonical": "-7"
+  },
+  {
+   "name": "integer with a plus",
+   "input": "+5",
+   "canonical": "5"
+  },
+  {
+   "name": "big integer",
+   "input": "12345678901234567890N",
+   "canonical": "12345678901234567890N"
+  },
+  {
+   "name": "float",
+   "input": "1.0",
+   "canonical": "1.0"
+  },
+  {
+   "name": "float stays a float",
+   "input": "1.",
+   "canonical": "1.0"
+  },
+  {
+   "name": "float with an exponent",
+   "input": "1.5e3",
+   "canonical": "1500.0"
+  },
+  {
+   "name": "float, shortest form",
+   "input": "0.1",
+   "canonical": "0.1"
+  },
+  {
+   "name": "decimal",
+   "input": "1.5M",
+   "canonical": "1.5M"
+  },
+  {
+   "name": "string",
+   "input": "\"hello\"",
+   "canonical": "\"hello\""
+  },
+  {
+   "name": "string escapes",
+   "input": "\"a\\\"b\\\\c\\nd\\te\"",
+   "canonical": "\"a\\\"b\\\\c\\nd\\te\""
+  },
+  {
+   "name": "string, unicode",
+   "input": "\"café ☕\"",
+   "canonical": "\"café ☕\""
+  },
+  {
+   "name": "character",
+   "input": "\\a",
+   "canonical": "\\a"
+  },
+  {
+   "name": "character, newline",
+   "input": "\\newline",
+   "canonical": "\\newline"
+  },
+  {
+   "name": "character, space",
+   "input": "\\space",
+   "canonical": "\\space"
+  },
+  {
+   "name": "keyword",
+   "input": ":status",
+   "canonical": ":status"
+  },
+  {
+   "name": "keyword with a namespace",
+   "input": ":geo/place",
+   "canonical": ":geo/place"
+  },
+  {
+   "name": "symbol",
+   "input": "budget",
+   "canonical": "budget"
+  },
+  {
+   "name": "symbol with a namespace",
+   "input": "env/fetch",
+   "canonical": "env/fetch"
+  },
+  {
+   "name": "symbol, operator",
+   "input": "+",
+   "canonical": "+"
+  },
+  {
+   "name": "symbol, predicate",
+   "input": "empty?",
+   "canonical": "empty?"
+  },
+  {
+   "name": "list",
+   "input": "(a b c)",
+   "canonical": "(a b c)"
+  },
+  {
+   "name": "vector",
+   "input": "[1 2 3]",
+   "canonical": "[1 2 3]"
+  },
+  {
+   "name": "commas are whitespace",
+   "input": "[1, 2,3]",
+   "canonical": "[1 2 3]"
+  },
+  {
+   "name": "extra spacing",
+   "input": "(  a\n   b )",
+   "canonical": "(a b)"
+  },
+  {
+   "name": "comment",
+   "input": "[1 ; one\n 2]",
+   "canonical": "[1 2]"
+  },
+  {
+   "name": "discard",
+   "input": "[1 #_ 2 3]",
+   "canonical": "[1 3]"
+  },
+  {
+   "name": "map, keys sorted",
+   "input": "{:b 2 :a 1}",
+   "canonical": "{:a 1 :b 2}"
+  },
+  {
+   "name": "map, keys sorted by printed form",
+   "input": "{:a 1 \"b\" 2}",
+   "canonical": "{\"b\" 2 :a 1}"
+  },
+  {
+   "name": "set, members sorted",
+   "input": "#{3 1 2}",
+   "canonical": "#{1 2 3}"
+  },
+  {
+   "name": "empty collections",
+   "input": "[() [] {} #{}]",
+   "canonical": "[() [] {} #{}]"
+  },
+  {
+   "name": "tag, inst",
+   "input": "#inst \"2026-10-21T00:00:00Z\"",
+   "canonical": "#inst \"2026-10-21T00:00:00Z\""
+  },
+  {
+   "name": "tag, uuid",
+   "input": "#uuid \"f81d4fae-7dec-11d0-a765-00a0c91e6bf6\"",
+   "canonical": "#uuid \"f81d4fae-7dec-11d0-a765-00a0c91e6bf6\""
+  },
+  {
+   "name": "tag, unknown, kept",
+   "input": "#my/tag [1 2]",
+   "canonical": "#my/tag [1 2]"
+  },
+  {
+   "name": "a .table formula",
+   "input": "(round (/ budget 12) 0)",
+   "canonical": "(round (/ budget 12) 0)"
+  },
+  {
+   "name": "an action",
+   "input": "{:id :geo/place :on :open :fresh \"P1D\" :needs {:fetch [\"nominatim.openstreetmap.org\"]}}",
+   "canonical": "{:fresh \"P1D\" :id :geo/place :needs {:fetch [\"nominatim.openstreetmap.org\"]} :on :open}"
+  },
+  {
+   "name": "unclosed list",
+   "input": "(1 2",
+   "error": "ends before"
+  },
+  {
+   "name": "bracket that closes nothing",
+   "input": ")",
+   "error": "doesn't close"
+  },
+  {
+   "name": "map with a key twice",
+   "input": "{:a 1 :a 2}",
+   "error": "same key twice"
+  },
+  {
+   "name": "set with a member twice",
+   "input": "#{1 1}",
+   "error": "same member twice"
+  },
+  {
+   "name": "ratio",
+   "input": "1/2",
+   "error": "ratios"
+  },
+  {
+   "name": "more than one value",
+   "input": "1 2",
+   "error": "more than one value"
+  },
+  {
+   "name": "nested too deep",
+   "input": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+   "error": "nested more than"
+  },
+  {
+   "name": "empty",
+   "input": "",
+   "error": "ends before"
+  }
+ ]
+}
