@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build the core's C binding (edn/crates/ffi) for the iOS and Mac apps into
-# apple/WorkspaceEdn.xcframework: the iPhone, the simulator, and the Mac
-# (Apple silicon and Intel). Runs on a Mac with Xcode and rustup.
+# apple/WorkspaceEdnCore.xcframework: the iPhone, the simulator, and the Mac,
+# Apple silicon only: no Intel slice. Runs on a Mac with Xcode and rustup.
 set -eu
 cd "$(dirname "$0")/.."
-targets="aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin x86_64-apple-darwin"
+targets="aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin"
 rustup target add $targets
 for t in $targets; do
   cargo build --release -p workspace-edn-ffi --lib --target "$t"
@@ -58,9 +58,7 @@ versioned() { # <dir> <binary>: a Mac framework
 }
 flat "$out/ios" "target/aarch64-apple-ios/release/$lib" iPhoneOS
 flat "$out/ios-sim" "target/aarch64-apple-ios-sim/release/$lib" iPhoneSimulator
-mkdir -p "$out/mac-bin"
-lipo -create "target/aarch64-apple-darwin/release/$lib" "target/x86_64-apple-darwin/release/$lib" -output "$out/mac-bin/$lib"
-versioned "$out/mac" "$out/mac-bin/$lib"
+versioned "$out/mac" "target/aarch64-apple-darwin/release/$lib"
 xcodebuild -create-xcframework \
   -framework "$out/ios/$name.framework" \
   -framework "$out/ios-sim/$name.framework" \
