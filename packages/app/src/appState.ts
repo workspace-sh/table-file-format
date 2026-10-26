@@ -948,7 +948,7 @@ function step(state: AppState, action: AppAction): AppState {
       return arrangements === state.arrangements ? state : { ...state, arrangements };
     }
     case "display":
-      return { ...state, display: withDisplayChoice(state.display, action.choice.kind, action.choice.value) };
+      return { ...state, display: withDisplayChoice(state.display, action.choice.kind, action.choice.value, state.active || undefined) };
     case "setFilesSide":
       if (!!state.sidebar.files === action.files) return state;
       return { ...state, sidebar: action.files ? { ...state.sidebar, files: true } : tablesSide(state.sidebar) };
