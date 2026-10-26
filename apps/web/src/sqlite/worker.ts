@@ -13,7 +13,7 @@
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import { loadEdn } from "@workspace.sh/edn";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app/worker";
 import {
   FIRST_ROWS_FILE,
   alterIndex,
