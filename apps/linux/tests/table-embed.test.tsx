@@ -70,7 +70,7 @@ describe("what an embed's address names", () => {
   });
 
   it("says which views a table has when the link names one it doesn't", async () => {
-    expect(await problemOf("../tables/projects.table#table=tasks&view=nope&embed=1")).toBe("The table “tasks” has no view “nope”. It has “ffaisc1zows4dzhy7aq5jrebkx”, “gzrqtgo1p3gfehto7tani3jzz4”.");
+    expect(await problemOf("../tables/projects.table#table=tasks&view=nope&embed=1")).toBe("The table “tasks” has no view “nope”. It has “All tasks by priority”, “Board by status”.");
   });
 
   it("won't read a table outside the folder that was opened, by its path or through a link", async () => {
