@@ -164,6 +164,13 @@ describe("the File menu on Linux", () => {
     expect(existsSync(join(examples, "empty.table"))).toBe(false);
   });
 
+  it("a file that isn't there is said in passing, with no alert to answer", async () => {
+    await openExamples({ chooseToOpen: async () => join(dir, "gone.table") });
+    await run("open");
+    expect(await screen.findByText("Couldn't open gone.table: it isn't there")).toBeDefined();
+    expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toEqual([]);
+  });
+
   it("a file that isn't a .table is refused, and says why", async () => {
     const junk = join(dir, "junk.table");
     writeFileSync(junk, "not a zip");
