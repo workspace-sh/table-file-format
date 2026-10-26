@@ -1,0 +1,19 @@
+{"id":"jptf3xu8dxq6fo55jrx5ka956b","problem":"Divide by zero","n":3}
+{"id":"p8reozp6xtbez7x9zostb6jhtr","problem":"Overflow","n":3}
+{"id":"mjwqcpte6snrur6iqsa3k9n5c4","problem":"Text in a sum","n":3}
+{"id":"t4eo113reofpsh1ru54hgksean","problem":"Not a true/false in if","n":3}
+{"id":"61kwtcaktonbgwf8h1cx7dr736","problem":"Wrong number of arguments","n":3}
+{"id":"g48oqd7nec7umpr6a5gxetaj5t","problem":"Unknown function","n":3}
+{"id":"3yur8asyznd6z1p4ek9kawngka","problem":"Missing field","n":3}
+{"id":"dzzj31e15s7wmmr5yq8x14tn1n","problem":"Missing row","n":3}
+{"id":"x5topoju6nfx514xurc9mdfbhj","problem":"Missing table","n":3}
+{"id":"phb16i3yxydndeq7oy4xgm7zud","problem":"Missing Sheet view","n":3}
+{"id":"1ej3bnytdhdbo4i158xmzw9mxz","problem":"Past the Sheet's edge","n":3}
+{"id":"hpe8hzrn4jhwek7hkqss4beckp","problem":"Column not in the Sheet","n":3}
+{"id":"rjspe7qwtug3bn9jwz9cdf6tej","problem":"Loop","n":3}
+{"id":"ipjbmsnhtdagttwpeknfwpxrwm","problem":"Loop (other half)","n":3}
+{"id":"qxdm6e9uspptqwhwb54pzw5bwr","problem":"Date column, number given","n":3}
+{"id":"oatbcz1bau33141odzz7gm8cte","problem":"Whole-number column","n":3}
+{"id":"ks5oftw5yawe69icixdyz1fnht","problem":"True/false column","n":3}
+{"id":"x5pqi3iomy4mfam83wxpp7shrk","problem":"Text column","n":3}
+{"id":"cab8jj5uq3n4x83sptekxchmnf","problem":"Map point column","n":3}
