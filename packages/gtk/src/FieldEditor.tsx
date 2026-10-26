@@ -17,7 +17,7 @@ import {
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
-import { defaultAlignFor, enumOptions, type CompileResult, type Field, type Grid } from "@workspace.sh/table-core";
+import { defaultAlignFor, enumOptions, renameProblem, type CompileResult, type Field, type Grid } from "@workspace.sh/table-core";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -108,13 +108,17 @@ export interface FieldEditorProps {
   onDelete?: () => void;
   /** Close, putting the field back as it was when the editor opened. Absent: there's no Cancel. */
   onCancel?: () => void;
+  /** Rename the field: its name becomes `to` everywhere it's used. Absent: the name is shown, not edited. */
+  onRename?: (to: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
   grid?: Grid;
 }
 
-export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onRemoveChoice, onDelete, onCancel, onMove, onClose, grid }: FieldEditorProps) {
+export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onRemoveChoice, onDelete, onCancel, onRename, onMove, onClose, grid }: FieldEditorProps) {
+  // Why the name typed can't be the field's, until it's typed again.
+  const [nameProblem, setNameProblem] = useState<string | null>(null);
   const display = useDisplaySettings();
   const rtl = useDirection() === "rtl";
   const [choiceDraft, setChoiceDraft] = useState("");
@@ -132,7 +136,28 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
         }
       >
         <AdwPreferencesPage>
-          <AdwPreferencesGroup description={`${field.computed ? "Formula" : friendlyType(field.type)} · stored as “${field.name}”`}>
+          <AdwPreferencesGroup
+            description={
+              onRename
+                ? `${field.computed ? "Formula" : friendlyType(field.type)}. ${nameProblem ?? "Formulas read the field by its name: renaming it renames it in every formula."}`
+                : `${field.computed ? "Formula" : friendlyType(field.type)} · stored as “${field.name}”`
+            }
+          >
+            {onRename ? (
+              <AdwEntryRow
+                title="Name"
+                text={field.name}
+                showApplyButton
+                cssClasses={nameProblem ? ["error"] : []}
+                onChanged={() => setNameProblem(null)}
+                onApply={(row) => {
+                  const to = row.getText();
+                  const problem = renameProblem({ schema: { fields } }, field.name, to);
+                  if (problem) setNameProblem(problem);
+                  else if (to !== field.name) onRename(to);
+                }}
+              />
+            ) : null}
             <AdwEntryRow title="Title" text={field.title ?? ""} showApplyButton onApply={(row) => onUpdate({ title: row.getText() || undefined })} />
             <AdwEntryRow title="Description" text={field.description ?? ""} showApplyButton onApply={(row) => onUpdate({ description: row.getText() || undefined })} />
           </AdwPreferencesGroup>

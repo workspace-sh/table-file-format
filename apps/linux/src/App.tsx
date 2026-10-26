@@ -4,6 +4,7 @@
 // sidebar has them. What a view shows comes from table-app's `showView`,
 // the same function the web demo calls.
 
+import { css } from "@gtkx/css";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import * as Adw from "@gtkx/gi/adw";
@@ -74,10 +75,11 @@ import {
   loadingViewRows,
   departedText,
   storedTableRows,
+  changedElsewherePrompt,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
-import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, discardSingleFileEdits, keepSingleFileEdits, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
@@ -228,6 +230,7 @@ function TablePane({
   callbacks,
   saving,
   onRetrySave,
+  onSettleElsewhere,
   viewActions,
   onSearch,
   settingsOpen,
@@ -259,6 +262,8 @@ function TablePane({
   };
   saving: SaveState;
   onRetrySave: () => void;
+  /** A save found this single file changed elsewhere: what's done with the edits, asked in place. */
+  onSettleElsewhere: (file: string, how: "copy" | "discard") => void;
   viewActions: ViewActions;
   onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
@@ -306,6 +311,7 @@ function TablePane({
       }
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+        {saving.kind === "failed" && saving.changedElsewhere ? <ChangedElsewhereBar file={saving.changedElsewhere} onAnswer={onSettleElsewhere} /> : null}
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
           {/* While a large table is read, how far that has got is in the count's place. */}
           {building ? (
@@ -564,6 +570,30 @@ function SaveStatus({ state, onRetry }: { state: SaveState; onRetry: () => void 
   return <GtkButton iconName="dialog-warning-symbolic" cssClasses={["flat", "error"]} tooltipText={`Not saved: ${state.message}. Try Again`} onClicked={onRetry} />;
 }
 
+/**
+ * A single file changed elsewhere, so a save didn't write over it: said in
+ * place, above the table, with what can be done with the edits. Nothing
+ * waits on it (no blocking alert for a file's state); it stays until one is
+ * chosen, and the edits stay in the working folder meanwhile.
+ */
+function ChangedElsewhereBar({ file, onAnswer }: { file: string; onAnswer: (file: string, how: "copy" | "discard") => void }) {
+  const prompt = changedElsewherePrompt(file);
+  const choices = prompt.responses.filter((r): r is typeof r & { id: "copy" | "discard" } => r.id === "copy" || r.id === "discard");
+  return (
+    <GtkBox name="changed-elsewhere" spacing={12} cssClasses={[elsewhereBar]}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand valign={Gtk.Align.CENTER}>
+        <GtkLabel label={prompt.heading} xalign={0} wrap cssClasses={["heading"]} />
+        <GtkLabel label={prompt.body} xalign={0} wrap />
+      </GtkBox>
+      {choices.map((r) => (
+        <GtkButton key={r.id} label={r.label} valign={Gtk.Align.CENTER} cssClasses={r.destructive ? ["destructive-action"] : ["suggested-action"]} onClicked={() => onAnswer(file, r.id)} />
+      ))}
+    </GtkBox>
+  );
+}
+
+const elsewhereBar = css({ padding: "10px 12px", backgroundColor: "alpha(@warning_bg_color, 0.18)", borderBottom: "1px solid alpha(@warning_bg_color, 0.4)" });
+
 /** How long after the last edit its bundle is written. */
 const SAVE_DELAY_MS = 400;
 
@@ -727,6 +757,12 @@ export function App({
     fileNameOf: (bundle: string) => pathOf(bundle)?.split("/").pop(),
   };
   const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
+  // Said in passing: GNOME's toast, which goes by itself and stops nothing.
+  const note = (text: string) => {
+    const toast = Adw.Toast.new(text);
+    toast.setUseMarkup(false);
+    toastOverlay.current?.addToast(toast);
+  };
   // Tables held in the index: their rows are read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
   saveIndexed.current = indexed.save;
@@ -845,7 +881,8 @@ export function App({
     const held = Object.entries({ ...state.opened, ...state.singleFiles }).find(([, at]) => at === path)?.[0];
     const first = held === undefined ? undefined : Object.keys(state.tables).find((key) => bundleOf(key) === held);
     if (first !== undefined) return dispatch({ type: "showTable", key: first });
-    if (!existsSync(path)) return tell(openFailedText(basename(path), "it isn't there"));
+    // A file that isn't there is said in passing, never by an alert that waits (workspace#711).
+    if (!existsSync(path)) return note(openFailedText(basename(path), "it isn't there"));
     if (statSync(path).isDirectory()) return openFolder(path);
     if (isSpreadsheetFile(path)) return openFile(path);
     return openSingle(path);
@@ -859,6 +896,25 @@ export function App({
       dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
     } catch (error) {
       tell(openFailedText(basename(path), error));
+    }
+  };
+  // A single file changed elsewhere since it was opened, so not saved over: its edits kept as a copy beside it
+  // (opened, and shown), or let go; either way the file is read again as it now is.
+  const settleChangedElsewhere = async (file: string, how: "copy" | "discard") => {
+    try {
+      const key = Object.entries(state.singleFiles ?? {}).find(([, at]) => at === file)?.[0];
+      if (key !== undefined) await closeIndexed.current(key);
+      const copy = how === "copy" ? await keepSingleFileEdits(file) : null;
+      if (how === "discard") await discardSingleFileEdits(file);
+      if (key !== undefined) {
+        const fresh = await openSingleFile(file, Object.keys(bundles).filter((b) => b !== key), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
+        dispatch({ type: "replaced", library: fresh });
+      }
+      if (copy) await openSingle(copy);
+      // Nothing of it is left to write: the warning goes.
+      await flush();
+    } catch (error) {
+      tell(`Couldn't ${how === "copy" ? "keep your edits" : "let your edits go"}`, error instanceof Error ? error.message : String(error));
     }
   };
   // A .table folder from disk, edited where it is.
@@ -1140,6 +1196,7 @@ export function App({
                 callbacks={callbacks}
                 saving={saving}
                 onRetrySave={() => void flush()}
+                onSettleElsewhere={(file, how) => void settleChangedElsewhere(file, how)}
                 viewActions={viewActions}
                 onSearch={(text) => dispatch({ type: "search", text })}
                 settingsOpen={state.settingsOpen}

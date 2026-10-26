@@ -8,7 +8,8 @@ import { readTableArchive } from "@workspace.sh/table-core";
 import { readBundle } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 
-import { appendHistory, openSingleFile, readTableFile, saveBundle } from "./node.ts";
+import { appendHistory, discardSingleFileEdits, keepSingleFileEdits, openSingleFile, readTableFile, saveBundle } from "./node.ts";
+import { ChangedElsewhere } from "./singleFile.ts";
 import { bundleToArchive } from "./tableFiles.ts";
 import { withCell } from "./edits.ts";
 
@@ -49,6 +50,50 @@ test("a single-file .table opened in Node is edited in its working folder and pa
   } finally {
     if (cache === undefined) delete process.env.XDG_CACHE_HOME;
     else process.env.XDG_CACHE_HOME = cache;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a single file changed elsewhere isn't saved over; its edits are kept as a copy beside it, or let go", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-elsewhere-"));
+  try {
+    const file = join(dir, "projects.table");
+    const original = await bundleToArchive("projects", await readBundle(nodeFs, join(fixtures, "projects.table")));
+    writeFileSync(file, original);
+    const home = join(dir, "cache");
+    const row = "ytjc8tj8w8ftnbf9h86s5k9jfk";
+    const edit = async (title: string) => {
+      const library = await openSingleFile(file, [], { home });
+      const key = Object.keys(library.bundles)[0]!;
+      const tasks = `${key}/tasks`;
+      return () => saveBundle(library, { ...library.tables, [tasks]: withCell(library.tables[tasks]!, row, "title", title) }, library.bundles, key);
+    };
+    const titleIn = async (path: string) => (await readTableArchive(new Uint8Array(readFileSync(path)))).tables.tasks!.rows.find((r) => r.id === row)!.title;
+
+    // Opened, then the file is changed by someone else (another size, so its stamp differs), then a save here.
+    const save = await edit("Mine");
+    const theirs = await bundleToArchive("projects", { ...(await readBundle(nodeFs, join(fixtures, "projects.table"))), meta: { title: "Theirs" } });
+    writeFileSync(file, theirs);
+    await assert.rejects(save(), (e: unknown) => e instanceof ChangedElsewhere);
+    assert.deepEqual(new Uint8Array(readFileSync(file)), theirs);
+
+    // Kept as a copy: beside it, with the edit; the file as they left it; opened again, it's theirs.
+    const copy = await keepSingleFileEdits(file);
+    assert.equal(copy, join(dir, "projects (edited here).table"));
+    assert.equal(await titleIn(copy), "Mine");
+    assert.deepEqual(new Uint8Array(readFileSync(file)), theirs);
+    const again = await openSingleFile(file, [], { home });
+    assert.equal(Object.values(again.bundles)[0]!.title, "Theirs");
+
+    // Let go: the same, with no copy.
+    const save2 = await edit("Mine again");
+    writeFileSync(file, original);
+    await assert.rejects(save2(), (e: unknown) => e instanceof ChangedElsewhere);
+    await discardSingleFileEdits(file);
+    assert.deepEqual(new Uint8Array(readFileSync(file)), original);
+    assert.notEqual(Object.values((await openSingleFile(file, [], { home })).bundles)[0]!.title, "Theirs");
+    assert.notEqual(await titleIn(file), "Mine again");
+  } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });

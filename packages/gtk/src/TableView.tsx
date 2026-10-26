@@ -418,6 +418,7 @@ export function TableView({
   onUnmerge,
   onUpdateView,
   onUpdateField,
+  onRenameField,
   onAddEnumValue,
   onMoveField,
   onAddField,
@@ -446,7 +447,15 @@ export function TableView({
   const [editingField, setEditingField] = useState<string | null>(null);
   // The schema as it was when a field's editor opened, for its Cancel.
   const schemaBefore = useRef<typeof schema | null>(null);
+  // A field renamed with its editor open: the editor follows it, and what Cancel puts back has the new name.
+  const renamedField = useRef<{ from: string; to: string } | null>(null);
   useEffect(() => {
+    const renamed = renamedField.current;
+    renamedField.current = null;
+    if (renamed && schemaBefore.current && editingField === renamed.to) {
+      schemaBefore.current = { ...schemaBefore.current, fields: schemaBefore.current.fields.map((f) => (f.name === renamed.from ? { ...f, name: renamed.to } : f)) };
+      return;
+    }
     schemaBefore.current = editingField ? schema : null;
     // Only as an editor opens or closes: the schema changes under it as it edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1840,13 +1849,23 @@ export function TableView({
         if (!field) return null;
         return (
           <FieldEditor
-            key={editingField}
+            // By the field's id where it has one: a rename keeps the same editor open.
+            key={field.id ?? editingField}
             field={field}
             fieldIndex={schema.fields.indexOf(field)}
             totalFields={schema.fields.length}
             fields={schema.fields}
             grid={grid}
             onUpdate={(patch) => onUpdateField!(editingField, patch)}
+            onRename={
+              onRenameField
+                ? (to) => {
+                    renamedField.current = { from: editingField, to };
+                    onRenameField(editingField, to);
+                    setEditingField(to);
+                  }
+                : undefined
+            }
             onAddChoice={(value) => onAddEnumValue!(editingField, value)}
             onRemoveChoice={onRemoveEnumValue ? (value) => onRemoveEnumValue(editingField, value) : undefined}
             onDelete={
