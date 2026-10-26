@@ -11,10 +11,10 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
-import { addressedView, newId, parseAddress, type View } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -24,6 +24,8 @@ import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedSh
 import { rowTitleFor } from "./edits.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
+import type { IndexDatabase } from "./indexHost.ts";
+import { useIndexedTables } from "./useIndexedTables.ts";
 import { askName } from "./askName";
 
 /** What the host draws around the view: the file's tables and views, and what can be done to them. */
@@ -93,7 +95,24 @@ export interface TableFileViewProps {
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
   /** What goes around the view, drawn by the host. */
   chrome?: (file: TableFileChrome) => ReactNode;
+  /**
+   * A file holding a large table, read through the index (readLargeTableFile): the host's index, and
+   * the first rows reading the file gave. Its rows are read from the index, never all into memory.
+   */
+  index?: TableFileIndex;
 }
+
+/** How a large table in the file is read: through the platform's index host (createIndexHost). */
+export interface TableFileIndex {
+  /** A bundle's index on this device: the index host's openIndexDatabase. */
+  openIndexDatabase: (bundle: string) => IndexDatabase;
+  /** Its large tables' first rows by `bundle/table` key (readLargeTableFile's `first`), shown while the rest is read. */
+  first?: Record<string, Row[]>;
+}
+
+const noIndex = (): IndexDatabase => {
+  throw new Error("this file's host reads no index");
+};
 
 function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   Alert.alert(
@@ -107,8 +126,27 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
-  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+  // A large table's rows are saved from its index, after the rest of the file is written.
+  const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<void>) | null>(null);
+  const writing = useMemo(
+    () => (index ? { ...files, write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => (await files.write(...args), await saveIndexed.current?.(args[1])) } : files),
+    [files, index],
+  );
+  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, writing, locale);
+  const indexed = useIndexedTables({
+    state,
+    dispatch,
+    view: derived.shown.view,
+    tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
+    openIndexDatabase: index?.openIndexDatabase ?? noIndex,
+  });
+  saveIndexed.current = indexed.save;
+  useEffect(() => {
+    if (index?.first) indexed.hold(index.first);
+    // Once: what reading the file gave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { table, view } = derived;
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = !!readOnly || fromArchive;
@@ -215,6 +253,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
         cells={table.cells}
         tableKey={tableName}
         sheet={derived.shown.sheet}
+        // A large table's rows: from its index, or as many as are read so far while it's made.
+        {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}
         onOpenRelation={followLink}
         restorePlace={select}
