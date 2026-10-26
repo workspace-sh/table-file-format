@@ -651,6 +651,39 @@ function hiddenValues(hidden: string[], row: Row): Record<string, unknown> {
 /** Field names in the order the search text holds them. */
 const searchedNames = (schema: TableSchema) => schema.fields.filter(searched).map((f) => f.name);
 
+/**
+ * How schema `from`'s fields became `to`'s: each field of `to`'s place in `from` (undefined
+ * for a new field), the fields renamed, and the names of those gone. Matched by id (D62), so a
+ * field renamed is the same field (D63); else by name, unless the field of that name has
+ * another id, which makes it another field.
+ */
+export function fieldChanges(from: TableSchema, to: TableSchema): { matched: (number | undefined)[]; renamed: { from: string; to: string }[]; gone: string[] } {
+  const before = new Map(from.fields.map((f, i) => [f.name, i]));
+  const byId = new Map(from.fields.flatMap((f, i) => (f.id !== undefined ? [[f.id, i] as const] : [])));
+  const matched = to.fields.map((f): number | undefined => {
+    if (f.id !== undefined && byId.has(f.id)) return byId.get(f.id);
+    const o = before.get(f.name);
+    if (o !== undefined && f.id !== undefined && from.fields[o]!.id !== undefined && from.fields[o]!.id !== f.id) return undefined;
+    return o;
+  });
+  const renamed = to.fields.flatMap((f, k) => {
+    const o = matched[k];
+    return o !== undefined && from.fields[o]!.name !== f.name ? [{ from: from.fields[o]!.name, to: f.name }] : [];
+  });
+  const kept = new Set(matched);
+  const gone = from.fields.filter((_, i) => !kept.has(i)).map((f) => f.name);
+  return { matched, renamed, gone };
+}
+
+/**
+ * Whether field `from` of a table held in the index can be renamed `to` there (alterIndex):
+ * not when its formulas read other rows (those are worked out over every row at once), nor
+ * to or from a name the index's JSON paths can't hold.
+ */
+export function renamesInIndex(schema: TableSchema, from: string, to: string): boolean {
+  return planOf(schema).never.size === 0 && ![from, to].some((name) => /["\\]/.test(name));
+}
+
 let parked = 0;
 
 /**
@@ -673,21 +706,8 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
   const now = planOf(to);
   // Formulas over other rows are worked out over every row at once: no steps for them.
   if (was.never.size > 0 || now.never.size > 0) return false;
-  const before = new Map(from.fields.map((f, i) => [f.name, i]));
   const after = new Set(to.fields.map((f) => f.name));
-  // Each field of `to`'s place in `from`: by its id (D62), so a field renamed is the same field
-  // (D63); else by its name, unless the field of that name has another id, which makes it another.
-  const byId = new Map(from.fields.flatMap((f, i) => (f.id !== undefined ? [[f.id, i] as const] : [])));
-  const matched = to.fields.map((f): number | undefined => {
-    if (f.id !== undefined && byId.has(f.id)) return byId.get(f.id);
-    const o = before.get(f.name);
-    if (o !== undefined && f.id !== undefined && from.fields[o]!.id !== undefined && from.fields[o]!.id !== f.id) return undefined;
-    return o;
-  });
-  const renamed = to.fields.flatMap((f, k) => {
-    const o = matched[k];
-    return o !== undefined && from.fields[o]!.name !== f.name ? [{ from: from.fields[o]!.name, to: f.name }] : [];
-  });
+  const { matched, renamed } = fieldChanges(from, to);
   const kept = new Set(matched.filter((o) => o !== undefined));
   const pending = await fillOf(db, n);
   const wasHidden = await hiddenOf(db, n);
