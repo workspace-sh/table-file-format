@@ -30,6 +30,10 @@
       "react-native": "./src/tableFileView.tsx",
       "default": "./src/tableFileView.tsx"
     },
+    "./worker": {
+      "source": "./src/worker.ts",
+      "default": "./src/worker.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
