@@ -37,7 +37,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=source --import tsx --test src/*.test.ts"
+    "test": "node --conditions=source --import tsx --import ../../edn/js/src/node-engine.ts --test src/*.test.ts"
   },
   "dependencies": {
     "@exodus/bytes": "1.16.0",

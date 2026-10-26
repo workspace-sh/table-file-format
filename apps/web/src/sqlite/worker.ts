@@ -533,7 +533,7 @@ function take(req: Request): void {
 // the page's are. Requests still go in the order they came.
 const formulas = loadEdn().then(
   (edn) => setFormulaEngine(edn),
-  (e: unknown) => console.warn(`index worker formulas: the workbook's own, not the EDN core: ${String(e)}`),
+  (e: unknown) => console.warn(`index worker: formulas aren't worked out, the EDN core didn't load: ${String(e)}`),
 );
 
 self.onmessage = (e: MessageEvent<Request>) => void formulas.then(() => {

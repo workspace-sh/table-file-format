@@ -1,39 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { FormulaError } from "../../../packages/core/src/expr.ts";
-import { computeRows, sheetGrid } from "../../../packages/core/src/workbook.ts";
 import { readBundle } from "../../../packages/core/src/io.ts";
 import { nodeFs } from "../../../packages/core/src/node-fs.ts";
 import type { ParsedTable } from "../../../packages/core/src/types.ts";
 import { loadEdn, type Edn, type FormulaResult } from "./index.ts";
 
-// Today's evaluator and the core, value for value, over the same rows: a formula's
-// result is the same whichever computes it (empties compared as empties).
+// The core, value for value, against what `.table`'s TypeScript evaluator gave for the same rows
+// (expected.json.gz, recorded on 26 Oct 2026 from develop df7bb90, the last commit with both, where they
+// agreed on every value; #710 removed the TypeScript one). Empties compare as empties.
 
 type Row = { id: string } & Record<string, unknown>;
 
 const plain = (v: unknown): unknown =>
   v instanceof FormulaError ? { code: v.code, message: v.message } : Array.isArray(v) ? v.map(plain) : v === "" || v === null ? undefined : v;
 
-/** Today's results for a bundle's tables: computeRows, table by table, as the apps compute them. */
-function today(tables: Record<string, ParsedTable>, now: Date): Record<string, Record<string, unknown[]>> {
-  const out: Record<string, Record<string, unknown[]>> = {};
-  for (const [name, t] of Object.entries(tables)) {
-    const { rows } = computeRows(t.schema, t.rows, { tables, self: name, views: t.views, now, ...(t.cells ? { cells: t.cells } : {}) });
-    // A field is worked out when it has a formula, or a cell of it has its own (D52).
-    const own = new Set((t.cells ?? []).filter((c) => c.expr !== undefined).map((c) => c.field));
-    out[name] = Object.fromEntries(t.schema.fields.filter((f) => f.computed || own.has(f.name)).map((f) => [f.name, rows.map((r) => r[f.name])]));
-  }
-  return out;
-}
+/** What the TypeScript evaluator gave, by case. */
+const EXPECTED = JSON.parse(gunzipSync(readFileSync(new URL("./expected.json.gz", import.meta.url))).toString("utf8")) as {
+  same: Record<string, Record<string, Record<string, unknown[]>>>;
+  grids: Record<string, { ids: string[]; groups: unknown[]; loop: boolean; fields: Record<string, unknown[]> } | null>;
+};
 
 /** A moment past midnight UTC in some places and before it in others: the date is the reader's own. */
 const MOMENT = new Date("2026-10-24T23:30:15.250Z");
 
 function same(edn: Edn, tables: Record<string, ParsedTable>, label: string): { core: number; host: number } {
-  const want = today(tables, MOMENT);
+  const want = EXPECTED.same[label];
+  assert.ok(want, `no expected values for ${label}`);
   const got = edn.computeTables(tables as never, { now: MOMENT });
   let core = 0;
   let host = 0;
@@ -46,6 +42,7 @@ function same(edn: Edn, tables: Record<string, ParsedTable>, label: string): { c
     for (const [field, values] of Object.entries(fields)) {
       core++;
       const mine = g![field]!.map(plain);
+      assert.equal(values.length, tables[name]!.rows.length, `${label}: ${name}.${field} rows`);
       values.forEach((v, i) => assert.deepEqual(mine[i], plain(v), `${label}: ${name}.${field} row ${i} (${tables[name]!.schema.fields.find((f) => f.name === field)?.computed?.expr})`));
     }
   }
@@ -325,7 +322,7 @@ for (const binding of ["native", "wasm"] as const) {
 
     // Each view's grid as an app numbers its rows: order, groups, whether it's sorted by its own places, rows filled.
     for (const v of ["by-date", "by-kind", "manual", "narrow", "by-own", "kind-sort", "plain", "nope"]) {
-      const want = sheetGrid(ledger, v, { tables: { ledger, reader }, self: "ledger", now: MOMENT });
+      const want = EXPECTED.grids[v];
       const got = edn.computeGrids({ ledger, reader } as never, "ledger", [v], { now: MOMENT });
       assert.notEqual(got, "host");
       const g = (got as Exclude<typeof got, "host">).grids[v];
@@ -333,12 +330,12 @@ for (const binding of ["native", "wasm"] as const) {
         assert.equal(g, null, v);
         continue;
       }
-      assert.deepEqual(g!.order.map((i) => ledger.rows[i]!.id), want.rows.map((r) => r.id), `${v}: order`);
+      assert.deepEqual(g!.order.map((i) => ledger.rows[i]!.id), want.ids, `${v}: order`);
       assert.deepEqual(g!.groups, want.groups, `${v}: groups`);
       assert.equal(g!.loop, want.loop, `${v}: loop`);
       const fields = (got as Exclude<typeof got, "host">).fields;
       for (const f of ["balance", "above", "byown"]) {
-        assert.deepEqual(g!.order.map((i) => plain(fields[f]![i])), want.rows.map((r) => plain(r[f])), `${v}: ${f}`);
+        assert.deepEqual(g!.order.map((i) => plain(fields[f]![i])), want.fields[f]!.map(plain), `${v}: ${f}`);
       }
     }
   });

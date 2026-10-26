@@ -66,7 +66,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --import ../../edn/js/src/node-engine.ts --test src/**/*.test.ts",
     "test:watch": "node --import tsx --test --watch src/**/*.test.ts"
   },
   "dependencies": {

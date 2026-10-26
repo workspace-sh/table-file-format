@@ -77,22 +77,25 @@ have a formula of their own: 250,000 distinct formulas. Read once each
 ### Formulas computed inside the core
 
 Whole bundles go in once (row ids, stored columns, formulas, relations,
-Sheet views) and every formula column comes out once. Same results as
-`.table`'s workbook (`computeRows`), value for value and message for
-message: every fixture bundle, deliberately awkward values, relations gone
-wrong, and Sheet places down 3,000-row grids (`js/src/evaluate.test.ts`).
-In table-core's own tests every formula is checked the same way
-(`node --import tsx --import ../../edn/js/src/check-engine.ts --test
-src/**/*.test.ts` in packages/core).
+Sheet views) and every formula column comes out once. It is `.table`'s
+only evaluator (#710): table-core's `computeRows` and `sheetGrid` hand it
+the tables (`setFormulaEngine`), and every package's tests run with it
+(`--import ../../edn/js/src/node-engine.ts`). Until #710 there was also a
+TypeScript evaluator, and the two were compared value for value and message
+for message; what it gave is kept in `js/src/expected.json.gz`, which
+`js/src/evaluate.test.ts` checks the core against: every fixture bundle,
+deliberately awkward values, relations gone wrong, objects and GeoJSON,
+and Sheet places down 3,000-row grids. On the 11,293 OpenFormula
+conformance cases the two answered alike, every one.
 
 What the core works out: fields' formulas, cells' own (D52, with the type
 check a typed value gets), loops by iteration (D60), the clock and chance
-(D55: the host gives the moment and a seed), and Sheet places (D41: `at`,
+(D55: the app gives the moment and a seed), and Sheet places (D41: `at`,
 `range`, `row`, `rows`, a long running total worked down its grid rather
 than by recursion), and objects and GeoJSON (passed on, compared, read
-as text as JavaScript reads them, and checked as a typed value is). The
-host's evaluator still works out a table reading the clock when the host
-gives no moment, with every table related to it; the apps always give one.
+as text as JavaScript reads them, and checked as a typed value is). A
+binding is always given the moment (`@workspace.sh/edn` gives the time
+it's asked), so nothing is left to anyone else.
 
 100,000 deals pointing at 2,000 companies (a row formula, a lookup through
 the relation, two rollups back), everything included (columns in, results
