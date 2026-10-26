@@ -11,6 +11,7 @@
 
 import { packTableFileFrom, unpackTableFileTo } from "@workspace.sh/table-core";
 import { joinPath, type TableFs } from "@workspace.sh/table-core/io";
+import { CANCEL, type Confirm } from "./confirm.ts";
 
 /** A short, stable name for a path, for its working folder: FNV-1a, 32 bits, as hex. */
 function hashOf(text: string): string {
@@ -80,4 +81,53 @@ export async function packTableFile(fs: TableFs, workDir: string, target: string
 /** After a pack, the stamp of the file as it now is: so the next open keeps the working folder. */
 export async function restampTableFile(fs: TableFs, workDir: string, stamp: string): Promise<void> {
   await fs.writeText(stampOf(workDir), stamp);
+}
+
+/**
+ * Where the edits of a file that changed elsewhere are kept: beside it, as
+ * `<name> (edited here).table`, numbered when that's taken.
+ */
+export async function copyPathFor(fs: TableFs, target: string): Promise<string> {
+  const base = target.replace(/\.table$/, "");
+  for (let n = 1; ; n++) {
+    const path = `${base} (edited here${n === 1 ? "" : ` ${n}`}).table`;
+    if ((await fs.readBytes!(path)) === null && (await fs.list(path)) === null) return path;
+  }
+}
+
+/**
+ * After ChangedElsewhere, keep the edits: the working folder packed into a
+ * new single file beside the file (copyPathFor), which is returned, and the
+ * file itself left as it now is. The working folder is let go, so opening
+ * the file again shows it as it is.
+ */
+export async function keepEditsAsCopy(fs: TableFs, workDir: string, target: string): Promise<string> {
+  const copy = await copyPathFor(fs, target);
+  await packTableFileFrom(fs, workDir, copy);
+  await takeFileAsItIs(fs, workDir);
+  return copy;
+}
+
+/**
+ * After ChangedElsewhere, let the edits go: the working folder removed, so
+ * opening the file again unpacks it as it now is.
+ */
+export async function takeFileAsItIs(fs: TableFs, workDir: string): Promise<void> {
+  await fs.remove(workDir);
+  await fs.remove(stampOf(workDir));
+}
+
+/**
+ * What's asked after ChangedElsewhere: keep the edits as a copy beside the
+ * file (`copy`, keepEditsAsCopy), let them go and show the file as it is
+ * now (`discard`, takeFileAsItIs), or neither yet (`cancel`), the edits
+ * staying in the working folder.
+ */
+export function changedElsewherePrompt(target: string): Confirm {
+  const name = target.slice(target.lastIndexOf("/") + 1);
+  return {
+    heading: `“${name}” was changed somewhere else`,
+    body: "Your edits weren't saved into it, so nothing was lost. Keep your edits as a copy beside it, or let them go and see it as it is now.",
+    responses: [{ ...CANCEL, label: "Not now" }, { id: "discard", label: "Discard my edits", destructive: true }, { id: "copy", label: "Keep my edits as a copy" }],
+  };
 }
