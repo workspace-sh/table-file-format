@@ -14,7 +14,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
-import { newId, parseAddress, type View } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type View } from "@workspace.sh/table-core";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -125,7 +125,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
     if (!state.tables[key]) return;
     const rowId = parsed.rowId;
     const hasPage = rowId !== undefined && state.tables[key]!.bodies?.[rowId] !== undefined;
-    dispatch({ type: "follow", target: { key, ...(parsed.viewId ? { viewId: parsed.viewId } : {}), openBody: hasPage ? rowId : null } });
+    const viewId = parsed.viewId ? (addressedView(state.tables[key]!.views, parsed.viewId)?.id ?? parsed.viewId) : undefined;
+    dispatch({ type: "follow", target: { key, ...(viewId ? { viewId } : {}), openBody: hasPage ? rowId : null } });
     if (rowId) setSelect((was) => ({ place: { rowId }, n: (was?.n ?? 0) + 1 }));
   };
   useEffect(() => {

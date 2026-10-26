@@ -29,7 +29,10 @@ export interface Address {
   tableName?: string;
   /** `row=<id>` — system id of the target row. */
   rowId?: string;
-  /** `view=<id>` — view id to pin the row to on open. */
+  /**
+   * `view=<id or name>`: the view to show. As written: `addressedView`
+   * finds it, by id or by name.
+   */
   viewId?: string;
   /** `field=<name>` — reserved for cell-level addressing. */
   fieldName?: string;
@@ -62,6 +65,16 @@ function decoded(text: string): string {
  * matches the spec requirement that readers MUST tolerate unknown
  * keys silently.
  */
+/**
+ * The view an address's `view=` names (SPEC section 10): the view with that
+ * `id`, else the first whose `name` matches it, ignoring case ("pipeline"
+ * finds "Pipeline"). Ids are opaque (D23); a name is what a reader types.
+ */
+export function addressedView<V extends { id: string; name: string }>(views: readonly V[], key: string): V | undefined {
+  const lower = key.toLowerCase();
+  return views.find((v) => v.id === key) ?? views.find((v) => v.name.toLowerCase() === lower);
+}
+
 export function parseAddress(input: string): Address | null {
   if (!input) return null;
   const hashIdx = input.indexOf("#");

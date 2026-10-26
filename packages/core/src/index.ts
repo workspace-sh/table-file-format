@@ -83,6 +83,7 @@ export {
 export {
   parseAddress,
   formatAddress,
+  addressedView,
   resolveRow,
   type Address,
   type TableLookup,

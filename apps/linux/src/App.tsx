@@ -81,7 +81,7 @@ import { appendHistory, attachFile, attachmentsIn, bundlesIn, loadLibrary, openI
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
+import { addressedView, HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { FewRows, useIndexedTables } from "@workspace.sh/table-gtk/embed";
 import {
   AttachmentsProvider,
@@ -650,8 +650,7 @@ export function App({
     const startKey = initialTable && library.tables[initialTable] ? initialTable : undefined;
     // A view by its id, or by its name as the viewer sees it ("Pipeline"): ids are opaque (D23).
     const startView = startKey && initialView
-      ? (library.tables[startKey]!.views.find((v) => v.id === initialView) ??
-          library.tables[startKey]!.views.find((v) => v.name.toLowerCase() === initialView.toLowerCase()))?.id
+      ? addressedView(library.tables[startKey]!.views, initialView)?.id
       : undefined;
     return initialAppState({
       tables: library.tables,
