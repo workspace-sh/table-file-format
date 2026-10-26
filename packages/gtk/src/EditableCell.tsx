@@ -19,10 +19,11 @@ import {
   GtkLabel,
   GtkMenuButton,
   GtkPopover,
+  GtkSignalListItemFactory,
   GtkSpinButton,
 } from "@gtkx/jsx/gtk";
 import { enumOptions, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { styles } from "./theme.js";
+import { pillClass, styles, useDark } from "./theme.js";
 import { type GridEditEnd, inputHints, cellFormulaDraft, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
@@ -60,7 +61,9 @@ export interface EditableCellProps {
 
 /**
  * A choice cell being edited: a drop-down of the field's choices, and "—"
- * for none. Picking one saves it; leaving or Escape closes without.
+ * for none. Picking one saves it; leaving or Escape closes without. A
+ * field's own choices are drawn as the cell draws them, each a pill in its
+ * colour; a relation's rows are plain names.
  */
 function ChoiceEditor({
   field,
@@ -80,12 +83,35 @@ function ChoiceEditor({
   const at = options.findIndex((o) => o.value === value) + 1;
   const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value)];
   const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
+  const dark = useDark();
+  const colors = choices ? null : [undefined, ...enumOptions(field).map((o) => o.color)];
   return (
     <GtkDropDown
       ref={ref}
       hexpand
       selected={at}
       model={<StringList strings={labels} />}
+      {...(colors
+        ? {
+            factory: (
+              <GtkSignalListItemFactory
+                onSetup={(object) => {
+                  const label = new Gtk.Label();
+                  label.setHalign(Gtk.Align.START);
+                  (object as Gtk.ListItem).setChild(label);
+                }}
+                onBind={(object) => {
+                  const item = object as Gtk.ListItem;
+                  const i = item.getPosition();
+                  const label = item.getChild() as Gtk.Label;
+                  label.setLabel(labels[i] ?? "");
+                  // "—", for none, is no choice, so no pill.
+                  label.setCssClasses(i === 0 ? [] : [styles.pill, pillClass(colors[i], dark)]);
+                }}
+              />
+            ),
+          }
+        : {})}
       onNotifySelected={(index) => {
         if (index === null || index === at) return;
         onClose("done");
