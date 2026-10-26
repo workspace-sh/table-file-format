@@ -225,7 +225,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       mode: session.mode,
       keyboard: session.keyboard,
       prefix: session.dropPrefix && !prefixKept ? undefined : session.prefix,
-      prefixRemovable: !!session.dropPrefix && prefixKept,
+      // Kept or dropped, the edit stays in the same field: only the "=" goes.
+      prefixRemovable: session.dropPrefix ? prefixKept : undefined,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       highlight: formula ? formulaSpans : undefined,
