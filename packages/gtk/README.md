@@ -46,7 +46,7 @@ edits back.
 ```tsx
 import { TableEmbed } from "@workspace.sh/table-gtk/embed";
 
-// `[Tasks](../tables/projects.table#table=tasks&view=v2&embed=1 "Tasks by status")`
+// `[Tasks](../tables/projects.table#table=tasks&view=Board%20by%20status&embed=1 "Tasks by status")`
 <TableEmbed
   address={link.url}
   caption={link.title}

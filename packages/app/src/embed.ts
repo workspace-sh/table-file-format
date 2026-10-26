@@ -8,7 +8,7 @@
 // names; readEmbedWith finds the file over a platform's TableFs (`./node`'s
 // readEmbed is it over the disk, as Node sees it).
 
-import { formatAddress, parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { addressedView, formatAddress, parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
@@ -133,11 +133,13 @@ export function embedIn(library: Library, address: Pick<Address, "tableName" | "
   // A drop-in that reads a large table through its index (readsIndex) draws it; one that can't says so.
   if (table.indexed && !options.readsIndex) return embedProblem(`“${name}” in “${file}” has too many rows to show in a document yet.`);
 
-  if (address.viewId !== undefined && !table.views.some((v) => v.id === address.viewId)) {
-    const has = table.views.length > 0 ? ` It has ${listed(table.views.map((v) => v.id))}.` : " It has no views of its own.";
+  // `view=` names a view by its id or its name.
+  const view = address.viewId === undefined ? table.views[0] : addressedView(table.views, address.viewId);
+  if (address.viewId !== undefined && !view) {
+    const has = table.views.length > 0 ? ` It has ${listed(table.views.map((v) => v.name))}.` : " It has no views of its own.";
     return embedProblem(`The table “${name}” has no view “${address.viewId}”.${has}`);
   }
-  return { kind: "shown", library, key, viewId: address.viewId ?? table.views[0]?.id ?? "", size: embedSize(address) };
+  return { kind: "shown", library, key, viewId: view?.id ?? "", size: embedSize(address) };
 }
 
 /** Where an embedded table's file is, for the platform: how a bundle is written back, and how its history is added to. */
