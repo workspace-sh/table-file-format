@@ -6113,6 +6113,9 @@ export function CalendarView({
   // Google Calendar pattern. On a phone the cells show dots; wider,
   // they show each entry's title, and clicking a title opens it.
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  // A day's rows: the Mac's popover pointing at the day (ChooseOne), else a sheet.
+  const { ChooseOne } = usePlatformControls();
+  const dayAnchor = `day-${useId()}`;
   const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
   // A title chip sits inside its day's button. The chip's click marks
   // itself handled so the day's click doesn't also open the sheet —
@@ -6235,6 +6238,7 @@ export function CalendarView({
                 }
                 setSelectedDateKey(key);
               }}
+              id={`${dayAnchor}-${key}`}
               style={[
                 styles.calendarDay,
                 styles.calendarDayButton,
@@ -6299,6 +6303,20 @@ export function CalendarView({
               year: "numeric",
             })
           : "";
+        if (ChooseOne) {
+          return selectedDateKey && dayRows.length > 0 ? (
+            <ChooseOne
+              key={selectedDateKey}
+              options={dayRows.map((row) => ({ value: row.id, label: labelOf(row) }))}
+              anchor={`${dayAnchor}-${selectedDateKey}`}
+              onPick={(id) => {
+                setSelectedDateKey(null);
+                onOpenBody?.(id);
+              }}
+              onClose={() => setSelectedDateKey(null)}
+            />
+          ) : null;
+        }
         return (
           <BottomSheet
             visible={selectedDateKey !== null}

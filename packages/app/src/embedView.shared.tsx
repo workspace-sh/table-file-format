@@ -20,6 +20,7 @@ import { EMBED_MAX_HEIGHT, EMBED_ROW_HEIGHT, embedCount, embedFileAddress, embed
 import { useEmbeddedTable } from "./react.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
+import { askName } from "./askName";
 
 export { EMBED_MAX_HEIGHT };
 
@@ -104,6 +105,9 @@ function Shown({
   const asking = state.asking;
   useEffect(() => {
     if (asking?.kind === "confirm") ask(asking.confirm, (response) => dispatch({ type: "answer", response }));
+    // A name to type (a cell's note, a range of cells to merge): the system's own text prompt.
+    else if (asking?.kind === "name")
+      askName(asking.prompt, (text) => dispatch({ type: "answer", response: "create", text }), () => dispatch({ type: "answer", response: "cancel" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asking]);
   const telling = state.telling;
