@@ -488,6 +488,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "workspace-edn-ffi"
+version = "0.1.0"
+dependencies = [
+ "workspace-edn",
+]
+
+[[package]]
 name = "workspace-edn-node"
 version = "0.1.0"
 dependencies = [
