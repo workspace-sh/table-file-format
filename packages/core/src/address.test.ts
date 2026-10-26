@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addressedView,
   parseAddress,
   formatAddress,
   resolveRow,
@@ -213,5 +214,32 @@ describe("escaping (SPEC section 10)", () => {
     assert.equal(formatAddress({ tablePath: "crm.table", tableName: "deals", rowId: "dl-1" }), "crm.table#table=deals&row=dl-1");
     // Written before values were encoded, and not valid percent-encoding: read as it stands.
     assert.equal(parseAddress("crm.table#row=50%off")?.rowId, "50%off");
+  });
+});
+
+describe("addressedView", () => {
+  const views = [
+    { id: "ffaisc1zows4dzhy7aq5jrebkx", name: "By date" },
+    { id: "pipeline", name: "Pipeline" },
+    { id: "gzrqtgo1p3gfehto7tani3jzz4", name: "By date" },
+  ];
+
+  it("finds a view by its id first", () => {
+    assert.equal(addressedView(views, "gzrqtgo1p3gfehto7tani3jzz4")?.id, "gzrqtgo1p3gfehto7tani3jzz4");
+    assert.equal(addressedView(views, "pipeline")?.id, "pipeline");
+  });
+
+  it("else by its name, ignoring case, as the link was written with a space encoded", () => {
+    const parsed = parseAddress("budget.table#table=ledger&view=by%20DATE");
+    assert.equal(parsed?.viewId, "by DATE");
+    assert.equal(addressedView(views, parsed!.viewId!)?.id, "ffaisc1zows4dzhy7aq5jrebkx");
+  });
+
+  it("takes the first of two views with one name, in views.json's order", () => {
+    assert.equal(addressedView(views, "By date")?.id, "ffaisc1zows4dzhy7aq5jrebkx");
+  });
+
+  it("finds nothing for a name no view has", () => {
+    assert.equal(addressedView(views, "Board"), undefined);
   });
 });

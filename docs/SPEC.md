@@ -1438,7 +1438,10 @@ fragment:
   - `table=<name>`: the table in the bundle with this name (section 1).
     It MAY be omitted when the bundle holds exactly one table.
   - `row=<id>` — the row with this system `id`
-  - `view=<id>` — the view with this id
+  - `view=<id or name>` — the view with this `id`, or failing that the
+    first view (in `views.json` order) whose `name` matches it, ignoring
+    case. Ids are opaque (D23); a name is what a person writes by hand. A
+    link an app writes uses the id, which survives a rename
   - `field=<id or name>` — a specific field on the row, by its `id`
     (section 2, "A field's id") or, failing that, its `name` (cell-level
     addressing for future affordances; reserved)
@@ -1462,7 +1465,7 @@ silently ignore.
 docs/crm.table                                   # the whole bundle
 docs/crm.table#table=deals                       # one table in it
 docs/crm.table#table=deals&row=dl-1              # a row in that table
-docs/crm.table#table=deals&view=pipeline         # a view of that table
+docs/crm.table#table=deals&view=pipeline         # a view of that table, by its name
 docs/projects.table#row=p1                       # a one-table bundle may omit table=
 ../suppliers.table#table=suppliers&row=ACME_CORP # another bundle
 ```
@@ -1521,10 +1524,10 @@ width they are given, and ignore it. A column resized in the view
 (`columnWidths`) keeps its width either way.
 
 ```
-docs/projects.table#table=tasks&view=v1&rows=5             # five rows of a table view, then it scrolls
-docs/projects.table#table=tasks&view=v2&cards=3            # a board, three cards down each column
-docs/projects.table#table=tasks&view=v1&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
-docs/projects.table#table=tasks&view=v1&width=full         # the whole width of the document
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5            # five rows of a table view, then it scrolls
+docs/projects.table#table=tasks&view=Board%20by%20status&cards=3                    # a board, three cards down each column
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
+docs/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&width=full          # the same view by its id, the whole width of the document
 ```
 
 ### Resolution

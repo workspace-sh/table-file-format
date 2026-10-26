@@ -3,7 +3,7 @@
 // These turn that into what core deals in: a bundle, its tables by name,
 // and an address resolved within the right bundle.
 
-import { parseAddress, tableOrder } from "@workspace.sh/table-core";
+import { addressedView, parseAddress, tableOrder } from "@workspace.sh/table-core";
 import type { Address, BundleMeta, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 
 /** `crm/deals` → `crm` */
@@ -149,7 +149,9 @@ export function addressTarget(
   const key = keyForAddress(addr, tables, bundles, fromBundle);
   if (!key) return null;
   const openBody = addr.rowId && tables[key]?.bodies?.[addr.rowId] !== undefined ? addr.rowId : null;
-  return { key, ...(addr.viewId ? { viewId: addr.viewId } : {}), openBody };
+  // By id or by name; one no view has stays as written, so a stale address reads as one.
+  const viewId = addr.viewId ? (addressedView(tables[key]?.views ?? [], addr.viewId)?.id ?? addr.viewId) : undefined;
+  return { key, ...(viewId ? { viewId } : {}), openBody };
 }
 
 /** What following an address sets in an app, as addressTarget found it. */

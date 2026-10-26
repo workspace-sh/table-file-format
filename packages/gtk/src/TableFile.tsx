@@ -14,7 +14,7 @@ import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-a
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
-import { newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LayoutView } from "./LayoutView.js";
@@ -119,7 +119,8 @@ function Opened({
     if (!state.tables[key]) return;
     const rowId = parsed.rowId;
     const hasPage = rowId !== undefined && state.tables[key]!.bodies?.[rowId] !== undefined;
-    dispatch({ type: "follow", target: { key, ...(parsed.viewId ? { viewId: parsed.viewId } : {}), openBody: hasPage ? rowId : null } });
+    const viewId = parsed.viewId ? (addressedView(state.tables[key]!.views, parsed.viewId)?.id ?? parsed.viewId) : undefined;
+    dispatch({ type: "follow", target: { key, ...(viewId ? { viewId } : {}), openBody: hasPage ? rowId : null } });
     if (rowId) setSelect((was) => ({ place: { rowId }, n: (was?.n ?? 0) + 1 }));
   };
   useEffect(() => {
