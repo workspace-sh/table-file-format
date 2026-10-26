@@ -20,11 +20,14 @@ const schema: TableSchema = {
 const rows = [{ id: "a", due: "2026-10-01" }, { id: "b", due: "2026-12-01" }];
 
 test("today is the reader's date, now the instant in UTC, rand a number from 0 up to 1, one moment for every row", () => {
-  const out = computeRows(schema, rows, { now: new Date(Date.UTC(2026, 9, 23, 12, 0, 5)), random: () => 0.5 }).rows;
+  const moment = { now: new Date(Date.UTC(2026, 9, 23, 12, 0, 5)), seed: 7 };
+  const out = computeRows(schema, rows, moment).rows;
   assert.equal(out[0]!.d, out[1]!.d);
   assert.match(String(out[0]!.d), /^2026-10-2[234]$/);
   assert.equal(out[0]!.t, "2026-10-23T12:00:05Z");
-  assert.equal(out[0]!.r, 0.5);
+  // A draw from 0 up to 1; the same seed draws the same.
+  assert.ok(typeof out[0]!.r === "number" && out[0]!.r >= 0 && out[0]!.r < 1);
+  assert.equal(computeRows(schema, rows, moment).rows[0]!.r, out[0]!.r);
   assert.equal(out[0]!.late, true);
   assert.equal(out[1]!.late, false);
   assert.equal(String(computeRows({ fields: [{ name: "x", type: "date", computed: c("(today 1)") }] }, rows).rows[0]!.x), "#VALUE!");

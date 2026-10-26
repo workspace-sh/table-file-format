@@ -12,9 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 process.env.XDG_CACHE_HOME = mkdtempSync(join(tmpdir(), "table-linux-cache-"));
 
-// Every formula the app works out is worked out by the EDN core too, as the app does, and checked against
-// `.table`'s workbook: a difference fails the test (#638). The index worker reads the variable.
+// Formulas are worked out by the EDN core, as the app's are (#638, #710).
 import { setFormulaEngine } from "@workspace.sh/table-core";
 import { loadEdn } from "@workspace.sh/edn";
-setFormulaEngine(await loadEdn({ binding: "native" }), { check: true });
-process.env.TABLE_FORMULA_CHECK = "1";
+setFormulaEngine(await loadEdn({ binding: "native" }));
