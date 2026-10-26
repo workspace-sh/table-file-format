@@ -10,6 +10,7 @@
       "icon": "./assets/icon/AppIcon.icon",
       "supportsTablet": true,
       "bundleIdentifier": "sh.workspace.table.mobile",
+      "appleTeamId": "5Y4NB76UP6",
       "infoPlist": {
         "UTImportedTypeDeclarations": [
           {
@@ -60,7 +61,8 @@
       ],
       "./plugins/with-pods-deployment-floor",
       "expo-sharing",
-      "expo-router"
+      "expo-router",
+      "expo-sqlite"
     ]
   }
 }
