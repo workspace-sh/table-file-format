@@ -72,6 +72,9 @@ public final class TableChoicePicker: NSObject, NSPopoverDelegate {
     self.popover = popover
     self.done = done
     popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+    // The keyboard to the list, as a menu takes it when it opens: up, down,
+    // Space, Return and Escape are its, not the table's under it.
+    host.view.window?.makeKey()
   }
 
   @objc public func close() {
@@ -125,6 +128,7 @@ private struct ChoicesList: View {
   @ObservedObject var model: ChoicesModel
   let close: () -> Void
   @State private var focused: String?
+  @FocusState private var hasKeyboard: Bool
 
   var body: some View {
     ScrollView {
@@ -165,6 +169,7 @@ private struct ChoicesList: View {
     .fixedSize(horizontal: false, vertical: true)
     // The keyboard, as a menu's: up and down move, Space toggles, Return and Escape close.
     .focusable()
+    .focused($hasKeyboard)
     .focusEffectDisabled()
     .onKeyPress(.downArrow) { move(1); return .handled }
     .onKeyPress(.upArrow) { move(-1); return .handled }
@@ -172,10 +177,17 @@ private struct ChoicesList: View {
       if let focused { model.toggle(focused) }
       return .handled
     }
-    .onKeyPress(.return) { close(); return .handled }
+    // Return picks the highlighted one in a list of one choice, and closes a list of several.
+    .onKeyPress(.return) {
+      if model.single, let focused { model.toggle(focused) } else { close() }
+      return .handled
+    }
     .onKeyPress(.escape) { close(); return .handled }
     // On the chosen one, when there is one, as a pop-up menu opens on its tick.
-    .onAppear { focused = model.options.first { model.selected.contains($0.value) }?.value ?? model.options.first?.value }
+    .onAppear {
+      focused = model.options.first { model.selected.contains($0.value) }?.value ?? model.options.first?.value
+      hasKeyboard = true
+    }
   }
 
   private func move(_ by: Int) {
