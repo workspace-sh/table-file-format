@@ -50,10 +50,14 @@ describe("editing on Linux saves to the file", () => {
       id = t.cells![0]!.id;
       expect(t.rows.find((r) => r.id === id)?.priority).toBeUndefined();
     });
-    // Shown as what it works out to; edited as the formula.
+    // Shown as what it works out to; edited as the formula, its `=` before the entry, not in it.
     await userEvent.click(await screen.findByText("6"));
-    entry = (await screen.findByDisplayValue("=2 * 3")) as Gtk.Entry;
+    entry = (await screen.findByDisplayValue("2 * 3")) as Gtk.Entry;
+    expect(((await screen.findAllByName("formula-prefix"))[0] as Gtk.Label).getLabel()).toBe("=");
+    // Emptied, and Backspace once more takes the `=`: what's typed then is a value.
     await userEvent.clear(entry);
+    await userEvent.keyboard(entry, "{Backspace}");
+    await waitFor(() => expect(screen.queryAllByName("formula-prefix")).toHaveLength(0));
     await userEvent.type(entry, "4");
     await userEvent.keyboard(entry, "{Enter}");
     await waitFor(async () => {
