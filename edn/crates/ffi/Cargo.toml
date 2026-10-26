@@ -8,8 +8,9 @@ repository.workspace = true
 publish = false
 
 [lib]
-# staticlib for the Apple apps; rlib so this crate's tests can call it.
-crate-type = ["staticlib", "rlib"]
+# cdylib for the Apple apps (a framework of its own: build-apple.sh), staticlib
+# for anything that links it in; rlib so this crate's tests can call it.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 workspace-edn = { path = "../core" }
