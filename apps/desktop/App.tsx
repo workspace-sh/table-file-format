@@ -328,6 +328,7 @@ const styles = css.create({
 interface ViewCallbacks {
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice, or a field: table-app asks first when rows hold it. */
   onRemoveEnumValue?: (fieldName: string, value: string) => void;
@@ -405,6 +406,7 @@ function renderView(
           onUnmerge={cb.onUnmerge}
           onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}

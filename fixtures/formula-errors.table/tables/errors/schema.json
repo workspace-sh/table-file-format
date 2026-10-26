@@ -1,0 +1,44 @@
+{
+  "fields": [
+    {
+      "id": "f44niqpb14e1q",
+      "name": "problem",
+      "type": "string"
+    },
+    {
+      "id": "ysxathwnt5dem",
+      "name": "n",
+      "type": "number"
+    },
+    {
+      "id": "fqjptzycigxiu",
+      "name": "result",
+      "type": "number"
+    },
+    {
+      "id": "kaomy8kbn9pfk",
+      "name": "date",
+      "type": "date"
+    },
+    {
+      "id": "kf7dtstcyihws",
+      "name": "whole",
+      "type": "integer"
+    },
+    {
+      "id": "cy8hcgxt4d6jy",
+      "name": "yes_no",
+      "type": "boolean"
+    },
+    {
+      "id": "ypaajenhdoxh7",
+      "name": "text",
+      "type": "string"
+    },
+    {
+      "id": "qbfq7xngcxpwf",
+      "name": "point",
+      "type": "geopoint"
+    }
+  ]
+}

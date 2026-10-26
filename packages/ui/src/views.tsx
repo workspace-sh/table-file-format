@@ -1085,13 +1085,19 @@ const styles = css.create({
   },
   calendarGrid: {
     display: "flex",
+    flexDirection: "column",
+  },
+  calendarWeek: {
+    display: "flex",
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
   },
   calendarDay: {
     // Same `dayColWidth(n)` applied at use-site as the header cells,
-    // so headers and grid share identical column geometry.
-    flexShrink: 0,
+    // so headers and grid share identical column geometry. It may give a
+    // point or two back when the widths come to more than the row has.
+    flexShrink: 1,
+    minWidth: 0,
     flexGrow: 0,
     boxSizing: "border-box",
     display: "flex",
@@ -6262,73 +6268,82 @@ export function CalendarView({
         ))}
       </html.div>
       <html.div style={styles.calendarGrid}>
-        {cells.map((cell, i) => {
-          const key = dateKey(cell.date);
-          const dayRows = rowsByDate.get(key) ?? [];
-          const dotsToShow = Math.min(dayRows.length, 3);
-          const overflowCount = dayRows.length - dotsToShow;
-          const isToday = key === dateKey(today);
-          const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
-          const moreCount = dayRows.length - chips.length;
-          return (
-            <html.button
-              key={i}
-              onClick={() => {
-                if (chipClicked.current) {
-                  chipClicked.current = false;
-                  return;
-                }
-                setSelectedDateKey(key);
-              }}
-              id={`${dayAnchor}-${key}`}
-              style={[
-                styles.calendarDay,
-                styles.calendarDayButton,
-                styles.cellWidth(dayColWidth(i % 7)),
-                // The calendar's own border is the outer edge; the last
-                // column and last week don't draw a second one.
-                i % 7 === 6 && styles.noRightBorder,
-                i >= cells.length - 7 && styles.noBottomBorder,
-                !cell.inMonth && styles.calendarDayOther,
-              ]}
-            >
-              <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
-                {cell.date.getDate()}
-              </html.span>
-              {!isTouchViewport && chips.length > 0 && (
-                <html.div style={styles.calendarChips}>
-                  {chips.map((row) => (
-                    <html.span
-                      key={row.id}
-                      onClick={() => {
-                        chipClicked.current = true;
-                        onOpenBody?.(row.id);
-                      }}
-                      style={[styles.calendarChip, tintOf(colorsOf(row).row)]}
-                    >
-                      {labelOf(row)}
-                    </html.span>
-                  ))}
-                  {moreCount > 0 && (
-                    <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
+        {/* A week to a row, seven to a row whatever their widths come to: one
+            wrapping row of days put a week's last day at the start of the next
+            line, under the wrong weekday, when the widths came to more than the
+            calendar measured. */}
+        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, week) => (
+          <html.div key={week} style={styles.calendarWeek}>
+            {cells.slice(week * 7, week * 7 + 7).map((cell, j) => {
+              const i = week * 7 + j;
+              const key = dateKey(cell.date);
+              const dayRows = rowsByDate.get(key) ?? [];
+              const dotsToShow = Math.min(dayRows.length, 3);
+              const overflowCount = dayRows.length - dotsToShow;
+              const isToday = key === dateKey(today);
+              const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
+              const moreCount = dayRows.length - chips.length;
+              return (
+                <html.button
+                  key={i}
+                  onClick={() => {
+                    if (chipClicked.current) {
+                      chipClicked.current = false;
+                      return;
+                    }
+                    setSelectedDateKey(key);
+                  }}
+                  id={`${dayAnchor}-${key}`}
+                  style={[
+                    styles.calendarDay,
+                    styles.calendarDayButton,
+                    styles.cellWidth(dayColWidth(i % 7)),
+                    // The calendar's own border is the outer edge; the last
+                    // column and last week don't draw a second one.
+                    i % 7 === 6 && styles.noRightBorder,
+                    i >= cells.length - 7 && styles.noBottomBorder,
+                    !cell.inMonth && styles.calendarDayOther,
+                  ]}
+                >
+                  <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
+                    {cell.date.getDate()}
+                  </html.span>
+                  {!isTouchViewport && chips.length > 0 && (
+                    <html.div style={styles.calendarChips}>
+                      {chips.map((row) => (
+                        <html.span
+                          key={row.id}
+                          onClick={() => {
+                            chipClicked.current = true;
+                            onOpenBody?.(row.id);
+                          }}
+                          style={[styles.calendarChip, tintOf(colorsOf(row).row)]}
+                        >
+                          {labelOf(row)}
+                        </html.span>
+                      ))}
+                      {moreCount > 0 && (
+                        <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
+                      )}
+                    </html.div>
                   )}
-                </html.div>
-              )}
-              {isTouchViewport && dayRows.length > 0 && (
-                <html.div style={styles.calendarDayDots}>
-                  {Array.from({ length: dotsToShow }).map((_, j) => (
-                    <html.span key={j} style={styles.calendarDayDot} />
-                  ))}
-                  {overflowCount > 0 && (
-                    <html.span style={styles.calendarDayMore}>
-                      +{overflowCount}
-                    </html.span>
+                  {isTouchViewport && dayRows.length > 0 && (
+                    <html.div style={styles.calendarDayDots}>
+                      {Array.from({ length: dotsToShow }).map((_, j) => (
+                        <html.span key={j} style={styles.calendarDayDot} />
+                      ))}
+                      {overflowCount > 0 && (
+                        <html.span style={styles.calendarDayMore}>
+                          +{overflowCount}
+                        </html.span>
+                      )}
+                    </html.div>
                   )}
-                </html.div>
-              )}
-            </html.button>
-          );
-        })}
+                </html.button>
+              );
+            })}
+          </html.div>
+        ))}
       </html.div>
       {(() => {
         // Day-detail sheet — renders the selected day's rows as a
