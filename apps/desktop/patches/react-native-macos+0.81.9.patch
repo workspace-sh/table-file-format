@@ -28,6 +28,23 @@ index f5b7fd9..039963f 100644
    CGImageSourceRef sourceRef = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
    if (!sourceRef) {
      return nil;
+diff --git a/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm b/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+index 18bbe64..c9e4356 100644
+--- a/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
++++ b/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+@@ -239,7 +239,11 @@ - (BOOL)control:(NSControl *)control textView:(NSTextView *)fieldEditor doComman
+   // enter/return
+   if (commandSelector == @selector(insertNewline:) || commandSelector == @selector(insertNewlineIgnoringFieldEditor:)) {
+     [self textFieldDidEndEditingOnExit];
+-    if ([textInputDelegate textInputShouldSubmitOnReturn]) {
++    // Workspace patch: the field gives up the keyboard on Return only when its
++    // submitBehavior is blurAndSubmit, as on iOS (textInputShouldReturn).
++    // With "submit" it stays focused: Return is the key handler's, and a
++    // blur after it undid what it decided (a refused value was dropped).
++    if ([textInputDelegate textInputShouldSubmitOnReturn] && [textInputDelegate textInputShouldReturn]) {
+       [[_backedTextInputView window] makeFirstResponder:nil];
+     }
+     commandHandled = YES;
 diff --git a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m b/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
 index a37a1c1..2933ca9 100644
 --- a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
@@ -339,7 +356,7 @@ index 804eec8..1b13af7 100644
  {
    return nil;
 diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
-index 0dd5223..4715a19 100644
+index 6e20d03..ab374dc 100644
 --- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 +++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
 @@ -1035,7 +1035,11 @@ - (RCTUIView *)currentContainerView // [macOS]
