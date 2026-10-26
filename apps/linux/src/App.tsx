@@ -757,6 +757,12 @@ export function App({
     fileNameOf: (bundle: string) => pathOf(bundle)?.split("/").pop(),
   };
   const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
+  // Said in passing: GNOME's toast, which goes by itself and stops nothing.
+  const note = (text: string) => {
+    const toast = Adw.Toast.new(text);
+    toast.setUseMarkup(false);
+    toastOverlay.current?.addToast(toast);
+  };
   // Tables held in the index: their rows are read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
   saveIndexed.current = indexed.save;
@@ -875,7 +881,8 @@ export function App({
     const held = Object.entries({ ...state.opened, ...state.singleFiles }).find(([, at]) => at === path)?.[0];
     const first = held === undefined ? undefined : Object.keys(state.tables).find((key) => bundleOf(key) === held);
     if (first !== undefined) return dispatch({ type: "showTable", key: first });
-    if (!existsSync(path)) return tell(openFailedText(basename(path), "it isn't there"));
+    // A file that isn't there is said in passing, never by an alert that waits (workspace#711).
+    if (!existsSync(path)) return note(openFailedText(basename(path), "it isn't there"));
     if (statSync(path).isDirectory()) return openFolder(path);
     if (isSpreadsheetFile(path)) return openFile(path);
     return openSingle(path);
