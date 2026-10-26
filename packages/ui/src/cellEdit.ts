@@ -114,6 +114,21 @@ export function ownNote(cells: readonly CellFormula[] | undefined, rowId: string
   return cells?.find((c) => c.id === rowId && c.field === field && c.note !== undefined)?.note;
 }
 
+/**
+ * A cell's own formula as it's edited, without its `=`: in Excel syntax its
+ * Excel text, in stored syntax the stored form exactly as the file has it.
+ * The editor draws the `=` before the text, outside it, as it draws a
+ * currency's symbol, and puts it back on saving (FORMULA_PREFIX).
+ */
+export function cellFormulaText(own: string, grid?: Grid, syntax?: "excel" | "stored"): string {
+  if (syntax === "stored") return own;
+  const shown = printFormula(own, { grid, syntax: "excel" });
+  return shown.startsWith("=") ? shown.slice(1) : shown;
+}
+
+/** What a formula's text begins with, drawn before it while it's edited (cellFormulaText): D52's sign of a formula. */
+export const FORMULA_PREFIX = "=";
+
 /** What a cell with its own formula shows when it's edited: `=` and the formula, in the reader's syntax. */
 export function cellFormulaDraft(own: string, grid?: Grid, syntax?: "excel" | "stored"): string {
   const shown = printFormula(own, { grid, ...(syntax ? { syntax } : {}) });
