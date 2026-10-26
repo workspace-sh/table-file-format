@@ -405,6 +405,7 @@ function renderView(
           onUnmerge={cb.onUnmerge}
           onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
