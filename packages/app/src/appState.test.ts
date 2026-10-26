@@ -520,6 +520,19 @@ function one(bundle: string): Library {
   return { tables: { [`${bundle}/${bundle}`]: table }, bundles: { [bundle]: { title: "Notes" } }, paths: {}, problems: {} };
 }
 
+test("replaced: a file read again takes the place of what's held of it, its unwritten edits let go", () => {
+  const opened = run(start(), { type: "opened", library: { ...one("notes"), singleFiles: { notes: "/docs/notes.table" } } });
+  // Edited, and the save found the file changed elsewhere: still to write.
+  const edited = { ...opened, dirty: ["notes", "crm"] };
+  const again = one("notes");
+  const fresh: Library = { ...again, tables: { "notes/ideas": again.tables["notes/notes"]! }, paths: { notes: "/app/work/notes.table" }, singleFiles: { notes: "/docs/notes.table" } };
+  const s = run(edited, { type: "replaced", library: fresh });
+  assert.deepEqual(Object.keys(s.tables).filter((k) => k.startsWith("notes/")), ["notes/ideas"], "a table the file no longer has is gone");
+  assert.deepEqual(s.dirty, ["crm"], "the file's edits aren't written over it; others still are");
+  assert.equal(s.active, "notes/ideas");
+  assert.deepEqual(s.singleFiles, { notes: "/docs/notes.table" });
+});
+
 test("opened: a folder is held and shown, and isn't written back until edited", () => {
   const s = run(start({ stored: { sidebar: { files: true } } }), { type: "opened", library: { ...one("notes"), paths: { notes: "/x/notes.table" } } });
   assert.equal(s.active, "notes/notes");

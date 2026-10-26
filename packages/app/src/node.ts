@@ -19,7 +19,7 @@ import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, t
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
-import { packTableFile, restampTableFile, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { keepEditsAsCopy, packTableFile, restampTableFile, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
@@ -131,6 +131,32 @@ export function packSingleFile(path: string): Promise<void> {
     held.running = null;
   });
   return held.running;
+}
+
+/** The working folder held for the single file `file`, let go of here. */
+function letGo(file: string): string | undefined {
+  const target = resolve(file);
+  const dir = [...singleFiles].find(([, held]) => held.target === target)?.[0];
+  if (dir !== undefined) singleFiles.delete(dir);
+  return dir;
+}
+
+/**
+ * After a save found the single file `file` changed elsewhere
+ * (ChangedElsewhere): its edits packed into a new file beside it, whose
+ * path is returned, and its working folder let go, so opening `file`
+ * again shows it as it now is.
+ */
+export async function keepSingleFileEdits(file: string): Promise<string> {
+  const dir = letGo(file);
+  if (dir === undefined) throw new Error(`${file} isn't open here`);
+  return keepEditsAsCopy(nodeFs, dir, resolve(file));
+}
+
+/** After ChangedElsewhere: the edits to `file` let go, so opening it again shows it as it now is. */
+export async function discardSingleFileEdits(file: string): Promise<void> {
+  const dir = letGo(file);
+  if (dir !== undefined) await takeFileAsItIs(nodeFs, dir);
 }
 
 /**
