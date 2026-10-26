@@ -43,6 +43,8 @@ export {
   rowsBeingBuilt,
   buildSearchIndex,
   alterIndex,
+  fieldChanges,
+  renamesInIndex,
   fillIndex,
   indexFilling,
   setIndexKey,

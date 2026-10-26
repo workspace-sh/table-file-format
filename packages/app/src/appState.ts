@@ -1403,7 +1403,7 @@ export type ViewCallbacks = Required<
     | "onInsertRow"
   >
 > &
-  /** Absent for a table held in the index, whose fields aren't renamed (fieldRenameProblem). */
+  /** Absent while a table is still being read (fieldRenameProblem). */
   Pick<ViewProps, "onRenameField">;
 
 /**
@@ -1420,7 +1420,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUnmerge: (rowId, field) => dispatch({ type: "unmerge", rowId, field }),
     onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
-    ...(state.tables[state.active] && !state.tables[state.active]!.indexed ? { onRenameField: (name: string, to: string) => dispatch({ type: "renameField", name, to }) } : {}),
+    ...(state.tables[state.active] && !state.tables[state.active]!.loading ? { onRenameField: (name: string, to: string) => dispatch({ type: "renameField", name, to }) } : {}),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),
     onDeleteField: (name) => dispatch({ type: "deleteField", name }),
