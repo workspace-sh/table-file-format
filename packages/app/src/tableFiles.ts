@@ -5,7 +5,9 @@
 
 import { TextDecoder } from "@exodus/bytes/encoding-lite.js";
 import { newBundle, orderedTables, readTableArchive, firstLineIsData, tableFromCSV, writeTableArchive, type ReadArchiveOptions } from "@workspace.sh/table-core";
-import { fieldKey } from "@workspace.sh/table-ui/shared";
+// Its own entry, not ./shared: that one brings React components, which a
+// worker importing this (apps/web's SQLite worker) can't load.
+import { fieldKey } from "@workspace.sh/table-ui/fieldKey";
 import type { ParsedBundle } from "@workspace.sh/table-core";
 
 import { tableKeyFor } from "./tableKey.ts";
