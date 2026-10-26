@@ -33,9 +33,9 @@ test("an app that doesn't write history keeps nothing, whatever is edited", () =
   const { tables, bundles } = examples();
   const s = run(
     initialAppState({ tables, bundles }),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "sam" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" },
     { type: "addRow", id: "new-1" },
-    { type: "updateBody", rowId: "p1", content: "Text" },
+    { type: "updateBody", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "Text" },
     { type: "pagesSettled" },
   );
   assert.deepEqual(s.editLog, { on: false, pending: {}, pages: {} });
@@ -43,12 +43,12 @@ test("an app that doesn't write history keeps nothing, whatever is edited", () =
 
 test("a cell edited is one set, from what it held to what it holds; the same value again is nothing", () => {
   const before = start();
-  const was = rowOf(before, "p1").owner;
-  const s = run(before, { type: "updateRow", rowId: "p1", field: "owner", value: "sam" });
-  assert.deepEqual(kept(s), [{ op: "set", row: "p1", field: "owner", from: was, to: "sam" }]);
-  assert.equal(run(s, { type: "updateRow", rowId: "p1", field: "owner", value: "sam" }).editLog, s.editLog);
+  const was = rowOf(before, "xsdxifzn73ohismzm8q5uri8fe").owner;
+  const s = run(before, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" });
+  assert.deepEqual(kept(s), [{ op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: was, to: "sam" }]);
+  assert.equal(run(s, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" }).editLog, s.editLog);
   // Cleared: no `to`.
-  assert.deepEqual(kept(run(s, { type: "updateRow", rowId: "p1", field: "owner", value: null })).at(-1), { op: "set", row: "p1", field: "owner", from: "sam" });
+  assert.deepEqual(kept(run(s, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: null })).at(-1), { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "sam" });
   // Nothing was kept for any other table.
   assert.deepEqual(Object.keys(s.editLog.pending), [KEY]);
 });
@@ -56,16 +56,16 @@ test("a cell edited is one set, from what it held to what it holds; the same val
 test("each edit is its own event, in the order made", () => {
   const s = run(
     start(),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "a" },
-    { type: "updateRow", rowId: "p2", field: "owner", value: "b" },
-    { type: "updateRow", rowId: "p1", field: "owner", value: "c" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "a" },
+    { type: "updateRow", rowId: "1h38m5st7rwanz3hyjb6dy8igr", field: "owner", value: "b" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "c" },
   );
   assert.deepEqual(
     kept(s).map((c) => (c.op === "set" ? [c.row, c.to] : null)),
     [
-      ["p1", "a"],
-      ["p2", "b"],
-      ["p1", "c"],
+      ["xsdxifzn73ohismzm8q5uri8fe", "a"],
+      ["1h38m5st7rwanz3hyjb6dy8igr", "b"],
+      ["xsdxifzn73ohismzm8q5uri8fe", "c"],
     ],
   );
 });
@@ -77,28 +77,28 @@ test("a row added is an insert with the row as it is written", () => {
 
 test("a row deleted is a delete with the whole row, once the question is answered; its page is said too", () => {
   const before = start();
-  const row = rowOf(before, "p10");
-  const page = before.tables[KEY]!.bodies!.p10!;
+  const row = rowOf(before, "ryumw55g4nqi7ytmzrudb7fyru");
+  const page = before.tables[KEY]!.bodies!["ryumw55g4nqi7ytmzrudb7fyru"]!;
   assert.ok(page.length > 0);
-  const asked = run(before, { type: "deleteRow", rowId: "p10" });
+  const asked = run(before, { type: "deleteRow", rowId: "ryumw55g4nqi7ytmzrudb7fyru" });
   assert.deepEqual(kept(asked), []);
   assert.deepEqual(kept(run(asked, { type: "answer", response: "cancel" })), []);
   const gone = run(asked, { type: "answer", response: "delete" });
   assert.deepEqual(kept(gone), [
-    { op: "delete", row: "p10", values: row },
-    { op: "page", row: "p10", from: page },
+    { op: "delete", row: "ryumw55g4nqi7ytmzrudb7fyru", values: row },
+    { op: "page", row: "ryumw55g4nqi7ytmzrudb7fyru", from: page },
   ]);
   assert.deepEqual(gone.editLog.pages, {});
 });
 
 test("undo is a new event that sets the cell back, and redo one that sets it again", () => {
   const before = start();
-  const was = rowOf(before, "p1").owner;
-  const s = run(before, { type: "updateRow", rowId: "p1", field: "owner", value: "sam" }, { type: "undo" }, { type: "redo" });
+  const was = rowOf(before, "xsdxifzn73ohismzm8q5uri8fe").owner;
+  const s = run(before, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" }, { type: "undo" }, { type: "redo" });
   assert.deepEqual(kept(s), [
-    { op: "set", row: "p1", field: "owner", from: was, to: "sam" },
-    { op: "set", row: "p1", field: "owner", from: "sam", to: was },
-    { op: "set", row: "p1", field: "owner", from: was, to: "sam" },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: was, to: "sam" },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "sam", to: was },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: was, to: "sam" },
   ]);
   // A row added, then undone: an insert and a delete.
   const added = run(before, { type: "addRow", id: "new-1" }, { type: "undo" });
@@ -113,74 +113,74 @@ test("undo is a new event that sets the cell back, and redo one that sets it aga
 
 test("a page typed in is one event when it is closed: the text before the first change, and the text at the end", () => {
   const before = start();
-  const page = before.tables[KEY]!.bodies!.p10!;
+  const page = before.tables[KEY]!.bodies!["ryumw55g4nqi7ytmzrudb7fyru"]!;
   const typing = run(
     before,
-    { type: "openPage", rowId: "p10" },
-    { type: "updateBody", rowId: "p10", content: "One" },
-    { type: "updateBody", rowId: "p10", content: "One two" },
-    { type: "updateBody", rowId: "p10", content: "One two three" },
+    { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" },
+    { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "One" },
+    { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "One two" },
+    { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "One two three" },
   );
   // Each save of it is not an event.
   assert.deepEqual(kept(typing), []);
-  assert.deepEqual(typing.editLog.pages, { [KEY]: { p10: page } });
+  assert.deepEqual(typing.editLog.pages, { [KEY]: { "ryumw55g4nqi7ytmzrudb7fyru": page } });
   const closed = run(typing, { type: "openPage", rowId: null });
   // As the page's file holds each: ending in a newline.
-  assert.deepEqual(kept(closed), [{ op: "page", row: "p10", from: page.endsWith("\n") ? page : page + "\n", to: "One two three\n" }]);
+  assert.deepEqual(kept(closed), [{ op: "page", row: "ryumw55g4nqi7ytmzrudb7fyru", from: page.endsWith("\n") ? page : page + "\n", to: "One two three\n" }]);
   assert.deepEqual(closed.editLog.pages, {});
 });
 
 test("a page left as it began says nothing; one opened and not changed says nothing", () => {
   const before = start();
-  const page = before.tables[KEY]!.bodies!.p10!;
+  const page = before.tables[KEY]!.bodies!["ryumw55g4nqi7ytmzrudb7fyru"]!;
   const s = run(
     before,
-    { type: "openPage", rowId: "p10" },
-    { type: "updateBody", rowId: "p10", content: "Changed" },
-    { type: "updateBody", rowId: "p10", content: page },
+    { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" },
+    { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "Changed" },
+    { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: page },
     { type: "openPage", rowId: null },
   );
   assert.deepEqual(kept(s), []);
   assert.deepEqual(s.editLog.pages, {});
-  assert.deepEqual(kept(run(before, { type: "openPage", rowId: "p10" }, { type: "openPage", rowId: null })), []);
+  assert.deepEqual(kept(run(before, { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "openPage", rowId: null })), []);
 });
 
 test("a page's stretch also ends when another page opens, when another table shows, and when the app says typing has been still", () => {
-  const typing = run(start(), { type: "openPage", rowId: "p10" }, { type: "updateBody", rowId: "p10", content: "New text" });
+  const typing = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "New text" });
   for (const end of [
-    { type: "openPage", rowId: "p13" },
+    { type: "openPage", rowId: "jqujockyrs4yw6k6uue9h97tp1" },
     { type: "showTable", key: "crm/deals" },
     { type: "pagesSettled" },
   ] as AppAction[]) {
     const s = run(typing, end);
     assert.deepEqual(
       kept(s).map((c) => [c.op, c.row]),
-      [["page", "p10"]],
+      [["page", "ryumw55g4nqi7ytmzrudb7fyru"]],
       end.type,
     );
     assert.deepEqual(s.editLog.pages, {}, end.type);
   }
   // Said while still open, the next change starts a new stretch from there.
-  const again = run(typing, { type: "pagesSettled" }, { type: "updateBody", rowId: "p10", content: "Newer text" }, { type: "openPage", rowId: null });
+  const again = run(typing, { type: "pagesSettled" }, { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "Newer text" }, { type: "openPage", rowId: null });
   const pages = kept(again).filter((c) => c.op === "page");
   assert.equal(pages.length, 2);
   assert.equal(pages[1]!.op === "page" && pages[1]!.from, pages[0]!.op === "page" && pages[0]!.to);
 });
 
 test("a page saved after its row's page was left (its last save landing late) is said at once", () => {
-  const s = run(start(), { type: "updateBody", rowId: "p10", content: "Late", table: KEY });
+  const s = run(start(), { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "Late", table: KEY });
   assert.deepEqual(
     kept(s).map((c) => [c.op, c.row]),
-    [["page", "p10"]],
+    [["page", "ryumw55g4nqi7ytmzrudb7fyru"]],
   );
 });
 
 test("the app says what it has written, and those leave; what was edited meanwhile stays", () => {
   const s = run(
     start(),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "a" },
-    { type: "updateRow", rowId: "p1", field: "owner", value: "b" },
-    { type: "updateRow", rowId: "p1", field: "owner", value: "c" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "a" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "b" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "c" },
   );
   const some = run(s, { type: "editsWritten", key: KEY, count: 2 });
   assert.deepEqual(
@@ -212,7 +212,7 @@ test("changes to fields and views aren't recorded, nor what a field's change doe
 });
 
 test("files opened and the examples reset aren't edits; what wasn't written for a table that has gone goes with it", () => {
-  const edited = run(start(), { type: "updateRow", rowId: "p1", field: "owner", value: "sam" });
+  const edited = run(start(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" });
   assert.equal(kept(edited).length, 1);
   const { [KEY]: _gone, ...others } = examples().tables;
   const without = run(edited, { type: "reset", fresh: { ...examples(), tables: others } }, { type: "answer", response: "reset" });
@@ -220,10 +220,10 @@ test("files opened and the examples reset aren't edits; what wasn't written for 
   assert.deepEqual(without.editLog.pending, {});
   // Reset to the examples as they shipped, after an edit: the rows go back, and that isn't an edit to say.
   const reset = run(edited, { type: "editsWritten", key: KEY, count: 1 }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
-  assert.notEqual(rowOf(reset, "p1").owner, "sam");
+  assert.notEqual(rowOf(reset, "xsdxifzn73ohismzm8q5uri8fe").owner, "sam");
   assert.deepEqual(reset.editLog.pending, {});
   // An edit not yet written when they are reset, and a page being typed, go too: the files are new.
-  const unwritten = run(edited, { type: "openPage", rowId: "p10" }, { type: "updateBody", rowId: "p10", content: "Typing" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
+  const unwritten = run(edited, { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "Typing" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
   assert.deepEqual(unwritten.editLog, { on: true, pending: {}, pages: {} });
   // Cancelled, they stay.
   const cancelled = run(edited, { type: "reset", fresh: examples() }, { type: "answer", response: "cancel" });
@@ -238,41 +238,41 @@ const indexedStart = (writesHistory = true): AppState => {
 };
 
 test("an indexed table's cell edit is said once the index has made it, from what the index held", () => {
-  const queued = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "owner", value: "sam" });
+  const queued = run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" });
   // Not before: only the index knows what it replaced.
   assert.deepEqual(kept(queued), []);
-  const made = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } });
-  assert.deepEqual(kept(made), [{ op: "set", row: "p1", field: "owner", from: "leslie", to: "sam" }]);
+  const made = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "leslie" } } });
+  assert.deepEqual(kept(made), [{ op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "leslie", to: "sam" }]);
   // A cell that was empty has no from; one cleared has no to.
-  const filled = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: null } } });
-  assert.deepEqual(kept(filled), [{ op: "set", row: "p1", field: "owner", to: "sam" }]);
+  const filled = run(queued, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: null } } });
+  assert.deepEqual(kept(filled), [{ op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", to: "sam" }]);
   const cleared = run(
     indexedStart(),
-    { type: "updateRow", rowId: "p1", field: "owner", value: null },
-    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: null },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "leslie" } } },
   );
-  assert.deepEqual(kept(cleared), [{ op: "set", row: "p1", field: "owner", from: "leslie" }]);
+  assert.deepEqual(kept(cleared), [{ op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "leslie" }]);
 });
 
 test("an indexed table's edit that changed nothing says nothing; one not yet made waits", () => {
   const s = run(
     indexedStart(),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "leslie" },
-    { type: "updateRow", rowId: "p2", field: "owner", value: "sam" },
-    { type: "updateRow", rowId: "p3", field: "owner", value: "kim" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "leslie" },
+    { type: "updateRow", rowId: "1h38m5st7rwanz3hyjb6dy8igr", field: "owner", value: "sam" },
+    { type: "updateRow", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", field: "owner", value: "kim" },
     // The first two are made: the first changed nothing, so the index says nothing undoes it.
-    { type: "indexed", key: KEY, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "p2", field: "owner", value: "leslie" } } },
+    { type: "indexed", key: KEY, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "1h38m5st7rwanz3hyjb6dy8igr", field: "owner", value: "leslie" } } },
   );
   assert.deepEqual(
     kept(s).map((c) => [c.op, c.row]),
-    [["set", "p2"]],
+    [["set", "1h38m5st7rwanz3hyjb6dy8igr"]],
   );
-  const later = run(s, { type: "indexed", key: KEY, count: 17, done: 3, back: { 3: { kind: "cell", rowId: "p3", field: "owner", value: "sam" } } });
+  const later = run(s, { type: "indexed", key: KEY, count: 17, done: 3, back: { 3: { kind: "cell", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", field: "owner", value: "sam" } } });
   assert.deepEqual(
     kept(later).map((c) => [c.op, c.row]),
     [
-      ["set", "p2"],
-      ["set", "p3"],
+      ["set", "1h38m5st7rwanz3hyjb6dy8igr"],
+      ["set", "4csppbyqkcmq3kf4y7zbxeeumg"],
     ],
   );
 });
@@ -281,15 +281,15 @@ test("an indexed table's row added is an insert, and one removed a delete with t
   const added = run(indexedStart(), { type: "addRow", id: "new-1" }, { type: "indexed", key: KEY, count: 18, done: 1, back: { 1: { kind: "remove", rowId: "new-1" } } });
   assert.deepEqual(kept(added), [{ op: "insert", row: "new-1", values: { id: "new-1" } }]);
   const before = indexedStart();
-  const page = before.tables[KEY]!.bodies!.p10!;
-  const row = { id: "p10", title: "Plugin SDK", owner: "claude" };
-  const asked = run(before, { type: "deleteRow", rowId: "p10" }, { type: "answer", response: "delete" });
+  const page = before.tables[KEY]!.bodies!["ryumw55g4nqi7ytmzrudb7fyru"]!;
+  const row = { id: "ryumw55g4nqi7ytmzrudb7fyru", title: "Plugin SDK", owner: "claude" };
+  const asked = run(before, { type: "deleteRow", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "answer", response: "delete" });
   // Its page is the state's, and said at once; the row waits for the index.
-  assert.deepEqual(kept(asked), [{ op: "page", row: "p10", from: page }]);
-  const removed = run(asked, { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p10", row, at: 9 } } });
+  assert.deepEqual(kept(asked), [{ op: "page", row: "ryumw55g4nqi7ytmzrudb7fyru", from: page }]);
+  const removed = run(asked, { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "ryumw55g4nqi7ytmzrudb7fyru", row, at: 9 } } });
   assert.deepEqual(kept(removed), [
-    { op: "page", row: "p10", from: page },
-    { op: "delete", row: "p10", values: row },
+    { op: "page", row: "ryumw55g4nqi7ytmzrudb7fyru", from: page },
+    { op: "delete", row: "ryumw55g4nqi7ytmzrudb7fyru", values: row },
   ]);
   // Two added, one made so far: only that one is said.
   const one = run(indexedStart(), { type: "addRow", id: "new-1" }, { type: "addRow", id: "new-2" }, { type: "indexed", key: KEY, count: 18, done: 1, back: { 1: { kind: "remove", rowId: "new-1" } } });
@@ -305,48 +305,48 @@ test("an indexed table's row added is an insert, and one removed a delete with t
 test("undo and redo of an indexed table's edits are new events, as any table's", () => {
   const edited = run(
     indexedStart(),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "sam" },
-    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "leslie" } } },
   );
   // (The queue was empty again, so the undo's edit is counted from one.)
-  const undone = run(edited, { type: "undo" }, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "sam" } } });
+  const undone = run(edited, { type: "undo" }, { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" } } });
   assert.deepEqual(kept(undone), [
-    { op: "set", row: "p1", field: "owner", from: "leslie", to: "sam" },
-    { op: "set", row: "p1", field: "owner", from: "sam", to: "leslie" },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "leslie", to: "sam" },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", from: "sam", to: "leslie" },
   ]);
   // A row removed, then put back by undo: a delete, then an insert with the whole row.
-  const row = { id: "p3", title: "X" };
+  const row = { id: "4csppbyqkcmq3kf4y7zbxeeumg", title: "X" };
   const removed = run(
     indexedStart(),
-    { type: "deleteRow", rowId: "p3" },
+    { type: "deleteRow", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" },
     { type: "answer", response: "delete" },
-    { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row, at: 2 } } },
+    { type: "indexed", key: KEY, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", row, at: 2 } } },
     { type: "undo" },
-    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "remove", rowId: "p3" } } },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "remove", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" } } },
   );
   assert.deepEqual(
     kept(removed).filter((c) => c.op !== "page"),
     [
-      { op: "delete", row: "p3", values: row },
-      { op: "insert", row: "p3", values: row },
+      { op: "delete", row: "4csppbyqkcmq3kf4y7zbxeeumg", values: row },
+      { op: "insert", row: "4csppbyqkcmq3kf4y7zbxeeumg", values: row },
     ],
   );
 });
 
 test("an indexed table's pages are kept as any table's, and nothing is kept by an app that doesn't write history", () => {
-  const s = run(indexedStart(), { type: "updateBody", rowId: "p10", content: "Text", table: KEY }, { type: "indexed", key: KEY, count: 17, done: 1 });
+  const s = run(indexedStart(), { type: "updateBody", rowId: "ryumw55g4nqi7ytmzrudb7fyru", content: "Text", table: KEY }, { type: "indexed", key: KEY, count: 17, done: 1 });
   assert.deepEqual(
     kept(s).map((c) => [c.op, c.row]),
-    [["page", "p10"]],
+    [["page", "ryumw55g4nqi7ytmzrudb7fyru"]],
   );
   const off = run(
     indexedStart(false),
-    { type: "updateRow", rowId: "p1", field: "owner", value: "sam" },
-    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "leslie" } } },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" },
+    { type: "indexed", key: KEY, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "leslie" } } },
   );
   assert.deepEqual(off.editLog, { on: false, pending: {}, pages: {} });
   // Another table's edits, made in the same breath, aren't taken for this one's.
-  const two = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "owner", value: "sam" }, { type: "indexed", key: "crm/deals", count: 5, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "owner", value: "x" } } });
+  const two = run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "sam" }, { type: "indexed", key: "crm/deals", count: 5, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "owner", value: "x" } } });
   assert.deepEqual(two.editLog.pending, {});
 });
 
@@ -371,28 +371,28 @@ test("rowsChanges: rows are told apart by id, so a row moved is no change; formu
 
 test("a cell given its own formula: its value goes, history says a set and a formula, undo puts both back, a value typed over it takes its place (D52)", () => {
   const before = start();
-  const budget = rowOf(before, "p1").budget;
-  const s = run(before, { type: "setCellFormula", rowId: "p1", field: "budget", expr: "(* 2 1000)" });
-  assert.deepEqual(s.tables[KEY]!.cells, [{ id: "p1", field: "budget", expr: "(* 2 1000)" }]);
-  assert.equal("budget" in rowOf(s, "p1"), false);
+  const budget = rowOf(before, "xsdxifzn73ohismzm8q5uri8fe").budget;
+  const s = run(before, { type: "setCellFormula", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: "(* 2 1000)" });
+  assert.deepEqual(s.tables[KEY]!.cells, [{ id: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: "(* 2 1000)" }]);
+  assert.equal("budget" in rowOf(s, "xsdxifzn73ohismzm8q5uri8fe"), false);
   assert.deepEqual(kept(s), [
-    { op: "set", row: "p1", field: "budget", from: budget },
-    { op: "formula", row: "p1", field: "budget", to: "(* 2 1000)" },
+    { op: "set", row: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", from: budget },
+    { op: "formula", row: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", to: "(* 2 1000)" },
   ]);
   // Undone: the value back, the formula gone.
   const undone = run(s, { type: "undo" });
-  assert.equal(rowOf(undone, "p1").budget, budget);
+  assert.equal(rowOf(undone, "xsdxifzn73ohismzm8q5uri8fe").budget, budget);
   assert.equal(undone.tables[KEY]!.cells, undefined);
   // A value typed over it takes its place.
-  const typed = run(s, { type: "updateRow", rowId: "p1", field: "budget", value: 5 });
+  const typed = run(s, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", value: 5 });
   assert.equal(typed.tables[KEY]!.cells, undefined);
-  assert.deepEqual(kept(typed).at(-1), { op: "formula", row: "p1", field: "budget", from: "(* 2 1000)" });
+  assert.deepEqual(kept(typed).at(-1), { op: "formula", row: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", from: "(* 2 1000)" });
   // Taken away by itself.
-  assert.equal(run(s, { type: "setCellFormula", rowId: "p1", field: "budget", expr: null }).tables[KEY]!.cells, undefined);
+  assert.equal(run(s, { type: "setCellFormula", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: null }).tables[KEY]!.cells, undefined);
 });
 
 test("a row deleted with a cell's own formula has it in its delete event", () => {
-  const s = run(start(), { type: "setCellFormula", rowId: "p1", field: "budget", expr: "1" }, { type: "deleteRow", rowId: "p1" }, { type: "answer", response: "delete" });
+  const s = run(start(), { type: "setCellFormula", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: "1" }, { type: "deleteRow", rowId: "xsdxifzn73ohismzm8q5uri8fe" }, { type: "answer", response: "delete" });
   const gone = kept(s).find((c) => c.op === "delete")!;
   assert.deepEqual(gone.op === "delete" && gone.cells, { budget: { expr: "1" } });
   assert.equal(s.tables[KEY]!.cells, undefined);
@@ -400,20 +400,20 @@ test("a row deleted with a cell's own formula has it in its delete event", () =>
 
 test("a cell's note (D57): asked with the one it has, saved and said, kept when a formula comes and goes", () => {
   const s0 = start();
-  const asked = run(s0, { type: "askCellNote", rowId: "p1", field: "budget" });
+  const asked = run(s0, { type: "askCellNote", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget" });
   assert.equal(asked.asking?.kind, "name");
   assert.equal(asked.asking?.kind === "name" ? asked.asking.prompt.heading : "", "Note on Budget");
   const noted = run(asked, { type: "answer", response: "create", text: "Approved in March" });
-  assert.deepEqual(noted.tables[KEY]!.cells, [{ id: "p1", field: "budget", note: "Approved in March" }]);
-  assert.deepEqual(kept(noted).at(-1), { op: "note", row: "p1", field: "budget", to: "Approved in March" });
+  assert.deepEqual(noted.tables[KEY]!.cells, [{ id: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", note: "Approved in March" }]);
+  assert.deepEqual(kept(noted).at(-1), { op: "note", row: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", to: "Approved in March" });
   // Asked again, it starts from the note.
-  const again = run(noted, { type: "askCellNote", rowId: "p1", field: "budget" });
+  const again = run(noted, { type: "askCellNote", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget" });
   assert.equal(again.asking?.kind === "name" ? again.asking.prompt.value : "", "Approved in March");
   // A formula given and taken away: the note stays.
-  const withFormula = run(noted, { type: "setCellFormula", rowId: "p1", field: "budget", expr: "1" }, { type: "setCellFormula", rowId: "p1", field: "budget", expr: null });
-  assert.deepEqual(withFormula.tables[KEY]!.cells, [{ id: "p1", field: "budget", note: "Approved in March" }]);
+  const withFormula = run(noted, { type: "setCellFormula", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: "1" }, { type: "setCellFormula", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", expr: null });
+  assert.deepEqual(withFormula.tables[KEY]!.cells, [{ id: "xsdxifzn73ohismzm8q5uri8fe", field: "budget", note: "Approved in March" }]);
   // Emptied: gone.
-  const cleared = run(noted, { type: "askCellNote", rowId: "p1", field: "budget" }, { type: "answer", response: "create", text: "" });
+  const cleared = run(noted, { type: "askCellNote", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "budget" }, { type: "answer", response: "create", text: "" });
   assert.equal(cleared.tables[KEY]!.cells, undefined);
 });
 

@@ -225,7 +225,10 @@ on, and what is left, is on the
 `.table` is a file, and moving it between people and devices is the job
 of the app that holds it. The reasoning is in
 [DECISIONS](docs/DECISIONS.md) (D14 and D17) and
-[STORAGE-AND-SYNC](docs/STORAGE-AND-SYNC.md).
+[STORAGE-AND-SYNC](docs/STORAGE-AND-SYNC.md). Workspace's own sync and
+permissions are specified in the
+[Workspace Protocol](https://github.com/workspace-sh/workspace-protocol);
+[PERMISSIONS](docs/PERMISSIONS.md) is how they apply to a `.table`.
 
 `.table` is developed as part of
 [Workspace](https://github.com/workspace-sh), and is meant to be useful

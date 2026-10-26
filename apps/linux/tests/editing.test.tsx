@@ -31,7 +31,7 @@ const tasksOnDisk = () => parseTable(join(bundle, "tables", "tasks"));
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
 }
 
 describe("editing on Linux saves to the file", () => {
@@ -72,7 +72,7 @@ describe("editing on Linux saves to the file", () => {
     await userEvent.keyboard(entry, "{Enter}");
     await waitFor(async () => {
       const t = await tasksOnDisk();
-      expect(t.rows.find((r) => r.id === "t1")?.title).toBe("Renamed task");
+      expect(t.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Renamed task");
     });
   });
 
@@ -87,7 +87,7 @@ describe("editing on Linux saves to the file", () => {
     await waitFor(() => expect(entry.hasCssClass("error")).toBe(true));
     expect(entry.getTooltipText()).toBe("“2.5” isn't a whole number.");
     const t = await tasksOnDisk();
-    expect(t.rows.find((r) => r.id === "t2")?.priority).toBe(2);
+    expect(t.rows.find((r) => r.id === "wpzuom5b9k3k4g6co658ozwerw")?.priority).toBe(2);
   });
 
   it("a new row opens for typing, and is saved with what's typed", async () => {

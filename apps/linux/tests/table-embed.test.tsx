@@ -39,11 +39,11 @@ const problemOf = async (address: string, within?: string) => {
 
 describe("what an embed's address names", () => {
   it("is the table and the view the link names", async () => {
-    const result = await read("../tables/projects.table#table=tasks&view=v2&embed=1");
+    const result = await read("../tables/projects.table#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&embed=1");
     expect(result.kind).toBe("shown");
     if (result.kind !== "shown") return;
     expect(result.key).toBe("projects/tasks");
-    expect(result.viewId).toBe("v2");
+    expect(result.viewId).toBe("gzrqtgo1p3gfehto7tani3jzz4");
     expect(result.library.tables[result.key]!.rows).toHaveLength(8);
     expect(Object.keys(result.library.tables).sort()).toEqual(["projects/projects", "projects/tasks"]);
     expect(result.library.paths).toEqual({ projects: join(root, "tables", "projects.table") });
@@ -51,7 +51,7 @@ describe("what an embed's address names", () => {
 
   it("is the table's first view when the link names none", async () => {
     const result = await read("../tables/crm.table#table=deals&embed=1");
-    expect(result.kind === "shown" && result.viewId).toBe("pipeline");
+    expect(result.kind === "shown" && result.viewId).toBe("oxycwiuri87bqu1s89cpt836n1");
   });
 
   it("reads a path written with percent signs", async () => {
@@ -70,7 +70,7 @@ describe("what an embed's address names", () => {
   });
 
   it("says which views a table has when the link names one it doesn't", async () => {
-    expect(await problemOf("../tables/projects.table#table=tasks&view=nope&embed=1")).toBe("The table “tasks” has no view “nope”. It has “v1”, “v2”.");
+    expect(await problemOf("../tables/projects.table#table=tasks&view=nope&embed=1")).toBe("The table “tasks” has no view “nope”. It has “All tasks by priority”, “Board by status”.");
   });
 
   it("won't read a table outside the folder that was opened, by its path or through a link", async () => {
@@ -109,7 +109,7 @@ const inDocument = (embed: React.ReactNode) => (
 
 describe("a table drawn in a document", () => {
   it("shows the view's rows, with the caption beneath", async () => {
-    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} caption="All tasks by priority" />));
+    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1" baseDir={docs} within={root} caption="All tasks by priority" />));
     expect(await screen.findByText("Land .table extension")).toBeDefined();
     const caption = await screen.findByText("All tasks by priority");
     expect(caption.getName()).toBe("table-embed-caption");
@@ -126,10 +126,10 @@ describe("a table drawn in a document", () => {
       inDocument(
         <>
           <GtkBox name="few">
-            <TableEmbed address="../tables/crm.table#table=companies&view=all&embed=1" baseDir={docs} within={root} />
+            <TableEmbed address="../tables/crm.table#table=companies&view=9gcz9d8ctoqamitkgwfhiu7sru&embed=1" baseDir={docs} within={root} />
           </GtkBox>
           <GtkBox name="many">
-            <TableEmbed address="../tables/projects.table#table=projects&view=v1&embed=1" baseDir={docs} within={root} />
+            <TableEmbed address="../tables/projects.table#table=projects&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1" baseDir={docs} within={root} />
           </GtkBox>
         </>,
       ),
@@ -155,7 +155,7 @@ describe("a table drawn in a document", () => {
 
   it("names a linked row in full, and hands its address to the app when it is clicked", async () => {
     const opened: string[] = [];
-    const address = "../tables/projects.table#table=tasks&view=v1&embed=1";
+    const address = "../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1";
     const first = await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} />));
     // With nowhere to go, it is the row's name, whole.
     const names = (await screen.findAllByText("Table file format spike")) as Gtk.Label[];
@@ -168,12 +168,12 @@ describe("a table drawn in a document", () => {
     await userEvent.click((await screen.findAllByText("Table file format spike"))[0]!);
     expect(opened).toHaveLength(1);
     // As the file's address: the .table as it was read, the table and the row.
-    expect(opened[0]).toBe(`${join(root, "tables", "projects.table")}#table=projects&row=p2`);
+    expect(opened[0]).toBe(`${join(root, "tables", "projects.table")}#table=projects&row=1h38m5st7rwanz3hyjb6dy8igr`);
   });
 
   it("offers the table as a document of its own beside its caption, when the app can open one", async () => {
     const opened: string[] = [];
-    const address = "../tables/projects.table#table=tasks&view=v2&embed=1";
+    const address = "../tables/projects.table#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&embed=1";
     const first = await render(inDocument(<TableEmbed address={address} baseDir={docs} within={root} caption="Tasks by status" />));
     await screen.findByText("Tasks by status");
     expect(screen.queryAllByName("table-embed-open")).toHaveLength(0);
@@ -184,13 +184,13 @@ describe("a table drawn in a document", () => {
     expect(open.getTooltipText()).toBe("Open projects.table");
     await userEvent.click(open);
     // The file, at the table and view drawn.
-    expect(opened).toEqual([`${join(root, "tables", "projects.table")}#table=tasks&view=v2`]);
+    expect(opened).toEqual([`${join(root, "tables", "projects.table")}#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4`]);
     // The caption is still there, centred under the table.
     expect(await screen.findByText("Tasks by status")).toBeDefined();
   });
 
   it("draws a board for a board view", async () => {
-    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=v2&embed=1" baseDir={docs} within={root} />));
+    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&embed=1" baseDir={docs} within={root} />));
     // A column for each status, each headed by it.
     expect((await screen.findAllByText("Land .table extension")).length).toBe(1);
     const embed = (await screen.findAllByName("table-embed"))[0]!;
@@ -225,7 +225,7 @@ describe("an embed asked for so many rows or cards", () => {
   };
 
   it("a table shows its header and that many rows, and scrolls for the rest", async () => {
-    await draw("table=tasks&view=v1&rows=3");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=3");
     const scroller = await scrollerOf();
     // The header and its rule, then three rows of 44 with theirs.
     await waitFor(() => expect(shown(scroller)).toBe(36 + 1 + 3 * 45));
@@ -236,7 +236,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("more rows than the usual limit holds are shown when the link asks for them", async () => {
-    await draw("table=projects&view=v1&rows=12");
+    await draw("table=projects&view=ffaisc1zows4dzhy7aq5jrebkx&rows=12");
     const scroller = await scrollerOf();
     await waitFor(() => expect(shown(scroller)).toBe(36 + 1 + 12 * 45));
     expect(shown(scroller)).toBeGreaterThan(EMBED_MAX_HEIGHT);
@@ -246,7 +246,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("a table with no more rows than that is shown whole", async () => {
-    await draw("table=tasks&view=v1&rows=20");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=20");
     const scroller = await scrollerOf();
     await screen.findByText("OG images");
     await waitFor(() => {
@@ -256,7 +256,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("a list shows that many rows", async () => {
-    await draw("table=projects&view=v7&rows=3");
+    await draw("table=projects&view=u5fpdkwh5w9thdq8o368a9t4nw&rows=3");
     const scroller = await scrollerOf();
     await waitFor(() => {
       const rows = scroller.getFirstChild()!.getFirstChild()!;
@@ -268,7 +268,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("a board shows that many cards down each column", async () => {
-    const one = await draw("table=tasks&view=v2&cards=1");
+    const one = await draw("table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&cards=1");
     let scroller = await scrollerOf();
     let oneCard = 0;
     await waitFor(() => {
@@ -289,13 +289,13 @@ describe("an embed asked for so many rows or cards", () => {
     });
     await one.unmount();
 
-    await draw("table=tasks&view=v2&cards=2");
+    await draw("table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&cards=2");
     scroller = await scrollerOf();
     await waitFor(() => expect(shown(scroller)).toBeGreaterThan(oneCard + 60));
   });
 
   it("a board with no column of more cards than that is shown whole", async () => {
-    await draw("table=tasks&view=v2&cards=5");
+    await draw("table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&cards=5");
     const scroller = await scrollerOf();
     await screen.findByText("OG images");
     await waitFor(() => {
@@ -305,7 +305,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("a gallery shows the lines that hold that many cards", async () => {
-    await draw("table=projects&view=v6&cards=1");
+    await draw("table=projects&view=yxqsjf1fmbakwepxpx4ta44xks&cards=1");
     const scroller = await scrollerOf();
     await waitFor(() => {
       const lines = scroller.getFirstChild()!.getFirstChild()!;
@@ -317,7 +317,7 @@ describe("an embed asked for so many rows or cards", () => {
   });
 
   it("a count of what the layout doesn't show is ignored: the usual limit", async () => {
-    await draw("table=projects&view=v1&cards=2");
+    await draw("table=projects&view=ffaisc1zows4dzhy7aq5jrebkx&cards=2");
     const scroller = await scrollerOf();
     await waitFor(() => expect(shown(scroller)).toBe(EMBED_MAX_HEIGHT));
   });
@@ -334,7 +334,7 @@ describe("an embed cut to its count", () => {
   const nothingToScroll = (scroller: Gtk.ScrolledWindow) => expect(scroller.getVadjustment().getUpper()).toBe(scroller.getVadjustment().getPageSize());
 
   it("a table draws only its first rows, says how many more, and shows them when asked", async () => {
-    await draw("table=tasks&view=v1&rows=3&rest=more");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=3&rest=more");
     const scroller = await scrollerOf();
     // Sorted by priority: these three, and not the fourth.
     for (const title of ["Land .table extension", "Markdown editor polish", "Wire RSD + StyleX"]) expect(await screen.findByText(title)).toBeDefined();
@@ -350,21 +350,21 @@ describe("an embed cut to its count", () => {
   });
 
   it("a table with no more rows than its count has no line beneath", async () => {
-    await draw("table=tasks&view=v1&rows=8&rest=more");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=8&rest=more");
     expect(await screen.findByText("OG images")).toBeDefined();
     expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
   });
 
   it("a table cut to its rows still totals the whole view", async () => {
     // All deals: a count of titles and two sums, over eight rows.
-    await render(inDocument(<TableEmbed address="../tables/crm.table#table=deals&view=all&rows=2&rest=more&embed=1" baseDir={docs} within={root} />));
+    await render(inDocument(<TableEmbed address="../tables/crm.table#table=deals&view=9gcz9d8ctoqamitkgwfhiu7sru&rows=2&rest=more&embed=1" baseDir={docs} within={root} />));
     expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 6 more rows" })).toBeDefined();
     // The footer's count is of every row, not of the two drawn.
     expect((await screen.findAllByText("8")).length).toBeGreaterThan(0);
   });
 
   it("with rows left out, offers no place to add a row, nor an empty totals row, until the rest is shown", async () => {
-    await draw("table=tasks&view=v1&rows=3&rest=more");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=3&rest=more");
     const scroller = await scrollerOf();
     await screen.findByText("Wire RSD + StyleX");
     expect(screen.queryByText("+ New row")).toBeNull();
@@ -376,12 +376,12 @@ describe("an embed cut to its count", () => {
   });
 
   it("with no rows left out, a cut table still offers a new row", async () => {
-    await draw("table=tasks&view=v1&rows=8&rest=more");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=8&rest=more");
     expect(await screen.findByText("+ New row")).toBeDefined();
   });
 
   it("a list draws only its first rows", async () => {
-    await draw("table=projects&view=v7&rows=3&rest=more");
+    await draw("table=projects&view=u5fpdkwh5w9thdq8o368a9t4nw&rows=3&rest=more");
     const scroller = await scrollerOf();
     await screen.findByText("Workspace v1");
     await waitFor(() => {
@@ -395,7 +395,7 @@ describe("an embed cut to its count", () => {
   });
 
   it("a board draws the first cards of each column, each column saying how many more it has and its whole count", async () => {
-    await draw("table=tasks&view=v2&cards=1&rest=more");
+    await draw("table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&cards=1&rest=more");
     const scroller = await scrollerOf();
     await screen.findByText("Settings panel");
     await waitFor(() => {
@@ -417,14 +417,14 @@ describe("an embed cut to its count", () => {
   });
 
   it("a gallery draws only its first cards", async () => {
-    await draw("table=projects&view=v6&cards=2&rest=more");
+    await draw("table=projects&view=yxqsjf1fmbakwepxpx4ta44xks&cards=2&rest=more");
     await screen.findByText("Workspace v1");
     expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 15 more cards" })).toBeDefined();
     expect(screen.queryByText("iOS Pro launch")).toBeNull();
   });
 
   it("is as tall as what it draws, past the usual limit too, with nothing to scroll", async () => {
-    const table = await draw("table=projects&view=v1&rows=12&rest=more");
+    const table = await draw("table=projects&view=ffaisc1zows4dzhy7aq5jrebkx&rows=12&rest=more");
     let scroller = await scrollerOf();
     await waitFor(() => {
       expect(scroller.getVadjustment().getPageSize()).toBeGreaterThan(36 + 12 * 45);
@@ -433,7 +433,7 @@ describe("an embed cut to its count", () => {
     await table.unmount();
 
     // A list of all seventeen rows: taller than the limit, and whole.
-    await draw("table=projects&view=v7&rows=17&rest=more");
+    await draw("table=projects&view=u5fpdkwh5w9thdq8o368a9t4nw&rows=17&rest=more");
     scroller = await scrollerOf();
     await screen.findByText("Workspace v1");
     await waitFor(() => {
@@ -443,7 +443,7 @@ describe("an embed cut to its count", () => {
   });
 
   it("rest=more with a count the layout doesn't show cuts nothing", async () => {
-    await draw("table=tasks&view=v1&cards=2&rest=more");
+    await draw("table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&cards=2&rest=more");
     expect(await screen.findByText("OG images")).toBeDefined();
     expect(screen.queryAllByName("table-embed-more")).toHaveLength(0);
   });
@@ -479,8 +479,8 @@ describe("an embed in a page with margins", () => {
     act(() => {
       scroller.getHadjustment().setValue(value);
     });
-  const DEALS = "../tables/crm.table#table=deals&view=all&rows=3&embed=1";
-  const PIPELINE = "../tables/crm.table#table=deals&view=pipeline&cards=1&embed=1";
+  const DEALS = "../tables/crm.table#table=deals&view=9gcz9d8ctoqamitkgwfhiu7sru&rows=3&embed=1";
+  const PIPELINE = "../tables/crm.table#table=deals&view=oxycwiuri87bqu1s89cpt836n1&cards=1&embed=1";
 
   it("a table's scroller reaches both edges of the window, and the table rests in line with the text", async () => {
     await render(page(DEALS));
@@ -567,7 +567,7 @@ describe("a large table embedded in a document", () => {
     writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
     return tasks;
   };
-  const address = "../tables/projects.table#table=tasks&view=v1&rows=5&rest=more&embed=1";
+  const address = "../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=5&rest=more&embed=1";
 
   it("is drawn from its index: its first rows, cut to the link's count with the rest counted, and an edit written back", async () => {
     const tasks = big();
@@ -609,7 +609,7 @@ describe("a table edited in a document", () => {
     const file = join(tasksDir(), "history.ndjson");
     return existsSync(file) ? parseEditLog(readFileSync(file, "utf8")).events : [];
   };
-  const tasks = () => render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} />));
+  const tasks = () => render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1" baseDir={docs} within={root} />));
 
   it("saves a cell retyped to the file, and says so in its history", async () => {
     await tasks();
@@ -619,8 +619,8 @@ describe("a table edited in a document", () => {
     await userEvent.type(entry, "Renamed in a document");
     await userEvent.keyboard(entry, "{Enter}");
     await waitFor(async () => {
-      expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Renamed in a document");
-      expect(history()).toMatchObject([{ op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Renamed in a document" }]);
+      expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Renamed in a document");
+      expect(history()).toMatchObject([{ op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Land .table extension", to: "Renamed in a document" }]);
     });
   });
 
@@ -632,10 +632,10 @@ describe("a table edited in a document", () => {
     await userEvent.type(entry, "Renamed in a document");
     await userEvent.keyboard(entry, "{Enter}");
     const renamed = await screen.findByText("Renamed in a document");
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Renamed in a document"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Renamed in a document"));
     await userEvent.keyboard(renamed, "{Control>}z{/Control}");
     expect(await screen.findByText("Land .table extension")).toBeDefined();
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Land .table extension"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Land .table extension"));
   });
 
   it("adds a row from “+ New row”, saved with what is typed", async () => {
@@ -648,7 +648,7 @@ describe("a table edited in a document", () => {
   });
 
   it("read-only, has nothing to edit with: no editor on a click, no new row, and Ctrl+Z does nothing", async () => {
-    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} readOnly />));
+    await render(inDocument(<TableEmbed address="../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1" baseDir={docs} within={root} readOnly />));
     const title = await screen.findByText("Land .table extension");
     await userEvent.click(title);
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -664,8 +664,8 @@ describe("a table edited in a document", () => {
     await render(
       inDocument(
         <>
-          <TableEmbed address="../tables/projects.table#table=tasks&view=v1&embed=1" baseDir={docs} within={root} />
-          <TableEmbed address="../tables/projects.table#table=tasks&view=v2&embed=1" baseDir={docs} within={root} />
+          <TableEmbed address="../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1" baseDir={docs} within={root} />
+          <TableEmbed address="../tables/projects.table#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4&embed=1" baseDir={docs} within={root} />
         </>,
       ),
     );
@@ -680,7 +680,7 @@ describe("a table edited in a document", () => {
     // Both show it, and the file has it once.
     await waitFor(async () => expect((await screen.findAllByText("Changed in one")).length).toBe(2));
     expect(screen.queryAllByText("Land .table extension")).toHaveLength(0);
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Changed in one"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Changed in one"));
   });
 
   it("keeps an edit made in the same moment the document lets go of the table", async () => {
@@ -694,7 +694,7 @@ describe("a table edited in a document", () => {
       entry.emit("activate");
       void first.unmount();
     });
-    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "t1")?.title).toBe("Committed as it closed"));
+    await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Committed as it closed"));
   });
 
   it("a file read just after an edit was let go of reads the edit", async () => {
@@ -707,17 +707,17 @@ describe("a table edited in a document", () => {
     await first.unmount();
     // At once, as switching from a document to the table opened as a document does.
     const read = await readEmbed({ address: "../tables/projects.table#table=tasks&embed=1", baseDir: docs, within: root });
-    expect(read.kind === "shown" && read.library.tables[read.key]!.rows.find((r) => r.id === "t1")?.title).toBe("Read straight after");
+    expect(read.kind === "shown" && read.library.tables[read.key]!.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Read straight after");
   });
 
   it("says what was typed in a row's page when the document lets go of it, as closing the page would", async () => {
-    const page = join(root, "tables", "projects.table", "tables", "projects", "bodies", "p2.md");
+    const page = join(root, "tables", "projects.table", "tables", "projects", "bodies", "1h38m5st7rwanz3hyjb6dy8igr.md");
     const pageHistory = () => {
       const file = join(root, "tables", "projects.table", "tables", "projects", "history.ndjson");
       return existsSync(file) ? parseEditLog(readFileSync(file, "utf8")).events : [];
     };
     const before = readFileSync(page, "utf8");
-    await render(inDocument(<TableEmbed address="../tables/projects.table#table=projects&view=v7&embed=1" baseDir={docs} within={root} />));
+    await render(inDocument(<TableEmbed address="../tables/projects.table#table=projects&view=u5fpdkwh5w9thdq8o368a9t4nw&embed=1" baseDir={docs} within={root} />));
     await userEvent.click(await screen.findByText("Table file format spike"));
     const text = (await screen.findAllByRole(Gtk.AccessibleRole.TEXT_BOX)).find((w) => w instanceof Gtk.TextView) as Gtk.TextView;
     await userEvent.type(text, " Typed in a document.");
@@ -725,6 +725,6 @@ describe("a table edited in a document", () => {
     await waitFor(() => expect(readFileSync(page, "utf8")).toContain("Typed in a document."), { timeout: 5000 });
     expect(pageHistory()).toEqual([]);
     await cleanup();
-    await waitFor(() => expect(pageHistory()).toMatchObject([{ op: "page", row: "p2", from: before }]));
+    await waitFor(() => expect(pageHistory()).toMatchObject([{ op: "page", row: "1h38m5st7rwanz3hyjb6dy8igr", from: before }]));
   });
 });

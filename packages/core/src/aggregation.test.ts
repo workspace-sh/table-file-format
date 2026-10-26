@@ -22,22 +22,22 @@ test("rollup: a company's open pipeline sums the open deals that link to it", as
   const { rows } = computeRows(tables.companies!.schema, tables.companies!.rows, { tables, self: "companies" });
   const pipeline = Object.fromEntries(rows.map((r) => [r.id, r.open_pipeline]));
   assert.deepEqual(pipeline, {
-    "co-northwind": 64000,
-    "co-lumen": 22000,
-    "co-atlas": 430000,
-    "co-quill": 0,
-    "co-tidal": 104000,
-    "co-fern": 4800,
+    "znqnjiyryfpbdjfb57fzm6119k": 64000,
+    "yuj6mtu1akbnxbb5k9nmfrh5p6": 22000,
+    "wexwuo344aoowkqiieeb8fk56z": 430000,
+    "w5bqp8gjqebacfc6gnjgp93a98": 0,
+    "ihka6ego6oyrkacacjngf3y7od": 104000,
+    "j3qx6ayq43nqjoogmd7b6jedyi": 4800,
   });
-  assert.equal(byId(rows, "co-atlas").deal_count, 2);
-  assert.equal(byId(rows, "co-quill").deal_count, 1);
+  assert.equal(byId(rows, "wexwuo344aoowkqiieeb8fk56z").deal_count, 2);
+  assert.equal(byId(rows, "w5bqp8gjqebacfc6gnjgp93a98").deal_count, 1);
 });
 
 test("lookup: a deal shows its company's industry", async () => {
   const tables = await crm();
   const { rows } = computeRows(tables.deals!.schema, tables.deals!.rows, { tables, self: "deals" });
-  assert.equal(byId(rows, "dl-1").industry, "Logistics");
-  assert.equal(byId(rows, "dl-4").industry, "Energy");
+  assert.equal(byId(rows, "jddy8scd44w9r1kqur3j4meoii").industry, "Logistics");
+  assert.equal(byId(rows, "x4ch1jcqawdk7y1e7i9hzu9piu").industry, "Energy");
 });
 
 test("column total: the pipeline's total value", async () => {
@@ -55,9 +55,9 @@ test("sheet: each line's share of the quarter's total spending", async () => {
     fields: [...budget.schema.fields, { name: "total", type: "number", computed: { expr: '(sum (values "spend"))', dialect: "table-expr-v1" } }],
   };
   assert.equal(computeRows(schema, budget.rows).rows[0]!.total, 8313);
-  assert.equal(Math.round(Number(byId(rows, "rent").of_spending) * 1000) / 1000, 0.523);
+  assert.equal(Math.round(Number(byId(rows, "yzqhrmxgwi1k3ur81b7epdbim5").of_spending) * 1000) / 1000, 0.523);
   // Income isn't spending: its share is left empty.
-  assert.equal(byId(rows, "income").of_spending, undefined);
+  assert.equal(byId(rows, "d7obaaj5dfw5bexxt8xmgrwbra").of_spending, undefined);
 });
 
 test("count and average skip blanks, and take lists as spreadsheets take ranges", () => {
@@ -79,7 +79,7 @@ test("count and average skip blanks, and take lists as spreadsheets take ranges"
 test("without the other tables, lookup and linked say so (#REF!), they don't guess", async () => {
   const deals = await fixture("deals");
   const { rows } = computeRows(deals.schema, deals.rows);
-  const v = byId(rows, "dl-1").industry;
+  const v = byId(rows, "jddy8scd44w9r1kqur3j4meoii").industry;
   assert.ok(v instanceof FormulaError);
   assert.equal((v as FormulaError).code, "#REF!");
 });
@@ -94,7 +94,7 @@ test("tables that look each other up don't loop", () => {
         { name: "from_b", type: "number", computed: { expr: '(related "b" "from_a")', dialect: "table-expr-v1" } },
       ],
     },
-    rows: [{ id: "a1", b: "b1", n: 5 }],
+    rows: [{ id: "a1", b: "ik9jdn1jye4ajepnxiimo3xc6a", n: 5 }],
     views: [],
     meta: {},
   };
@@ -106,7 +106,7 @@ test("tables that look each other up don't loop", () => {
         { name: "from_a", type: "number", computed: { expr: '(related "a" "n")', dialect: "table-expr-v1" } },
       ],
     },
-    rows: [{ id: "b1", a: "a1" }],
+    rows: [{ id: "ik9jdn1jye4ajepnxiimo3xc6a", a: "a1" }],
     views: [],
     meta: {},
   };
@@ -128,8 +128,8 @@ test("a lookup of another table's rollup of this table computes (#123)", async (
   // but no field depends on itself.
   const tables = await crm();
   const { rows } = computeRows(tables.deals!.schema, tables.deals!.rows, { tables, self: "deals" });
-  assert.equal(byId(rows, "dl-1").company_pipeline, 430000);
-  assert.equal(byId(rows, "dl-4").company_pipeline, 104000);
+  assert.equal(byId(rows, "jddy8scd44w9r1kqur3j4meoii").company_pipeline, 430000);
+  assert.equal(byId(rows, "x4ch1jcqawdk7y1e7i9hzu9piu").company_pipeline, 104000);
 });
 
 test("a real loop across two tables is #REF!, not a hang", () => {
@@ -139,7 +139,7 @@ test("a real loop across two tables is #REF!, not a hang", () => {
       { name: "b", type: "string", relation: { table: "b", field: "id" } },
       { name: "x", type: "number", ...f('(related "b" "y")') },
     ],
-    [{ id: "a1", b: "b1" }],
+    [{ id: "a1", b: "ik9jdn1jye4ajepnxiimo3xc6a" }],
   );
   const b = table(
     "b",
@@ -147,7 +147,7 @@ test("a real loop across two tables is #REF!, not a hang", () => {
       { name: "a", type: "string", relation: { table: "a", field: "id" } },
       { name: "y", type: "number", ...f('(related "a" "x")') },
     ],
-    [{ id: "b1", a: "a1" }],
+    [{ id: "ik9jdn1jye4ajepnxiimo3xc6a", a: "a1" }],
   );
   const { rows } = computeRows(a.schema, a.rows, { tables: { a, b }, self: "a" });
   const v = rows[0]!.x;

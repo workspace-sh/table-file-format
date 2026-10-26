@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { Field, ParsedTable } from "@workspace.sh/table-core";
 import { describeCell, useDisplaySettings, type RelationLink, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { AttachmentImage } from "./AttachmentImage.js";
+import { ErrorMark } from "./ErrorMark.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
 export interface CellValueProps {
@@ -20,6 +21,8 @@ export interface CellValueProps {
   lines?: number;
   /** Start, centre or end, as the field aligns (`effectiveAlign`). */
   xalign?: number;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
 /** Markup-safe text: GTK parses `&`, `<` and `>` in a markup label. */
@@ -34,7 +37,7 @@ function escapeMarkup(text: string): string {
  * character, so a long value can't widen its column: the cell's own width
  * decides, and the text ends in "…" there, as it does on the web.
  */
-function CellText({ text, lines, xalign = 0, cssClasses, tooltip }: { text: string; lines?: number; xalign?: number; cssClasses?: string[]; tooltip?: string }) {
+function CellText({ text, lines, xalign = 0, cssClasses }: { text: string; lines?: number; xalign?: number; cssClasses?: string[] }) {
   const wraps = lines !== undefined && lines > 1;
   return (
     <GtkLabel
@@ -47,7 +50,7 @@ function CellText({ text, lines, xalign = 0, cssClasses, tooltip }: { text: stri
       wrapMode={Pango.WrapMode.WORD_CHAR}
       lines={wraps ? lines : -1}
       cssClasses={cssClasses}
-      tooltipText={tooltip ?? (text.length > 24 ? text : undefined)}
+      tooltipText={text.length > 24 ? text : undefined}
     />
   );
 }
@@ -99,7 +102,7 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
   );
 }
 
-export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0 }: CellValueProps) {
+export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0, inPanel }: CellValueProps) {
   const display = useDisplaySettings();
   const dark = useDark();
   const shown = describeCell(field, value, display, relatedTables);
@@ -124,8 +127,15 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
         </Clipped>
       );
     case "error":
-      // A warning mark and what's wrong; hovering says why, and where the fix is (#685).
-      return <CellText text={`\u26A0\uFE0E ${shown.text}`} xalign={xalign} cssClasses={[styles.formulaError]} tooltip={shown.explanation} />;
+      // Its kind's mark and what's wrong; hovering says why, and where the fix is (#685).
+      return (
+        <Clipped>
+          <GtkBox spacing={4} halign={xalign === 1 ? Gtk.Align.END : xalign === 0.5 ? Gtk.Align.CENTER : Gtk.Align.START} tooltipText={shown.explanation}>
+            <ErrorMark group={shown.group} cssClasses={[styles.formulaError]} />
+            <GtkLabel label={inPanel ? shown.withCode : shown.text} cssClasses={[styles.formulaError]} />
+          </GtkBox>
+        </Clipped>
+      );
     case "pills":
       return (
         <Clipped>

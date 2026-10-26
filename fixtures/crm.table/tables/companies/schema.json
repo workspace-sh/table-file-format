@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "rghwqogkxjjs8",
       "name": "name",
       "type": "string",
       "title": "Company",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "8c9dqd6zp7tyu",
       "name": "domain",
       "type": "string",
       "title": "Domain",
@@ -19,12 +21,14 @@
       }
     },
     {
+      "id": "ctbjed8gnxh9z",
       "name": "website",
       "type": "string",
       "title": "Website",
       "format": "url"
     },
     {
+      "id": "cbs3num9xuqbe",
       "name": "industry",
       "type": "string",
       "title": "Industry",
@@ -59,12 +63,14 @@
       }
     },
     {
+      "id": "8kggyzjcrbp75",
       "name": "customer",
       "type": "boolean",
       "title": "Customer",
       "description": "Has signed at least one deal."
     },
     {
+      "id": "rj9n8y9apsroy",
       "name": "employees",
       "type": "integer",
       "title": "Employees",
@@ -73,6 +79,7 @@
       }
     },
     {
+      "id": "gnsjpcnghb1xg",
       "name": "growth",
       "type": "number",
       "title": "Growth",
@@ -80,12 +87,14 @@
       "description": "Headcount growth over the last year."
     },
     {
+      "id": "pmiidt4zkgr5y",
       "name": "logo",
       "type": "string",
       "title": "Logo",
       "attachment": true
     },
     {
+      "id": "pmf5osu9sjqmk",
       "name": "tags",
       "type": "array",
       "title": "Tags",
@@ -128,6 +137,7 @@
       }
     },
     {
+      "id": "c84gaouo69mpf",
       "name": "open_pipeline",
       "type": "number",
       "title": "Open pipeline",
@@ -139,6 +149,7 @@
       }
     },
     {
+      "id": "jx6u8xw3y4u1a",
       "name": "deal_count",
       "type": "number",
       "title": "Deals",

@@ -13,12 +13,18 @@ off the P2P permission model planned for later.
 
 ## Background
 
-The P2P data layer spike (`workspace-sh/workspace-p2p-spike`) established
-that Hypercore + UCAN + Autobase is a viable foundation for Workspace's
-sync and permission model. The key findings relevant here:
+The Workspace Protocol ([`workspace-sh/workspace-protocol`](https://github.com/workspace-sh/workspace-protocol),
+which began as the P2P data layer spike) established that Hypercore +
+UCAN + Autobase is a viable foundation for Workspace's sync and
+permission model. The protocol itself is specified there, in
+[`docs/permissions/permissions-model.md`](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/permissions/permissions-model.md);
+this document is the per-format view of it. The key findings relevant
+here:
 
 - Each peer's identity is a standards-compliant `did:key:z6Mk…` derived
-  from an ed25519 keypair — the same format UCAN tooling (ucanto) expects.
+  from an ed25519 keypair — the same format UCAN tooling expects (the
+  protocol uses UCAN 1.0 through `iso-ucan`, which superseded its
+  [ADR 0001](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/adr/0001-ucan-library.md)).
 - Permissions travel peer-to-peer as UCAN delegations. No relay or
   central server is required for the data, key distribution, or
   authorisation paths.
@@ -30,8 +36,8 @@ sync and permission model. The key findings relevant here:
   prevents access to *new* data; it cannot retrieve data already received.
   This is the same contract as any system that delivers data to a client.
 
-See [`workspace-p2p-spike/FINDINGS.md`](https://github.com/workspace-sh/workspace-p2p-spike/blob/develop/FINDINGS.md)
-and [`workspace-p2p-spike/docs/ucan-prior-research.md`](https://github.com/workspace-sh/workspace-p2p-spike/blob/develop/docs/ucan-prior-research.md)
+See [`workspace-protocol/FINDINGS.md`](https://github.com/workspace-sh/workspace-protocol/blob/develop/FINDINGS.md)
+and [`workspace-protocol/docs/permissions/ucan-prior-research.md`](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/permissions/ucan-prior-research.md)
 for the full technical background.
 
 ---
@@ -370,21 +376,25 @@ never shared with the wider org.
 
 ---
 
-## Open questions (tracked in `workspace-p2p-spike`)
+## Open questions (tracked in `workspace-protocol`)
 
-- **ucanto delegation for `K_n` keys** — does ucanto's capability model
-  handle scoped key delivery cleanly, or does it need a custom capability
-  type? ([workspace-p2p-spike #5](https://github.com/workspace-sh/workspace-p2p-spike/issues/5))
-- **Autobase merge semantics for the rows files** — how do concurrent
-  edits to the same field across writer logs resolve? Last-write-wins
-  by timestamp, custom rules, or CRDTs on top? The format defers this
-  (D14); the P2P spike has not yet validated Autobase as the answer.
-- **Topic-layer connection authentication** — peers must present a
-  current UCAN proving org membership before block exchange begins.
-  Hyperswarm supports this in principle; the spike has not yet
-  implemented it.
+- **Scoped key delivery for `K_n` keys** — the protocol delivers keys
+  as UCAN 1.0 delegations with wrapped keys, on a key delivery log
+  (permissions-model.md, "Key distribution"). What's left is tuning it
+  and clearing out old deliveries ([#9](https://github.com/workspace-sh/workspace-protocol/issues/9); the epic is
+  [#5](https://github.com/workspace-sh/workspace-protocol/issues/5)).
+- **Merging concurrent edits to the rows files** — decided in the
+  protocol's [ADR 0002](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/adr/0002-autobase-merge-strategy.md):
+  last writer wins per row and per column over Autobase, ties broken
+  by timestamp and then the writer's key, so different columns of one
+  row both survive. The format still defers this (D14). Not built yet
+  ([#11](https://github.com/workspace-sh/workspace-protocol/issues/11), [#12](https://github.com/workspace-sh/workspace-protocol/issues/12)).
+- **Topic-layer connection authentication** — built: a peer must
+  present a current UCAN proving membership before replication
+  begins. Changing the discovery topic when someone leaves is still to
+  do ([#10](https://github.com/workspace-sh/workspace-protocol/issues/10)).
 - **Mobile path** — react-native-bare-kit as the Hypercore host on iOS
-  and Android. ([workspace-p2p-spike #6](https://github.com/workspace-sh/workspace-p2p-spike/issues/6))
+  and Android ([#6](https://github.com/workspace-sh/workspace-protocol/issues/6)).
 - **MLS integration** — the upgrade path for enterprise-scale orgs.
   Out of scope for v1; design must not foreclose it.
 - **`history.ndjson`** — the reserved extension (D14) for an audit log

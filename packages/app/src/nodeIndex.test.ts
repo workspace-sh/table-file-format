@@ -93,17 +93,17 @@ test("a view of an indexed table shows what the table in memory shows, and edits
     assert.deepEqual((await shown.totals()).priority, want.reduce((a, r) => a + (r.priority as number), 0));
     assert.deepEqual((await shown.groups()).map((g) => g.count).reduce((a, b) => a + b, 0), want.length);
 
-    assert.deepEqual(await setIndexedCell(host, "tasks", held, "t1", "title", "Edited in the index"), { value: memory.rows.find((r) => r.id === "t1")!.title });
+    assert.deepEqual(await setIndexedCell(host, "tasks", held, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Edited in the index"), { value: memory.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title });
     assert.equal(await setIndexedCell(host, "tasks", held, "nobody", "title", "x"), null);
     await addIndexedRow(host, "tasks", held, "t-new");
-    await removeIndexedRow(host, "tasks", held, "t2");
+    await removeIndexedRow(host, "tasks", held, "wpzuom5b9k3k4g6co658ozwerw");
     const after = await indexedViewRows(host, "tasks", held, memory.views[0]!, "");
     const ids = await after.ids(0, after.count);
     assert.equal(after.count, want.length);
-    assert.ok(ids.includes("t-new") && !ids.includes("t2"));
-    assert.equal((await after.row("t1"))?.title, "Edited in the index");
+    assert.ok(ids.includes("t-new") && !ids.includes("wpzuom5b9k3k4g6co658ozwerw"));
+    assert.equal((await after.row("ytjc8tj8w8ftnbf9h86s5k9jfk"))?.title, "Edited in the index");
     // A search reaches the edit.
-    assert.deepEqual(await (await indexedViewRows(host, "tasks", held, memory.views[0]!, "edited in the")).ids(0, 5), ["t1"]);
+    assert.deepEqual(await (await indexedViewRows(host, "tasks", held, memory.views[0]!, "edited in the")).ids(0, 5), ["ytjc8tj8w8ftnbf9h86s5k9jfk"]);
     await host.close();
   } finally {
     s.done();
@@ -128,8 +128,8 @@ test("each edit made in the index says what undoes it, and those put the table b
     const second = before[1]!.id;
     await setIndexedBody(host, "tasks", held, second, "A page with a needle in it");
     const edits: IndexEdit[] = [
-      { kind: "cell", rowId: "t1", field: "title", value: "Edited in the index" },
-      { kind: "cell", rowId: "t1", field: "priority", value: undefined },
+      { kind: "cell", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", value: "Edited in the index" },
+      { kind: "cell", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "priority", value: undefined },
       { kind: "add", rowId: "t-new" },
       { kind: "cell", rowId: "t-new", field: "title", value: "New" },
       { kind: "remove", rowId: second },
@@ -153,7 +153,7 @@ test("each edit made in the index says what undoes it, and those put the table b
     assert.deepEqual(await found("needle"), [second]);
     // And what undoes those makes the edits again.
     const again = await makeIndexEdits(host, "tasks", held, undone.back.filter((b) => b !== null).reverse());
-    assert.equal((await all()).find((r) => r.id === "t1")!.title, "Edited in the index");
+    assert.equal((await all()).find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Edited in the index");
     assert.equal((await all()).some((r) => r.id === second), false);
     assert.equal(again.count, before.length);
     await host.close();
@@ -169,14 +169,14 @@ test("saving writes the rows in file order and leaves the index fresh", async ()
     const before = rowsOnDisk(s.tasks);
     const host = openIndexHost(s.bundle);
     await host.ensure("tasks", s.tasks);
-    await setIndexedCell(host, "tasks", held, "t1", "title", "Edited in the index");
+    await setIndexedCell(host, "tasks", held, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Edited in the index");
     await addIndexedRow(host, "tasks", held, "t-new");
-    await removeIndexedRow(host, "tasks", held, "t2");
+    await removeIndexedRow(host, "tasks", held, "wpzuom5b9k3k4g6co658ozwerw");
     await host.save("tasks", s.tasks, true);
     const after = rowsOnDisk(s.tasks);
     assert.deepEqual(
       after,
-      [...before.filter((r) => r.id !== "t2").map((r) => (r.id === "t1" ? { ...r, title: "Edited in the index" } : r)), { id: "t-new" }],
+      [...before.filter((r) => r.id !== "wpzuom5b9k3k4g6co658ozwerw").map((r) => (r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk" ? { ...r, title: "Edited in the index" } : r)), { id: "t-new" }],
     );
     // Fresh for what was written: opening again builds nothing.
     let built = false;
@@ -284,11 +284,11 @@ test("a save takes turns, and an edit made while it writes stops it: the file st
     const stale = async () => (await isIndexStale(host, "tasks", await tableContentKey(s.tasks)));
     const edit = (rowId: string, value: string) => host.rows({ ask: "edits", name: "tasks", table: facts, edits: [{ kind: "cell", rowId, field: "title", value }] });
 
-    await edit("t1", "First");
+    await edit("ytjc8tj8w8ftnbf9h86s5k9jfk", "First");
     turns = 0;
     const stopped = host.save("tasks", s.tasks, true);
     // While it's on its first rows, another edit.
-    await edit("t2", "Second");
+    await edit("wpzuom5b9k3k4g6co658ozwerw", "Second");
     assert.equal(await stopped, false);
     assert.deepEqual(rowsOnDisk(s.tasks), before, "the file is as it was");
     assert.equal(existsSync(join(s.tasks, "rows", "0001.ndjson.tmp")), false);
@@ -300,16 +300,16 @@ test("a save takes turns, and an edit made while it writes stops it: the file st
     assert.ok(turns >= before.length / 2, `${turns} turns`);
     assert.deepEqual(
       rowsOnDisk(s.tasks).map((r) => r.title),
-      before.map((r) => (r.id === "t1" ? "First" : r.id === "t2" ? "Second" : r.title)),
+      before.map((r) => (r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk" ? "First" : r.id === "wpzuom5b9k3k4g6co658ozwerw" ? "Second" : r.title)),
     );
     assert.equal(await stale(), false);
 
     // The save a build is about to read isn't stopped: it has what the index had when it began or since, and is stamped.
-    await edit("t1", "Third");
+    await edit("ytjc8tj8w8ftnbf9h86s5k9jfk", "Third");
     const whole = host.save("tasks", s.tasks, true, undefined, true);
-    await edit("t2", "Fourth");
+    await edit("wpzuom5b9k3k4g6co658ozwerw", "Fourth");
     assert.equal(await whole, true);
-    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t1")!.title, "Third");
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Third");
     await host.close();
   } finally {
     s.done();
@@ -323,7 +323,7 @@ test("a save that only stamps (pages changed, not rows) leaves the index unstamp
     const host = openIndexHost(s.bundle);
     await host.ensure("tasks", s.tasks);
     const saving = host.save("tasks", s.tasks, false);
-    await host.rows({ ask: "edits", name: "tasks", table: { schema: held.schema }, edits: [{ kind: "cell", rowId: "t1", field: "title", value: "Edited" }] });
+    await host.rows({ ask: "edits", name: "tasks", table: { schema: held.schema }, edits: [{ kind: "cell", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", value: "Edited" }] });
     assert.equal(await saving, false);
     assert.equal(await isIndexStale(host, "tasks", await tableContentKey(s.tasks)), true);
     await host.close();
@@ -369,7 +369,7 @@ test("a change of fields is made in the index where it is, and what it leaves to
     assert.equal(await host.alter("tasks", from, to), true);
     // Answering for the new fields at once, the formula's values worked out as they're read.
     const now = await queryIndex(host, { name: "tasks", schema: to });
-    assert.deepEqual((await now!.rows(0, 2)).map((r) => [r.id, r.urgency, "assignee" in r]), [["t1", 5, false], ["t2", 4, false]]);
+    assert.deepEqual((await now!.rows(0, 2)).map((r) => [r.id, r.urgency, "assignee" in r]), [["ytjc8tj8w8ftnbf9h86s5k9jfk", 5, false], ["wpzuom5b9k3k4g6co658ozwerw", 4, false]]);
     const bySoonest = { sort: [{ field: "urgency", direction: "desc" as const }] };
     assert.equal(await queryIndex(host, { name: "tasks", schema: to, query: bySoonest }), null, "sorted by it once it's filled in");
     await host.fill("tasks", to);
@@ -542,7 +542,7 @@ test("a large table split across rows files is handed over as one, in file order
 test("a table with two rows of one id isn't indexed: held in memory, where the later is kept (D54)", async () => {
   const s = scratch();
   try {
-    appendFileSync(join(s.tasks, "rows", "0001.ndjson"), '{"id":"t1","title":"Edited on another branch"}\n');
+    appendFileSync(join(s.tasks, "rows", "0001.ndjson"), '{"id":"ytjc8tj8w8ftnbf9h86s5k9jfk","title":"Edited on another branch"}\n');
     const host = openIndexHost(s.bundle);
     await assert.rejects(host.ensure("tasks", s.tasks), /two of its rows have the same id/);
     await host.close();
@@ -580,36 +580,36 @@ test("a table with cells' own formulas is indexed: shown with their results, edi
   const s = scratch();
   try {
     mkdirSync(join(s.tasks, "cells"), { recursive: true });
-    writeFileSync(join(s.tasks, "cells", "0001.ndjson"), '{"id":"t2","field":"priority","expr":"(* 7 6)"}\n');
+    writeFileSync(join(s.tasks, "cells", "0001.ndjson"), '{"id":"wpzuom5b9k3k4g6co658ozwerw","field":"priority","expr":"(* 7 6)"}\n');
     // The row's own value goes with the formula, as a writer would have left it.
-    const rows = rowsOnDisk(s.tasks).map((r) => (r.id === "t2" ? (({ priority: _p, ...rest }) => rest)(r) : r));
+    const rows = rowsOnDisk(s.tasks).map((r) => (r.id === "wpzuom5b9k3k4g6co658ozwerw" ? (({ priority: _p, ...rest }) => rest)(r) : r));
     writeFileSync(join(s.tasks, "rows", "0001.ndjson"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const held = (await readBundle(nodeFs, s.bundle, { rowsElsewhere: (dir) => dir === s.tasks })).tables.tasks!;
     // Held in the index, its cells are there, not in memory.
     assert.equal(held.cells, undefined);
-    assert.equal(canBeIndexed({ ...held, cells: [{ id: "t2", field: "priority", expr: "(* 7 6)" }] }), true);
-    assert.equal(canBeIndexed({ ...held, cells: [{ id: "t2", field: "priority", expr: '(sum (values "priority"))' }] }), false);
+    assert.equal(canBeIndexed({ ...held, cells: [{ id: "wpzuom5b9k3k4g6co658ozwerw", field: "priority", expr: "(* 7 6)" }] }), true);
+    assert.equal(canBeIndexed({ ...held, cells: [{ id: "wpzuom5b9k3k4g6co658ozwerw", field: "priority", expr: '(sum (values "priority"))' }] }), false);
     const host = openIndexHost(s.bundle);
     await host.ensure("tasks", s.tasks);
     const shownOf = async (id: string) => (await (await indexedViewRows(host, "tasks", held, held.views[0]!, "")).rows(0, 20)).find((r) => r.id === id)!;
-    assert.equal((await shownOf("t2")).priority, 42);
+    assert.equal((await shownOf("wpzuom5b9k3k4g6co658ozwerw")).priority, 42);
     // A formula given in place, and one typed over: undo of that brings the formula back.
-    const made = await makeIndexEdits(host, "tasks", held, [{ kind: "formula", rowId: "t1", field: "priority", expr: "(+ 1 1)" }]);
-    assert.deepEqual(made.back, [{ kind: "formula", rowId: "t1", field: "priority", expr: null }]);
-    assert.equal((await shownOf("t1")).priority, 2);
-    const typed = await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "t2", field: "priority", value: 5 }]);
-    assert.deepEqual(typed.back, [{ kind: "formula", rowId: "t2", field: "priority", expr: "(* 7 6)" }]);
-    assert.equal((await shownOf("t2")).priority, 5);
+    const made = await makeIndexEdits(host, "tasks", held, [{ kind: "formula", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "priority", expr: "(+ 1 1)" }]);
+    assert.deepEqual(made.back, [{ kind: "formula", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "priority", expr: null }]);
+    assert.equal((await shownOf("ytjc8tj8w8ftnbf9h86s5k9jfk")).priority, 2);
+    const typed = await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "wpzuom5b9k3k4g6co658ozwerw", field: "priority", value: 5 }]);
+    assert.deepEqual(typed.back, [{ kind: "formula", rowId: "wpzuom5b9k3k4g6co658ozwerw", field: "priority", expr: "(* 7 6)" }]);
+    assert.equal((await shownOf("wpzuom5b9k3k4g6co658ozwerw")).priority, 5);
     // Another of t1's fields edited: its formula's result isn't taken for a typed value.
-    await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "t1", field: "title", value: "Retitled" }, { kind: "body", rowId: "t1", content: "Notes" }]);
-    assert.equal((await shownOf("t1")).priority, 2);
+    await makeIndexEdits(host, "tasks", held, [{ kind: "cell", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", value: "Retitled" }, { kind: "body", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk", content: "Notes" }]);
+    assert.equal((await shownOf("ytjc8tj8w8ftnbf9h86s5k9jfk")).priority, 2);
     await host.save("tasks", s.tasks, true);
-    assert.equal(readFileSync(join(s.tasks, "cells", "0001.ndjson"), "utf8"), '{"id":"t1","field":"priority","expr":"(+ 1 1)"}\n');
-    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t1")!.priority, undefined);
-    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "t2")!.priority, 5);
+    assert.equal(readFileSync(join(s.tasks, "cells", "0001.ndjson"), "utf8"), '{"id":"ytjc8tj8w8ftnbf9h86s5k9jfk","field":"priority","expr":"(+ 1 1)"}\n');
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.priority, undefined);
+    assert.equal(rowsOnDisk(s.tasks).find((r) => r.id === "wpzuom5b9k3k4g6co658ozwerw")!.priority, 5);
     // Read again from the files, as any reader: the same.
     const again = (await readBundle(nodeFs, s.bundle)).tables.tasks!;
-    assert.deepEqual(again.cells, [{ id: "t1", field: "priority", expr: "(+ 1 1)" }]);
+    assert.deepEqual(again.cells, [{ id: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "priority", expr: "(+ 1 1)" }]);
     await host.close();
   } finally {
     s.done();

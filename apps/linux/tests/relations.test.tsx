@@ -29,7 +29,7 @@ const dealsOnDisk = () => parseTable(join(bundle, "tables", "deals"));
 
 async function openDeals() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="crm/deals" initialView="all" />);
+  await render(<App library={library} initialTable="crm/deals" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
 }
 
 describe("relations on Linux", () => {
@@ -47,7 +47,7 @@ describe("relations on Linux", () => {
     });
     const labels = Array.from({ length: picker!.getModel()!.getNItems() }, (_, i) => (picker!.getModel()!.getItem(i) as Gtk.StringObject).getString());
     picker!.setSelected(labels.indexOf("Lumen Health"));
-    await waitFor(async () => expect((await dealsOnDisk()).rows.find((r) => r.id === "dl-1")?.company).toBe("co-lumen"));
+    await waitFor(async () => expect((await dealsOnDisk()).rows.find((r) => r.id === "jddy8scd44w9r1kqur3j4meoii")?.company).toBe("yuj6mtu1akbnxbb5k9nmfrh5p6"));
   });
 
   it("a deal's contacts are ticked on from the contacts, kept in their table's order", async () => {
@@ -55,16 +55,16 @@ describe("relations on Linux", () => {
     const pickers = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose Contacts" });
     await userEvent.click(pickers[0]!);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.CHECKBOX, { name: "Priya Nair" }));
-    await waitFor(async () => expect((await dealsOnDisk()).rows.find((r) => r.id === "dl-1")?.contacts).toEqual(["ct-maya", "ct-jonas", "ct-priya"]));
+    await waitFor(async () => expect((await dealsOnDisk()).rows.find((r) => r.id === "jddy8scd44w9r1kqur3j4meoii")?.contacts).toEqual(["3zaq9e5my1rrbywrdnfwsfcf4n", "7t7w54pit8zj8swt9ihwbfxbpb", "7xbtoiywn5ahzyyehydb8ds6fc"]));
   });
 
   it("a related row's link opens its table, and its page when it has one", async () => {
     await openDeals();
-    // Atlas Freight has a page (bodies/co-atlas.md): following the link opens it.
-    const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b.getTooltipText()?.includes("co-atlas"))!;
+    // Atlas Freight has a page (bodies/wexwuo344aoowkqiieeb8fk56z.md): following the link opens it.
+    const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b.getTooltipText()?.includes("wexwuo344aoowkqiieeb8fk56z"))!;
     expect(link).toBeDefined();
     await userEvent.click(link);
-    expect(await screen.findByText("bodies/co-atlas.md")).toBeDefined();
+    expect(await screen.findByText("bodies/wexwuo344aoowkqiieeb8fk56z.md")).toBeDefined();
     // Behind it, the companies table is the one shown.
     expect(await screen.findByText("Companies")).toBeDefined();
   });

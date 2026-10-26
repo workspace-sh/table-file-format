@@ -69,6 +69,7 @@ import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
 import { fieldHint, fieldHintText } from "./fieldHintFacts";
 import { FieldHint, Hinted } from "./FieldHint";
+import { ErrorMark } from "./internal/ErrorMark";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
 import { AttachmentImage } from "./internal/AttachmentImage";
 import {
@@ -1577,15 +1578,11 @@ const styles = css.create({
    */
   /** A computed field whose formula failed (#DIV/0!, #VALUE!, …). */
   formulaError: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: 12,
     color: {
       default: "#c00",
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
     },
   },
-  // Plain words read as text, not code.
-  formulaErrorWords: { fontFamily: "inherit", fontSize: 13 },
   relationBroken: {
     fontStyle: "italic",
     opacity: 0.55,
@@ -1974,9 +1971,11 @@ interface CellValueProps {
    * column stretches its children. On the web it's inline there already.
    */
   inColumn?: boolean;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
-function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
+function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn, inPanel }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   const width = useContext(CellWidth);
   const display = useDisplaySettings();
@@ -2005,10 +2004,11 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
         );
       }
     case "error":
-      // A warning mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
+      // Its kind's mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
       return (
-        <Hinted hint={shown.explanation}>
-          <html.span style={[styles.formulaError, shown.text !== shown.code && styles.formulaErrorWords]}>{`\u26A0\uFE0E ${shown.text}`}</html.span>
+        <Hinted hint={shown.explanation} style={styles.formulaError} box>
+          <ErrorMark group={shown.group} />
+          <html.span style={styles.formulaError}>{inPanel ? shown.withCode : shown.text}</html.span>
         </Hinted>
       );
     case "pills": {
@@ -2344,7 +2344,7 @@ function EditableCell({
     closed.current = true;
   }
   const hints = inputHints(field);
-  const { Select: SelectControl, DateInput: DateInputControl } = usePlatformControls();
+  const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
@@ -2458,8 +2458,8 @@ function EditableCell({
     );
   }
 
-  // Boolean: toggle on click, no draft state
-  if (kind === "boolean") {
+  // Boolean: toggle on click, no draft state. A formula that failed shows why, not an unticked box.
+  if (kind === "boolean" && !(value instanceof FormulaError)) {
     return (
       <Toggle
         role="cell"
@@ -2738,6 +2738,30 @@ function EditableCell({
     input
   );
   if (!problem || !problemAt) return field_;
+  if (CellProblem) {
+    const suggestion = problem.suggestion;
+    return (
+      <>
+        {field_}
+        <CellProblem
+          message={problem.message}
+          confirmable={problem.confirmable === true}
+          suggestion={
+            suggestion
+              ? {
+                  label: `Use ${suggestion.slice(0, 4)}`,
+                  onUse: () => {
+                    setDraft(suggestion);
+                    if (commit(suggestion)) onEditEnd?.("done");
+                  },
+                }
+              : undefined
+          }
+          rect={problemAt}
+        />
+      </>
+    );
+  }
   return (
     <>
       {field_}
@@ -5282,6 +5306,7 @@ export function TableView({
                 value={value}
                 relatedTables={relatedTables}
                 lines={1}
+                inPanel
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
@@ -6112,6 +6137,9 @@ export function CalendarView({
   // Google Calendar pattern. On a phone the cells show dots; wider,
   // they show each entry's title, and clicking a title opens it.
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  // A day's rows: the Mac's popover pointing at the day (ChooseOne), else a sheet.
+  const { ChooseOne } = usePlatformControls();
+  const dayAnchor = `day-${useId()}`;
   const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
   // A title chip sits inside its day's button. The chip's click marks
   // itself handled so the day's click doesn't also open the sheet —
@@ -6234,6 +6262,7 @@ export function CalendarView({
                 }
                 setSelectedDateKey(key);
               }}
+              id={`${dayAnchor}-${key}`}
               style={[
                 styles.calendarDay,
                 styles.calendarDayButton,
@@ -6298,6 +6327,20 @@ export function CalendarView({
               year: "numeric",
             })
           : "";
+        if (ChooseOne) {
+          return selectedDateKey && dayRows.length > 0 ? (
+            <ChooseOne
+              key={selectedDateKey}
+              options={dayRows.map((row) => ({ value: row.id, label: labelOf(row) }))}
+              anchor={`${dayAnchor}-${selectedDateKey}`}
+              onPick={(id) => {
+                setSelectedDateKey(null);
+                onOpenBody?.(id);
+              }}
+              onClose={() => setSelectedDateKey(null)}
+            />
+          ) : null;
+        }
         return (
           <BottomSheet
             visible={selectedDateKey !== null}

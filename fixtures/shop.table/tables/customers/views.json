@@ -1,6 +1,6 @@
 [
   {
-    "id": "all",
+    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
     "name": "All customers",
     "layout": "table",
     "totals": {
@@ -10,7 +10,7 @@
     }
   },
   {
-    "id": "top",
+    "id": "gqb75ejrnkarxf75d4zm5zbeho",
     "name": "Top customers",
     "layout": "table",
     "sort": [
@@ -27,7 +27,7 @@
     ]
   },
   {
-    "id": "by-city",
+    "id": "wm1a6nrpnbekeu51be5tkit6wt",
     "name": "By city",
     "layout": "table",
     "group": {

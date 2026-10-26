@@ -28,7 +28,7 @@ afterEach(async () => {
 
 async function openSheet() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="sheet" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="kifpjiq34nhz8k95rc3uezwqu5" />);
 }
 
 describe("a formula cell on Linux", () => {
@@ -64,10 +64,16 @@ describe("a formula cell on Linux", () => {
     schema.fields.find((f) => f.name === "quarter")!.computed!.expr = "(+ jan feb mar (* quarter 0))";
     writeFileSync(schemaFile, JSON.stringify(schema));
     await openSheet();
-    // Excel style, the default: the code, marked, and why on hover (#685).
-    const loop = (await screen.findAllByText("\u26A0\uFE0E #REF!"))[0]!;
-    expect(loop.getTooltipText()).toBe("This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.");
+    // Excel style, the default: the same plain words after their kind's mark; the hover begins with the code (#685).
+    const loop = (await screen.findAllByText("Loops back on itself"))[0]!;
+    // The loop's mark before it (#685).
+    expect(loop.getPrevSibling()).toBeInstanceOf(Gtk.Image);
+    expect(loop.getParent()!.getTooltipText()).toBe(
+      "#REF!: This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.",
+    );
     await userEvent.click(loop);
+    // The panel says the code beside the words.
+    expect((await screen.findAllByText("Loops back on itself · #REF!")).length).toBeGreaterThan(0);
     await userEvent.click(await screen.findByText("Repeat Until It Settles"));
     const iteration = async () => (await parseTable(join(bundle, "tables", "budget"))).meta?.iteration;
     await waitFor(async () => expect(await iteration()).toEqual({ max: 100, change: 0.001 }));
@@ -148,7 +154,7 @@ describe("a formula cell on Linux", () => {
 
   it("in a field's settings on a table that isn't a sheet, a column is added by its name", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="household-budget/budget" initialView="spending" />);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="wsohm6y8imnngf9dirsm38je7w" />);
     await userEvent.click(await screen.findByText("Q1"));
     await screen.findByText("One formula for the whole column.");
     const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
@@ -161,5 +167,22 @@ describe("a formula cell on Linux", () => {
     await waitFor(() => expect(entry.getText()).toBe(`${before} * feb`));
     // Coloured here as in the cell's panel.
     expect(entry.getAttributes()?.toString()).toMatch(/ foreground #/);
+  });
+
+  it("a true/false cell whose formula failed says why, not an unticked box (#685)", async () => {
+    const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const table = join(bundle, "tables", "budget");
+    const schema = JSON.parse(readFileSync(join(table, "schema.json"), "utf8")) as { fields: { name: string; type: string }[] };
+    schema.fields.push({ name: "paid", type: "boolean" });
+    writeFileSync(join(table, "schema.json"), JSON.stringify(schema));
+    const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8")) as { id: string; fields?: string[] }[];
+    views.find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")!.fields!.push("paid");
+    writeFileSync(join(table, "views.json"), JSON.stringify(views));
+    // Rent's own formula gives a number, which a true/false column can't hold (D52).
+    mkdirSync(join(table, "cells"), { recursive: true });
+    writeFileSync(join(table, "cells", "0001.ndjson"), JSON.stringify({ id: "yzqhrmxgwi1k3ur81b7epdbim5", field: "paid", expr: "(+ 1 1)" }) + "\n");
+    await openSheet();
+    const paid = await screen.findByText("Not true or false");
+    expect(paid.getParent()!.getTooltipText()).toBe("#VALUE!: The formula gave 2, and this column holds true or false. Open the formula to change it.");
   });
 });

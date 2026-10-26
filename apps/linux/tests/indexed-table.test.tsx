@@ -26,7 +26,7 @@ beforeEach(() => {
   bundle = join(dir, "projects.table");
   cpSync(join(fixturesDir()!, "projects.table"), bundle, { recursive: true });
   let more = "";
-  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "p1", status: "todo", priority: 9, assignee: "sam" })}\n`;
+  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "xsdxifzn73ohismzm8q5uri8fe", status: "todo", priority: 9, assignee: "sam" })}\n`;
   appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
 });
 
@@ -43,7 +43,7 @@ async function openTasks(openIndex?: (bundleDir: string) => IndexHost) {
   expect(library.tables["projects/tasks"]!.indexed).toBeDefined();
   // Small tables beside it are held in memory as ever.
   expect(library.tables["projects/projects"]!.rows.length).toBeGreaterThan(0);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} {...(openIndex ? { openIndex } : {})} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} {...(openIndex ? { openIndex } : {})} />);
   // Past the first rows shown while its index is made: the view itself.
   await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
   await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
@@ -89,7 +89,7 @@ describe("a table held in the index on Linux", () => {
         },
       };
     };
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} openIndex={slow} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} openIndex={slow} />);
     // The head of the file, in file order: t1 first, though the view sorts by priority.
     await screen.findAllByText("Land .table extension");
     await screen.findAllByText("1,000 of 3,008 rows read");
@@ -128,7 +128,7 @@ describe("a table held in the index on Linux", () => {
         },
       };
     };
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} openIndex={reading} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} openIndex={reading} />);
     const first = await cellOf("Land .table extension");
     const scroller = scrollerOf(first);
     const adjustment = scroller.getVadjustment();
@@ -166,10 +166,10 @@ describe("a table held in the index on Linux", () => {
     await userEvent.type(entry, "ed");
     await userEvent.keyboard(entry, "{Enter}");
     await screen.findAllByText("Zed");
-    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Zed"), { timeout: 5000 });
     const saved = rowsOnDisk();
     expect(saved).toHaveLength(ROWS + 8);
-    expect(saved.at(-1)).toEqual({ id: `b${ROWS - 1}`, title: `Big ${ROWS - 1}`, project: "p1", status: "todo", priority: 9, assignee: "sam" });
+    expect(saved.at(-1)).toEqual({ id: `b${ROWS - 1}`, title: `Big ${ROWS - 1}`, project: "xsdxifzn73ohismzm8q5uri8fe", status: "todo", priority: 9, assignee: "sam" });
     // Saved, the index is fresh for the file: opening again builds nothing.
     const host = openIndexHost(bundle);
     let built = false;
@@ -181,7 +181,7 @@ describe("a table held in the index on Linux", () => {
   it("with a line its rows can't read, it's held in memory instead and says so, and a save keeps the line (#567)", async () => {
     appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} />);
     // Said, in a dialog of its own, then put away.
     let told: Adw.AlertDialog | undefined;
     await waitFor(async () => {
@@ -210,19 +210,19 @@ describe("a table held in the index on Linux", () => {
     await userEvent.type(entry, "ed");
     await userEvent.keyboard(entry, "{Enter}");
     await screen.findAllByText("Zed");
-    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Zed"), { timeout: 5000 });
     await waitFor(() => expect(window.getActionEnabled("undo")).toBe(true));
 
     window.activateAction("win.undo", null);
     await screen.findAllByText("Land .table extension");
-    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Land .table extension"), { timeout: 5000 });
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Land .table extension"), { timeout: 5000 });
     expect(rowsOnDisk()).toHaveLength(ROWS + 8);
     await waitFor(() => expect(window.getActionEnabled("redo")).toBe(true));
     expect(window.getActionEnabled("undo")).toBe(false);
 
     window.activateAction("win.redo", null);
     await screen.findAllByText("Zed");
-    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "t1")?.title).toBe("Zed"), { timeout: 5000 });
+    await waitFor(() => expect(rowsOnDisk().find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Zed"), { timeout: 5000 });
   });
 
   it("its edits go to its history as any table's: a cell edited, then undone, each with what the index held", async () => {
@@ -238,14 +238,14 @@ describe("a table held in the index on Linux", () => {
     const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
     await userEvent.type(entry, "ed");
     await userEvent.keyboard(entry, "{Enter}");
-    await waitFor(() => expect(history()).toEqual([{ op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Zed" }]), { timeout: 5000 });
+    await waitFor(() => expect(history()).toEqual([{ op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Land .table extension", to: "Zed" }]), { timeout: 5000 });
     await waitFor(() => expect(window.getActionEnabled("undo")).toBe(true));
     window.activateAction("win.undo", null);
     await waitFor(
       () =>
         expect(history()).toEqual([
-          { op: "set", row: "t1", field: "title", from: "Land .table extension", to: "Zed" },
-          { op: "set", row: "t1", field: "title", from: "Zed", to: "Land .table extension" },
+          { op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Land .table extension", to: "Zed" },
+          { op: "set", row: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "title", from: "Zed", to: "Land .table extension" },
         ]),
       { timeout: 5000 },
     );
@@ -329,7 +329,7 @@ describe("a table held in the index on Linux", () => {
     appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
     // v2 is the board by status.
-    await render(<App library={library} initialTable="projects/tasks" initialView="v2" indexedFrom={1000} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="gzrqtgo1p3gfehto7tani3jzz4" indexedFrom={1000} />);
     await screen.findAllByText("Too Many Rows for This Layout");
     await screen.findAllByText(/This view shows 6,008 rows\./);
     const search = (await screen.findByPlaceholderText("Search rows")) as Gtk.SearchEntry;
@@ -342,7 +342,7 @@ describe("a table held in the index on Linux", () => {
   it("exports as a single-file .table with every row", async () => {
     const out = join(dir, "out.table");
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" indexedFrom={1000} chooseSaveAs={async () => out} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} chooseSaveAs={async () => out} />);
     await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
     const button = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" });
     (button.getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.export-file", null);

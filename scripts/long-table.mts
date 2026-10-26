@@ -4,12 +4,16 @@
 // enough to sit with the other fixtures and load instantly. A large table
 // (10,000 rows and up) is scripts/big-table.mts.
 //
-//   npx tsx scripts/long-table.mts
+//   node --conditions=source --import tsx scripts/long-table.mts
 //
 // Then `npm run fixtures:generate` bundles it for the apps.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { fixtureId } from "./fixture-ids.mts";
+import { writeBundleTo } from "../packages/core/src/io.ts";
+import { nodeFs } from "../packages/core/src/node-fs.ts";
+import type { Row, TableSchema, View } from "../packages/core/src/types.ts";
 
 const ROWS = 1000;
 const out = join(import.meta.dirname, "..", "fixtures", "library.table");
@@ -42,7 +46,7 @@ function title(): string {
   }
 }
 
-const rows: string[] = [];
+const rows: Row[] = [];
 const seen = new Set<string>();
 for (let i = 1; rows.length < ROWS; i++) {
   let name = title();
@@ -51,8 +55,8 @@ for (let i = 1; rows.length < ROWS; i++) {
   if (seen.has(name)) continue;
   seen.add(name);
   const added = new Date(Date.UTC(2024, 0, 1) + between(0, 1000) * 86_400_000).toISOString().slice(0, 10);
-  const row: Record<string, unknown> = {
-    id: `b${rows.length + 1}`,
+  const row: Row = {
+    id: fixtureId(`row/b${rows.length + 1}`),
     title: name,
     author: `${pick(firsts)} ${pick(lasts)}`,
     genre: pick(genres),
@@ -64,10 +68,10 @@ for (let i = 1; rows.length < ROWS; i++) {
   };
   // Some books are unrated: an empty cell, as a real list has.
   if (random() < 0.8) row.rating = between(1, 5);
-  rows.push(JSON.stringify(row));
+  rows.push(row);
 }
 
-const schema = {
+const schema: TableSchema = {
   fields: [
     { name: "title", type: "string", constraints: { required: true } },
     { name: "author", type: "string" },
@@ -83,31 +87,23 @@ const schema = {
   "schema-version": 1,
 };
 
-const views = [
-  { id: "all", name: "All books", layout: "table", sort: [{ field: "title", direction: "asc" }] },
-  { id: "genre", name: "By genre", layout: "board", board_field: "genre", fields: ["title", "author", "year"] },
-  { id: "unread", name: "To read", layout: "table", filter: [{ field: "read", operator: "eq", value: false }], sort: [{ field: "added", direction: "desc" }] },
-  { id: "recent", name: "Recently added", layout: "table", sort: [{ field: "added", direction: "desc" }] },
+const views: View[] = [
+  { id: fixtureId("view/all"), name: "All books", layout: "table", sort: [{ field: "title", direction: "asc" }] },
+  { id: fixtureId("view/genre"), name: "By genre", layout: "board", board_field: "genre", fields: ["title", "author", "year"] },
+  { id: fixtureId("view/unread"), name: "To read", layout: "table", filter: [{ field: "read", operator: "eq", value: false }], sort: [{ field: "added", direction: "desc" }] },
+  { id: fixtureId("view/recent"), name: "Recently added", layout: "table", sort: [{ field: "added", direction: "desc" }] },
 ];
 
-const meta = {
-  format: "table",
-  formatVersion: 2,
-  title: "Library",
-  description: "A long list: 1,000 books, for scrolling a long table and its header.",
-  tables: ["books"],
-  created_at: "2026-10-14T00:00:00Z",
-  modified_at: "2026-10-14T00:00:00Z",
-};
-
-const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
-const table = join(out, "tables", "books");
-mkdirSync(table, { recursive: true });
-writeFileSync(join(out, "meta.json"), json(meta));
-writeFileSync(join(table, "meta.json"), json({ title: "Books" }));
-writeFileSync(join(table, "schema.json"), json(schema));
-writeFileSync(join(table, "views.json"), json(views));
-// In rows/ (SPEC section 3, D51): 1,000 books is one file.
-mkdirSync(join(table, "rows"), { recursive: true });
-writeFileSync(join(table, "rows", "0001.ndjson"), `${rows.join("\n")}\n`);
+// Written by core, as an app saves a table: field ids (D62), the rows files (D51), the canonical form.
+rmSync(out, { recursive: true, force: true });
+await writeBundleTo(nodeFs, out, {
+  meta: {
+    title: "Library",
+    description: "A long list: 1,000 books, for scrolling a long table and its header.",
+    tables: ["books"],
+    created_at: "2026-10-14T00:00:00Z",
+    modified_at: "2026-10-14T00:00:00Z",
+  },
+  tables: { books: { schema, rows, views, meta: { title: "Books" } } },
+});
 console.log(`wrote ${rows.length} rows to ${out}`);

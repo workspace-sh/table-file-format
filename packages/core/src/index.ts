@@ -1,5 +1,6 @@
 export * from "./types.js";
-export { newId, ID_ALPHABET, ID_LENGTH } from "./id.js";
+export { newId, newFieldId, idNumber, ID_ALPHABET, ID_LENGTH, FIELD_ID_LENGTH } from "./id.js";
+export { withFieldIds, addressedField, derivedFieldId } from "./fieldIds.js";
 export { newTable, newBundle } from "./new-table.js";
 export { isTableName, tableOrder, orderedTables } from "./bundle.js";
 export {
@@ -82,6 +83,7 @@ export {
 export {
   parseAddress,
   formatAddress,
+  addressedView,
   resolveRow,
   type Address,
   type TableLookup,

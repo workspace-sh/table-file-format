@@ -11,9 +11,10 @@ import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef
 import { Pressable, requireNativeComponent, View as ReactNativeView, type View, type ViewProps } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
-import { chooseMany, chooseManyClose, chooseOne, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
+import type { CellProblemProps, CellProblemSlot, ChooseManyProps, ChooseManySlot, ChooseOneProps, ChooseOneSlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
+import { chooseMany, chooseManyClose, chooseOne, onContextMenu, pickDate, popUpMenu, showProblem, type PopUpItem } from "./native";
 
+export { useMacFormulaEditing } from "./formula";
 export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
 export { datePickerClose, datePickerSet, datePickerShown, onContextMenu, pickDate, popUpChoose, popUpMenu, popUpTitles, type PopUpItem } from "./native";
 
@@ -164,6 +165,49 @@ function ChooseManyView({ options, selected, onToggle, anchor, rect, onClose }: 
 
 export const MacChooseMany: ChooseManySlot = ChooseManyView;
 
+/**
+ * One of a list (a calendar day's rows) in the same popover, pointing at the
+ * element the views name; a pick or a click outside closes it.
+ */
+function ChooseOneView({ options, anchor, onPick, onClose }: ChooseOneProps): null {
+  const latest = useRef({ onPick, onClose });
+  latest.current = { onPick, onClose };
+  useEffect(() => {
+    let open = true;
+    void chooseOne(options, null, anchor).then((picked) => {
+      if (!open) return;
+      if (picked === null) latest.current.onClose();
+      else latest.current.onPick(picked);
+    });
+    return () => {
+      open = false;
+      chooseManyClose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+  return null;
+}
+
+export const MacChooseOne: ChooseOneSlot = ChooseOneView;
+
+/**
+ * Why a cell's draft wasn't saved, in a popover of the system's pointing at
+ * the cell, which leaves typing in the cell (TableProblemNote.swift). Shown
+ * while the views have it; nothing of its own is drawn here.
+ */
+function CellProblemView({ message, confirmable, suggestion, rect }: CellProblemProps): null {
+  const use = useRef(suggestion?.onUse);
+  use.current = suggestion?.onUse;
+  const label = suggestion?.label ?? null;
+  useEffect(
+    () => showProblem(message, confirmable, label, { x: rect.left, y: rect.top, width: rect.width, height: rect.height }, () => use.current?.()),
+    [message, confirmable, label, rect.left, rect.top, rect.width, rect.height],
+  );
+  return null;
+}
+
+export const MacCellProblem: CellProblemSlot = CellProblemView;
+
 /** The Mac's controls, for PlatformControlsProvider. One object, so the views' rows aren't remounted. */
 /** The system's checkbox (macos/TableCheckbox.m). */
 const NativeCheckbox = requireNativeComponent<ViewProps & { checked: boolean; label?: string; onChange: (event: { nativeEvent: { checked: boolean } }) => void }>("TableCheckbox");
@@ -187,7 +231,7 @@ function ToggleView({ checked, onChange, label, children, style }: ToggleProps):
 
 export const MacToggle: ToggleSlot = ToggleView;
 
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, Toggle: MacToggle };
+export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, ChooseOne: MacChooseOne, CellProblem: MacCellProblem, Toggle: MacToggle };
 
 const styles = css.create({
   toggleRow: {

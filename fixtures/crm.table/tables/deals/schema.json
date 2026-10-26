@@ -1,6 +1,7 @@
 {
   "fields": [
     {
+      "id": "j49tkemwbf17r",
       "name": "title",
       "type": "string",
       "title": "Deal",
@@ -9,6 +10,7 @@
       }
     },
     {
+      "id": "mabuakau8tjug",
       "name": "company",
       "type": "string",
       "title": "Company",
@@ -18,6 +20,7 @@
       }
     },
     {
+      "id": "pbpftmn36sxnq",
       "name": "contacts",
       "type": "array",
       "title": "Contacts",
@@ -28,6 +31,7 @@
       }
     },
     {
+      "id": "md7yzo3kw3d81",
       "name": "stage",
       "type": "string",
       "title": "Stage",
@@ -68,6 +72,7 @@
       }
     },
     {
+      "id": "yenis3phpcrn1",
       "name": "value",
       "type": "number",
       "title": "Value",
@@ -75,6 +80,7 @@
       "align": "end"
     },
     {
+      "id": "gqhzunramagty",
       "name": "probability",
       "type": "number",
       "title": "Probability",
@@ -85,6 +91,7 @@
       }
     },
     {
+      "id": "x638q3pmppoye",
       "name": "weighted",
       "type": "number",
       "title": "Weighted",
@@ -95,6 +102,7 @@
       }
     },
     {
+      "id": "ckjab9fcna5nf",
       "name": "open_value",
       "type": "number",
       "title": "Open value",
@@ -105,16 +113,19 @@
       }
     },
     {
+      "id": "r57wxgpofr4hg",
       "name": "close_date",
       "type": "date",
       "title": "Close date"
     },
     {
+      "id": "gm95w4ffnqbgi",
       "name": "renewal",
       "type": "boolean",
       "title": "Renewal"
     },
     {
+      "id": "cbs3num9xuqbe",
       "name": "industry",
       "type": "string",
       "title": "Industry",
@@ -125,6 +136,7 @@
       }
     },
     {
+      "id": "nczi59m8iph3w",
       "name": "company_pipeline",
       "type": "number",
       "title": "Company pipeline",

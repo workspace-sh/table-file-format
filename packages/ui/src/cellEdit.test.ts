@@ -90,7 +90,7 @@ test("a relation is picked from its related table's rows, by their titles", asyn
   assert.equal(relatesMany({ name: "x", type: "array", relation: { table: "t", field: "id" } }), true);
   const options = relationOptions(company, related);
   assert.equal(options.length, tables["companies"]!.rows.length);
-  assert.deepEqual(options[0], { value: "co-northwind", label: "Northwind Traders" });
+  assert.deepEqual(options[0], { value: "znqnjiyryfpbdjfb57fzm6119k", label: "Northwind Traders" });
   assert.deepEqual(relationOptions(company, {}), []);
 });
 

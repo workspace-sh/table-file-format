@@ -124,6 +124,21 @@ export interface ChooseManyProps {
 /** A ChooseMany control, or null where the views draw their own. */
 export type ChooseManySlot = ((props: ChooseManyProps) => ReactElement | null) | null;
 
+/**
+ * One of a list, picked from a popover pointing at the element whose `id` is
+ * `anchor` (the Mac's, the same as ChooseMany's): the rows of a calendar's
+ * day, say. A pick or a click outside closes it.
+ */
+export interface ChooseOneProps {
+  options: { value: string; label: string; color?: string }[];
+  anchor: string;
+  onPick: (value: string) => void;
+  onClose: () => void;
+}
+
+/** A ChooseOne control, or null where the views draw their own (a sheet). */
+export type ChooseOneSlot = ((props: ChooseOneProps) => ReactElement | null) | null;
+
 /** A DateInput control; `available` false where cells type their dates instead. */
 export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
 
@@ -278,7 +293,29 @@ export interface PlatformControls {
   SettingsForm: SettingsFormSlot;
   /** Several choices over a cell; absent or null, the views' own menu. */
   ChooseMany?: ChooseManySlot;
+  ChooseOne?: ChooseOneSlot;
+  /** Why a cell's draft wasn't saved; absent or null, the views' own note under the cell. */
+  CellProblem?: CellProblemSlot;
 }
+
+/**
+ * Why a cell's draft wasn't saved (D42), shown at the cell while it's
+ * still being edited: a value the column can't hold, or one to confirm
+ * (Return again keeps it), with a value to use instead where there is one.
+ * The platform's own: a popover of the system's on a Mac. Absent, the
+ * views draw their own note under the cell.
+ */
+export interface CellProblemProps {
+  message: string;
+  /** Asked, not refused: Return again keeps the draft. */
+  confirmable: boolean;
+  /** A value to use instead, as a button ("Use 2024"). */
+  suggestion?: { label: string; onUse: () => void };
+  /** The cell's input, where React measures it. */
+  rect: AnchorRect;
+}
+
+export type CellProblemSlot = ((props: CellProblemProps) => ReactElement | null) | null;
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
 export type RowActionsSlot = ((props: RowActionsProps) => ReactElement) & { gesture?: string };

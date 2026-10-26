@@ -10,11 +10,14 @@
 // note, and one formula column (weighted = amount × probability), so the
 // formula engine is part of what's measured.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseBundle } from "../packages/core/src/parser.ts";
+import { fixtureId } from "./fixture-ids.mts";
+import { writeBundleTo } from "../packages/core/src/io.ts";
+import { nodeFs } from "../packages/core/src/node-fs.ts";
 import { bundleToArchive } from "../packages/app/src/tableFiles.ts";
-import { FIRST_ROWS_FILE, ROWS_FILE_BYTES, nameAfter } from "../packages/core/src/rowFiles.ts";
+import type { Row, TableSchema } from "../packages/core/src/types.ts";
 
 const n = Number(process.argv[2]);
 const out = process.argv[3];
@@ -39,62 +42,43 @@ const words = ["Atlas", "Northwind", "Lumen", "Tidal", "Quill", "Fern", "Harbor"
 const kinds = ["renewal", "expansion", "pilot", "migration", "audit", "rollout", "support plan", "licence"];
 const notes = ["Follow up next week.", "Waiting on procurement.", "Champion is keen.", "Needs a security review.", "Budget confirmed.", ""];
 
+
 const name = `big-${n}`;
 const dir = join(out, `${name}.table`);
-const tableDir = join(dir, "tables", "deals");
-await mkdir(tableDir, { recursive: true });
-
 const now = "2026-10-02T00:00:00Z";
-await writeFile(
-  join(dir, "meta.json"),
-  JSON.stringify({ format: "table", formatVersion: 2, title: `Big (${n.toLocaleString("en")} rows)`, tables: ["deals"], created_at: now, modified_at: now, generator: "scripts/big-table.ts" }, null, 2) + "\n",
-);
-await writeFile(join(tableDir, "meta.json"), JSON.stringify({ title: "Deals", created_at: now, modified_at: now }, null, 2) + "\n");
-await writeFile(
-  join(tableDir, "schema.json"),
-  JSON.stringify(
-    {
-      fields: [
-        { name: "title", type: "string", constraints: { required: true } },
-        {
-          name: "stage",
-          type: "string",
-          constraints: {
-            enum: [
-              { value: "lead", color: "gray" },
-              { value: "qualified", color: "blue" },
-              { value: "proposal", color: "purple" },
-              { value: "negotiation", color: "orange" },
-              { value: "won", color: "green" },
-              { value: "lost", color: "red" },
-            ],
-          },
-        },
-        { name: "amount", type: "number", format: "currency" },
-        { name: "probability", type: "number" },
-        { name: "owner", type: "string" },
-        { name: "close_date", type: "date" },
-        { name: "note", type: "string" },
-        { name: "weighted", type: "number", format: "currency", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
-      ],
-    },
-    null,
-    2,
-  ) + "\n",
-);
-await writeFile(
-  join(tableDir, "views.json"),
-  JSON.stringify([{ id: "all", name: "All deals", layout: "table" }], null, 2) + "\n",
-);
 
-// Rows in chunks, so a million is never one huge string in memory.
-const lines: string[] = [];
-let rows = "";
+const schema: TableSchema = {
+  fields: [
+    { name: "title", type: "string", constraints: { required: true } },
+    {
+      name: "stage",
+      type: "string",
+      constraints: {
+        enum: [
+          { value: "lead", color: "gray" },
+          { value: "qualified", color: "blue" },
+          { value: "proposal", color: "purple" },
+          { value: "negotiation", color: "orange" },
+          { value: "won", color: "green" },
+          { value: "lost", color: "red" },
+        ],
+      },
+    },
+    { name: "amount", type: "number", format: "currency" },
+    { name: "probability", type: "number" },
+    { name: "owner", type: "string" },
+    { name: "close_date", type: "date" },
+    { name: "note", type: "string" },
+    { name: "weighted", type: "number", format: "currency", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
+  ],
+};
+
+const rows: Row[] = [];
 for (let i = 0; i < n; i++) {
   const month = 1 + Math.floor(random() * 12);
   const day = 1 + Math.floor(random() * 28);
-  const row: Record<string, unknown> = {
-    id: `d${i.toString(36)}`,
+  const row: Row = {
+    id: fixtureId(`row/d${i}`),
     title: `${pick(words)} ${pick(kinds)} ${i + 1}`,
     stage: pick(stages),
     amount: Math.round(random() * 200) * 500,
@@ -104,26 +88,19 @@ for (let i = 0; i < n; i++) {
   };
   const note = pick(notes);
   if (note) row.note = note;
-  lines.push(JSON.stringify(row));
-  if (lines.length === 10_000) {
-    rows += lines.join("\n") + "\n";
-    lines.length = 0;
-  }
+  rows.push(row);
 }
-if (lines.length) rows += lines.join("\n") + "\n";
-// In rows/, a new file at about 25 MB (SPEC section 3, D51).
-await mkdir(join(tableDir, "rows"), { recursive: true });
-let file = FIRST_ROWS_FILE;
-for (let at = 0; at < rows.length; ) {
-  let end = Math.min(rows.length, at + ROWS_FILE_BYTES);
-  // At a line's end (the rows are ASCII, so characters are bytes).
-  if (end < rows.length) end = rows.indexOf("\n", end) + 1 || rows.length;
-  await writeFile(join(tableDir, "rows", file), rows.slice(at, end));
-  file = nameAfter(file);
-  at = end;
-}
+
+// Written by core, as an app saves a table: field ids (D62), rows files of about 25 MB (D51), the canonical form.
+await rm(dir, { recursive: true, force: true });
+await writeBundleTo(nodeFs, dir, {
+  meta: { title: `Big (${n.toLocaleString("en")} rows)`, created_at: now, modified_at: now, generator: "scripts/big-table.mts" },
+  tables: {
+    deals: { schema, rows, views: [{ id: fixtureId("view/all"), name: "All deals", layout: "table" }], meta: { title: "Deals", created_at: now, modified_at: now } },
+  },
+});
 
 const bundle = await parseBundle(dir);
 await mkdir(join(out, "single-file"), { recursive: true });
 await writeFile(join(out, "single-file", `${name}.table`), await bundleToArchive(name, bundle));
-console.log(`${name}: ${(Buffer.byteLength(rows) / 1e6).toFixed(1)} MB of rows`);
+console.log(`${name}: ${bundle.tables.deals!.rows.length.toLocaleString("en")} rows`);
