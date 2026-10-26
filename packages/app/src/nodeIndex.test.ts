@@ -24,7 +24,7 @@ import {
 } from "./indexed.ts";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { isIndexStale, queryIndex, type TableSchema } from "@workspace.sh/table-core";
+import { fieldChanges, isIndexStale, queryIndex, type TableSchema } from "@workspace.sh/table-core";
 import { countRows, openIndexHost, saveTableRows, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -387,6 +387,42 @@ test("a change of fields is made in the index where it is, and what it leaves to
   } finally {
     s.done();
   }
+});
+
+test("a field renamed is renamed in the index first, then every row is written with its new name, its values kept (#709)", async () => {
+  const s = scratch();
+  try {
+    const host = openIndexHost(s.bundle, { turn: (run) => run() });
+    await host.ensure("tasks", s.tasks);
+    const from = JSON.parse(readFileSync(join(s.tasks, "schema.json"), "utf8")) as TableSchema;
+    const before = rowsOnDisk(s.tasks);
+    // The same field (its id) under another name, as renameField leaves it.
+    const to: TableSchema = { ...from, fields: from.fields.map((f) => (f.name === "title" ? { ...f, name: "task" } : f)) };
+    assert.deepEqual(fieldChanges(from, to), { matched: from.fields.map((_, i) => i), renamed: [{ from: "title", to: "task" }], gone: [] });
+    assert.equal(await host.alter("tasks", from, to), true);
+    writeFileSync(join(s.tasks, "schema.json"), JSON.stringify(to));
+    assert.equal(await host.save("tasks", s.tasks, true, [], true), true);
+    const after = rowsOnDisk(s.tasks);
+    assert.ok(after.every((r) => !("title" in r)), "no row keeps the old name");
+    assert.deepEqual(after.map((r) => [r.id, r.task]), before.map((r) => [r.id, r.title]));
+    // Read under its new name, sorted and searched.
+    const sorted = await queryIndex(host, { name: "tasks", schema: to, query: { sort: [{ field: "task", direction: "asc" }] } });
+    assert.deepEqual(await sorted!.ids(0, 8), [...before].sort((a, b) => String(a.title).localeCompare(String(b.title))).map((r) => r.id));
+    // Undone: renamed back the same way.
+    assert.equal(await host.alter("tasks", to, from), true);
+    writeFileSync(join(s.tasks, "schema.json"), JSON.stringify(from));
+    assert.equal(await host.save("tasks", s.tasks, true, [], true), true);
+    assert.deepEqual(rowsOnDisk(s.tasks).map((r) => [r.id, r.title, "task" in r]), before.map((r) => [r.id, r.title, false]));
+    await host.close();
+  } finally {
+    s.done();
+  }
+});
+
+test("a field removed and another added with its name are two fields: the old one's values aren't the new one's (D62)", () => {
+  const from: TableSchema = { fields: [{ id: "aaaaaaaaaaaaa", name: "notes", type: "string" }] };
+  const to: TableSchema = { fields: [{ id: "bbbbbbbbbbbbb", name: "notes", type: "string" }] };
+  assert.deepEqual(fieldChanges(from, to), { matched: [undefined], renamed: [], gone: ["notes"] });
 });
 
 test("an archive's large table is handed over as bytes, unparsed, and indexed from them", async () => {
