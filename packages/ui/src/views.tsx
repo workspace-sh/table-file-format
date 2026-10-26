@@ -40,7 +40,7 @@ import {
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { cellFormulaDraft, commitDraft, currencySymbolOf, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
+import { cellFormulaText, commitDraft, currencySymbolOf, FORMULA_PREFIX, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
@@ -2305,6 +2305,8 @@ function EditableCell({
   const readOnly = kind === "readonly";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
+  // Editing the cell's own formula (D52): its `=` is drawn before the box, not in it, and put back on saving.
+  const [asFormula, setAsFormula] = useState(false);
   // Why the draft wasn't saved (D42), and which draft an early year was
   // already queried for, so Enter again keeps it.
   const [problem, setProblem] = useState<(CellCheck & { ok: false }) | null>(null);
@@ -2374,8 +2376,10 @@ function EditableCell({
     if (editOutside?.(text)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
-    // A cell with its own formula is edited as that formula (D52).
-    setDraft(text ?? (formula?.own !== undefined ? cellFormulaDraft(formula.own, formula.grid, formula.syntax) : draftOf(value)));
+    // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` outside the box.
+    const own = text === undefined && formula?.own !== undefined;
+    setAsFormula(own);
+    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -2397,7 +2401,7 @@ function EditableCell({
    * year is kept, since it's a valid date.
    */
   const commit = (raw: string, how: "key" | "blur" = "key"): boolean => {
-    const result = commitDraft(field, value, raw, how, queried.current, formula);
+    const result = commitDraft(field, value, asFormula ? FORMULA_PREFIX + raw : raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem(result.check);
@@ -2729,15 +2733,26 @@ function EditableCell({
       onBlur={() => {
         if (!closed.current) commit(draft, "blur");
       }}
-      onKeyDown={onEditKey}
+      onKeyDown={(e: KeyEventLike) => {
+        // Backspace before the formula's first character takes its `=`: what's left is a value (D52).
+        const el = inputRef.current as { selectionStart?: number | null; selectionEnd?: number | null } | null;
+        if (asFormula && e.key === "Backspace" && el?.selectionStart === 0 && el.selectionEnd === 0) {
+          e.preventDefault?.();
+          setAsFormula(false);
+          return;
+        }
+        onEditKey(e);
+      }}
       aria-invalid={problem && !problem.confirmable ? true : undefined}
       style={[styles.cellInput, cellInputFit]}
     />
   );
-  // A div, not a span: on native a span is a run of text, and an input inside one doesn't sit on its line.
-  const field_ = currencySymbol ? (
+  // Before the box: a formula's `=`, or a currency's symbol. A div, not a span: on native a span is a run of
+  // text, and an input inside one doesn't sit on its line.
+  const affix = asFormula ? FORMULA_PREFIX : currencySymbol;
+  const field_ = affix ? (
     <html.div style={styles.cellInputAffixed}>
-      <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
+      <html.span style={styles.cellInputAffix}>{affix}</html.span>
       {input}
     </html.div>
   ) : (
@@ -4603,7 +4618,11 @@ export function TableView({
         onSetCellFormula && kind === "text" && !dated
           ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
           : undefined;
-      const initial = text ?? (cellFormula?.own !== undefined ? cellFormulaDraft(cellFormula.own, cellFormula.grid, formulaSyntax) : draftOf(row[name]));
+      // Its own formula, its `=` drawn as the bar's prefix and put back on saving.
+      const asFormula = text === undefined && cellFormula?.own !== undefined;
+      // Whether the `=` is still there: the reader may drop it (dropPrefix), and every save after says so.
+      let prefixed = asFormula;
+      const initial = text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name]));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
       // A multi-select's value as it's toggled, each toggle saved.
@@ -4616,7 +4635,16 @@ export function TableView({
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
-        ...(kind === "text" && !dated && currencySymbolOf(field) ? { prefix: currencySymbolOf(field)! } : {}),
+        ...(asFormula
+          ? {
+              prefix: FORMULA_PREFIX,
+              dropPrefix: () => {
+                prefixed = false;
+              },
+            }
+          : kind === "text" && !dated && currencySymbolOf(field)
+            ? { prefix: currencySymbolOf(field)! }
+            : {}),
         ...(kind === "choice" || many
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
@@ -4688,7 +4716,8 @@ export function TableView({
             if (t !== row[name]) onUpdateRow!(rowId, name, t);
             return { ok: true };
           }
-          const r = commitDraft(field, row[name], t, "key", queried, cellFormula);
+          // The `=` put back, unless the reader dropped it: then what's left is a value.
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "key", queried, cellFormula);
           if (r.kind === "problem") {
             queried = r.queried;
             return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
