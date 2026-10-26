@@ -65,6 +65,7 @@ pub fn json_value(out: &mut String, v: &Value) {
             }
             out.push(']');
         }
+        Value::Object(json) => out.push_str(json),
     }
 }
 

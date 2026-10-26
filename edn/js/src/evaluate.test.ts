@@ -155,6 +155,40 @@ for (const binding of ["native", "wasm"] as const) {
     same(edn, hostileTable(), "hostile");
   });
 
+  test(`${binding}: objects and GeoJSON are the core's: passed on, compared, read as text, refused as numbers`, async () => {
+    const edn = await loadEdn({ binding });
+    const point = { type: "Point", coordinates: [-0.13, 51.51] };
+    const fields = [
+      { name: "geo", type: "geojson" },
+      { name: "meta", type: "object" },
+      { name: "n", type: "number" },
+      ...[
+        "geo", "meta", "(= geo geo)", "(= geo meta)", "(upper geo)", "(len meta)", "(concatenate \"at \" geo)", "(+ geo 1)", "(sum (values \"geo\"))",
+        "(if geo 1 2)", "(and meta true)", "(isblank geo)", "(count (values \"meta\"))", "(values \"geo\")", "(if (> n 1) geo meta)", "(< geo meta)",
+      ].map((expr, i) => ({ name: `f${i}`, type: "string", computed: { expr, dialect: "table-expr-v1" } })),
+      // A GeoJSON field worked out by its cells' own formulas (D52), checked as a typed value is.
+      { name: "shape", type: "geojson" },
+      { name: "thing", type: "object" },
+    ];
+    const rows = [
+      { id: "r1", geo: point, meta: { b: 2, a: [1, "x"] }, n: 2 },
+      { id: "r2", geo: JSON.stringify(point), meta: {}, n: 1 },
+      { id: "r3", n: 3 },
+    ];
+    const cells = [
+      // An object with no `type` isn't GeoJSON: refused, as a typed value would be.
+      { id: "r1", field: "shape", expr: "meta" },
+      { id: "r2", field: "shape", expr: "geo" },
+      { id: "r3", field: "shape", expr: "(+ n 1)" },
+      { id: "r1", field: "thing", expr: "meta" },
+      { id: "r2", field: "thing", expr: "\"text\"" },
+    ];
+    const tables = { t: { schema: { fields }, rows, views: [], meta: {}, cells } as unknown as ParsedTable };
+    const { core, host } = same(edn, tables, "objects");
+    assert.equal(host, 0, "no table is the host's for holding objects");
+    assert.ok(core > 0);
+  });
+
   test(`${binding}: relations gone wrong give today's results: missing rows and tables, lists, loops, unknown names`, async () => {
     const edn = await loadEdn({ binding });
     const n = same(edn, relationsTables(), "relations");
@@ -227,15 +261,13 @@ for (const binding of ["native", "wasm"] as const) {
     assert.deepEqual((edn.computeTables({ exact } as never)["exact"] as Record<string, FormulaResult[]>)["z"], [1]);
   });
 
-  test(`${binding}: a cell's own formula in a GeoJSON field is the host's, with every table related to it`, async () => {
+  test(`${binding}: a cell's own formula in a GeoJSON field is the core's, checked as today's evaluator checks it`, async () => {
     const edn = await loadEdn({ binding });
     const plainTable = table([{ name: "n", type: "number" }, f("x", "(* n 2)")], [{ id: "r1", n: 1 }]);
-    const shaped = { ...table([{ name: "shape", type: "geojson" }], [{ id: "r1" }]), cells: [{ id: "r1", field: "shape", expr: '"{}"' }] };
-    const reader = table([{ name: "to", type: "string", relation: { table: "t" } }, f("y", '(related "to" "shape")')], [{ id: "a", to: "r1" }]);
-    const out = edn.computeTables({ t: shaped as never, reader: reader as never, alone: plainTable as never });
-    assert.equal(out["t"], "host");
-    assert.equal(out["reader"], "host");
-    assert.notEqual(out["alone"], "host");
+    const shaped = { ...table([{ name: "shape", type: "geojson" }], [{ id: "r1" }, { id: "r2" }]), cells: [{ id: "r1", field: "shape", expr: '"{}"' }, { id: "r2", field: "shape", expr: '"{\\"type\\":\\"Point\\"}"' }] } as unknown as ParsedTable;
+    const reader = table([{ name: "to", type: "string", relation: { table: "t" } }, f("y", '(related "to" "shape")')], [{ id: "a", to: "r1" }, { id: "b", to: "r2" }]);
+    const { host } = same(edn, { t: shaped, reader, alone: plainTable }, "GeoJSON cells");
+    assert.equal(host, 0);
   });
 
   test(`${binding}: Sheet places give today's results: running totals down long grids, groups, sorts, manual order, other tables`, async () => {

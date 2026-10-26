@@ -143,11 +143,8 @@ function run(
       },
       tables: Object.entries(tables).map(([name, t]) => {
         const iteration = t.meta?.iteration as { max?: unknown; change?: unknown } | undefined;
-        // A value the core has no kind for (an object, as an `object` field holds) is read only by the host.
-        const objects = t.schema.fields.some((f) => !f.computed && t.rows.some((r) => holdsObject(r[f.name])));
         return {
           name,
-          ...(objects ? { host: true } : {}),
           ...(iteration && typeof iteration.max === "number" ? { iteration: { max: iteration.max, change: typeof iteration.change === "number" ? iteration.change : 0 } } : {}),
           ids: t.rows.map((r) => r.id),
           // Its Sheet views: a table layout with lettered columns and numbered rows (D41).
@@ -194,8 +191,6 @@ function run(
     return { out };
 }
 
-/** Whether a stored value is, or holds, an object (JSON's `{…}`). */
-const holdsObject = (v: unknown): boolean => typeof v === "object" && v !== null && (!Array.isArray(v) || v.some(holdsObject));
 
 /** A column's cells as numbers (`NaN` for an empty cell), or null when any cell isn't a number or empty. */
 function numbersOnly(cells: readonly unknown[], rows: number): Float64Array | null {

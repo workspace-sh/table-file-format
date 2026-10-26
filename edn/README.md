@@ -89,9 +89,10 @@ What the core works out: fields' formulas, cells' own (D52, with the type
 check a typed value gets), loops by iteration (D60), the clock and chance
 (D55: the host gives the moment and a seed), and Sheet places (D41: `at`,
 `range`, `row`, `rows`, a long running total worked down its grid rather
-than by recursion). The host's evaluator still works out a table holding
-objects or a cell's formula in a GeoJSON field, and a table reading the
-clock when the host gives no moment, with every table related to it.
+than by recursion), and objects and GeoJSON (passed on, compared, read
+as text as JavaScript reads them, and checked as a typed value is). The
+host's evaluator still works out a table reading the clock when the host
+gives no moment, with every table related to it; the apps always give one.
 
 100,000 deals pointing at 2,000 companies (a row formula, a lookup through
 the relation, two rollups back), everything included (columns in, results

@@ -26,6 +26,11 @@ pub enum Value {
     Error(ErrorCode, String),
     /// Shared: a whole column (`values`) is the same list for every row.
     List(Rc<Vec<Value>>),
+    /// A JSON object, as an `object` or `geojson` field holds: its text, kept as stored. Formulas
+    /// pass it on; as `.table`'s evaluator does in JavaScript, it is equal only to itself (the same
+    /// cell), reads as `[object Object]` where text is wanted, and is #VALUE! where a number or a
+    /// truth is.
+    Object(Rc<str>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,6 +302,8 @@ fn strict_equal(a: &Value, b: &Value) -> bool {
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Empty, Value::Empty) => true,
+        // The same object: one cell read twice, as JavaScript's === sees it.
+        (Value::Object(x), Value::Object(y)) => Rc::ptr_eq(x, y),
         _ => false,
     }
 }
@@ -453,6 +460,7 @@ pub fn js_string(v: &Value) -> String {
         Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         Value::Error(code, _) => code.as_str().to_string(),
         Value::List(items) => items.iter().map(js_string).collect::<Vec<_>>().join(","),
+        Value::Object(_) => "[object Object]".to_string(),
     }
 }
 
@@ -466,6 +474,7 @@ pub fn json_of(v: &Value) -> String {
         }
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => js_number(*n),
+        Value::Object(json) => json.to_string(),
         // Errors and lists never reach a message: they're returned before.
         _ => "null".to_string(),
     }

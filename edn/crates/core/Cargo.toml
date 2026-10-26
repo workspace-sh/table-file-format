@@ -11,4 +11,5 @@ repository.workspace = true
 clojure-reader = { version = "=0.7.0", default-features = false, features = ["std", "floats", "arbitrary-nums"] }
 
 # Mixed columns arrive as JSON (numbers-only ones as typed arrays).
-serde_json = { version = "1", features = ["float_roundtrip"] }
+# preserve_order: an object keeps its keys in the order it was written, as JavaScript does.
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }

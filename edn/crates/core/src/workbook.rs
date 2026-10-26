@@ -16,7 +16,7 @@ use std::rc::Rc;
 
 use crate::eval::{evaluate, linked_tables, needs_host, ErrorCode, Scope, Value};
 use crate::formula::{read_formula, Expr};
-use crate::holds::{checked_by_host, holds, Kind};
+use crate::holds::{holds, Kind};
 use crate::places::{arrange, place_tables, place_use, GridGroup, Place, PlaceRow, SheetView, SortField};
 use crate::Error;
 
@@ -714,7 +714,7 @@ fn hosted(tables: &[Table], by_name: &HashMap<String, usize>, clocked: bool) -> 
     }
     let own: Vec<bool> = tables
         .iter()
-        .map(|t| t.host || formulas(t).any(|e| needs_host(e, clocked)) || t.own.keys().any(|&(_, f)| checked_by_host(&t.fields[f].kind)))
+        .map(|t| t.host || formulas(t).any(|e| needs_host(e, clocked)))
         .collect();
     let mut groups_hosted = vec![false; tables.len()];
     for (t, h) in own.iter().enumerate() {
@@ -841,7 +841,7 @@ fn from_json(v: &serde_json::Value) -> Value {
         serde_json::Value::Number(n) => n.as_f64().map_or(Value::Empty, Value::Number),
         serde_json::Value::String(s) => Value::Str(s.as_str().into()),
         serde_json::Value::Array(items) => Value::List(Rc::new(items.iter().map(from_json).collect())),
-        serde_json::Value::Object(_) => Value::Empty,
+        serde_json::Value::Object(_) => Value::Object(v.to_string().into()),
     }
 }
 
