@@ -4,7 +4,7 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
-import { isSheet, newFieldId, renameProblem } from "@workspace.sh/table-core";
+import { isSheet, newFieldId, renameProblem, renamesInIndex } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -210,11 +210,12 @@ function viewWithoutField(view: View, name: string): View {
 
 /**
  * Why field `name` can't be renamed `to`, or null when it can. A table held
- * in the index has its rows there, every one of which would be written
- * again, so its fields aren't renamed (yet).
+ * in the index is renamed there (#709), once it's read, unless its formulas
+ * read other rows (renamesInIndex).
  */
 export function fieldRenameProblem(table: ParsedTable, name: string, to: string): string | null {
-  if (table.indexed || table.loading) return "A field of a table this large can't be renamed yet.";
+  if (table.loading) return "This table is still being read.";
+  if (table.indexed && !renamesInIndex(table.schema, name, to)) return "A field of this table can't be renamed while it's this large.";
   return renameProblem(table, name, to);
 }
 
