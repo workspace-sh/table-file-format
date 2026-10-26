@@ -12,6 +12,7 @@
 import { instantOf } from "./encoding.js";
 import type { CellFormula, Field, ParsedTable, Row, TableSchema, ViewFilter, ViewSort, ViewTotal } from "./types.js";
 import { cellFormulas, cellLine } from "./cells.js";
+import { cellRenamed } from "./renameField.js";
 import { enumValues } from "./types.js";
 import type { RowGroup, ViewRows } from "./row-source.js";
 import { exactSum } from "./query.js";
@@ -674,23 +675,37 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
   if (was.never.size > 0 || now.never.size > 0) return false;
   const before = new Map(from.fields.map((f, i) => [f.name, i]));
   const after = new Set(to.fields.map((f) => f.name));
+  // Each field of `to`'s place in `from`: by its id (D62), so a field renamed is the same field
+  // (D63); else by its name, unless the field of that name has another id, which makes it another.
+  const byId = new Map(from.fields.flatMap((f, i) => (f.id !== undefined ? [[f.id, i] as const] : [])));
+  const matched = to.fields.map((f): number | undefined => {
+    if (f.id !== undefined && byId.has(f.id)) return byId.get(f.id);
+    const o = before.get(f.name);
+    if (o !== undefined && f.id !== undefined && from.fields[o]!.id !== undefined && from.fields[o]!.id !== f.id) return undefined;
+    return o;
+  });
+  const renamed = to.fields.flatMap((f, k) => {
+    const o = matched[k];
+    return o !== undefined && from.fields[o]!.name !== f.name ? [{ from: from.fields[o]!.name, to: f.name }] : [];
+  });
+  const kept = new Set(matched.filter((o) => o !== undefined));
   const pending = await fillOf(db, n);
   const wasHidden = await hiddenOf(db, n);
   // A field gone is hidden, its values kept. One that comes back is shown again: with its
   // values when it's restored, and emptied first when it's a new field of that name.
-  const gone = from.fields.filter((f) => !after.has(f.name)).map((f) => f.name);
+  const gone = from.fields.filter((_, i) => !kept.has(i)).map((f) => f.name);
   const back = wasHidden.filter((name) => after.has(name));
   const hidden = [...new Set([...wasHidden.filter((name) => !after.has(name)), ...gone])];
   const emptied = back.filter((name) => !(options.restore ?? []).includes(name));
   // A field that keeps its name and loses its formula holds nothing (its results were never
   // in the file): taken out of the JSON now, as edits to it from now on are its own.
-  const unformulated = from.fields.filter((f) => f.computed && after.has(f.name) && !to.fields.find((g) => g.name === f.name)!.computed).map((f) => f.name);
-  if ([...unformulated, ...emptied].some((name) => /["\\]/.test(name))) return false;
+  const unformulated = from.fields.filter((f, i) => f.computed && kept.has(i) && !to.fields[matched.indexOf(i)]!.computed).map((f) => f.name);
+  if ([...unformulated, ...emptied, ...renamed.flatMap((r) => [r.from, r.to])].some((name) => /["\\]/.test(name))) return false;
 
   // Each field of `to`: where it was, and whether its values are worked out again.
   // A new field is: its values are whatever the rows hold under its name, as a build reads them.
   const moves = to.fields.map((f, k) => {
-    const o = before.get(f.name);
+    const o = matched[k];
     if (o === undefined) return { k, o: null as number | null, refill: true };
     const old = from.fields[o]!;
     const retyped = was.kinds[o] !== now.kinds[k];
@@ -698,8 +713,10 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
     return { k, o, refill: retyped || reformulated };
   });
   // The search text holds the searched fields' values in order.
+  // A field renamed is searched as it was: its new name stands for its old.
+  const renamedTo = new Map(renamed.map((r) => [r.from, r.to]));
   const searchChanged =
-    JSON.stringify(searchedNames(from)) !== JSON.stringify(searchedNames(to)) || moves.some((m) => m.refill && searched(to.fields[m.k]!));
+    JSON.stringify(searchedNames(from).map((f) => renamedTo.get(f) ?? f)) !== JSON.stringify(searchedNames(to)) || moves.some((m) => m.refill && searched(to.fields[m.k]!));
 
   forgetIndexes(db, n);
   await db.exec("begin");
@@ -709,6 +726,21 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
       if (String(ix.name).startsWith(`r${n}_o`)) await db.exec(`drop index if exists ${ix.name as string}`);
     }
     for (const name of [...unformulated, ...emptied]) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
+    // A field renamed (D63): its key in every row's JSON, its cells' lines and what reads it in them,
+    // and the hidden names. Through a name nothing has, so two fields that swap names don't meet.
+    if (renamed.length > 0) {
+      const step = `${Date.now().toString(36)}${(parked++).toString(36)}`;
+      const passes = [renamed.map((r, i) => ({ from: r.from, to: `__renaming_${step}_${i}` })), renamed.map((r, i) => ({ from: `__renaming_${step}_${i}`, to: r.to }))];
+      const cells = await db.all("select seq, line from _cells where n = ?", [n]).catch(() => [] as Record<string, unknown>[]);
+      let lines = cells.map((c) => ({ seq: c.seq as number, cell: JSON.parse(c.line as string) as CellFormula }));
+      for (const pass of passes) {
+        for (const r of pass) {
+          await db.run(`update r${n} set j = json_set(json_remove(j, ?), ?, json(j -> ?)) where json_type(j, ?) is not null`, [`$."${r.from}"`, `$."${r.to}"`, `$."${r.from}"`, `$."${r.from}"`]);
+          lines = lines.map((l) => ({ seq: l.seq, cell: cellRenamed(l.cell, to, name, r.from, r.to) }));
+        }
+      }
+      for (const l of lines) await db.run("update _cells set field = ?, line = ? where n = ? and seq = ?", [l.cell.field, cellLine(l.cell), n, l.seq]);
+    }
     // Every column out of the way first, so no new name meets an old one.
     for (const col of was.columns) await db.exec(`alter table r${n} rename column ${col} to q_${col}`);
     const kept = new Set<string>();
