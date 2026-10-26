@@ -4626,6 +4626,8 @@ export function TableView({
           : undefined;
       // Its own formula, its `=` drawn as the bar's prefix and put back on saving.
       const asFormula = text === undefined && cellFormula?.own !== undefined;
+      // Whether the `=` is still there: the reader may drop it (dropPrefix), and every save after says so.
+      let prefixed = asFormula;
       const initial = text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name]));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
@@ -4639,7 +4641,16 @@ export function TableView({
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
-        ...(asFormula ? { prefix: FORMULA_PREFIX } : kind === "text" && !dated && currencySymbolOf(field) ? { prefix: currencySymbolOf(field)! } : {}),
+        ...(asFormula
+          ? {
+              prefix: FORMULA_PREFIX,
+              dropPrefix: () => {
+                prefixed = false;
+              },
+            }
+          : kind === "text" && !dated && currencySymbolOf(field)
+            ? { prefix: currencySymbolOf(field)! }
+            : {}),
         ...(kind === "choice" || many
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
@@ -4711,7 +4722,8 @@ export function TableView({
             if (t !== row[name]) onUpdateRow!(rowId, name, t);
             return { ok: true };
           }
-          const r = commitDraft(field, row[name], asFormula ? FORMULA_PREFIX + t : t, "key", queried, cellFormula);
+          // The `=` put back, unless the reader dropped it: then what's left is a value.
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "key", queried, cellFormula);
           if (r.kind === "problem") {
             queried = r.queried;
             return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
