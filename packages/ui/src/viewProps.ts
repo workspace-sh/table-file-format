@@ -62,6 +62,8 @@ export interface ViewProps {
   /** Ask for a cell's note, starting from `note`, the one it has (D57). Absent: notes can't be edited. */
   onAskCellNote?: (rowId: string, fieldName: string, note?: string) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  /** Rename a field: its name becomes `to` everywhere it's used (renameField). Absent: the name isn't edited. */
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice from a field; rows holding it lose it (the host asks first). */
   onRemoveEnumValue?: (fieldName: string, value: string) => void;
