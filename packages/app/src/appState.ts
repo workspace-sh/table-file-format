@@ -6,19 +6,21 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { coordinateOf, isSheet, mergeOfRange, mergeOver, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
+import { coordinateOf, isSheet, mergeOfRange, mergeOver, renameField, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
 import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
-import { addressTarget, applyTarget, bundleOf, tableNameOf, type AddressTarget } from "./bundles.ts";
+import { addressTarget, applyTarget, bundleOf, bundleTables, tableNameOf, type AddressTarget } from "./bundles.ts";
 import { appCommands, type AppCommand } from "./commands.ts";
 import { canClose, closePrompt, withClosed } from "./closing.ts";
 import { CANCEL, type Confirm } from "./confirm.ts";
 import { creating, namePrompt, newView, type Making, type NamePrompt } from "./creating.ts";
 import { viewerLocale, viewerOrder, withDisplayChoice } from "./displaySettings.ts";
 import {
+  bumpSchemaVersion,
   deletingField,
+  fieldRenameProblem,
   deletingRow,
   deletingView,
   removingChoice,
@@ -185,7 +187,11 @@ export interface AppState {
  * to edits that are one stretch of the same thing (typing in a page),
  * which undo as one.
  */
-export type UndoStep = { name: string; run?: string } & ({ table: ParsedTable } | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } });
+export type UndoStep = { name: string; run?: string } & (
+  /** `others`: other tables the edit changed with it (a field renamed, and the formulas that read it), undone with it. */
+  | { table: ParsedTable; others?: Record<string, ParsedTable> }
+  | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } }
+);
 
 /** The most steps kept for a table, the fewest, and the rows those steps may list between them. */
 const UNDO_STEPS = 100;
@@ -237,7 +243,13 @@ export type AppAction =
   // screen (a page saved as it's typed, its last save landing after a move).
   | { type: "updateBody"; rowId: string; content: string; table?: string }
   | { type: "updateField"; name: string; patch: Partial<Field> }
-  | { type: "addField"; field: Field; place?: FieldPlace }
+  | { type: "addField"; field: Field; place?: FieldPlace }  /**
+   * The field's name (its key) becomes `to`, everywhere it's used: its
+   * rows, views and cells, and every formula that reads it, in its table
+   * or another of its file (renameField). Its id and title stay.
+   */
+  | { type: "renameField"; name: string; to: string }
+
   | { type: "moveField"; name: string; delta: -1 | 1 }
   // A field's settings, cancelled: the schema as they opened, version and all.
   | { type: "restoreSchema"; schema: TableSchema }
@@ -529,6 +541,25 @@ function withDeparted(prev: AppState, next: AppState, action: AppAction): AppSta
   return departed === next.departed ? next : { ...next, departed };
 }
 
+/** This viewer's own arrangements of a table's views, a field of it renamed. */
+function arrangementsRenamed(arrangements: Arrangements, key: string, from: string, to: string): Arrangements {
+  const mine = arrangements[key];
+  if (!mine || !JSON.stringify(mine).includes(JSON.stringify(from))) return arrangements;
+  const field = <T extends { field: string }>(x: T): T => (x.field === from ? { ...x, field: to } : x);
+  const views = Object.fromEntries(
+    Object.entries(mine).map(([id, a]) => [
+      id,
+      {
+        ...a,
+        ...(a.filter ? { filter: a.filter.map(field) } : {}),
+        ...(a.sort ? { sort: a.sort.map(field) } : {}),
+        ...(a.group ? { group: field(a.group) } : {}),
+      },
+    ]),
+  );
+  return { ...arrangements, [key]: views };
+}
+
 /** A change that is only a new title: a rename. */
 const onlyTitle = (patch: object): boolean => Object.keys(patch).length === 1 && "title" in patch;
 
@@ -567,11 +598,14 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
   const table = now.indexed
     ? { ...now, views: step.table.views, schema: step.table.schema, indexed: { count: now.indexed.count, version: now.indexed.version, ...(restore.length > 0 ? { restore } : {}) } }
     : step.table;
+  // Other tables the edit changed with this one go back (or forward) with it, and are kept as they are now for the way back.
+  const others = step.others ? Object.fromEntries(Object.keys(step.others).flatMap((k) => (state.tables[k] ? [[k, state.tables[k]!]] : []))) : undefined;
+  const dirty = Object.keys(step.others ?? {}).reduce((d, k) => marked(d, bundleOf(k)), marked(state.dirty, bundleOf(key)));
   return {
     ...state,
-    tables: { ...state.tables, [key]: table },
-    dirty: marked(state.dirty, bundleOf(key)),
-    undo: moved({ name: step.name, table: now, ...run }),
+    tables: { ...state.tables, ...step.others, [key]: table },
+    dirty,
+    undo: moved({ name: step.name, table: now, ...run, ...(others ? { others } : {}) }),
   };
 }
 
@@ -821,6 +855,31 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "updateField":
       return edit(state, onlyTitle(action.patch) ? "Rename Field" : "Change Field", (t) => withFieldPatch(t, action.name, action.patch));
+    case "renameField": {
+      const key = state.active;
+      const table = state.tables[key];
+      if (!table || fieldRenameProblem(table, action.name, action.to) !== null) return state;
+      const bundle = bundleOf(key);
+      const held = bundleTables(state.tables, bundle);
+      const renamed = renameField(held, tableNameOf(key), action.name, action.to);
+      const changed = Object.keys(renamed).filter((n) => renamed[n] !== held[n]).map((n) => `${bundle}/${n}`);
+      const bumped = (k: string) => {
+        const t = renamed[tableNameOf(k)]!;
+        return t.schema === state.tables[k]!.schema ? t : { ...t, schema: bumpSchemaVersion(t.schema) };
+      };
+      const made = edit(state, "Rename Field", () => bumped(key), key);
+      if (made === state) return state;
+      const others = changed.filter((k) => k !== key);
+      const stack = made.undo[key]!;
+      const step = stack.past.at(-1)!;
+      return {
+        ...made,
+        tables: { ...made.tables, ...Object.fromEntries(others.map((k) => [k, bumped(k)])) },
+        undo: { ...made.undo, [key]: { ...stack, past: [...stack.past.slice(0, -1), { ...step, others: Object.fromEntries(others.map((k) => [k, state.tables[k]!])) }] } },
+        arrangements: arrangementsRenamed(made.arrangements, key, action.name, action.to),
+        ...(made.place.field === action.name ? { place: { ...made.place, field: action.to } } : {}),
+      };
+    }
     case "addField":
       return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active), action.place));
     case "moveField":
@@ -1333,7 +1392,9 @@ export type ViewCallbacks = Required<
     | "onOpenRelation"
     | "onInsertRow"
   >
->;
+> &
+  /** Absent for a table held in the index, whose fields aren't renamed (fieldRenameProblem). */
+  Pick<ViewProps, "onRenameField">;
 
 /**
  * The view on screen's callbacks, each dispatching its action. `newId`
@@ -1349,6 +1410,7 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     onUnmerge: (rowId, field) => dispatch({ type: "unmerge", rowId, field }),
     onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
+    ...(state.tables[state.active] && !state.tables[state.active]!.indexed ? { onRenameField: (name: string, to: string) => dispatch({ type: "renameField", name, to }) } : {}),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),
     onDeleteField: (name) => dispatch({ type: "deleteField", name }),

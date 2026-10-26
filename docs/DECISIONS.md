@@ -1483,3 +1483,42 @@ z-base-32 is lowercase, has no look-alikes, wastes none of the random
 bits (32 is a power of two), and is what Workspace and Holepunch
 already write.
 
+
+## D63: a field may be renamed, and every use of its name is rewritten
+
+**Leslie leaned towards it when field ids were agreed (25 Oct 2026); built 26 Oct 2026.**
+
+A field's `name` was never to change ("Schema evolution", before): it
+was both the key rows and formulas read it by and the field's identity,
+so changing it would break everything that named it. With D62 the
+field has an `id` for its identity, and the name is only the key. So a
+field may now be renamed, as a spreadsheet's column may: the new name is
+written everywhere the old one was used, in one save, and the `id`
+stays.
+
+**Where a name is used**, all rewritten (table-core's `renameField`):
+
+- the field itself, and `primaryKey`;
+- every row's key;
+- every view's keys that name a field: `fields`, `sort`, `filter`,
+  `group`, `columnWidths`, `totals`, `colors`, `merged`,
+  `calendar_range`, `board_field`, `gallery_field` and `calendar_field`;
+- `cells/` lines;
+- every formula that reads it, in its table or another of the same
+  `.table`: a bare word, and `field`, `values`, `related`, `linked`,
+  `at` and `range`. A formula that doesn't read it is left as it is,
+  to the byte; one that does is written in the stored form's canonical
+  spelling; one in another dialect is left;
+- every relation whose `field` is it.
+
+**Not rewritten:** `history.ndjson`, which records what was (its lines
+before the rename name the field as it was then), and links in other
+documents. A link that names the field by `id` (SPEC section 10) still
+finds it; one that names it by name doesn't.
+
+**Not yet:** a table held in the index (a large one) has its rows
+there, and renaming would write every row again, so its fields aren't
+renamed in the apps yet.
+
+The `title` stays what a person reads, and changing it changes nothing
+else. Renaming is for when the name formulas read should change too.
