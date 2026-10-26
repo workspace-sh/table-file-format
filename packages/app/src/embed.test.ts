@@ -43,7 +43,13 @@ test("with no table named, a file's only table is drawn, and a file of several s
 
 test("a table or a view the file doesn't have is said, with the ones it has", () => {
   assert.equal(words(projects, { tableName: "nope" }), "“projects.table” has no table named “nope”. It has “projects”, “tasks”.");
-  assert.equal(words(projects, { tableName: "tasks", viewId: "nope" }), "The table “tasks” has no view “nope”. It has “ffaisc1zows4dzhy7aq5jrebkx”, “gzrqtgo1p3gfehto7tani3jzz4”.");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "nope" }), "The table “tasks” has no view “nope”. It has “All tasks by priority”, “Board by status”.");
+});
+
+test("a view is named by its id or by its name, whatever its case", () => {
+  assert.equal(words(projects, { tableName: "tasks", viewId: "gzrqtgo1p3gfehto7tani3jzz4" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "Board by status" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "board BY status" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
 });
 
 test("a table read without its rows (one for the index) is too large to draw in a document", () => {
