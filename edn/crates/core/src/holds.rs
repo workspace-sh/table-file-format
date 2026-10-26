@@ -33,17 +33,22 @@ pub fn holds(kind: &Kind, v: &Value) -> bool {
         "integer" | "year" => matches!(v, Value::Number(n) if n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0),
         "boolean" => matches!(v, Value::Bool(_)),
         "array" => matches!(v, Value::List(_)),
-        // A formula never gives an object.
-        "object" => false,
+        "object" => matches!(v, Value::Object(_)),
+        // GeoJSON (SPEC "Value encodings"): an object with a `type`, or text that reads as one, as `.table`'s isGeoJSON.
+        "geojson" => match v {
+            Value::Object(json) => is_geojson(json),
+            Value::Str(text) => is_geojson(text),
+            _ => false,
+        },
         "geopoint" => matches!(v, Value::List(items) if items.len() == 2
             && matches!((&items[0], &items[1]), (Value::Number(x), Value::Number(y)) if x.is_finite() && y.is_finite() && x.abs() <= 180.0 && y.abs() <= 90.0)),
         _ => true,
     }
 }
 
-/// Types whose check the core doesn't carry: a cell's formula in one is the host's.
-pub fn checked_by_host(kind: &Kind) -> bool {
-    !kind.many && kind.ty == "geojson"
+/// JSON text that reads as an object whose `type` is text.
+fn is_geojson(json: &str) -> bool {
+    matches!(serde_json::from_str::<serde_json::Value>(json), Ok(serde_json::Value::Object(o)) if matches!(o.get("type"), Some(serde_json::Value::String(_))))
 }
 
 fn digits(s: &[u8]) -> bool {
