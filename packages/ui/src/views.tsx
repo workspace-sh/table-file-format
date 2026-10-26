@@ -3354,12 +3354,18 @@ export function TableView({
     const row = sel ? rowOf(sel.rowId) : undefined;
     const field = sel ? fieldMap.get(sel.name) : undefined;
     if (!sel || !row || !field) return editor.select(null);
+    // A cell with its own formula shows that formula, as it's edited: the "=" apart, then the text
+    // in the reader's syntax (the stored form untouched). Its value is in the cell itself.
+    const own = ownFormula(cells, sel.rowId, sel.name, row);
     editor.select({
       rowId: sel.rowId,
       name: sel.name,
       label: field.title ?? field.name,
       rowLabel: titleField ? formatValue(row[titleField]) : row.id,
-      text: field.computed
+      ...(own !== undefined ? { prefix: FORMULA_PREFIX } : {}),
+      text: own !== undefined
+        ? cellFormulaText(own, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
+        : field.computed
         ? formulaDraftOf(field, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
         : field.relation
           ? // A link reads as the rows it points at, as the cell shows them.
@@ -3369,7 +3375,7 @@ export function TableView({
               return ids.map((id) => names.get(id) ?? id).join(", ");
             })()
           : formatCellValue(field, row[sel.name]),
-      formula: field.computed !== undefined,
+      formula: own === undefined && field.computed !== undefined,
       ...(field.description ? { description: field.description } : {}),
       // What the web's header hover says, for a platform with no hover.
       facts: (() => {
