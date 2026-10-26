@@ -24,7 +24,7 @@ import {
 } from "@gtkx/jsx/gtk";
 import { enumOptions, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
 import { pillClass, styles, useDark } from "./theme.js";
-import { type GridEditEnd, inputHints, cellFormulaDraft, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { type GridEditEnd, inputHints, cellFormulaText, FORMULA_PREFIX, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -140,6 +140,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Editing the cell's own formula (D52): its `=` is drawn before the entry, not in it, and put back on saving.
+  const [asFormula, setAsFormula] = useState(false);
   // Why the typed text wasn't saved, and the date it probably meant.
   const [problem, setProblem] = useState<{ message: string; suggestion?: string } | null>(null);
   // The draft already asked about (an early year, D42): saved if saved again.
@@ -214,8 +216,10 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     closed.current = false;
     queried.current = null;
     typedOver.current = text !== undefined;
-    // A cell with its own formula is edited as that formula (D52).
-    setDraft(text ?? (formula?.own !== undefined ? cellFormulaDraft(formula.own, formula.grid, formula.syntax) : draftOf(value)));
+    // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` before the entry.
+    const own = text === undefined && formula?.own !== undefined;
+    setAsFormula(own);
+    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
     setProblem(null);
     setEditing(true);
   };
@@ -253,7 +257,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   /** Saved (or nothing to save) and closed: true; refused, the editor stays: false. */
   const commit = (raw: string, how: "key" | "blur"): boolean => {
     if (closed.current) return false;
-    const result = commitDraft(field, value, raw, how, queried.current, formula);
+    const result = commitDraft(field, value, asFormula ? FORMULA_PREFIX + raw : raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem({ message: result.check.message, suggestion: result.check.suggestion });
@@ -338,7 +342,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const symbol = currencySymbolOf(field, locale);
   return (
     <GtkBox hexpand spacing={4}>
-      {symbol ? <GtkLabel label={symbol} cssClasses={["dim-label"]} /> : null}
+      {asFormula ? <GtkLabel name="formula-prefix" label={FORMULA_PREFIX} cssClasses={["dim-label"]} /> : symbol ? <GtkLabel label={symbol} cssClasses={["dim-label"]} /> : null}
       <GtkEntry
         ref={entry}
         hexpand
@@ -377,6 +381,11 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
                 if (keyval === Gdk.KEY_Escape) {
                   close();
                   onEditEnd?.("escape");
+                  return true;
+                }
+                // Backspace before the formula's first character takes its `=`: what's left is a value (D52).
+                if (keyval === Gdk.KEY_BackSpace && asFormula && entry.current?.getPosition() === 0 && !entry.current.getSelectionBounds()[0]) {
+                  setAsFormula(false);
                   return true;
                 }
                 // Tab saves and moves along, as in a spreadsheet, rather than leaving the table.
