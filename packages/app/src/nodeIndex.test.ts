@@ -420,8 +420,8 @@ test("a field renamed is renamed in the index first, then every row is written w
 });
 
 test("a field removed and another added with its name are two fields: the old one's values aren't the new one's (D62)", () => {
-  const from: TableSchema = { fields: [{ id: "aaaaaaaaaaaaa", name: "notes", type: "text" }] };
-  const to: TableSchema = { fields: [{ id: "bbbbbbbbbbbbb", name: "notes", type: "text" }] };
+  const from: TableSchema = { fields: [{ id: "aaaaaaaaaaaaa", name: "notes", type: "string" }] };
+  const to: TableSchema = { fields: [{ id: "bbbbbbbbbbbbb", name: "notes", type: "string" }] };
   assert.deepEqual(fieldChanges(from, to), { matched: [undefined], renamed: [], gone: ["notes"] });
 });
 
