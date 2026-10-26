@@ -141,7 +141,7 @@ function formerName(node: Node): string | undefined {
 
 export function tableCore(version: string): Engine {
   return {
-    name: "table-core",
+    name: "table-core (the EDN core)",
     version,
     host: TABLE_HOST,
     evaluate(c) {

@@ -8,13 +8,13 @@ OpenFormula 1.4 has 393 functions (functions.txt); 346 have cases here (8667 cas
 | Engine | Version | Functions with no misses | Cases met | Missed | Inconclusive |
 | --- | --- | --- | --- | --- | --- |
 | Formualizer | 0.9.3 | 146 of 346 | 5654 of 8667 | 2720 | 293 |
-| table-core | 0.1.0 | 0 of 346 | 40 of 8667 | 8590 | 37 |
+| table-core (the EDN core) | 0.1.0 | 0 of 346 | 39 of 8667 | 8611 | 17 |
 
 A **miss** is a wrong answer under the host settings the engine computes with (OpenFormula 3.4; `.table`'s are Excel's, DECISIONS D39). A case written under other settings, using something those settings change (criteria, database functions, lookups, `search`, comparisons), that an engine doesn't meet is **inconclusive**: the difference may be the settings'. A function has no misses when at least one case is met and none is missed. A case an engine can't express counts as missed.
 
 ## By function
 
-| Function | Cases | Formualizer met / missed | table-core met / missed | First miss (Formualizer) |
+| Function | Cases | Formualizer met / missed | table-core (the EDN core) met / missed | First miss (Formualizer) |
 | --- | --- | --- | --- | --- |
 | `abs` | 9 | 8 / 1 | 4 / 5 | (abs (ref "J3") 0) gave 13, expected {:error nil} |
 | `accrintm` | 11 | 9 / 2 | 0 / 11 | (accrintm (date 2012 1 1) (date 2013 2 15) 0.065 nil 3) gave {:error "#NUM!"}, expected 73.1917808219178 |
@@ -164,7 +164,7 @@ A **miss** is a wrong answer under the host settings the engine computes with (O
 | `hex2bin` | 23 | 19 / 4 | 0 / 23 | (hex2bin (ref "H4") 2) gave {:error "#NUM!"}, expected "1111111111" |
 | `hex2dec` | 23 | 18 / 5 | 0 / 23 | (hex2dec (ref "H15")) gave {:error "#VALUE!"}, expected 0 |
 | `hex2oct` | 23 | 20 / 3 | 0 / 23 | (hex2oct (ref "H15")) gave {:error "#VALUE!"}, expected "0" |
-| `hlookup` | 39 | 39 / 0 ✓ | 0 / 36 |  |
+| `hlookup` | 39 | 39 / 0 ✓ | 0 / 39 |  |
 | `hour` | 6 | 5 / 1 | 0 / 6 | (hour "17:20:00") gave {:error "#VALUE!"}, expected 17 |
 | `hyperlink` | 33 | 23 / 10 | 3 / 30 | (hyperlink (ref "I6") (ref "J6")) gave "1", expected 1 |
 | `hypgeomdist` | 23 | 0 / 23 | 0 / 23 | (hypgeomdist 2 2 90 100 0) gave {:error "#NAME?"}, expected 0.809090909090909 |
@@ -214,7 +214,7 @@ A **miss** is a wrong answer under the host settings the engine computes with (O
 | `lognormdist` | 23 | 0 / 23 | 0 / 23 | (lognormdist 0.1 0 1 1) gave {:error "#NAME?"}, expected 0.0106510993417001 |
 | `lookup` | 720 | 540 / 0 ✓ | 0 / 720 |  |
 | `lower` | 5 | 5 / 0 ✓ | 2 / 3 |  |
-| `match` | 99 | 87 / 0 ✓ | 0 / 86 |  |
+| `match` | 99 | 87 / 0 ✓ | 0 / 99 |  |
 | `max` | 13 | 9 / 0 ✓ | 0 / 13 |  |
 | `maxa` | 13 | 9 / 0 ✓ | 0 / 13 |  |
 | `mdeterm` | 10 | 0 / 10 | 0 / 10 | (mdeterm (ref "I2:L5")) gave {:error "#NAME?"}, expected 88 |
@@ -286,7 +286,7 @@ A **miss** is a wrong answer under the host settings the engine computes with (O
 | `round` | 18 | 16 / 2 | 14 / 4 | (round 2.5) gave {:error "#VALUE!"}, expected 3 |
 | `rounddown` | 18 | 16 / 2 | 0 / 18 | (rounddown (- 45.67)) gave {:error "#VALUE!"}, expected -45 |
 | `roundup` | 18 | 15 / 3 | 0 / 18 | (roundup (- 45.67)) gave {:error "#VALUE!"}, expected -46 |
-| `row` | 10 | 9 / 1 | 1 / 9 | (cell "ROW") gave {:error "#VALUE!"}, expected 14 |
+| `row` | 10 | 9 / 1 | 0 / 10 | (cell "ROW") gave {:error "#VALUE!"}, expected 14 |
 | `rows` | 3 | 3 / 0 ✓ | 0 / 3 |  |
 | `rri` | 7 | 7 / 0 ✓ | 0 / 7 |  |
 | `rsq` | 8 | 8 / 0 ✓ | 0 / 8 |  |
@@ -317,7 +317,7 @@ A **miss** is a wrong answer under the host settings the engine computes with (O
 | `substitute` | 8 | 8 / 0 ✓ | 0 / 8 |  |
 | `subtotal` | 22 | 20 / 2 | 0 / 22 | (subtotal 103 (ref "J2:J11")) gave 10, expected false |
 | `sum` | 10 | 8 / 2 | 0 / 10 | (sum (abs (munit 2))) gave {:error "#NAME?"}, expected 2 |
-| `sumif` | 30 | 23 / 0 ✓ | 0 / 29 |  |
+| `sumif` | 30 | 23 / 0 ✓ | 0 / 30 |  |
 | `sumproduct` | 37 | 31 / 6 | 0 / 37 | (sumproduct (* (ref "J16:J18") (ref "M16:M18"))) gave 18, expected {:error nil} |
 | `sumsq` | 6 | 6 / 0 ✓ | 0 / 6 |  |
 | `sumx2my2` | 8 | 8 / 0 ✓ | 0 / 8 |  |
@@ -350,7 +350,7 @@ A **miss** is a wrong answer under the host settings the engine computes with (O
 | `varp` | 19 | 18 / 1 | 0 / 19 | (varp "red" 1 2) gave 0.25, expected {:error nil} |
 | `varpa` | 20 | 19 / 1 | 0 / 20 | (varpa "red" 1 2) gave 0.25, expected 0.666666666666667 |
 | `vdb` | 73 | 0 / 73 | 0 / 73 | (vdb 35000 7500 36 10 20 2) gave {:error "#NAME?"}, expected 8603.80245372397 |
-| `vlookup` | 67 | 60 / 0 ✓ | 0 / 64 |  |
+| `vlookup` | 67 | 60 / 0 ✓ | 0 / 67 |  |
 | `weekday` | 16 | 4 / 12 | 0 / 16 | (weekday "2000-06-14") gave {:error "#VALUE!"}, expected 4 |
 | `weeknum` | 18 | 12 / 6 | 0 / 18 | (weeknum "2000-06-14") gave {:error "#VALUE!"}, expected 25 |
 | `weibull` | 16 | 0 / 16 | 0 / 16 | (weibull 2 1 1 1) gave {:error "#NAME?"}, expected 0.864664716763387 |

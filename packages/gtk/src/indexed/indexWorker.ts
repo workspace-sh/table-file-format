@@ -32,11 +32,10 @@ export type IndexResponse =
   | { id: number; progress: [done: number, total: number] };
 
 // One at a time, in the order asked; the first once the EDN core is in, so
-// every formula this worker works out is the core's (the window's are too).
-// `TABLE_FORMULA_CHECK=1` checks each against the workbook, as the app's tests do.
+// every formula this worker works out is the core's, as the window's are.
 let last: Promise<unknown> = loadEdn({ binding: "native" }).then(
-  (edn) => setFormulaEngine(edn, { check: process.env.TABLE_FORMULA_CHECK === "1" }),
-  (e: unknown) => console.warn(`index worker formulas: the workbook's own, not the EDN core: ${String(e)}`),
+  (edn) => setFormulaEngine(edn),
+  (e: unknown) => console.warn(`index worker: formulas aren't worked out, the EDN core didn't load: ${String(e)}`),
 );
 let lastAsked = 0;
 const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
