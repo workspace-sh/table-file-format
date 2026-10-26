@@ -9,7 +9,7 @@
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { bundleOf, bundleTables, derive, linkedRowAddress, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
+import { bundleOf, bundleTables, derive, linkedRowAddress, sheetReaders, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
@@ -230,6 +230,7 @@ function Opened({
           personal={derived.arranged}
           onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
           onReset={() => dispatch({ type: "resetArrangement" })}
+          sheetReaders={sheetReaders(state.tables, state.active, derived.shown.view)}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

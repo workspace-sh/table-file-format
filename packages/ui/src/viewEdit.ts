@@ -342,6 +342,17 @@ export interface ViewSettingsProps {
   personal?: boolean;
   onSaveForEveryone?: () => void;
   onReset?: () => void;
+  /** How many formulas read this view by place (D41): said beside the Sheet switch, as they depend on it. */
+  sheetReaders?: number;
+}
+
+/** What the Sheet switch means, and, while formulas read this view by place, that they depend on it. */
+export function sheetNote(view: View, readers = 0): string {
+  const what = "Letter the columns and number the rows, so formulas can use =B7.";
+  if (view.coordinates !== true || readers === 0) return what;
+  return readers === 1
+    ? `${what} A formula reads this sheet by place: it shows #REF! if this stops being a sheet.`
+    : `${what} ${readers} formulas read this sheet by place: they show #REF! if this stops being a sheet.`;
 }
 
 /** A table view made a Sheet view, or not (D41): off is no `coordinates` at all. */
