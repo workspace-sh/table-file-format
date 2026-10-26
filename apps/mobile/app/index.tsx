@@ -325,6 +325,16 @@ export default function TableScreen() {
                 <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>
               </html.button>
             )}
+            {/* Its index couldn't be made: said here, on the table, not as an alert; a tap says why. */}
+            {summary.held && (
+              <html.button
+                aria-label={`${summary.held.label}: why`}
+                onClick={() => Alert.alert(summary.held!.label, summary.held!.hint)}
+                style={styles.validityButton}
+              >
+                <html.span style={styles.schemaBumpBadge}>{summary.held.label}</html.span>
+              </html.button>
+            )}
           </html.div>
           {appSettings && <AppSettings onClose={() => setAppSettings(false)} />}
           {state.settingsOpen && (

@@ -182,15 +182,14 @@ describe("a table held in the index on Linux", () => {
     appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
     const library = await loadLibrary([bundle], [], { indexedFrom: 1000 });
     await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" indexedFrom={1000} />);
-    // Said, in a dialog of its own, then put away.
-    let told: Adw.AlertDialog | undefined;
+    // Said on the table, beside its count, with why as the hint: never an alert to answer (workspace#711).
+    let held: Gtk.Label | undefined;
     await waitFor(async () => {
-      told = (await screen.findAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
-      expect(told?.getHeading()).toBe("Opened without its index");
+      held = (await screen.findAllByName("held-in-memory"))[0] as Gtk.Label | undefined;
+      expect(held?.getLabel()).toBe("held in memory");
     }, { timeout: 20000 });
-    expect(told!.getBody()).toMatch(/line 3009 of rows\/0001.ndjson couldn.t be read/);
-    told!.emit("response", "ok");
-    await waitFor(() => expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toHaveLength(0));
+    expect(held!.getTooltipText()).toMatch(/line 3009 of rows\/0001.ndjson couldn.t be read/);
+    expect(screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG)).toHaveLength(0);
     const first = await cellOf("Land .table extension");
     first.grabFocus();
     await userEvent.keyboard(first, "Z");
