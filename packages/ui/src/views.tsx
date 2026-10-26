@@ -3166,6 +3166,7 @@ export function TableView({
   relatedTables,
   onUpdateRow,
   onUpdateField,
+  onRenameField,
   onAddEnumValue,
   onRemoveEnumValue,
   onDeleteField,
@@ -3219,7 +3220,15 @@ export function TableView({
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   // The schema as a field's settings opened, for their Cancel to put back.
   const schemaBefore = useRef<TableSchema | null>(null);
+  // A field renamed with its settings open: they follow it, and what Cancel puts back has the new name.
+  const renamedField = useRef<{ from: string; to: string } | null>(null);
   useEffect(() => {
+    const renamed = renamedField.current;
+    renamedField.current = null;
+    if (renamed && schemaBefore.current && editingFieldName === renamed.to) {
+      schemaBefore.current = { ...schemaBefore.current, fields: schemaBefore.current.fields.map((f) => (f.name === renamed.from ? { ...f, name: renamed.to } : f)) };
+      return;
+    }
     schemaBefore.current = editingFieldName ? schema : null;
     // Only on opening and closing: what's changed since is what Cancel undoes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4139,6 +4148,15 @@ export function TableView({
             align={opensTowardStart(name) !== rtl ? "right" : "left"}
             anchorRect={anchorRect ?? NO_ANCHOR}
             onUpdate={(patch) => onUpdateField!(name, patch)}
+            onRename={
+              onRenameField
+                ? (to) => {
+                    renamedField.current = { from: name, to };
+                    onRenameField(name, to);
+                    setEditingFieldName(to);
+                  }
+                : undefined
+            }
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onRemoveEnumValue={onRemoveEnumValue ? (value) => onRemoveEnumValue(name, value) : undefined}
             onDelete={

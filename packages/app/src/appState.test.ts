@@ -520,6 +520,40 @@ function one(bundle: string): Library {
   return { tables: { [`${bundle}/${bundle}`]: table }, bundles: { [bundle]: { title: "Notes" } }, paths: {}, problems: {} };
 }
 
+test("replaced: a file read again takes the place of what's held of it, its unwritten edits let go", () => {
+  const opened = run(start(), { type: "opened", library: { ...one("notes"), singleFiles: { notes: "/docs/notes.table" } } });
+  // Edited, and the save found the file changed elsewhere: still to write.
+  const edited = { ...opened, dirty: ["notes", "crm"] };
+  const again = one("notes");
+  const fresh: Library = { ...again, tables: { "notes/ideas": again.tables["notes/notes"]! }, paths: { notes: "/app/work/notes.table" }, singleFiles: { notes: "/docs/notes.table" } };
+  const s = run(edited, { type: "replaced", library: fresh });
+  assert.deepEqual(Object.keys(s.tables).filter((k) => k.startsWith("notes/")), ["notes/ideas"], "a table the file no longer has is gone");
+  assert.deepEqual(s.dirty, ["crm"], "the file's edits aren't written over it; others still are");
+  assert.equal(s.active, "notes/ideas");
+  assert.deepEqual(s.singleFiles, { notes: "/docs/notes.table" });
+});
+
+test("renaming a field renames it everywhere in its file, and undo and redo take every table with it", () => {
+  const s0 = run(start(), { type: "showTable", key: "crm/deals" }, { type: "place", place: { rowId: "r", field: "company" } });
+  const formula = (s: AppState, key: string, field: string) => s.tables[key]!.schema.fields.find((f) => f.name === field)?.computed?.expr;
+  const s1 = run(s0, { type: "renameField", name: "company", to: "account" });
+  assert.ok(s1.tables["crm/deals"]!.rows.every((r) => "account" in r && !("company" in r)));
+  assert.equal(formula(s1, "crm/deals", "industry"), '(related "account" "industry")');
+  assert.equal(formula(s1, "crm/companies", "open_pipeline"), '(sum (linked "deals" "account" "open_value"))');
+  assert.ok(s1.dirty.includes("crm"));
+  assert.equal(s1.place.field, "account", "the cell selected stays selected");
+  assert.equal(s1.tables["crm/contacts"], s0.tables["crm/contacts"]);
+  // Undone: both tables as they were; redone: both renamed again.
+  const s2 = run(s1, { type: "undo" });
+  assert.equal(s2.tables["crm/deals"], s0.tables["crm/deals"]);
+  assert.equal(s2.tables["crm/companies"], s0.tables["crm/companies"]);
+  const s3 = run(s2, { type: "redo" });
+  assert.equal(formula(s3, "crm/companies", "open_pipeline"), '(sum (linked "deals" "account" "open_value"))');
+  assert.ok(s3.tables["crm/deals"]!.rows.every((r) => "account" in r));
+  // A name in use is refused, and changes nothing.
+  assert.equal(run(s0, { type: "renameField", name: "company", to: "stage" }), s0);
+});
+
 test("opened: a folder is held and shown, and isn't written back until edited", () => {
   const s = run(start({ stored: { sidebar: { files: true } } }), { type: "opened", library: { ...one("notes"), paths: { notes: "/x/notes.table" } } });
   assert.equal(s.active, "notes/notes");

@@ -86,7 +86,11 @@ export async function writeHistoryNow(
 }
 
 /** Where the files stand: written, being written, or not written and why. */
-export type SaveState = { kind: "saved" } | { kind: "saving" } | { kind: "failed"; message: string };
+export type SaveState =
+  | { kind: "saved" }
+  | { kind: "saving" }
+  /** `changedElsewhere`: the single file that changed since it was opened, so wasn't saved over (ChangedElsewhere). */
+  | { kind: "failed"; message: string; changedElsewhere?: string };
 
 /** What a write reads of the state. */
 type Writable = Pick<AppState, "dirty" | "tables" | "bundles"> & Partial<Pick<AppState, "closed">>;
@@ -102,7 +106,11 @@ export async function writeNow(
   dispatch: (action: AppAction) => void,
   onSaving: (saving: SaveState) => void,
 ): Promise<boolean> {
-  if (state.dirty.length === 0) return true;
+  // Nothing to write: whatever failed before has been dealt with.
+  if (state.dirty.length === 0) {
+    onSaving({ kind: "saved" });
+    return true;
+  }
   const { dirty: which, tables, bundles } = state;
   onSaving({ kind: "saving" });
   try {
@@ -112,7 +120,8 @@ export async function writeNow(
     onSaving({ kind: "saved" });
     return done !== false;
   } catch (error) {
-    onSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error) });
+    const elsewhere = error instanceof Error && error.name === "ChangedElsewhere" ? (error as Error & { target: string }).target : undefined;
+    onSaving({ kind: "failed", message: error instanceof Error ? error.message : String(error), ...(elsewhere ? { changedElsewhere: elsewhere } : {}) });
     return false;
   }
 }

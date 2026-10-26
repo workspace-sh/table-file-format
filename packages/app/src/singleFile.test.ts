@@ -4,7 +4,7 @@ import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { readTableDocument, writeTableFileTo } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 
-import { ChangedElsewhere, packTableFile, restampTableFile, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { ChangedElsewhere, copyPathFor, keepEditsAsCopy, packTableFile, restampTableFile, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 
 const fs = () => {
   const m = memoryFs();
@@ -77,4 +77,33 @@ test("a file changed elsewhere since it was opened isn't saved over: the edits s
   // As it was opened, it packs.
   await packTableFile(m, work, "/docs/t.table", "opened");
   assert.notDeepEqual(await m.readBytes!("/docs/t.table"), theirs);
+});
+
+test("after a file changed elsewhere, the edits are kept as a copy beside it, or let go", async () => {
+  const m = fs();
+  await m.mkdir("/docs");
+  await writeTableFileTo(m, "/docs/t.table", { tables: { tasks: tables["tasks"]! } });
+  const work = workDirFor("/app", "/docs/t.table");
+  await unpackTableFile(m, (await m.readBytes!("/docs/t.table"))!, work, "opened");
+  const newer = { tables: { tasks: { ...tables["tasks"]!, rows: tables["tasks"]!.rows.slice(0, 1) } } };
+  await writeTableFileTo(m, "/docs/t.table", newer);
+  const theirs = await m.readBytes!("/docs/t.table");
+  const mine = tables["tasks"]!.rows.slice(1);
+  await writeBundleTo(m, work, { tables: { tasks: { ...tables["tasks"]!, rows: mine } } });
+
+  // Kept: a new file beside it holds the edits; the file is as it was changed; the working folder is let go.
+  const copy = await keepEditsAsCopy(m, work, "/docs/t.table");
+  assert.equal(copy, "/docs/t (edited here).table");
+  assert.deepEqual((await readTableDocument(m, copy)).bundle.tables.tasks!.rows, mine);
+  assert.deepEqual(await m.readBytes!("/docs/t.table"), theirs);
+  assert.equal(await m.list(work), null);
+  // Opened again, it's the file as it now is.
+  await unpackTableFile(m, theirs!, work, "changed");
+  assert.equal((await readTableDocument(m, work)).bundle.tables.tasks!.rows.length, 1);
+
+  // A second copy is numbered; letting the edits go leaves the file and no working folder.
+  assert.equal(await copyPathFor(m, "/docs/t.table"), "/docs/t (edited here 2).table");
+  await takeFileAsItIs(m, work);
+  assert.equal(await m.list(work), null);
+  assert.deepEqual(await m.readBytes!("/docs/t.table"), theirs);
 });
