@@ -93,6 +93,11 @@ export interface TableFileViewProps {
   ask?: (confirm: Confirm, answer: (response: string) => void) => void;
   /** What goes around the view, drawn by the host. */
   chrome?: (file: TableFileChrome) => ReactNode;
+  /**
+   * Which syntax this file's formulas are shown in, as the host's viewer chose for it (Excel style by
+   * default). The viewer's, kept by the host, never in the file (SPEC section 4).
+   */
+  formulaSyntax?: "excel" | "stored";
 }
 
 function alertAsk(confirm: Confirm, answer: (response: string) => void) {
@@ -107,7 +112,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
   const { table, view } = derived;
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
@@ -201,7 +206,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome }:
   };
 
   return (
-    <DisplaySettingsProvider value={display}>
+    <DisplaySettingsProvider value={formulaSyntax ? { ...display, formulaSyntax } : display}>
       {chrome?.(file)}
       <LayoutView
         key={`${state.active}\u0000${view.id}`}
