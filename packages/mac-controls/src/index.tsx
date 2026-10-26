@@ -11,7 +11,7 @@ import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef
 import { Pressable, requireNativeComponent, View as ReactNativeView, type View, type ViewProps } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { ChooseManyProps, ChooseManySlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
+import type { ChooseManyProps, ChooseManySlot, ChooseOneProps, ChooseOneSlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
 import { chooseMany, chooseManyClose, chooseOne, onContextMenu, pickDate, popUpMenu, type PopUpItem } from "./native";
 
 export { MacSettingsForm, cancelSettingsForm, dismissSettingsForm, macSheet, onSettingsFormEvent, settingsFormJson, settingsFormShown, setSettingsTransport, type SettingsFormEvent, type SettingsTransport } from "./settings";
@@ -164,6 +164,31 @@ function ChooseManyView({ options, selected, onToggle, anchor, rect, onClose }: 
 
 export const MacChooseMany: ChooseManySlot = ChooseManyView;
 
+/**
+ * One of a list (a calendar day's rows) in the same popover, pointing at the
+ * element the views name; a pick or a click outside closes it.
+ */
+function ChooseOneView({ options, anchor, onPick, onClose }: ChooseOneProps): null {
+  const latest = useRef({ onPick, onClose });
+  latest.current = { onPick, onClose };
+  useEffect(() => {
+    let open = true;
+    void chooseOne(options, null, anchor).then((picked) => {
+      if (!open) return;
+      if (picked === null) latest.current.onClose();
+      else latest.current.onPick(picked);
+    });
+    return () => {
+      open = false;
+      chooseManyClose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+  return null;
+}
+
+export const MacChooseOne: ChooseOneSlot = ChooseOneView;
+
 /** The Mac's controls, for PlatformControlsProvider. One object, so the views' rows aren't remounted. */
 /** The system's checkbox (macos/TableCheckbox.m). */
 const NativeCheckbox = requireNativeComponent<ViewProps & { checked: boolean; label?: string; onChange: (event: { nativeEvent: { checked: boolean } }) => void }>("TableCheckbox");
@@ -187,7 +212,7 @@ function ToggleView({ checked, onChange, label, children, style }: ToggleProps):
 
 export const MacToggle: ToggleSlot = ToggleView;
 
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, Toggle: MacToggle };
+export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, ChooseOne: MacChooseOne, Toggle: MacToggle };
 
 const styles = css.create({
   toggleRow: {
