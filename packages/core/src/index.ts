@@ -42,6 +42,7 @@ export { compareText, type TextOrder } from "./collate.js";
 export { readTableArchive, writeTableArchive, bundleFiles, type BundleFile, type ReadArchiveOptions } from "./archive.js";
 export { filesOfFolder, packTableFileFrom, readTableDocument, tableFormOf, unpackTableFileTo, writeTableFileTo, type TableDocument, type TableForm } from "./document.js";
 export type { LazyZipEntry } from "./zip.js";
+export { archiveStamp } from "./zip.js";
 export {
   buildIndex,
   queryIndex,
