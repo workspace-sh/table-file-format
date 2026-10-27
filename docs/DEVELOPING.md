@@ -11,7 +11,7 @@ All commands run from the monorepo root. Namespaced consistently so the
 syntax is the same across every surface.
 
 ```sh
-git submodule update --init       # the fixtures (workspace-fixtures, private; fixtures/ links into it)
+git submodule update --init       # the fixtures (workspace-fixtures; fixtures/ links into it)
 npm install                       # installs everything; symlinks workspace packages
 
 # Format library
@@ -70,7 +70,7 @@ npm run conformance:test
 
 ### The example tables
 
-`fixtures/` is the only place an example table is edited. It is a link to `workspace-fixtures/Fixtures/table`, a submodule of the private [workspace-fixtures](https://github.com/workspace-sh/workspace-fixtures) repository, the one copy every repository shares. An edit is committed there first, then this repository's submodule is moved to that commit. Everything else is made from it:
+`fixtures/` is the only place an example table is edited. It is a link to `workspace-fixtures/Fixtures/table`, a submodule of the [workspace-fixtures](https://github.com/workspace-sh/workspace-fixtures) repository, the one copy every repository shares. An edit is committed there first, then this repository's submodule is moved to that commit. Everything else is made from it:
 
 - the modules the apps build in, by `fixtures:generate`;
 - a copy for testing anywhere else, by `fixtures:export`, which writes each example as a folder and as a single file, with a `CHECKSUMS` list, into any folder, such as a device's documents. Run on `fixtures` itself, it writes only the single files and `CHECKSUMS` beside the folders. Its `--check` names each file that differs.

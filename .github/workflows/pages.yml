@@ -26,18 +26,8 @@ jobs:
         with:
           # The build's number counts the day's commits (docs/VERSIONING.md): it needs the history.
           fetch-depth: 0
-      # The fixtures are the private workspace-fixtures repository, a submodule (fixtures/ links
-      # into it). Read with its read-only deploy key, whose private half is this secret.
-      - name: Fetch the fixtures
-        env:
-          FIXTURES_DEPLOY_KEY: ${{ secrets.FIXTURES_DEPLOY_KEY }}
-        run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$FIXTURES_DEPLOY_KEY" > ~/.ssh/fixtures
-          chmod 600 ~/.ssh/fixtures
-          git config submodule.workspace-fixtures.url git@github.com:workspace-sh/workspace-fixtures.git
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/fixtures -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" git submodule update --init --depth 1
-          rm ~/.ssh/fixtures
+          # The fixtures: the workspace-fixtures submodule, which fixtures/ links into.
+          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
