@@ -198,25 +198,30 @@ test("the same file opened again takes the index made from it; after a save, or 
       const host = createIndexHost(counted());
       const { opened } = await host.openZip(bytes, [], 1000);
       const db = host.openIndexDatabase(opened.key);
+      const kept = opened.bundle.tables.tasks!.indexed?.kept === true;
       const count = await db.ensure("tasks", schema);
-      return { db, count };
+      return { db, count, kept };
     };
 
-    let { db, count } = await openAndEnsure(archive);
+    let { db, count, kept } = await openAndEnsure(archive);
     assert.equal(count, many.length);
     assert.equal(written, 1, "made from the archive the first time");
+    assert.equal(kept, false);
     await db.close();
 
-    ({ db, count } = await openAndEnsure(archive));
+    ({ db, count, kept } = await openAndEnsure(archive));
     assert.equal(count, many.length);
     assert.equal(written, 1, "opened again: taken as it is");
+    // Said as it's opened, before anything is shown: the screen never says it's being read.
+    assert.equal(kept, true);
 
     // An edit saved: the index is this device's now, and the archive's rows are read again when it's opened.
     await db.rows({ ask: "edits", name: "tasks", table: { schema }, edits: [{ kind: "cell", rowId: "r0", field: "title", value: "Edited" }] });
     assert.equal(await db.save("tasks", schema, true), true);
     await db.close();
-    ({ db, count } = await openAndEnsure(archive));
+    ({ db, count, kept } = await openAndEnsure(archive));
     assert.equal(written, 3, "made again after a save (the save wrote one rows file, the build another)");
+    assert.equal(kept, false);
     await db.close();
 
     // Another file of the same name: made again.

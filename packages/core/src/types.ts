@@ -454,6 +454,11 @@ export interface ParsedTable {
      * values, hidden since they were removed (alterIndex's `restore`).
      */
     restore?: string[];
+    /**
+     * Its index on this device was made from this same file and is taken as
+     * it is: nothing is read, so nothing says it's being read.
+     */
+    kept?: true;
   };
   /**
    * Its edit history, as `history.ndjson` holds it (SPEC section 14):
