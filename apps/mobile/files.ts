@@ -98,6 +98,6 @@ export async function shareZip(
   const file = new File(Paths.cache, singleFileName(bundle));
   if (file.exists) file.delete();
   file.create();
-  file.write(await bundleToArchive(bundle, { ...toBundle(tables, bundles, bundle), files }));
+  await file.write(await bundleToArchive(bundle, { ...toBundle(tables, bundles, bundle), files }));
   await Sharing.shareAsync(file.uri, { mimeType: "application/octet-stream", UTI: "sh.workspace.table.file", dialogTitle: singleFileName(bundle) });
 }
