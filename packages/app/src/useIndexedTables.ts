@@ -126,7 +126,8 @@ export function useIndexedTables(input: {
     for (const [key, table] of Object.entries(state.tables)) {
       if (!table.indexed || asked.current.has(key)) continue;
       asked.current.add(key);
-      setMade((was) => ({ ...was, [key]: "building" }));
+      // An index taken as it is (the same file opened again) isn't read: nothing says it is.
+      if (!table.indexed.kept) setMade((was) => ({ ...was, [key]: "building" }));
       const schema = table.schema;
       void hostOf(bundleOf(key))
         .then(async (host) => ready(key, schema, await host.ensure(tableNameOf(key), schema, (done, total) => setProgress((was) => ({ ...was, [key]: { done, total } }))), host))
@@ -309,7 +310,7 @@ export function useIndexedTables(input: {
   // has read of it stays good.
   const firstHere = first[state.active];
   // (Kept past the end of the reading, until the view's own rows have arrived: nothing blanks between the two.)
-  const stillReading = state_ === "building" || (state_ === "ready" && source?.key !== state.active);
+  const stillReading = state_ === "building" || ((state_ === "ready" || (state_ === undefined && active?.indexed?.kept)) && source?.key !== state.active);
   const readSoFar =
     active?.indexed && stillReading && firstHere
       ? state_ === "ready"
@@ -354,7 +355,10 @@ export function useIndexedTables(input: {
     [hostOf],
   );
 
-  const building = active?.indexed && state_ !== "ready" && state_ !== "lost" ? (progress[state.active] ?? { done: 0, total: active.indexed.count }) : null;
+  const building =
+    active?.indexed && state_ !== "ready" && state_ !== "lost" && !(state_ === undefined && active.indexed.kept)
+      ? (progress[state.active] ?? { done: 0, total: active.indexed.count })
+      : null;
   return {
     hold,
     save,
