@@ -43,10 +43,11 @@ export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFol
     const handle = file.open();
     return { write: (bytes) => handle.writeBytes(bytes), close: () => handle.close() };
   },
-  *pieces(path, size, step) {
+  // readBytes is asynchronous since Expo SDK 58: each piece is awaited, never handed on as a promise.
+  async *pieces(path, size, step) {
     const handle = new File(path).open();
     try {
-      for (let at = 0; at < size; at += step) yield handle.readBytes(Math.min(step, size - at));
+      for (let at = 0; at < size; at += step) yield await handle.readBytes(Math.min(step, size - at));
     } finally {
       handle.close();
     }
