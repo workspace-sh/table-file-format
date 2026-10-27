@@ -1132,6 +1132,10 @@ Every member is optional, and an object with none says nothing. In the
 bundle's `meta.json` it is the whole bundle's source; in a table's, that
 table's (one table of a bundle imported from a CSV, say).
 
+[`schema/meta.schema.json`](../schema/meta.schema.json) is the JSON
+Schema for both `meta.json` files, `source` included; every example's
+pass it.
+
 It is a record of origin and nothing more (DECISIONS D66). A reader MUST
 NOT read or compute anything differently because of it, and nothing
 follows the address. Writers keep it as it was read; one that makes a
