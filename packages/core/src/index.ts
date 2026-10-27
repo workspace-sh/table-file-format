@@ -56,6 +56,7 @@ export {
   setIndexKey,
   storedRows,
   storedRowLines,
+  rowPlaces,
   isIndexStale,
   dropIndex,
   indexKey,
