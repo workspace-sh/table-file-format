@@ -138,7 +138,12 @@ export function cellFormulaDraft(own: string, grid?: Grid, syntax?: "excel" | "s
 /**
  * Save `raw` into a cell holding `current`, from a key (Enter, Tab) or by
  * leaving the editor (`blur`). `queried` is the draft already asked about.
- * An early year is kept on leaving, being a valid date.
+ *
+ * What's typed is never refused for good, as a spreadsheet keeps it (D65):
+ * a key asks once about a problem, and the same draft entered again is kept;
+ * leaving keeps it at once. A value the column can't hold is kept as typed,
+ * and the cell says so; a formula is kept as it reads (an unknown function
+ * shows #NAME?), or as typed when it doesn't (the cell says it can't be read).
  */
 export function commitDraft(
   field: Field | undefined,
@@ -148,20 +153,37 @@ export function commitDraft(
   queried: string | null,
   formula?: CellFormulaEntry,
 ): Commit {
+  const keep = how === "blur" || queried === raw;
   // `=` begins a formula, in a stored field's cell, where the view can give it one (D52).
   if (formula && field && !field.computed && raw.trimStart().startsWith("=")) {
-    const compiled = compileFormula(raw, { fields: formula.fields.map((f) => f.name), ...(formula.grid ? { grid: formula.grid } : {}) });
-    if (!compiled.ok) return how === "blur" ? { kind: "dropped" } : { kind: "problem", check: { ok: false, message: compiled.message }, queried };
-    return compiled.stored === formula.own ? { kind: "unchanged" } : { kind: "formula", expr: compiled.stored };
+    const fields = formula.fields.map((f) => f.name);
+    const compiled = compileFormula(raw, { fields, ...(formula.grid ? { grid: formula.grid } : {}) });
+    if (!compiled.ok && !keep) return { kind: "problem", check: { ok: false, message: `${compiled.message} ${AGAIN}` }, queried: raw };
+    const expr = compiled.ok ? compiled.stored : storedAsTyped(raw, fields, formula.grid);
+    return expr === formula.own ? { kind: "unchanged" } : { kind: "formula", expr };
   }
-  const check = checkEntry(field, raw, queried === raw || how === "blur");
+  const check = checkEntry(field, raw, keep);
   if (!check.ok) {
-    if (how === "blur") return { kind: "dropped" };
-    return { kind: "problem", check, queried: check.confirmable ? raw : queried };
+    if (!keep) return { kind: "problem", check: { ...check, message: check.confirmable ? check.message : `${check.message} ${AGAIN}` }, queried: raw };
+    // Kept as typed: the column can't hold it, and the cell says so.
+    const typed = raw.trim() === "" ? undefined : raw;
+    return typed !== current ? { kind: "save", value: typed } : { kind: "unchanged" };
   }
   // A cell with its own formula: whatever's typed over it (nothing, too) is saved, and takes its place.
   if (formula?.own !== undefined) return { kind: "save", value: check.value };
   return check.value !== current ? { kind: "save", value: check.value } : { kind: "unchanged" };
+}
+
+/** Said after a problem a key met: entering the same again keeps it. */
+const AGAIN = "Press Enter again to keep it as typed.";
+
+/**
+ * A formula kept from an unfinished or refused edit (D65): as it reads, an unknown function
+ * kept as a call to it; else as typed, without its `=`, for the cells to say it can't be read.
+ */
+export function storedAsTyped(raw: string, fields: string[], grid?: Grid): string {
+  const kept = compileFormula(raw, { fields, ...(grid ? { grid } : {}), keepUnknownFunctions: true });
+  return kept.ok ? kept.stored : raw.trim().replace(/^=\s*/, "");
 }
 
 // ─── Lists ─────────────────────────────────────────────────────────────
