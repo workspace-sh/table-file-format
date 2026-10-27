@@ -4,7 +4,7 @@
 // in the stack's search field. What's below is
 // table-ui's views, scrolling under the glass bars.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { Alert, Platform, Pressable, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SFSymbol } from "expo-symbols";
@@ -67,7 +67,8 @@ export default function TableScreen() {
     if (search === "") searchBar.current?.clearText();
   }, [search]);
   // The table's scroll position, so the editor can keep its cell in view.
-  const scroller = useRef<ScrollView>(null);
+  // ScrollView's instance (React Native 0.88 types the component, not its instance).
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
   const scrollY = useRef(0);
   // Where this screen is scrolled, for the table's rows: they are drawn
   // only where they're on screen (RowList.native.tsx).
