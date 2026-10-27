@@ -28,7 +28,7 @@ afterEach(async () => {
 
 async function openSheet() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="kifpjiq34nhz8k95rc3uezwqu5" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="435dx9iqim5iz" />);
 }
 
 describe("a formula cell on Linux", () => {
@@ -154,7 +154,7 @@ describe("a formula cell on Linux", () => {
 
   it("in a field's settings on a table that isn't a sheet, a column is added by its name", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="household-budget/budget" initialView="wsohm6y8imnngf9dirsm38je7w" />);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="h8k36on7woi94" />);
     await userEvent.click(await screen.findByText("Q1"));
     await screen.findByText("One formula for the whole column.");
     const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
@@ -176,7 +176,7 @@ describe("a formula cell on Linux", () => {
     schema.fields.push({ name: "paid", type: "boolean" });
     writeFileSync(join(table, "schema.json"), JSON.stringify(schema));
     const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8")) as { id: string; fields?: string[] }[];
-    views.find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")!.fields!.push("paid");
+    views.find((v) => v.id === "435dx9iqim5iz")!.fields!.push("paid");
     writeFileSync(join(table, "views.json"), JSON.stringify(views));
     // Rent's own formula gives a number, which a true/false column can't hold (D52).
     mkdirSync(join(table, "cells"), { recursive: true });

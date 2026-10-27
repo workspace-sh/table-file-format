@@ -36,7 +36,7 @@ function memoryStore(): KeyValueStore {
 
 async function openTasks(settings?: KeyValueStore) {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" settings={settings} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" settings={settings} />);
 }
 
 const button = (name: string) => screen.findByRole(Gtk.AccessibleRole.BUTTON, { name }) as Promise<Gtk.Button>;
@@ -118,7 +118,7 @@ describe("the app's commands on Linux", () => {
     await openTasks();
     (await window()).activateAction("win.copy-link", null);
     const text = await Gdk.Display.getDefault()!.getClipboard().readTextAsync();
-    expect(text).toBe("projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx");
+    expect(text).toBe("projects.table#table=tasks&view=juycicwios88m");
   });
 
   it("Ctrl+B's command hides the sidebar, and it stays hidden next time", async () => {
@@ -164,11 +164,11 @@ describe("leaving a view on Linux", () => {
 
   it("Copy Link to View carries the row whose page is open", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="u5fpdkwh5w9thdq8o368a9t4nw" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="4bteo61c6agby" />);
     await userEvent.click(await screen.findByText("Table file format spike"));
-    await screen.findByText("bodies/1h38m5st7rwanz3hyjb6dy8igr.md");
+    await screen.findByText("bodies/table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr.md");
     (await window()).activateAction("win.copy-link", null);
-    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=1h38m5st7rwanz3hyjb6dy8igr&view=u5fpdkwh5w9thdq8o368a9t4nw");
+    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=1h38m5st7rwanz3hyjb6dy8igr&view=4bteo61c6agby");
   });
 });
 

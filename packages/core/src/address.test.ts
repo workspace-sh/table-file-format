@@ -219,24 +219,24 @@ describe("escaping (SPEC section 10)", () => {
 
 describe("addressedView", () => {
   const views = [
-    { id: "ffaisc1zows4dzhy7aq5jrebkx", name: "By date" },
+    { id: "juycicwios88m", name: "By date" },
     { id: "pipeline", name: "Pipeline" },
-    { id: "gzrqtgo1p3gfehto7tani3jzz4", name: "By date" },
+    { id: "mufe9nmjruiq5", name: "By date" },
   ];
 
   it("finds a view by its id first", () => {
-    assert.equal(addressedView(views, "gzrqtgo1p3gfehto7tani3jzz4")?.id, "gzrqtgo1p3gfehto7tani3jzz4");
+    assert.equal(addressedView(views, "mufe9nmjruiq5")?.id, "mufe9nmjruiq5");
     assert.equal(addressedView(views, "pipeline")?.id, "pipeline");
   });
 
   it("else by its name, ignoring case, as the link was written with a space encoded", () => {
     const parsed = parseAddress("budget.table#table=ledger&view=by%20DATE");
     assert.equal(parsed?.viewId, "by DATE");
-    assert.equal(addressedView(views, parsed!.viewId!)?.id, "ffaisc1zows4dzhy7aq5jrebkx");
+    assert.equal(addressedView(views, parsed!.viewId!)?.id, "juycicwios88m");
   });
 
   it("takes the first of two views with one name, in views.json's order", () => {
-    assert.equal(addressedView(views, "By date")?.id, "ffaisc1zows4dzhy7aq5jrebkx");
+    assert.equal(addressedView(views, "By date")?.id, "juycicwios88m");
   });
 
   it("finds nothing for a name no view has", () => {

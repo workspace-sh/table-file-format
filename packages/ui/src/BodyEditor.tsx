@@ -5,6 +5,7 @@ import { confirmDestructive } from "./internal/confirm";
 import { PanelSurface } from "./panelSurface";
 import { useEscape } from "./internal/useEscape";
 import { pageSave } from "./pageEdit";
+import { bodyFileName } from "@workspace.sh/table-core";
 
 /** How long typing pauses before it's saved. */
 const SAVE_AFTER_MS = 700;
@@ -57,6 +58,8 @@ export function BodyEditor(props: BodyEditorProps) {
 }
 
 function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorProps) {
+  // Its file, as the writer names it (D64); a row named only by its id has no title in it.
+  const pageFile = bodyFileName(rowId, rowTitle === rowId ? undefined : rowTitle);
   const [draft, setDraft] = useState(content);
   // What's been saved, as this editor knows it.
   const [saved, setSaved] = useState(content);
@@ -97,7 +100,7 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
     }
     void confirmDestructive({
       title: "Delete this page?",
-      message: `Its text is gone, so closing deletes bodies/${rowId}.md.`,
+      message: `Its text is gone, so closing deletes bodies/${pageFile}.`,
       confirm: "Delete Page",
       cancel: "Keep Editing",
     }).then((yes) => {
@@ -105,7 +108,7 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
       latest.current.onSave("");
       onClose();
     });
-  }, [flush, onClose, rowId]);
+  }, [flush, onClose, pageFile]);
 
   // Escape closes it, as Done does (internal/useEscape: the document on the
   // web, the text input on macOS, nothing on touch screens).
@@ -116,7 +119,7 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
     // web and macOS, the system's sheet on a phone.
     <Sheet
       title={rowTitle || rowId}
-      subtitle={`bodies/${rowId}.md${isNew ? " · new" : ""}`}
+      subtitle={`bodies/${pageFile}${isNew ? " · new" : ""}`}
       confirm={{ label: "Done", onPress: close }}
       status={next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved"}
       // A swipe or a tap outside closes it, saving, unless it would delete

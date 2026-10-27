@@ -53,6 +53,25 @@ test("rewriting without bodies removes them; a dropped table is trimmed", async 
   assert.equal((await fs.list("/b/tables/b")), null);
 });
 
+// D64: a page is named for its row, so a person browsing bodies/ sees which row each is.
+test("a page is written under its row's title, follows it when it changes, and keeps its name when its row isn't here", async () => {
+  const fs = memoryFs();
+  await writeTableTo(fs, "/t", table);
+  const names = async () => ((await fs.list("/t/bodies")) ?? []).map((e) => e.name).sort();
+  assert.deepEqual(await names(), ["one--r1.md"]);
+  await writeTableTo(fs, "/t", { ...table, rows: [{ id: "r1", title: "Renamed" }] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+  assert.equal((await readTable(fs, "/t")).bodies?.["r1"], "# Page\n");
+  // Rows held elsewhere (an indexed table's): the page stays as it's named.
+  await writeTableTo(fs, "/t", { ...table, rows: [] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+  // Renamed by hand, it's still r1's page, and the next save names it for its row again.
+  await fs.rename("/t/bodies/renamed--r1.md", "/t/bodies/my-notes--r1.md");
+  assert.equal((await readTable(fs, "/t")).bodies?.["r1"], "# Page\n");
+  await writeTableTo(fs, "/t", { ...table, rows: [{ id: "r1", title: "Renamed" }] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+});
+
 test("io reaches for nothing from Node, so React Native and browsers can load it", () => {
   const source = readFileSync(fileURLToPath(new URL("./io.ts", import.meta.url)), "utf8");
   assert.doesNotMatch(source, /from "node:/);
@@ -82,8 +101,8 @@ test("saving again writes only what changed, and adds no attachments folder", as
   await writeBundleTo(counting, "/b", bundle);
   assert.equal(writes, 0);
   await writeBundleTo(counting, "/b", { tables: { a: { ...table, rows: [{ id: "r1", title: "Two" }] }, b: table } });
-  // Only a's rows: not its schema, views, meta or body, not table b, not the manifest.
-  assert.equal(writes, 1);
+  // Only a's rows, and its page under the row's new title (D64): not its schema, views or meta, not table b, not the manifest.
+  assert.equal(writes, 2);
   assert.equal((await fs.readText("/b/tables/b/rows/0001.ndjson"))!.includes("One"), true);
 });
 

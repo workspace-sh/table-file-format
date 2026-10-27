@@ -84,7 +84,7 @@ import { appendHistory, attachFile, attachmentsIn, bundlesIn, discardSingleFileE
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { addressedView, HISTORY_FILE, newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
+import { addressedView, HISTORY_FILE, newId, newViewId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
 import { FewRows, useIndexedTables } from "@workspace.sh/table-gtk/embed";
 import {
   AttachmentsProvider,
@@ -873,7 +873,7 @@ export function App({
     },
   };
   const viewActions: ViewActions = {
-    onAddView: () => dispatch({ type: "addView", id: newId() }),
+    onAddView: () => dispatch({ type: "addView", id: newViewId() }),
     ...(derived.table.views.length > 1 ? { onDeleteView: () => dispatch({ type: "deleteView" }) } : {}),
     arranged: derived.arranged,
     onArrange: (patch) => dispatch({ type: "arrange", patch }),

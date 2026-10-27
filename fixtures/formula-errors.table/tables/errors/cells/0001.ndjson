@@ -8,8 +8,8 @@
 {"id":"dzzj31e15s7wmmr5yq8x14tn1n","field":"result","expr":"(field \"n\" \"r99\")"}
 {"id":"x5topoju6nfx514xurc9mdfbhj","field":"result","expr":"(linked \"deals\" \"company\" \"value\")"}
 {"id":"phb16i3yxydndeq7oy4xgm7zud","field":"result","expr":"(at \"n\" 0 \"nope\")"}
-{"id":"1ej3bnytdhdbo4i158xmzw9mxz","field":"result","expr":"(row (at \"n\" -50 \"xi8na68irhrtm8yqnaiawpt7i1\"))"}
-{"id":"hpe8hzrn4jhwek7hkqss4beckp","field":"result","expr":"(sum (range \"n\" 0 \"whole\" 1 \"xi8na68irhrtm8yqnaiawpt7i1\"))"}
+{"id":"1ej3bnytdhdbo4i158xmzw9mxz","field":"result","expr":"(row (at \"n\" -50 \"zp5fa754dua5z\"))"}
+{"id":"hpe8hzrn4jhwek7hkqss4beckp","field":"result","expr":"(sum (range \"n\" 0 \"whole\" 1 \"zp5fa754dua5z\"))"}
 {"id":"rjspe7qwtug3bn9jwz9cdf6tej","field":"result","expr":"(+ (field \"result\" \"ipjbmsnhtdagttwpeknfwpxrwm\") 1)"}
 {"id":"ipjbmsnhtdagttwpeknfwpxrwm","field":"result","expr":"(+ (field \"result\" \"rjspe7qwtug3bn9jwz9cdf6tej\") 1)"}
 {"id":"qxdm6e9uspptqwhwb54pzw5bwr","field":"date","expr":"(+ n 1)"}

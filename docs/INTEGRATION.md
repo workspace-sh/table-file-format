@@ -141,7 +141,7 @@ Rules that matter when constructing rows:
 
 - **Ids**: any non-empty string unique in the table is valid; mint
   with `newId()` (25-char lowercase base36 — case-safe because ids
-  become `bodies/{id}.md` filenames; SPEC section 3). Never reuse or
+  become `bodies/{title}--{id}.md` filenames; SPEC section 3). Never reuse or
   rename an id — relations and addresses point at it.
 - **Schema evolution is append-only**: add fields, mark old ones
   `deprecated: true`; never remove or rename (SPEC section 2). Bump

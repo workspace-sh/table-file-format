@@ -17,7 +17,7 @@ const start = (): AppState => {
     Object.assign(tables, fromBundle(key, b));
     bundles[key] = b.meta;
   }
-  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: BOOKS, viewId: "eho3sibxpturhakhgqn8zdnsza" });
+  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: BOOKS, viewId: "mkosm7xozqxwf" });
 };
 
 const run = (state: AppState, ...actions: AppAction[]): AppState => actions.reduce(tableApp, state);
@@ -84,12 +84,12 @@ test("Another view or the toast's end clears it", () => {
   const s = start();
   const [a] = unread(s);
   const ticked = run(s, read(a!.id));
-  assert.equal(run(ticked, { type: "showView", key: BOOKS, viewId: "9gcz9d8ctoqamitkgwfhiu7sru" }).departed, null);
+  assert.equal(run(ticked, { type: "showView", key: BOOKS, viewId: "hnmryzi51j6jz" }).departed, null);
   assert.equal(run(ticked, { type: "departedDone" }).departed, null);
 });
 
 test("In a view without a filter, ticking takes nothing out", () => {
-  const s = run(start(), { type: "showView", key: BOOKS, viewId: "9gcz9d8ctoqamitkgwfhiu7sru" });
+  const s = run(start(), { type: "showView", key: BOOKS, viewId: "hnmryzi51j6jz" });
   const [a] = unread(s);
   assert.equal(run(s, read(a!.id)).departed, null);
 });

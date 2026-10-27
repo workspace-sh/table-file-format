@@ -32,7 +32,7 @@ describe("attaching on Linux", () => {
     writeFileSync(source, '<svg xmlns="http://www.w3.org/2000/svg"/>');
     const library = await loadLibrary([bundle]);
     // Customers lists every field, the logo included; the file chooser is stubbed.
-    await render(<App library={library} initialTable="crm/companies" initialView="surkeym1tjrn97wm3xdrg9qufr" chooseFile={async () => source} />);
+    await render(<App library={library} initialTable="crm/companies" initialView="puifj4tbwywzp" chooseFile={async () => source} />);
     const buttons = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose File" });
     await userEvent.click(buttons[0]!);
     await waitFor(async () => {
@@ -44,7 +44,7 @@ describe("attaching on Linux", () => {
 
   it("choosing nothing changes nothing", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="crm/companies" initialView="surkeym1tjrn97wm3xdrg9qufr" chooseFile={async () => null} />);
+    await render(<App library={library} initialTable="crm/companies" initialView="puifj4tbwywzp" chooseFile={async () => null} />);
     await userEvent.click((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose File" }))[0]!);
     await new Promise((r) => setTimeout(r, 800));
     // No failure was reported: cancelling isn't an error.

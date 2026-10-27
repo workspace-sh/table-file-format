@@ -1,6 +1,6 @@
 [
   {
-    "id": "ffaisc1zows4dzhy7aq5jrebkx",
+    "id": "juycicwios88m",
     "name": "All tasks by priority",
     "layout": "table",
     "sort": [
@@ -11,7 +11,7 @@
     ]
   },
   {
-    "id": "gzrqtgo1p3gfehto7tani3jzz4",
+    "id": "mufe9nmjruiq5",
     "name": "Board by status",
     "layout": "board",
     "board_field": "status"

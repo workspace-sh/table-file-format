@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
-import { addressedView, newId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
+import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -223,7 +223,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
     search: (text) => dispatch({ type: "search", text }),
     lookOnly,
     fromArchive,
-    addView: () => dispatch({ type: "addView", id: newId() }),
+    addView: () => dispatch({ type: "addView", id: newViewId() }),
     openSettings: () => dispatch({ type: "settings", open: true }),
     canUndo: derived.canUndo,
     canRedo: derived.canRedo,

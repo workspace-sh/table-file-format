@@ -16,10 +16,10 @@ const start = (): AppState => {
     Object.assign(tables, fromBundle(key, b));
     bundles[key] = b.meta;
   }
-  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: KEY, viewId: "kifpjiq34nhz8k95rc3uezwqu5" });
+  return tableApp(initialAppState({ tables, bundles }), { type: "showView", key: KEY, viewId: "435dx9iqim5iz" });
 };
 const run = (state: AppState, ...actions: AppAction[]): AppState => actions.reduce(tableApp, state);
-const sheetOf = (s: AppState) => s.tables[KEY]!.views.find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")!;
+const sheetOf = (s: AppState) => s.tables[KEY]!.views.find((v) => v.id === "435dx9iqim5iz")!;
 
 test("Merge Cells asks for a range from the cell, and the block typed is the view's; Unmerge takes it back", () => {
   const asked = run(start(), { type: "askMerge", rowId: "yzqhrmxgwi1k3ur81b7epdbim5", field: "jan" });

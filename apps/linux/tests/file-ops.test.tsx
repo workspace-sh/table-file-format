@@ -35,7 +35,7 @@ afterEach(async () => {
 /** The examples, as the demo opens them: projects shown, new files made beside them. */
 async function openExamples(props: Partial<Parameters<typeof App>[0]> = {}) {
   const library = await loadLibrary([join(examples, "projects.table")]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={examples} {...props} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={examples} {...props} />);
 }
 
 async function run(action: string) {
@@ -274,7 +274,7 @@ describe("the File menu on Linux", () => {
   it("closing an example asks first; Close takes it out of the sidebar and removes the app's copy, and it stays closed", async () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     const library = await loadLibrary([join(examples, "projects.table"), join(examples, "crm.table")]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" newFilesIn={examples} settings={settings} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={examples} settings={settings} />);
     const copy = join(examples, "crm.table");
     expect(existsSync(copy)).toBe(true);
     (await fileMenu("CRM"))!.activateAction("file.close", null);

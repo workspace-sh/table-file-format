@@ -6,7 +6,7 @@ import { ScrollView, Settings } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { BundleEntry, HISTORY_FILE, filesOfFolder, newId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -1245,7 +1245,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
         return `importing ${path}`;
       },
       newView: () => {
-        dispatch({ type: "addView", id: newId() });
+        dispatch({ type: "addView", id: newViewId() });
         return "made view";
       },
       // Set display settings, as the Display controls will.
@@ -1425,7 +1425,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
         if (e.type === "selectTable") dispatch({ type: "showTable", key: e.key });
         else if (e.type === "selectView") dispatch({ type: "showView", key: e.key, viewId: e.viewId });
         else if (e.type === "toggleFile") dispatch({ type: "toggleFile", bundle: e.bundle });
-        else if (e.type === "newView") dispatch({ type: "addView", id: newId() });
+        else if (e.type === "newView") dispatch({ type: "addView", id: newViewId() });
         else if (e.type === "close") dispatch({ type: "close", bundle: e.bundle });
         else if (e.type === "newTable") dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeRef.current) } });
         else if (e.type === "filesMode") chooseFilesMode(e.files);

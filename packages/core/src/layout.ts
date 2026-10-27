@@ -16,7 +16,7 @@
 //   │       ├── history.ndjson    TableEntry.history
 //   │       ├── attachments/      TableEntry.attachments
 //   │       └── bodies/           TableEntry.bodies
-//   │           └── {row.id}.md   BODY_EXTENSION
+//   │           └── {title}--{row.id}.md   bodyFileName
 //   └── index.sqlite              BundleEntry.index
 
 /** What a bundle's folder name ends in: `crm.table`. */
@@ -25,8 +25,62 @@ export const BUNDLE_EXTENSION = ".table";
 /** What a bundle packed into one file ends in: `crm.table.zip`. */
 export const ARCHIVE_EXTENSION = ".table.zip";
 
-/** What a row's page ends in, under a table's `bodies/`: `{row.id}.md`. */
+/** What a row's page ends in, under a table's `bodies/`: `{title}--{row.id}.md`. */
 export const BODY_EXTENSION = ".md";
+
+/** What parts a page's title from its row's id in its file name (D64). A title written there never holds it. */
+export const BODY_ID_SEPARATOR = "--";
+
+/** The longest a title in a page's file name gets, in characters: enough to tell pages apart, short enough for any file system. */
+const BODY_TITLE_LENGTH = 40;
+
+/**
+ * A title as a page's file name holds it (D64): lowercase (case-insensitive
+ * file systems), its letters and digits in any script, everything else a
+ * single `-`, cut at 40 characters. Empty when nothing of it is left.
+ */
+export function bodyTitleSlug(title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return [...slug].slice(0, BODY_TITLE_LENGTH).join("").replace(/-+$/, "");
+}
+
+/**
+ * A row's page's file name (D64): `atlas-freight--{id}.md`, so a person
+ * browsing `bodies/` sees which row each page is; just `{id}.md` when the
+ * row has no title. The id is what the page belongs to, the title only a
+ * reading aid: a reader never trusts it (rowIdOfBodyFile).
+ */
+export function bodyFileName(rowId: string, title?: string): string {
+  const slug = title ? bodyTitleSlug(title) : "";
+  // An id holding the separator itself is always written after one, so it reads back whole.
+  if (!slug && !rowId.includes(BODY_ID_SEPARATOR)) return `${rowId}${BODY_EXTENSION}`;
+  return `${slug}${BODY_ID_SEPARATOR}${rowId}${BODY_EXTENSION}`;
+}
+
+/** The row a page's file name is for: what follows its first `--`, else the whole name; null when it isn't a page (`.md`). */
+export function rowIdOfBodyFile(fileName: string): string | null {
+  if (!fileName.endsWith(BODY_EXTENSION) || fileName.includes("/")) return null;
+  const stem = fileName.slice(0, -BODY_EXTENSION.length);
+  const at = stem.indexOf(BODY_ID_SEPARATOR);
+  const id = at === -1 ? stem : stem.slice(at + BODY_ID_SEPARATOR.length);
+  return id.length > 0 ? id : null;
+}
+
+/** A row's title, as its page's file name holds it: its first text field with a value, as a person would name the row. */
+export function rowTitleIn(fields: readonly { name: string; type: string }[], row: Record<string, unknown>): string | undefined {
+  for (const field of fields) {
+    if (field.type !== "string") continue;
+    const v = row[field.name];
+    if (typeof v === "string" && v.trim().length > 0) return v;
+  }
+  return undefined;
+}
 
 /** What is in a bundle's folder. */
 export const BundleEntry = {
@@ -55,7 +109,7 @@ export const TableEntry = {
   history: "history.ndjson",
   /** Files its rows point at. Optional. */
   attachments: "attachments",
-  /** Its rows' pages, `{row.id}.md` each. Optional. */
+  /** Its rows' pages, `{title}--{row.id}.md` each (D64). Optional. */
   bodies: "bodies",
 } as const;
 export type TableEntry = (typeof TableEntry)[keyof typeof TableEntry];
@@ -79,9 +133,9 @@ export function tableEntryPath(name: string, entry: TableEntry): string {
   return `${tablePath(name)}/${entry}`;
 }
 
-/** A row's page within its bundle: `tables/companies/bodies/{id}.md`. */
-export function bodyPath(name: string, rowId: string): string {
-  return `${tableEntryPath(name, TableEntry.bodies)}/${rowId}${BODY_EXTENSION}`;
+/** A row's page within its bundle: `tables/companies/bodies/{title}--{id}.md`. */
+export function bodyPath(name: string, rowId: string, title?: string): string {
+  return `${tableEntryPath(name, TableEntry.bodies)}/${bodyFileName(rowId, title)}`;
 }
 
 /** The table a path inside a bundle belongs to (`tables/companies/…`), or null when it is under no table. */

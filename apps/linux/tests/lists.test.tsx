@@ -28,7 +28,7 @@ afterEach(async () => {
 describe("list cells on Linux", () => {
   it("ticking a choice saves the list in the schema's order", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="crm/companies" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
+    await render(<App library={library} initialTable="crm/companies" initialView="hnmryzi51j6jz" />);
     // Rows in file order: Northwind, Lumen, Atlas. Atlas is enterprise, emea, priority.
     const pickers = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose Tags" });
     await userEvent.click(pickers[2]!);

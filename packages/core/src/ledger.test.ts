@@ -33,7 +33,7 @@ test("ledger balances run down by date, not as entered", async () => {
 
 test("the By date sheet numbers the rows by date", async () => {
   const tables = await budget();
-  const grid = sheetGrid(tables.ledger!, "7wxsrxd9g5oa5smry9tmfahdzs", { tables, self: "ledger" })!;
+  const grid = sheetGrid(tables.ledger!, "87jkeekgwbfgr", { tables, self: "ledger" })!;
   assert.deepEqual(grid.rows.map((r) => r.id), [
     "z4bfkjkfy5csqpyjgrj8ctqz4o", "zc97gcrezrrayob3mtz7c6miqa", "kwmndi1coeyj44ui3fba8xm1ya", "3agkc9teunqagz4t4x63z8mphm", "xzit1mrr1mgoiqo6ee5aon4c7f",
     "3k3n65mn4hi5p193ofrhrxk58d", "j6xmp5j9wkexyaesqa5uaiwqbb", "e5sjrefsnss7c8xgbjmcwtgeqy", "8qu3wjyhxcy94ow8ecekqjrrt3", "6834q711q9jsjuo5785dcq14sr",

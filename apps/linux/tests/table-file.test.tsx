@@ -130,7 +130,7 @@ describe("a .table opened as a document", () => {
     const path = join(root, "projects.table");
     await render(
       <GtkWindow defaultWidth={1000} defaultHeight={700}>
-        <TableFile path={path} at={{ address: `${path}#table=tasks&view=gzrqtgo1p3gfehto7tani3jzz4`, n: 1 }} />
+        <TableFile path={path} at={{ address: `${path}#table=tasks&view=mufe9nmjruiq5`, n: 1 }} />
       </GtkWindow>,
     );
     await waitFor(async () => {
@@ -170,7 +170,7 @@ describe("a .table opened as a document", () => {
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
     expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" })).toBeDefined();
     // The file is as it was; the filter is kept apart from it, under this file's path.
-    expect(views().find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.filter).toBeUndefined();
+    expect(views().find((v) => v.id === "juycicwios88m")?.filter).toBeUndefined();
     await waitFor(() => expect(Object.keys(kept).some((k) => k.startsWith(path))).toBe(true));
 
     const filtered = await count();
@@ -186,7 +186,7 @@ describe("a .table opened as a document", () => {
     await waitFor(async () => expect(await count()).toBe(filtered));
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" }));
-    await waitFor(() => expect(views().find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.filter).toHaveLength(1));
+    await waitFor(() => expect(views().find((v) => v.id === "juycicwios88m")?.filter).toHaveLength(1));
   });
 
   it("reads a table of 50,000 rows through its index, as the table app does: shown, counted, and an edit written back to the file", async () => {
@@ -198,7 +198,7 @@ describe("a .table opened as a document", () => {
     await render(
       <GtkWindow defaultWidth={1000} defaultHeight={700}>
         {/* The index in this thread, as the table app's tests have it; the app's own is a worker. */}
-        <TableFile path={path} at={{ address: `${path}#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx`, n: 1 }} openIndex={openIndexHost} />
+        <TableFile path={path} at={{ address: `${path}#table=tasks&view=juycicwios88m`, n: 1 }} openIndex={openIndexHost} />
       </GtkWindow>,
     );
     // Sorted by priority, from the index: the first rows, and every row counted.
@@ -219,7 +219,7 @@ describe("a .table opened as a document", () => {
     // orders.table's orders name a supplier; suppliers.table, beside it, holds them.
     await writeBundleTo(nodeFs, join(root, "suppliers.table"), {
       meta: {},
-      tables: { suppliers: { schema: { fields: [{ name: "name", type: "string" }] }, rows: [{ id: "s1", name: "Acme Supplies" }], views: [{ id: "9gcz9d8ctoqamitkgwfhiu7sru", name: "All", layout: "table" }], meta: {} } },
+      tables: { suppliers: { schema: { fields: [{ name: "name", type: "string" }] }, rows: [{ id: "s1", name: "Acme Supplies" }], views: [{ id: "hnmryzi51j6jz", name: "All", layout: "table" }], meta: {} } },
     } as never);
     await writeBundleTo(nodeFs, join(root, "orders.table"), {
       meta: {},
@@ -227,7 +227,7 @@ describe("a .table opened as a document", () => {
         orders: {
           schema: { fields: [{ name: "title", type: "string" }, { name: "supplier", type: "string", relation: { table: "suppliers", field: "id" } }] },
           rows: [{ id: "o1", title: "First order", supplier: "s1" }],
-          views: [{ id: "9gcz9d8ctoqamitkgwfhiu7sru", name: "All", layout: "table" }],
+          views: [{ id: "hnmryzi51j6jz", name: "All", layout: "table" }],
           meta: {},
         },
       },

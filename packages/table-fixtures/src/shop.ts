@@ -255,7 +255,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All orders",
           "layout": "table",
           "sort": [
@@ -283,7 +283,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "gbzbk1bf5hktu8fua1948abgwg",
+          "id": "j79j66pjaafew",
           "name": "Fulfilment",
           "layout": "board",
           "board_field": "status",
@@ -295,13 +295,13 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "doreg51aza5kubnriw76qjh6rd",
+          "id": "m45au98xccumq",
           "name": "Calendar",
           "layout": "calendar",
           "calendar_field": "ordered"
         },
         {
-          "id": "31cjom1jbtic4gara7pxjq7q5k",
+          "id": "zhccfwcqrmbk1",
           "name": "To ship",
           "layout": "table",
           "filter": [
@@ -476,7 +476,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All customers",
           "layout": "table",
           "totals": {
@@ -486,7 +486,7 @@ export const shopBundle: ParsedBundle = {
           }
         },
         {
-          "id": "gqb75ejrnkarxf75d4zm5zbeho",
+          "id": "apzifyeyrctux",
           "name": "Top customers",
           "layout": "table",
           "sort": [
@@ -503,7 +503,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "wm1a6nrpnbekeu51be5tkit6wt",
+          "id": "3quwu3444q51s",
           "name": "By city",
           "layout": "table",
           "group": {
@@ -718,7 +718,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "mmaar1kws5dfnw1i6a7z6q3tyx",
+          "id": "c7by3xraxgzc6",
           "name": "Catalogue",
           "layout": "table",
           "totals": {
@@ -728,7 +728,7 @@ export const shopBundle: ParsedBundle = {
           }
         },
         {
-          "id": "c7ae39md7putcu3qkdfiitc1z1",
+          "id": "ww8mpspmg15jb",
           "name": "By category",
           "layout": "board",
           "board_field": "category",
@@ -739,7 +739,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "kgj9fs8mkb6zdo3w9wy8okm5q4",
+          "id": "rzq9gx8aeh8ta",
           "name": "Best sellers",
           "layout": "table",
           "sort": [
@@ -1016,7 +1016,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All lines",
           "layout": "table",
           "totals": {

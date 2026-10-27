@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { html, css } from "react-strict-dom";
 import { Icon } from "./Icon";
-import { computeRows, isSheet, newId } from "@workspace.sh/table-core";
+import { computeRows, isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { openArchiveInWorker } from "./sqlite/client";
 import { useIndexedTables } from "./useIndexedTables";
@@ -926,7 +926,7 @@ export function App() {
       onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
       onNewFile={() => dispatch({ type: "create", making: { kind: "file" } })}
       onCloseFile={(bundle) => dispatch({ type: "close", bundle })}
-      onNewView={() => dispatch({ type: "addView", id: newId() })}
+      onNewView={() => dispatch({ type: "addView", id: newViewId() })}
       onOpenFile={openTableFile}
       display={display}
       onDisplayChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}

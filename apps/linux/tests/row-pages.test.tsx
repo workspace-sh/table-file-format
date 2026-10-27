@@ -26,11 +26,11 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const page = (id: string) => join(bundle, "tables", "projects", "bodies", `${id}.md`);
+const page = (name: string) => join(bundle, "tables", "projects", "bodies", `${name}.md`);
 
 async function openList() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/projects" initialView="u5fpdkwh5w9thdq8o368a9t4nw" />);
+  await render(<App library={library} initialTable="projects/projects" initialView="4bteo61c6agby" />);
 }
 
 async function textView(): Promise<Gtk.TextView> {
@@ -52,25 +52,25 @@ describe("row pages on Linux", () => {
     expect(view.getBuffer().text.startsWith("# Table file format spike")).toBe(true);
     await userEvent.type(view, " Edited.");
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
-    await waitFor(() => expect(readFileSync(page("1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Edited."));
+    await waitFor(() => expect(readFileSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Edited."));
   });
 
   it("typing is saved after a pause, with the page still open", async () => {
     await openList();
     await userEvent.click(await screen.findByText("Table file format spike"));
     await userEvent.type(await textView(), " Typed.");
-    await waitFor(() => expect(readFileSync(page("1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Typed."), { timeout: 5000 });
+    await waitFor(() => expect(readFileSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Typed."), { timeout: 5000 });
     expect(await screen.findByText("Saved")).toBeDefined();
   });
 
   it("a row without a page starts one, saved as a new file", async () => {
     await openList();
-    expect(existsSync(page("xsdxifzn73ohismzm8q5uri8fe"))).toBe(false);
+    expect(existsSync(page("workspace-v1--xsdxifzn73ohismzm8q5uri8fe"))).toBe(false);
     await userEvent.click(await screen.findByText("Workspace v1"));
-    expect(await screen.findByText("bodies/xsdxifzn73ohismzm8q5uri8fe.md · new")).toBeDefined();
+    expect(await screen.findByText("bodies/workspace-v1--xsdxifzn73ohismzm8q5uri8fe.md · new")).toBeDefined();
     await userEvent.type(await textView(), "# Plan");
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
-    await waitFor(() => expect(readFileSync(page("xsdxifzn73ohismzm8q5uri8fe"), "utf8")).toBe("# Plan\n"));
+    await waitFor(() => expect(readFileSync(page("workspace-v1--xsdxifzn73ohismzm8q5uri8fe"), "utf8")).toBe("# Plan\n"));
   });
 
   it("closing the dialog keeps what was typed", async () => {
@@ -78,12 +78,12 @@ describe("row pages on Linux", () => {
     await userEvent.click(await screen.findByText("Table file format spike"));
     await userEvent.type(await textView(), " Kept.");
     (await dialogOf()).close();
-    await waitFor(() => expect(readFileSync(page("1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Kept."));
+    await waitFor(() => expect(readFileSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toContain("Kept."));
   });
 
   it("wiping a page isn't saved as typed; closing asks, and Keep Editing leaves the file", async () => {
     await openList();
-    const before = readFileSync(page("1h38m5st7rwanz3hyjb6dy8igr"), "utf8");
+    const before = readFileSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"), "utf8");
     await userEvent.click(await screen.findByText("Table file format spike"));
     const view = await textView();
     view.getBuffer().text = "";
@@ -92,7 +92,7 @@ describe("row pages on Linux", () => {
     expect(await screen.findByText("Delete this page?")).toBeDefined();
     await userEvent.click(await screen.findByText("Keep Editing"));
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect(readFileSync(page("1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toBe(before);
+    expect(readFileSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"), "utf8")).toBe(before);
   });
 
   it("Delete Page removes the page's file", async () => {
@@ -102,6 +102,6 @@ describe("row pages on Linux", () => {
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Done" }));
     expect(await screen.findByText("Delete this page?")).toBeDefined();
     await userEvent.click(await screen.findByText("Delete Page"));
-    await waitFor(() => expect(existsSync(page("1h38m5st7rwanz3hyjb6dy8igr"))).toBe(false));
+    await waitFor(() => expect(existsSync(page("table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr"))).toBe(false));
   });
 });

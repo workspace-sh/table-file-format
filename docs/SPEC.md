@@ -48,7 +48,7 @@ crm.table/
 │   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
 │   │   ├── attachments/      OPTIONAL
 │   │   └── bodies/           OPTIONAL
-│   │       └── {row.id}.md
+│   │       └── {title}--{row.id}.md
 │   └── deals/
 │       └── …
 └── index.sqlite              OPTIONAL: gitignored rebuildable cache for the bundle
@@ -788,8 +788,12 @@ workspace, should not need opaque identifiers.
 
 **Writer-minted ids** SHOULD be 26 characters of z-base-32, the
 alphabet `ybndrfg8ejkmcpqxot1uwisza345h769` (130 bits; reference:
-`newId()` in `@workspace.sh/table-core`), as a view's id and a history
-entry's are. The alphabet is deliberately **case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
+`newId()` in `@workspace.sh/table-core`), as a history entry's is.
+A view's id, like a field's, is 13 characters (65 bits; `newViewId()`):
+it only has to be unique among one table's views, and it travels in
+links. The length follows how many there can be: rows and history
+entries run to millions, minted on many devices and merged; a table
+has a handful of views and fields. The alphabet is deliberately **case-safe**: ids are used verbatim in filenames (`bodies/{title}--{id}.md`),
 and on case-insensitive filesystems (default APFS, NTFS) two ids
 differing only in letter case would resolve to the same path and
 silently overwrite each other. For the same reason, all ids — minted
@@ -1132,14 +1136,30 @@ specify size limits.
 
 ## 7. `bodies/`
 
-Optional long-form markdown bodies, one file per row. Filename is the
-row's stable system `id` plus `.md`:
+Optional long-form markdown bodies, one file per row. Its name is the
+row's title, `--`, then the row's stable system `id`, and `.md`, so a
+person browsing the folder sees which row each page is (D64):
 
 ```
 bodies/
-├── p1.md
+├── atlas-freight--p1.md
 └── p2.md
 ```
+
+- **The id is the page's row.** A reader takes the row id from what
+  follows the name's first `--`, or the whole name before `.md` when it
+  has none. It MUST NOT use the title part: it is a reading aid, and a
+  page renamed by hand is still its row's.
+- **The title** is the row's first `string` field with a value, in
+  schema order, written lowercase, with its letters and digits (in any
+  script) kept, accents removed, everything else a single `-`, and cut
+  at 40 characters. It never holds `--`. A row with no title has
+  `{id}.md`; an id holding `--` itself is always written after one
+  (`--a--b.md`), so it reads back whole.
+- **Writers name each page for its row as it is now**, so a row given a
+  new title has its page renamed at the next save. A writer that doesn't
+  have the row to hand (it is held in the index) keeps the name the page
+  has.
 
 Each body is a standalone, readable markdown file. Bodies are intended
 for the **canonical long-form content** of a row — the Notion
@@ -1153,7 +1173,8 @@ Rules:
   body files (file present, no row) are a validator warning.
 - A row WITHOUT a body file is valid; bodies are optional per row.
 - Writers wholesale-replace `bodies/` on `writeTable`: bodies not
-  present in the input are removed from disk. Partial-update APIs
+  present in the input are removed from disk, as is a page under its
+  row's old title once it has been written under the new. Partial-update APIs
   belong elsewhere (`writeBody(dir, id, content)` is intended but not
   yet implemented).
 
@@ -1370,7 +1391,7 @@ the next open and is rebuilt from the file. The index file's journal
 ### Full-text search includes bodies
 
 The cache indexes an FTS5 virtual table over all string-typed fields
-**and** the contents of `bodies/{id}.md`, keyed by row id. The
+**and** the contents of `bodies/{title}--{id}.md`, keyed by row id. The
 in-memory `searchRows` already searches bodies; an index that omitted
 them would silently return fewer hits than the fallback — the worst
 kind of divergence, invisible until a missing result is noticed.
@@ -1420,7 +1441,7 @@ Stable addressing for rows, views, and tables — used by:
 
 - Cross-table relations (per-field `relation` references one row in
   another table, in the same bundle or another)
-- Cross-format references (a markdown body inside `bodies/{id}.md`
+- Cross-format references (a markdown body inside `bodies/{title}--{id}.md`
   linking to a row elsewhere, an external markdown file linking into
   a `.table/`, etc.)
 - Application-level deep links (URL hashes, share links)
@@ -1538,7 +1559,7 @@ width they are given, and ignore it. A column resized in the view
 docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5            # five rows of a table view, then it scrolls
 docs/projects.table#table=tasks&view=Board%20by%20status&cards=3                    # a board, three cards down each column
 docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
-docs/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&width=full          # the same view by its id, the whole width of the document
+docs/projects.table#table=tasks&view=juycicwios88m&width=full          # the same view by its id, the whole width of the document
 ```
 
 ### Resolution
@@ -1567,7 +1588,7 @@ serialisation; the relation declaration is the structured form.
 
 ### Reverse direction (markdown → row)
 
-A markdown body inside `bodies/{id}.md` MAY contain links that use
+A markdown body inside `bodies/{title}--{id}.md` MAY contain links that use
 the address grammar:
 
 ```markdown
@@ -1862,7 +1883,7 @@ Ops:
   `{"total": {"expr": "(* price qty)"}}`.
 - `delete`: a row was removed. `values` is the whole row as it was, and
   `cells` its cells' own formulas, so it can be restored.
-- `page`: a row's page (`bodies/{id}.md`, section 7) changed. `from`
+- `page`: a row's page (`bodies/{title}--{id}.md`, section 7) changed. `from`
   and `to` are the **complete** text before and after; `from` is absent
   for a new page and `to` is absent for a cleared one.
 - `note`: a cell's note (section 3, D57) was set, changed or removed.

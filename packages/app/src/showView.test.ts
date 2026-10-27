@@ -10,7 +10,7 @@ const held = Object.assign({}, ...Object.entries(bundles).map(([key, b]) => from
 const view = (key: string, id: string) => held[key]!.views.find((v: { id: string }) => v.id === id)!;
 
 test("a saved view's filter and sort decide the rows", () => {
-  const shown = showView(held, "crm/companies", view("crm/companies", "surkeym1tjrn97wm3xdrg9qufr"));
+  const shown = showView(held, "crm/companies", view("crm/companies", "puifj4tbwywzp"));
   assert.deepEqual(
     shown.rows.map((r) => r.name),
     ["Atlas Freight", "Tidal Energy", "Northwind Traders"],
@@ -19,13 +19,13 @@ test("a saved view's filter and sort decide the rows", () => {
 });
 
 test("a search narrows what the view shows, and says how many the view had", () => {
-  const shown = showView(held, "crm/companies", view("crm/companies", "9gcz9d8ctoqamitkgwfhiu7sru"), { search: "freight" });
+  const shown = showView(held, "crm/companies", view("crm/companies", "hnmryzi51j6jz"), { search: "freight" });
   assert.deepEqual(shown.rows.map((r) => r.name), ["Atlas Freight"]);
   assert.equal(shown.inView, tables["companies"]!.rows.length);
 });
 
 test("a viewer's own sort shows over the saved view, which stays as saved", () => {
-  const saved = view("crm/companies", "9gcz9d8ctoqamitkgwfhiu7sru");
+  const saved = view("crm/companies", "hnmryzi51j6jz");
   const shown = showView(held, "crm/companies", saved, {
     arrangement: { sort: [{ field: "employees", direction: "asc" }] },
   });
@@ -35,10 +35,10 @@ test("a viewer's own sort shows over the saved view, which stays as saved", () =
 });
 
 test("a Sheet view numbers its rows in its saved order; another view has no grid", () => {
-  const sheet = sheetShown(held, "household-budget/ledger", view("household-budget/ledger", "7wxsrxd9g5oa5smry9tmfahdzs"));
+  const sheet = sheetShown(held, "household-budget/ledger", view("household-budget/ledger", "87jkeekgwbfgr"));
   assert.ok(sheet);
   assert.equal(sheet.order.length, 10);
   assert.equal(sheet.position.get(sheet.order[0]!), 1);
   assert.ok(sheet.sheets.length > 0);
-  assert.equal(sheetShown(held, "household-budget/ledger", view("household-budget/ledger", "63occwsg8oxgutjn9s5jxyqfkf")), undefined);
+  assert.equal(sheetShown(held, "household-budget/ledger", view("household-budget/ledger", "f179qhc4jxi7y")), undefined);
 });

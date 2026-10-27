@@ -31,7 +31,7 @@ const launchedOnDisk = async () => (await parseTable(join(bundle, "tables", "pro
 describe("a date cell on Linux", () => {
   it("has a calendar: a day picked goes into the entry, and closing the calendar saves it", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     expect(await launchedOnDisk()).toBe("2026-01-15");
     await userEvent.click((await screen.findAllByText("2026-01-15"))[0]!);
     const entry = (await screen.findByDisplayValue("2026-01-15")) as Gtk.Entry;
@@ -56,7 +56,7 @@ describe("a date cell on Linux", () => {
 
   it("the keyboard going to the calendar's button doesn't end the edit; going elsewhere saves what was typed", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     await userEvent.click((await screen.findAllByText("2026-01-15"))[0]!);
     const entry = (await screen.findByDisplayValue("2026-01-15")) as Gtk.Entry;
     await userEvent.clear(entry);
@@ -75,7 +75,7 @@ describe("a date cell on Linux", () => {
 
   it("a cell that isn't a date has no calendar", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     await userEvent.click((await screen.findAllByText("Workspace v1"))[0]!);
     await screen.findByDisplayValue("Workspace v1");
     const buttons = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON);
@@ -94,7 +94,7 @@ function withTimes() {
   writeFileSync(join(table, "schema.json"), JSON.stringify(schema, null, 2));
   // The view shows the three, and little else.
   const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8"));
-  for (const view of Array.isArray(views) ? views : views.views) if (view.id === "ffaisc1zows4dzhy7aq5jrebkx") view.fields = ["title", "kickoff", "standup", "review"];
+  for (const view of Array.isArray(views) ? views : views.views) if (view.id === "juycicwios88m") view.fields = ["title", "kickoff", "standup", "review"];
   writeFileSync(join(table, "views.json"), JSON.stringify(views, null, 2));
   const rows = readFileSync(join(table, "rows", "0001.ndjson"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
   Object.assign(rows.find((r) => r.id === "xsdxifzn73ohismzm8q5uri8fe"), { kickoff: KICKOFF, standup: "09:30:15" });
@@ -140,7 +140,7 @@ describe("a time on Linux", () => {
   it("a time cell has an hour and a minute to pick, and no calendar; its seconds are kept", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("09:30:15");
     expect(entry.getText()).toBe("09:30:15");
     const { button, calendar, hour, minute } = await picker("Choose a Time");
@@ -160,7 +160,7 @@ describe("a time on Linux", () => {
   it("a date and time has both, shown in the viewer's own time and saved in UTC", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     // Shown with its time, in the viewer's clock (#568).
     const entry = await openCell(/^2026-09-2[123] \d\d:30$/);
     expect(entry.getText()).toBe(KICKOFF);
@@ -189,7 +189,7 @@ describe("a time on Linux", () => {
   it("an empty date and time stays empty until something is picked, then starts from now", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("—");
     const { button, calendar } = await picker("Choose a Date and Time");
     button.popup();
@@ -205,7 +205,7 @@ describe("a time on Linux", () => {
   it("picks the day with today's number in another month, which the calendar itself says nothing of", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("—");
     const { button, calendar } = await picker("Choose a Date and Time");
     button.popup();
@@ -221,7 +221,7 @@ describe("a time on Linux", () => {
   it("picks today when today's own day is pressed in an empty field", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("—");
     const { button, calendar } = await picker("Choose a Date and Time");
     button.popup();
@@ -241,7 +241,7 @@ describe("a time on Linux", () => {
   it("a press on the calendar leaves a date that is already there as it is", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("—");
     await userEvent.type(entry, "2026-11-05T08:15");
     const { button, calendar } = await picker("Choose a Date and Time");
@@ -258,7 +258,7 @@ describe("a time on Linux", () => {
   it("typing a date and time isn't rewritten by the picker following it", async () => {
     withTimes();
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="juycicwios88m" />);
     const entry = await openCell("—");
     await userEvent.type(entry, "2026-11-05T08:15");
     await new Promise((resolve) => setTimeout(resolve, 400));

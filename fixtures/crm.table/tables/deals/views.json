@@ -1,6 +1,6 @@
 [
   {
-    "id": "oxycwiuri87bqu1s89cpt836n1",
+    "id": "6dc54nqbzhf64",
     "name": "Pipeline",
     "layout": "board",
     "board_field": "stage",
@@ -12,7 +12,7 @@
     ]
   },
   {
-    "id": "hc9yis984a6wnajx7rgoi476ay",
+    "id": "6wfiqak18zfgo",
     "name": "Open deals",
     "layout": "table",
     "filter": [
@@ -33,13 +33,13 @@
     ]
   },
   {
-    "id": "oztz56jo4yid66csmo63wamhsn",
+    "id": "uj6a6be3tos93",
     "name": "Closing",
     "layout": "calendar",
     "calendar_field": "close_date"
   },
   {
-    "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+    "id": "hnmryzi51j6jz",
     "name": "All deals",
     "layout": "table",
     "totals": {
