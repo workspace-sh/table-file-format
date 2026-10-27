@@ -1688,15 +1688,17 @@ export async function* storedRows(
  */
 export async function* storedRowLines(
   db: SqlDriver,
-  options: { name: string; schema: TableSchema; batchSize?: number; omit?: string[] },
+  options: { name: string; schema: TableSchema; batchSize?: number; omit?: string[]; from?: number; before?: number },
 ): AsyncIterable<{ pos: number; line: string }[]> {
   const n = await tableNumber(db, options.name, false);
   if (n === null) throw new Error(`no index for ${options.name}`);
   const size = options.batchSize ?? BATCH;
   const leave = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...(await hiddenOf(db, n))];
-  let after = -1;
+  // Only the places from `from` up to (not including) `before`, when given: one rows file's.
+  let after = options.from !== undefined && Number.isFinite(options.from) ? options.from - 1 : -1;
+  const below = options.before !== undefined && Number.isFinite(options.before) ? ` and pos < ${Math.floor(options.before)}` : "";
   for (;;) {
-    const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
+    const found = await db.all(`select pos, j from r${n} where pos > ?${below} order by pos limit ?`, [after, size]);
     if (found.length === 0) return;
     after = found[found.length - 1]!.pos as number;
     yield found.map((r) => {
@@ -1706,6 +1708,19 @@ export async function* storedRowLines(
       return { pos: r.pos as number, line: JSON.stringify(row) };
     });
   }
+}
+
+/** Where rows are in the file order (their places), by id: those the index has. */
+export async function rowPlaces(db: SqlDriver, name: string, ids: string[]): Promise<number[]> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || ids.length === 0) return [];
+  const places: number[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const some = ids.slice(i, i + 500);
+    const found = await db.all(`select pos from r${n} where id in (${some.map(() => "?").join(", ")})`, some);
+    for (const r of found) places.push(r.pos as number);
+  }
+  return places;
 }
 
 /** A parsed table's rows as the index holds them: handy for the apps' first build. */

@@ -23,6 +23,7 @@
 
 import {
   archiveStamp,
+  rowPlaces,
   BUNDLE_EXTENSION,
   BundleEntry,
   CELLS_DIR,
@@ -236,6 +237,16 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   const KEPT = "create table if not exists _keptfiles(tbl text not null, name text not null, bytes integer not null, primary key(tbl, name))";
   const rowsFile = (bundle: string, table: string, file: string): string => joinPath(rowsDir(bundle, table), file);
 
+  // The places of rows edited since the rows files were last written, each with the edit's number:
+  // a save writes again only the files holding them, and clears the marks it took in.
+  const DIRTY = "create table if not exists _dirtyrows(seq integer primary key autoincrement, tbl text not null, pos integer not null)";
+
+  /** A table made again from its files: no edit is waiting to be written to them. */
+  async function forgetEdits(db: SqlDriver, table: string): Promise<void> {
+    await db.exec(DIRTY);
+    await db.run("delete from _dirtyrows where tbl = ?", [table]);
+  }
+
   /** Say a table's rows files are whole, each at its size: one cut short isn't taken for the table. */
   async function kept(db: SqlDriver, table: string, files: { name: string; bytes: number }[]): Promise<void> {
     await db.exec(KEPT);
@@ -397,6 +408,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         await setRowFileStarts(db, name, starts);
         await kept(db, name, [...sizes].map(([file, bytes]) => ({ name: file, bytes })));
         await setMadeFrom(db, name, fresh.stamp);
+        await forgetEdits(db, name);
         waiting.delete(`${bundle}/${name}`);
         return count;
       } catch (error) {
@@ -428,6 +440,8 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       ...(onProgress ? { onProgress } : {}),
     });
     await setRowFileStarts(db, name, starts);
+    // Its rows placed afresh: marks of where edits were would point at other rows now, and the files are the index.
+    await forgetEdits(db, name);
     return count;
   }
 
@@ -468,7 +482,8 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     schema: TableSchema,
     omit: string[] | undefined,
     stop: () => boolean,
-  ): Promise<{ files: (RowFileStart & { bytes: number })[]; key: string | null } | null> {
+    whole: boolean,
+  ): Promise<{ files: (RowFileStart & { bytes: number })[]; key: string | null; marked: number } | null> {
     const dir = rowsDir(bundle, name);
     await fs.mkdir(dir);
     const staged = (file: string): string => joinPath(dir, `${file}.tmp`);
@@ -478,21 +493,18 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     // the bundle's own connection goes on answering the screen and taking
     // edits. (On that one connection a save held every read behind it.)
     const reader = await platform.openDatabase(bundleDir(bundle), "reader");
-    let placer: ReturnType<typeof rowFilePlacer> | null = null;
-    const sizes = new Map<string, number>();
+    // The files written, in file order, each with its size.
+    const written: (RowFileStart & { bytes: number })[] = [];
     let out: FileWriter | null = null;
-    // What's been placed in the file being written and not yet written: a piece at a time, not a row at a time.
-    let pending = "";
-    const flush = async () => {
-      if (pending === "" || !out) return;
-      await out.write(encoder.encode(pending));
-      pending = "";
-    };
     let stopped = false;
     // The index's key as these rows have it: the files are this index and no later one.
     let key: string | null = null;
     // Its cells' own formulas (D52), read in the same transaction as the rows.
     let cellsText = "";
+    // The last edit mark these files take in (cleared once they're saved).
+    let marked = 0;
+    // The files kept as they are: only those holding an edited row are written again.
+    let keptAsIs: (RowFileStart & { bytes: number })[] = [];
     try {
       // The reader's first look is what fixes what it sees, so it takes a turn of
       // the bundle's own queue: every edit asked before this save has had its
@@ -502,33 +514,75 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         key = await indexKey(reader, name);
       });
       const starts = await rowFileStarts(reader, name);
-      placer = rowFilePlacer(starts);
-      for await (const batch of storedRowLines(reader, { name, schema, ...(omit ? { omit } : {}) })) {
-        // An edit has landed: these files would be out of date as they were finished, and the next save writes them.
-        if (stop()) {
-          stopped = true;
-          break;
-        }
-        for (const { pos, line } of batch) {
-          const bytes = utf8Length(line) + 1;
-          const starting = placer.place(pos, bytes);
-          if (starting !== null) {
-            await flush();
-            await out?.close();
-            out = await platform.writer(staged(starting));
-            sizes.set(starting, 0);
+      await reader.exec(DIRTY);
+      const marks = await reader.all("select pos, seq from _dirtyrows where tbl = ?", [name]);
+      marked = marks.reduce((m, r) => Math.max(m, Number(r.seq)), 0);
+      await reader.exec(KEPT);
+      const sizesKept = new Map((await reader.all("select name, bytes from _keptfiles where tbl = ?", [name])).map((r) => [r.name as string, Number(r.bytes)]));
+      // Which files hold an edited row: each mark is in the last file starting at or before it.
+      const fileOf = (pos: number): number => {
+        let k = 0;
+        while (k + 1 < starts.length && starts[k + 1]!.first <= pos) k++;
+        return k;
+      };
+      const touched = new Set(marks.map((r) => fileOf(Number(r.pos))));
+      // Only the files with edits, when it can be: all of them when a field is left out of every
+      // row, when a build is about to read them, or when nothing says which rows changed.
+      // (None marked, and the index as the files were last written: none of them.)
+      const none = marks.length === 0 && key === "saved";
+      const some =
+        !whole && !(omit && omit.length > 0) && starts.length > 0 && (marks.length > 0 || none) && starts.every((f, k) => touched.has(k) || sizesKept.has(f.name));
+      const ranges = some
+        ? [...touched].sort((a, b) => a - b).map((k) => ({ k, bounds: starts.slice(k, k + 2), from: k === 0 ? undefined : starts[k]!.first, before: starts[k + 1]?.first }))
+        : [{ k: -1, bounds: starts, from: undefined, before: undefined }];
+      if (some) keptAsIs = starts.filter((_, k) => !touched.has(k)).map((f) => ({ ...f, bytes: sizesKept.get(f.name)! }));
+      for (const range of ranges) {
+        const placer = rowFilePlacer(range.bounds);
+        const sizes = new Map<string, number>();
+        // What's been placed in the file being written and not yet written: a piece at a time, not a row at a time.
+        let pending = "";
+        const flush = async () => {
+          if (pending === "" || !out) return;
+          await out.write(encoder.encode(pending));
+          pending = "";
+        };
+        const rows = storedRowLines(reader, {
+          name,
+          schema,
+          ...(omit ? { omit } : {}),
+          ...(range.from !== undefined ? { from: range.from } : {}),
+          ...(range.before !== undefined ? { before: range.before } : {}),
+        });
+        for await (const batch of rows) {
+          // An edit has landed: these files would be out of date as they were finished, and the next save writes them.
+          if (stop()) {
+            stopped = true;
+            break;
           }
-          const file = placer.files[placer.files.length - 1]!.name;
-          sizes.set(file, sizes.get(file)! + bytes);
-          pending += `${line}\n`;
+          for (const { pos, line } of batch) {
+            const bytes = utf8Length(line) + 1;
+            const starting = placer.place(pos, bytes);
+            if (starting !== null) {
+              await flush();
+              await out?.close();
+              out = await platform.writer(staged(starting));
+              sizes.set(starting, 0);
+            }
+            const file = placer.files[placer.files.length - 1]!.name;
+            sizes.set(file, sizes.get(file)! + bytes);
+            pending += `${line}\n`;
+          }
+          await flush();
         }
-        await flush();
+        await (out as FileWriter | null)?.close();
+        out = null;
+        if (stopped) break;
+        for (const f of placer.files) written.push({ ...f, bytes: sizes.get(f.name) ?? 0 });
       }
       // No rows at all: one empty file, so the folder is kept.
-      if (!stopped && placer.files.length === 0) {
+      if (!stopped && written.length === 0 && keptAsIs.length === 0) {
         const file = starts[0]?.name ?? FIRST_ROWS_FILE;
-        placer.files.push({ name: file, first: 1 });
-        sizes.set(file, 0);
+        written.push({ name: file, first: 1, bytes: 0 });
         out = await platform.writer(staged(file));
       }
       if (!stopped) cellsText = await storedCellsText(reader, { name, schema });
@@ -537,13 +591,14 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       await (out as FileWriter | null)?.close();
       await reader.close().catch(() => {});
     }
-    const files = placer?.files ?? [];
     if (stopped) {
       // The files from the save before stay as they are, whole.
-      for (const f of files) await fs.remove(staged(f.name));
+      for (const f of written) await fs.remove(staged(f.name));
+      for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && entry.name.endsWith(".tmp")) await fs.remove(joinPath(dir, entry.name));
       return null;
     }
-    for (const f of files) await fs.rename(staged(f.name), joinPath(dir, f.name));
+    for (const f of written) await fs.rename(staged(f.name), joinPath(dir, f.name));
+    const files = [...keptAsIs, ...written].sort((a, b) => a.first - b.first);
     // Files left without rows, and a rows.ndjson from before D51.
     const now = new Set(files.map((f) => f.name));
     for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && isRowsFileName(entry.name) && !now.has(entry.name)) await fs.remove(joinPath(dir, entry.name));
@@ -557,7 +612,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     }
     for (const entry of (await fs.list(cellsDir)) ?? []) if (!entry.directory && (!cellsText || entry.name !== FIRST_ROWS_FILE)) await fs.remove(joinPath(cellsDir, entry.name));
     if (!cellsText && (await fs.list(cellsDir)) !== null) await fs.remove(cellsDir);
-    return { files: files.map((f) => ({ ...f, bytes: sizes.get(f.name) ?? 0 })), key };
+    return { files, key, marked };
   }
 
   // A bundle's saves, one after another, and how many are under way.
@@ -603,7 +658,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
           // Rows the file doesn't have yet are written whether or not the screen knows of them: the
           // index says (edits made before the app was ended, whose save was stopped or never began).
           const write = rows || (await asked(({ driver }) => indexKey(driver, name))) !== "saved";
-          const written = write ? await writeRows(bundle, name, schema, omit, editedSince) : null;
+          const written = write ? await writeRows(bundle, name, schema, omit, editedSince, !!whole) : null;
           if (write && written === null) return false;
           // Said in one turn with the last look, so no edit comes between them.
           return asked(async ({ driver }) => {
@@ -618,6 +673,9 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
               await kept(driver, name, written.files);
               // Its rows are this device's now, not the archive's.
               await setMadeFrom(driver, name, null);
+              // The edits these files took in are in them.
+              await driver.exec(DIRTY);
+              await driver.run("delete from _dirtyrows where tbl = ? and seq <= ?", [name, written.marked]);
             }
             await setIndexKey(driver, name, "saved");
             return true;
@@ -640,7 +698,20 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         // Counted as it's asked, before its turn: a save under way sees it at once.
         const table = `${bundle}/${request.name}`;
         edited.set(table, (edited.get(table) ?? 0) + 1);
-        return afterBuild(bundle, () => asked(({ serve }) => serve(request)));
+        // The rows it changes, where they were and where they are: the files holding them are written again.
+        const ids = [...new Set(request.edits.flatMap((e) => (e.kind === "cell" || e.kind === "add" || e.kind === "remove" || e.kind === "restore" ? [e.rowId] : [])))];
+        return afterBuild(bundle, () =>
+          asked(async ({ driver, serve }) => {
+            const before = await rowPlaces(driver, request.name, ids);
+            const made = await serve(request);
+            const places = new Set([...before, ...(await rowPlaces(driver, request.name, ids))]);
+            if (places.size > 0) {
+              await driver.exec(DIRTY);
+              for (const pos of places) await driver.run("insert into _dirtyrows(tbl, pos) values(?, ?)", [request.name, pos]);
+            }
+            return made;
+          }),
+        );
       },
       search: (name) => inSteps(bundle, (driver) => buildSearchIndex(driver, name, SEARCH_STEP)),
       // One transaction, in one turn, after a build of its bundle.
