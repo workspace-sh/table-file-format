@@ -22,6 +22,7 @@ import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { rowTitleFor, sheetReaders } from "./edits.ts";
+import type { Library } from "./library.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
 import type { IndexDatabase } from "./indexHost.ts";
@@ -108,6 +109,14 @@ export interface TableFileViewProps {
    * default). The viewer's, kept by the host, never in the file (SPEC section 4).
    */
   formulaSyntax?: "excel" | "stored";
+  /**
+   * When a large table's edited rows go to its files: after each write ("written", the default), or
+   * only when the host asks ("flushed"): leaving the file, the app going to the background. Then
+   * `files.written` (a single file packed again) waits too. A change to a field is saved at once.
+   */
+  saveRowsWhen?: "written" | "flushed";
+  /** Set by the view: saves what waits, then calls `files.written`. For the host to call. */
+  flush?: { current: (() => Promise<void>) | null };
 }
 
 /** How a large table in the file is read: through the platform's index host (createIndexHost). */
@@ -134,9 +143,13 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax, saveRowsWhen, flush }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
-  const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<void>) | null>(null);
+  const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
+  const flushIndexed = useRef<(() => Promise<void>) | null>(null);
+  // The host's step after a write whose rows wait for flush: taken then.
+  const writtenWaits = useRef<[Library, string] | null>(null);
+  const later = saveRowsWhen === "flushed";
   // Then the host's own step once the write is whole (a single file packed again).
   const writing = useMemo(
     () =>
@@ -145,12 +158,16 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
             ...files,
             write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => {
               await files.write(...args);
-              if (index) await saveIndexed.current?.(args[1]);
+              const waits = index ? await saveIndexed.current?.(args[1], later) : false;
+              if (waits) {
+                writtenWaits.current = [args[0], args[3]];
+                return;
+              }
               await files.written?.(args[0], args[3]);
             },
           }
         : files,
-    [files, index],
+    [files, index, later],
   );
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, writing, locale);
   const indexed = useIndexedTables({
@@ -161,6 +178,19 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
     openIndexDatabase: index?.openIndexDatabase ?? noIndex,
   });
   saveIndexed.current = indexed.save;
+  flushIndexed.current = indexed.flush;
+  useEffect(() => {
+    if (!flush) return;
+    flush.current = async () => {
+      await flushIndexed.current?.();
+      const waited = writtenWaits.current;
+      writtenWaits.current = null;
+      if (waited) await files.written?.(...waited);
+    };
+    return () => {
+      flush.current = null;
+    };
+  }, [flush, files]);
   useEffect(() => {
     if (index?.first) indexed.hold(index.first);
     // Once: what reading the file gave.
