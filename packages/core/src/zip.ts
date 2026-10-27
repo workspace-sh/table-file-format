@@ -75,6 +75,27 @@ function assertSafeEntryName(name: string): void {
  * An entry left compressed: read a piece at a time, so a very large file in
  * an archive is never held whole, and its start can be had at once.
  */
+/**
+ * What an archive holds, in a few bytes: its central directory (every entry's name, size and
+ * CRC-32) as a CRC-32, with its length. Two archives with the same stamp hold the same files,
+ * which tells an index made from one that it is the other's too, without reading either.
+ * Null for what isn't a zip archive.
+ */
+export function archiveStamp(buf: Uint8Array): string | null {
+  if (buf.length < 22) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const scanFrom = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= scanFrom; i--) {
+    if (dv.getUint32(i, true) !== EOCD_SIG) continue;
+    const cdSize = dv.getUint32(i + 12, true);
+    const cdOffset = dv.getUint32(i + 16, true);
+    if (cdOffset + cdSize > buf.length) return null;
+    const cd = buf.subarray(cdOffset, cdOffset + cdSize);
+    return `${crc32(cd).toString(16)}-${cdSize}-${buf.length}`;
+  }
+  return null;
+}
+
 export interface LazyZipEntry {
   name: string;
   /** Its size once inflated, as the archive declares it. */

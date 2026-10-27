@@ -22,6 +22,7 @@
 // freshness would need the files' own content, or their size and date.
 
 import {
+  archiveStamp,
   BUNDLE_EXTENSION,
   BundleEntry,
   CELLS_DIR,
@@ -195,7 +196,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   // When the screen last asked for something: the search index's steps wait for a quiet moment.
   let lastAsked = 0;
   // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
-  const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
+  const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[]; stamp: string | null }>();
 
   function open(bundle: string): Promise<Held> {
     let on = held.get(bundle);
@@ -242,6 +243,18 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     for (const f of files) await db.run("insert into _keptfiles(tbl, name, bytes) values(?, ?, ?)", [table, f.name, f.bytes]);
   }
 
+  // Which archive a table's index was made from, while nothing has been saved over it since.
+  const FROM = "create table if not exists _fromarchive(tbl text primary key, stamp text not null)";
+  async function madeFrom(db: SqlDriver, table: string): Promise<string | null> {
+    await db.exec(FROM);
+    return ((await db.all("select stamp from _fromarchive where tbl = ?", [table]))[0]?.stamp as string | undefined) ?? null;
+  }
+  async function setMadeFrom(db: SqlDriver, table: string, stamp: string | null): Promise<void> {
+    await db.exec(FROM);
+    await db.run("delete from _fromarchive where tbl = ?", [table]);
+    if (stamp !== null) await db.run("insert into _fromarchive(tbl, stamp) values(?, ?)", [table, stamp]);
+  }
+
   /** A table's rows files in pieces, in file order, when each is whole; null when one is missing or was cut short. */
   async function keptRows(
     db: SqlDriver,
@@ -281,7 +294,9 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
   async function openZip(bytes: Uint8Array, taken: Iterable<string>, from: number = INDEXED_FROM): Promise<OpenedLarge> {
     const first: Record<string, Row[]> = {};
     const counts: Record<string, number> = {};
-    const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
+    const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[]; stamp: string | null }>();
+    // The archive, as a stamp: an index made from this same file is taken as it is (ensure).
+    const stamp = archiveStamp(bytes);
     const opened = await openArchive(bytes, taken, {
       // A large table's rows are left compressed: only their start is read here, so the
       // screen has rows to show at once, however large the table. The rest is read by `ensure`.
@@ -294,7 +309,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         const figures = 10 ** Math.max(0, String(judged).length - 2);
         const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
         if (count < from) return false;
-        large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}) });
+        large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}), stamp });
         first[name] = firstRowsInBytes(head, FIRST_ROWS);
         counts[name] = count;
         return true;
@@ -321,6 +336,14 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     onProgress?: (done: number, total: number) => void,
   ): Promise<number> {
     const fresh = again ? undefined : waiting.get(`${bundle}/${name}`);
+    // The same file opened again: its index, made from it and not saved over since, is taken as it is.
+    if (fresh && fresh.stamp !== null && (await madeFrom(db, name)) === fresh.stamp && (await indexKey(db, name)) === "saved") {
+      const before = await queryIndex(db, { name, schema });
+      if (before && (await keptRows(db, bundle, name)) !== null) {
+        waiting.delete(`${bundle}/${name}`);
+        return before.count;
+      }
+    }
     if (fresh) {
       // Read a piece at a time: into the index, and each rows file into its own file kept beside it.
       await fs.mkdir(rowsDir(bundle, name));
@@ -356,6 +379,7 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         await (out as FileWriter | null)?.close();
         await setRowFileStarts(db, name, starts);
         await kept(db, name, [...sizes].map(([file, bytes]) => ({ name: file, bytes })));
+        await setMadeFrom(db, name, fresh.stamp);
         waiting.delete(`${bundle}/${name}`);
         return count;
       } catch (error) {
@@ -575,6 +599,8 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
             if (written !== null) {
               await setRowFileStarts(driver, name, written.files);
               await kept(driver, name, written.files);
+              // Its rows are this device's now, not the archive's.
+              await setMadeFrom(driver, name, null);
             }
             await setIndexKey(driver, name, "saved");
             return true;
