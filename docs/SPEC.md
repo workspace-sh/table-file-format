@@ -1108,6 +1108,37 @@ table's own `title`, `description`, `created_at` and `modified_at`.
 It does not repeat `format` or `formatVersion`: those describe the
 bundle.
 
+### Where a table came from: `source`
+
+Either `meta.json` MAY say where its content came from, when it was made
+from something else: a CSV someone imported, a spreadsheet, a file at a
+web address.
+
+```json
+"source": {
+  "uri": "https://example.org/exports/sales.csv",
+  "format": "text/csv",
+  "retrieved_at": "2026-10-27T10:00:00Z"
+}
+```
+
+- `uri`: where it came from, as an absolute URI (`https:`, `file:`, or
+  any other scheme).
+- `format`: what it was, as a media type (`text/csv`,
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
+- `retrieved_at`: when it was read, as `created_at` is written.
+
+Every member is optional, and an object with none says nothing. In the
+bundle's `meta.json` it is the whole bundle's source; in a table's, that
+table's (one table of a bundle imported from a CSV, say).
+
+It is a record of origin and nothing more (DECISIONS D66). A reader MUST
+NOT read or compute anything differently because of it, and nothing
+follows the address. Writers keep it as it was read; one that makes a
+table from something else SHOULD write it. A `source` that is not an
+object, or a member that is not a string, is ignored, as an unknown key
+is.
+
 `modified_at` SHOULD be stamped only on **user-initiated** writes —
 not on mechanical re-materialisations (sync engines applying remote
 ops, cache rebuilds, format migrations). A sync engine that touches

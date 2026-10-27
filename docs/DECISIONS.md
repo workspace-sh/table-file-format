@@ -1580,3 +1580,21 @@ wrong.
 Considered and not taken: Excel's and Airtable's, refusing until it's fixed
 or cancelled, which is the lock or the loss; and a mix (keep what reads,
 drop what doesn't), which has no rule a reader could guess.
+
+## D66: a table can say where it came from
+
+Decided 27 Oct 2026. Either `meta.json` may carry `source`: `{ uri,
+format, retrieved_at }`, the address it came from, the media type it was
+in, and when it was read (SPEC section 5).
+
+It records origin and does nothing else. Reading, computing and writing
+are the same with or without it, and no app fetches the address. That
+keeps it safe to copy from a file someone sends: an address in it is a
+fact about the past, not an instruction.
+
+One object, not a list: a table made by merging several sources says so
+in its description. A media type rather than a name of our own, because
+one exists for every format worth naming. The same idea as a TextBundle's
+`sourceURL` in its `info.json`, so a document and a table copied from the
+web carry their origin the same way.
+
