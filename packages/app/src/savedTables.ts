@@ -3,7 +3,9 @@
 // bundle's manifest (D37). Both are plain JSON, so they're stored as they are.
 // An example is kept only once it differs from the app's own copy
 // (savedFrom), so an app follows the examples as they change until one is
-// edited (#592).
+// edited (#592). It's kept whole, every table of the file: its tables link to
+// each other by row id, and a table kept from one version of an example beside
+// one taken from the next would break every link between them.
 //
 // Pre-alpha: the stored shape has no version. Anything that doesn't read
 // back as bundles (including what earlier demos saved) is discarded, and
@@ -16,6 +18,13 @@ export interface Saved {
   bundles: Record<string, BundleMeta>;
   /** Bundles closed here (closing.ts): an example among them isn't added back. */
   closed?: string[];
+  /**
+   * Set when an example edited here is kept whole (savedFrom). What demos
+   * saved before kept an edited example's tables one by one, so an
+   * example's tables there are dropped on load and the example comes back
+   * as it is now (withNewFixtures).
+   */
+  whole?: true;
 }
 
 export const STORAGE_KEY = "table-demo:tables";
@@ -62,11 +71,12 @@ export function save(store: KeyValueStore | null, saved: Saved): void {
 }
 
 /**
- * What an app keeps of `tables` and `bundles`: each that differs from the
- * example of the same key in `fixtures`, and everything that isn't an
- * example. An example left as it is isn't kept, so the next launch shows the
- * example as it is then; one edited is kept as edited, whatever the example
- * becomes. An edit undone back to the example is the example again.
+ * What an app keeps of `tables` and `bundles`: every file that isn't an
+ * example, and every example where anything (a table, or its manifest)
+ * differs from `fixtures`, whole. An example left as it is isn't kept, so the
+ * next launch shows the example as it is then; one edited is kept as edited,
+ * whatever the example becomes. An edit undone back to the example is the
+ * example again.
  */
 export function savedFrom(
   tables: Record<string, ParsedTable>,
@@ -74,11 +84,19 @@ export function savedFrom(
   closed: string[],
   fixtures: Saved,
 ): Saved {
+  const edited = new Set<string>();
+  for (const [key, t] of Object.entries(tables)) if (!same(t, fixtures.tables[key])) edited.add(bundleOfKey(key));
+  for (const [key, b] of Object.entries(bundles)) if (!same(b, fixtures.bundles[key])) edited.add(key);
   return {
-    tables: Object.fromEntries(Object.entries(tables).filter(([key, t]) => !same(t, fixtures.tables[key]))),
-    bundles: Object.fromEntries(Object.entries(bundles).filter(([key, b]) => !same(b, fixtures.bundles[key]))),
+    tables: Object.fromEntries(Object.entries(tables).filter(([key]) => edited.has(bundleOfKey(key)))),
+    bundles: Object.fromEntries(Object.entries(bundles).filter(([key]) => edited.has(key))),
     closed,
+    whole: true,
   };
+}
+
+function bundleOfKey(key: string): string {
+  return key.slice(0, key.indexOf("/"));
 }
 
 // The examples' JSON, made once each: they're compared on every write.
@@ -117,6 +135,21 @@ export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
   const bundles = { ...saved.bundles };
   const closed = new Set(saved.closed ?? []);
   let changed = false;
+  if (!saved.whole) {
+    // Saved table by table: an example's tables may be from another version of it than the rest.
+    for (const key of Object.keys(tables)) {
+      if (fixtures.bundles[bundleOfKey(key)]) {
+        delete tables[key];
+        changed = true;
+      }
+    }
+    for (const key of Object.keys(bundles)) {
+      if (fixtures.bundles[key]) {
+        delete bundles[key];
+        changed = true;
+      }
+    }
+  }
   for (const key of Object.keys(tables)) {
     const bundle = key.slice(0, key.indexOf("/"));
     if (bundles[bundle]) continue;
@@ -145,7 +178,7 @@ export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
       bundles[bundle] = { ...manifest, tables: next };
     }
   }
-  return changed ? { tables, bundles, ...(saved.closed ? { closed: saved.closed } : {}) } : saved;
+  return changed ? { tables, bundles, ...(saved.closed ? { closed: saved.closed } : {}), whole: true } : saved;
 }
 
 /**
@@ -156,6 +189,7 @@ export function withNewFixtures(saved: Saved, fixtures: Saved): Saved {
 function isSaved(value: unknown): value is Saved {
   if (!isObject(value) || !isObject(value.bundles) || !isTables(value.tables)) return false;
   if (value.closed !== undefined && !(Array.isArray(value.closed) && value.closed.every((b) => typeof b === "string"))) return false;
+  if (value.whole !== undefined && value.whole !== true) return false;
   if (!Object.values(value.bundles).every(isObject)) return false;
   return Object.keys(value.tables).every((key) => key.indexOf("/") > 0);
 }

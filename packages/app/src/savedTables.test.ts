@@ -86,6 +86,7 @@ test("a fixture table added since the demo was saved appears, and edits stay", (
   const saved = {
     tables: { "home/budget": edited },
     bundles: { home: { format: "table" as const, title: "Home", tables: ["budget"] } },
+    whole: true as const,
   };
   const fixtures = {
     tables: { "home/budget": fresh, "home/ledger": fresh, "shop/orders": fresh },
@@ -107,6 +108,7 @@ test("a new fixture table goes where the fixture puts it", () => {
   const saved = {
     tables: { "b/one": table, "b/three": table },
     bundles: { b: { format: "table" as const, tables: ["one", "three"] } },
+    whole: true as const,
   };
   const fixtures = {
     tables: { "b/one": table, "b/two": table, "b/three": table },
@@ -122,7 +124,7 @@ const examples = { tables: { "projects/projects": example }, bundles: { projects
 
 test("an example left as it is isn't saved, so the next launch shows the example as it is then", () => {
   const kept = savedFrom(examples.tables, examples.bundles, [], examples);
-  assert.deepEqual(kept, { tables: {}, bundles: {}, closed: [] });
+  assert.deepEqual(kept, { tables: {}, bundles: {}, closed: [], whole: true });
   // Read back, a store with no tables in it is still a store (it may hold what was closed).
   const store = memory();
   save(store, kept);
@@ -140,8 +142,7 @@ test("the same example read back from JSON is still the example, not an edit", (
 test("an example edited is saved, and stays as edited whatever the example becomes", () => {
   const kept = savedFrom({ "projects/projects": table }, examples.bundles, [], examples);
   assert.deepEqual(Object.keys(kept.tables), ["projects/projects"]);
-  // Its manifest is the example's, so it isn't saved: the load takes the example's.
-  assert.deepEqual(kept.bundles, {});
+  assert.deepEqual(kept.bundles, examples.bundles);
   const changed = { ...examples, tables: { "projects/projects": { ...example, rows: [] } } };
   const loaded = withNewFixtures(kept, changed);
   assert.equal(loaded.tables["projects/projects"]!.rows[0]!.title, "Edited");
@@ -160,9 +161,9 @@ test("a file made here, and a renamed example, are saved; a saved table with no 
     [],
     examples,
   );
-  assert.deepEqual(Object.keys(kept.tables), ["notes/notes"]);
+  assert.deepEqual(Object.keys(kept.tables), ["projects/projects", "notes/notes"]);
   assert.deepEqual(kept.bundles, { projects: { title: "Renamed" }, notes: { title: "Notes" } });
-  const orphan = withNewFixtures({ tables: { "gone/gone": table }, bundles: {} }, examples);
+  const orphan = withNewFixtures({ tables: { "gone/gone": table }, bundles: {}, whole: true }, examples);
   assert.deepEqual(Object.keys(orphan.tables), ["projects/projects"]);
 });
 
@@ -174,3 +175,34 @@ test("an example closed stays closed, with nothing of it saved", () => {
   assert.deepEqual(loaded.tables, {});
   assert.deepEqual(loaded.closed, ["projects"]);
 });
+
+// An example's tables link by row id, so one is never kept from another version of the example than the rest.
+const shop = {
+  tables: { "shop/orders": { ...table, rows: [{ id: "o1", customer: "c-new" }] }, "shop/customers": { ...table, rows: [{ id: "c-new" }] } },
+  bundles: { shop: { format: "table" as const, tables: ["orders", "customers"] } },
+};
+
+test("an example edited is kept whole: the tables left as they are with it", () => {
+  const orders = { ...shop.tables["shop/orders"], rows: [{ id: "o1", customer: "c-new", note: "edited" }] };
+  const kept = savedFrom({ ...shop.tables, "shop/orders": orders }, shop.bundles, [], shop);
+  assert.deepEqual(Object.keys(kept.tables).sort(), ["shop/customers", "shop/orders"]);
+  // The example's ids change since: the saved file still links to its own customers.
+  const next = { ...shop, tables: { "shop/orders": shop.tables["shop/orders"], "shop/customers": { ...table, rows: [{ id: "c-newer" }] } } };
+  const loaded = withNewFixtures(loadSavedFrom(kept), next);
+  assert.equal(loaded.tables["shop/customers"]!.rows[0]!.id, "c-new");
+});
+
+test("an example saved table by table, before files were kept whole, comes back as the example", () => {
+  const old = { tables: { "shop/orders": { ...table, rows: [{ id: "o1", customer: "c-old" }] }, "notes/notes": table }, bundles: { notes: { title: "Notes" } } };
+  const loaded = withNewFixtures(loadSavedFrom(old), shop);
+  assert.equal(loaded.tables["shop/orders"]!.rows[0]!.customer, "c-new");
+  // A file made here is kept.
+  assert.ok(loaded.tables["notes/notes"]);
+  assert.equal(loaded.whole, true);
+});
+
+function loadSavedFrom(value: object) {
+  const store = memory();
+  store.setItem(STORAGE_KEY, JSON.stringify(value));
+  return loadSaved(store)!;
+}
