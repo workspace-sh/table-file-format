@@ -126,6 +126,8 @@ pipes/streams.
 
 ## D12: Long-form bodies live in `bodies/{id}.md`
 
+*Named `bodies/{title}--{id}.md` since D64.*
+
 Optional. Each body is a standalone markdown file named by the row's
 stable system `id`. The Notion *every-row-is-also-a-page* pattern,
 made line-diffable.
@@ -1524,3 +1526,28 @@ renamed in the apps yet.
 
 The `title` stays what a person reads, and changing it changes nothing
 else. Renaming is for when the name formulas read should change too.
+
+## D64: a row's page is named for its row; a view's id is short
+
+**Leslie (27 Oct 2026).** A `.table` is to be read by people, even when
+they don't edit it, and `bodies/wexwuo344aoowkqiieeb8fk56z.md` tells a
+person nothing. A page is now `bodies/atlas-freight--wexwuo344aoowkqiieeb8fk56z.md`:
+the row's title, `--`, its id (SPEC section 7).
+
+- **The id still decides.** The reader takes the row from the id after
+  the first `--` and never from the title, so a stale or hand-edited
+  title breaks nothing, and a plain `{id}.md` still reads.
+- **The id stays whole.** It is the row's own id, 26 characters; a
+  shorter one would be a second id per row.
+- **A new title renames the page** at the next save, so the folder reads
+  like the table. It is one file moved, and only for a row with a page.
+- **Titles are slugs:** lowercase for case-insensitive file systems,
+  letters and digits in any script, at most 40 characters.
+
+**A view's id is 13 characters,** as a field's is (D62). The length
+follows how many there can be: rows and history entries run to
+millions, minted on many devices and merged, so 26 (130 bits); a
+table's views and fields are a handful each, so 13 (65 bits), which
+also keeps links short. Views stayed at 26 when D23's amendment came
+before D62 set the shorter length; that was never a decision. Views
+already minted at 26 stay valid: a reader takes any id.

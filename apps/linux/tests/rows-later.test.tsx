@@ -30,7 +30,7 @@ describe("opening a .table, its rows after the rest", () => {
     const ledger = library.tables["household-budget/ledger"]!;
     expect(ledger.rows).toEqual([]);
     expect(ledger.loading?.estimate).toBe(10);
-    await render(<App library={library} initialTable="household-budget/ledger" initialView="63occwsg8oxgutjn9s5jxyqfkf" />);
+    await render(<App library={library} initialTable="household-budget/ledger" initialView="f179qhc4jxi7y" />);
     // Read after: the count is the rows'.
     expect(await screen.findByText("10 of 10 rows")).toBeDefined();
   });
@@ -38,7 +38,7 @@ describe("opening a .table, its rows after the rest", () => {
   it("says a line of its rows it couldn't read once it has read them (#567)", async () => {
     appendFileSync(join(bundle, "tables", "ledger", "rows", "0001.ndjson"), "<<<<<<< HEAD\n");
     const library = await loadLibrary([bundle], [], { rowsLater: true });
-    await render(<App library={library} initialTable="household-budget/ledger" initialView="63occwsg8oxgutjn9s5jxyqfkf" />);
+    await render(<App library={library} initialTable="household-budget/ledger" initialView="f179qhc4jxi7y" />);
     await waitFor(async () => expect(await screen.findByText(/skipped 1 thing it couldn.t read/)).toBeDefined());
   });
 

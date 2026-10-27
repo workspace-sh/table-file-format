@@ -2,7 +2,7 @@
 // change here. Each is a bundle (D37); its tables go into the demo's one
 // map under `bundle/table` keys, and its manifest beside them.
 
-import { parseCellsText, type BundleMeta, type CellFormula, type ParsedTable, type Row, type TableMeta, type TableSchema, type View } from "@workspace.sh/table-core";
+import { parseCellsText, rowIdOfBodyFile, type BundleMeta, type CellFormula, type ParsedTable, type Row, type TableMeta, type TableSchema, type View } from "@workspace.sh/table-core";
 
 type Json<T> = Record<string, T>;
 const manifests = import.meta.glob<BundleMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
@@ -48,7 +48,8 @@ for (const path of Object.keys(cellFiles).sort()) cellLines[tableKeyOf(path)] = 
 const cells: Record<string, CellFormula[]> = Object.fromEntries(Object.entries(cellLines).map(([key, raw]) => [key, parseCellsText(raw, [], [], "cells/0001.ndjson")]));
 const bodies: Record<string, Record<string, string>> = {};
 for (const [path, content] of Object.entries(bodyFiles)) {
-  const id = path.split("/").pop()!.replace(/\.md$/, "");
+  const id = rowIdOfBodyFile(path.split("/").pop()!);
+  if (id === null) continue;
   (bodies[tableKeyOf(path)] ??= {})[id] = content;
 }
 

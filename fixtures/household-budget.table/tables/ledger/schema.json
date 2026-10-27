@@ -31,7 +31,7 @@
       "format": "currency:GBP",
       "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
       "computed": {
-        "expr": "(sum (at \"balance\" -1 \"7wxsrxd9g5oa5smry9tmfahdzs\") amount)",
+        "expr": "(sum (at \"balance\" -1 \"87jkeekgwbfgr\") amount)",
         "dialect": "table-expr-v1"
       }
     }

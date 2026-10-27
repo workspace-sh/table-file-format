@@ -30,7 +30,7 @@ const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 async function windowOf(): Promise<Gtk.ApplicationWindow> {

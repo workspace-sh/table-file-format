@@ -83,13 +83,13 @@ test("a field read by place in a Sheet view: its own formula, and the view, rena
   const tables = await tablesOf("household-budget");
   const before = computed(tables);
   const after = renameField(tables, "ledger", "balance", "running");
-  assert.equal(formulaOf(after.ledger!, "running"), '(sum (at "running" -1 "7wxsrxd9g5oa5smry9tmfahdzs") amount)');
-  const byDate = after.ledger!.views.find((v) => v.id === "7wxsrxd9g5oa5smry9tmfahdzs")!;
+  assert.equal(formulaOf(after.ledger!, "running"), '(sum (at "running" -1 "87jkeekgwbfgr") amount)');
+  const byDate = after.ledger!.views.find((v) => v.id === "87jkeekgwbfgr")!;
   assert.ok(byDate.fields!.includes("running") && "running" in byDate.columnWidths!);
   assert.deepEqual(computed(after, { table: "ledger", from: "balance", to: "running" }), before);
   // And a field the place formula reads as its plain argument.
   const amount = renameField(tables, "ledger", "amount", "spent");
-  assert.equal(formulaOf(amount.ledger!, "balance"), '(sum (at "balance" -1 "7wxsrxd9g5oa5smry9tmfahdzs") spent)');
+  assert.equal(formulaOf(amount.ledger!, "balance"), '(sum (at "balance" -1 "87jkeekgwbfgr") spent)');
   assert.deepEqual(computed(amount, { table: "ledger", from: "amount", to: "spent" }), before);
 });
 

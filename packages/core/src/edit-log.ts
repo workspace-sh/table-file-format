@@ -127,7 +127,7 @@ export function rowChanges(before: Row | undefined, after: Row | undefined, comp
 
 /**
  * A row's page changed from one text to another: null when it didn't. The
- * text is said as its file holds it (`bodies/{id}.md` ends in a newline),
+ * text is said as its file holds it (a page's file ends in a newline),
  * so a page typed without one and its file are the same text. No text and
  * an empty one are the same: no page.
  */

@@ -20,24 +20,24 @@ const words = (library: Library, address: { tableName?: string; viewId?: string 
 };
 
 test("the table and view an address names are what is drawn", () => {
-  const result = embedIn(projects, { tableName: "tasks", viewId: "gzrqtgo1p3gfehto7tani3jzz4" }, "projects.table");
+  const result = embedIn(projects, { tableName: "tasks", viewId: "mufe9nmjruiq5" }, "projects.table");
   assert.equal(result.kind, "shown");
-  assert.deepEqual(result.kind === "shown" && [result.key, result.viewId, result.library], ["projects/tasks", "gzrqtgo1p3gfehto7tani3jzz4", projects]);
+  assert.deepEqual(result.kind === "shown" && [result.key, result.viewId, result.library], ["projects/tasks", "mufe9nmjruiq5", projects]);
 });
 
 test("with no view named, it is the table's first", () => {
-  assert.equal(words(projects, { tableName: "projects" }), "shown: projects/projects ffaisc1zows4dzhy7aq5jrebkx");
+  assert.equal(words(projects, { tableName: "projects" }), "shown: projects/projects juycicwios88m");
 });
 
 test("a table with no views of its own is drawn as it is", () => {
   const bare: Library = { ...projects, tables: { ...projects.tables, "projects/tasks": { ...projects.tables["projects/tasks"]!, views: [] } } };
   assert.equal(words(bare, { tableName: "tasks" }), "shown: projects/tasks ");
-  assert.equal(words(bare, { tableName: "tasks", viewId: "ffaisc1zows4dzhy7aq5jrebkx" }), "The table “tasks” has no view “ffaisc1zows4dzhy7aq5jrebkx”. It has no views of its own.");
+  assert.equal(words(bare, { tableName: "tasks", viewId: "juycicwios88m" }), "The table “tasks” has no view “juycicwios88m”. It has no views of its own.");
 });
 
 test("with no table named, a file's only table is drawn, and a file of several says which it has", () => {
   const one: Library = { ...projects, tables: { "projects/tasks": projects.tables["projects/tasks"]! } };
-  assert.equal(words(one, {}), "shown: projects/tasks ffaisc1zows4dzhy7aq5jrebkx");
+  assert.equal(words(one, {}), "shown: projects/tasks juycicwios88m");
   assert.equal(words(projects, {}), "“projects.table” holds 2 tables. The link says which with “table=”: “projects”, “tasks”.");
 });
 
@@ -47,16 +47,16 @@ test("a table or a view the file doesn't have is said, with the ones it has", ()
 });
 
 test("a view is named by its id or by its name, whatever its case", () => {
-  assert.equal(words(projects, { tableName: "tasks", viewId: "gzrqtgo1p3gfehto7tani3jzz4" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
-  assert.equal(words(projects, { tableName: "tasks", viewId: "Board by status" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
-  assert.equal(words(projects, { tableName: "tasks", viewId: "board BY status" }), "shown: projects/tasks gzrqtgo1p3gfehto7tani3jzz4");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "mufe9nmjruiq5" }), "shown: projects/tasks mufe9nmjruiq5");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "Board by status" }), "shown: projects/tasks mufe9nmjruiq5");
+  assert.equal(words(projects, { tableName: "tasks", viewId: "board BY status" }), "shown: projects/tasks mufe9nmjruiq5");
 });
 
 test("a table read without its rows (one for the index) is too large to draw in a document", () => {
   const large: Library = { ...projects, tables: { ...projects.tables, "projects/tasks": { ...projects.tables["projects/tasks"]!, rows: [], indexed: { count: 60_000, version: 0 } } } };
   assert.equal(words(large, { tableName: "tasks" }), "“tasks” in “projects.table” has too many rows to show in a document yet.");
   // The tables beside it are still drawn.
-  assert.equal(words(large, { tableName: "projects" }), "shown: projects/projects ffaisc1zows4dzhy7aq5jrebkx");
+  assert.equal(words(large, { tableName: "projects" }), "shown: projects/projects juycicwios88m");
 });
 
 test("a file that held no table says what was wrong reading it, when something was", () => {
@@ -80,7 +80,7 @@ test("an address may ask for a table the whole width, and nothing else widens it
 });
 
 test("what is drawn carries the size its address asked for", () => {
-  const result = embedIn(projects, { tableName: "tasks", viewId: "ffaisc1zows4dzhy7aq5jrebkx", extra: { rows: "4", embed: "1" } }, "projects.table");
+  const result = embedIn(projects, { tableName: "tasks", viewId: "juycicwios88m", extra: { rows: "4", embed: "1" } }, "projects.table");
   assert.deepEqual(result.kind === "shown" && result.size, { rows: 4 });
   const plain = embedIn(projects, { tableName: "tasks" }, "projects.table");
   assert.deepEqual(plain.kind === "shown" && plain.size, {});
@@ -101,8 +101,8 @@ test("a layout shows one of the two counts: rows for a table or a list, cards fo
 
 test("an embed cut to its count says how many rows or cards it leaves out", () => {
   const tasks = projects.tables["projects/tasks"]!;
-  const table = tasks.views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!;
-  const board = tasks.views.find((v) => v.id === "gzrqtgo1p3gfehto7tani3jzz4")!;
+  const table = tasks.views.find((v) => v.id === "juycicwios88m")!;
+  const board = tasks.views.find((v) => v.id === "mufe9nmjruiq5")!;
   const left = (size: Parameters<typeof embedLeftOut>[0], view = table) => embedLeftOut(size, view, tasks.rows, tasks.schema);
   // Eight tasks.
   assert.equal(left({ rows: 5, rest: "more" }), 3);
@@ -142,7 +142,7 @@ test("a link is read over any platform's files, from the document's folder and k
   assert.equal(resolvePath("/ws/docs", "../tables/./projects.table"), "/ws/tables/projects.table");
   // As iOS's files speak: a URL keeps its scheme.
   assert.equal(resolvePath("file:///var/mobile/ws/docs", "../tables/projects.table"), "file:///var/mobile/ws/tables/projects.table");
-  assert.equal(await at("../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&rows=5&embed=1"), 'shown: projects/tasks ffaisc1zows4dzhy7aq5jrebkx {"rows":5}');
+  assert.equal(await at("../tables/projects.table#table=tasks&view=juycicwios88m&rows=5&embed=1"), 'shown: projects/tasks juycicwios88m {"rows":5}');
   // Percent-encoded as Markdown writes a space.
   await writeBundleTo(fs, "/ws/tables/my projects.table", bundles.projects!);
   assert.match(await at("../tables/my%20projects.table#table=tasks&embed=1"), /^shown: my projects\/tasks /);
@@ -197,7 +197,7 @@ test("a document's embeds read each file once, and again after a write", async (
   const [tasks, projects, again] = await Promise.all([
     at("../tables/projects.table#table=tasks&embed=1"),
     at("../tables/projects.table#table=projects&embed=1"),
-    at("../tables/projects.table#table=tasks&view=ffaisc1zows4dzhy7aq5jrebkx&embed=1"),
+    at("../tables/projects.table#table=tasks&view=juycicwios88m&embed=1"),
   ]);
   assert.equal(reads, 1);
   assert.ok(tasks.kind === "shown" && projects.kind === "shown" && again.kind === "shown");

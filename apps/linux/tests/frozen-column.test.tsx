@@ -42,9 +42,9 @@ describe("a wide table's first column on Linux", () => {
     const views = join(dir, "projects.table", "tables", "projects", "views.json");
     const { readFileSync, writeFileSync } = await import("node:fs");
     const all = JSON.parse(readFileSync(views, "utf8")) as { id: string; frozen?: { columns: number } }[];
-    writeFileSync(views, JSON.stringify(all.map((v) => (v.id === "r1mmz6bdngh1qjdyc7a3u3n58c" ? { ...v, frozen: { columns: 2 } } : v))));
+    writeFileSync(views, JSON.stringify(all.map((v) => (v.id === "9d493f96hyaax" ? { ...v, frozen: { columns: 2 } } : v))));
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const second = await screen.findByText("status");
     const later = await screen.findByText("owner");
@@ -61,7 +61,7 @@ describe("a wide table's first column on Linux", () => {
   it("stays where it is while the other columns scroll sideways, header and all", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
     // Seven columns: wider than the window, so it scrolls sideways.
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const owner = (await screen.findAllByText("leslie"))[0]!;
     const titleHeader = await screen.findByText("title");
@@ -86,7 +86,7 @@ describe("a wide table's first column on Linux", () => {
 
   it("a sideways scroll comes to rest with a column starting where the first column ends", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const scroller = scrollerOf(title);
     const across = scroller.getHadjustment();
@@ -126,7 +126,7 @@ describe("a wide table's first column on Linux", () => {
 
   it("in a narrow window, where the first column scrolls too, a column comes to rest at the window's edge", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     (title.getRoot() as unknown as Gtk.Window).setDefaultSize(600, 700);
     const scroller = scrollerOf(title);
@@ -155,7 +155,7 @@ describe("a wide table's first column on Linux", () => {
 describe("columns' lines down a wide table on Linux", () => {
   it("the first column's line stays with it, and a line that has gone under the first column is out of reach until it comes out", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const scroller = scrollerOf(title);
     const across = scroller.getHadjustment();
@@ -189,7 +189,7 @@ describe("columns' lines down a wide table on Linux", () => {
 describe("Back on Linux", () => {
   it("puts a table back where it was scrolled across to", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const across = scrollerOf((await screen.findAllByText("Workspace v1"))[0]!).getHadjustment();
     await waitFor(() => expect(across.getUpper()).toBeGreaterThan(across.getPageSize() + 200));
     across.setValue(300);
@@ -215,7 +215,7 @@ describe("Back on Linux", () => {
 describe("a cell the keyboard moves to on Linux", () => {
   it("is brought whole into the window: out from under the first column, and in from past the window's end", async () => {
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const scroller = scrollerOf(title);
     const across = scroller.getHadjustment();
@@ -250,7 +250,7 @@ describe("a wide table's first column on Linux, right to left", () => {
     const settings = jsonFileStore(join(dir, "settings.json"));
     settings.setItem("table-demo:display", JSON.stringify({ locale: "ar-EG" }));
     const library = await loadLibrary([join(dir, "projects.table")]);
-    await render(<App library={library} initialTable="projects/projects" initialView="r1mmz6bdngh1qjdyc7a3u3n58c" settings={settings} />);
+    await render(<App library={library} initialTable="projects/projects" initialView="9d493f96hyaax" settings={settings} />);
     const title = (await screen.findAllByText("Workspace v1"))[0]!;
     const scroller = scrollerOf(title);
     const across = scroller.getHadjustment();

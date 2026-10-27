@@ -52,11 +52,11 @@ describe("frozen rows on Linux", () => {
   it("scrolled down, the header and the view's first two rows stay at the window's top; at rest they're drawn once", async () => {
     const viewsFile = join(books, "views.json");
     const views = JSON.parse(readFileSync(viewsFile, "utf8")) as { id: string }[];
-    writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "9gcz9d8ctoqamitkgwfhiu7sru" ? { ...v, frozen: { rows: 2 } } : v))));
+    writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "hnmryzi51j6jz" ? { ...v, frozen: { rows: 2 } } : v))));
     const table = await parseTable(books);
-    const firstTwo = applyView(table, table.views.find((v) => v.id === "9gcz9d8ctoqamitkgwfhiu7sru")!).slice(0, 2).map((r) => String(r.title));
+    const firstTwo = applyView(table, table.views.find((v) => v.id === "hnmryzi51j6jz")!).slice(0, 2).map((r) => String(r.title));
     const library = await loadLibrary([join(dir, "library.table")]);
-    await render(<App library={library} initialTable="library/books" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
+    await render(<App library={library} initialTable="library/books" initialView="hnmryzi51j6jz" />);
     const first = (await screen.findAllByText(firstTwo[0]!))[0]!;
     const scroller = scrollerOf(first);
     const band = named(scroller.getParent()!, "frozen-band")!;

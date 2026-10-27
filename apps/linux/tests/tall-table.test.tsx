@@ -67,7 +67,7 @@ const shown = () => screen.queryAllByText(/^Big \d+$/).map((w) => Number((w as G
 describe("a table taller than GTK lays out exactly", () => {
   it("is scrolled through a shorter body: the ends are the table's ends, and the middle its middle", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
     const first = await cellOf("Big 0");
     const scroller = scrollerOf(first);
     const adjustment = scroller.getVadjustment();
@@ -92,7 +92,7 @@ describe("a table taller than GTK lays out exactly", () => {
 
   it.each([["in memory", undefined], ["in the index", 1000]] as const)("Ctrl+Down goes to the last row, and Ctrl+Up back to the first (held %s)", async (_how, indexedFrom) => {
     const library = await loadLibrary([bundle], [], indexedFrom === undefined ? {} : { indexedFrom });
-    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" {...(indexedFrom === undefined ? {} : { indexedFrom })} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" {...(indexedFrom === undefined ? {} : { indexedFrom })} />);
     await screen.findAllByText(`${ROWS.toLocaleString()} of ${ROWS.toLocaleString()} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const first = await cellOf("Big 0");
