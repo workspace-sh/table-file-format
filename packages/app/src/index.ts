@@ -11,6 +11,7 @@ export * from "./savedTables.ts";
 export * from "./sidebarPrefs.ts";
 export * from "./tableFiles.ts";
 export * from "./singleFile.ts";
+export { holdsLargeTable, readLargeTableFile, type LargeDocument } from "./largeDocument.ts";
 export * from "./tableKey.ts";
 export * from "./showView.ts";
 export * from "./edits.ts";

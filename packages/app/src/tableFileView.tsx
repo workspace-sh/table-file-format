@@ -11,10 +11,10 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
-import { addressedView, newId, parseAddress, type View } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -24,6 +24,9 @@ import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedSh
 import { rowTitleFor, sheetReaders } from "./edits.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
+import type { IndexDatabase } from "./indexHost.ts";
+import { useIndexedTables } from "./useIndexedTables.ts";
+import { readingText } from "./reading.ts";
 import { askName } from "./askName";
 
 /** What the host draws around the view: the file's tables and views, and what can be done to them. */
@@ -40,6 +43,8 @@ export interface TableFileChrome {
   showView: (id: string) => void;
   /** The rows shown, as a count says it ("8 of 8 rows"). */
   count: string;
+  /** While a large table is read into its index: how far along, as said ("Reading 120,000 of 1,000,000 rows"). */
+  reading?: string;
   /** While searching, what was found, for the search field ("2 rows"). */
   found?: string;
   query: string;
@@ -94,11 +99,28 @@ export interface TableFileViewProps {
   /** What goes around the view, drawn by the host. */
   chrome?: (file: TableFileChrome) => ReactNode;
   /**
+   * A file holding a large table, read through the index (readLargeTableFile): the host's index, and
+   * the first rows reading the file gave. Its rows are read from the index, never all into memory.
+   */
+  index?: TableFileIndex;
+  /**
    * Which syntax this file's formulas are shown in, as the host's viewer chose for it (Excel style by
    * default). The viewer's, kept by the host, never in the file (SPEC section 4).
    */
   formulaSyntax?: "excel" | "stored";
 }
+
+/** How a large table in the file is read: through the platform's index host (createIndexHost). */
+export interface TableFileIndex {
+  /** A bundle's index on this device: the index host's openIndexDatabase. */
+  openIndexDatabase: (bundle: string) => IndexDatabase;
+  /** Its large tables' first rows by `bundle/table` key (readLargeTableFile's `first`), shown while the rest is read. */
+  first?: Record<string, Row[]>;
+}
+
+const noIndex = (): IndexDatabase => {
+  throw new Error("this file's host reads no index");
+};
 
 function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   Alert.alert(
@@ -112,8 +134,27 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
-  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+  // A large table's rows are saved from its index, after the rest of the file is written.
+  const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<void>) | null>(null);
+  const writing = useMemo(
+    () => (index ? { ...files, write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => (await files.write(...args), await saveIndexed.current?.(args[1])) } : files),
+    [files, index],
+  );
+  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, writing, locale);
+  const indexed = useIndexedTables({
+    state,
+    dispatch,
+    view: derived.shown.view,
+    tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
+    openIndexDatabase: index?.openIndexDatabase ?? noIndex,
+  });
+  saveIndexed.current = indexed.save;
+  useEffect(() => {
+    if (index?.first) indexed.hold(index.first);
+    // Once: what reading the file gave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // This file's formula syntax, as the host chose it, over the viewer's display settings (the same object while neither changes).
   const shownDisplay = useMemo(() => (formulaSyntax ? { ...display, formulaSyntax } : display), [display, formulaSyntax]);
   const { table, view } = derived;
@@ -176,6 +217,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, f
     view: view.id,
     showView: (id) => id !== view.id && dispatch({ type: "showView", key: state.active, viewId: id }),
     count: derived.summary.count,
+    ...(indexed.building ? { reading: readingText(indexed.building) } : {}),
     found: derived.summary.found,
     query: state.search,
     search: (text) => dispatch({ type: "search", text }),
@@ -222,6 +264,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, f
         cells={table.cells}
         tableKey={tableName}
         sheet={derived.shown.sheet}
+        // A large table's rows: from its index, or as many as are read so far while it's made.
+        {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}
         onOpenRelation={followLink}
         restorePlace={select}
