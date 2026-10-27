@@ -10,7 +10,7 @@ import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { withFieldIds } from "./fieldIds.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
-import { BODY_EXTENSION, BundleEntry, TableEntry, tablePath } from "./layout.js";
+import { BundleEntry, TableEntry, bodyFileName, rowIdOfBodyFile, rowTitleIn, tablePath } from "./layout.js";
 import { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, estimateRows, layoutRows, rowsFileOrder } from "./rowFiles.js";
 
 /**
@@ -302,9 +302,11 @@ async function readBodies(fs: TableFs, dir: string): Promise<Record<string, stri
   // By name, whatever order the file system lists them in, so a table
   // reads the same from every platform.
   for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    if (entry.directory || !entry.name.endsWith(BODY_EXTENSION)) continue;
+    // Its row is the id in its name, whatever title is written beside it (D64).
+    const id = entry.directory ? null : rowIdOfBodyFile(entry.name);
+    if (id === null) continue;
     const text = await fs.readText(joinPath(dir, entry.name));
-    if (text !== null) bodies[entry.name.slice(0, -BODY_EXTENSION.length)] = text;
+    if (text !== null) bodies[id] = text;
   }
   return Object.keys(bodies).length > 0 ? bodies : undefined;
 }
@@ -318,7 +320,7 @@ export interface WriteTableInput {
   meta?: TableMeta;
   /**
    * Long-form markdown bodies, keyed by row.id.
-   * Each entry becomes a `bodies/{id}.md` file.
+   * Each entry becomes a `bodies/{title}--{id}.md` file (D64).
    * On write, the bodies/ directory is wholesale-replaced — entries not
    * present in this map are deleted from disk. Use a future appendBody /
    * writeBody API for partial updates.
@@ -386,6 +388,7 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   const bodiesDir = joinPath(dir, TableEntry.bodies);
   const bodies = input.bodies ?? {};
   const haveBodies = Object.keys(bodies).length > 0;
+  const bodiesWritten = new Set<string>();
 
   // ---- Stage: write everything to *.tmp; nothing existing is touched.
   // A file whose text wouldn't change isn't staged at all, so saving one
@@ -427,8 +430,19 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     if (input.history && (await fs.readText(historyPath)) === null) await stage(historyPath, input.history);
     if (haveBodies) {
       await fs.mkdir(bodiesDir);
+      // Each page named by its row's title as it is now (D64). A row not here to read (held in the
+      // index, or not read yet) keeps the name its page has.
+      const existing = new Map<string, string>();
+      for (const entry of (await fs.list(bodiesDir)) ?? []) {
+        const id = entry.directory ? null : rowIdOfBodyFile(entry.name);
+        if (id !== null && !entry.name.endsWith(".tmp")) existing.set(id, entry.name);
+      }
+      const rowsById = new Map(input.rows.map((r) => [r.id, r]));
       for (const [id, content] of Object.entries(bodies)) {
-        await stage(joinPath(bodiesDir, `${id}.md`), normaliseBody(content));
+        const row = rowsById.get(id);
+        const name = row ? bodyFileName(id, rowTitleIn(input.schema.fields, row)) : (existing.get(id) ?? bodyFileName(id));
+        bodiesWritten.add(name);
+        await stage(joinPath(bodiesDir, name), normaliseBody(content));
       }
     }
   } catch (err) {
@@ -458,10 +472,10 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     if (cellsWritten.length === 0 && (await fs.list(cellsDir))?.length === 0) await fs.remove(cellsDir);
   }
   if (haveBodies) {
+    // A page whose row is gone, and one under its row's old title: it's been written under the new.
     for (const entry of (await fs.list(bodiesDir)) ?? []) {
-      if (entry.directory || !entry.name.endsWith(BODY_EXTENSION)) continue;
-      const id = entry.name.slice(0, -BODY_EXTENSION.length);
-      if (!(id in bodies)) await fs.remove(joinPath(bodiesDir, entry.name));
+      if (entry.directory || rowIdOfBodyFile(entry.name) === null) continue;
+      if (!bodiesWritten.has(entry.name)) await fs.remove(joinPath(bodiesDir, entry.name));
     }
   } else if ((await fs.list(bodiesDir)) !== null) {
     await fs.remove(bodiesDir);

@@ -276,7 +276,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All companies",
           "layout": "table",
           "fields": [
@@ -296,7 +296,7 @@ export const crmBundle: ParsedBundle = {
           "rowHeight": 44
         },
         {
-          "id": "7cpm7hu37hhoyip8dqp5xrikgi",
+          "id": "cqc4jrjcapja8",
           "name": "Logos",
           "layout": "gallery",
           "gallery_field": "logo",
@@ -307,7 +307,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "r13o6oqo7xmpbc7bdmo3t6zcgx",
+          "id": "fjpuu35p7dxdw",
           "name": "By industry",
           "layout": "board",
           "board_field": "industry",
@@ -317,7 +317,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "surkeym1tjrn97wm3xdrg9qufr",
+          "id": "puifj4tbwywzp",
           "name": "Customers",
           "layout": "table",
           "filter": [
@@ -491,7 +491,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All contacts",
           "layout": "table",
           "sort": [
@@ -502,7 +502,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "wa68ong5p9463hzwn1wngk1yrh",
+          "id": "nkd1umq59qd9u",
           "name": "Call list",
           "layout": "list",
           "fields": [
@@ -804,7 +804,7 @@ export const crmBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "oxycwiuri87bqu1s89cpt836n1",
+          "id": "6dc54nqbzhf64",
           "name": "Pipeline",
           "layout": "board",
           "board_field": "stage",
@@ -816,7 +816,7 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "hc9yis984a6wnajx7rgoi476ay",
+          "id": "6wfiqak18zfgo",
           "name": "Open deals",
           "layout": "table",
           "filter": [
@@ -837,13 +837,13 @@ export const crmBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "oztz56jo4yid66csmo63wamhsn",
+          "id": "uj6a6be3tos93",
           "name": "Closing",
           "layout": "calendar",
           "calendar_field": "close_date"
         },
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All deals",
           "layout": "table",
           "totals": {

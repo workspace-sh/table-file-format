@@ -39,9 +39,9 @@ function labels(root: Gtk.Widget, out: string[] = []): string[] {
 async function openSheet(merged: unknown[]) {
   const viewsFile = join(budget, "views.json");
   const views = JSON.parse(readFileSync(viewsFile, "utf8")) as { id: string }[];
-  writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "kifpjiq34nhz8k95rc3uezwqu5" ? { ...v, merged } : v))));
+  writeFileSync(viewsFile, JSON.stringify(views.map((v) => (v.id === "435dx9iqim5iz" ? { ...v, merged } : v))));
   const library = await loadLibrary([join(dir, "household-budget.table")]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="kifpjiq34nhz8k95rc3uezwqu5" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="435dx9iqim5iz" />);
   const cell = (await screen.findAllByText("Rent"))[0]!;
   return cell.getRoot() as unknown as Gtk.Widget;
 }
@@ -88,12 +88,12 @@ describe("merged cells on Linux", () => {
     entry.setPosition(-1);
     await userEvent.type(entry, "D2");
     await userEvent.click(await screen.findByText("Merge"));
-    await waitFor(() => expect(views().find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")?.merged).toEqual([{ from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "feb", row: "f8o7dzw4cpk4zgd38togwz7n4w" } }]));
+    await waitFor(() => expect(views().find((v) => v.id === "435dx9iqim5iz")?.merged).toEqual([{ from: { field: "jan", row: "yzqhrmxgwi1k3ur81b7epdbim5" }, to: { field: "feb", row: "f8o7dzw4cpk4zgd38togwz7n4w" } }]));
     await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(1));
     // From the block: its top-left cell is selected, and the menu offers to take it apart.
     await userEvent.click(all(root, "merged-cells")[0]!);
     (await rowMenu()).activateAction("row.unmerge", null);
-    await waitFor(() => expect(views().find((v) => v.id === "kifpjiq34nhz8k95rc3uezwqu5")?.merged).toBeUndefined());
+    await waitFor(() => expect(views().find((v) => v.id === "435dx9iqim5iz")?.merged).toBeUndefined());
     await waitFor(() => expect(all(root, "merged-cells")).toHaveLength(0));
   });
 

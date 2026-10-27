@@ -35,17 +35,17 @@ const viewOf = (s: AppState) => viewIdOf(s, s.active);
 test("starts on the default table's first view, with its address recorded and its file unfolded", () => {
   const s = start({ stored: { sidebar: { foldedFiles: ["projects", "crm"] } } });
   assert.equal(s.active, "projects/projects");
-  assert.equal(viewOf(s), "ffaisc1zows4dzhy7aq5jrebkx");
-  assert.deepEqual(s.history.at, { address: viewAddress("projects/projects", "ffaisc1zows4dzhy7aq5jrebkx") });
+  assert.equal(viewOf(s), "juycicwios88m");
+  assert.deepEqual(s.history.at, { address: viewAddress("projects/projects", "juycicwios88m") });
   assert.deepEqual(s.sidebar.foldedFiles, ["crm"]);
   assert.deepEqual(s.dirty, []);
   assert.equal(s.asking, null);
 });
 
 test("starts at an address: its table, its view, and its row's page when it has one", () => {
-  const s = start({ start: viewAddress("projects/projects", "r1mmz6bdngh1qjdyc7a3u3n58c", "ryumw55g4nqi7ytmzrudb7fyru") });
+  const s = start({ start: viewAddress("projects/projects", "9d493f96hyaax", "ryumw55g4nqi7ytmzrudb7fyru") });
   assert.equal(s.active, "projects/projects");
-  assert.equal(viewOf(s), "r1mmz6bdngh1qjdyc7a3u3n58c");
+  assert.equal(viewOf(s), "9d493f96hyaax");
   assert.equal(s.openPage, "ryumw55g4nqi7ytmzrudb7fyru");
   assert.equal(start({ start: "nowhere.table#view=x" }).active, "projects/projects");
 });
@@ -59,15 +59,15 @@ test("the viewer's stored settings come in as they were", () => {
 // Where you are
 
 test("showTable shows the table on the view it was left on, and closes a page open elsewhere", () => {
-  let s = run(start(), { type: "showView", key: "crm/deals", viewId: "hc9yis984a6wnajx7rgoi476ay" }, { type: "showTable", key: "projects/projects" });
+  let s = run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }, { type: "showTable", key: "projects/projects" });
   s = run(s, { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showTable", key: "crm/deals" });
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "hc9yis984a6wnajx7rgoi476ay");
+  assert.equal(viewOf(s), "6wfiqak18zfgo");
   assert.equal(s.openPage, null);
 });
 
 test("choosing a view from the sidebar closes the page open, even in the same table", () => {
-  const s = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showView", key: "projects/projects", viewId: "gzrqtgo1p3gfehto7tani3jzz4" });
+  const s = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showView", key: "projects/projects", viewId: "mufe9nmjruiq5" });
   assert.equal(s.openPage, null);
   const t = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showTable", key: "projects/projects" });
   assert.equal(t.openPage, null);
@@ -90,10 +90,10 @@ test("openPage opens a row of the table on screen, and null closes it", () => {
 test("follow goes where an address leads, on the Tables side, opening the row's page when it has one", () => {
   const s = run(
     start({ stored: { sidebar: { files: true } } }),
-    { type: "follow", target: { key: "crm/deals", viewId: "9gcz9d8ctoqamitkgwfhiu7sru", openBody: "jddy8scd44w9r1kqur3j4meoii" } },
+    { type: "follow", target: { key: "crm/deals", viewId: "hnmryzi51j6jz", openBody: "jddy8scd44w9r1kqur3j4meoii" } },
   );
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "9gcz9d8ctoqamitkgwfhiu7sru");
+  assert.equal(viewOf(s), "hnmryzi51j6jz");
   assert.equal(s.openPage, "jddy8scd44w9r1kqur3j4meoii");
   assert.equal(s.sidebar.files, undefined);
 });
@@ -109,7 +109,7 @@ test("search and settings are set as asked", () => {
 test("leaving: another view or table clears the search and closes the settings", () => {
   const busy = run(start(), { type: "search", text: "ship" }, { type: "settings", open: true });
   for (const action of [
-    { type: "showView", key: "projects/projects", viewId: "gzrqtgo1p3gfehto7tani3jzz4" },
+    { type: "showView", key: "projects/projects", viewId: "mufe9nmjruiq5" },
     { type: "showTable", key: "crm/deals" },
     { type: "follow", target: { key: "crm/deals", openBody: null } },
   ] satisfies AppAction[]) {
@@ -121,7 +121,7 @@ test("leaving: another view or table clears the search and closes the settings",
 
 test("leaving: choosing the view already on screen keeps both", () => {
   const busy = run(start(), { type: "search", text: "ship" }, { type: "settings", open: true });
-  const s = run(busy, { type: "showView", key: "projects/projects", viewId: "ffaisc1zows4dzhy7aq5jrebkx" }, { type: "showTable", key: "projects/projects" });
+  const s = run(busy, { type: "showView", key: "projects/projects", viewId: "juycicwios88m" }, { type: "showTable", key: "projects/projects" });
   assert.equal(s.search, "ship");
   assert.equal(s.settingsOpen, true);
 });
@@ -162,15 +162,15 @@ test("history: each view shown is recorded once, and back and forward walk it", 
     start(),
     { type: "showTable", key: "crm/deals" },
     { type: "showTable", key: "crm/deals" },
-    { type: "showView", key: "crm/deals", viewId: "hc9yis984a6wnajx7rgoi476ay" },
+    { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" },
   );
-  assert.deepEqual(s.history.back.map((e) => e.address), [viewAddress("projects/projects", "ffaisc1zows4dzhy7aq5jrebkx"), viewAddress("crm/deals", "oxycwiuri87bqu1s89cpt836n1")]);
+  assert.deepEqual(s.history.back.map((e) => e.address), [viewAddress("projects/projects", "juycicwios88m"), viewAddress("crm/deals", "6dc54nqbzhf64")]);
   s = run(s, { type: "back" }, { type: "back" });
   assert.equal(s.active, "projects/projects");
   assert.equal(derive(s).canGoBack, false);
   assert.equal(derive(s).canGoForward, true);
   s = run(s, { type: "forward" });
-  assert.equal(viewOf(s), "oxycwiuri87bqu1s89cpt836n1");
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
 });
 
 test("history: back with nowhere to go changes nothing", () => {
@@ -182,16 +182,16 @@ test("history: back with nowhere to go changes nothing", () => {
 test("history: back skips a view deleted since, and opens again the page it was left with", () => {
   let s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "jddy8scd44w9r1kqur3j4meoii" }, { type: "showTable", key: "projects/projects" });
   s = run(s, { type: "addView", id: "gone" }, { type: "deleteView" }, { type: "answer", response: "delete" });
-  assert.equal(viewOf(s), "ffaisc1zows4dzhy7aq5jrebkx");
+  assert.equal(viewOf(s), "juycicwios88m");
   s = run(s, { type: "back" });
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "oxycwiuri87bqu1s89cpt836n1");
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
   assert.equal(s.openPage, "jddy8scd44w9r1kqur3j4meoii");
 });
 
 test("history: a reset starts it again", () => {
   const s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
-  assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "ffaisc1zows4dzhy7aq5jrebkx") }, forward: [] });
+  assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "juycicwios88m") }, forward: [] });
 });
 
 // Rule 3: the file on screen unfolds
@@ -267,11 +267,11 @@ test("addRow puts the adapter's id at the end", () => {
 });
 
 test("insertRow goes where the sheet says, and nowhere a sort decides", () => {
-  let s = run(start(), { type: "showView", key: "household-budget/budget", viewId: "kifpjiq34nhz8k95rc3uezwqu5" });
+  let s = run(start(), { type: "showView", key: "household-budget/budget", viewId: "435dx9iqim5iz" });
   const before = rowIds(s);
   s = run(s, { type: "insertRow", anchor: before[1]!, where: "above", id: "r-new" });
   assert.deepEqual(rowIds(s).slice(0, 3), [before[0], "r-new", before[1]]);
-  const sorted = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "7wxsrxd9g5oa5smry9tmfahdzs" });
+  const sorted = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "87jkeekgwbfgr" });
   assert.equal(tableApp(sorted, { type: "insertRow", anchor: "z4bfkjkfy5csqpyjgrj8ctqz4o", where: "below", id: "x" }), sorted);
 });
 
@@ -328,13 +328,13 @@ test("an answer that isn't one of the question's responses does nothing", () => 
 });
 
 test("deleteView asks first, then shows the table's next view", () => {
-  const asked = run(start(), { type: "showView", key: "crm/deals", viewId: "hc9yis984a6wnajx7rgoi476ay" }, { type: "deleteView" });
+  const asked = run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }, { type: "deleteView" });
   assert.equal(asked.asking?.kind, "confirm");
-  assert.ok(asked.tables["crm/deals"]!.views.some((v) => v.id === "hc9yis984a6wnajx7rgoi476ay"));
+  assert.ok(asked.tables["crm/deals"]!.views.some((v) => v.id === "6wfiqak18zfgo"));
   const s = run(asked, { type: "answer", response: "delete" });
-  assert.ok(!s.tables["crm/deals"]!.views.some((v) => v.id === "hc9yis984a6wnajx7rgoi476ay"));
-  assert.equal(viewOf(s), "oxycwiuri87bqu1s89cpt836n1");
-  assert.equal(s.viewIds["crm/deals"], "oxycwiuri87bqu1s89cpt836n1", "no table is left pointing at a view that's gone");
+  assert.ok(!s.tables["crm/deals"]!.views.some((v) => v.id === "6wfiqak18zfgo"));
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
+  assert.equal(s.viewIds["crm/deals"], "6dc54nqbzhf64", "no table is left pointing at a view that's gone");
   assert.deepEqual(s.dirty, ["crm"]);
 });
 
@@ -351,7 +351,7 @@ test("updateView: most changes are made at once", () => {
 });
 
 test("updateView: turning off a sheet that formulas read asks first, and stop makes the change", () => {
-  const asked = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "7wxsrxd9g5oa5smry9tmfahdzs" }, { type: "updateView", patch: { coordinates: undefined } });
+  const asked = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "87jkeekgwbfgr" }, { type: "updateView", patch: { coordinates: undefined } });
   assert.equal(asked.asking?.kind, "confirm");
   assert.equal(asked.tables["household-budget/ledger"]!.views[0]!.coordinates, true);
   assert.equal(run(asked, { type: "answer", response: "cancel" }).tables["household-budget/ledger"]!.views[0]!.coordinates, true);
@@ -408,7 +408,7 @@ test("create a file makes a bundle of its own", () => {
 
 test("arrange is this viewer's own; save for everyone writes it into the view, reset drops it", () => {
   let s = run(start(), { type: "arrange", patch: { sort: [{ field: "title", direction: "asc" }] } });
-  assert.deepEqual(s.arrangements["projects/projects"]?.["ffaisc1zows4dzhy7aq5jrebkx"], { sort: [{ field: "title", direction: "asc" }] });
+  assert.deepEqual(s.arrangements["projects/projects"]?.["juycicwios88m"], { sort: [{ field: "title", direction: "asc" }] });
   assert.equal(s.tables["projects/projects"]!.views[0]!.sort, undefined);
   assert.deepEqual(s.dirty, []);
   assert.equal(derive(s).arranged, true);
@@ -441,7 +441,7 @@ test("Cancel puts back everything the view settings changed; Done keeps it", () 
 
   const kept = run(changed, { type: "settings", open: false });
   assert.equal(kept.tables["projects/projects"]!.views[0]!.name, "Renamed");
-  assert.deepEqual(kept.arrangements["projects/projects"]?.["ffaisc1zows4dzhy7aq5jrebkx"], { group: { field: "status" } });
+  assert.deepEqual(kept.arrangements["projects/projects"]?.["juycicwios88m"], { group: { field: "status" } });
   assert.equal(kept.settingsBefore, null);
 });
 
@@ -588,10 +588,10 @@ test("written clears what was written, but not a bundle edited again meanwhile",
 // Selectors
 
 test("derive: the view on screen as this viewer sees it, with its summary and breadcrumb", () => {
-  const s = run(start(), { type: "showView", key: "crm/deals", viewId: "9gcz9d8ctoqamitkgwfhiu7sru" }, { type: "search", text: "zzzz-nothing" });
+  const s = run(start(), { type: "showView", key: "crm/deals", viewId: "hnmryzi51j6jz" }, { type: "search", text: "zzzz-nothing" });
   const d = derive(s, { locale: "en-GB" });
   assert.equal(d.table, s.tables["crm/deals"]);
-  assert.equal(d.view.id, "9gcz9d8ctoqamitkgwfhiu7sru");
+  assert.equal(d.view.id, "hnmryzi51j6jz");
   assert.equal(d.shown.rows.length, 0);
   assert.equal(d.summary.count, "0 of 8 matching");
   assert.equal(d.breadcrumb.text, "CRM (crm.table) › Deals");
@@ -601,7 +601,7 @@ test("derive: the view on screen as this viewer sees it, with its summary and br
 });
 
 test("derive: a search of only spaces isn't searching", () => {
-  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "9gcz9d8ctoqamitkgwfhiu7sru" }, { type: "search", text: "  " }));
+  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "hnmryzi51j6jz" }, { type: "search", text: "  " }));
   assert.equal(d.summary.count, "8 of 8 rows");
 });
 
@@ -611,10 +611,10 @@ test("derive: the viewer's language sets the direction; the platform's when they
 });
 
 test("derive: the sidebar expands the table on screen and marks its view", () => {
-  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "hc9yis984a6wnajx7rgoi476ay" }));
+  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }));
   const views = d.sidebarEntries.filter((e) => e.kind === "view");
   assert.ok(views.every((e) => e.key === "crm/deals"));
-  assert.deepEqual(views.filter((e) => e.view.active).map((e) => e.view.id), ["hc9yis984a6wnajx7rgoi476ay"]);
+  assert.deepEqual(views.filter((e) => e.view.active).map((e) => e.view.id), ["6wfiqak18zfgo"]);
 });
 
 test("derive: the Files side's tree, only on that side", () => {
@@ -630,7 +630,7 @@ test("derive: commands say what's possible, and the address names the open page"
   assert.equal(byId["toggle-sidebar"]!.label, "Show Sidebar");
   assert.equal(byId["go-back"]!.enabled, true);
   assert.equal(byId["go-forward"]!.enabled, false);
-  assert.equal(d.address, viewAddress("crm/deals", "oxycwiuri87bqu1s89cpt836n1", "jddy8scd44w9r1kqur3j4meoii"));
+  assert.equal(d.address, viewAddress("crm/deals", "6dc54nqbzhf64", "jddy8scd44w9r1kqur3j4meoii"));
 });
 
 test("derive: schema changed since opened", () => {
@@ -647,7 +647,7 @@ test("viewCallbacks dispatch the named actions, with the adapter's ids", () => {
   cb.onInsertRow("xsdxifzn73ohismzm8q5uri8fe", "below");
   cb.onDeleteRow("xsdxifzn73ohismzm8q5uri8fe");
   cb.onOpenBody("ryumw55g4nqi7ytmzrudb7fyru");
-  cb.onOpenRelation(viewAddress("crm/deals", "9gcz9d8ctoqamitkgwfhiu7sru"));
+  cb.onOpenRelation(viewAddress("crm/deals", "hnmryzi51j6jz"));
   cb.onOpenRelation("nowhere.table");
   cb.onAddEnumValue("status", "New");
   assert.deepEqual(seen, [
@@ -655,7 +655,7 @@ test("viewCallbacks dispatch the named actions, with the adapter's ids", () => {
     { type: "insertRow", anchor: "xsdxifzn73ohismzm8q5uri8fe", where: "below", id: "id-2" },
     { type: "deleteRow", rowId: "xsdxifzn73ohismzm8q5uri8fe" },
     { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" },
-    { type: "follow", target: { key: "crm/deals", viewId: "9gcz9d8ctoqamitkgwfhiu7sru", openBody: null } },
+    { type: "follow", target: { key: "crm/deals", viewId: "hnmryzi51j6jz", openBody: null } },
     { type: "addChoice", name: "status", value: "New" },
   ]);
 });

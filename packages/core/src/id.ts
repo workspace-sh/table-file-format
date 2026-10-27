@@ -6,7 +6,7 @@ import { customAlphabet } from "nanoid";
  * and Holepunch write keys and invite codes in.
  *
  * Lowercase matters: row ids are used verbatim as filenames
- * (`bodies/{id}.md`), and on case-insensitive filesystems (default APFS,
+ * (`bodies/{title}--{id}.md`), and on case-insensitive filesystems (default APFS,
  * NTFS, most sync targets) two ids differing only in letter case resolve
  * to the SAME path, silently overwriting one row's page with another's.
  *
@@ -46,4 +46,18 @@ export function idNumber(n: number): string {
     n = Math.floor(n / 32);
   } while (n > 0);
   return out;
+}
+
+/**
+ * A view's `id` (D23, D62): 13 characters, 65 bits, as a field's. Like a
+ * field's, it only has to be unique among one table's views, and it travels
+ * in links (`#view=`), so it's as short.
+ */
+export const VIEW_ID_LENGTH = 13;
+
+const generateViewId = customAlphabet(ID_ALPHABET, VIEW_ID_LENGTH);
+
+/** A new view's id: random, so two people adding a view on two devices make two views. */
+export function newViewId(): string {
+  return generateViewId();
 }

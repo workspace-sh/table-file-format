@@ -2,7 +2,7 @@
 // into a workbook, D37), a new `.table` file. What each app does after the
 // name is asked for; how it asks is the app's own.
 
-import { newBundle, newId, newTable } from "@workspace.sh/table-core";
+import { newBundle, newTable, newViewId } from "@workspace.sh/table-core";
 import type { BundleMeta, ParsedTable, View } from "@workspace.sh/table-core";
 
 import { bundleTables, fromBundle } from "./bundles.ts";
@@ -19,7 +19,7 @@ export interface Made {
 }
 
 /** A new view: a plain table of everything, for its settings to make into what's wanted. `id`: the app's, else a new one. */
-export function newView(id: string = newId()): View {
+export function newView(id: string = newViewId()): View {
   return { id, name: "New view", layout: "table" };
 }
 

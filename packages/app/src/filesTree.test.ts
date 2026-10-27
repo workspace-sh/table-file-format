@@ -42,7 +42,7 @@ test("each bundle's files as the writer writes them, plus attachments", () => {
   ]);
   // Its rows in rows/ (D51).
   assert.deepEqual(dir(deals, "rows").files.map((f) => [f.path, f.kind, f.opens, f.note]), [["tables/deals/rows/0001.ndjson", "rows", "text", "1 row"]]);
-  assert.deepEqual(dir(deals, "bodies").files.map((f) => [f.path, f.kind]), [["tables/deals/bodies/r0.md", "body"]]);
+  assert.deepEqual(dir(deals, "bodies").files.map((f) => [f.path, f.kind]), [["tables/deals/bodies/row-0--r0.md", "body"]]);
   const attachments = dir(crm!.root, "tables/companies/attachments");
   assert.deepEqual(attachments.files.map((f) => [f.path, f.kind, f.opens]), [
     ["tables/companies/attachments/co-atlas.svg", "attachment", "attachment"],
@@ -94,7 +94,7 @@ test("folded bundles and closed folders list nothing under them when flattened",
 test("kinds, attachments and text by path", () => {
   assert.equal(fileKind("meta.json"), "manifest");
   assert.equal(fileKind("tables/deals/meta.json"), "meta");
-  assert.equal(fileKind("tables/deals/bodies/r0.md"), "body");
+  assert.equal(fileKind("tables/deals/bodies/row-0--r0.md"), "body");
   assert.equal(fileKind("tables/deals/rows/0001.ndjson"), "rows");
   assert.equal(fileKind("tables/deals/rows/0002m.ndjson"), "rows");
   // formatVersion 1's one file.
@@ -102,7 +102,7 @@ test("kinds, attachments and text by path", () => {
   assert.equal(fileKind("tables/deals/attachments/rows.ndjson"), "attachment");
   assert.deepEqual(attachmentAt("crm", "tables/companies/attachments/a/b.png"), { tableKey: "crm/companies", name: "a/b.png" });
   assert.equal(attachmentAt("crm", "tables/companies/rows/0001.ndjson"), null);
-  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/r0.md"), "# Notes\n");
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/row-0--r0.md"), "# Notes\n");
   assert.match(fileText(tables, bundles, "crm", "meta.json") ?? "", /"deals",\s*"companies"/);
   assert.equal(fileText(tables, bundles, "crm", "tables/nope/rows/0001.ndjson"), undefined);
 });
@@ -159,7 +159,7 @@ test("a table's edit history is listed where the app keeps one, after its other 
   assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson", (key) => (key === "crm/deals" ? kept : undefined)), kept);
   assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson"), undefined);
   // Other files don't ask for it.
-  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/r0.md", () => "nope"), "# Notes\n");
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/row-0--r0.md", () => "nope"), "# Notes\n");
 });
 
 test("a history a table holds itself (it came from an archive) is listed once, and shown until the app has its own", () => {

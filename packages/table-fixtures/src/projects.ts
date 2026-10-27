@@ -228,7 +228,7 @@ export const projectsBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "ffaisc1zows4dzhy7aq5jrebkx",
+          "id": "juycicwios88m",
           "name": "All projects",
           "layout": "table",
           "fields": [
@@ -239,7 +239,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "gzrqtgo1p3gfehto7tani3jzz4",
+          "id": "mufe9nmjruiq5",
           "name": "Active by owner",
           "layout": "table",
           "filter": [
@@ -257,7 +257,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "tsaw1n3171mm9pu8zugkzm9pog",
+          "id": "3qqcjeapqcmur",
           "name": "Roadmap",
           "layout": "table",
           "fields": [
@@ -273,7 +273,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "r1mmz6bdngh1qjdyc7a3u3n58c",
+          "id": "9d493f96hyaax",
           "name": "By owner",
           "layout": "table",
           "group": {
@@ -281,7 +281,7 @@ export const projectsBundle: ParsedBundle = {
           }
         },
         {
-          "id": "f185otbhy1gqy4e6e8fk9ehbz9",
+          "id": "mtemnsupa8wrp",
           "name": "Board by status",
           "layout": "board",
           "board_field": "status",
@@ -292,7 +292,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "yxqsjf1fmbakwepxpx4ta44xks",
+          "id": "6nif36nrryx7o",
           "name": "Gallery",
           "layout": "gallery",
           "gallery_field": "summary",
@@ -303,7 +303,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "u5fpdkwh5w9thdq8o368a9t4nw",
+          "id": "4bteo61c6agby",
           "name": "Quick list",
           "layout": "list",
           "fields": [
@@ -312,13 +312,13 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "m9ha81uuwcoba6qb1y36jexyy4",
+          "id": "pnjgwrsxrdsuu",
           "name": "Calendar",
           "layout": "calendar",
           "calendar_field": "launched"
         },
         {
-          "id": "mjgwimtp1b49fgtgp5zdr5pzq9",
+          "id": "iitdxx3iitt5d",
           "name": "Q1 2026",
           "layout": "calendar",
           "calendar_field": "launched",
@@ -328,7 +328,7 @@ export const projectsBundle: ParsedBundle = {
           }
         },
         {
-          "id": "9o3aahftejwwkwbs4si48zmqwo",
+          "id": "mw3a6t7igaufp",
           "name": "Budgets",
           "layout": "table",
           "fields": [
@@ -377,10 +377,10 @@ export const projectsBundle: ParsedBundle = {
         }
       ],
       "bodies": {
-        "1h38m5st7rwanz3hyjb6dy8igr": "# Table file format spike\n\nOpen, app-agnostic data-matrix file format. Sits in the same niche as\nAirtable, Google Tables, and Obsidian Bases — a portable database that\nalso reads as a spreadsheet for information workers.\n\n## Architecture\n\nA `.table/` is a directory:\n\n- `schema.json` — own schema vocabulary (not Frictionless-aligned)\n- `rows.ndjson` — one JSON record per line, every row carries a system `id`\n- `views.json` — saved views (table, board, gallery, list, calendar)\n- `meta.json` — manifest, generator, timestamps\n- `attachments/` — files referenced by row values\n- `bodies/{id}.md` — optional long-form markdown bodies, Notion-style\n- `index.sqlite` — optional rebuildable cache (gitignored)\n\n## Goals\n\n1. Information workers can move structured data between apps without\n   lock-in. Plain text, line-diffable, greppable.\n2. Workspace's wider thesis is local-first markdown plus structured\n   data; `.table/` is the structured-data half.\n3. Doubles as a `react-strict-dom` playground for the Workspace UI\n   layer ahead of the Expo migration.\n",
-        "btwsx6crxzmgjrztuu8f3yq3pi": "# Plugin SDK\n\nA third-party extension surface for the Workspace runtime. Goal: let\nthe community ship new view layouts, field types, and integrations\nwithout forking.\n\n## Surfaces\n\n- **View plugins** — register a new `view.layout` value and a renderer\n  component. Receives the same `ViewProps` core ships internally.\n- **Field-type plugins** — register a `schema.fields[].type` value, a\n  validator, an editor component, and a display component.\n- **Sync providers** — pluggable backends behind the local-first sync\n  protocol.\n\n## Open questions\n\n- Sandboxing model. JS sandbox vs. WASM vs. trust-the-author.\n- Distribution. NPM? Workspace marketplace? Both?\n- Versioning of the host API. SemVer per surface or single host version.\n",
         "jqujockyrs4yw6k6uue9h97tp1": "# AI assist\n\nInline LLM helpers anchored at the cursor, not bolted onto a sidebar.\n\n## Targets\n\n- **Writing**: complete a paragraph, rewrite for tone, summarise a\n  long body.\n- **Tables**: \"add a status field with these enum values\", \"rewrite\n  this column as title-case\", \"what's the median budget across\n  active projects\".\n\n## Constraints\n\n- Local-first. The default backend is a local model; cloud is opt-in\n  per workspace.\n- No silent telemetry. Every request shows where it ran and what got\n  sent.\n- Works offline for local-model paths.\n",
-        "ryumw55g4nqi7ytmzrudb7fyru": "# Encrypted vaults\n\nPer-workspace end-to-end encryption. Each workspace gets its own\nkeypair; the user holds the private key, the cloud only sees\nciphertext.\n\n## Why on-hold\n\nThe KMS choice is blocking everything else. Three candidates:\n\n1. **Apple CloudKit + Keychain.** Free for Apple-platform users,\n   zero-config sync of the private key between the user's devices.\n   Useless for cross-platform users (web, Android).\n2. **Passkeys + WebAuthn.** Cross-platform, no password to forget,\n   but the threat model around device loss + recovery is fuzzy.\n3. **Roll our own.** Maximum control, minimum free time.\n\nDecision parked until Q3 — too many other things gate on the answer.\n"
+        "ryumw55g4nqi7ytmzrudb7fyru": "# Encrypted vaults\n\nPer-workspace end-to-end encryption. Each workspace gets its own\nkeypair; the user holds the private key, the cloud only sees\nciphertext.\n\n## Why on-hold\n\nThe KMS choice is blocking everything else. Three candidates:\n\n1. **Apple CloudKit + Keychain.** Free for Apple-platform users,\n   zero-config sync of the private key between the user's devices.\n   Useless for cross-platform users (web, Android).\n2. **Passkeys + WebAuthn.** Cross-platform, no password to forget,\n   but the threat model around device loss + recovery is fuzzy.\n3. **Roll our own.** Maximum control, minimum free time.\n\nDecision parked until Q3 — too many other things gate on the answer.\n",
+        "btwsx6crxzmgjrztuu8f3yq3pi": "# Plugin SDK\n\nA third-party extension surface for the Workspace runtime. Goal: let\nthe community ship new view layouts, field types, and integrations\nwithout forking.\n\n## Surfaces\n\n- **View plugins** — register a new `view.layout` value and a renderer\n  component. Receives the same `ViewProps` core ships internally.\n- **Field-type plugins** — register a `schema.fields[].type` value, a\n  validator, an editor component, and a display component.\n- **Sync providers** — pluggable backends behind the local-first sync\n  protocol.\n\n## Open questions\n\n- Sandboxing model. JS sandbox vs. WASM vs. trust-the-author.\n- Distribution. NPM? Workspace marketplace? Both?\n- Versioning of the host API. SemVer per surface or single host version.\n",
+        "1h38m5st7rwanz3hyjb6dy8igr": "# Table file format spike\n\nOpen, app-agnostic data-matrix file format. Sits in the same niche as\nAirtable, Google Tables, and Obsidian Bases — a portable database that\nalso reads as a spreadsheet for information workers.\n\n## Architecture\n\nA `.table/` is a directory:\n\n- `schema.json` — own schema vocabulary (not Frictionless-aligned)\n- `rows.ndjson` — one JSON record per line, every row carries a system `id`\n- `views.json` — saved views (table, board, gallery, list, calendar)\n- `meta.json` — manifest, generator, timestamps\n- `attachments/` — files referenced by row values\n- `bodies/{id}.md` — optional long-form markdown bodies, Notion-style\n- `index.sqlite` — optional rebuildable cache (gitignored)\n\n## Goals\n\n1. Information workers can move structured data between apps without\n   lock-in. Plain text, line-diffable, greppable.\n2. Workspace's wider thesis is local-first markdown plus structured\n   data; `.table/` is the structured-data half.\n3. Doubles as a `react-strict-dom` playground for the Workspace UI\n   layer ahead of the Expo migration.\n"
       }
     },
     "tasks": {
@@ -503,7 +503,7 @@ export const projectsBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "ffaisc1zows4dzhy7aq5jrebkx",
+          "id": "juycicwios88m",
           "name": "All tasks by priority",
           "layout": "table",
           "sort": [
@@ -514,7 +514,7 @@ export const projectsBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "gzrqtgo1p3gfehto7tani3jzz4",
+          "id": "mufe9nmjruiq5",
           "name": "Board by status",
           "layout": "board",
           "board_field": "status"

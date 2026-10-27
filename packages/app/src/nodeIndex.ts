@@ -9,7 +9,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
@@ -109,7 +109,7 @@ export function mayHoldRows(tableDir: string, rows: number): boolean {
 const bodyFiles = (tableDir: string): string[] => {
   try {
     return readdirSync(join(tableDir, "bodies"))
-      .filter((name) => name.endsWith(".md"))
+      .filter((name) => rowIdOfBodyFile(name) !== null)
       .sort();
   } catch {
     return [];
@@ -198,7 +198,7 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
   const key = await tableContentKey(tableDir);
   const total = onProgress ? await countRows(tableDir) : 0;
   const bodies: Record<string, string> = {};
-  for (const file of bodyFiles(tableDir)) bodies[file.slice(0, -".md".length)] = readFileSync(join(tableDir, "bodies", file), "utf8");
+  for (const file of bodyFiles(tableDir)) bodies[rowIdOfBodyFile(file)!] = readFileSync(join(tableDir, "bodies", file), "utf8");
   let done = 0;
   // Where each rows file starts, by the place its first row takes in the index (positions run from 1).
   const files: { name: string; first: number }[] = [];

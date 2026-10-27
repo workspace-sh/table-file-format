@@ -49,7 +49,7 @@ const focused = (w: Gtk.Widget) => (w.getRoot() as unknown as Gtk.Window).getFoc
 
 describe("the keyboard on a board on Linux", () => {
   it("down stays in the column; left keeps the place in the next column", async () => {
-    await open("tasks", "gzrqtgo1p3gfehto7tani3jzz4");
+    await open("tasks", "mufe9nmjruiq5");
     // doing: t2, t3, t5; todo: t4, t6, t7.
     const wire = await cardOf("Wire RSD + StyleX");
     wire.grabFocus();
@@ -60,7 +60,7 @@ describe("the keyboard on a board on Linux", () => {
   });
 
   it("Alt+Left moves the card to the column before, and it keeps the keyboard", async () => {
-    await open("tasks", "gzrqtgo1p3gfehto7tani3jzz4");
+    await open("tasks", "mufe9nmjruiq5");
     const land = await cardOf("Land .table extension");
     land.grabFocus();
     await press(land, Gdk.KEY_Left, true);
@@ -73,12 +73,12 @@ describe("the keyboard on a board on Linux", () => {
   });
 
   it("Alt+Down swaps it with the card below, as the view's order", async () => {
-    await open("tasks", "gzrqtgo1p3gfehto7tani3jzz4");
+    await open("tasks", "mufe9nmjruiq5");
     const wire = await cardOf("Wire RSD + StyleX");
     wire.grabFocus();
     await press(wire, Gdk.KEY_Down, true);
     await waitFor(async () => {
-      const order = (await onDisk("tasks")).views.find((v) => v.id === "gzrqtgo1p3gfehto7tani3jzz4")?.order ?? [];
+      const order = (await onDisk("tasks")).views.find((v) => v.id === "mufe9nmjruiq5")?.order ?? [];
       expect(order.indexOf("wpzuom5b9k3k4g6co658ozwerw")).toBeGreaterThan(order.indexOf("18pfutsbnrkppxrwxxn1ideokr"));
     });
   });
@@ -86,11 +86,11 @@ describe("the keyboard on a board on Linux", () => {
 
 describe("the keyboard on a list on Linux", () => {
   it("Alt+Down moves the row down, as the view's order", async () => {
-    await open("projects", "u5fpdkwh5w9thdq8o368a9t4nw");
+    await open("projects", "4bteo61c6agby");
     const first = (await onDisk("projects")).rows[0]!;
     const card = await cardOf(String(first.name ?? first.title));
     card.grabFocus();
     await press(card, Gdk.KEY_Down, true);
-    await waitFor(async () => expect((await onDisk("projects")).views.find((v) => v.id === "u5fpdkwh5w9thdq8o368a9t4nw")?.order?.[1]).toBe(first.id));
+    await waitFor(async () => expect((await onDisk("projects")).views.find((v) => v.id === "4bteo61c6agby")?.order?.[1]).toBe(first.id));
   });
 });

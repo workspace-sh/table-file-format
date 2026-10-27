@@ -316,7 +316,7 @@ distinct from encryption-layer access.
 
 ### Bodies and attachments
 
-Long-form bodies (`bodies/{id}.md`) and attachments inherit the
+Long-form bodies (`bodies/{title}--{id}.md`) and attachments inherit the
 permission of the row they belong to. If a row contains only tier-0
 fields, its body is unencrypted (within the org). If a row contains
 tier-1 or tier-2 fields, its body is encrypted with the highest tier

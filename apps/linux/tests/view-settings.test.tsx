@@ -30,7 +30,7 @@ const tasksOnDisk = () => parseTable(join(bundle, "tables", "tasks"));
 
 async function openSettings() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
   await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
   await screen.findByText("Filters");
 }
@@ -44,18 +44,18 @@ async function shownChoices(): Promise<string[]> {
 describe("view settings on Linux", () => {
   it("a row hidden from its menu leaves the view, and View Settings shows it again (D58)", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
     const cell = await screen.findByText("Land .table extension");
     const window = cell.getRoot() as unknown as Gtk.ApplicationWindow;
     await userEvent.click(cell);
     // The row's menu action, as its menu item runs it.
     const row = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Row Actions" }))[0]!;
     row.activateAction("row.hide", null);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.hidden).toEqual(["ytjc8tj8w8ftnbf9h86s5k9jfk"]));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.hidden).toEqual(["ytjc8tj8w8ftnbf9h86s5k9jfk"]));
     await waitFor(() => expect(screen.queryByText("Land .table extension")).toBeNull());
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
     await userEvent.click(await screen.findByText("Show All"));
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.hidden).toBeUndefined());
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.hidden).toBeUndefined());
     expect(window).toBeDefined();
   });
 
@@ -63,7 +63,7 @@ describe("view settings on Linux", () => {
     await openSettings();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Colour" }));
     await waitFor(async () => {
-      const rules = (await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.colors;
+      const rules = (await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.colors;
       expect(rules).toHaveLength(1);
       expect(rules![0]!.color).toBe("red");
       expect(rules![0]!.field).toBeUndefined();
@@ -72,12 +72,12 @@ describe("view settings on Linux", () => {
     const downs = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Gtk.DropDown) as Gtk.DropDown[];
     const colour = downs.find((d) => (d.getSelectedItem() as Gtk.StringObject | null)?.getString() === "Red")!;
     colour.setSelected(4);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.colors?.[0]?.color).toBe("green"));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.colors?.[0]?.color).toBe("green"));
   });
 
   it("shows the view's own filter and sort, not each picker's first choice", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="gzrqtgo1p3gfehto7tani3jzz4" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="mufe9nmjruiq5" />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
     await screen.findByText("Filters");
     // "Active by owner": status is active, sorted by owner.
@@ -91,13 +91,13 @@ describe("view settings on Linux", () => {
     await userEvent.click(sheet);
     await waitFor(async () => {
       const t = await tasksOnDisk();
-      expect(t.views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.coordinates).toBe(true);
+      expect(t.views.find((v) => v.id === "juycicwios88m")?.coordinates).toBe(true);
     });
   });
 
   it("Columns: a column switched off leaves the view without it, and the last one stays", async () => {
     await openSettings();
-    const fieldsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.fields;
+    const fieldsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.fields;
     const all = (await tasksOnDisk()).schema.fields.map((f) => f.name);
     const column = async (name: string) => {
       const rows = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).filter((w) => w instanceof Adw.SwitchRow) as Adw.SwitchRow[];
@@ -123,7 +123,7 @@ describe("view settings on Linux", () => {
 
   it("Totals: a total chosen for a column is saved to the view and shown under it; None takes it away", async () => {
     await openSettings();
-    const totalsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.totals;
+    const totalsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.totals;
     await screen.findByText("Shown in a row under the table.");
     const total = async (title: string) => {
       const rows = (await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Adw.ComboRow) as Adw.ComboRow[];
@@ -150,7 +150,7 @@ describe("view settings on Linux", () => {
 
   it("Totals aren't offered on a board, which has no row under it", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="gzrqtgo1p3gfehto7tani3jzz4" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="mufe9nmjruiq5" />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
     await screen.findByText("Filters");
     expect(screen.queryByText("Totals")).toBeNull();
@@ -163,9 +163,9 @@ describe("view settings on Linux", () => {
     const freeze = rows.find((r) => r.getTitle() === "Freeze Columns")!;
     expect((freeze.getSelectedItem() as Gtk.StringObject).getString()).toBe("First Column");
     freeze.setSelected(2);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.frozen).toEqual({ columns: 2 }));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.frozen).toEqual({ columns: 2 }));
     freeze.setSelected(1);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.frozen).toBeUndefined());
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.frozen).toBeUndefined());
   });
 
   it("Freeze Rows: the header only by default, and two chosen are written to the view (D58)", async () => {
@@ -174,9 +174,9 @@ describe("view settings on Linux", () => {
     const freeze = rows.find((r) => r.getTitle() === "Freeze Rows")!;
     expect((freeze.getSelectedItem() as Gtk.StringObject).getString()).toBe("Header Only");
     freeze.setSelected(2);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.frozen).toEqual({ rows: 2 }));
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.frozen).toEqual({ rows: 2 }));
     freeze.setSelected(0);
-    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.frozen).toBeUndefined());
+    await waitFor(async () => expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.frozen).toBeUndefined());
   });
 
   it("Totals are offered for the columns the view shows", async () => {
@@ -197,11 +197,11 @@ describe("view settings on Linux", () => {
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
     // Shown at once, and only for this viewer: the file is as it was.
     const save = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" });
-    expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.filter).toBeUndefined();
+    expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.filter).toBeUndefined();
     await userEvent.click(save);
     await waitFor(async () => {
       const t = await tasksOnDisk();
-      expect(t.views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.filter?.[0]?.field).toBe("title");
+      expect(t.views.find((v) => v.id === "juycicwios88m")?.filter?.[0]?.field).toBe("title");
     });
     // Saved, it's no longer this viewer's own.
     await waitFor(() => expect(screen.queryByRole(Gtk.AccessibleRole.BUTTON, { name: "Save for Everyone" })).toBeNull());
@@ -212,7 +212,7 @@ describe("view settings on Linux", () => {
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Filter" }));
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Reset" }));
     await waitFor(() => expect(screen.queryByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove Filter" })).toBeNull());
-    expect((await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")?.filter).toBeUndefined();
+    expect((await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")?.filter).toBeUndefined();
   });
 
   it("deleting a view asks first, then removes it from the file", async () => {
@@ -222,7 +222,7 @@ describe("view settings on Linux", () => {
     await userEvent.click(await screen.findByText("Delete"));
     await waitFor(async () => {
       const t = await tasksOnDisk();
-      expect(t.views.map((v) => v.id)).toEqual(["gzrqtgo1p3gfehto7tani3jzz4"]);
+      expect(t.views.map((v) => v.id)).toEqual(["mufe9nmjruiq5"]);
     });
   });
 });

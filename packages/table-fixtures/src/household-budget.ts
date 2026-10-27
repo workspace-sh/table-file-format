@@ -194,7 +194,7 @@ export const householdBudgetBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "kifpjiq34nhz8k95rc3uezwqu5",
+          "id": "435dx9iqim5iz",
           "name": "Sheet",
           "layout": "table",
           "coordinates": true,
@@ -224,7 +224,7 @@ export const householdBudgetBundle: ParsedBundle = {
           }
         },
         {
-          "id": "wsohm6y8imnngf9dirsm38je7w",
+          "id": "h8k36on7woi94",
           "name": "Spending",
           "layout": "table",
           "filter": [
@@ -249,7 +249,7 @@ export const householdBudgetBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "c7ae39md7putcu3qkdfiitc1z1",
+          "id": "ww8mpspmg15jb",
           "name": "By category",
           "layout": "board",
           "board_field": "category",
@@ -315,7 +315,7 @@ export const householdBudgetBundle: ParsedBundle = {
             "format": "currency:GBP",
             "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
             "computed": {
-              "expr": "(sum (at \"balance\" -1 \"7wxsrxd9g5oa5smry9tmfahdzs\") amount)",
+              "expr": "(sum (at \"balance\" -1 \"87jkeekgwbfgr\") amount)",
               "dialect": "table-expr-v1"
             }
           }
@@ -385,7 +385,7 @@ export const householdBudgetBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "7wxsrxd9g5oa5smry9tmfahdzs",
+          "id": "87jkeekgwbfgr",
           "name": "By date",
           "layout": "table",
           "coordinates": true,
@@ -409,7 +409,7 @@ export const householdBudgetBundle: ParsedBundle = {
           }
         },
         {
-          "id": "63occwsg8oxgutjn9s5jxyqfkf",
+          "id": "f179qhc4jxi7y",
           "name": "As entered",
           "layout": "table",
           "fields": [

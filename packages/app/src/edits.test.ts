@@ -57,9 +57,9 @@ test("a page saved after its row was deleted leaves no orphan body", () => {
 
 test("a row goes above or below another in a Sheet view's file order", () => {
   const first = ledger.rows[0]!.id;
-  const below = withRowAt(ledger, "63occwsg8oxgutjn9s5jxyqfkf", first, "below", "ins");
+  const below = withRowAt(ledger, "f179qhc4jxi7y", first, "below", "ins");
   assert.equal(below.rows[1]!.id, "ins");
-  const above = withRowAt(ledger, "63occwsg8oxgutjn9s5jxyqfkf", first, "above", "ins");
+  const above = withRowAt(ledger, "f179qhc4jxi7y", first, "above", "ins");
   assert.equal(above.rows[0]!.id, "ins");
 });
 
@@ -89,17 +89,17 @@ test("fields move one place, not past either end", () => {
 });
 
 test("a new field joins the view it was added from, when that view lists its fields", () => {
-  const listing = withViewPatch(withViewPatch(tasks, "ffaisc1zows4dzhy7aq5jrebkx", { fields: ["title"] }), "gzrqtgo1p3gfehto7tani3jzz4", { fields: ["title", "status"] });
-  const added = withField(listing, { name: "notes", type: "string" }, "ffaisc1zows4dzhy7aq5jrebkx");
-  assert.deepEqual(added.views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!.fields, ["title", "notes"]);
-  assert.deepEqual(added.views.find((v) => v.id === "gzrqtgo1p3gfehto7tani3jzz4")!.fields, ["title", "status"]);
-  assert.equal(withField(added, { name: "notes", type: "string" }, "ffaisc1zows4dzhy7aq5jrebkx"), added);
+  const listing = withViewPatch(withViewPatch(tasks, "juycicwios88m", { fields: ["title"] }), "mufe9nmjruiq5", { fields: ["title", "status"] });
+  const added = withField(listing, { name: "notes", type: "string" }, "juycicwios88m");
+  assert.deepEqual(added.views.find((v) => v.id === "juycicwios88m")!.fields, ["title", "notes"]);
+  assert.deepEqual(added.views.find((v) => v.id === "mufe9nmjruiq5")!.fields, ["title", "status"]);
+  assert.equal(withField(added, { name: "notes", type: "string" }, "juycicwios88m"), added);
 });
 
 test("the last view is never removed", () => {
-  const one = withoutView(tasks, "gzrqtgo1p3gfehto7tani3jzz4");
+  const one = withoutView(tasks, "mufe9nmjruiq5");
   assert.equal(one.views.length, 1);
-  assert.equal(withoutView(one, "ffaisc1zows4dzhy7aq5jrebkx"), one);
+  assert.equal(withoutView(one, "juycicwios88m"), one);
 });
 
 test("onTable edits one table in an app's map and leaves the rest", () => {
@@ -117,13 +117,13 @@ test("a row is named by its first text field", () => {
 
 test("deleting a view asks first, and warns when formulas read a Sheet view by place", () => {
   const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
-  const byDate = ledger.views.find((v) => v.id === "7wxsrxd9g5oa5smry9tmfahdzs")!;
+  const byDate = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
   const asked = deleteViewPrompt(held, "household-budget/ledger", byDate)!;
   assert.equal(asked.heading, "Delete the view “By date”?");
   assert.match(asked.body, /formula.* by place and will show #REF!/);
   const plain = deleteViewPrompt(held, "projects/tasks", tasks.views[0]!)!;
   assert.equal(plain.body, "The rows stay; only this way of showing them goes.");
-  assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "gzrqtgo1p3gfehto7tani3jzz4") }, "projects/tasks", tasks.views[0]!), null);
+  assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "mufe9nmjruiq5") }, "projects/tasks", tasks.views[0]!), null);
 });
 
 test("a view's delete prompt carries its responses, Cancel first", () => {
@@ -154,7 +154,7 @@ test("deleting a row names it, says whether its page goes, and closes that page 
 
 test("turning a Sheet view that formulas read into anything else asks first", () => {
   const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
-  const byDate = ledger.views.find((v) => v.id === "7wxsrxd9g5oa5smry9tmfahdzs")!;
+  const byDate = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
   const asked = viewPatchPrompt(held, "household-budget/ledger", byDate, { coordinates: undefined })!;
   assert.match(asked.heading, /^(A formula reads|\d+ formulas read) this sheet by place and will show #REF!\.$/);
   assert.equal(asked.body, "Stop showing it as a sheet?");

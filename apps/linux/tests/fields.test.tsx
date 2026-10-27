@@ -31,7 +31,7 @@ const schemaOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 /**
@@ -115,7 +115,7 @@ describe("fields on Linux", () => {
   it("a field renamed in its editor is renamed in its rows and in the formulas that read it; the editor stays on it", async () => {
     const library = await loadLibrary([bundle]);
     // Active by owner shows every field.
-    await render(<App library={library} initialTable="projects/projects" initialView="gzrqtgo1p3gfehto7tani3jzz4" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="mufe9nmjruiq5" />);
     const projectsOnDisk = () => parseTable(join(bundle, "tables", "projects"));
     await userEvent.click((await screen.findAllByText("budget"))[0]!);
     const name = await entryRow("Name");

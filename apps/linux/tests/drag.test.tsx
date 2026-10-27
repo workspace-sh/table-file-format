@@ -46,31 +46,31 @@ async function open(view: string) {
 
 describe("dragging on Linux", () => {
   it("a card dropped on another column takes that column's value", async () => {
-    await open("gzrqtgo1p3gfehto7tani3jzz4");
+    await open("mufe9nmjruiq5");
     await userEvent.dragAndDrop(await card("App icon"), await column("doing"), "abk93zgaattfxeony4hqsf457r");
     await waitFor(async () => expect((await tasksOnDisk()).rows.find((r) => r.id === "abk93zgaattfxeony4hqsf457r")?.status).toBe("doing"));
   });
 
   it("a card dropped in a card's lower half goes after it in the view's order", async () => {
-    await open("gzrqtgo1p3gfehto7tani3jzz4");
+    await open("mufe9nmjruiq5");
     const target = await card("Wire RSD + StyleX");
     await userEvent.dragAndDrop(await card("App icon"), target, "abk93zgaattfxeony4hqsf457r", { y: target.getHeight() - 1 });
     await waitFor(async () => {
       const t = await tasksOnDisk();
       expect(t.rows.find((r) => r.id === "abk93zgaattfxeony4hqsf457r")?.status).toBe("doing");
-      const order = t.views.find((v) => v.id === "gzrqtgo1p3gfehto7tani3jzz4")?.order ?? [];
+      const order = t.views.find((v) => v.id === "mufe9nmjruiq5")?.order ?? [];
       expect(order.indexOf("abk93zgaattfxeony4hqsf457r")).toBe(order.indexOf("wpzuom5b9k3k4g6co658ozwerw") + 1);
     });
   });
 
   it("a list row dropped on another takes its place in the view's order", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="u5fpdkwh5w9thdq8o368a9t4nw" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="4bteo61c6agby" />);
     // Quick list, in file order: Workspace v1 (p1) first, Web companion app (p4) fourth.
     await userEvent.dragAndDrop(await card("Web companion app"), await card("Workspace v1"), "hd7ttdzeb5z53faz9agiearrek");
     await waitFor(async () => {
       const t = await parseTable(join(bundle, "tables", "projects"));
-      expect(t.views.find((v) => v.id === "u5fpdkwh5w9thdq8o368a9t4nw")?.order?.slice(0, 2)).toEqual(["hd7ttdzeb5z53faz9agiearrek", "xsdxifzn73ohismzm8q5uri8fe"]);
+      expect(t.views.find((v) => v.id === "4bteo61c6agby")?.order?.slice(0, 2)).toEqual(["hd7ttdzeb5z53faz9agiearrek", "xsdxifzn73ohismzm8q5uri8fe"]);
     });
   });
 });

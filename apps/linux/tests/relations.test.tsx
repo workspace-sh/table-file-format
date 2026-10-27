@@ -29,7 +29,7 @@ const dealsOnDisk = () => parseTable(join(bundle, "tables", "deals"));
 
 async function openDeals() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="crm/deals" initialView="9gcz9d8ctoqamitkgwfhiu7sru" />);
+  await render(<App library={library} initialTable="crm/deals" initialView="hnmryzi51j6jz" />);
 }
 
 describe("relations on Linux", () => {
@@ -60,11 +60,11 @@ describe("relations on Linux", () => {
 
   it("a related row's link opens its table, and its page when it has one", async () => {
     await openDeals();
-    // Atlas Freight has a page (bodies/wexwuo344aoowkqiieeb8fk56z.md): following the link opens it.
+    // Atlas Freight has a page (bodies/atlas-freight--wexwuo344aoowkqiieeb8fk56z.md): following the link opens it.
     const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b.getTooltipText()?.includes("wexwuo344aoowkqiieeb8fk56z"))!;
     expect(link).toBeDefined();
     await userEvent.click(link);
-    expect(await screen.findByText("bodies/wexwuo344aoowkqiieeb8fk56z.md")).toBeDefined();
+    expect(await screen.findByText("bodies/atlas-freight--wexwuo344aoowkqiieeb8fk56z.md")).toBeDefined();
     // Behind it, the companies table is the one shown.
     expect(await screen.findByText("Companies")).toBeDefined();
   });

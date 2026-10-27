@@ -47,8 +47,8 @@ test("a formula that doesn't compile says why; one that does shows its stored fo
 });
 
 test("by place in a Sheet view, the row above's balance is outlined for this row", () => {
-  const view = ledger.views.find((v) => v.id === "7wxsrxd9g5oa5smry9tmfahdzs")!;
-  const order = sheetOrder(ledger, "7wxsrxd9g5oa5smry9tmfahdzs")!.ids;
+  const view = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
+  const order = sheetOrder(ledger, "87jkeekgwbfgr")!.ids;
   const second = order[1]!;
   const cells = formulaInputCells(field(ledger, "balance"), second, view, view.fields!, order);
   assert.ok(cells.has(`${order[0]}\u0000balance`), [...cells].join(", "));

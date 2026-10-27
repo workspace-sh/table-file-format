@@ -21,7 +21,7 @@ import { estimateRows, FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layout
 /** How much of a table's first rows file is read to judge how many rows it has. */
 const ESTIMATE_HEAD = 64 * 1024;
 import { isTableName, tableOrder } from "./bundle.js";
-import { BODY_EXTENSION, BUNDLE_EXTENSION, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
+import { BODY_EXTENSION, BUNDLE_EXTENSION, bodyFileName, rowIdOfBodyFile, rowTitleIn, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
 import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
 
 /**
@@ -178,9 +178,9 @@ export async function readTableArchive(
     for (const file of files.keys()) {
       // Direct children of the table's bodies/ only, mirroring the directory parser.
       if (!file.startsWith(`${prefix}${TableEntry.bodies}/`) || !file.endsWith(BODY_EXTENSION)) continue;
-      const inner = file.slice(`${prefix}${TableEntry.bodies}/`.length);
-      if (inner.includes("/")) continue;
-      bodies[inner.slice(0, -BODY_EXTENSION.length)] = strFromU8(files.get(file)!);
+      const id = rowIdOfBodyFile(file.slice(`${prefix}${TableEntry.bodies}/`.length));
+      if (id === null) continue;
+      bodies[id] = strFromU8(files.get(file)!);
     }
 
     // Cells' own formulas (D52), from cells/ in name order; what doesn't apply is kept and said.
@@ -384,8 +384,11 @@ export function bundleFiles(input: WriteBundleInput | ParsedBundle): BundleFile[
     // Its edit history, byte for byte: it is the table's, and no writer's to rewrite.
     if (t.history) files.push({ path: `${at}${TableEntry.history}`, content: t.history });
     const bodies = t.bodies ?? {};
+    const rowsById = new Map(t.rows.map((r) => [r.id, r]));
     for (const id of Object.keys(bodies).sort()) {
-      files.push({ path: `${at}${TableEntry.bodies}/${id}${BODY_EXTENSION}`, content: normaliseBody(bodies[id]!) });
+      const row = rowsById.get(id);
+      const name = bodyFileName(id, row ? rowTitleIn(t.schema.fields, row) : undefined);
+      files.push({ path: `${at}${TableEntry.bodies}/${name}`, content: normaliseBody(bodies[id]!) });
     }
   }
   return files;

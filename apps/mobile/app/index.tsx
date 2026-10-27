@@ -11,7 +11,7 @@ import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
-import { isSheet, newId } from "@workspace.sh/table-core";
+import { isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
 import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, sheetReaders, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
 import { useDepartedToast } from "@workspace.sh/table-app/react";
@@ -200,7 +200,7 @@ export default function TableScreen() {
       on: v.id === view.id,
       onPress: () => dispatch({ type: "showView", key: state.active, viewId: v.id }),
     })),
-    { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newId() }) },
+    { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newViewId() }) },
   ];
   const canAddFieldHere = view.layout === "table" && !table.indexed;
   // In the order they read, top to bottom, from what's done most to least:

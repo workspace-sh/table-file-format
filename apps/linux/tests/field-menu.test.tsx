@@ -32,11 +32,11 @@ afterEach(async () => {
 
 const tasksOnDisk = () => parseTable(join(bundle, "tables", "tasks"));
 const fieldsOnDisk = async () => (await tasksOnDisk()).schema.fields.map((f) => f.name);
-const widthsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "ffaisc1zows4dzhy7aq5jrebkx")!.columnWidths;
+const widthsOnDisk = async () => (await tasksOnDisk()).views.find((v) => v.id === "juycicwios88m")!.columnWidths;
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="ffaisc1zows4dzhy7aq5jrebkx" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 /** Every label in a menu, sections included. */
@@ -150,7 +150,7 @@ describe("About This Field on Linux", () => {
     const budget = join(dir, "household-budget.table");
     cpSync(join(fixturesDir()!, "household-budget.table"), budget, { recursive: true });
     const library = await loadLibrary([budget]);
-    await render(<App library={library} initialTable="household-budget/budget" initialView="wsohm6y8imnngf9dirsm38je7w" />);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="h8k36on7woi94" />);
     const schema = (await parseTable(join(budget, "tables", "budget"))).schema;
     const hint = fieldHint({ field: schema.fields.find((f) => f.name === "quarter"), name: "quarter", schema, editable: false });
     expect(hint.formula).toMatch(/^=/);

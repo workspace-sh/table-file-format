@@ -15,7 +15,7 @@ test("a new table has one text field, one table view and no rows", () => {
   assert.equal(t.rows.length, 0);
   assert.equal(t.views.length, 1);
   assert.equal(t.views[0]!.layout, "table");
-  assert.match(t.views[0]!.id, /^[ybndrfg8ejkmcpqxot1uwisza345h769]{26}$/);
+  assert.match(t.views[0]!.id, /^[ybndrfg8ejkmcpqxot1uwisza345h769]{13}$/);
   assert.equal(t.path, "reading-list.table");
 });
 

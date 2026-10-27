@@ -11888,7 +11888,7 @@ export const libraryBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "9gcz9d8ctoqamitkgwfhiu7sru",
+          "id": "hnmryzi51j6jz",
           "name": "All books",
           "layout": "table",
           "sort": [
@@ -11899,7 +11899,7 @@ export const libraryBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "fx19qhz358zdh8qa4bf531ts14",
+          "id": "i6y1eswxggtrz",
           "name": "By genre",
           "layout": "board",
           "board_field": "genre",
@@ -11910,7 +11910,7 @@ export const libraryBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "eho3sibxpturhakhgqn8zdnsza",
+          "id": "mkosm7xozqxwf",
           "name": "To read",
           "layout": "table",
           "filter": [
@@ -11928,7 +11928,7 @@ export const libraryBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "8kwi18giesuwmpo56g65od3t4t",
+          "id": "xwzdzzec3yubh",
           "name": "Recently added",
           "layout": "table",
           "sort": [
