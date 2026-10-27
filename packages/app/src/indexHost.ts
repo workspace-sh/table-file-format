@@ -316,7 +316,24 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       },
     });
     for (const [name, count] of Object.entries(counts)) opened.bundle.tables[name]!.indexed = { count, version: 0 };
-    if (large.size > 0) {
+    const anyLarge = large.size > 0;
+    // The same file opened again: a table whose index was made from it is taken as it is, said
+    // before anything is shown, so the screen never says it's being read.
+    if (anyLarge && stamp !== null) {
+      const { driver } = await open(opened.key);
+      for (const name of [...large.keys()]) {
+        const schema = opened.bundle.tables[name]!.schema;
+        const count = await inTurn(async () => {
+          if ((await madeFrom(driver, name)) !== stamp || (await indexKey(driver, name)) !== "saved") return null;
+          const before = await queryIndex(driver, { name, schema });
+          return before && (await keptRows(driver, opened.key, name)) !== null ? before.count : null;
+        });
+        if (count === null) continue;
+        opened.bundle.tables[name]!.indexed = { count, version: 0, kept: true };
+        large.delete(name);
+      }
+    }
+    if (anyLarge) {
       // The folder, whole but for the large tables' rows (the writer leaves an indexed table's rows file alone).
       await writeBundleTo(fs, bundleDir(opened.key), opened.bundle);
       for (const [name, table] of large) waiting.set(`${opened.key}/${name}`, table);

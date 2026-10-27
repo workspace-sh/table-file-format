@@ -23,7 +23,8 @@ export const expoFs: TableFs = {
   async writeText(path, content) {
     const file = new File(path);
     if (!file.exists) file.create();
-    file.write(content);
+    // Asynchronous since Expo SDK 58: awaited, or a rename after it moves an empty or partial file into place.
+    await file.write(content);
   },
   // A single-file .table, and the files a folder holds besides its text (D49).
   async readBytes(path) {
@@ -33,7 +34,7 @@ export const expoFs: TableFs = {
   async writeBytes(path, bytes) {
     const file = new File(path);
     if (!file.exists) file.create();
-    file.write(bytes);
+    await file.write(bytes);
   },
   // For judging how many rows a table has before reading them (core's shape-first read).
   async size(path) {
