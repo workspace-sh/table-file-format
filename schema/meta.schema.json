@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/workspace-sh/table-file-format/blob/develop/schema/meta.schema.json",
+  "title": ".table meta.json",
+  "description": "A .table's manifest (the bundle's meta.json) or a table's own meta.json (SPEC section 5). Both are optional, and any key not named here is allowed and kept.",
+  "type": "object",
+  "properties": {
+    "format": { "const": "table", "description": "Stamped on every write of the bundle's meta.json." },
+    "formatVersion": { "type": "integer", "minimum": 1, "description": "SPEC section 12." },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "tables": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The bundle's tables in the order they are shown. Only in the bundle's meta.json."
+    },
+    "created_at": { "$ref": "#/$defs/timestamp" },
+    "modified_at": { "$ref": "#/$defs/timestamp" },
+    "generator": { "type": "string" },
+    "iteration": {
+      "type": "object",
+      "description": "A table's own: loops between its formulas worked out by repetition (DECISIONS D60).",
+      "properties": {
+        "max": { "type": "integer", "minimum": 1 },
+        "change": { "type": "number", "minimum": 0 }
+      },
+      "required": ["max", "change"]
+    },
+    "source": { "$ref": "#/$defs/source" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "description": "ISO 8601, as 2026-10-27T10:00:00Z."
+    },
+    "source": {
+      "type": "object",
+      "description": "Where this was made from, when it was made from something else: a record of origin that changes nothing about how it's read (SPEC section 5, DECISIONS D66). Every member is optional.",
+      "properties": {
+        "uri": { "type": "string", "minLength": 1, "description": "An absolute URI: https:, file:, or any other scheme." },
+        "format": { "type": "string", "minLength": 1, "description": "A media type, as text/csv." },
+        "retrieved_at": { "$ref": "#/$defs/timestamp", "description": "When it was read." }
+      }
+    }
+  }
+}
