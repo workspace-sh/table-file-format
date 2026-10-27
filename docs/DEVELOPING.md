@@ -11,6 +11,7 @@ All commands run from the monorepo root. Namespaced consistently so the
 syntax is the same across every surface.
 
 ```sh
+git submodule update --init       # the fixtures (workspace-fixtures, private; fixtures/ links into it)
 npm install                       # installs everything; symlinks workspace packages
 
 # Format library
@@ -62,16 +63,17 @@ npm run app:test
 npm run fixtures:test
 npm run fixtures:generate         # fixtures/ → the modules the apps build in (-- --check: fail if stale)
 npm run fixtures:export -- <dir>  # fixtures/ → <dir>: each example as a folder and a single file (-- <dir> --check: fail if <dir> differs)
+npm run fixtures:export -- fixtures  # after editing an example: its single file and CHECKSUMS, in place
 npm run conformance:run           # measures formula engines against the OpenFormula cases
 npm run conformance:test
 ```
 
 ### The example tables
 
-`fixtures/` is the only place an example table is edited. Everything else is made from it:
+`fixtures/` is the only place an example table is edited. It is a link to `workspace-fixtures/Fixtures/table`, a submodule of the private [workspace-fixtures](https://github.com/workspace-sh/workspace-fixtures) repository, the one copy every repository shares. An edit is committed there first, then this repository's submodule is moved to that commit. Everything else is made from it:
 
 - the modules the apps build in, by `fixtures:generate`;
-- a copy for testing anywhere else, by `fixtures:export`, which writes each example as a folder and as a single file, with a `CHECKSUMS` list, into any folder. That includes the test-files repository's `Fixtures/table` and a device's documents. Its `--check` names each file that differs.
+- a copy for testing anywhere else, by `fixtures:export`, which writes each example as a folder and as a single file, with a `CHECKSUMS` list, into any folder, such as a device's documents. Run on `fixtures` itself, it writes only the single files and `CHECKSUMS` beside the folders. Its `--check` names each file that differs.
 
 An app saves an example only once it is edited (`savedFrom` in `packages/app/src/savedTables.ts`). So an app follows the examples as they change, and keeps what was edited. Reset Demo Data goes back to the examples as they are.
 

@@ -187,7 +187,7 @@ packages/
   table-fixtures/           the fixtures, built in for the apps that can't read the folder
   glass-bar/, file-browser/ parts of the iOS app's interface
 apps/                       web, mobile, desktop, linux
-fixtures/                   the .table files every app and test uses
+fixtures/                   the .table files every app and test uses (a link into the workspace-fixtures submodule)
 docs/                       the specification and everything behind it
 ```
 
