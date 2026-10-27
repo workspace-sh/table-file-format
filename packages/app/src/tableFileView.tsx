@@ -137,8 +137,19 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
 function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<void>) | null>(null);
+  // Then the host's own step once the write is whole (a single file packed again).
   const writing = useMemo(
-    () => (index ? { ...files, write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => (await files.write(...args), await saveIndexed.current?.(args[1])) } : files),
+    () =>
+      index || files.written
+        ? {
+            ...files,
+            write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => {
+              await files.write(...args);
+              if (index) await saveIndexed.current?.(args[1]);
+              await files.written?.(args[0], args[3]);
+            },
+          }
+        : files,
     [files, index],
   );
   const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, writing, locale);
