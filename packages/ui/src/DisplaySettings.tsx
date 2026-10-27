@@ -11,6 +11,12 @@ export interface DisplaySettings extends DisplayOptions {
   /** Which syntax formulas are shown in (#76). Absent: Excel style. */
   formulaSyntax?: FormulaSyntax;
   /**
+   * The tables (their keys) whose formulas this viewer shows in stored form,
+   * chosen table by table and kept on this device: `formulaSyntax` is worked
+   * out from it for the table on screen. Absent: none.
+   */
+  storedFormulaTables?: string[];
+  /**
    * Which way the interface reads (D40), from the language it's shown
    * in (`textDirection`). Absent: left to right. Styles mirror by
    * themselves; this is for what they can't, like which way a drag

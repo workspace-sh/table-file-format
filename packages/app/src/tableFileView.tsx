@@ -21,7 +21,7 @@ import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
-import { rowTitleFor } from "./edits.ts";
+import { rowTitleFor, sheetReaders } from "./edits.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
 import type { IndexDatabase } from "./indexHost.ts";
@@ -103,6 +103,11 @@ export interface TableFileViewProps {
    * the first rows reading the file gave. Its rows are read from the index, never all into memory.
    */
   index?: TableFileIndex;
+  /**
+   * Which syntax this file's formulas are shown in, as the host's viewer chose for it (Excel style by
+   * default). The viewer's, kept by the host, never in the file (SPEC section 4).
+   */
+  formulaSyntax?: "excel" | "stored";
 }
 
 /** How a large table in the file is read: through the platform's index host (createIndexHost). */
@@ -129,7 +134,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<void>) | null>(null);
   const writing = useMemo(
@@ -150,6 +155,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
     // Once: what reading the file gave.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // This file's formula syntax, as the host chose it, over the viewer's display settings (the same object while neither changes).
+  const shownDisplay = useMemo(() => (formulaSyntax ? { ...display, formulaSyntax } : display), [display, formulaSyntax]);
   const { table, view } = derived;
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = !!readOnly || fromArchive;
@@ -243,7 +250,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
   };
 
   return (
-    <DisplaySettingsProvider value={display}>
+    <DisplaySettingsProvider value={shownDisplay}>
       {chrome?.(file)}
       <LayoutView
         key={`${state.active}\u0000${view.id}`}
@@ -270,6 +277,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
           view={derived.shown.view}
           schema={table.schema}
           onChange={(patch) => dispatch({ type: "updateView", patch })}
+          sheetReaders={sheetReaders(state.tables, state.active, view)}
           onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
           onClose={() => dispatch({ type: "settings", open: false })}
           onCancel={() => dispatch({ type: "settings", open: false, revert: true })}

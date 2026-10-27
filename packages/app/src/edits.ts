@@ -4,7 +4,7 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
-import { isSheet, newFieldId, renameProblem } from "@workspace.sh/table-core";
+import { isSheet, newFieldId, renameProblem, renamesInIndex } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -210,11 +210,12 @@ function viewWithoutField(view: View, name: string): View {
 
 /**
  * Why field `name` can't be renamed `to`, or null when it can. A table held
- * in the index has its rows there, every one of which would be written
- * again, so its fields aren't renamed (yet).
+ * in the index is renamed there (#709), once it's read, unless its formulas
+ * read other rows (renamesInIndex).
  */
 export function fieldRenameProblem(table: ParsedTable, name: string, to: string): string | null {
-  if (table.indexed || table.loading) return "A field of a table this large can't be renamed yet.";
+  if (table.loading) return "This table is still being read.";
+  if (table.indexed && !renamesInIndex(table.schema, name, to)) return "A field of this table can't be renamed while it's this large.";
   return renameProblem(table, name, to);
 }
 
@@ -316,6 +317,11 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
   return rowId;
 }
 
+/** How many formulas read view `view` of table `key` by place (D41): none unless it's a Sheet view. */
+export function sheetReaders(tables: Record<string, ParsedTable>, key: string, view: View): number {
+  return isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+}
+
 /**
  * What to ask before changing a view's settings, or null when nothing is
  * lost and the change can simply be made. Turning a Sheet view into
@@ -329,7 +335,7 @@ export function viewPatchPrompt(
   patch: Partial<View>,
 ): Confirm | null {
   if (!isSheet(view) || isSheet({ ...view, ...patch })) return null;
-  const readers = sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length;
+  const readers = sheetReaders(tables, key, view);
   if (readers === 0) return null;
   return {
     heading: `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
@@ -347,7 +353,7 @@ export function viewPatchPrompt(
 export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): Confirm | null {
   const table = tables[key];
   if (!table || table.views.length <= 1) return null;
-  const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+  const readers = sheetReaders(tables, key, view);
   const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
   return {
     heading: `Delete the view “${view.name}”?`,

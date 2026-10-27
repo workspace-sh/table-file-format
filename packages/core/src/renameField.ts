@@ -5,7 +5,7 @@
 
 import { parseExpr, type Expr } from "./expr.js";
 import { formatExpr } from "./formula.js";
-import type { CellFormula, ParsedTable, Row, View, ViewFilter } from "./types.js";
+import type { CellFormula, ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 
 /** Why `to` can't be the new name of `from` in `table`, or null when it can. */
 export function renameProblem(table: Pick<ParsedTable, "schema">, from: string, to: string): string | null {
@@ -49,6 +49,17 @@ interface Renaming {
   table: string;
   /** The formula's table's relation fields that point at the renamed field's table. */
   relations: Set<string>;
+}
+
+/**
+ * One of table `table`'s `cells/` lines with its field `from` renamed `to`:
+ * its own field, and its formula where it reads it (as renameField does it),
+ * for an index that keeps the lines (alterIndex). `schema` is the table's,
+ * renamed or not: its relations to itself are what `related` reads through.
+ */
+export function cellRenamed(cell: CellFormula, schema: TableSchema, table: string, from: string, to: string): CellFormula {
+  const relations = new Set(schema.fields.filter((f) => f.relation?.table === table).map((f) => (f.name === to ? from : f.name)));
+  return cellOf(cell.field === from ? { ...cell, field: to } : cell, { from, to, here: true, table, relations });
 }
 
 function renamedHere(t: ParsedTable, from: string, to: string, rename: Renaming): ParsedTable {

@@ -18,6 +18,8 @@ export interface CellEditorSelection {
   rowLabel: string;
   /** The value as text, or the formula as typed. */
   text: string;
+  /** Drawn before `text`, apart from it: the `=` of a cell's own formula (D52). */
+  prefix?: string;
   /** A formula column: `text` is its formula. */
   formula: boolean;
   /** The field's description (SPEC section 2: its help), if it has one. */
