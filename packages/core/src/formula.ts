@@ -311,7 +311,16 @@ export function coordinateOf(field: string, rowId: string, grid: Grid): string |
  */
 export function compileFormula(
   text: string,
-  options: { fields?: Iterable<string>; grid?: Grid } = {},
+  options: {
+    fields?: Iterable<string>;
+    grid?: Grid;
+    /**
+     * A function the library doesn't have is kept, as a call to it, instead of refusing the
+     * formula: it reads, so it can be stored, and shows #NAME? where it's worked out. For an
+     * edit that's left unfinished (the editor closed on it), so what was typed isn't lost.
+     */
+    keepUnknownFunctions?: boolean;
+  } = {},
 ): CompileResult {
   const fields = options.fields ? new Set(options.fields) : undefined;
   const lead = /^\s*=?/.exec(text)![0].length;
@@ -323,14 +332,14 @@ export function compileFormula(
   // it reads completely and uses D32's functions, so an Excel-style
   // "(budget + 1) * 2" still compiles as Excel.
   if (body.trimStart().startsWith("(")) {
-    const stored = compileStoredForm(body, lead, fields);
+    const stored = compileStoredForm(body, lead, fields, options.keepUnknownFunctions);
     if (stored.ok) return stored;
-    const excel = compileExcel(body, lead, fields, options.grid);
+    const excel = compileExcel(body, lead, fields, options.grid, options.keepUnknownFunctions);
     // Neither: the stored form's reason when it read as one, so a typo in
     // a function name isn't reported as an Excel syntax error.
     return excel.ok || !stored.parsed ? excel : stored.failure;
   }
-  return compileExcel(body, lead, fields, options.grid);
+  return compileExcel(body, lead, fields, options.grid, options.keepUnknownFunctions);
 }
 
 /** Library functions, as the stored form names them (D32). */
@@ -340,6 +349,7 @@ function compileStoredForm(
   body: string,
   lead: number,
   fields: Set<string> | undefined,
+  keepUnknown = false,
 ): (CompileResult & { ok: true }) | { ok: false; parsed: boolean; failure: CompileResult & { ok: false } } {
   const read = parseExpr(body);
   if (!read.ok) {
@@ -371,7 +381,7 @@ function compileStoredForm(
     return { kind: "call", fn, args: e.args.map(walk) };
   };
   const expr = walk(read.expr);
-  if (unknown !== null) {
+  if (unknown !== null && !keepUnknown) {
     const names = [...LIBRARY].filter((n) => /^[a-z]/.test(n) && n !== "field").join(", ");
     return {
       ok: false,
@@ -387,7 +397,7 @@ function compileStoredForm(
   return { ok: true, expr, stored, warnings: [...warnings] };
 }
 
-function compileExcel(body: string, lead: number, fields: Set<string> | undefined, grid?: Grid): CompileResult {
+function compileExcel(body: string, lead: number, fields: Set<string> | undefined, grid?: Grid, keepUnknown = false): CompileResult {
   const warnings = new Set<string>();
 
   let tokens: Token[];
@@ -528,6 +538,10 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
     }
     // A name a form had before (D48) is taken as the name it has now.
     const known = FORMER_NAMES[fn] ?? fn;
+    if (!CALLABLE.has(known) && keepUnknown) {
+      warnings.add(`${name} isn't a function .table formulas have, so the result will show #NAME?.`);
+      return { kind: "call", fn: known.toLowerCase(), args };
+    }
     if (!CALLABLE.has(known)) {
       throw new CompileError(
         `${name} isn't a function .table formulas have. They can use: ${[...CALLABLE]

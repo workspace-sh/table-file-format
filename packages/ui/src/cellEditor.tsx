@@ -107,6 +107,12 @@ export interface CellEditSession {
   clear?(): void;
   /** A formula's working with `draft`, for the editor to show on request. */
   details?(draft: string): FormulaDetails;
+  /**
+   * The edit left unfinished (a tap on another cell): a formula is saved as it stands when it
+   * reads, error and all, so its cells show what's wrong. False when it doesn't read: nothing is
+   * stored, and the edit is discarded.
+   */
+  leave?(text: string): boolean;
   /** Discard the edit. */
   cancel(): void;
   /** After a save by Return: move down a row and edit there. */
