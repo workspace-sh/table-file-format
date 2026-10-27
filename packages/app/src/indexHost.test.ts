@@ -233,3 +233,67 @@ test("the same file opened again takes the index made from it; after a save, or 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a save writes again only the rows files holding an edited row; a field left out of every row writes them all", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-index-host-"));
+  try {
+    const source = join(dir, "source.table");
+    cpSync(join(fixtures, "projects.table"), source, { recursive: true });
+    const bundle = await readBundle(nodeFs, source);
+    const schema = bundle.tables.tasks!.schema;
+    // Each file over 1 MB, so the archive hands them over still compressed, to be indexed.
+    const many = Array.from({ length: 6000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ${"x".repeat(700)}`, priority: i % 7 }));
+    bundle.tables.tasks!.rows = [];
+    const files = unzipSync(await bundleToArchive("projects", bundle));
+    const rowsDir = "projects.table/tables/tasks/rows/";
+    const lines = (rows: typeof many) => rows.map((r) => `${JSON.stringify(r)}\n`).join("");
+    files[`${rowsDir}0001.ndjson`] = strToU8(lines(many.slice(0, 2000)));
+    files[`${rowsDir}0002.ndjson`] = strToU8(lines(many.slice(2000, 4000)));
+    files[`${rowsDir}0003.ndjson`] = strToU8(lines(many.slice(4000)));
+    const home = join(dir, "home");
+    // The rows files each save writes (staged, then moved over).
+    let wrote: string[] = [];
+    const platform = nodePlatform(home);
+    const host = createIndexHost({ ...platform, writer: async (path) => (wrote.push(path.split("/").pop()!.replace(/\.tmp$/, "")), platform.writer(path)) });
+    const { opened } = await host.openZip(zipSync(files), [], 1000);
+    const db = host.openIndexDatabase(opened.key);
+    assert.equal(await db.ensure("tasks", schema), many.length);
+    const tasks = join(host.bundleDir(opened.key), "tables", "tasks", "rows");
+    const ids = (file: string) => parseRowsText(readFileSync(join(tasks, file), "utf8"), []).map((r) => r.id);
+    const edit = async (edits: Parameters<typeof db.rows>[0] extends infer R ? (R extends { edits: infer E } ? E : never) : never) => {
+      wrote = [];
+      await db.rows({ ask: "edits", name: "tasks", table: { schema }, edits });
+      assert.equal(await db.save("tasks", schema, true), true);
+      return [...wrote].sort();
+    };
+
+    // One cell in the middle file: only that file.
+    assert.deepEqual(await edit([{ kind: "cell", rowId: "r3001", field: "title", value: "Edited" }]), ["0002.ndjson"]);
+    assert.equal(parseRowsText(readFileSync(join(tasks, "0002.ndjson"), "utf8"), []).find((r) => r.id === "r3001")!.title, "Edited");
+    assert.deepEqual(ids("0001.ndjson"), many.slice(0, 2000).map((r) => r.id));
+    // A row added: the last file.
+    assert.deepEqual(await edit([{ kind: "add", rowId: "r-new" }]), ["0003.ndjson"]);
+    assert.equal(ids("0003.ndjson").at(-1), "r-new");
+    // A row removed from the first: that file.
+    assert.deepEqual(await edit([{ kind: "remove", rowId: "r5" }]), ["0001.ndjson"]);
+    assert.equal(ids("0001.ndjson").includes("r5"), false);
+    // Nothing edited since: a save writes no rows file.
+    wrote = [];
+    assert.equal(await db.save("tasks", schema, true), true);
+    assert.deepEqual(wrote, []);
+    // Every row, in order, across the files.
+    assert.deepEqual(
+      [...ids("0001.ndjson"), ...ids("0002.ndjson"), ...ids("0003.ndjson")],
+      [...many.map((r) => r.id).filter((id) => id !== "r5"), "r-new"],
+    );
+
+    // A field left out of every row: every file.
+    wrote = [];
+    assert.equal(await db.save("tasks", schema, true, ["priority"]), true);
+    assert.deepEqual([...wrote].sort(), ["0001.ndjson", "0002.ndjson", "0003.ndjson"]);
+    assert.ok(parseRowsText(readFileSync(join(tasks, "0002.ndjson"), "utf8"), []).every((r) => !("priority" in r)));
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
