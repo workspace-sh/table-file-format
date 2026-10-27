@@ -342,7 +342,23 @@ export interface TableMeta {
    * than `change` (D60). Absent: a loop is #REF!.
    */
   iteration?: { max: number; change: number };
+  /**
+   * Where this was made from, when it was made from something else (D66):
+   * a record of origin, which changes nothing about how it's read. Read it
+   * with `sourceOf`, which ignores one that isn't well-formed.
+   */
+  source?: TableSource;
   [key: string]: unknown;
+}
+
+/** Where a table or bundle came from (SPEC section 5, D66). Every member is optional. */
+export interface TableSource {
+  /** An absolute URI: `https:`, `file:`, or any other scheme. */
+  uri?: string;
+  /** A media type: `text/csv`. */
+  format?: string;
+  /** When it was read, ISO 8601, as `created_at`. */
+  retrieved_at?: string;
 }
 
 /** SPEC section 12: 3 since cells' own formulas (D52); 2 had no `cells/`, 1 one `rows.ndjson`. */
