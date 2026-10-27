@@ -40,8 +40,15 @@ export interface IndexedTables {
   hold(first: Record<string, Row[]>): void;
   /** Every row of an indexed table, in file order: for what needs the whole table at once, like an archive. */
   everyRow(key: string, table: ParsedTable): Promise<Row[]>;
-  /** After the rest is saved: the indexed tables' rows, to the files kept beside their indexes. */
-  save(tables: Record<string, ParsedTable>): Promise<void>;
+  /**
+   * After the rest is saved: the indexed tables' rows, to the files kept beside their indexes.
+   * `later`: a save of rows alone (no field changed) waits for `flush`, so the host decides
+   * when (leaving the file, the app going to the background). A field's change is saved at once.
+   * Says whether anything waits.
+   */
+  save(tables: Record<string, ParsedTable>, later?: boolean): Promise<boolean>;
+  /** Save what waits (the rows of `save(…, true)`). */
+  flush(): Promise<void>;
 }
 
 /** Rows a build puts in at a time: the last of them may not be in yet when its count is told. */
@@ -226,8 +233,11 @@ export function useIndexedTables(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.indexWork, made]);
 
+  // The tables whose rows wait for flush, as they were last asked to be saved.
+  const waitingSave = useRef<Record<string, ParsedTable> | null>(null);
   const save = useCallback(
-    async (tables: Record<string, ParsedTable>) => {
+    async (tables: Record<string, ParsedTable>, later = false): Promise<boolean> => {
+      let waits = false;
       for (const [key, table] of Object.entries(tables)) {
         if (!table.indexed || !madeFor.current.has(key)) continue;
         const host = await hostOf(bundleOf(key));
@@ -238,6 +248,15 @@ export function useIndexedTables(input: {
         // Its fields changed in a way the index holds: it's changed in place, or made
         // again from the rows saved here, so edits wait from now (they'd be lost between the two).
         const again = indexedFor(was) !== indexedFor(table.schema);
+        // Rows alone, when the host says when: they wait (in the index, and marked there) for flush.
+        if (later && !again && gone.length === 0 && renamed.length === 0) {
+          madeFor.current.set(key, table.schema);
+          if (rows) {
+            waitingSave.current = { ...(waitingSave.current ?? {}), [key]: table };
+            waits = true;
+          }
+          continue;
+        }
         if (again) setMade((m) => ({ ...m, [key]: "building" }));
         // An undo brought fields back (#562): the index is changed first, so the rows it
         // writes have their values again, kept hidden since they were removed.
@@ -298,10 +317,18 @@ export function useIndexedTables(input: {
             (error: unknown) => latest.current.tell("Couldn't read this table again", error instanceof Error ? error.message : String(error)),
           );
       }
+      return waits;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  const flush = useCallback(async () => {
+    const waiting = waitingSave.current;
+    if (!waiting) return;
+    waitingSave.current = null;
+    await save(waiting);
+  }, [save]);
 
   const state_ = active?.indexed ? made[state.active] : undefined;
   // The rows read so far, as a source the table view can scroll through: the
@@ -362,6 +389,7 @@ export function useIndexedTables(input: {
   return {
     hold,
     save,
+    flush,
     everyRow,
     building,
     editable: isEditable(active, building !== null || state_ === "lost"),
