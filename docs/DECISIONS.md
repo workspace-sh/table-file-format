@@ -1551,3 +1551,32 @@ table's views and fields are a handful each, so 13 (65 bits), which
 also keeps links short. Views stayed at 26 when D23's amendment came
 before D62 set the shorter length; that was never a decision. Views
 already minted at 26 stay valid: a reader takes any id.
+
+## D65: what's typed is kept, never refused for good
+
+**Leslie (27 Oct 2026).** An editor that refuses an edit locks the reader in
+a cell they may not know how to fix, or loses what they typed. The rule is
+Google Sheets' and Numbers': what's typed is kept, and the cell says what's
+wrong.
+
+- **Leaving a cell keeps the edit at once.** A tap on another cell, or the
+  editor closing, never asks and never drops.
+- **A key asks once.** Enter or Return with a problem says what it is; the
+  same draft entered again is kept. (An early year, D42, already worked
+  this way.)
+- **A value the column can't hold** is kept as typed, as a string; the
+  cell shows "Not a number" (and the like), and validation reports it, as
+  for any value of the wrong type in a file.
+- **A formula that reads** is kept as it stands, an unknown function as a
+  call to it, which shows `#NAME?` (`compileFormula`'s
+  `keepUnknownFunctions`).
+- **A formula that doesn't read** is kept as typed, without its `=`. SPEC
+  section 5 already says what a reader does with an `expr` that doesn't
+  parse: the cell is empty and the reader reports it. The apps report it
+  in the cell itself, "Formula can't be read", so it's never an empty cell
+  with no reason.
+- **Undo** puts back what was there before, as for any edit.
+
+Considered and not taken: Excel's and Airtable's, refusing until it's fixed
+or cancelled, which is the lock or the loss; and a mix (keep what reads,
+drop what doesn't), which has no rule a reader could guess.

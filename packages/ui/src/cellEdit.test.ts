@@ -33,11 +33,12 @@ test("a draft the column holds is saved; the same value is not saved again", () 
   assert.deepEqual(commitDraft(count, 4, "4", "key", null), { kind: "unchanged" });
 });
 
-test("a draft the column can't hold is refused with the reason, or dropped on leaving", () => {
-  const refused = commitDraft(count, 3, "2.5", "key", null);
-  assert.equal(refused.kind, "problem");
-  assert.equal(refused.kind === "problem" && refused.check.message, "“2.5” isn't a whole number.");
-  assert.deepEqual(commitDraft(count, 3, "2.5", "blur", null), { kind: "dropped" });
+test("a draft the column can't hold is said once, then kept as typed; leaving keeps it outright (D65)", () => {
+  const asked = commitDraft(count, 3, "2.5", "key", null);
+  assert.equal(asked.kind, "problem");
+  assert.equal(asked.kind === "problem" && asked.check.message, "“2.5” isn't a whole number. Press Enter again to keep it as typed.");
+  assert.deepEqual(commitDraft(count, 3, "2.5", "key", asked.kind === "problem" ? asked.queried : null), { kind: "save", value: "2.5" });
+  assert.deepEqual(commitDraft(count, 3, "2.5", "blur", null), { kind: "save", value: "2.5" });
 });
 
 test("an early year is asked about once, then kept; leaving keeps it outright", () => {
@@ -110,7 +111,11 @@ test("`=` typed in a stored field's cell is its own formula; typed over one, a v
   const qty = fields[1]!;
   assert.deepEqual(commitDraft(qty, 3, "=price * 2", "key", null, { fields }), { kind: "formula", expr: "(* price 2)" });
   assert.equal(commitDraft(qty, 3, "=price *", "key", null, { fields }).kind, "problem");
-  assert.equal(commitDraft(qty, 3, "=price *", "blur", null, { fields }).kind, "dropped");
+  // Kept as typed on leaving, or entered again (D65): its cell says it can't be read.
+  assert.deepEqual(commitDraft(qty, 3, "=price *", "blur", null, { fields }), { kind: "formula", expr: "price *" });
+  assert.deepEqual(commitDraft(qty, 3, "=price *", "key", "=price *", { fields }), { kind: "formula", expr: "price *" });
+  // One that reads keeps an unknown function, to show #NAME?.
+  assert.deepEqual(commitDraft(qty, 3, "=frobnicate(price)", "blur", null, { fields }), { kind: "formula", expr: "(frobnicate price)" });
   // The same formula again changes nothing.
   assert.deepEqual(commitDraft(qty, 6, "=price*2", "key", null, { fields, own: "(* price 2)" }), { kind: "unchanged" });
   // Typed over it: the value, even the one it shows, and nothing at all.
