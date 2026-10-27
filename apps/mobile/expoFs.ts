@@ -45,7 +45,8 @@ export const expoFs: TableFs = {
     if (!file.exists) return null;
     const handle = file.open();
     try {
-      return handle.readBytes(Math.min(bytes, file.size));
+      // readBytes is asynchronous since Expo SDK 58: awaited, so the handle isn't closed before it reads.
+      return await handle.readBytes(Math.min(bytes, file.size));
     } finally {
       handle.close();
     }
