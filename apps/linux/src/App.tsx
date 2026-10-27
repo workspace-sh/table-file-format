@@ -76,6 +76,7 @@ import {
   departedText,
   storedTableRows,
   changedElsewherePrompt,
+  sheetReaders,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
@@ -220,6 +221,8 @@ interface ViewActions {
   arranged: boolean;
   onArrange: (patch: Partial<View>) => void;
   onSaveForEveryone: () => void;
+  /** How many formulas read the view on screen by place (D41). */
+  sheetReaders: number;
   onReset: () => void;
 }
 
@@ -441,6 +444,7 @@ function TablePane({
           personal={viewActions.arranged}
           onSaveForEveryone={viewActions.onSaveForEveryone}
           onReset={viewActions.onReset}
+          sheetReaders={viewActions.sheetReaders}
           onClose={() => onSettings(false)}
           onCancel={() => onSettings(false, true)}
           revision={revision}
@@ -875,6 +879,7 @@ export function App({
     onArrange: (patch) => dispatch({ type: "arrange", patch }),
     onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
     onReset: () => dispatch({ type: "resetArrangement" }),
+    sheetReaders: sheetReaders(state.tables, state.active, derived.shown.view),
   };
 
   // Open…: a .table folder is edited where it is; a single-file .table or a spreadsheet becomes a .table folder beside the new files.
@@ -1237,7 +1242,7 @@ export function App({
               <AdwToolbarView topBar={<AdwHeaderBar />}>
                 <AdwPreferencesPage>
                   <DisplayControls
-                    rows={displayChoices(state.display, ownLocale, "System")}
+                    rows={displayChoices(state.display, ownLocale, "System", state.active || undefined)}
                     onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </AdwPreferencesPage>

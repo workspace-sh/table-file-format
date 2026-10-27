@@ -555,7 +555,7 @@ export function Sidebar({
       {!foldedDisplay && (
         <>
       <DisplayControls
-        rows={displayChoices(display, browserLocale)}
+        rows={displayChoices(display, browserLocale, "Browser", activeTablePath || undefined)}
         onChoose={onDisplayChoose}
       />
         </>

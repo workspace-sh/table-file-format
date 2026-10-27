@@ -27,6 +27,9 @@ export default defineConfig(() => ({
     }),
     babel(),
   ],
+  // SQLite's WebAssembly is found beside its script: pre-bundled into Vite's deps folder,
+  // the script asks for a sqlite3.wasm that isn't there and gets the page instead.
+  optimizeDeps: { exclude: ["@sqlite.org/sqlite-wasm"] },
   // Which build this is, shown in the sidebar (docs/VERSIONING.md).
   define: { __TABLE_BUILD__: JSON.stringify(buildInfo()) },
   build: {

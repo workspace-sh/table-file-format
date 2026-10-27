@@ -15,6 +15,8 @@ export type GlassBarState =
       kind: "selected";
       label: string;
       value: string;
+      /** Drawn before the value, apart from it: the `=` of a cell's own formula. */
+      prefix?: string;
       monospaced?: boolean;
       about?: string;
       info?: boolean;
@@ -56,8 +58,15 @@ export type GlassBarEditing = {
    */
   expandable?: boolean;
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
-  /** Shown before the field, in the field's own type: a currency's symbol. */
+  /** Shown before the field, in the field's own type: a currency's symbol, or a formula's `=`. */
   prefix?: string;
+  /**
+   * The prefix can be taken away (a cell's own formula's `=`): tapping it, or
+   * Backspace at the very start, calls `onPrefixRemove`. `false` once it has
+   * gone. Either way, set means the field is the bar's own native one, which
+   * reports that Backspace, so the edit keeps its field when the prefix goes.
+   */
+  prefixRemovable?: boolean;
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
@@ -204,6 +213,8 @@ export type GlassBarProps = {
    */
   onSubmit?: (value: string) => void;
   onChip?: (id: string) => void;
+  /** Editing: the removable prefix tapped, or Backspace at the very start. */
+  onPrefixRemove?: () => void;
   onFix?: () => void;
   onChoose?: (id: string) => void;
   /** The "+" after the choices: add a new one. */

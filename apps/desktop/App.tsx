@@ -116,6 +116,7 @@ import {
   type Making,
   type NamePrompt,
   type SheetGridShown,
+  sheetReaders,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
@@ -761,7 +762,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
   // over the table as the web has. Sent whenever they change.
   useEffect(() => {
     setAppSettings(
-      displayChoices(display, systemLocale, "System").map((c) => ({
+      displayChoices(display, systemLocale, "System", state.active || undefined).map((c) => ({
         id: c.kind,
         name: c.name,
         note: c.note ?? c.label,
@@ -769,7 +770,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
         options: c.options,
       })),
     );
-  }, [display, systemLocale]);
+  }, [display, systemLocale, state.active]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
   // The sidebar is the window's own (nativeSidebar): the split view shows,
@@ -1021,6 +1022,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
             personal: derived.arranged,
             onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
             onReset: () => dispatch({ type: "resetArrangement" }),
+            sheetReaders: sheetReaders(state.tables, state.active, settingsView),
             onDelete: viewCount > 1 ? () => dispatch({ type: "deleteView" }) : undefined,
             onClose: () => dispatch({ type: "settings", open: false }),
             onCancel: () => dispatch({ type: "settings", open: false, revert: true }),

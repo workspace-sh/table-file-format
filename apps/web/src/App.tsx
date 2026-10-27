@@ -70,6 +70,7 @@ import {
   type AttachmentShown,
   type ShownFile,
   storedTableRows,
+  sheetReaders,
 } from "@workspace.sh/table-app";
 import { useSearchBehind, useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
@@ -1163,6 +1164,7 @@ export function App() {
             personal={derived.arranged}
             onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
             onReset={() => dispatch({ type: "resetArrangement" })}
+            sheetReaders={sheetReaders(state.tables, state.active, view)}
             onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
             onClose={() => dispatch({ type: "settings", open: false })}
             onCancel={() => dispatch({ type: "settings", open: false, revert: true })}

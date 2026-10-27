@@ -7,7 +7,7 @@
 // rows.ndjson.
 
 import { bundleOf, remoteEdits, remoteViewRows, settled, tableNameOf, type AppAction, type AppState, type IndexWork, type RemoteViewRows } from "@workspace.sh/table-app";
-import { computeRows, queryIndex } from "@workspace.sh/table-core";
+import { computeRows, fieldChanges, queryIndex } from "@workspace.sh/table-core";
 import { firstRows, packSingleFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { readTable } from "@workspace.sh/table-core/io";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
@@ -268,7 +268,8 @@ export function useIndexedTables(input: {
         // Its fields changed: rows lose the fields that went, and the index
         // is made again when what it holds no longer fits (indexedFor).
         const was = madeFor.current.get(key);
-        const gone = was ? was.fields.filter((f) => !table.schema.fields.some((g) => g.name === f.name)).map((f) => f.name) : [];
+        // Matched by id (D62): a field renamed is the same field, its values kept (#709).
+        const { gone, renamed } = was ? fieldChanges(was, table.schema) : { gone: [] as string[], renamed: [] };
         const rows = unsaved.current.has(key) || gone.length > 0;
         // Its fields changed in a way the index holds: it's changed in place, or made
         // again from the rows saved here, so edits wait from now (they'd be lost between the two).
@@ -277,7 +278,9 @@ export function useIndexedTables(input: {
         // An undo brought fields back (#562): the index is changed first, so the rows it
         // writes have their values again, kept hidden since they were removed.
         const restore = (table.indexed.restore ?? []).filter((name) => !was?.fields.some((f) => f.name === name));
-        if (again && restore.length > 0 && (await host.alter(tableNameOf(key), was, table.schema, { restore }).catch(() => false))) {
+        // So does a rename (D63): its rows are written with the new name only once the index
+        // has it. Saved first, every row would be written without the field.
+        if (again && (restore.length > 0 || renamed.length > 0) && (await host.alter(tableNameOf(key), was, table.schema, { restore }).catch(() => false))) {
           const schema = table.schema;
           madeFor.current.set(key, schema);
           unsaved.current.delete(key);
@@ -293,6 +296,13 @@ export function useIndexedTables(input: {
           latest.current.dispatch({ type: "indexed", key, count });
           setMade((m) => ({ ...m, [key]: "ready" }));
           fillIn(host, key, schema);
+          continue;
+        }
+        if (again && renamed.length > 0) {
+          // The index can't take the new name where it is: nothing is written, so no row
+          // loses the field's values. The file keeps its old name until it's saved again.
+          setMade((m) => ({ ...m, [key]: "ready" }));
+          latest.current.tell("Couldn't rename the field", "This table's index couldn't be changed. Its file is as it was.");
           continue;
         }
         unsaved.current.delete(key);
