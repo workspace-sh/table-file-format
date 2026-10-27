@@ -40,6 +40,7 @@ import {
   Text,
   TextField,
   VStack,
+  useNativeState,
   type TextFieldRef,
 } from "@expo/ui/swift-ui";
 import {
@@ -70,6 +71,17 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
 import type { GlassBarAction, GlassBarDetails, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+
+/**
+ * Expo UI's TextField, starting from `initial`. Since Expo UI 56 a field
+ * holds its text as native state (useNativeState) instead of taking a
+ * `defaultValue`, and reports edits as `onTextChange`: given the old props it
+ * opened empty and told nothing of what was typed. A new key starts it again.
+ */
+function SeededTextField({ initial, onChange, ...rest }: Omit<ComponentProps<typeof TextField>, "text" | "onTextChange"> & { initial: string; onChange?: (text: string) => void }) {
+  const text = useNativeState(initial);
+  return <TextField {...rest} text={text} onTextChange={onChange} />;
+}
 
 const SIZE = 48;
 const GAP = 8;
@@ -565,12 +577,12 @@ function Capsule(props: Part) {
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
           {/* Focused as it opens, so typing starts at once. Return puts the
               keyboard away and keeps the query. */}
-          <TextField
+          <SeededTextField
             key="search"
-            defaultValue={state.query}
+            initial={state.query}
             placeholder={props.searchLabel ?? "Search"}
             autoFocus
-            onValueChange={props.onQueryChange}
+            onChange={props.onQueryChange}
             modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
           />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
@@ -953,13 +965,13 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
             modifiers={[fixedSize({ horizontal: false, vertical: true }), padding({ vertical: 4 })]}
           />
         ) : (
-          <TextField
+          <SeededTextField
             key={state.editKey}
             ref={field}
-            defaultValue={state.initialValue}
+            initial={state.initialValue}
             autoFocus
             axis={grows ? "vertical" : "horizontal"}
-            onValueChange={change}
+            onChange={change}
             onSelectionChange={(sel) => { selection.current = sel; }}
             modifiers={[
               font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),
