@@ -8,6 +8,7 @@ import {
   formatAddress,
   formatValue as formatWithFieldFormat,
   FormulaError,
+  parseExpr,
   stringFormatKind,
   type FormulaSyntax,
   viewTotal,
@@ -312,6 +313,28 @@ export function formulaErrorShow(error: FormulaError, field: Field | undefined, 
   return said("calculation", "Wrong kind of value", sentence);
 }
 
+/** Types whose values are never strings: one stored as a string was kept as typed (D65). */
+const NOT_STRINGS = new Set(["number", "integer", "year", "boolean"]);
+
+/**
+ * A cell holding what was kept as typed (D65): a formula that can't be read (its cells are
+ * empty, SPEC section 5), or a value the column's type can't hold. Null for anything else.
+ */
+export function keptAsTyped(field: Field | undefined, value: unknown): FormulaErrorShow | null {
+  if (!field) return null;
+  if (field.computed && (value === undefined || value === null)) {
+    const read = parseExpr(field.computed.expr);
+    if (read.ok) return null;
+    const text = "Formula can't be read";
+    return { code: "", text, withCode: text, explanation: `The formula was kept as typed, and it can't be read: ${read.message}. Open the formula to change it.`, fix: "edit", group: "calculation" };
+  }
+  if (!field.computed && typeof value === "string" && NOT_STRINGS.has(field.type)) {
+    const [not, holds] = HOLDS[field.type]!;
+    return { code: "", text: not, withCode: not, explanation: `“${value}” was kept as typed, and this column holds ${holds}. Edit the cell to change it.`, fix: "edit", group: "mismatch" };
+  }
+  return null;
+}
+
 /** What `value`, stored in `field`, shows as. */
 export function describeCell(
   field: Field | undefined,
@@ -325,6 +348,9 @@ export function describeCell(
   }
   // A formula that failed: plain words, and its code in Excel style's hover and panel (#685).
   if (value instanceof FormulaError) return { kind: "error", ...formulaErrorShow(value, field, display.formulaSyntax) };
+  // What was kept as typed and can't be used as it is (D65): the cell says so, rather than standing empty.
+  const kept = keptAsTyped(field, value);
+  if (kept) return { kind: "error", ...kept };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
     if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
