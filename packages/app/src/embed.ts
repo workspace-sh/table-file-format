@@ -148,6 +148,12 @@ export interface EmbeddedTableFiles {
   write: (library: Library, tables: Record<string, ParsedTable>, metas: Record<string, BundleMeta>, bundle: string) => Promise<void>;
   /** Append events to the history of the table `key` (SPEC section 14). Absent: the platform keeps no history. */
   appendHistory?: (library: Library, key: string, events: EditEvent[]) => Promise<void>;
+  /**
+   * After a write of `bundle` is whole, a large table's rows from its index
+   * included: for a host that keeps a single-file `.table` as a working
+   * folder, to pack it back into the file then (singleFile.ts).
+   */
+  written?: (library: Library, bundle: string) => Promise<void>;
 }
 
 /** The tallest an embedded view is before it scrolls within itself, as on GTK. */
