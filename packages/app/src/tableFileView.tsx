@@ -181,11 +181,19 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
   flushIndexed.current = indexed.flush;
   useEffect(() => {
     if (!flush) return;
-    flush.current = async () => {
-      await flushIndexed.current?.();
-      const waited = writtenWaits.current;
-      writtenWaits.current = null;
-      if (waited) await files.written?.(...waited);
+    // One flush after another: asked again while one runs (iOS goes inactive, then to the
+    // background), the second waits for the first, so nothing is packed before its rows are saved.
+    let running: Promise<void> = Promise.resolve();
+    flush.current = () => {
+      running = running.then(async () => {
+        const waited = writtenWaits.current;
+        await flushIndexed.current?.();
+        if (!waited) return;
+        // Taken only once its rows are saved; a write since (still waiting) keeps its own.
+        if (writtenWaits.current === waited) writtenWaits.current = null;
+        await files.written?.(...waited);
+      });
+      return running;
     };
     return () => {
       flush.current = null;
