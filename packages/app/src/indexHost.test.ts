@@ -176,3 +176,55 @@ test("a large table from an archive with a line it can't read isn't indexed: hel
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the same file opened again takes the index made from it; after a save, or another file, it is made again", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-index-host-"));
+  try {
+    const source = join(dir, "source.table");
+    cpSync(join(fixtures, "projects.table"), source, { recursive: true });
+    const bundle = await readBundle(nodeFs, source);
+    const many = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ${"x".repeat(400)}`, priority: i % 7 }));
+    bundle.tables.tasks!.rows = many;
+    const schema = bundle.tables.tasks!.schema;
+    const archive = await bundleToArchive("projects", bundle);
+    const home = join(dir, "home");
+    // Each rows file written is a build from the archive.
+    let written = 0;
+    const counted = (): IndexHostPlatform => {
+      const p = nodePlatform(home);
+      return { ...p, writer: async (path) => (written++, p.writer(path)) };
+    };
+    const openAndEnsure = async (bytes: Uint8Array) => {
+      const host = createIndexHost(counted());
+      const { opened } = await host.openZip(bytes, [], 1000);
+      const db = host.openIndexDatabase(opened.key);
+      const count = await db.ensure("tasks", schema);
+      return { db, count };
+    };
+
+    let { db, count } = await openAndEnsure(archive);
+    assert.equal(count, many.length);
+    assert.equal(written, 1, "made from the archive the first time");
+    await db.close();
+
+    ({ db, count } = await openAndEnsure(archive));
+    assert.equal(count, many.length);
+    assert.equal(written, 1, "opened again: taken as it is");
+
+    // An edit saved: the index is this device's now, and the archive's rows are read again when it's opened.
+    await db.rows({ ask: "edits", name: "tasks", table: { schema }, edits: [{ kind: "cell", rowId: "r0", field: "title", value: "Edited" }] });
+    assert.equal(await db.save("tasks", schema, true), true);
+    await db.close();
+    ({ db, count } = await openAndEnsure(archive));
+    assert.equal(written, 3, "made again after a save (the save wrote one rows file, the build another)");
+    await db.close();
+
+    // Another file of the same name: made again.
+    bundle.tables.tasks!.rows = many.map((r, i) => (i === 1 ? { ...r, title: "Changed" } : r));
+    ({ db, count } = await openAndEnsure(await bundleToArchive("projects", bundle)));
+    assert.equal(written, 4, "another archive: made again");
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
