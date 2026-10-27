@@ -1,5 +1,6 @@
-// The example tables, from fixtures/ (the only place one is edited), written wherever a test needs
-// them: the test-files repository, a device's documents, a folder of one's own (#592).
+// The example tables, from fixtures/ (a link into the workspace-fixtures submodule, the only place
+// one is edited), written wherever a test needs them: a device's documents, a folder of one's own
+// (#592), or workspace-fixtures itself, in place, for its single files and CHECKSUMS.
 //
 //   npm run fixtures:export -- <dir>           write them
 //   npm run fixtures:export -- <dir> --check   fail, naming each file, if <dir> doesn't hold them as they are
@@ -8,11 +9,11 @@
 //   <name>.table/              each example as a folder, byte for byte
 //   single-file/<name>.table   each as a single file (single-file.mts): the same bytes every time
 //   CHECKSUMS                  sha256 of every file above, and the commit they came from
-// Each example's folder is replaced whole, so a file removed from an example goes. Nothing else in
-// <dir> is touched. The large tables are scripts/big-table.mts's, made where they're needed.
+// Each example's folder is replaced whole, so a file removed from an example goes; in place (<dir> is
+// fixtures/ itself) the folders are the source and are left alone. Nothing else in <dir> is touched. The large tables are scripts/big-table.mts's, made where they're needed.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { folderFiles, packFolder } from "./single-file.mts";
 
@@ -25,7 +26,9 @@ if (!dir) {
 }
 
 const root = join(import.meta.dirname, "..");
-const source = join(root, "fixtures");
+const source = realpathSync(join(root, "fixtures"));
+// Writing into fixtures/ itself: its folders are what's read, so they're never removed or rewritten.
+const inPlace = existsSync(dir) && realpathSync(dir) === source;
 const names = readdirSync(source)
   .filter((n) => n.endsWith(".table") && statSync(join(source, n)).isDirectory() && existsSync(join(source, n, "meta.json")))
   .map((n) => n.slice(0, -".table".length))
@@ -45,9 +48,9 @@ for (const name of names) {
 }
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 // The commit, so a copy says what it's a copy of; checked by the files' sums, not by it.
-const commit = execFileSync("git", ["-C", root, "log", "-1", "--format=%h %cs", "--", "fixtures"], { encoding: "utf8" }).trim();
+const commit = execFileSync("git", ["-C", source, "log", "-1", "--format=%h %cs", "--", "."], { encoding: "utf8" }).trim();
 const sums = [...want].map(([p, b]) => `${sha(b)}  ${p}`).join("\n");
-const checksums = `# The example tables from workspace-sh/table-file-format fixtures/ (${commit}), written by npm run fixtures:export.\n${sums}\n`;
+const checksums = `# The example tables from workspace-sh/workspace-fixtures Fixtures/table (${commit}), written by table-file-format's npm run fixtures:export.\n${sums}\n`;
 
 if (check) {
   const differ: string[] = [];
@@ -70,8 +73,9 @@ if (check) {
   }
   console.log(`${dir} holds the ${names.length} examples as fixtures/ has them (${want.size} files).`);
 } else {
-  for (const name of names) rmSync(join(dir, `${name}.table`), { recursive: true, force: true });
+  if (!inPlace) for (const name of names) rmSync(join(dir, `${name}.table`), { recursive: true, force: true });
   for (const [p, bytes] of want) {
+    if (inPlace && !p.startsWith("single-file/")) continue;
     mkdirSync(dirname(join(dir, p)), { recursive: true });
     writeFileSync(join(dir, p), bytes);
   }
