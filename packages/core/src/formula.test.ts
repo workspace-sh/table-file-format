@@ -312,3 +312,16 @@ test("the names forms had before D48 are read as the names they have now, typed 
   const bad = compileFormula("=nope(1)");
   assert.ok(!bad.ok && bad.message.includes("related") && bad.message.includes("values") && !bad.message.includes("lookup"));
 });
+
+test("an unfinished edit keeps a formula that reads, an unknown function and all; one that doesn't read isn't stored", () => {
+  const keep = { fields: ["n"], keepUnknownFunctions: true };
+  const unknown = compileFormula("=frobnicate(n)", keep);
+  assert.ok(unknown.ok && unknown.stored === "(frobnicate n)");
+  // Worked out, it shows what's wrong.
+  const stored = compileFormula("(frobnicate n)", keep);
+  assert.ok(stored.ok && stored.stored === "(frobnicate n)");
+  // Without the option it's refused, as an edit being saved is.
+  assert.equal(compileFormula("=frobnicate(n)", { fields: ["n"] }).ok, false);
+  // Malformed text is never stored.
+  assert.equal(compileFormula("=sum(n,", keep).ok, false);
+});

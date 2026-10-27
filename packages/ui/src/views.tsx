@@ -41,7 +41,7 @@ import {
 } from "./display";
 import type { ViewProps } from "./viewProps";
 import { cellFormulaText, commitDraft, currencySymbolOf, FORMULA_PREFIX, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
-import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
+import { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
   BOARD_GAP,
@@ -87,6 +87,7 @@ import {
   mergedBlocks,
   mergeOver,
   rowColors,
+  compileFormula,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
 import { useViewFacts, useViewWindow } from "./useViewRows";
@@ -4324,7 +4325,11 @@ export function TableView({
         const typed = barDraft?.text ?? barFormula?.draft;
         if (typed !== undefined) {
           const done = open.save(typed);
-          if (!done.ok) return;
+          // A formula that can't be saved (an error is an error) doesn't hold the table: it's
+          // dropped, the column keeping the formula it had, and the tap moves on. A value that
+          // can't be held keeps its edit open, to be put right.
+          if (!done.ok && open.mode !== "formula") return;
+          if (!done.ok && !open.leave?.(typed)) open.cancel();
         }
         editor?.end(open.key);
         barSession.current = null;
@@ -4600,6 +4605,15 @@ export function TableView({
           setBarFormula(null);
           barSession.current = null;
           return { ok: true };
+        },
+        leave: (t) => {
+          // Kept as typed when it reads, an unknown function included: its cells say what's wrong.
+          const kept = compileFormula(t, { fields: schema.fields.map((f) => f.name), ...(g ? { grid: g } : {}), keepUnknownFunctions: true });
+          if (!kept.ok) return false;
+          if (kept.stored !== (field.computed?.expr ?? "")) onUpdateField!(name, { computed: { expr: kept.stored, dialect: FORMULA_DIALECT } });
+          setBarFormula(null);
+          barSession.current = null;
+          return true;
         },
         cancel: () => {
           setBarFormula(null);
