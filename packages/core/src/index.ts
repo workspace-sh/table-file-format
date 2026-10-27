@@ -1,4 +1,5 @@
 export * from "./types.js";
+export { sourceOf } from "./source.js";
 export { newId, newFieldId, idNumber, ID_ALPHABET, ID_LENGTH, FIELD_ID_LENGTH, newViewId, VIEW_ID_LENGTH } from "./id.js";
 export { withFieldIds, addressedField, derivedFieldId } from "./fieldIds.js";
 export { renameField, renameProblem } from "./renameField.js";
