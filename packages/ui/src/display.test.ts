@@ -285,3 +285,16 @@ test("a table's columns stop at their natural widths, and share less by them", (
   const phone = columnWidths(names, {}, 1602, 2, SQUEEZED_CELL_WIDTH, undefined, undefined, most);
   assert.deepEqual(names.map(phone), [240, 180, 180, 180]);
 });
+
+test("what was kept as typed says so in its cell, rather than standing empty (D65)", () => {
+  const unreadable = { name: "total", type: "number" as const, computed: { expr: "sum(n,", dialect: "table-expr-v1" } };
+  const shown = describeCell(unreadable, undefined, plain);
+  assert.equal(shown.kind, "error");
+  assert.equal(shown.kind === "error" && shown.text, "Formula can't be read");
+  const count = { name: "count", type: "integer" as const };
+  const typed = describeCell(count, "2.5", plain);
+  assert.equal(typed.kind === "error" && typed.text, "Not a whole number");
+  // A formula that reads, and a value of its type, show as before.
+  assert.notEqual(describeCell({ ...unreadable, computed: { expr: "(+ n 1)", dialect: "table-expr-v1" } }, undefined, plain).kind, "error");
+  assert.notEqual(describeCell(count, 3, plain).kind, "error");
+});

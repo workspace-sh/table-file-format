@@ -40,7 +40,7 @@ import {
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { cellFormulaText, commitDraft, currencySymbolOf, FORMULA_PREFIX, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
+import { cellFormulaText, commitDraft, storedAsTyped, currencySymbolOf, FORMULA_PREFIX, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
 import { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
@@ -87,7 +87,6 @@ import {
   mergedBlocks,
   mergeOver,
   rowColors,
-  compileFormula,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
 import { useViewFacts, useViewWindow } from "./useViewRows";
@@ -4328,7 +4327,7 @@ export function TableView({
           // A formula that can't be saved (an error is an error) doesn't hold the table: it's
           // dropped, the column keeping the formula it had, and the tap moves on. A value that
           // can't be held keeps its edit open, to be put right.
-          if (!done.ok && open.mode !== "formula") return;
+          // Never held: what was typed is kept as it stands (D65).
           if (!done.ok && !open.leave?.(typed)) open.cancel();
         }
         editor?.end(open.key);
@@ -4568,6 +4567,15 @@ export function TableView({
       const explain = (draft: string) =>
         explainFormula({ field, row, fields: schema.fields, draft, editable: true, grid: g, allRows, computeOptions: { tables: relatedTables, self: tableKey } });
       const initial = formulaDraftOf(field, g, formulaSyntax);
+      // The draft a problem was last said about: entered again, it's kept.
+      let asked: string | null = null;
+      const keepAsTyped = (t: string): { ok: true } => {
+        const expr = storedAsTyped(t, schema.fields.map((f) => f.name), g);
+        if (expr !== (field.computed?.expr ?? "")) onUpdateField!(name, { computed: { expr, dialect: FORMULA_DIALECT } });
+        setBarFormula(null);
+        barSession.current = null;
+        return { ok: true };
+      };
       setFormulaCell(null);
       setBarFormula({ rowId, name, draft: initial });
       session = {
@@ -4600,21 +4608,19 @@ export function TableView({
         },
         save: (t) => {
           const ex = explain(t);
-          if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
+          // A problem is said once; the same formula entered again is kept as it stands (D65).
+          if (ex.status?.kind === "error" && asked !== t) {
+            asked = t;
+            return { ok: false, error: { message: `${ex.status.message} Press Return again to keep it as typed.` } };
+          }
+          if (ex.status?.kind === "error") return keepAsTyped(t);
           if (ex.save) onUpdateField!(name, ex.save);
           setBarFormula(null);
           barSession.current = null;
           return { ok: true };
         },
-        leave: (t) => {
-          // Kept as typed when it reads, an unknown function included: its cells say what's wrong.
-          const kept = compileFormula(t, { fields: schema.fields.map((f) => f.name), ...(g ? { grid: g } : {}), keepUnknownFunctions: true });
-          if (!kept.ok) return false;
-          if (kept.stored !== (field.computed?.expr ?? "")) onUpdateField!(name, { computed: { expr: kept.stored, dialect: FORMULA_DIALECT } });
-          setBarFormula(null);
-          barSession.current = null;
-          return true;
-        },
+        // Left unfinished (a tap on another cell): kept as it stands, its cells saying what's wrong (D65).
+        leave: (t) => keepAsTyped(t).ok,
         cancel: () => {
           setBarFormula(null);
           barSession.current = null;
@@ -4747,6 +4753,16 @@ export function TableView({
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
           if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
           return { ok: true };
+        },
+        // Left unfinished (a tap on another cell): kept as typed, as leaving a cell on the web keeps it (D65).
+        leave: (t) => {
+          if (linksOne) return false;
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "blur", queried, cellFormula);
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
+          return true;
         },
         // Emptied as the Delete key does (the value goes, not ""), required or not:
         // the table then reports a required one as missing, as on the web.
