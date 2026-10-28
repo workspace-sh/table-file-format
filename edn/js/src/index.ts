@@ -19,7 +19,7 @@ const loading = new Map<string, Promise<Edn>>();
  * this module; in Node it's read from disk. `wasm` gives it another way
  * (bytes, a URL, a Response).
  */
-export function loadEdn(options: { wasm?: BufferSource | URL | Response; binding?: "native" | "wasm" } = {}): Promise<Edn> {
+export function loadEdn(options: { wasm?: ArrayBuffer | ArrayBufferView | URL | Response; binding?: "native" | "wasm" } = {}): Promise<Edn> {
   const key = options.binding ?? "auto";
   let found = loading.get(key);
   if (!found) {

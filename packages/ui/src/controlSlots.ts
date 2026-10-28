@@ -5,7 +5,7 @@
 // own where it wants something else. Free of any renderer, as shared.ts.
 
 import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
-import type { AnchorRect } from "./internal/measureAnchor";
+import type { AnchorRect } from "./internal/anchorRect";
 
 /** An entry of a menu the platform draws: a row's, or a column's. */
 interface Action<Id extends string> {
