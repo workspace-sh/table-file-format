@@ -14,13 +14,9 @@
  * just what popover positioning needs.
  */
 import type { View } from "react-native";
+import type { AnchorRect } from "./anchorRect";
+export type { AnchorRect } from "./anchorRect";
 
-export interface AnchorRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
 
 /** Returns `null` if the target is falsy or doesn't support `measure()`. */
 export function measureAnchor(target: unknown): Promise<AnchorRect | null> {
