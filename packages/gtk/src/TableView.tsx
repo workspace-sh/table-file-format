@@ -95,6 +95,7 @@ import { styles, tintClass, useDark } from "./theme.js";
 import { useRowColors } from "./rowColors.js";
 import { drawnOf, NO_LIMIT, scrollerHeight, useEmbedded } from "./embedded.js";
 import { gridKeyOf } from "./gridKeys.js";
+import { Steady } from "./steady.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
 const TABLE_CHROME = 2;
@@ -307,6 +308,13 @@ function HeaderMenu({
       {children}
     </GtkOverlay>
   );
+}
+
+/** One cursor of each name, for every handle: a new one at each render would be a new prop to set on each. */
+const cursors = new Map<string, Gdk.Cursor | null>();
+function cursorNamed(name: string): Gdk.Cursor | null {
+  if (!cursors.has(name)) cursors.set(name, Gdk.Cursor.newFromName(name, null));
+  return cursors.get(name)!;
 }
 
 /**
@@ -921,7 +929,7 @@ export function TableView({
         halign={Gtk.Align.END}
         cssClasses={[styles.columnHandle, ...(liveWidths[name] !== undefined ? [styles.columnHandleLit] : [])]}
         tooltipText="Drag to resize the column; double-click to reset it"
-        cursor={Gdk.Cursor.newFromName("col-resize", null)}
+        cursor={cursorNamed("col-resize")}
         controllers={columnResize(name)}
       />
     ) : null;
@@ -953,7 +961,7 @@ export function TableView({
           widthRequest={COLUMN_LINE_WIDTH}
           cssClasses={[styles.columnLine, ...(liveWidths[name] !== undefined ? [styles.columnLineLit] : [])]}
           tooltipText="Drag to resize the column; double-click to reset it"
-          cursor={Gdk.Cursor.newFromName("col-resize", null)}
+          cursor={cursorNamed("col-resize")}
           controllers={columnResize(name)}
         />
       );
@@ -1058,7 +1066,7 @@ export function TableView({
           heightRequest={grabbers ? GRABBER_HEIGHT : 8}
           cssClasses={[grabbers ? styles.rowGrabber : styles.rowGrip]}
           tooltipText="Drag to resize the row; double-click to fit it"
-          cursor={Gdk.Cursor.newFromName("row-resize", null)}
+          cursor={cursorNamed("row-resize")}
           controllers={rowResize(row, "grip", gripName)}
         >
           {grabbers ? null : <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />}
@@ -1084,7 +1092,7 @@ export function TableView({
           heightRequest={ROW_LINE_HEIGHT}
           cssClasses={[styles.rowLine, ...(label !== null ? [styles.rowLineLit] : [])]}
           tooltipText="Drag to resize the row; double-click to fit it"
-          cursor={Gdk.Cursor.newFromName("row-resize", null)}
+          cursor={cursorNamed("row-resize")}
           // A row still on its way from the index has no height to change yet.
           controllers={row.id ? rowResize(row, "line", fields[0]!) : undefined}
         />
@@ -1374,7 +1382,9 @@ export function TableView({
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
   // Only rows in memory have a grid to type formulas against (Sheet views are never indexed).
-  const grid = viewGrid(view, fields, isImmediate(source) ? (source.ids(0, count) as string[]) : [], sheet);
+  // Kept while what it's made of is, as it's given to every cell (and each row is kept while its cells are).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fields are the view's and schema's
+  const grid = useMemo(() => viewGrid(view, fields, isImmediate(source) ? (source.ids(0, count) as string[]) : [], sheet), [view, schema, source, count, sheet]);
   const openField = openFormula ? fieldMap.get(openFormula.name) : undefined;
   // While a formula is open: its column tinted, the cells it read outlined.
   const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
@@ -1444,6 +1454,10 @@ export function TableView({
   // What a cell holds is its own row's, made again for each: an editor open
   // in it stays with the row it edits.
   const slots = slotsFor(slotOf, firstBuilt, builtRows.length);
+  // A row the same as at the last render, its handlers aside, is the element it was: React passes over
+  // it, and its widgets aren't given their props again (an edit redraws its own row, not every row).
+  const steadyHeld = useRef<Steady | null>(null);
+  const steadyRows = (steadyHeld.current ??= new Steady());
   const body = builtRows.map((built, i) => {
     let row = built;
     const index = firstBuilt + i;
@@ -1513,7 +1527,9 @@ export function TableView({
                     field={field}
                     value={row[name]}
                     onCommit={(next) => onUpdateRow!(row.id, name, next)}
-                    relatedTables={relatedTables}
+                    // Only a relation shows another table's rows. The tables change at every edit, so the
+                    // other cells aren't given them, and stay as they were.
+                    relatedTables={field?.relation ? relatedTables : undefined}
                     onOpenRelation={onOpenRelation}
                     lines={lines}
                     xalign={xalign}
@@ -1542,7 +1558,7 @@ export function TableView({
                     key={row.id}
                     field={field}
                     value={row[name]}
-                    relatedTables={relatedTables}
+                    relatedTables={field?.relation ? relatedTables : undefined}
                     onOpenRelation={onOpenRelation}
                     lines={lines}
                     xalign={xalign}
@@ -1563,7 +1579,7 @@ export function TableView({
     };
     // The frozen start covers the row's own background: it takes the row's colour too.
     const start = rowStart(awaited ? `awaited:${index}` : `row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], awaited ? "" : String(numberOf(row, index)), freeze ? frozenNames.map((name, i) => bodyCell(name, i)) : null);
-    return (
+    return steadyRows.take(`slot:${slots[i]}`, (
     <GtkBox key={`slot:${slots[i]}`} name={awaited ? "awaited-row" : "table-row"} orientation={Gtk.Orientation.VERTICAL}>
       {heading}
       <GtkOverlay
@@ -1613,7 +1629,7 @@ export function TableView({
       )}
       </GtkOverlay>
     </GtkBox>
-    );
+    ), index);
   });
 
   // "New Row" is open space under the last row: a band as wide as the real

@@ -269,7 +269,7 @@ Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows wh
 
 Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an export of more than 250,000 rows. A single file holding one is saved whole, whatever its size: only export builds an archive in memory. The app's own timings follow.
 
-**Timed in the app itself** (29 Oct 2026, #442, #745). `apps/linux/scripts/measure-large.sh` opens a table from `scripts/big-table.mts` in the built app (`npm run build`), on headless sway at 1280 × 800 on the rig (a 2017 MacBook, 8 GB; software rendering, no GPU). The app times itself (`TABLE_MEASURE=1`, `src/measure.ts`): it watches its own widgets, once a frame, and takes each time from the action to the frame that first shows the result. It opens the table twice: with no index, and then again. An edit is made as the app's controls make one (its `updateRow` action), not typed. The 100,000-row numbers are the range of three runs; the 1,000,000-row numbers are one run.
+**Timed in the app itself** (29 Oct 2026, #442, #745). `apps/linux/scripts/measure-large.sh` opens a table from `scripts/big-table.mts` in the built app (`npm run build`), on headless sway at 1280 × 800 on the rig (a 2017 MacBook, 8 GB; software rendering, no GPU). The app times itself (`TABLE_MEASURE=1`, `src/measure.ts`): it watches its own widgets, once a frame, and takes each time from the action to the frame that first shows the result; a jump is shown once every row on screen has arrived from the index. It opens the table twice: with no index, and then again. An edit is made as the app's controls make one (its `updateRow` action), not typed. The 100,000-row numbers are the range of three runs; the 1,000,000-row numbers are one run.
 
 | | 100,000 rows | 1,000,000 rows |
 |---|---|---|
@@ -280,13 +280,13 @@ Not there yet for an indexed table: removing a choice (it has to come out of eve
 | Jump to the middle | 1.28 to 1.31 s | 1.38 s |
 | Jump to the last row | 0.35 to 0.47 s | 0.36 s |
 | A search, before its index is whole | 0.21 to 0.29 s | 0.26 s |
-| An edit shown | 0.73 to 0.78 s | 0.30 s |
-| A place not read before, asked for while the edit is saved | 0.74 to 0.90 s | 0.51 s |
+| An edit shown | 0.12 to 0.22 s | 0.21 s |
+| A place not read before, asked for while the edit is saved | 0.85 to 1.21 s | 0.93 s |
 | Opened again: first rows, and ready | 1.7 to 1.8 s, 3.1 to 3.2 s | 2.1 s, 3.6 s |
 
 - **Half the wait for first rows is the rig's software rendering.** With GTK's GL renderer on a machine with no GPU, Mesa's llvmpipe compiles its shaders on the app's thread, and the first draw of each new kind of widget pays for it. With `GSK_RENDERER=cairo` (`WRAP="env GSK_RENDERER=cairo"`), first rows come at 1.5 s and a jump to the middle takes 0.56 s. The rest of the wait is React making the first rows' GTK widgets, about 57 rows of about 100 widgets each (a profile: `PROFILE=<folder>`, one `.cpuprofile` for each step timed). On a desktop with a GPU the GL share should be small; that's unchecked.
 - **A row's widgets are kept for the next row built in its place** (#745). Each built place has a slot that it keeps while it stays built, and a jump hands the slots it leaves to the places it comes to. So a jump gives the rows already made their new values, and makes only what's in their cells. A row still on its way from the index is made as a row with values is, so its values arrive in the same widgets.
-- **An edit is drawn three times** before it shows: the table is drawn again as the edit is made, again as the index takes it, and again with the rows read back. Each time, every cell on screen is given its properties again, which costs 30 to 200 ms. Drawing again only the rows that changed is what's left in #745.
+- **An edit draws again only its own row** (#745). Each built row is kept as it was last drawn, and one whose cells would be drawn as before is passed over, though the table's handlers are new at each draw: they go through stand-ins that call the latest (`packages/gtk/src/steady.ts`). A cell is given the bundle's tables only when it shows a relation, as the tables change at every edit. What's left of an edit's time is the index's round trip and drawing that row.
 - **Ready at a million rows** is 59 s, against 17.7 s for the index alone (above): the build shares the machine with the window, which is drawing in software.
 
 ### What the web does (W2 and W3, 9 Oct 2026)
