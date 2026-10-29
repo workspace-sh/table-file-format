@@ -104,6 +104,17 @@ function until<T>(what: string, check: () => T | undefined | null | false, timeo
 const TITLE = /^\w+ [\w ]+ \d+$/;
 const rowNumbers = () => labels(TITLE).map((l) => Number(/(\d+)$/.exec(l.getLabel())![1]));
 const reading = () => labels(/rows read/).length > 0;
+/** Whether a row on screen is still on its way from the index (drawn empty, named so by the table). */
+function awaiting(): boolean {
+  let found = false;
+  const walk = (w: Gtk.Widget) => {
+    if (found || !w.getMapped()) return;
+    if (w.getName() === "awaited-row") found = true;
+    for (let c = w.getFirstChild(); c && !found; c = c.getNextSibling()) walk(c);
+  };
+  each(walk);
+  return found;
+}
 const countOf = (label: Gtk.Label) =>
   label
     .getLabel()
@@ -128,8 +139,9 @@ async function jumpTo(what: string, fraction: number, rows: number) {
   const t0 = performance.now();
   adjustment.setValue((adjustment.getUpper() - adjustment.getPageSize()) * fraction);
   const { at } = await until(what, () => {
+    // Done when the rows there are on screen, every one of them arrived from the index.
     const shown = rowNumbers();
-    return shown.length > 5 && shown.some((n) => Math.abs(n - target) <= Math.max(50, rows * 0.01));
+    return shown.length > 5 && shown.some((n) => Math.abs(n - target) <= 60) && !awaiting();
   });
   say(what, at - t0);
   if (fraction === 0.5) console.log(`[measure] rows built: ${labels(TITLE).length}, widgets in the window: ${widgetCount()}`);
