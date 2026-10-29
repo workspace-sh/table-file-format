@@ -103,6 +103,55 @@ describe("a large table on Linux", () => {
     expect(screen.queryAllByDisplayValue("Zed")).toHaveLength(0);
   });
 
+  it("a jump far down takes the rows it leaves for the ones it comes to: none is made again", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    await waitFor(() => expect(adjustment.getUpper()).toBeGreaterThanOrEqual((ROWS + 8) * 45));
+    // A row's widget: the one among the body's rows (the box with many children) that holds the label.
+    const rowOf = (label: Gtk.Widget) => {
+      let w: Gtk.Widget = label;
+      const many = (box: Gtk.Widget) => {
+        let n = 0;
+        for (let c = box.getFirstChild(); c && n <= 5; c = c.getNextSibling()) n++;
+        return n > 5;
+      };
+      while (w.getParent() && !many(w.getParent()!)) w = w.getParent()!;
+      return w;
+    };
+    // Every row the body holds, marked by name as a widget's own: a widget made again has none.
+    const body = rowOf(first).getParent()!;
+    const rows = () => {
+      const all: Gtk.Widget[] = [];
+      for (let c = body.getFirstChild(); c; c = c.getNextSibling()) if (c.getName() !== "") all.push(c);
+      return all.filter((row) => row.getName() !== "GtkBox");
+    };
+    const before = rows();
+    expect(before.length).toBeGreaterThan(5);
+    for (const row of before) row.setName("built-before");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    const after = rows();
+    expect(after.length).toBeGreaterThan(5);
+    // As many as there were or are now, whichever is fewer: the top has no rows above the screen to build.
+    expect(after.filter((row) => row.getName() === "built-before")).toHaveLength(Math.min(before.length, after.length));
+  });
+
+  it("a cell being edited when its row is scrolled away leaves no editor or draft in the row that takes its widgets", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    first.grabFocus();
+    await userEvent.keyboard(first, "Q");
+    await screen.findByDisplayValue("Q");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    // A row now has the widgets Big 0's had: not its editor, nor what was typed.
+    await waitFor(() => expect(screen.queryAllByDisplayValue("Q")).toHaveLength(0));
+    expect(screen.queryAllByText("Q")).toHaveLength(0);
+  });
+
   it("Back puts the table where it was scrolled to", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");

@@ -3,10 +3,12 @@
 // from scripts/measure-large.sh: the built app, opened on a table made by
 // scripts/big-table.mts, under a headless compositor. It watches the app's
 // own widgets, does what a person would (a jump, a search, an edit), and
-// prints how long each took, from the action to the result on screen and
-// two frames drawn after it.
+// prints how long each took, from the action to the frame that first
+// showed its result, and one more drawn after it.
 
 import * as Gtk from "@gtkx/gi/gtk";
+import { writeFileSync } from "node:fs";
+import { Session } from "node:inspector/promises";
 import type { AppAction } from "@workspace.sh/table-app";
 
 /** The app's dispatch, set by App while it measures: an edit is made as its controls make one. */
@@ -17,6 +19,26 @@ export function measureWith(dispatch: (action: AppAction) => void): void {
 }
 
 const say = (what: string, ms: number) => console.log(`[measure] ${what}: ${Math.round(ms)} ms`);
+
+/** With TABLE_MEASURE_PROFILE set to a folder: a CPU profile of each step timed, written there as <step>.cpuprofile. */
+const profiles = process.env["TABLE_MEASURE_PROFILE"];
+let session: Session | undefined;
+async function profiled<T>(what: string, run: () => Promise<T>): Promise<T> {
+  if (!profiles) return run();
+  if (!session) {
+    session = new Session();
+    session.connect();
+    await session.post("Profiler.enable");
+    await session.post("Profiler.setSamplingInterval", { interval: 200 });
+  }
+  await session.post("Profiler.start");
+  try {
+    return await run();
+  } finally {
+    const { profile } = await session.post("Profiler.stop");
+    writeFileSync(`${profiles}/${what.replaceAll(/\W+/g, "-")}.cpuprofile`, JSON.stringify(profile));
+  }
+}
 
 /** Every mapped label in the app's windows whose text matches. */
 function labels(match: RegExp | string): Gtk.Label[] {
@@ -49,37 +71,44 @@ function find<T extends Gtk.Widget>(kind: abstract new (...args: never[]) => T):
   return found;
 }
 
-/** `count` frames drawn by `widget`'s frame clock. */
-const frames = (widget: Gtk.Widget, count = 2) =>
-  new Promise<void>((resolve) => {
-    let left = count;
-    widget.addTickCallback(() => {
-      if (--left > 0) return true;
-      resolve();
-      return false;
+/**
+ * Asked at each frame the window draws until it holds, then one more frame:
+ * what a person would see. Once a frame, not every few milliseconds, as a
+ * look over every widget costs the app's thread time of its own. Resolves
+ * with when it first held.
+ */
+function until<T>(what: string, check: () => T | undefined | null | false, timeoutMs = 120_000): Promise<{ at: number; value: T }> {
+  return new Promise((resolve, reject) => {
+    const window = Gtk.Window.getToplevels().getItem(0) as unknown as Gtk.Widget | null;
+    const now = check();
+    if (now || !window) {
+      if (now) resolve({ at: performance.now(), value: now });
+      else setTimeout(() => until(what, check, timeoutMs).then(resolve, reject), 10);
+      return;
+    }
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${what}`)), timeoutMs);
+    let held: { at: number; value: T } | undefined;
+    window.addTickCallback(() => {
+      if (held) {
+        clearTimeout(timer);
+        resolve(held);
+        return false;
+      }
+      const value = check();
+      if (value) held = { at: performance.now(), value };
+      return true;
     });
   });
-
-/** Asked again every few milliseconds until it holds; then two frames drawn. Resolves with when it first held. */
-async function until<T>(what: string, check: () => T | undefined | null | false, timeoutMs = 120_000): Promise<{ at: number; value: T }> {
-  const end = performance.now() + timeoutMs;
-  for (;;) {
-    const value = check();
-    if (value) {
-      const at = performance.now();
-      const anyWindow = Gtk.Window.getToplevels().getItem(0) as unknown as Gtk.Widget | null;
-      if (anyWindow) await frames(anyWindow);
-      return { at, value };
-    }
-    if (performance.now() > end) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((r) => setTimeout(r, 2));
-  }
 }
 
 const TITLE = /^\w+ [\w ]+ \d+$/;
 const rowNumbers = () => labels(TITLE).map((l) => Number(/(\d+)$/.exec(l.getLabel())![1]));
 const reading = () => labels(/rows read/).length > 0;
-const countOf = (label: Gtk.Label) => label.getLabel().match(/[\d,]+/g)!.map((n) => Number(n.replaceAll(",", "")));
+const countOf = (label: Gtk.Label) =>
+  label
+    .getLabel()
+    .match(/[\d,]+/g)!
+    .map((n) => Number(n.replaceAll(",", "")));
 const viewCount = () => {
   const label = labels(/^[\d,]+ of [\d,]+ rows$/)[0];
   return label ? countOf(label) : undefined;
@@ -91,7 +120,8 @@ function scrollerOf(w: Gtk.Widget): Gtk.ScrolledWindow {
   return x as Gtk.ScrolledWindow;
 }
 
-async function jump(what: string, fraction: number, rows: number) {
+const jump = (what: string, fraction: number, rows: number) => profiled(what, () => jumpTo(what, fraction, rows));
+async function jumpTo(what: string, fraction: number, rows: number) {
   const { value: row } = await until("rows on screen", () => labels(TITLE)[0]);
   const adjustment = scrollerOf(row).getVadjustment();
   const target = Math.max(1, rows * fraction);
@@ -102,6 +132,17 @@ async function jump(what: string, fraction: number, rows: number) {
     return shown.length > 5 && shown.some((n) => Math.abs(n - target) <= Math.max(50, rows * 0.01));
   });
   say(what, at - t0);
+  if (fraction === 0.5) console.log(`[measure] rows built: ${labels(TITLE).length}, widgets in the window: ${widgetCount()}`);
+}
+
+function widgetCount(): number {
+  let n = 0;
+  const walk = (w: Gtk.Widget) => {
+    n++;
+    for (let c = w.getFirstChild(); c; c = c.getNextSibling()) walk(c);
+  };
+  each(walk);
+  return n;
 }
 
 /** The run, from the app's start (`startedAt`, before its window). Ends the app when it's done. */
@@ -147,9 +188,11 @@ export async function measure(startedAt: number, rowId: string | undefined, quit
 
     await jump("jump to the start", 0, rows);
     if (act && rowId) {
-      t0 = performance.now();
-      act({ type: "updateRow", rowId, field: "title", value: "Zed measured" });
-      const edit = await until("the edit", () => labels("Zed measured")[0]);
+      const edit = await profiled("an edit shown", () => {
+        t0 = performance.now();
+        act!({ type: "updateRow", rowId, field: "title", value: "Zed measured" });
+        return until("the edit", () => labels("Zed measured")[0]);
+      });
       say("an edit shown", edit.at - t0);
       // A save starts 400 ms after the last edit: half a second in, a place not read before.
       await new Promise((r) => setTimeout(r, 500));
