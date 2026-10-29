@@ -57,13 +57,17 @@ export interface EditableCellProps {
    * formula it has now, and where it's saved. Absent: `=` is typed as text.
    */
   formula?: CellFormulaEntry & { syntax?: "excel" | "stored"; onSet: (expr: string) => void };
+  /** Add a choice to the field: a choice cell then offers "New Choice…", as iOS's bar does. Absent: only the field's choices. */
+  onAddChoice?: (value: string) => void;
 }
 
 /**
  * A choice cell being edited: a drop-down of the field's choices, and "—"
  * for none. Picking one saves it; leaving or Escape closes without. A
  * field's own choices are drawn as the cell draws them, each a pill in its
- * colour; a relation's rows are plain names.
+ * colour; a relation's rows are plain names. With `onAdd`, the last item is
+ * "New Choice…": the drop-down becomes an entry, and the name typed there,
+ * with Enter, is added to the field and picked.
  */
 function ChoiceEditor({
   field,
@@ -71,6 +75,7 @@ function ChoiceEditor({
   onClose,
   onCommit,
   choices,
+  onAdd,
 }: {
   field: Field | undefined;
   value: unknown;
@@ -78,13 +83,40 @@ function ChoiceEditor({
   onCommit: (next: unknown) => void;
   /** The choices, when they aren't the field's own (a relation's rows). */
   choices?: { value: string; label?: string }[];
+  /** A new choice, named: added to the field and picked. */
+  onAdd?: (value: string) => void;
 }) {
   const options = choices ?? enumOptions(field);
   const at = options.findIndex((o) => o.value === value) + 1;
-  const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value)];
+  const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value), ...(onAdd ? [NEW_CHOICE] : [])];
+  const [naming, setNaming] = useState(false);
   const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
   const dark = useDark();
   const colors = choices ? null : [undefined, ...enumOptions(field).map((o) => o.color)];
+  const keys = (
+    <>
+      <GtkEventControllerFocus onLeave={() => onClose("done")} />
+      <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose("escape"), true) : false)} />
+    </>
+  );
+  if (naming) {
+    return (
+      <GtkEntry
+        ref={(entry: Gtk.Entry | null) => {
+          entry?.grabFocus();
+        }}
+        hexpand
+        placeholderText="New choice"
+        onActivate={(entry) => {
+          const name = entry.getText().trim();
+          if (!name) return;
+          onClose("done");
+          onAdd!(name);
+        }}
+        controllers={keys}
+      />
+    );
+  }
   return (
     <GtkDropDown
       ref={ref}
@@ -105,8 +137,8 @@ function ChoiceEditor({
                   const i = item.getPosition();
                   const label = item.getChild() as Gtk.Label;
                   label.setLabel(labels[i] ?? "");
-                  // "—", for none, is no choice, so no pill.
-                  label.setCssClasses(i === 0 ? [] : [styles.pill, pillClass(colors[i], dark)]);
+                  // "—", for none, is no choice, nor is "New Choice…": no pill.
+                  label.setCssClasses(i === 0 || i > options.length ? [] : [styles.pill, pillClass(colors[i], dark)]);
                 }}
               />
             ),
@@ -114,19 +146,17 @@ function ChoiceEditor({
         : {})}
       onNotifySelected={(index) => {
         if (index === null || index === at) return;
+        if (onAdd && index === options.length + 1) return setNaming(true);
         onClose("done");
         const next = index === 0 ? null : options[index - 1]!.value;
         if (next !== value) onCommit(next);
       }}
-      controllers={
-        <>
-          <GtkEventControllerFocus onLeave={() => onClose("done")} />
-          <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose("escape"), true) : false)} />
-        </>
-      }
+      controllers={keys}
     />
   );
 }
+
+const NEW_CHOICE = "New Choice…";
 
 /** A picker's words and picture, by what it picks. */
 const PICKERS: Record<DateKind, { tooltip: string; icon: string }> = {
@@ -135,7 +165,7 @@ const PICKERS: Record<DateKind, { tooltip: string; icon: string }> = {
   time: { tooltip: "Choose a Time", icon: "preferences-system-time-symbolic" },
 };
 
-export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd, formula }: EditableCellProps) {
+export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd, formula, onAddChoice }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
@@ -348,6 +378,14 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
         }}
         onCommit={onCommit}
         choices={kind === "relation" ? relationOptions(field, relatedTables) : undefined}
+        onAdd={
+          kind === "choice" && onAddChoice
+            ? (name) => {
+                if (!enumOptions(field).some((o) => o.value === name)) onAddChoice(name);
+                if (name !== value) onCommit(name);
+              }
+            : undefined
+        }
       />
     );
   }

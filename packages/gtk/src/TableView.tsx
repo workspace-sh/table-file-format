@@ -1541,6 +1541,7 @@ export function TableView({
                       if (at) focusCell(afterEdit(at, how, count, fields.length));
                     }}
                     onAttach={onAttachFile ? () => onAttachFile(row.id, name) : undefined}
+                    onAddChoice={onAddEnumValue ? (value) => onAddEnumValue(name, value) : undefined}
                     formula={
                       onSetCellFormula
                         ? {
