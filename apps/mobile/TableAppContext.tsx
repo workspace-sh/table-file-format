@@ -151,7 +151,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
 function Loaded({ store, reopened, children }: { store: KeyValueStore | null; reopened: OpenedDocuments; children: ReactNode }) {
   // The platform's language, when the viewer hasn't chosen one.
   const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
   // The tables as they are now, for where a table's history goes: a large table's folder, or the store.
   const tablesNow = useRef<Record<string, ParsedTable>>({});
   // Read a folder table's history again once it's been added to (useFolderHistories, below).
