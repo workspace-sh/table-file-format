@@ -152,6 +152,23 @@ describe("a large table on Linux", () => {
     expect(screen.queryAllByText("Q")).toHaveLength(0);
   });
 
+  it("what was typed in a cell is saved when its row is scrolled out of the rows built, as leaving the cell would save it", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    first.grabFocus();
+    await userEvent.keyboard(first, "Q");
+    await screen.findByDisplayValue("Q");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    // Back at the top: the row shows what was typed, saved.
+    adjustment.setValue(0);
+    await screen.findByText("Q");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    expect(screen.queryAllByDisplayValue("Q")).toHaveLength(0);
+  });
+
   it("Back puts the table where it was scrolled to", async () => {
     await openTasks();
     const first = await cellOf("Land .table extension");

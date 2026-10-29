@@ -3,9 +3,11 @@
 // GTK a handler given anew is a signal let go and connected again, and
 // every cell of every row built pays for it, though one row was edited.
 // Steady keeps each place's last element. Its handlers go through
-// stand-ins that call the latest one given, so a row whose elements are
-// the same as last time, handlers aside, is given back as the very element
-// it was, and React passes over it.
+// stand-ins, so a row whose elements are the same as last time, handlers
+// aside, is given back as the very element it was, and React passes over
+// it; its stand-ins then call the handlers given latest. A place given
+// another row gets new stand-ins: the old row's, called as it goes (a cell
+// saving what was typed in it), still reach the old row's handlers.
 
 import { cloneElement, isValidElement, type ReactElement } from "react";
 
@@ -14,12 +16,17 @@ const LONG = 64;
 
 type Handler = (...args: unknown[]) => unknown;
 
+/** An element's handlers, the latest given, by where they are in it. */
+type Handlers = Map<string, Handler>;
+
 interface Held {
-  element: ReactElement | undefined;
+  element: ReactElement;
   also: unknown;
-  latest: Map<string, Handler>;
-  standIns: Map<string, Handler>;
+  handlers: Handlers;
 }
+
+/** Every stand-in made, told from a handler as given. */
+const standIns = new WeakSet<Handler>();
 
 /**
  * A ref (`ref`, or a prop named like `cellRef`) is called again when it's a
@@ -42,28 +49,24 @@ export class Steady {
    * as the place's last one (handlers aside, and `also` the same), that one.
    */
   take(key: string, element: ReactElement, also?: unknown): ReactElement {
-    let held = this.held.get(key);
-    if (!held) {
-      held = { element: undefined, also: undefined, latest: new Map(), standIns: new Map() };
-      this.held.set(key, held);
+    const held = this.held.get(key);
+    const handlers: Handlers = new Map();
+    const next = steady(element, "", handlers) as ReactElement;
+    if (held && Object.is(held.also, also) && same(held.element, next)) {
+      for (const [path, handler] of handlers) held.handlers.set(path, handler);
+      return held.element;
     }
-    const next = steady(element, "", held) as ReactElement;
-    if (held.element && Object.is(held.also, also) && same(held.element, next)) return held.element;
-    held.element = next;
-    held.also = also;
+    this.held.set(key, { element: next, also, handlers });
     return next;
   }
 }
 
 /** The value with each handler in it, however deep, swapped for its place's stand-in. */
-function steady(value: unknown, path: string, held: Held): unknown {
+function steady(value: unknown, path: string, held: Handlers): unknown {
   if (typeof value === "function") {
-    held.latest.set(path, value as Handler);
-    let standIn = held.standIns.get(path);
-    if (!standIn) {
-      standIn = (...args) => held.latest.get(path)!(...args);
-      held.standIns.set(path, standIn);
-    }
+    held.set(path, value as Handler);
+    const standIn: Handler = (...args) => held.get(path)!(...args);
+    standIns.add(standIn);
     return standIn;
   }
   if (value === null || typeof value !== "object") return value;
@@ -102,6 +105,8 @@ function steady(value: unknown, path: string, held: Held): unknown {
 /** Whether two steadied values show the same: elements by type, key and props (refs aside), the rest by value. */
 function same(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
+  // Handlers in the same place: each element's stand-ins call its own.
+  if (typeof a === "function" && typeof b === "function") return standIns.has(a as Handler) && standIns.has(b as Handler);
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
   if (isValidElement(a) || isValidElement(b)) {
     if (!isValidElement(a) || !isValidElement(b) || a.type !== b.type || a.key !== b.key) return false;
