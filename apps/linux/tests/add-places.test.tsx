@@ -52,6 +52,8 @@ describe("places to add to, on Linux", () => {
     // Laid over the row, never seen or pointed at: the row is its cells and nothing after them.
     expect(menu.getOpacity()).toBe(0);
     expect(menu.getCanTarget()).toBe(false);
+    // Nor is the menu made until it's opened: every row built would carry one (#745).
+    expect(menu.getPopover()).toBeNull();
     const row = menu.getParent() as Gtk.Overlay;
     const cells = row.getChild()!;
     // As wide as the header's columns, and the header is wider by the "+" after its last one.

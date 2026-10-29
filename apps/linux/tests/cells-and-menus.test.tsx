@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { rowActions } from "@workspace.sh/table-ui/shared";
 import { App } from "../src/App.js";
+import { openedRowMenu } from "./rowMenu.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // What a row's menu offers, by the view it's in; and a short year typed
@@ -53,7 +54,7 @@ async function firstRowMenu(): Promise<string[]> {
     found = buttons.find((b) => b instanceof Gtk.MenuButton && b.getTooltipText() === "Row Actions") as Gtk.MenuButton | undefined;
     expect(found).toBeDefined();
   });
-  return labels((found!.getPopover() as Gtk.PopoverMenu).getMenuModel()!);
+  return labels((await openedRowMenu(found!)).getMenuModel()!);
 }
 
 describe("the row menu on Linux", () => {

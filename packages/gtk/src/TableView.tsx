@@ -322,7 +322,9 @@ function cursorNamed(name: string): Gdk.Cursor | null {
  * with the keyboard on one of its cells, as on the web and the Mac. The
  * menu hangs from a button laid over the row that is never seen or pressed
  * itself (a popover needs a widget of its own to open from); `menuRef`
- * gives the table the way to open it from the keyboard.
+ * gives the table the way to open it from the keyboard. The menu itself is
+ * made the first time it's opened: built for every row, it was some thirty
+ * widgets a row, which a jump paid for row after row.
  */
 function BodyRow({
   rowId,
@@ -360,7 +362,8 @@ function BodyRow({
   onHideRow?: (rowId: string) => void;
   onMergeCells?: () => void;
   onUnmergeCells?: () => void;
-  menuRef?: (button: Gtk.MenuButton | null) => void;
+  /** How to open the row's menu (from the keyboard), or null as the row goes. */
+  menuRef?: (open: (() => void) | null) => void;
   /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
   frozen?: ReactNode;
   /** The row's colour from the view's colour rules (D53), as a class. */
@@ -368,6 +371,26 @@ function BodyRow({
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
+  // Made once it's asked for, and opened as soon as it's there.
+  const [made, setMade] = useState(false);
+  const opening = useRef(false);
+  const open = () => {
+    if (made) return void button.current?.popup();
+    opening.current = true;
+    setMade(true);
+  };
+  useEffect(() => {
+    if (!made || !opening.current) return;
+    opening.current = false;
+    button.current?.popup();
+  }, [made]);
+  const openNow = useRef(open);
+  openNow.current = open;
+  // In the table's map of rows' menus under the row it is now: a place given another row is given another menuRef.
+  useEffect(() => {
+    menuRef?.(() => openNow.current());
+    return () => menuRef?.(null);
+  }, [menuRef]);
   // As wide as its cells and no wider: its rule stops at the last real column, short of the "+" after it.
   if (!menu) {
     const cells = <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow, ...tint]}>{children}</GtkBox>;
@@ -376,7 +399,7 @@ function BodyRow({
   return (
     <GtkOverlay
       halign={Gtk.Align.START}
-      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+      controllers={<GtkGestureClick button={3} onPressed={open} />}
       actionGroups={
         <GSimpleActionGroup
           prefix="row"
@@ -400,21 +423,20 @@ function BodyRow({
         <>
         {frozen}
         <GtkMenuButton
-          ref={(widget: Gtk.MenuButton | null) => {
-            button.current = widget;
-            menuRef?.(widget);
-          }}
+          ref={button}
           opacity={0}
           canTarget={false}
           canFocus={false}
           halign={Gtk.Align.START}
           tooltipText="Row Actions"
           popover={
+            made ? (
             <GtkPopoverMenu
               flags={Gtk.PopoverMenuFlags.NESTED}
               hasArrow={false}
               menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}), ...(onHideRow ? { onHideRow } : {}), ...(onMergeCells ? { onMergeCells } : {}), ...(onUnmergeCells ? { onUnmergeCells } : {}) }))} />}
             />
+            ) : undefined
           }
         />
         </>
@@ -1181,7 +1203,7 @@ export function TableView({
   // The group's field, as its bands say it: "CITY · MANCHESTER".
   const groupTitle = groupField !== undefined ? (fieldMap.get(groupField)?.title ?? groupField) : "";
   // Each row's menu and each column's, to open from the keyboard.
-  const rowMenus = useRef(new Map<string, Gtk.MenuButton>());
+  const rowMenus = useRef(new Map<string, () => void>());
   const headerMenus = useRef(new Map<string, Gtk.MenuButton>());
 
   const editable = !!onUpdateRow;
@@ -1330,7 +1352,7 @@ export function TableView({
     if (key && (keyval === Gdk.KEY_Menu || (keyval === Gdk.KEY_F10 && (state & Gdk.ModifierType.SHIFT_MASK) !== 0))) {
       const menu = rowMenus.current.get(key.split("\u0000")[0]!);
       if (!menu) return false;
-      menu.popup();
+      menu();
       return true;
     }
     // Alt+Down: the menu of the column the cell is in, as a right-click on its header opens it.
@@ -1618,8 +1640,8 @@ export function TableView({
         {...(onAskCellNote && focusedCell?.startsWith(`${row.id}\u0000`)
           ? { onCellNote: () => onAskCellNote(row.id, focusedCell.slice(row.id.length + 1), ownNote(cellFormulas, row.id, focusedCell.slice(row.id.length + 1), row)) }
           : {})}
-        menuRef={(button) => {
-          if (button) rowMenus.current.set(row.id, button);
+        menuRef={(open) => {
+          if (open) rowMenus.current.set(row.id, open);
           else rowMenus.current.delete(row.id);
         }}
         frozen={start.frozen}
