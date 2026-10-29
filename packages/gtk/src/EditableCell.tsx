@@ -269,6 +269,19 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     return true;
   };
 
+  // Gone while it's edited (its row scrolled far out of the rows built, or the table closed): what
+  // was typed is saved, as the keyboard leaving the cell would save it.
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
+  const commitNow = useRef(commit);
+  commitNow.current = commit;
+  useEffect(
+    () => () => {
+      if (editingNow.current) commitNow.current(draftNow.current, "blur");
+    },
+    [],
+  );
+
   const shown = <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />;
 
   if (kind === "readonly") return shown;
