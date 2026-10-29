@@ -49,6 +49,7 @@ import {
   operatorsFor,
   picksChoice,
   sortsPatch,
+  moveSort,
   takesValue,
   viewFieldChoices,
   type ViewSettingsProps,
@@ -176,7 +177,23 @@ function FilterRow({ filter, fields, onChange, onRemove }: { filter: ViewFilter;
   );
 }
 
-function SortRow({ sort, fields, onChange, onRemove }: { sort: ViewSort; fields: Field[]; onChange: (next: ViewSort) => void; onRemove: () => void }) {
+function SortRow({
+  sort,
+  fields,
+  onChange,
+  onRemove,
+  onEarlier,
+  onLater,
+}: {
+  sort: ViewSort;
+  fields: Field[];
+  onChange: (next: ViewSort) => void;
+  onRemove: () => void;
+  /** Sort by this before the one above it; absent for the first. */
+  onEarlier?: () => void;
+  /** After the one below it; absent for the last. */
+  onLater?: () => void;
+}) {
   return (
     <AdwActionRow title="By" activatable={false}>
       <GtkBox spacing={6} valign={Gtk.Align.CENTER}>
@@ -190,6 +207,8 @@ function SortRow({ sort, fields, onChange, onRemove }: { sort: ViewSort; fields:
           value={sort.direction}
           onChange={(d) => onChange({ ...sort, direction: d as "asc" | "desc" })}
         />
+        <GtkButton iconName="go-up-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Sort Earlier" sensitive={!!onEarlier} onClicked={() => onEarlier?.()} />
+        <GtkButton iconName="go-down-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Sort Later" sensitive={!!onLater} onClicked={() => onLater?.()} />
         <GtkButton iconName="list-remove-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Remove Sort" onClicked={onRemove} />
       </GtkBox>
     </AdwActionRow>
@@ -418,6 +437,8 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
                 fields={choices.live}
                 onChange={(next) => arrange(sortsPatch(sorts.map((s, j) => (j === i ? next : s))))}
                 onRemove={() => arrange(sortsPatch(sorts.filter((_, j) => j !== i)))}
+                onEarlier={i > 0 ? () => arrange(sortsPatch(moveSort(sorts, i, i - 1))) : undefined}
+                onLater={i < sorts.length - 1 ? () => arrange(sortsPatch(moveSort(sorts, i, i + 1))) : undefined}
               />
             ))}
           </AdwPreferencesGroup>

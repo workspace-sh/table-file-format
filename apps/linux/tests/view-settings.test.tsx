@@ -84,6 +84,26 @@ describe("view settings on Linux", () => {
     await waitFor(async () => expect(await shownChoices()).toEqual(["status", "is", "active", "owner", "Ascending"]));
   });
 
+  it("Sorts: a sort added is moved earlier, and the view sorts by it first", async () => {
+    await openSettings();
+    // The field each sort is by, in order (a sort is the viewer's own arrangement until saved for everyone).
+    const sortFields = async () =>
+      ((await screen.findAllByRole(Gtk.AccessibleRole.COMBO_BOX)).filter((w) => w instanceof Gtk.DropDown && w.getTooltipText() === "Field") as Gtk.DropDown[]).map(
+        (d) => (d.getSelectedItem() as Gtk.StringObject | null)?.getString() ?? "",
+      );
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Sort" }));
+    await waitFor(async () => expect((await sortFields()).length).toBe(2));
+    const [first, added] = await sortFields();
+    expect(first).toBe("priority");
+    // The first can't go earlier, nor the last later.
+    const earlier = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Sort Earlier" })) as Gtk.Button[];
+    const later = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Sort Later" })) as Gtk.Button[];
+    expect(earlier.map((b) => b.getSensitive())).toEqual([false, true]);
+    expect(later.map((b) => b.getSensitive())).toEqual([true, false]);
+    await userEvent.click(earlier[1]!);
+    await waitFor(async () => expect(await sortFields()).toEqual([added, "priority"]));
+  });
+
   it("making a table a sheet is saved to the view", async () => {
     await openSettings();
     // The row and its switch both have the switch role; the switch is the control.
