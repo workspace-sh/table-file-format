@@ -598,6 +598,30 @@ describe("a large table embedded in a document", () => {
     await opened.unmount();
     await waitFor(() => expect(indexHostUsers(dir)).toBe(0));
   }, 60_000);
+
+  it("two views of the same large table: an edit in one shows in the other (#554)", async () => {
+    big();
+    await render(
+      inDocument(
+        <>
+          <TableEmbed address={address} baseDir={docs} within={root} openIndex={openIndexHost} />
+          <TableEmbed address="../tables/projects.table#table=tasks&view=juycicwios88m&rows=3&embed=1" baseDir={docs} within={root} openIndex={openIndexHost} />
+        </>,
+      ),
+    );
+    // Both from the index: Big 0 first in each, sorted by priority.
+    await waitFor(async () => expect((await screen.findAllByText("Big 0")).filter((w) => w.getMapped())).toHaveLength(2), { timeout: 30_000 });
+    // Both read whole ("Show … more rows" on the cut one): nothing is still arriving to take the keyboard.
+    await waitFor(async () => expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 49,995 more rows" })).toBeDefined(), { timeout: 45_000 });
+    await userEvent.click((await screen.findAllByText("Big 0")).filter((w) => w.getMapped())[0]!);
+    const entry = (await screen.findByDisplayValue("Big 0", {}, { timeout: 10_000 })) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Edited in one view");
+    await userEvent.keyboard(entry, "{Enter}");
+    // The other view reads its rows again from the index they share, once the edit is saved.
+    await waitFor(async () => expect((await screen.findAllByText("Edited in one view")).filter((w) => w.getMapped())).toHaveLength(2), { timeout: 30_000 });
+    expect(screen.queryAllByText("Big 0").filter((w) => w.getMapped())).toHaveLength(0);
+  }, 120_000);
 });
 
 // It is the table, not a picture of it: what is done to it in the document
