@@ -129,7 +129,7 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
 | Table, board, list, gallery, calendar | Yes | Yes | Yes | Yes | |
 | Sheet views (`=B7`, row numbers kept under a filter) | Yes | Yes | Yes | Yes | |
 | Every filter operator | Yes | Yes | Yes | Yes | Two edge cases (#568). |
-| Sorts | Yes | Yes | Yes | Partly | Linux can't reorder sorts (#573). |
+| Sorts | Yes | Yes | Yes | Yes | |
 | Groups | Partly | Partly | Partly | Partly | Number-like groups come out in the wrong order (#568). |
 | Totals | Yes | Yes | Yes | Yes | |
 | Manual row order | Partly | Partly | Partly | Partly | By dragging in board and list views; not table or gallery (#573). |
