@@ -63,6 +63,21 @@ describe("Steady", () => {
     expect(calls).toEqual(["second", "second"]);
   });
 
+  it("leaves an element given up calling its own handlers: a row going calls the row it was, not the one in its place", () => {
+    const steady = new Steady();
+    const calls: string[] = [];
+    const going = steady.take(
+      "a",
+      box("row 1", () => calls.push("row 1")),
+    );
+    steady.take(
+      "a",
+      box("row 2", () => calls.push("row 2")),
+    );
+    (going.props as { onClick: () => void }).onClick();
+    expect(calls).toEqual(["row 1"]);
+  });
+
   it("gives the new element when what it shows changed, or what its refs read", () => {
     const steady = new Steady();
     const first = steady.take(
