@@ -1,4 +1,4 @@
-import { createRoot } from "@gtkx/react";
+import { createRoot, quit } from "@gtkx/react";
 import { execFileSync } from "node:child_process";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -7,6 +7,7 @@ import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/t
 import { loadClosed } from "./closedFiles.js";
 import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
+import { measure, measuring } from "./measure.js";
 import { openWorkerIndexHost } from "@workspace.sh/table-gtk/embed";
 import { fixturesDir } from "./fixtures.js";
 import { setFormulaEngine } from "@workspace.sh/table-core";
@@ -86,3 +87,6 @@ createRoot().render(
     indexedFrom={INDEXED_FROM}
   />,
 );
+
+// TABLE_MEASURE=1 (scripts/measure-large.sh): how long a large table takes, timed from the app's start.
+if (measuring) void measure(0, process.env["TABLE_MEASURE_ROW"], () => quit());

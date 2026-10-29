@@ -82,6 +82,7 @@ import {
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
+import { measureWith, measuring } from "./measure.js";
 import { appendHistory, attachFile, attachmentsIn, bundlesIn, discardSingleFileEdits, keepSingleFileEdits, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -823,6 +824,7 @@ export function App({
     ...deriveOptions,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
+  if (measuring) measureWith(dispatch);
   // The layout reads the way the display language does (D40), the whole app included.
   useEffect(() => {
     Gtk.Widget.setDefaultDirection(derived.direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
