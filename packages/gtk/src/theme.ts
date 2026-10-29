@@ -189,6 +189,8 @@ export const styles = {
   /** A day's number: small and plain, in the corner of its square. */
   calendarNumber: css({ fontSize: "11px", fontWeight: "400", fontFeatureSettings: '"tnum"' }),
   calendarToday: css({ color: "@accent_color", fontWeight: "700" }),
+  /** A choice's colour, as a dot before it in Field settings. */
+  choiceSwatch: css({ minWidth: "14px", minHeight: "14px", borderRadius: "7px" }),
   calendarChip: css({ fontSize: "smaller", padding: "1px 6px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
 } as const;
 

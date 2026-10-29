@@ -6,10 +6,10 @@
 import type * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import {
-  AdwActionRow,
   AdwComboRow,
   AdwDialog,
   AdwEntryRow,
+  AdwExpanderRow,
   AdwHeaderBar,
   AdwPreferencesGroup,
   AdwPreferencesPage,
@@ -17,9 +17,14 @@ import {
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
-import { defaultAlignFor, enumOptions, renameProblem, type CompileResult, type Field, type Grid } from "@workspace.sh/table-core";
+import { defaultAlignFor, enumOptions, renameProblem, type CompileResult, type EnumOption, type Field, type Grid } from "@workspace.sh/table-core";
 import {
   addableChoices,
+  CHOICE_COLOURS,
+  choiceColour,
+  choiceLabel,
+  choicesPatch,
+  movedChoices,
   ALIGN_CHOICES,
   alignLabel,
   alignPatch,
@@ -45,6 +50,7 @@ import { useState } from "react";
 import { columnsFor, FormulaEntry } from "./FormulaEntry.js";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
+import { pillClass, styles, useDark } from "./theme.js";
 
 /** A combo row over values, showing labels; the selection set once its model is in. */
 function Combo({
@@ -126,6 +132,11 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
   const formula = field.computed ? fieldFormula(field, fields, formulaDraft, grid) : null;
   const format = formatState(field, fields, display);
   const auto = alignLabel(defaultAlignFor(field.type), rtl).toLowerCase();
+  const dark = useDark();
+  const choices = enumOptions(field);
+  const setChoices = (next: EnumOption[]) => {
+    if (next !== choices) onUpdate(choicesPatch(field, next));
+  };
 
   return (
     <AdwDialog title={field.title ?? field.name} contentWidth={520} contentHeight={640} onClosed={onClose}>
@@ -248,18 +259,39 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
 
           {takesChoices(field) ? (
             <AdwPreferencesGroup title="Choices">
-              {enumOptions(field).map((o) => (
-                <AdwActionRow key={o.value} title={o.label ?? o.value} subtitle={o.label && o.label !== o.value ? o.value : undefined}>
-                  {onRemoveChoice ? (
-                    <GtkButton
-                      iconName="edit-delete-symbolic"
-                      cssClasses={["flat"]}
-                      valign={Gtk.Align.CENTER}
-                      tooltipText={`Remove ${o.label ?? o.value}`}
-                      onClicked={() => onRemoveChoice(o.value)}
-                    />
-                  ) : null}
-                </AdwActionRow>
+              {/* Each choice: its colour, and opened, its label and colour to change; moved earlier or later, or removed. */}
+              {choices.map((o, i) => (
+                <AdwExpanderRow
+                  key={o.value}
+                  title={o.label ?? o.value}
+                  subtitle={o.label && o.label !== o.value ? o.value : ""}
+                  useMarkup={false}
+                  prefix={<GtkBox name="choice-swatch" valign={Gtk.Align.CENTER} cssClasses={[styles.choiceSwatch, pillClass(o.color, dark)]} />}
+                  suffix={
+                    <GtkBox spacing={2} valign={Gtk.Align.CENTER}>
+                      <GtkButton iconName="go-up-symbolic" cssClasses={["flat"]} sensitive={i > 0} tooltipText={`Move ${o.label ?? o.value} Earlier`} onClicked={() => setChoices(movedChoices(choices, i, i - 1))} />
+                      <GtkButton
+                        iconName="go-down-symbolic"
+                        cssClasses={["flat"]}
+                        sensitive={i < choices.length - 1}
+                        tooltipText={`Move ${o.label ?? o.value} Later`}
+                        onClicked={() => setChoices(movedChoices(choices, i, i + 1))}
+                      />
+                      {onRemoveChoice ? <GtkButton iconName="edit-delete-symbolic" cssClasses={["flat"]} tooltipText={`Remove ${o.label ?? o.value}`} onClicked={() => onRemoveChoice(o.value)} /> : null}
+                    </GtkBox>
+                  }
+                  rows={
+                    <>
+                      <AdwEntryRow
+                        title="Label"
+                        text={o.label ?? ""}
+                        showApplyButton
+                        onApply={(row) => setChoices(choices.map((c, j) => (j === i ? choiceLabel(c, row.getText()) : c)))}
+                      />
+                      <Combo title="Colour" options={CHOICE_COLOURS} value={o.color ?? "none"} onChange={(c) => setChoices(choices.map((x, j) => (j === i ? choiceColour(x, c) : x)))} />
+                    </>
+                  }
+                />
               ))}
               <AdwEntryRow
                 title="Add Choice"

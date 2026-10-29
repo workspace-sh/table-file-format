@@ -1,3 +1,4 @@
+import { GtkBox, GtkButton } from "@gtkx/jsx/gtk";
 import { render, screen } from "@gtkx/testing";
 import type { Row, TableSchema, View } from "@workspace.sh/table-core";
 import { TableView } from "@workspace.sh/table-gtk";
@@ -76,6 +77,20 @@ describe("Steady", () => {
     );
     (going.props as { onClick: () => void }).onClick();
     expect(calls).toEqual(["row 1"]);
+  });
+
+  it("gives children back as they were given: a row's cells aren't made a list wanting keys", async () => {
+    const said = vi.spyOn(console, "error");
+    const row = new Steady().take(
+      "a",
+      <GtkBox>
+        <GtkButton label="a" onClicked={() => {}} />
+        <GtkButton label="b" onClicked={() => {}} />
+      </GtkBox>,
+    );
+    await render(row);
+    expect(said.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('"key"'))).toEqual([]);
+    said.mockRestore();
   });
 
   it("gives the new element when what it shows changed, or what its refs read", () => {

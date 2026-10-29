@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
-import type { EnumColor, EnumOption, CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
+import type { EnumOption, CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import type { SettingsRow, SettingsSection } from "./controlSlots";
 import { movesBack, revertPatch } from "./revert";
@@ -26,6 +26,11 @@ import {
   formatState,
   friendlyType,
   newChoice,
+  CHOICE_COLOURS,
+  choiceColour,
+  choiceLabel,
+  choicesPatch,
+  movedChoices,
   newField,
   requiredPatch,
   takesChoices,
@@ -58,15 +63,6 @@ export { friendlyType };
  * What a field holds, as people say it: a formula, one choice or several,
  * a link to rows, else its stored type ("Text", "Number").
  */
-/** The schema's choice colours (SPEC "enum colours"), for a choice's colour picker. */
-const CHOICE_COLOURS = [
-  // Not "": an empty selection draws a native picker blank.
-  { value: "none", label: "None" },
-  ...(["gray", "brown", "red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink"] as const).map((c) => ({
-    value: c,
-    label: c === "gray" ? "Grey" : c[0]!.toUpperCase() + c.slice(1),
-  })),
-];
 
 function typeShown(field: Field): string {
   if (field.computed) return "Formula";
@@ -790,15 +786,11 @@ export function SchemaFieldEditor({
   };
 
   // The field's choices written back, each as { value, label?, color? } (SPEC "enum").
-  const setChoices = (next: EnumOption[]) =>
-    onUpdate({ constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } });
+  const setChoices = (next: EnumOption[]) => onUpdate(choicesPatch(field, next));
   const choices = hasEnum ? enumOptions(field) : [];
   const moveChoice = (from: number, to: number) => {
-    if (to < 0 || to >= choices.length) return;
-    const next = choices.slice();
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved!);
-    setChoices(next);
+    const next = movedChoices(choices, from, to);
+    if (next !== choices) setChoices(next);
   };
 
   const body = (
@@ -905,16 +897,13 @@ export function SchemaFieldEditor({
                   aria-label={`Label for ${o.value}`}
                   value={o.label ?? o.value}
                   placeholder={o.value}
-                  onChange={(e: { target: { value: string } }) => {
-                    const t = e.target.value.trim();
-                    setChoices(choices.map((c, j) => (j === i ? { ...c, label: t && t !== c.value ? t : undefined } : c)));
-                  }}
+                  onChange={(e: { target: { value: string } }) => setChoices(choices.map((c, j) => (j === i ? choiceLabel(c, e.target.value) : c)))}
                   style={[styles.input, styles.choiceLabel]}
                 />
                 <Select
                   value={o.color ?? "none"}
                   options={CHOICE_COLOURS}
-                  onChange={(c) => setChoices(choices.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x)))}
+                  onChange={(c) => setChoices(choices.map((x, j) => (j === i ? choiceColour(x, c) : x)))}
                   style={[styles.input, styles.choiceColour]}
                 />
                 <html.button aria-label={`Move ${o.label ?? o.value} up`} disabled={i === 0} onClick={() => moveChoice(i, i - 1)} style={styles.smallButton}>
@@ -1097,11 +1086,8 @@ export function SchemaFieldEditor({
         // removes it and touch and hold drags it into another place.
         onRemove: onRemoveEnumValue ? (i) => options[i] && onRemoveEnumValue(options[i]!.value) : undefined,
         onMove: (from, to) => {
-          if (from === to) return;
-          const next = options.slice();
-          const [moved] = next.splice(from, 1);
-          next.splice(to, 0, moved!);
-          setChoices(next);
+          const next = movedChoices(options, from, to);
+          if (next !== options) setChoices(next);
         },
         rows: [
           ...options.map(
@@ -1116,7 +1102,7 @@ export function SchemaFieldEditor({
                   label: o.value,
                   placeholder: o.value,
                   value: o.label ?? o.value,
-                  onChange: (t) => setChoices(options.map((c, j) => (j === i ? { ...c, label: t.trim() && t.trim() !== c.value ? t.trim() : undefined } : c))),
+                  onChange: (t) => setChoices(options.map((c, j) => (j === i ? choiceLabel(c, t) : c))),
                 },
                 {
                   kind: "choice",
@@ -1124,7 +1110,7 @@ export function SchemaFieldEditor({
                   label: "Colour",
                   value: o.color ?? "none",
                   options: CHOICE_COLOURS,
-                  onChange: (c) => setChoices(options.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x))),
+                  onChange: (c) => setChoices(options.map((x, j) => (j === i ? choiceColour(x, c) : x))),
                 },
               ],
             }),

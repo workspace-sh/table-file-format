@@ -49,6 +49,13 @@ async function entryRow(title: string): Promise<Adw.EntryRow> {
   return found!;
 }
 
+/** Every widget under `w`. */
+function descendants(w: Gtk.Widget): Gtk.Widget[] {
+  const out: Gtk.Widget[] = [];
+  for (let c = w.getFirstChild(); c; c = c.getNextSibling()) out.push(c, ...descendants(c));
+  return out;
+}
+
 describe("fields on Linux", () => {
   it("a field's title is edited from its header and saved to the schema", async () => {
     await openTasks();
@@ -73,6 +80,32 @@ describe("fields on Linux", () => {
       expect(schema.fields.find((f) => f.name === "status")?.constraints?.enum).toContain("blocked");
       expect(schema["schema-version"]).toBe(Number(before) + 1);
     });
+  });
+
+  it("a choice is moved, labelled and coloured in the editor, and saved as the schema has it", async () => {
+    await openTasks();
+    const choicesOnDisk = async () => (await schemaOnDisk()).fields.find((f) => f.name === "status")?.constraints?.enum;
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Move doing Earlier" }));
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", "todo", "done"]));
+    // Opened, the choice's label and colour.
+    const choiceRow = async (title: string) => (await screen.findAllByRole(Gtk.AccessibleRole.LIST_ITEM)).find((w) => w instanceof Adw.ExpanderRow && w.getTitle() === title) as Adw.ExpanderRow;
+    let row = await choiceRow("todo");
+    row.setExpanded(true);
+    const within = (w: Gtk.Widget) => {
+      for (let p: Gtk.Widget | null = w; p; p = p.getParent()) if (p === row) return true;
+      return false;
+    };
+    const label = (await screen.findAllByRole(Gtk.AccessibleRole.LIST_ITEM)).find((w) => w instanceof Adw.EntryRow && w.getTitle() === "Label" && within(w)) as Adw.EntryRow;
+    await userEvent.type(label, "Not started");
+    label.emit("apply");
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", { value: "todo", label: "Not started" }, "done"]));
+    // Shown by its label now.
+    row = await choiceRow("Not started");
+    const colour = descendants(row).find((w) => w instanceof Adw.ComboRow && w.getTitle() === "Colour") as Adw.ComboRow;
+    // "None" first, then the schema's colours: Grey, Brown, Red.
+    colour.setSelected(3);
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", { value: "todo", label: "Not started", color: "red" }, "done"]));
   });
 
   it("a choice that rows hold is removed only after asking, and comes out of those rows", async () => {
