@@ -9,7 +9,7 @@
 // another row gets new stand-ins: the old row's, called as it goes (a cell
 // saving what was typed in it), still reach the old row's handlers.
 
-import { cloneElement, isValidElement, type ReactElement } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 
 /** Arrays longer than this are compared as themselves, not item by item (a grid's every row id, say). */
 const LONG = 64;
@@ -88,7 +88,11 @@ function steady(value: unknown, path: string, held: Handlers): unknown {
       const s = steady(props[name], `${path}.${name}`, held);
       if (s !== props[name]) (next ??= {})[name] = s;
     }
-    return next ? cloneElement(value, next) : value;
+    if (!next) return value;
+    // Children as they were given, one by one: an array given as a prop would be a list wanting keys.
+    const { children, ...rest } = next;
+    if ("children" in next && Array.isArray(children)) return cloneElement(value, rest, ...(children as ReactNode[]));
+    return cloneElement(value, next);
   }
   if (isPlain(value)) {
     const record = value as Record<string, unknown>;

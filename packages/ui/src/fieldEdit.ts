@@ -13,6 +13,8 @@ import {
   inputCurrency,
   type CompileResult,
   type DisplayOptions,
+  type EnumColor,
+  type EnumOption,
   type Field,
   type FieldAlignment,
   type FieldType,
@@ -253,6 +255,43 @@ export function newChoice(field: Field, typed: string): string | null {
   const value = typed.trim();
   if (!value || enumValues(field).includes(value)) return null;
   return value;
+}
+
+/** The schema's choice colours (SPEC "enum colours"), for a choice's colour picker: "none" first. */
+export const CHOICE_COLOURS: { value: "none" | EnumColor; label: string }[] = [
+  // Not "": an empty selection draws a native picker blank.
+  { value: "none", label: "None" },
+  ...(["gray", "brown", "red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink"] as const).map((c) => ({
+    value: c,
+    label: c === "gray" ? "Grey" : c[0]!.toUpperCase() + c.slice(1),
+  })),
+];
+
+/** A field's choices written back, each as `{ value, label?, color? }`, or the bare value when it has neither (SPEC "enum"). */
+export function choicesPatch(field: Field, next: EnumOption[]): Partial<Field> {
+  return { constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } };
+}
+
+/** A choice's label as typed: none when it's empty or the value itself. */
+export function choiceLabel(option: EnumOption, typed: string): EnumOption {
+  const t = typed.trim();
+  const { label: _old, ...rest } = option;
+  return t && t !== option.value ? { ...rest, label: t } : rest;
+}
+
+/** A choice's colour as picked from CHOICE_COLOURS: "none" takes it away. */
+export function choiceColour(option: EnumOption, picked: string): EnumOption {
+  const { color: _old, ...rest } = option;
+  return picked === "none" ? rest : { ...rest, color: picked as EnumColor };
+}
+
+/** The choices with the one at `from` moved to `to`; as they were when `to` is past either end. */
+export function movedChoices(choices: EnumOption[], from: number, to: number): EnumOption[] {
+  if (to < 0 || to >= choices.length || from === to) return choices;
+  const next = choices.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
 }
 
 // ─── Formulas ──────────────────────────────────────────────────────────
