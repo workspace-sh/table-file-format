@@ -166,12 +166,13 @@ describe("rows on their way from an index, on GTK", () => {
       return at!.getWidth();
     };
     const columns = await Promise.all(table.schema.fields.map((f) => widthOf(f.title ?? f.name)));
-    // Each awaited row has a cell for each column, as wide as its column and as tall as a row.
+    // Each awaited row has a cell for each column, as wide as its column and as tall as a row: the
+    // outermost widgets of a size of their own (a cell holds what a row's cell holds, with no value yet).
     const cellsOf = (row: Gtk.Widget) => {
       const cells: Gtk.Widget[] = [];
       const walk = (w: Gtk.Widget) => {
         for (let c = w.getFirstChild(); c; c = c.getNextSibling()) {
-          if (c.getSizeRequest()[0] > 0 && c.getSizeRequest()[1] > 0 && c.getFirstChild() === null) cells.push(c);
+          if (c.getSizeRequest()[0] > 0 && c.getSizeRequest()[1] > 0) cells.push(c);
           else walk(c);
         }
       };

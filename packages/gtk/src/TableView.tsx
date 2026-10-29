@@ -103,6 +103,37 @@ const HEADER_HEIGHT = 36;
 const ROW_RULE = 1;
 /** A group's heading above its first row, rule included. */
 const GROUP_ROW_HEIGHT = 33;
+
+/**
+ * The slot of each place from `first` on, `count` of them: a place built
+ * before keeps its slot, and the others take the slots let go, then new
+ * ones. `held` is the last call's, and is left as this one's.
+ */
+function slotsFor(held: { current: Map<number, number> }, first: number, count: number): number[] {
+  const was = held.current;
+  const now = new Map<number, number>();
+  const taken = new Set<number>();
+  for (let place = first; place < first + count; place++) {
+    const slot = was.get(place);
+    if (slot !== undefined) {
+      now.set(place, slot);
+      taken.add(slot);
+    }
+  }
+  const free = [...was.values()].filter((slot) => !taken.has(slot)).sort((a, b) => a - b);
+  let fresh = Math.max(-1, ...was.values()) + 1;
+  const out: number[] = [];
+  for (let place = first; place < first + count; place++) {
+    let slot = now.get(place);
+    if (slot === undefined) {
+      slot = free.shift() ?? fresh++;
+      now.set(place, slot);
+    }
+    out.push(slot);
+  }
+  held.current = now;
+  return out;
+}
 /** How far past the screen rows are kept built, in pixels. */
 const DRAW_DISTANCE = 900;
 /**
@@ -655,6 +686,7 @@ export function TableView({
   const after = count ? Math.max(0, laidOut - (layout.topOf(lastBuilt) + layout.heightOf(lastBuilt) - built.shift)) : 0;
   // The built rows: one that hasn't arrived from the index yet is undefined, and drawn empty.
   const builtRows = useViewWindow(source, firstBuilt, lastBuilt + 1);
+  const slotOf = useRef(new Map<number, number>());
   // The view's first rows that stay at the top with the header (D58), read wherever the window is.
   const frozenRowCount = Math.max(0, Math.min(view.frozen?.rows ?? 0, count));
   const topRows = useViewWindow(source, 0, frozenRowCount);
@@ -1053,7 +1085,8 @@ export function TableView({
           cssClasses={[styles.rowLine, ...(label !== null ? [styles.rowLineLit] : [])]}
           tooltipText="Drag to resize the row; double-click to fit it"
           cursor={Gdk.Cursor.newFromName("row-resize", null)}
-          controllers={rowResize(row, "line", fields[0]!)}
+          // A row still on its way from the index has no height to change yet.
+          controllers={row.id ? rowResize(row, "line", fields[0]!) : undefined}
         />
         {label !== null ? (
           <GtkLabel
@@ -1403,7 +1436,16 @@ export function TableView({
     );
   });
 
-  const body = builtRows.map((row, i) => {
+  // A row's widgets are kept for the next row to be built in its place, whose
+  // values they're given (a widget made is what costs, on GTK): each place
+  // built has a slot, its React key, which it keeps while it stays built,
+  // and the slots of places no longer built go to the places now built. So
+  // a jump or a scroll takes the rows it leaves for the ones it comes to.
+  // What a cell holds is its own row's, made again for each: an editor open
+  // in it stays with the row it edits.
+  const slots = slotsFor(slotOf, firstBuilt, builtRows.length);
+  const body = builtRows.map((built, i) => {
+    let row = built;
     const index = firstBuilt + i;
     const group = groupStarts.get(index);
     const starts = group ? { label: groupLabel(group.key, groupField!, schema), count: group.count } : undefined;
@@ -1419,28 +1461,12 @@ export function TableView({
         {trailing}
       </GtkBox>
     ) : null;
-    // On its way from the index: an empty row of its height in the table's own columns, with the cells
-    // and lines a row has, so the grid stays whole and only the values arrive, and nothing moves.
-    if (!row) {
-      // Its place's height is the row's cells and its line.
-      const height = layout.heightOf(index) - ROW_RULE;
-      const empty = (name: string) => (
-        <Cell key={name} width={colWidth(name)} height={height}>
-          {null}
-        </Cell>
-      );
-      const start = rowStart(`awaited:${index}`, height, [styles.frozen], "", freeze ? frozenNames.map(empty) : null);
-      return (
-        <GtkBox key={`empty-${index}`} name="awaited-row" orientation={Gtk.Orientation.VERTICAL}>
-          {heading}
-          <BodyRow rowId="" menu={false} hasBody={false} canInsert={false} frozen={start.frozen}>
-            {start.inLine}
-            {scrolling.map(empty)}
-          </BodyRow>
-        </GtkBox>
-      );
-    }
-    const rowHeight = heightOf(row.id);
+    // On its way from the index: a row of its height with the table's own columns, cells and lines, and no
+    // values yet, so the grid stays whole and only the values arrive, and nothing moves. It is made as a
+    // row with values is, so that when they come it's the same widgets, given them.
+    const awaited = !row;
+    if (!row) row = { id: "" };
+    const rowHeight = awaited ? layout.heightOf(index) - ROW_RULE : heightOf(row.id);
     const lines = linesFor(rowHeight);
     const colors = colorsOf(row);
     const bodyCell = (name: string, i: number) => {
@@ -1460,10 +1486,12 @@ export function TableView({
               ]}
               tooltip={ownNote(cellFormulas, row.id, name, row)}
               cellRef={(widget) => {
+                if (awaited) return;
                 if (widget) cells.current.set(cellKey(row.id, name), widget);
                 else cells.current.delete(cellKey(row.id, name));
               }}
               onFocused={(focused) => {
+                if (awaited) return;
                 if (focused) revealCell(index, cells.current.get(cellKey(row.id, name)));
                 setFocusedCell((was) => (focused ? cellKey(row.id, name) : was === cellKey(row.id, name) ? null : was));
               }}
@@ -1475,12 +1503,13 @@ export function TableView({
                 marginTop={lines > 1 ? 10 : 0}
                 // A formula cell opens how it was worked out; its value isn't typed.
                 controllers={
-                  field?.computed ? <GtkGestureClick onReleased={() => setOpenFormula({ rowId: row.id, name })} /> : undefined
+                  field?.computed && !awaited ? <GtkGestureClick onReleased={() => setOpenFormula({ rowId: row.id, name })} /> : undefined
                 }
                 tooltipText={field?.computed ? "How This Was Worked Out" : undefined}
               >
-                {editable ? (
+                {awaited ? null : editable ? (
                   <EditableCell
+                    key={row.id}
                     field={field}
                     value={row[name]}
                     onCommit={(next) => onUpdateRow!(row.id, name, next)}
@@ -1510,6 +1539,7 @@ export function TableView({
                   />
                 ) : (
                   <CellValue
+                    key={row.id}
                     field={field}
                     value={row[name]}
                     relatedTables={relatedTables}
@@ -1532,18 +1562,25 @@ export function TableView({
           );
     };
     // The frozen start covers the row's own background: it takes the row's colour too.
-    const start = rowStart(`row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, index)), freeze ? frozenNames.map((name, i) => bodyCell(name, i)) : null);
+    const start = rowStart(awaited ? `awaited:${index}` : `row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], awaited ? "" : String(numberOf(row, index)), freeze ? frozenNames.map((name, i) => bodyCell(name, i)) : null);
     return (
-    <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
+    <GtkBox key={`slot:${slots[i]}`} name={awaited ? "awaited-row" : "table-row"} orientation={Gtk.Orientation.VERTICAL}>
       {heading}
       <GtkOverlay
         overlays={
           <>
             {rowLine(row)}
-            {rowGrip(row)}
+            {awaited ? null : rowGrip(row)}
           </>
         }
       >
+      {awaited ? (
+        // Its menu does nothing yet.
+        <BodyRow rowId="" tint={[]} menu={hasMenu} hasBody={false} canInsert={false} frozen={start.frozen}>
+          {start.inLine}
+          {scrolling.map((name, i) => bodyCell(name, i + frozenCount))}
+        </BodyRow>
+      ) : (
       <BodyRow
         rowId={row.id}
         tint={tintClass(colors.row, dark)}
@@ -1573,6 +1610,7 @@ export function TableView({
         {start.inLine}
         {scrolling.map((name, i) => bodyCell(name, i + frozenCount))}
       </BodyRow>
+      )}
       </GtkOverlay>
     </GtkBox>
     );

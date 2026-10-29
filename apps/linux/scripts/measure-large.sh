@@ -9,6 +9,10 @@
 #
 #   SIZE=1280x800     output resolution
 #   NODE_ARGS=...     given to node, as --cpu-prof --cpu-prof-dir=/tmp/prof to see where its time goes
+#   PROFILE=/tmp/prof a CPU profile of each step timed (a jump, an edit), one file each
+#   WRAP=...          put before node, as WRAP="env GSK_RENDERER=cairo" to leave GL out
+#                     (on a machine without a GPU it's Mesa's llvmpipe, which compiles
+#                     its shaders on the app's thread), or WRAP="perf record -g -o …"
 #
 # The table is copied first, so it's left as it was: no index, no edit.
 # Needs sway: sudo dnf install sway
@@ -17,6 +21,8 @@ set -euo pipefail
 SOURCE="${1:?usage: measure-large.sh <a .table folder from scripts/big-table.mts>}"
 SIZE="${SIZE:-1280x800}"
 NODE_ARGS="${NODE_ARGS:-}"
+WRAP="${WRAP:-}"
+PROFILE="${PROFILE:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUNDLE="$HERE/dist/bundle.mjs"
 [ -f "$BUNDLE" ] || { echo "no build at $BUNDLE — run: npm run build" >&2; exit 1; }
@@ -37,7 +43,7 @@ run() {
     echo "output HEADLESS-1 mode $SIZE"
     echo "default_border none"
     # Its own data folder: nothing of this user's is read or changed.
-    printf 'exec sh -c %q\n' "env XDG_DATA_HOME=$WORK/data XDG_CACHE_HOME=$WORK/cache ADW_DEBUG_COLOR_SCHEME=prefer-dark TABLE_MEASURE=1 TABLE_MEASURE_RUN=$1 TABLE_MEASURE_ROW=$ROW node $NODE_ARGS $BUNDLE $TABLE > $log 2>&1; swaymsg exit"
+    printf 'exec sh -c %q\n' "env XDG_DATA_HOME=$WORK/data XDG_CACHE_HOME=$WORK/cache ADW_DEBUG_COLOR_SCHEME=prefer-dark TABLE_MEASURE=1 TABLE_MEASURE_RUN=$1 TABLE_MEASURE_ROW=$ROW TABLE_MEASURE_PROFILE=$PROFILE $WRAP node $NODE_ARGS $BUNDLE $TABLE > $log 2>&1; swaymsg exit"
   } > "$WORK/sway.conf"
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
   XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
