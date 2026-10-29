@@ -4,8 +4,7 @@ import { html, css } from "react-strict-dom";
 import { Icon } from "./Icon";
 import { computeRows, isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
-import { openArchiveInWorker } from "./sqlite/client";
-import { useIndexedTables } from "./useIndexedTables";
+import { openArchiveInWorker, openWebDatabase } from "./sqlite/client";
 import {
   AttachmentsProvider,
   BodyEditor,
@@ -75,7 +74,7 @@ import {
   readingText,
   ingestingText,
 } from "@workspace.sh/table-app";
-import { useSearchBehind, useTableApp } from "@workspace.sh/table-app/react";
+import { useIndexedTables, useSearchBehind, useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
@@ -486,7 +485,7 @@ export function App() {
   // the viewer's own settings come from this browser.
   const browserLocale = typeof navigator === "undefined" ? undefined : navigator.language;
   // Set once the indexed tables' hook below has run: a write can only come after.
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
   const { state, dispatch, display: shownDisplay, flush } = useTableApp(
     () => {
       const saved = loadSaved(browserStore());
@@ -539,7 +538,7 @@ export function App() {
   // Tables held in the index (large ones): read, edited and saved there, in a worker.
   // The view follows the search a step behind what's typed (useSearchBehind).
   const behind = useSearchBehind(state);
-  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: browserLocale, attachmentsOf }).shown.view, tell });
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: browserLocale, attachmentsOf }).shown.view, tell, openIndexDatabase: openWebDatabase, closeUnheld: true });
   saveIndexed.current = indexed.save;
   // A table's history, as this browser keeps it beside the table: the Files side lists and shows it.
   const historyText = (key: string): string | undefined => {
@@ -634,7 +633,7 @@ export function App() {
       if (bytes.byteLength < WORKER_FROM_BYTES || typeof Worker === "undefined") return openArchive(bytes, Object.keys(bundles));
       const read = await openArchiveInWorker(bytes, Object.keys(bundles));
       if (read.index) {
-        indexed.hold(read.opened.key, read.index, Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])));
+        indexed.hold(Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])), { [read.opened.key]: read.index });
         // Asked after, not before the rows show: the database opens behind them.
         void read.index.storage().then((storage) => {
           if (storage === "kept") return;
@@ -700,7 +699,7 @@ export function App() {
         return { key: opened.key, fetch: Math.round(t1 - t0), read: Math.round(t2 - t1), show: Math.round(t3 - t2) };
       },
       // What the index worker's answers took, for a bundle held in it.
-      workerTimings: (bundle: string) => indexed.timings(bundle),
+      workerTimings: (bundle: string) => indexed.databaseOf(bundle).then((db) => db.timings()),
       // Any action, as the app's own controls send them.
       act: (action: Parameters<typeof dispatch>[0]) => flushSync(() => dispatch(action)),
       // Whether there's a step to undo or redo, and how many edits wait on the index.

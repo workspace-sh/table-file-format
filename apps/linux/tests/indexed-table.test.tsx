@@ -1,10 +1,12 @@
 import * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
-import { openArchive } from "@workspace.sh/table-app";
-import { loadLibrary, openIndexHost, type IndexHost } from "@workspace.sh/table-app/node";
-import { parseEditLog, parseRowsText } from "@workspace.sh/table-core";
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { bundleToArchive, openArchive } from "@workspace.sh/table-app";
+import { loadLibrary, openIndexHost, openSingleFile, type IndexHost } from "@workspace.sh/table-app/node";
+import { filesOfFolder, parseEditLog, parseRowsText, readTableArchive } from "@workspace.sh/table-core";
+import { readBundle } from "@workspace.sh/table-core/io";
+import { nodeFs } from "@workspace.sh/table-core/node-fs";
+import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -177,6 +179,26 @@ describe("a table held in the index on Linux", () => {
     await host.close();
     expect(built).toBe(false);
   });
+
+  it("as a single .table file, an edit is packed back into the file with every other row", async () => {
+    const file = join(dir, "projects-one.table");
+    writeFileSync(file, await bundleToArchive("projects", { ...(await readBundle(nodeFs, bundle)), files: await filesOfFolder(nodeFs, bundle) }));
+    const library = await openSingleFile(file, [], { home: join(dir, "cache"), indexedFrom: 1000 });
+    const key = Object.keys(library.tables).find((k) => k.endsWith("/tasks"))!;
+    expect(library.tables[key]!.indexed).toBeDefined();
+    await render(<App library={library} initialTable={key} initialView="juycicwios88m" indexedFrom={1000} />);
+    await screen.findAllByText(`${COUNT} of ${COUNT} rows`);
+    await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
+    const first = await cellOf("Land .table extension");
+    first.grabFocus();
+    await userEvent.keyboard(first, "Z");
+    const entry = (await screen.findByDisplayValue("Z")) as Gtk.Entry;
+    await userEvent.type(entry, "ed");
+    await userEvent.keyboard(entry, "{Enter}");
+    const tasksInFile = async () => (await readTableArchive(new Uint8Array(readFileSync(file)))).tables.tasks!.rows;
+    await waitFor(async () => expect((await tasksInFile()).find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title).toBe("Zed"), { timeout: 15000 });
+    expect(await tasksInFile()).toHaveLength(ROWS + 8);
+  }, 60_000);
 
   it("with a line its rows can't read, it's held in memory instead and says so, and a save keeps the line (#567)", async () => {
     appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), '{"id":"t9","title":"Broken because of a typo"\n');
