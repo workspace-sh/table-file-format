@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../src/App.js";
+import { openedRowMenu } from "./rowMenu.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // Dragging a column's end edge, or the grip on the selected row: the size
@@ -248,7 +249,7 @@ describe("resizing on Linux", () => {
     expect(found, `the row menu of "${title}"`).toBeDefined();
     return found!;
   }
-  const menuLabels = (button: Gtk.MenuButton): string[] => {
+  const menuLabels = async (button: Gtk.MenuButton): Promise<string[]> => {
     const out: string[] = [];
     const walk = (model: Gio.MenuModel) => {
       for (let i = 0; i < model.getNItems(); i++) {
@@ -258,7 +259,7 @@ describe("resizing on Linux", () => {
         if (section) walk(section);
       }
     };
-    walk((button.getPopover() as Gtk.PopoverMenu).getMenuModel()!);
+    walk((await openedRowMenu(button)).getMenuModel()!);
     return out;
   };
 
@@ -267,17 +268,17 @@ describe("resizing on Linux", () => {
     await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
     const landed = (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.title === "Land .table extension")!;
     const menu = () => rowMenuOf("Land .table extension");
-    expect(menuLabels(await menu())).toContain("Fit Row to Content");
-    expect(menuLabels(await menu())).not.toContain("Reset Row Height");
+    expect((await menuLabels(await menu()))).toContain("Fit Row to Content");
+    expect((await menuLabels(await menu()))).not.toContain("Reset Row Height");
     (await menu()).activateAction("row.fit", null);
     // Two lines: its title wraps in its column, as the grip's double click finds.
     await waitFor(async () => expect((await viewOnDisk()).rowHeights).toEqual({ [landed.id]: 64 }));
     // Now it can be put back, and only it.
-    await waitFor(async () => expect(menuLabels(await menu())).toContain("Reset Row Height"));
-    expect(menuLabels(await rowMenuOf("Markdown editor polish"))).not.toContain("Reset Row Height");
+    await waitFor(async () => expect((await menuLabels(await menu()))).toContain("Reset Row Height"));
+    expect((await menuLabels(await rowMenuOf("Markdown editor polish")))).not.toContain("Reset Row Height");
     (await menu()).activateAction("row.reset-height", null);
     await waitFor(async () => expect((await viewOnDisk()).rowHeights).toBeUndefined());
-    await waitFor(async () => expect(menuLabels(await menu())).not.toContain("Reset Row Height"));
+    await waitFor(async () => expect((await menuLabels(await menu()))).not.toContain("Reset Row Height"));
     // A row that already fits is left as it is: nothing is written for it.
     (await rowMenuOf("App icon")).activateAction("row.fit", null);
     await new Promise((resolve) => setTimeout(resolve, 800));
