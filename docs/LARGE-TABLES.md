@@ -267,7 +267,26 @@ Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows wh
 - **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
 - **Export.** A single-file `.table` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
 
-Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an export of more than 250,000 rows. A single file holding one is saved whole, whatever its size: only export builds an archive in memory. No timings from the app itself yet; the index's own are above.
+Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an export of more than 250,000 rows. A single file holding one is saved whole, whatever its size: only export builds an archive in memory. The app's own timings follow.
+
+**Timed in the app itself** (29 Oct 2026, #442). `apps/linux/scripts/measure-large.sh` opens a table from `scripts/big-table.mts` in the built app (`npm run build`), on headless sway at 1280 × 800 on the rig (a 2017 MacBook, 8 GB; software rendering, no GPU). The app times itself (`TABLE_MEASURE=1`, `src/measure.ts`): it watches its own widgets and takes each time from the action to the result on screen, with two frames drawn after it. It opens the table twice: with no index, and then again. An edit is made as the app's controls make one (its `updateRow` action), not typed. The 100,000-row numbers are the range of three runs; the 1,000,000-row numbers are one run.
+
+| | 100,000 rows | 1,000,000 rows |
+|---|---|---|
+| The window, from the app's start | 0.96 to 0.99 s | 0.97 s |
+| First rows, from the app's start | 3.5 to 3.7 s | 3.6 s |
+| Table ready (sort, filter, search, edit), from the app's start | 5.7 to 5.8 s | 58 s |
+| The longest the window went without a frame meanwhile | 1.35 to 1.4 s | 1.5 s |
+| Jump to the middle | 1.5 to 1.6 s | 0.78 s |
+| Jump to the last row | 0.50 to 0.73 s | 0.84 s |
+| A search, before its index is whole | 0.27 to 0.33 s | 0.21 s |
+| An edit shown | 0.27 to 0.53 s | 0.41 s |
+| A place not read before, asked for while the edit is saved | 0.69 to 0.78 s | 0.72 s |
+| Opened again: first rows, and ready | 1.7 s, 3.3 s | 1.9 s, 3.5 s |
+
+- **The wait for first rows doesn't grow with the table**: 2.6 s after the window, at either size. A profile (`NODE_ARGS="--cpu-prof …"`) of that time at 100,000 rows: about 0.7 s is React making the first rows' GTK widgets, and about 2.1 s is outside JavaScript, GTK's own layout and drawing (in software here). The window draws nothing while it runs, in stretches of up to 1.4 s. By the time the first rows show, the worker has read 60% of a 100,000-row table into its index.
+- **Linux is slower than the web at everything after opening**: a jump takes 0.5 to 1.6 s against about 0.1 s in a browser on the same machine, and an edit 0.3 to 0.5 s against 35 to 70 ms. The index answers in tens of milliseconds (above), so the time is most likely in making and drawing the rows' widgets, as at opening; jumps and edits haven't been profiled yet (#745).
+- **Ready at a million rows** is 58 s, against 17.7 s for the index alone (above): the build shares the machine with the window, which is drawing in software.
 
 ### What the web does (W2 and W3, 9 Oct 2026)
 
