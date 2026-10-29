@@ -89,7 +89,7 @@ describe("editing on Linux saves to the file", () => {
     await userEvent.type(entry, "2.5");
     await userEvent.keyboard(entry, "{Enter}");
     await waitFor(() => expect(entry.hasCssClass("error")).toBe(true));
-    expect(entry.getTooltipText()).toBe("“2.5” isn't a whole number.");
+    expect(entry.getTooltipText()).toBe("“2.5” isn't a whole number. Press Enter again to keep it as typed.");
     const t = await tasksOnDisk();
     expect(t.rows.find((r) => r.id === "wpzuom5b9k3k4g6co658ozwerw")?.priority).toBe(2);
   });
