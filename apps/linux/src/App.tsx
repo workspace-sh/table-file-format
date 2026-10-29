@@ -77,6 +77,8 @@ import {
   storedTableRows,
   changedElsewherePrompt,
   sheetReaders,
+  asStored,
+  ingestingText,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
 import { loadClosed, saveClosed } from "./closedFiles.js";
@@ -454,21 +456,7 @@ function TablePane({
   );
 }
 
-/** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
-function asStored(view: View): View {
-  const { sort: _sort, order: _order, filter: _filter, group: _group, totals: _totals, ...rest } = view;
-  return rest;
-}
-
 const NO_ROWS: Row[] = [];
-
-/** What the line above the first rows says while the index is made. */
-function ingestingText(view: View): string {
-  const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
-  return arranged
-    ? "Showing rows as stored, as they're read. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
-    : "Showing rows as stored, as they're read. Search and editing are ready once the table is read. This happens once.";
-}
 
 /** A path from GTK's file chooser, set up by `ask`; null when it's dismissed. */
 async function choosePath(ask: (dialog: Gtk.FileDialog) => Promise<Gio.File>): Promise<string | null> {
