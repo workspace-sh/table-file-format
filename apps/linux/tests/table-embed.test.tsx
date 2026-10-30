@@ -614,7 +614,7 @@ describe("a large table embedded in a document", () => {
     // Both read whole ("Show … more rows" on the cut one): nothing is still arriving to take the keyboard.
     await waitFor(async () => expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 49,995 more rows" })).toBeDefined(), { timeout: 45_000 });
     await userEvent.click((await screen.findAllByText("Big 0")).filter((w) => w.getMapped())[0]!);
-    const entry = (await screen.findByDisplayValue("Big 0", {}, { timeout: 10_000 })) as Gtk.Entry;
+    const entry = (await screen.findByDisplayValue("Big 0", { timeout: 10_000 })) as Gtk.Entry;
     await userEvent.clear(entry);
     await userEvent.type(entry, "Edited in one view");
     await userEvent.keyboard(entry, "{Enter}");

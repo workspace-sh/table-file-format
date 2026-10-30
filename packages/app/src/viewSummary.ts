@@ -6,7 +6,7 @@
 import { validate, type ParsedTable, type ValidationError } from "@workspace.sh/table-core";
 
 export interface ViewSummary {
-  /** `3 of 6 rows`, or `2 of 5 matching` while searching. */
+  /** `3 of 6 rows`, or `2 of 5 matching` while searching; `81 of 180 rows · Filtered by Read` when the view's filter hides rows (#595). */
   count: string;
   /** While searching, what was found, short enough for the search field: `2 rows`, `1 row`, `No rows`. */
   found?: string;
@@ -42,16 +42,32 @@ export interface ViewSummaryInput {
   openedAt?: number;
   /** Why the table is held in memory, when its index couldn't be made (heldText). */
   held?: string;
+  /** The fields the view's filter reads, by name: said beside the count when it hides rows. */
+  filteredBy?: readonly string[];
 }
 
 /** A count as the reader writes numbers: `1,000,000` in English, as the reading line says them. */
 const counted = (n: number) => n.toLocaleString();
 
-/** `3 of 6 rows`, or `2 of 5 matching` while searching. */
-const countText = (input: ViewSummaryInput, total: number) =>
+/** How many filtered fields are named before it says only `Filtered`. */
+const NAMED_FILTERS = 2;
+
+/**
+ * Why rows are missing, when the view's filter hides some: `Filtered by
+ * Read`, `Filtered by Read and Status`, or `Filtered` past two fields. A
+ * search says its own count, out of the rows the filter left.
+ */
+function filterText(table: ParsedTable, input: ViewSummaryInput, total: number): string {
+  if (input.searching || input.inView >= total || !input.filteredBy?.length) return "";
+  const names = [...new Set(input.filteredBy)].map((name) => table.schema.fields.find((f) => f.name === name)?.title ?? name);
+  return names.length > NAMED_FILTERS ? " · Filtered" : ` · Filtered by ${names.join(" and ")}`;
+}
+
+/** `3 of 6 rows`, or `2 of 5 matching` while searching, with why rows are hidden. */
+const countText = (table: ParsedTable, input: ViewSummaryInput, total: number) =>
   input.searching
     ? `${counted(input.shown)} of ${counted(input.inView)} matching`
-    : `${counted(input.shown)} of ${counted(total)} ${total === 1 ? "row" : "rows"}`;
+    : `${counted(input.shown)} of ${counted(total)} ${total === 1 ? "row" : "rows"}${filterText(table, input, total)}`;
 
 /** What a search found, for the search field itself. */
 const foundText = (input: ViewSummaryInput) =>
@@ -68,7 +84,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   const valid = errors.length === 0;
   if (table.indexed) {
     return {
-      count: countText(input, total),
+      count: countText(table, input, total),
       found: foundText(input),
       valid: true,
       validity: "not checked",
@@ -82,7 +98,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
     };
   }
   return {
-    count: countText(input, total),
+    count: countText(table, input, total),
       found: foundText(input),
     valid,
     validity: valid ? "schema valid" : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`,

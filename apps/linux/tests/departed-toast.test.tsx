@@ -26,7 +26,7 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const count = async () => ((await screen.findByText(/^[\d,]+ of [\d,]+ rows$/)) as Gtk.Label).getLabel();
+const count = async () => ((await screen.findByText(/^[\d,]+ of [\d,]+ rows( · .+)?$/)) as Gtk.Label).getLabel();
 
 describe("rows a checkbox takes out of the view", () => {
   it("are counted in one toast, and Undo puts them all back", async () => {

@@ -68,3 +68,25 @@ test("the schema changed only when its version went up since it was opened", () 
   assert.equal(schemaVersionOf(table([])), 1);
   assert.deepEqual(schemaVersions({ "a/b": table([], 4), "a/c": table([]) }), { "a/b": 4, "a/c": 1 });
 });
+
+test("a filter that hides rows is said beside the count, by its fields' titles (#595)", () => {
+  const t: ParsedTable = {
+    ...table([{ title: "a" }, { title: "b" }, { title: "c" }]),
+    schema: {
+      fields: [
+        { name: "title", type: "string" },
+        { name: "read", title: "Read", type: "boolean" },
+        { name: "status", type: "string" },
+        { name: "owner", type: "string" },
+      ],
+    },
+  };
+  const count = (input: Partial<Parameters<typeof viewSummary>[1]>) => viewSummary(t, { shown: 2, inView: 2, searching: false, ...input }).count;
+  assert.equal(count({ filteredBy: ["read"] }), "2 of 3 rows · Filtered by Read");
+  assert.equal(count({ filteredBy: ["read", "status", "read"] }), "2 of 3 rows · Filtered by Read and status");
+  assert.equal(count({ filteredBy: ["read", "status", "owner"] }), "2 of 3 rows · Filtered");
+  // Nothing hidden, no filter, or a search (which counts out of what the filter left): just the count.
+  assert.equal(count({ shown: 3, inView: 3, filteredBy: ["read"] }), "3 of 3 rows");
+  assert.equal(count({}), "2 of 3 rows");
+  assert.equal(count({ shown: 1, searching: true, filteredBy: ["read"] }), "1 of 2 matching");
+});
