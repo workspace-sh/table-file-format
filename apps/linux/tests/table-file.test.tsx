@@ -175,6 +175,8 @@ describe("a .table opened as a document", () => {
 
     const filtered = await count();
     expect(filtered).not.toBe("17 of 17 rows");
+    // Saying why rows are missing (#595).
+    expect(filtered).toMatch(/ of 17 rows · Filtered by \S/);
     await opened.unmount();
 
     // Opened again with the same store: still this reader's filter.

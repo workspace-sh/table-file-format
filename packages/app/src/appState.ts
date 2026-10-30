@@ -1277,8 +1277,8 @@ function lastAnswer<A extends unknown[], R>(f: (...args: A) => R): (...args: A) 
 }
 
 const summaryLast = lastAnswer(
-  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined, held: string | undefined) =>
-    viewSummary(table, { shown, inView, searching, openedAt, ...(held !== undefined ? { held } : {}) }),
+  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined, held: string | undefined, filteredBy: string) =>
+    viewSummary(table, { shown, inView, searching, openedAt, ...(held !== undefined ? { held } : {}), ...(filteredBy ? { filteredBy: filteredBy.split("\n") } : {}) }),
 );
 
 let lastShown: { asked: unknown[]; answer: ShownView } | undefined;
@@ -1340,6 +1340,8 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
       state.search.trim().length > 0,
       state.openedAt[state.active],
       state.held?.[state.active],
+      // As one string, so an unchanged filter is the same answer.
+      (shown.view.filter ?? []).map((f) => f.field).join("\n"),
     ),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
     mode,
