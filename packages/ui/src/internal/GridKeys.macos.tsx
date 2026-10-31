@@ -7,9 +7,9 @@
  */
 import { forwardRef, useImperativeHandle, useRef, type ComponentType, type ReactNode } from "react";
 import { View } from "react-native";
-import type { GridKeysHandle, GridKeysProps } from "./GridKeys";
+import type { GridKeysHandle, GridKeysProps } from "./GridKeys.types";
 
-export type { GridKeysHandle, GridKeysProps } from "./GridKeys";
+export type { GridKeysHandle, GridKeysProps } from "./GridKeys.types";
 
 interface HandledKey {
   key: string;
