@@ -101,6 +101,8 @@ export interface EmbedShown {
 export interface EmbedProblem {
   kind: "problem";
   text: string;
+  /** What the host offers to put it right ("Open Folder…", where the app wasn't given the document's folder), drawn under the text. */
+  action?: { label: string; onPress: () => void };
 }
 
 export type EmbedRead = EmbedShown | EmbedProblem;
