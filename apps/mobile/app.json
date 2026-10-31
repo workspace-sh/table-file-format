@@ -29,7 +29,7 @@
           }
         }
       ],
-      "./plugins/with-pods-deployment-floor",
+      "@workspace.sh/table-files/plugins/with-pods-deployment-floor.cjs",
       "expo-sharing",
       "expo-router",
       "expo-sqlite",
