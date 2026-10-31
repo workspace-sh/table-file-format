@@ -6,8 +6,10 @@
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LogBox, useColorScheme } from "react-native";
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
-import { Stack } from "expo-router";
+// From expo-router, not @react-navigation/native: expo-router carries its own
+// copy of React Navigation, and a theme given through the other copy never
+// reached the stack (it stayed Light in Dark: light screen, dark text).
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as ExpoHaptics from "expo-haptics";
 import { AttachmentsProvider, DisplaySettingsProvider, HapticsProvider, type Haptics } from "@workspace.sh/table-ui";
 import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
