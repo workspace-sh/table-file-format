@@ -8,7 +8,7 @@ import { ScrollView } from "react-native";
 import { css, html } from "react-strict-dom";
 import { embedFilesWith, readEmbedWith, type EmbedRead } from "@workspace.sh/table-app";
 import { TableEmbed } from "@workspace.sh/table-app/embed-view";
-import { expoFs } from "./expoFs";
+import { expoFs } from "@workspace.sh/table-files";
 
 // What a document in <folder>/docs could link to, and what each should show.
 const CASES: { address: string; caption?: string; note: string }[] = [

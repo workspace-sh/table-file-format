@@ -17,14 +17,14 @@
  * web's ordinary list is LegendList following the page's scroller, which
  * its native build can't do: it windows only what it scrolls itself.
  */
-import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type ComponentRef } from "react";
 import { Platform, View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
 import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
-import type { RowListProps } from "./RowList";
+import type { RowListProps } from "./RowList.types";
 
-export type { RowListHandle, RowListProps } from "./RowList";
+export type { RowListHandle, RowListProps } from "./RowList.types";
 
 /** How far past the screen rows are kept drawn, in points. */
 const DRAW_DISTANCE = 600;
@@ -146,7 +146,7 @@ function WindowedRows<T>({
 }: RowListProps<T> & { page: PageScroll }) {
   const renderer = useRef(render);
   renderer.current = render;
-  const body = useRef<View | null>(null);
+  const body = useRef<ComponentRef<typeof View> | null>(null);
   // Given its layout, the list asks it; otherwise the heights are added up
   // once for these items (`version` changes when a height could have).
   const given = layoutOf !== undefined;

@@ -225,6 +225,11 @@ export function TableEmbedWith(
       {read?.kind === "problem" ? (
         <html.div style={styles.problem}>
           <html.span style={styles.problemText}>{read.text}</html.span>
+          {read.action ? (
+            <html.button style={styles.problemAction} onClick={read.action.onPress}>
+              <html.span style={styles.moreText}>{read.action.label}</html.span>
+            </html.button>
+          ) : null}
         </html.div>
       ) : null}
     </html.div>
@@ -242,8 +247,13 @@ const styles = css.create({
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#3a3a3f" },
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 8,
   },
   problemText: { fontSize: 14, color: dim },
+  problemAction: { padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   head: { display: "flex", flexDirection: "row", alignItems: "center", gap: 2 },
   headMost: (width: number) => ({ maxWidth: width }),
   titleButton: { flexShrink: 1, padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },

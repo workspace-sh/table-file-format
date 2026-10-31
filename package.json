@@ -15,7 +15,7 @@
     "dev": "npm run web:dev",
     "//postinstall": "patches/: fixes to installed packages, applied on every install (patch-package). apps/mobile has its own for the packages nested there.",
     "postinstall": "patch-package",
-    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run app:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run glass-bar:typecheck && npm run file-browser:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run app:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run glass-bar:typecheck && npm run file-browser:typecheck && npm run files:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace.sh/table-core",
     "core:test": "npm run test -w @workspace.sh/table-core",
@@ -26,6 +26,7 @@
     "ui:typecheck": "npm run typecheck -w @workspace.sh/table-ui",
     "glass-bar:typecheck": "npm run typecheck -w @workspace.sh/glass-bar",
     "file-browser:typecheck": "npm run typecheck -w @workspace.sh/file-browser",
+    "files:typecheck": "npm run typecheck -w @workspace.sh/table-files",
     "ui:test": "npm run test -w @workspace.sh/table-ui",
 
     "app:typecheck": "npm run typecheck -w @workspace.sh/table-app",

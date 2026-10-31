@@ -19,7 +19,7 @@ import { embedProblem, readEmbedWith, withOtherFiles, type EmbeddedTableFiles, t
 import { INDEXED_FROM } from "./indexed.ts";
 import { attachmentName, openLibrary, writeLibraryBundle, type Library } from "./library.ts";
 import { largeTables } from "./nodeIndex.ts";
-import { keepEditsAsCopy, packTableFile, restampTableFile, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { keepEditsAsCopy, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 
 export { bundleKey, type Library } from "./library.ts";
@@ -77,7 +77,8 @@ export function singleFilesHome(): string {
   return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "workspace-table", "single-files");
 }
 
-const singleFiles = new Map<string, { target: string; running: Promise<void> | null; again: boolean }>();
+/** Each single file open here, by its working folder. */
+const singleFiles = new Map<string, { target: string }>();
 
 /** A file's size and time, for knowing a working folder was made from it as it now is. */
 const stampOf = (path: string) => {
@@ -95,12 +96,14 @@ export async function openSingleFile(path: string, held: Iterable<string> = [], 
   const file = resolve(path);
   const workDir = workDirFor(options.home ?? singleFilesHome(), file);
   await unpackTableFile(nodeFs, new Uint8Array(readFileSync(file)), workDir, stampOf(file));
-  singleFiles.set(workDir, { target: file, running: null, again: false });
+  singleFiles.set(workDir, { target: file });
   const library = await loadLibrary([workDir], held, options);
   const key = Object.keys(library.bundles)[0];
   if (key !== undefined) library.singleFiles = { [key]: file };
   return library;
 }
+
+const pack = singleFilePacker(nodeFs, stampOf);
 
 /** The working folder of a single file `path` is in (a table's folder, say), if it's one. */
 function workDirOf(path: string): string | undefined {
@@ -116,21 +119,7 @@ export function packSingleFile(path: string): Promise<void> {
   const dir = workDirOf(path);
   const held = dir === undefined ? undefined : singleFiles.get(dir);
   if (!held || dir === undefined) return Promise.resolve();
-  if (held.running) {
-    held.again = true;
-    return held.running;
-  }
-  const run = async (): Promise<void> => {
-    do {
-      held.again = false;
-      await packTableFile(nodeFs, dir, held.target, stampOf(held.target));
-      await restampTableFile(nodeFs, dir, stampOf(held.target));
-    } while (held.again);
-  };
-  held.running = run().finally(() => {
-    held.running = null;
-  });
-  return held.running;
+  return pack(dir, held.target);
 }
 
 /** The working folder held for the single file `file`, let go of here. */

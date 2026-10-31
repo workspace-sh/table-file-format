@@ -26,15 +26,19 @@ public class TableFilesModule: Module {
     /// The phone was shaken, and nothing that edits text (which has its own Undo) took the shake.
     Events("onShake")
 
-    OnCreate {
+    // Shakes are watched for only while something listens (onShakeToUndo):
+    // an app that never asks never has its window's motionEnded changed.
+    OnStartObserving {
       TableShake.start()
+      guard self.shakes == nil else { return }
       self.shakes = NotificationCenter.default.addObserver(forName: TableShake.shaken, object: nil, queue: .main) { [weak self] _ in
         self?.sendEvent("onShake", [:])
       }
     }
 
-    OnDestroy {
+    OnStopObserving {
       if let shakes = self.shakes { NotificationCenter.default.removeObserver(shakes) }
+      self.shakes = nil
     }
 
     /// Development: turn the screen to "landscape" or "portrait", as turning the phone does, so a

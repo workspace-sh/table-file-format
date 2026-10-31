@@ -7,7 +7,7 @@
 
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import type { BundleMeta, ParsedTable, Row } from "@workspace.sh/table-core";
+import { TABLE_TYPES, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
 import { singleFileName, bundleToArchive, fromBundle, openSpreadsheet, spreadsheetText, toBundle, type Library } from "@workspace.sh/table-app";
 import { openZip } from "./indexHost";
 
@@ -77,8 +77,8 @@ export function readSpreadsheet(bytes: Uint8Array, held: Iterable<string>, name:
  * which becomes a new .table file.
  */
 export const OPEN_TYPES = [
-  "sh.workspace.table",
-  "sh.workspace.table.file",
+  TABLE_TYPES.folder,
+  TABLE_TYPES.file,
   "public.comma-separated-values-text",
   "public.tab-separated-values-text",
   "public.plain-text",
@@ -99,5 +99,5 @@ export async function shareZip(
   if (file.exists) file.delete();
   file.create();
   await file.write(await bundleToArchive(bundle, { ...toBundle(tables, bundles, bundle), files }));
-  await Sharing.shareAsync(file.uri, { mimeType: "application/octet-stream", UTI: "sh.workspace.table.file", dialogTitle: singleFileName(bundle) });
+  await Sharing.shareAsync(file.uri, { mimeType: "application/octet-stream", UTI: TABLE_TYPES.file, dialogTitle: singleFileName(bundle) });
 }

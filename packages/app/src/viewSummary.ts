@@ -8,6 +8,9 @@ import { validate, type ParsedTable, type ValidationError } from "@workspace.sh/
 export interface ViewSummary {
   /** `3 of 6 rows`, or `2 of 5 matching` while searching; `81 of 180 rows · Filtered by Read` when the view's filter hides rows (#595). */
   count: string;
+  /** The rows `count` says are shown, and out of how many: the view's (the search's while searching). As numbers, for an app to compare; `count` is for reading. */
+  shown: number;
+  total: number;
   /** While searching, what was found, short enough for the search field: `2 rows`, `1 row`, `No rows`. */
   found?: string;
   /** Every row fits the schema. */
@@ -85,6 +88,8 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   if (table.indexed) {
     return {
       count: countText(table, input, total),
+      shown: input.shown,
+      total: input.searching ? input.inView : total,
       found: foundText(input),
       valid: true,
       validity: "not checked",
@@ -99,7 +104,9 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   }
   return {
     count: countText(table, input, total),
-      found: foundText(input),
+    shown: input.shown,
+    total: input.searching ? input.inView : total,
+    found: foundText(input),
     valid,
     validity: valid ? "schema valid" : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`,
     validityHint: valid

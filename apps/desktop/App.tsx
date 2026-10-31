@@ -6,7 +6,7 @@ import { ScrollView, Settings } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { BundleEntry, HISTORY_FILE, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, TABLE_TYPES, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -505,7 +505,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
   // Read a folder table's history again once it's been added to (useFolderHistories, below).
   const rereadHistory = useRef<(key: string) => void>(() => {});
   // The large tables' save, set once their hook is made below.
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
   // A single file's working folder packed back into it after a write (folders.ts), set once its hook is made below.
   const packDocuments = useRef<(bundles: string[]) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
@@ -1149,7 +1149,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
     // A .table in either form (the panel offers a folder one as one item, a package), or a
     // spreadsheet someone already has, which becomes a new .table.
     open: () =>
-      void chooseFile("Open a .table, or a spreadsheet to make one from", ["sh.workspace.table", "sh.workspace.table.file", "csv", "tsv", "tab", "txt"]).then((path) => {
+      void chooseFile("Open a .table, or a spreadsheet to make one from", [TABLE_TYPES.folder, TABLE_TYPES.file, "csv", "tsv", "tab", "txt"]).then((path) => {
         if (path && isSpreadsheetFile(path.split("/").pop() ?? path)) return importZip(path);
         return openFolder(path);
       }),
@@ -1497,10 +1497,6 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
               onLayout={(e) => {
                 void adoptToolbarInsets();
                 pageScroller.onLayout(e);
-                // (The scroll view measures as any view does; its type doesn't say so.)
-                (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.(
-                  (_x, y) => pageScroller.setWindowTop(y),
-                );
               }}
             >
               <PageScrollContext.Provider value={pageScroller.pageScroll}>

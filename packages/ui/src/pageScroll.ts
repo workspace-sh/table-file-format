@@ -36,6 +36,8 @@ export const PageScrollContext = createContext<PageScroll | null>(null);
 interface ScrollerLike {
   scrollTo(to: { y: number; animated?: boolean }): void;
   getInnerViewRef?(): unknown;
+  /** Where it is in the window (a native view measures so; React Native's types don't say a ScrollView does). */
+  measureInWindow?(done: (x: number, y: number) => void): void;
 }
 
 interface MeasurableLike {
@@ -86,9 +88,13 @@ export function pageScrollOver(
       at.offset = e.nativeEvent.contentOffset.y;
       tell("scroll");
     },
+    /** Also measures where the ScrollView is in the window (setWindowTop), so a screen needn't. */
     onLayout: (e: { nativeEvent: { layout: { height: number } } }) => {
       at.height = e.nativeEvent.layout.height;
       tell("resize");
+      scroller.current?.measureInWindow?.((_x, y) => {
+        at.top = y;
+      });
     },
     onContentSizeChange: () => tell("resize"),
   };

@@ -17,6 +17,7 @@ export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
+export type { PlatformControls, SheetProps } from "./controlSlots";
 export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { PageGutter } from "./pageGutter";
 export { KeyboardOnShow } from "./keyboardOnShow";
@@ -38,3 +39,4 @@ export {
   type CellEditStatus,
   type FormulaDetails,
 } from "./cellEditor";
+export { ContextMenuButton, ContextMenuView, type ContextMenuButtonProps, type ContextMenuConfig, type ContextMenuItem, type ContextMenuViewProps } from "./contextMenu";

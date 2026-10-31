@@ -1,18 +1,12 @@
-// The Mac's indexes (SPEC section 8, #435): table-app's shared index host
-// (packages/app/src/indexHost.ts), as the phone runs it, over this
-// platform's files (react-native-file-access, in the app's own folder in
-// Application Support) and SQLite (op-sqlite over the system's own SQLite, which
-// macOS builds with FTS5: "op-sqlite" in package.json). A bundle with a
-// large table is a .table folder there, with `index.sqlite` beside its
-// rows.
+// The Mac's indexes (SPEC section 8, #435): table-app's index host for the
+// Mac (macIndexHost: react-native-file-access and op-sqlite), as Workspace's
+// Mac app runs it, over this app's files, in its own folder in Application
+// Support. A bundle with a large table is a .table folder there, with
+// `index.sqlite` beside its rows.
 
-import { open } from "@op-engineering/op-sqlite";
-import { Dirs, FileSystem } from "react-native-file-access";
-import { BundleEntry } from "@workspace.sh/table-core";
+import { Dirs } from "react-native-file-access";
 import { joinPath } from "@workspace.sh/table-core/io";
-import { createIndexHost } from "@workspace.sh/table-app";
-import { opDriver, type OpDatabase } from "@workspace.sh/table-core/sqlite-op";
-import { fromBase64, toBase64 } from "./bytes";
+import { macIndexHost } from "@workspace.sh/table-app/mac-index-host";
 import { desktopFs } from "./desktopFs";
 
 export type { IndexDatabase, OpenedLarge } from "@workspace.sh/table-app";
@@ -24,27 +18,4 @@ export type { IndexDatabase, OpenedLarge } from "@workspace.sh/table-app";
  */
 export const tablesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentDir, "Application Support", "sh.workspace.table.desktop", "tables");
 
-export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders } = createIndexHost({
-  fs: desktopFs,
-  home: tablesHome,
-  async size(path) {
-    if (!(await FileSystem.exists(path))) return null;
-    return (await FileSystem.stat(path)).size;
-  },
-  async writer(path) {
-    await FileSystem.writeFile(path, "", "utf8");
-    // Pieces are appended in the order written; close waits for the last.
-    let written: Promise<void> = Promise.resolve();
-    return {
-      write: (bytes) => (written = written.then(() => FileSystem.appendFile(path, toBase64(bytes), "base64"))),
-      close: () => written,
-    };
-  },
-  async *pieces(path, size, step) {
-    for (let at = 0; at < size; at += step) yield fromBase64(await FileSystem.readFileChunk(path, at, Math.min(step, size - at), "base64"));
-  },
-  async openDatabase(dir) {
-    // op-sqlite's database matches core's structural one but for its wider value types.
-    return opDriver(open({ name: BundleEntry.index, location: dir }) as unknown as OpDatabase);
-  },
-});
+export const { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders } = macIndexHost({ fs: desktopFs, home: tablesHome });

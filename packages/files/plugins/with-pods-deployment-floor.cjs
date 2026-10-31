@@ -1,11 +1,17 @@
 const fs = require("fs");
 const path = require("path");
-const { withDangerousMod } = require("expo/config-plugins");
+// Expo's config plugins as the app using this has them (its project folder),
+// not a copy beside this file: each app keeps its own Expo.
+const { withDangerousMod } = require(require.resolve("expo/config-plugins", { paths: [process.cwd()] }));
 
 // Raise every pod to the app's own deployment target. Pods keep the minimum
-// their podspec declares (RNSVG's filters 12.4, for one), and Xcode 27
-// rejects anything under 15.0. A pod can never run below the app that
-// embeds it, so the app's target is the honest floor.
+// their podspec declares (RNSVG's filters 12.4, SDWebImage's resource bundle
+// 9.0, most Expo pods 15.1), and Xcode 27 rejects anything under 15.0 and
+// compiles expo-router's iOS 16 calls as unavailable at 15.1. A pod can
+// never run below the app that embeds it, so the app's target is the honest
+// floor. For the .table apps and Workspace:
+//
+//   plugins: ["<path to>/packages/files/plugins/with-pods-deployment-floor.cjs"]
 const BEGIN = "    # >>> with-pods-deployment-floor";
 const END = "    # <<< with-pods-deployment-floor\n";
 const SNIPPET = `${BEGIN}
