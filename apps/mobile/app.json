@@ -10,37 +10,7 @@
       "icon": "./assets/icon/AppIcon.icon",
       "supportsTablet": true,
       "bundleIdentifier": "sh.workspace.table.mobile",
-      "appleTeamId": "5Y4NB76UP6",
-      "infoPlist": {
-        "UTImportedTypeDeclarations": [
-          {
-            "UTTypeIdentifier": "sh.workspace.table",
-            "UTTypeDescription": "Table",
-            "UTTypeConformsTo": [
-              "com.apple.package",
-              "public.composite-content"
-            ],
-            "UTTypeTagSpecification": {
-              "public.filename-extension": [
-                "table"
-              ]
-            }
-          },
-          {
-            "UTTypeIdentifier": "sh.workspace.table.file",
-            "UTTypeDescription": "Table",
-            "UTTypeConformsTo": [
-              "public.data",
-              "public.composite-content"
-            ],
-            "UTTypeTagSpecification": {
-              "public.filename-extension": [
-                "table"
-              ]
-            }
-          }
-        ]
-      }
+      "appleTeamId": "5Y4NB76UP6"
     },
     "android": {
       "package": "sh.workspace.table.mobile"
@@ -62,7 +32,13 @@
       "./plugins/with-pods-deployment-floor",
       "expo-sharing",
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "@workspace.sh/table-core/app.plugin.cjs",
+        {
+          "declare": "imported"
+        }
+      ]
     ]
   }
 }

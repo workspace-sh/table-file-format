@@ -155,3 +155,4 @@ export { currencyOf, effectiveFormat, inputCurrency } from "./currency.js";
 export { hasColorRules, knownColor, rowColors, type RowColors } from "./colors.js";
 export { CELLS_DIR, cellDiagnostics, cellFormulas, cellLine, layoutCells, parseCellsText } from "./cells.js";
 export { holds } from "./validator.js";
+export { TABLE_TYPES, TABLE_TYPE_DECLARATIONS } from "./tableTypes.js";

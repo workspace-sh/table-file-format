@@ -6,7 +6,7 @@ import { ScrollView, Settings } from "react-native";
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { BundleEntry, HISTORY_FILE, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, TABLE_TYPES, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
 import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
@@ -1149,7 +1149,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
     // A .table in either form (the panel offers a folder one as one item, a package), or a
     // spreadsheet someone already has, which becomes a new .table.
     open: () =>
-      void chooseFile("Open a .table, or a spreadsheet to make one from", ["sh.workspace.table", "sh.workspace.table.file", "csv", "tsv", "tab", "txt"]).then((path) => {
+      void chooseFile("Open a .table, or a spreadsheet to make one from", [TABLE_TYPES.folder, TABLE_TYPES.file, "csv", "tsv", "tab", "txt"]).then((path) => {
         if (path && isSpreadsheetFile(path.split("/").pop() ?? path)) return importZip(path);
         return openFolder(path);
       }),
