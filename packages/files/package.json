@@ -18,7 +18,8 @@
     "index.ts",
     "expo.ts",
     "ios",
-    "expo-module.config.json"
+    "expo-module.config.json",
+    "plugins"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"
