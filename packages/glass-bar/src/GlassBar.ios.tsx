@@ -65,6 +65,7 @@ import {
   opacity,
   onSubmit as onSubmitModifier,
   onTapGesture,
+  truncationMode,
   padding,
   shapes,
   textInputAutocapitalization,
@@ -276,8 +277,9 @@ type EditorHandle = GlassBarHandle & { value: () => string };
 type Expansion = { can: boolean; on: boolean; height: number; toggle: () => void; settling?: boolean };
 type Part = GlassBarProps & { ns: string; editor?: RefObject<EditorHandle | null>; expansion?: Expansion };
 
-function Lead({ state, ns, onFilter, restLead, onDeselect, onCancel, expansion }: Part) {
+function Lead({ state, ns, onFilter, restLead, restNotice, onDeselect, onCancel, expansion }: Part) {
   if (state.kind === "searching") return null; // absorbed into the search field
+  if (state.kind === "rest" && restNotice) return <LeadWithNotice state={state} ns={ns} onFilter={onFilter} restLead={restLead} restNotice={restNotice} />;
   // Expanded, ✕ is inside the capsule. This circle stays, shrunk to nothing
   // at the capsule's corner, so collapsing grows it back out of that corner:
   // a glass piece that appears afresh grows out of the whole capsule instead.
@@ -298,6 +300,55 @@ function Lead({ state, ns, onFilter, restLead, onDeselect, onCancel, expansion }
         accessibilityLabel(rest ? (restLead?.label ?? "Filter") : state.kind === "selected" ? "Deselect" : "Cancel"),
       ]}
     />
+  );
+}
+
+/**
+ * At rest with a notice: the lead's button and the notice in one capsule (the
+ * lead's glass identity, so a selection shrinks it back to the lead's circle),
+ * a line between them, the notice taking the room up to Search and More (up
+ * to NOTICE_MAX).
+ */
+/** The widest the notice's capsule grows: a phone's row in portrait, not landscape's. */
+const NOTICE_MAX = 340;
+
+function LeadWithNotice({ ns, onFilter, restLead, restNotice }: Pick<Part, "state" | "ns" | "onFilter" | "restLead" | "restNotice">) {
+  const notice = restNotice!;
+  return (
+    <HStack
+      spacing={0}
+      modifiers={[
+        frame({ maxWidth: NOTICE_MAX, minHeight: SIZE, alignment: "leading" }),
+        glass("roundedRectangle"),
+        glassEffectId("lead", ns),
+        // Wider rows (landscape, iPad) leave the room after it empty.
+        frame({ maxWidth: Infinity, alignment: "leading" }),
+      ]}
+    >
+      <Image
+        systemName={(restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease"}
+        size={19}
+        onPress={onFilter}
+        modifiers={[frame({ width: SIZE, height: SIZE }), contentShape(shapes.rectangle()), accessibilityLabel(restLead?.label ?? "Filter")]}
+      />
+      <Divider modifiers={[frame({ height: 26 })]} />
+      <HStack
+        spacing={0}
+        modifiers={[
+          padding({ leading: 12, trailing: 18 }),
+          frame({ maxWidth: Infinity, minHeight: SIZE, alignment: "leading" }),
+          contentShape(shapes.rectangle()),
+          ...(notice.onPress ? [onTapGesture(() => notice.onPress?.())] : []),
+          accessibilityLabel(notice.detail ? `${notice.title}, ${notice.detail}` : notice.title),
+        ]}
+      >
+        <VStack alignment="leading" spacing={1}>
+          <Text modifiers={[font({ size: 13, weight: "semibold" }), lineLimit(1)]}>{notice.title}</Text>
+          {notice.detail ? <Text modifiers={[font({ size: 12 }), secondary, lineLimit(1), truncationMode("middle")]}>{notice.detail}</Text> : null}
+        </VStack>
+        <Spacer />
+      </HStack>
+    </HStack>
   );
 }
 
@@ -549,7 +600,8 @@ function Capsule(props: Part) {
       if (props.searchStyle === "button" && !state.query)
         return (
           <HStack spacing={0}>
-            <Spacer />
+            {/* A notice beside the lead takes the room instead. */}
+            {props.restNotice ? null : <Spacer />}
             <Image
               systemName="magnifyingglass"
               size={18}
