@@ -57,7 +57,7 @@ import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZip } from "./files";
 import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
-import { pickDocument, releaseDocument, type HeldDocument } from "./modules/table-files";
+import { pickDocument, releaseDocument, type HeldDocument } from "@workspace.sh/table-files";
 import { File } from "expo-file-system";
 import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";

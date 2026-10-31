@@ -21,15 +21,13 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { Dirs, FileSystem } from "react-native-file-access";
-import { readTableArchive, tableFormOf, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
+import { tableFormOf, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import {
-  INDEXED_FROM,
   fromBundle,
-  linesInBytes,
+  holdsLargeTable,
   openLibrary,
-  packTableFile,
-  restampTableFile,
+  singleFilePacker,
   unpackTableFile,
   workDirFor,
   writeLibraryBundle,
@@ -50,27 +48,6 @@ const singleFilesHome = (): string => joinPath(Dirs.LibraryDir ?? Dirs.DocumentD
 async function stampOf(path: string): Promise<string> {
   const stat = await FileSystem.stat(path);
   return `${stat.size}:${stat.lastModified}`;
-}
-
-/** How much of a large rows file is read to judge how many rows it holds. */
-const JUDGED_FROM_BYTES = 256 * 1024;
-
-/**
- * Whether a single file holds a table of INDEXED_FROM rows or more: judged
- * from the start of each large rows file, the rest left compressed.
- */
-async function holdsLargeTable(bytes: Uint8Array): Promise<boolean> {
-  let large = false;
-  await readTableArchive(bytes, {
-    rowsLazily: (_name, _table, rows) => {
-      const head = rows.head(JUDGED_FROM_BYTES);
-      const count = head.length >= rows.size ? linesInBytes(head) : (linesInBytes(head) / Math.max(1, head.length)) * rows.size;
-      if (count >= INDEXED_FROM) large = true;
-      // Never parsed here: this is only a look.
-      return true;
-    },
-  });
-  return large;
 }
 
 /** The names the index host's folders have: a large single file's bundle is named apart from them, so its folder starts empty. */
@@ -222,30 +199,13 @@ export function useFolders({
 
   const documentOf = useCallback((folder: string) => documents.current.get(folder) ?? folder, []);
 
-  // One pack at a time per single file. Asked again while one runs, it runs once more after,
-  // and everyone asking meanwhile waits for that last one.
-  const packing = useRef<Record<string, { done: Promise<void>; again: boolean }>>({});
+  // One pack at a time per single file (table-app's singleFilePacker).
+  const packer = useRef(singleFilePacker(desktopFs, stampOf));
   const packOne = useCallback((bundle: string): Promise<void> => {
     const workDir = latest.current.paths[bundle];
     const file = workDir ? documents.current.get(workDir) : undefined;
     if (!workDir || !file) return Promise.resolve();
-    const running = packing.current[file];
-    if (running) {
-      running.again = true;
-      return running.done;
-    }
-    const entry = { done: Promise.resolve(), again: false };
-    entry.done = (async () => {
-      do {
-        entry.again = false;
-        await packTableFile(desktopFs, workDir, file, await stampOf(file));
-        await restampTableFile(desktopFs, workDir, await stampOf(file));
-      } while (entry.again);
-    })().finally(() => {
-      delete packing.current[file];
-    });
-    packing.current[file] = entry;
-    return entry.done;
+    return packer.current(workDir, file);
   }, []);
   const pack = useCallback(async (keys: string[]) => {
     await Promise.all(keys.map(packOne));

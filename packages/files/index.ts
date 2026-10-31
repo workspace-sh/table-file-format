@@ -1,6 +1,7 @@
-// The phone's own bits (ios/TableFilesModule.swift): rename(2), a file moved
-// over another in one step, which core's writer needs of a TableFs; the
-// shake that asks to undo; and documents opened where they are.
+// Files on iOS, for the .table apps and Workspace (ios/TableFilesModule.swift):
+// rename(2), a file moved over another in one step, which core's writer
+// needs of a TableFs; documents opened where they are, and a coordinated
+// write for a file the app was only given; and the shake that asks to undo.
 import { requireNativeModule } from "expo-modules-core";
 
 /** A document held open where it is (by its security scope), and kept for next time as `bookmark`. */
