@@ -24,6 +24,7 @@
     "@workspace.sh/glass-bar": "*",
     "@workspace.sh/table-app": "*",
     "@workspace.sh/table-core": "*",
+    "@workspace.sh/table-files": "*",
     "@workspace.sh/table-fixtures": "*",
     "@workspace.sh/table-ui": "*",
     "expo": "^58.0.0",

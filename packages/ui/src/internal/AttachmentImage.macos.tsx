@@ -5,7 +5,7 @@
  * (software-mansion/react-native-svg#2869), so it isn't used here.
  */
 import { html } from "react-strict-dom";
-import type { AttachmentImageProps } from "./AttachmentImage";
+import type { AttachmentImageProps } from "./AttachmentImage.types";
 
 export function AttachmentImage({ src, style }: AttachmentImageProps) {
   return <html.img src={src} alt="" style={style} />;

@@ -8,7 +8,7 @@
 // edits one (table-app's singleFile): unpacked into a working folder in the
 // phone's own storage, edited there as any folder, and packed back into the
 // file after each write. The file itself is only the app's to replace, not
-// its folder, so the pack is one coordinated write (modules/table-files)
+// its folder, so the pack is one coordinated write (@workspace.sh/table-files)
 // rather than core's write-beside-and-rename.
 //
 // The documents are kept for the next launch as bookmarks, and opened again
@@ -22,24 +22,21 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { Directory, File, Paths } from "expo-file-system";
-import { readTableArchive, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
-import type { TableFs } from "@workspace.sh/table-core/io";
+import type { BundleMeta, ParsedTable, Row } from "@workspace.sh/table-core";
 import {
-  INDEXED_FROM,
   fromBundle,
-  linesInBytes,
+  holdsLargeTable,
   openLibrary,
-  packTableFile,
-  restampTableFile,
+  replacingFs,
+  singleFilePacker,
   unpackTableFile,
   workDirFor,
   writeLibraryBundle,
   type KeyValueStore,
   type Library,
 } from "@workspace.sh/table-app";
-import { expoFs, pathOfUri, tablesHome } from "./expoFs";
-import { bundleDir, openZip, removeFolder } from "./indexHost";
-import { releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "./modules/table-files";
+import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
+import { expoFs, pathOfUri, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
 
 export const OPENED_KEY = "table-mobile:opened";
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */
@@ -52,55 +49,6 @@ const singleFilesHome = (): string => new Directory(Paths.document, "single-file
 function stampOf(uri: string): string {
   const file = new File(uri);
   return `${file.size}:${file.modificationTime ?? ""}`;
-}
-
-/**
- * expoFs, except that writing `<target>.tmp` and renaming it over `target`
- * (how core's writer replaces a file) is one coordinated write of the
- * target instead: a file the picker gave is the app's, its folder isn't.
- */
-function coordinatedFs(target: string): TableFs {
-  const staged = `${target}.tmp`;
-  let pending: Uint8Array | null = null;
-  return {
-    ...expoFs,
-    async writeBytes(path, bytes) {
-      if (path === staged) pending = bytes;
-      else await expoFs.writeBytes!(path, bytes);
-    },
-    async rename(from, to) {
-      if (from === staged && pending) {
-        const bytes = pending;
-        pending = null;
-        await writeCoordinated(pathOfUri(to), bytes);
-      } else await expoFs.rename(from, to);
-    },
-    async remove(path) {
-      if (path === staged) pending = null;
-      else await expoFs.remove(path);
-    },
-  };
-}
-
-/** How much of a large rows file is read to judge how many rows it holds. */
-const JUDGED_FROM_BYTES = 256 * 1024;
-
-/**
- * Whether a single file holds a table of INDEXED_FROM rows or more: judged
- * from the start of each large rows file, the rest left compressed.
- */
-async function holdsLargeTable(bytes: Uint8Array): Promise<boolean> {
-  let large = false;
-  await readTableArchive(bytes, {
-    rowsLazily: (_name, _table, rows) => {
-      const head = rows.head(JUDGED_FROM_BYTES);
-      const count = head.length >= rows.size ? linesInBytes(head) : (linesInBytes(head) / Math.max(1, head.length)) * rows.size;
-      if (count >= INDEXED_FROM) large = true;
-      // Never parsed here: this is only a look.
-      return true;
-    },
-  });
-  return large;
 }
 
 /** The names the index host's folders have: a large single file's bundle is named apart from them, so its folder starts empty. */
@@ -256,30 +204,16 @@ export function useDocuments({
 
   const documentOf = useCallback((folder: string) => documents.current.get(folder) ?? folder, []);
 
-  // One pack at a time per single file. Asked again while one runs, it runs once more after,
-  // and everyone asking meanwhile waits for that last one.
-  const packing = useRef<Record<string, { done: Promise<void>; again: boolean }>>({});
+  // One pack at a time per single file (table-app's singleFilePacker), each one coordinated
+  // write of the file: a file the picker gave is the app's, its folder isn't.
+  const packer = useRef(
+    singleFilePacker(expoFs, stampOf, (file) => replacingFs(expoFs, file, (bytes) => writeCoordinated(pathOfUri(file), bytes))),
+  );
   const packOne = useCallback((bundle: string): Promise<void> => {
     const workDir = latest.current.paths[bundle];
     const file = workDir ? documents.current.get(workDir) : undefined;
     if (!workDir || !file) return Promise.resolve();
-    const running = packing.current[file];
-    if (running) {
-      running.again = true;
-      return running.done;
-    }
-    const entry = { done: Promise.resolve(), again: false };
-    entry.done = (async () => {
-      do {
-        entry.again = false;
-        await packTableFile(coordinatedFs(file), workDir, file, stampOf(file));
-        await restampTableFile(expoFs, workDir, stampOf(file));
-      } while (entry.again);
-    })().finally(() => {
-      delete packing.current[file];
-    });
-    packing.current[file] = entry;
-    return entry.done;
+    return packer.current(workDir, file);
   }, []);
   const pack = useCallback(async (keys: string[]) => {
     await Promise.all(keys.map(packOne));

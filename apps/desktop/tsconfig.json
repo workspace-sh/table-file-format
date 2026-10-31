@@ -1,6 +1,11 @@
 {
   "extends": "@react-native/typescript-config/tsconfig.json",
   "compilerOptions": {
+    // What table-app's ./mac-index-host imports, from this app (it isn't an npm workspace).
+    "paths": {
+      "@op-engineering/op-sqlite": ["./node_modules/@op-engineering/op-sqlite"],
+      "react-native-file-access": ["./node_modules/react-native-file-access"]
+    },
     // Typecheck workspace packages from their source, not a build that
     // may be stale after a pull (#77). Core exports a "source" condition.
     "customConditions": ["source"],

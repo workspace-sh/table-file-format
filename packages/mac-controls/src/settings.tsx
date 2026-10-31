@@ -183,7 +183,7 @@ export const MacSettingsForm = Object.assign(SettingsFormView, { reorderHint: "U
  * form, with the sheet's title and buttons, so there is nothing of its own
  * to draw for them; anything else (a row's page) is `Page`'s to present.
  */
-export function macSheet(Page: (props: SheetProps) => ReactElement): SheetSlot {
+export function macSheet(Page: (props: SheetProps) => ReactElement | null): SheetSlot {
   function MacSheet(props: SheetProps): ReactElement {
     if (props.size !== "settings") return <Page {...props} />;
     const { title, cancel, confirm, onDismiss, children } = props;

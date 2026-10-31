@@ -125,3 +125,55 @@ export function shortcutText(command: AppCommand, platform: "mac" | "gtk" | "web
 export function hintWithShortcut(command: AppCommand, platform: "mac" | "gtk" | "web"): string {
   return `${command.hint ?? command.label} (${shortcutText(command, platform)})`;
 }
+
+/**
+ * One item of a menu an app draws its own way (a toolbar's menu, the glass
+ * bar's More): what it says, its symbol (SF Symbols on Apple's platforms,
+ * Material Symbols on Android), whether it's ticked or can't be chosen now,
+ * and what it does.
+ */
+export interface MenuItem {
+  key: string;
+  label: string;
+  sf?: string;
+  material?: string;
+  on?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}
+
+/** A table's views, the one shown ticked, then New View where the file can be changed: the Views menu every app has. */
+export function viewsMenu(input: {
+  views: readonly { id: string; name: string }[];
+  view: string;
+  showView: (id: string) => void;
+  /** Absent where the file is only to look at. */
+  addView?: () => void;
+}): MenuItem[] {
+  const items: MenuItem[] = input.views.map((v) => ({
+    key: v.id,
+    label: v.name,
+    sf: "rectangle.grid.1x2",
+    on: v.id === input.view,
+    onPress: () => input.showView(v.id),
+  }));
+  if (input.addView) items.push({ key: "new-view", label: "New View", sf: "plus", material: "add", onPress: input.addView });
+  return items;
+}
+
+/** Undo and Redo for the table on screen, named as the Edit menu names them ("Undo Delete Row"). */
+export function undoRedoMenu(input: {
+  canUndo: boolean;
+  canRedo: boolean;
+  undoName: string | null;
+  redoName: string | null;
+  undo: () => void;
+  redo: () => void;
+}): MenuItem[] {
+  const commands = appCommands({ sidebarCollapsed: false, filesMode: false, canUndo: input.canUndo, canRedo: input.canRedo, undoName: input.undoName, redoName: input.redoName });
+  const label = (id: string) => commands.find((c) => c.id === id)!.label;
+  return [
+    { key: "undo", label: label("undo"), sf: "arrow.uturn.backward", material: "undo", disabled: !input.canUndo, onPress: input.undo },
+    { key: "redo", label: label("redo"), sf: "arrow.uturn.forward", material: "redo", disabled: !input.canRedo, onPress: input.redo },
+  ];
+}

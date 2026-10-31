@@ -13,7 +13,12 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    // @expo/ui comes from the app that uses the views (a peer dependency),
+    // and npm keeps it in the app's own node_modules, not the root's.
+    "paths": {
+      "@expo/ui/*": ["../../apps/mobile/node_modules/@expo/ui/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

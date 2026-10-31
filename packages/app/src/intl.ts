@@ -1,8 +1,9 @@
 // Hermes has no Intl.Locale, PluralRules or RelativeTimeFormat, which
-// relative dates ("yesterday") need. FormatJS's polyfills fill them in,
+// relative dates ("yesterday") need. Imported once, first, by every app on
+// Hermes (the .table apps and Workspace). FormatJS's polyfills fill them in,
 // each only where it's missing,
-// with data for the languages the Display settings offer (table-app's
-// LOCALES: en, fr, de, es, pt, ja, ar, he). Keep the two lists in step.
+// with data for the languages the Display settings offer (LOCALES in
+// displaySettings.ts: en, fr, de, es, pt, ja, ar, he). Keep the two lists in step.
 // Core falls back to plain forms without them (tryIntl), so a language
 // missing here shows plainly rather than failing.
 //

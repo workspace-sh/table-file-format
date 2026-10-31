@@ -2,10 +2,10 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MAX_LIST_HEIGHT } from "./listLimits";
 import { settledPlace } from "../listSettle";
-import type { RowListProps } from "./RowList";
+import type { RowListProps } from "./RowList.types";
 import type { RowLayout } from "../rowLayout";
 
-export type { RowListHandle, RowListProps } from "./RowList";
+export type { RowListHandle, RowListProps } from "./RowList.types";
 
 /** How far past the screen rows are kept drawn, in pixels. */
 const DRAW_DISTANCE = 600;

@@ -90,3 +90,14 @@ test("a filter that hides rows is said beside the count, by its fields' titles (
   assert.equal(count({}), "2 of 3 rows");
   assert.equal(count({ shown: 1, searching: true, filteredBy: ["read"] }), "1 of 2 matching");
 });
+
+test("says the count as numbers too, for an app to compare whatever the language groups them as", () => {
+  const t = table([{ title: "a" }, { title: "b" }, { title: "c" }]);
+  const filtered = viewSummary(t, { shown: 2, inView: 2, searching: false });
+  assert.deepEqual([filtered.shown, filtered.total], [2, 3]);
+  const searching = viewSummary(t, { shown: 1, inView: 2, searching: true });
+  assert.deepEqual([searching.shown, searching.total], [1, 2], "out of the search's rows");
+  const big: ParsedTable = { ...table([]), indexed: { count: 1_000_000 } as ParsedTable["indexed"] };
+  const all = viewSummary(big, { shown: 1_000_000, inView: 1_000_000, searching: false });
+  assert.deepEqual([all.shown, all.total], [1_000_000, 1_000_000]);
+});
