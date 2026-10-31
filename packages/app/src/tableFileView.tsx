@@ -44,6 +44,9 @@ export interface TableFileChrome {
   showView: (id: string) => void;
   /** The rows shown, as a count says it ("8 of 8 rows"). */
   count: string;
+  /** The same as numbers: rows shown, out of how many (the search's while searching). */
+  shown: number;
+  total: number;
   /** While a large table is read into its index: how far along, as said ("Reading 120,000 of 1,000,000 rows"). */
   reading?: string;
   /** While searching, what was found, for the search field ("2 rows"). */
@@ -100,6 +103,12 @@ export interface TableFileViewProps {
   /** What goes around the view, drawn by the host. */
   chrome?: (file: TableFileChrome) => ReactNode;
   /**
+   * The same, handed up for a host that draws it elsewhere (its own bar):
+   * called when what it says changes, not at every render (its functions
+   * are new each time), and with null when the file is closed.
+   */
+  onChrome?: (file: TableFileChrome | null) => void;
+  /**
    * A file holding a large table, read through the index (readLargeTableFile): the host's index, and
    * the first rows reading the file gave. Its rows are read from the index, never all into memory.
    */
@@ -143,7 +152,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, index, formulaSyntax, saveRowsWhen, flush }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -266,6 +275,8 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
     view: view.id,
     showView: (id) => id !== view.id && dispatch({ type: "showView", key: state.active, viewId: id }),
     count: derived.summary.count,
+    shown: derived.summary.shown,
+    total: derived.summary.total,
     ...(indexed.building ? { reading: readingText(indexed.building) } : {}),
     found: derived.summary.found,
     query: state.search,
@@ -301,6 +312,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
   return (
     <DisplaySettingsProvider value={shownDisplay}>
       {chrome?.(file)}
+      {onChrome ? <ChromeUp chrome={file} onChrome={onChrome} /> : null}
       <LayoutView
         key={`${state.active}\u0000${view.id}`}
         layout={view.layout}
@@ -347,6 +359,18 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, i
 }
 
 /** The document: the file once read, or why it can't be shown, in the host's page. */
+/** Hands the chrome up when what it says changes (its functions are new at every render, so they're left out). */
+function ChromeUp({ chrome, onChrome }: { chrome: TableFileChrome; onChrome: (c: TableFileChrome | null) => void }) {
+  const latest = useRef(chrome);
+  latest.current = chrome;
+  const said = JSON.stringify(chrome);
+  useEffect(() => {
+    onChrome(latest.current);
+  }, [said, onChrome]);
+  useEffect(() => () => onChrome(null), [onChrome]);
+  return null;
+}
+
 export function TableFileView({ read, ...props }: TableFileViewProps) {
   if (read?.kind === "shown") {
     return <Opened key={`${read.library.paths[bundleOf(read.key)] ?? read.key}`} shown={read} {...props} />;
