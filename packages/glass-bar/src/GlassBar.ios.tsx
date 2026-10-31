@@ -306,14 +306,24 @@ function Lead({ state, ns, onFilter, restLead, restNotice, onDeselect, onCancel,
 /**
  * At rest with a notice: the lead's button and the notice in one capsule (the
  * lead's glass identity, so a selection shrinks it back to the lead's circle),
- * a line between them, the notice taking the room up to Search and More.
+ * a line between them, the notice taking the room up to Search and More (up
+ * to NOTICE_MAX).
  */
+/** The widest the notice's capsule grows: a phone's row in portrait, not landscape's. */
+const NOTICE_MAX = 340;
+
 function LeadWithNotice({ ns, onFilter, restLead, restNotice }: Pick<Part, "state" | "ns" | "onFilter" | "restLead" | "restNotice">) {
   const notice = restNotice!;
   return (
     <HStack
       spacing={0}
-      modifiers={[frame({ maxWidth: Infinity, minHeight: SIZE, alignment: "leading" }), glass("roundedRectangle"), glassEffectId("lead", ns)]}
+      modifiers={[
+        frame({ maxWidth: NOTICE_MAX, minHeight: SIZE, alignment: "leading" }),
+        glass("roundedRectangle"),
+        glassEffectId("lead", ns),
+        // Wider rows (landscape, iPad) leave the room after it empty.
+        frame({ maxWidth: Infinity, alignment: "leading" }),
+      ]}
     >
       <Image
         systemName={(restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease"}
