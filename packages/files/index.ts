@@ -72,3 +72,4 @@ export function onShakeToUndo(listener: () => void): () => void {
 export function requestOrientation(to: "landscape" | "portrait"): void {
   TableFiles.requestOrientation(to);
 }
+export { expoFs, expoIndexHost, pathOfUri, type ExpoIndexHostOptions } from "./expo";

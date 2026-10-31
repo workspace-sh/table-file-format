@@ -1,12 +1,27 @@
 {
   "compilerOptions": {
+    // Typecheck workspace packages from their source, not a build that
+    // may be stale after a pull (#77). Core exports a "source" condition.
+    "customConditions": ["source"],
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    // Expo and @expo/ui come from the app that uses this (peer
+    // dependencies), and npm keeps them in the app's own node_modules, not
+    // the root's.
+    "paths": {
+      "expo": ["../../apps/mobile/node_modules/expo"],
+      "@expo/ui/*": ["../../apps/mobile/node_modules/@expo/ui/*"]
+    }
   },
-  "include": ["index.ts"]
+  "include": ["index.ts", "expo.ts"],
+  "exclude": ["node_modules"]
 }

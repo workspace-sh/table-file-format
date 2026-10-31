@@ -44,6 +44,11 @@
       "react-native": "./src/intl.ts",
       "default": "./src/intl.ts"
     },
+    "./mac-index-host": {
+      "source": "./src/macIndexHost.ts",
+      "react-native": "./src/macIndexHost.ts",
+      "default": "./src/macIndexHost.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -72,8 +77,10 @@
     "@formatjs/intl-locale": ">=5.3.12",
     "@formatjs/intl-pluralrules": ">=6.3.15",
     "@formatjs/intl-relativetimeformat": ">=12.3.15",
+    "@op-engineering/op-sqlite": "*",
     "react": ">=19.0.0",
     "react-native": ">=0.81.0",
+    "react-native-file-access": "*",
     "react-strict-dom": ">=0.0.55"
   },
   "peerDependenciesMeta": {
@@ -89,6 +96,10 @@
       "optional": true,
       "comment": "Only for the ./intl subpath: Hermes's missing Intl pieces, for relative dates."
     },
+    "@op-engineering/op-sqlite": {
+      "optional": true,
+      "comment": "Only for the ./mac-index-host subpath: the Mac's files and SQLite."
+    },
     "react": {
       "optional": true,
       "comment": "Only for the ./react subpath (useTableApp). The rest of table-app is renderer-free."
@@ -96,6 +107,10 @@
     "react-native": {
       "optional": true,
       "comment": "Only for the ./embed-view subpath (its frame and dialog) and ./formula-engine (the JSI module) on iOS, Android and macOS. The web takes embedView.web.tsx, and the rest of table-app is renderer-free."
+    },
+    "react-native-file-access": {
+      "optional": true,
+      "comment": "Only for the ./mac-index-host subpath: the Mac's files and SQLite."
     },
     "react-strict-dom": {
       "optional": true,
