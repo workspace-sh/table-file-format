@@ -22,7 +22,7 @@ import { EmbedTest } from "../EmbedTest";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
-import { pathOfUri } from "../expoFs";
+import { pathOfUri } from "@workspace.sh/table-files";
 import { holdDocument } from "@workspace.sh/table-files";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 import { useGlassEditor } from "../useGlassEditor";

@@ -35,9 +35,8 @@ import {
   type KeyValueStore,
   type Library,
 } from "@workspace.sh/table-app";
-import { expoFs, pathOfUri, tablesHome } from "./expoFs";
-import { bundleDir, openZip, removeFolder } from "./indexHost";
-import { releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
+import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
+import { expoFs, pathOfUri, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
 
 export const OPENED_KEY = "table-mobile:opened";
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */

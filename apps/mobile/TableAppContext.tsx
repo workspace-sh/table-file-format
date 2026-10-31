@@ -61,7 +61,7 @@ import { pickDocument, releaseDocument, type HeldDocument } from "@workspace.sh/
 import { File } from "expo-file-system";
 import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
 import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";
-import { expoFs } from "./expoFs";
+import { expoFs } from "@workspace.sh/table-files";
 import { writeBundleTo } from "@workspace.sh/table-core/io";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web,
