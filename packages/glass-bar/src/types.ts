@@ -167,6 +167,13 @@ export type GlassBarProps = {
    * it Edit.)
    */
   restLead?: { symbol: string; label: string };
+  /**
+   * At rest, a notice that shares the lead's glass: one capsule, the lead's
+   * button at its start and the notice after a line, across the room up to
+   * Search and More ("Read-only" over where a document is from, beside its
+   * Edit a Copy). Tapped, the notice calls `onPress`; the lead still calls `onFilter`.
+   */
+  restNotice?: { title: string; detail?: string; onPress?: () => void };
   onMore?: () => void;
   /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
