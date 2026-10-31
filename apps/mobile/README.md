@@ -40,7 +40,7 @@ views the platform's way; table-ui itself owns no navigation:
   remembers it as a bookmark for the next launch, and writes edits back to
   it. A single file is edited through a working folder in the app's own
   storage and packed back into the file by one coordinated write after each
-  save (`modules/table-files`), since the file is the app's to replace but
+  save (`@workspace.sh/table-files`, packages/files), since the file is the app's to replace but
   its folder isn't. Export as a Single File hands the file on screen to the
   share sheet. Reading and writing the format is table-app's.
 - **Leaving:** going to the background writes what's left at once.

@@ -23,7 +23,7 @@ import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
 import { pathOfUri } from "../expoFs";
-import { holdDocument } from "../modules/table-files";
+import { holdDocument } from "@workspace.sh/table-files";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 import { useGlassEditor } from "../useGlassEditor";
 import { AppSettings } from "../AppSettings";
@@ -144,7 +144,7 @@ export default function TableScreen() {
       // The screen turned, as turning the phone does: the Simulator can't be turned from a script (iOS only).
       rotate: (to: "landscape" | "portrait") => {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        if (Platform.OS === "ios") (require("../modules/table-files") as typeof import("../modules/table-files")).requestOrientation(to);
+        if (Platform.OS === "ios") (require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files")).requestOrientation(to);
       },
     };
   });
@@ -159,12 +159,12 @@ export default function TableScreen() {
     void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"), app.openBytes);
   });
   // Shaking the phone undoes, as iOS's own apps do: asked first, by what it
-  // would undo. Only iOS has the shake (modules/table-files), so it's loaded there.
+  // would undo. Only iOS has the shake (@workspace.sh/table-files), so it's loaded there.
   const shake = useRef<{ ask?: () => void }>({});
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { onShakeToUndo } = require("../modules/table-files") as typeof import("../modules/table-files");
+    const { onShakeToUndo } = require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files");
     return onShakeToUndo(() => shake.current.ask?.());
   }, []);
   // The page's sides: the margin, or the safe area where it's wider, as in

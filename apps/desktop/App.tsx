@@ -505,7 +505,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
   // Read a folder table's history again once it's been added to (useFolderHistories, below).
   const rereadHistory = useRef<(key: string) => void>(() => {});
   // The large tables' save, set once their hook is made below.
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
   // A single file's working folder packed back into it after a write (folders.ts), set once its hook is made below.
   const packDocuments = useRef<(bundles: string[]) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(

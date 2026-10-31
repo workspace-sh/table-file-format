@@ -84,6 +84,70 @@ export async function restampTableFile(fs: TableFs, workDir: string, stamp: stri
 }
 
 /**
+ * Packs single files back from their working folders, one pack of a file
+ * at a time: asked again while one runs, it runs once more after it, and
+ * everyone asking meanwhile waits for that last one. Each app saving single
+ * files packs through one of these (the phones', the Macs', Linux's).
+ * `stamp` says what a file is now (its size and time), `fsFor` the TableFs
+ * a pack of it is written through (`replacingFs`, for a file the system gave
+ * the app).
+ */
+export function singleFilePacker(
+  fs: TableFs,
+  stamp: (file: string) => string | Promise<string>,
+  fsFor: (file: string) => TableFs = () => fs,
+): (workDir: string, file: string) => Promise<void> {
+  const running = new Map<string, { done: Promise<void>; again: boolean }>();
+  return (workDir, file) => {
+    const already = running.get(file);
+    if (already) {
+      already.again = true;
+      return already.done;
+    }
+    const entry = { done: Promise.resolve(), again: false };
+    entry.done = (async () => {
+      do {
+        entry.again = false;
+        await packTableFile(fsFor(file), workDir, file, await stamp(file));
+        await restampTableFile(fs, workDir, await stamp(file));
+      } while (entry.again);
+    })().finally(() => {
+      running.delete(file);
+    });
+    running.set(file, entry);
+    return entry.done;
+  };
+}
+
+/**
+ * `fs`, except that a pack's last step (the file written to `<target>.tmp`
+ * and renamed over `target`) is one `replace` of the target with its bytes
+ * instead: a file the system gave the app (iOS's document picker) is the
+ * app's to replace, the folder it's in isn't.
+ */
+export function replacingFs(fs: TableFs, target: string, replace: (bytes: Uint8Array) => Promise<void>): TableFs {
+  const staged = `${target}.tmp`;
+  let pending: Uint8Array | null = null;
+  return {
+    ...fs,
+    async writeBytes(path, bytes) {
+      if (path === staged) pending = bytes;
+      else await fs.writeBytes!(path, bytes);
+    },
+    async rename(from, to) {
+      if (from !== staged || !pending) return fs.rename(from, to);
+      const bytes = pending;
+      pending = null;
+      await replace(bytes);
+    },
+    async remove(path) {
+      if (path === staged) pending = null;
+      else await fs.remove(path);
+    },
+  };
+}
+
+/**
  * Where the edits of a file that changed elsewhere are kept: beside it, as
  * `<name> (edited here).table`, numbered when that's taken.
  */

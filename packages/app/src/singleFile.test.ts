@@ -4,7 +4,7 @@ import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { readTableDocument, writeTableFileTo } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 
-import { ChangedElsewhere, copyPathFor, keepEditsAsCopy, packTableFile, restampTableFile, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { ChangedElsewhere, copyPathFor, keepEditsAsCopy, packTableFile, replacingFs, restampTableFile, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 
 const fs = () => {
   const m = memoryFs();
@@ -106,4 +106,48 @@ test("after a file changed elsewhere, the edits are kept as a copy beside it, or
   await takeFileAsItIs(m, work);
   assert.equal(await m.list(work), null);
   assert.deepEqual(await m.readBytes!("/docs/t.table"), theirs);
+});
+
+test("packs of one file run one at a time; those asked for meanwhile are made once, after it", async () => {
+  const m = fs();
+  await writeBundleTo(m, "/made/crm.table", { tables: { tasks: tables["tasks"]! } });
+  const made = await readTableDocument(m, "/made/crm.table");
+  await m.mkdir("/docs");
+  await writeTableFileTo(m, "/docs/crm.table", made.bundle);
+  const work = workDirFor("/app/files", "/docs/crm.table");
+  await unpackTableFile(m, (await m.readBytes!("/docs/crm.table"))!, work, "v1");
+
+  let packs = 0;
+  let version = 1;
+  // Each write of the file makes it a new version, as its size and time would.
+  const pack = singleFilePacker(m, () => `v${version}`, (file) =>
+    replacingFs(m, file, async (bytes) => {
+      packs++;
+      await m.writeBytes!(file, bytes);
+      version++;
+    }),
+  );
+  const first = pack(work, "/docs/crm.table");
+  const second = pack(work, "/docs/crm.table");
+  const third = pack(work, "/docs/crm.table");
+  await Promise.all([first, second, third]);
+  assert.equal(packs, 2, "the first, and one more for both asked for while it ran");
+  assert.equal(await m.readText(`${work}.stamp`), `v${version}`, "restamped as the file now is");
+  assert.equal(await m.readBytes!("/docs/crm.table.tmp"), null, "nothing staged beside the file");
+  assert.equal((await readTableDocument(m, "/docs/crm.table")).form, "file");
+});
+
+test("replacingFs writes a pack's file in one replace, and leaves everything else to the fs", async () => {
+  const m = fs();
+  await m.mkdir("/docs");
+  const replaced: Uint8Array[] = [];
+  const r = replacingFs(m, "/docs/a.table", async (bytes) => {
+    replaced.push(bytes);
+  });
+  await r.writeBytes!("/docs/a.table.tmp", new Uint8Array([1, 2]));
+  await r.writeBytes!("/docs/other.bin", new Uint8Array([3]));
+  await r.rename("/docs/a.table.tmp", "/docs/a.table");
+  assert.deepEqual(replaced.map((b) => [...b]), [[1, 2]]);
+  assert.deepEqual([...(await m.readBytes!("/docs/other.bin"))!], [3]);
+  assert.equal(await m.readBytes!("/docs/a.table.tmp"), null);
 });

@@ -3,13 +3,13 @@
 // the same code Linux runs over node:fs and the Mac over its own.
 //
 // Paths here are the `file://` URLs expo-file-system speaks, joined with
-// `/` like any path. rename is one rename(2) (modules/table-files): the
+// `/` like any path. rename is one rename(2) (@workspace.sh/table-files): the
 // file manager behind expo-file-system won't move a file onto one that
 // exists, and removing the target first isn't atomic.
 
 import { Directory, File, Paths } from "expo-file-system";
 import type { TableFs } from "@workspace.sh/table-core/io";
-import { renameOver } from "./modules/table-files";
+import { renameOver } from "@workspace.sh/table-files";
 
 /** A `file://` URL as the path the file system knows it by. */
 export const pathOfUri = (uri: string): string => decodeURIComponent(uri.replace(/^file:\/\//, ""));
