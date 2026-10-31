@@ -131,6 +131,13 @@ export type GlassBarAction = {
   disabled?: boolean;
   /** A line above it in the menu: where a new group of actions starts. */
   startsGroup?: boolean;
+  /**
+   * Side by side with the actions next to it that are also `row`, as one
+   * row of icons with short labels (Mail's and Notes' menus): for a few
+   * actions on the same thing, such as a file's Rename, Move and Details.
+   * iOS; elsewhere they're listed as usual.
+   */
+  row?: boolean;
   onPress: () => void;
 };
 
