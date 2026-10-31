@@ -10,7 +10,7 @@
  * (interval-based) or `snapToOffsets` (point-based). We use the
  * interval form — columns are uniform width.
  */
-import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject, type ComponentRef } from "react";
 import { Platform, ScrollView } from "react-native";
 import { PageGutter } from "../pageGutter";
 
@@ -51,7 +51,7 @@ export function SnapHScroll({
   const [width, setWidth] = useState(0);
   const column = snapInterval - (gap ?? 0);
   const trailing = width > 0 ? Math.max(gutter, width - gutter - column) : gutter;
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
   const offset = useRef(0);
   const contentWidth = useRef(0);
   // A Mac's scroll view has no snapping (React Native macOS takes
