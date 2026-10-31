@@ -26,6 +26,7 @@ import { Animated, Dimensions, Easing, Keyboard, PlatformColor, StyleSheet, View
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Button,
+  ControlGroup,
   DatePicker,
   Divider,
   GlassEffectContainer,
@@ -151,6 +152,16 @@ function useKeyboardLift(rest: number): { lift: Animated.Value; keyboard: number
     return () => subs.forEach((s) => s.remove());
   }, [lift, rest]);
   return { lift, keyboard };
+}
+
+/**
+ * A system colour (`tertiaryLabel`) for the bar's SwiftUI views. @expo/ui is
+ * typed against its app's React Native and the bar against the repo's, so
+ * the same PlatformColor carries two types; this is the one place they meet.
+ */
+type UIColor = NonNullable<ComponentProps<typeof Image>["color"]>;
+function systemColor(name: string): UIColor {
+  return PlatformColor(name) as unknown as UIColor;
 }
 
 export function GlassBar(props: GlassBarProps) {
@@ -365,23 +376,33 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions, details, onDetails
       if (a.startsGroup || groups.length === 0) groups.push([a]);
       else groups[groups.length - 1]!.push(a);
     }
-    const shown = groups.reverse().map((g) => [...g].reverse());
+    // In each group, a run of `row` actions is one row (kept in its order).
+    const shown = groups.reverse().map((g) => {
+      const parts: (GlassBarAction | GlassBarAction[])[] = [];
+      for (const a of g) {
+        const last = parts[parts.length - 1];
+        if (a.row && Array.isArray(last)) last.push(a);
+        else parts.push(a.row ? [a] : a);
+      }
+      return parts.reverse();
+    });
+    const button = (a: GlassBarAction) => (
+      <Button
+        key={a.label}
+        label={a.label}
+        systemImage={a.symbol as Symbol | undefined}
+        onPress={a.onPress}
+        modifiers={a.disabled ? [disabled(true)] : undefined}
+      />
+    );
     const menu = (
       <Menu
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
       >
         {shown.flatMap((g, i) => [
-          ...(i > 0 ? [<Divider key={`${g[0]!.label}-line`} />] : []),
-          ...g.map((a) => (
-            <Button
-              key={a.label}
-              label={a.label}
-              systemImage={a.symbol as Symbol | undefined}
-              onPress={a.onPress}
-              modifiers={a.disabled ? [disabled(true)] : undefined}
-            />
-          )),
+          ...(i > 0 ? [<Divider key={`${i}-line`} />] : []),
+          ...g.map((p) => (Array.isArray(p) ? <ControlGroup key={`${p[0]!.label}-row`}>{p.map(button)}</ControlGroup> : button(p))),
         ])}
       </Menu>
     );
@@ -553,7 +574,7 @@ function CardActions({ state, editor, onCancel, onSave, onChip }: Pick<Part, "ed
         systemName="xmark"
         size={15}
         onPress={onCancel}
-        modifiers={[frame({ width: 36, height: 36 }), background(PlatformColor("tertiarySystemFill"), shapes.circle()), contentShape(shapes.circle()), accessibilityLabel("Cancel")]}
+        modifiers={[frame({ width: 36, height: 36 }), background(systemColor("tertiarySystemFill"), shapes.circle()), contentShape(shapes.circle()), accessibilityLabel("Cancel")]}
       />
       <Spacer />
       {chips.map((c) => (
@@ -620,7 +641,7 @@ function Capsule(props: Part) {
               through. Clear then waits in the open field (a tap away), so the
               query and its count keep their room. */}
           {state.query ? <Steps {...props} /> : null}
-          {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "searching":
@@ -639,7 +660,7 @@ function Capsule(props: Part) {
           />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
           {state.query ? <Steps {...props} /> : null}
-          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "selected":
@@ -822,7 +843,7 @@ function PrefixBadge({ text, size, onRemove, label }: { text: string; size: numb
         font({ size: size - 2, weight: "semibold", design: "monospaced" }),
         secondary,
         padding({ horizontal: 6, vertical: 1 }),
-        background(PlatformColor("tertiarySystemFill"), shapes.capsule()),
+        background(systemColor("tertiarySystemFill"), shapes.capsule()),
         ...(onRemove ? [onTapGesture(onRemove)] : []),
         ...(label ? [accessibilityLabel(label)] : []),
       ]}
@@ -856,7 +877,7 @@ function Header({ label, detail, expansion }: { label: string; detail?: string; 
           modifiers={[
             frame({ width: 26, height: 26 }),
             foregroundStyle({ type: "hierarchical", style: "secondary" }),
-            background(PlatformColor("tertiarySystemFill"), shapes.circle()),
+            background(systemColor("tertiarySystemFill"), shapes.circle()),
             contentShape(shapes.circle()),
             accessibilityLabel(expansion.on ? "Collapse" : "Expand"),
           ]}
