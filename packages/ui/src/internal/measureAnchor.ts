@@ -13,18 +13,21 @@
  * left on web). The returned `AnchorRect` is intentionally minimal —
  * just what popover positioning needs.
  */
-import type { View } from "react-native";
+/** What can say where it is on screen: a native view (React Native 0.81's and 0.88's alike). */
+type Measurable = {
+  measure(callback: (x: number, y: number, width: number, height: number, pageX: number, pageY: number) => void): void;
+};
 import type { AnchorRect } from "./anchorRect";
 export type { AnchorRect } from "./anchorRect";
 
 
 /** Returns `null` if the target is falsy or doesn't support `measure()`. */
 export function measureAnchor(target: unknown): Promise<AnchorRect | null> {
-  if (!target || typeof (target as View).measure !== "function") {
+  if (!target || typeof (target as Measurable).measure !== "function") {
     return Promise.resolve(null);
   }
   return new Promise((resolve) => {
-    (target as View).measure((_x, _y, width, height, pageX, pageY) => {
+    (target as Measurable).measure((_x, _y, width, height, pageX, pageY) => {
       resolve({ top: pageY, left: pageX, width, height });
     });
   });

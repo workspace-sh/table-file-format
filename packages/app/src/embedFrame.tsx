@@ -9,7 +9,7 @@
 // It holds still while something in it is dragged, and has the host's page
 // hold still too (PageScroll.lock), and fades in once it has its size.
 
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentRef } from "react";
 import { Alert, Animated, Platform, ScrollView } from "react-native";
 import { LayoutChannel, PageGutter, PageScrollContext, layoutChannel, pageScrollOver } from "@workspace.sh/table-ui";
 
@@ -30,7 +30,7 @@ const SETTLE_MS = 120;
 const FADES = Platform.OS !== "macos";
 
 function Frame({ limit, children }: { limit: number; children: ReactNode }) {
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
   // The host's page, if it has one: held still too while something in the
   // table is dragged, or the document would scroll under the finger.
   const outer = useContext(PageScrollContext);
