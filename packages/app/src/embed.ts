@@ -8,7 +8,7 @@
 // names; readEmbedWith finds the file over a platform's TableFs (`./node`'s
 // readEmbed is it over the disk, as Node sees it).
 
-import { addressedView, formatAddress, parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { addressedView, formatAddress, isTablePath, parseAddress, type Address, type BundleMeta, type EditEvent, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { joinPath, type ReadOptions, type TableFs } from "@workspace.sh/table-core/io";
 import { boardColumns } from "@workspace.sh/table-ui/shared";
 
@@ -380,4 +380,33 @@ export async function withOtherFiles(fs: TableFs, library: Library, reading: Pic
     paths: { ...library.paths, ...others.paths },
     problems: { ...library.problems, ...others.problems },
   };
+}
+
+// -- What a document embeds ---------------------------------------------------
+//
+// A paragraph that is one link to a `.table` with `embed` in its address is
+// an embed (SPEC section 10): the apps that draw documents find them so.
+
+/** The file an embed's address names: the part before `#`, as written. */
+export function embedFileOf(url: string): string {
+  const hash = url.indexOf("#");
+  const path = hash === -1 ? url : url.slice(0, hash);
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/** Whether an embed's file is a `.table`. */
+export const embedsTable = (file: string): boolean => isTablePath(file);
+
+/** The addresses of what a document's text embeds: each link to a `.table` with `embed` in its address. */
+export function embedAddresses(markdown: string): string[] {
+  const found = new Set<string>();
+  for (const match of markdown.matchAll(/\]\(\s*<?([^\s)>]+)>?/g)) {
+    const address = match[1]!;
+    if (/[#&]embed(=|&|$)/.test(address) && embedsTable(embedFileOf(address))) found.add(address);
+  }
+  return [...found];
 }

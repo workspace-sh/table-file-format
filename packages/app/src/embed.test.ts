@@ -221,3 +221,18 @@ test("a document's embeds read each file once, and again after a write", async (
   await embedReaderWith(fs)({ address: "../tables/projects.table#table=tasks&embed=1", baseDir: "/ws/docs" });
   assert.equal(reads, written + 2);
 });
+
+test("a document's embeds are its links to a .table with embed in the address, each once", async () => {
+  const { embedAddresses, embedFileOf, embedsTable } = await import("./embed.ts");
+  const text = [
+    "[Tasks](projects.table#table=tasks&embed=1)",
+    "[Again](projects.table#table=tasks&embed=1)",
+    "[Board](../table/My%20Projects.table#view=v2&embed)",
+    "[Just a link](projects.table#table=tasks)",
+    "[A picture](diagram.png#embed=1)",
+  ].join("\n\n");
+  assert.deepEqual(embedAddresses(text), ["projects.table#table=tasks&embed=1", "../table/My%20Projects.table#view=v2&embed"]);
+  assert.equal(embedFileOf("My%20Projects.table/#view=v2&embed"), "My Projects.table/");
+  assert.equal(embedsTable("crm.table/"), true);
+  assert.equal(embedsTable("notes.md"), false);
+});

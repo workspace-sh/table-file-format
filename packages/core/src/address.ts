@@ -170,3 +170,6 @@ export async function resolveRow(
   if (!table) return null;
   return table.rows.find((r) => r.id === addr.rowId) ?? null;
 }
+
+/** Whether a path names a `.table` (either form, SPEC section 13): its extension, with or without a folder's trailing `/`. */
+export const isTablePath = (path: string): boolean => /\.table\/?$/i.test(path);
