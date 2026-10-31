@@ -57,11 +57,13 @@
       "types": "./dist/sqlite-op.d.ts",
       "default": "./dist/sqlite-op.js"
     },
+    "./app.plugin.cjs": "./app.plugin.cjs",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
-    "dist"
+    "dist",
+    "app.plugin.cjs"
   ],
   "scripts": {
     "build": "tsc",
