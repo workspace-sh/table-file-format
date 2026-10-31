@@ -13,7 +13,7 @@ import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
-import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, sheetReaders, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
+import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, sheetReaders, tableNameOf, undoRedoMenu, viewCallbacks, viewsMenu } from "@workspace.sh/table-app";
 import { useDepartedToast } from "@workspace.sh/table-app/react";
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
@@ -194,15 +194,12 @@ export default function TableScreen() {
   const toggleSettings = () => dispatch({ type: "settings", open: !state.settingsOpen });
   // The same actions on both platforms, each with its system's symbol: SF
   // Symbols in iOS's toolbar menus, Material Symbols in Android's.
-  const views: { key: string; label: string; sf?: SFSymbol; material?: MaterialSymbol; on?: boolean; onPress: () => void }[] = [
-    ...table.views.map((v) => ({
-      key: v.id,
-      label: v.name,
-      on: v.id === view.id,
-      onPress: () => dispatch({ type: "showView", key: state.active, viewId: v.id }),
-    })),
-    { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newViewId() }) },
-  ];
+  const views = viewsMenu({
+    views: table.views,
+    view: view.id,
+    showView: (viewId) => dispatch({ type: "showView", key: state.active, viewId }),
+    addView: () => dispatch({ type: "addView", id: newViewId() }),
+  }) as { key: string; label: string; sf?: SFSymbol; material?: MaterialSymbol; on?: boolean; onPress: () => void }[];
   const canAddFieldHere = view.layout === "table" && !table.indexed;
   // In the order they read, top to bottom, from what's done most to least:
   // opening and making files, adding to what's open, stepping back and
@@ -222,8 +219,14 @@ export default function TableScreen() {
       onPress: () => dispatch({ type: "create", making: { kind: "table", bundle } }),
     },
     // The table on screen, back a step and forward again (APP-STATE, "Undo").
-    { startsGroup: true, label: labelOf("undo"), sf: "arrow.uturn.backward", disabled: !derived.canUndo, onPress: () => dispatch({ type: "undo" }) },
-    { label: labelOf("redo"), sf: "arrow.uturn.forward", disabled: !derived.canRedo, onPress: () => dispatch({ type: "redo" }) },
+    ...undoRedoMenu({
+      canUndo: derived.canUndo,
+      canRedo: derived.canRedo,
+      undoName: derived.undoName,
+      redoName: derived.redoName,
+      undo: () => dispatch({ type: "undo" }),
+      redo: () => dispatch({ type: "redo" }),
+    }).map((item, i) => ({ ...item, sf: item.sf as SFSymbol, material: item.material as MaterialSymbol | undefined, startsGroup: i === 0 })),
     { startsGroup: true, label: "Files", sf: "folder.badge.gearshape", material: "folder_open", onPress: () => router.push("/files") },
     { label: labelOf("export-file"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
     { startsGroup: true, label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },

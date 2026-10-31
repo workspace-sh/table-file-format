@@ -105,3 +105,21 @@ test("Export as a Single File is for a folder: a single file already is one", ()
   assert.equal(exportFile(false).enabled, true);
   assert.equal(exportFile(true).enabled, false);
 });
+
+test("the Views menu lists a table's views, the one shown ticked, and New View only where the file can change", async () => {
+  const { viewsMenu } = await import("./commands.ts");
+  const shown: string[] = [];
+  const views = [{ id: "v1", name: "All" }, { id: "v2", name: "Board" }];
+  const items = viewsMenu({ views, view: "v2", showView: (id) => shown.push(id), addView: () => shown.push("new") });
+  assert.deepEqual(items.map((i) => [i.label, i.on ?? false]), [["All", false], ["Board", true], ["New View", false]]);
+  items[0]!.onPress();
+  items[2]!.onPress();
+  assert.deepEqual(shown, ["v1", "new"]);
+  assert.equal(viewsMenu({ views, view: "v1", showView: () => {} }).length, 2, "nothing to add to a file only to look at");
+});
+
+test("Undo and Redo are named for the edit, as the Edit menu names them", async () => {
+  const { undoRedoMenu } = await import("./commands.ts");
+  const items = undoRedoMenu({ canUndo: true, canRedo: false, undoName: "Delete Row", redoName: null, undo: () => {}, redo: () => {} });
+  assert.deepEqual(items.map((i) => [i.label, i.disabled]), [["Undo Delete Row", false], ["Redo", true]]);
+});
