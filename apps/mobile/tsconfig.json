@@ -10,7 +10,11 @@
     "noEmit": true,
     // table-app imports its own files by their .ts names, as Node runs its tests.
     "allowImportingTsExtensions": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // The library's packages from their source, as Metro reads them, not a
+    // build that may be stale after a pull (#77): an old core build made a
+    // current option look unknown.
+    "customConditions": ["source"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]
