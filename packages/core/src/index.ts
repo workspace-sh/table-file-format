@@ -157,3 +157,4 @@ export { hasColorRules, knownColor, rowColors, type RowColors } from "./colors.j
 export { CELLS_DIR, cellDiagnostics, cellFormulas, cellLine, layoutCells, parseCellsText } from "./cells.js";
 export { holds } from "./validator.js";
 export { TABLE_TYPES, TABLE_TYPE_DECLARATIONS } from "./tableTypes.js";
+export { fromBase64, toBase64 } from "./base64.js";
