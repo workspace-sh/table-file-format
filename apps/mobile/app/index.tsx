@@ -244,13 +244,7 @@ export default function TableScreen() {
             page.onScroll(e);
           }}
           scrollEventThrottle={16}
-          onLayout={(e) => {
-            page.onLayout(e);
-            // (The scroll view measures as any view does; its type doesn't say so.)
-            (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.(
-              (_x, y) => page.setWindowTop(y),
-            );
-          }}
+          onLayout={page.onLayout}
           onContentSizeChange={page.onContentSizeChange}
           // Where a scroll comes to rest is where you are, for history.
           onScrollEndDrag={(e) => {

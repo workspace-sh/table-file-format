@@ -78,8 +78,6 @@ function Frame({ limit, children }: { limit: number; children: ReactNode }) {
       onScroll={page.onScroll}
       onLayout={(e) => {
         page.onLayout(e);
-        // Where it is in the window, for what's drawn over a cell (an editor, a menu).
-        (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.((_x, y) => page.setWindowTop(y));
         // A new width (the phone turned, the window resized): the table's
         // columns are measured again for it.
         const w = e.nativeEvent.layout.width;

@@ -1497,10 +1497,6 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
               onLayout={(e) => {
                 void adoptToolbarInsets();
                 pageScroller.onLayout(e);
-                // (The scroll view measures as any view does; its type doesn't say so.)
-                (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.(
-                  (_x, y) => pageScroller.setWindowTop(y),
-                );
               }}
             >
               <PageScrollContext.Provider value={pageScroller.pageScroll}>
