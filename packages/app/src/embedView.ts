@@ -4,3 +4,4 @@
 // embedFrame.tsx on iOS, Android and macOS, as table-ui's own files do.
 
 export { EMBED_MAX_HEIGHT, TableEmbed, type TableEmbedProps } from "./embedFrame";
+export { embedQueue, useEmbedTurn, useReadEmbedsEarly, type EmbedPage, type EmbedQueue } from "./embedTurns.ts";

@@ -93,6 +93,7 @@ export {
 } from "./csv.js";
 export {
   parseAddress,
+  isTablePath,
   formatAddress,
   addressedView,
   resolveRow,
