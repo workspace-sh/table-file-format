@@ -42,8 +42,39 @@ it implements is spec-frozen.
   tables held by `bundle/table` key, `showView` (the rows a view shows,
   after a viewer's own sort and search, and a Sheet view's saved grid),
   a viewer's arrangements, display settings, saved state over any
-  key-value store, and `.table.zip` files. `@workspace.sh/table-app/node`
+  key-value store, and single-file `.table`s. `@workspace.sh/table-app/node`
   opens `.table` folders from disk (`loadLibrary`).
+
+### A table inside a document
+
+To show a `.table` inside something else (a Markdown file that links to
+it), an app places one drop-in and gives it the link:
+
+- **`embedIn(library, address, fileName)`** in `table-app` says what a
+  link's address names in a file just read: which table and view, or why
+  it can't be drawn, in words for the reader. Every drop-in asks it, so a
+  link draws the same thing and fails with the same words everywhere.
+  What it answers carries `size`: the `rows=` or `cards=` the address asks
+  to be shown at once (SPEC section 10), for the drop-in to size itself by.
+  With `rest=more` in it the drop-in draws only that many: `embedCount`
+  says which count the layout shows, `embedLeftOut` how many it leaves
+  out, and `embedMoreText` what the line that shows them says. With
+  `width=full` (`size.width`) a table's columns share the whole width
+  rather than stopping at their natural widths: the drop-in passes
+  `fillWidth` to the view.
+- **`useEmbeddedTable(shown, files)`** in `table-app/react` holds what it
+  names over the app reducer: the views' props and callbacks, with edits
+  written through `files` (how the platform writes a bundle and appends
+  to a history) and whatever is still to write written when it goes.
+- **`readEmbed({ address, baseDir, within })`** and **`embedFiles`** in
+  `table-app/node` are those two over node:fs: the path resolved against
+  the document's folder and kept inside `within`.
+- **`TableEmbed`** in `@workspace.sh/table-gtk/embed` is the GTK drop-in
+  over them (see that package's README). **`TableEmbed`** in
+  `@workspace.sh/table-app/embed-view` is the drop-in for `table-ui`'s
+  views (web, iOS, Android, macOS): the same hook with those views and
+  the platform's own files. It holds a table of 50,000 rows or more in
+  memory, not through the index (#515).
 
 Resolution is verified on all three loaders: **Node ESM** (`default`
 condition → `dist/`, explicit `.js` specifiers), **Vite** (`source`
@@ -110,7 +141,7 @@ Rules that matter when constructing rows:
 
 - **Ids**: any non-empty string unique in the table is valid; mint
   with `newId()` (25-char lowercase base36 — case-safe because ids
-  become `bodies/{id}.md` filenames; SPEC section 3). Never reuse or
+  become `bodies/{title}--{id}.md` filenames; SPEC section 3). Never reuse or
   rename an id — relations and addresses point at it.
 - **Schema evolution is append-only**: add fields, mark old ones
   `deprecated: true`; never remove or rename (SPEC section 2). Bump
@@ -128,19 +159,26 @@ minted when absent) and `toCSV(table)` — call
 attachments, and bodies do not survive a CSV export, and the loss
 must be visible, not silent.
 
-## Archives (`.table.zip`)
+## A `.table` as a single file
 
-For transport contexts that can't carry a directory:
-
-Portable — works on Node, in browsers, and in React Native (Hermes),
-so mailed/shared archives open on every Workspace platform:
+A `.table` is a folder or a single file, the same document either way
+(SPEC section 13, D49, D50), told apart by what's on disk. Portable:
+it works on Node, in browsers, and in React Native (Hermes), so a
+`.table` sent as one file opens on every Workspace platform:
 
 ```ts
-import { readTableArchive, writeTableArchive } from "@workspace.sh/table-core"; // or the ./archive subpath
+import { readTableDocument, writeTableFileTo, readTableArchive, writeTableArchive } from "@workspace.sh/table-core";
 
-const table = await readTableArchive(bytes);              // same ParsedTable + diagnostics as parseTable
-const out = await writeTableArchive("projects", table);   // canonical <name>.table/ layout, deterministic
+const { form, bundle } = await readTableDocument(fs, path); // "folder" or "file", by what's on disk
+await writeTableFileTo(fs, path, bundle);                  // a single file, written beside it and renamed over it
+
+const read = await readTableArchive(bytes);                // a single file's bytes, as a ParsedBundle
+const out = await writeTableArchive("projects", read);     // and back: canonical <name>.table/ layout, deterministic
 ```
+
+To edit a single file in place, `@workspace.sh/table-app`'s
+`unpackTableFile` and `packTableFile` keep it as a working folder in
+the app's own storage and pack it back after each write.
 
 Callers supply bytes (`await readFile(p)` on Node, `File`/fetch on
 web, the document picker on RN). Reading is fully in-memory (no
@@ -165,7 +203,8 @@ case-insensitive checkout notes.
 
 ## Sync comes later — and changes nothing here
 
-The P2P layer (Hypercore/Autobase, docs/STORAGE-AND-SYNC.md)
+The P2P layer (Hypercore/Autobase, docs/STORAGE-AND-SYNC.md, specified in the
+[Workspace Protocol](https://github.com/workspace-sh/workspace-protocol))
 materialises **the same files** this guide reads and writes. Code
 written against `parseTable`/`writeTable` and the contracts above
 will not change when sync lands — files are the interface, by
@@ -176,8 +215,9 @@ design (DECISIONS D17). Do not couple consumer code to a transport.
 To claim `.table/` support, an implementation needs only:
 
 1. Parse `schema.json` (fatal if missing/malformed).
-2. Iterate `rows.ndjson` line-by-line, skip-and-collect on bad lines
-   (SPEC section 3, "Reader error contract").
+2. Iterate the files in `rows/` in name order, line by line,
+   skip-and-collect on bad lines (SPEC section 3, "Reader error
+   contract"); a `formatVersion` 1 table has one `rows.ndjson` instead.
 3. Tolerate every optional file being absent; ignore unknown files.
 
 Everything else — views, bodies, attachments, the SQLite cache — is

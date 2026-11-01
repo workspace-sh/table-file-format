@@ -60,9 +60,9 @@ Everything below comes back to these positions.
 | Row identity | Position | Position | Position (or `primaryKey` column) | Stable record id (`recXXX`) | None | Stable system `id` |
 | Cross-record links | None | Cell formulas (`Sheet2!A1`) | Foreign keys via `schema.foreignKeys` | Linked-record field type | Inline markdown links | `relation` + `<path>#row=<id>` address grammar |
 | Views | None | Implicit display state | None | First-class | None | First-class (`views.json`) |
-| Long-form content | One CSV cell | One spreadsheet cell (up to ~32k chars) | One CSV cell | One field (long-text type) | Body is the markdown file; structured fields in companion CSV | `bodies/{id}.md` per row |
+| Long-form content | One CSV cell | One spreadsheet cell (up to ~32k chars) | One CSV cell | One field (long-text type) | Body is the markdown file; structured fields in companion CSV | `bodies/{title}--{id}.md` per row |
 | Binary attachments | Not modelled | Embedded base64 / OLE | External URLs in fields | URL + cached blob | Files alongside the markdown | `attachments/` dir |
-| Formulas | None | First-class | None | First-class (formula field type) | None | None |
+| Formulas | None | First-class | None | First-class (formula field type) | None | Per field (`computed`) and per cell (`cells/`) |
 | Styling | None | First-class (`<Styles>`, conditional formatting) | None | View-level only | None in export | None — UI concern |
 | Diff-friendly | Line-oriented ✓ (but no row ids → row reorders churn) | Heavy XML diffs | Line-oriented ✓ | JSON re-serialization can churn | Line-oriented ✓ | Line-oriented + stable row ids ✓ |
 | Spec size | RFC 4180 (~10 pages) | ECMA-376 (~6000 pages) | ~50 pages | Proprietary, undocumented edges | Proprietary, undocumented | One markdown file |
@@ -80,7 +80,7 @@ directories. Both have a typed schema next to the data. Both target
 | Schema vocabulary | JSON Table Schema (W3C-aligned) | Own vocabulary — closer to what an app actually needs |
 | Multiple tables | Yes, listed in `datapackage.json` | One `.table/` per table; relations point across sibling dirs |
 | Row identity | Optional `primaryKey` (user-declared column) | Mandatory system `id` (always present, separate from user-declared primary key) |
-| Long-form bodies | Not modelled | `bodies/{id}.md` |
+| Long-form bodies | Not modelled | `bodies/{title}--{id}.md` |
 | Views / saved queries | Not modelled | First-class |
 | Audience | Data scientists, government open-data publishers | App users editing structured data daily |
 
@@ -128,6 +128,11 @@ Results are **never persisted** — recomputed on read — and the
 optional `index.sqlite` may cache them for query speed. Reading across
 rows (column totals, rollups, lookups) is three named forms over lists
 (D36), each built once per evaluation.
+
+A cell may also have its own formula, as a spreadsheet's does (D52):
+in a stored field it stands in for the value, and in a computed field
+it is that row's exception. It is kept in `cells/`, beside the rows,
+so the rows files stay plain values.
 
 #### Maintained formula libraries (checked 2026-09-25)
 
@@ -227,7 +232,7 @@ in SPEC section 2 and validated in `@workspace.sh/table-core`.
 **Other formats**: Excel has rich-text cells. Notion's property values
 can be rich-text segments.
 
-**`.table/` today**: A row has a body (`bodies/{id}.md`) for long-form
+**`.table/` today**: A row has a body (`bodies/{title}--{id}.md`) for long-form
 markdown content. Cell-level rich text isn't modelled — fields are
 plain strings.
 

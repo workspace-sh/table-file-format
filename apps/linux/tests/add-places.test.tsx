@@ -1,5 +1,5 @@
 import * as Gtk from "@gtkx/gi/gtk";
-import { cleanup, render, screen, screenshot } from "@gtkx/testing";
+import { cleanup, render, screen, screenshot, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,8 +9,9 @@ import { App } from "../src/App.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // What's there looks solid, and the places where something could be added
-// recede: a row's menu, the "+" for a field and "New Row" are faint until
-// they're pointed at, and none of them is inside the table's lines.
+// recede: the "+" for a field and "+ New row" are faint until they're
+// pointed at, and neither is inside the table's lines. A row has no button
+// of its own: its menu is a right-click, or the Menu key, as on the web.
 
 let dir: string;
 
@@ -26,7 +27,7 @@ afterEach(async () => {
 
 async function openTasks() {
   const library = await loadLibrary([join(dir, "projects.table")]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={dir} />);
 }
 
 function up<T extends Gtk.Widget>(from: Gtk.Widget, kind: abstract new (...args: never[]) => T): T {
@@ -45,21 +46,37 @@ async function drawn(widget: Gtk.Widget, pointedAt: Gtk.Widget | null): Promise<
 }
 
 describe("places to add to, on Linux", () => {
-  it("a row's menu is after the row's lines, and comes up when the row is pointed at", async () => {
+  it("a row's lines stop at its last cell, and its menu takes no room", async () => {
     await openTasks();
     const menu = up((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Row Actions" }))[0]!, Gtk.MenuButton);
-    const row = menu.getParent()!;
-    // The cells are in a box of their own, which has the row's rule; the menu follows it.
-    expect(row.getFirstChild()).not.toBe(menu);
-    expect(row.getLastChild()).toBe(menu);
-    const rest = await drawn(menu, null);
-    expect(await drawn(menu, row)).not.toBe(rest);
-    expect(await drawn(menu, null)).toBe(rest);
+    // Laid over the row, never seen or pointed at: the row is its cells and nothing after them.
+    expect(menu.getOpacity()).toBe(0);
+    expect(menu.getCanTarget()).toBe(false);
+    // Nor is the menu made until it's opened: every row built would carry one (#745).
+    expect(menu.getPopover()).toBeNull();
+    const row = menu.getParent() as Gtk.Overlay;
+    const cells = row.getChild()!;
+    // As wide as the header's columns, and the header is wider by the "+" after its last one.
+    const add = up(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }), Gtk.Button);
+    const header = add.getParent()!;
+    expect(cells.getWidth()).toBe(header.getFirstChild()!.getWidth());
+    expect(header.getWidth()).toBe(cells.getWidth() + 40);
   });
 
-  it("New Row is a band under the last row that fills when pointed at", async () => {
+  it("Shift+F10 on a cell opens its row's menu, as the Menu key does", async () => {
     await openTasks();
-    const band = up((await screen.findAllByText("New Row"))[0]!, Gtk.Button);
+    let cell: Gtk.Widget | null = (await screen.findAllByText("Land .table extension"))[0]!;
+    while (cell && !cell.getFocusable()) cell = cell.getParent();
+    cell!.grabFocus();
+    const menu = up((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Row Actions" }))[0]!, Gtk.MenuButton);
+    expect(menu.getActive()).toBe(false);
+    await userEvent.keyboard(cell!, "{Shift>}{F10}{/Shift}");
+    await waitFor(() => expect(menu.getActive()).toBe(true));
+  });
+
+  it("+ New row is a band under the last row that comes up when pointed at", async () => {
+    await openTasks();
+    const band = up((await screen.findAllByText("+ New row"))[0]!, Gtk.Button);
     const rest = await drawn(band, null);
     expect(await drawn(band, band)).not.toBe(rest);
     expect(await drawn(band, null)).toBe(rest);

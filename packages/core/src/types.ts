@@ -13,7 +13,9 @@ export type FieldType =
   | "object"
   | "duration"
   | "geopoint"
-  | "geojson";
+  | "geojson"
+  /** Any JSON value, each row its own kind, as a spreadsheet's column holds (D56). */
+  | "any";
 
 /**
  * Symbolic enum-chip color: one of 14 names (DECISIONS D43). Symbolic
@@ -73,6 +75,13 @@ export interface FieldConstraints {
 export type FieldAlignment = "start" | "center" | "end";
 
 export interface Field {
+  /**
+   * Its permanent identity (D62): minted by a writer, never shown, never
+   * changed, unique among the table's fields. Links and merges hold on to it
+   * whatever the field is called. Absent in a file written before D62; a
+   * writer gives it one (`withFieldIds`).
+   */
+  id?: string;
   name: string;
   type: FieldType;
   title?: string;
@@ -217,6 +226,12 @@ export interface ViewGroup {
   field: string;
 }
 
+/** A block of a Sheet view's cells shown as one (D58): its corners, by field and row id. */
+export interface ViewMerge {
+  from: { field: string; row: string };
+  to: { field: string; row: string };
+}
+
 export interface View {
   id: string;
   name: string;
@@ -263,6 +278,21 @@ export interface View {
    * but the choice.
    */
   totals?: Record<string, ViewTotal>;
+  /**
+   * Rows or cells coloured by their values (SPEC section 4, "Colour rules";
+   * D53): the first rule that matches wins. Display-only.
+   */
+  colors?: ViewColorRule[];
+  /** Rows this view leaves out by hand, by id (SPEC section 4, D58). A Sheet view keeps their numbers. */
+  hidden?: string[];
+  /** Rows and columns that stay put while the rest scroll (D58). Absent: the app's own choice. */
+  frozen?: { columns?: number; rows?: number };
+  /**
+   * In a Sheet view, blocks of cells shown as one, with the value of the
+   * top-left cell (SPEC section 4, D58): two corners, by field and row id.
+   * The cells under a merge keep their values. Display-only.
+   */
+  merged?: ViewMerge[];
   board_field?: string;
   gallery_field?: string;
   calendar_field?: string;
@@ -287,6 +317,15 @@ export interface View {
   [key: string]: unknown;
 }
 
+/** One colour rule of a view: rows meeting every condition of `filter` are coloured, or only their `field`'s cell. */
+export interface ViewColorRule {
+  filter: ViewFilter[];
+  /** One of the choice colours; a reader shows one it doesn't know as `gray`. */
+  color: EnumColor | string;
+  /** The cell to colour; absent, the whole row. */
+  field?: string;
+}
+
 // ---- Meta ----
 
 export interface TableMeta {
@@ -297,10 +336,33 @@ export interface TableMeta {
   created_at?: string;
   modified_at?: string;
   generator?: string;
+  /**
+   * A table's own: loops between its formulas worked out by repeating the
+   * calculation, at most `max` times, until no value in them changes by more
+   * than `change` (D60). Absent: a loop is #REF!.
+   */
+  iteration?: { max: number; change: number };
+  /**
+   * Where this was made from, when it was made from something else (D66):
+   * a record of origin, which changes nothing about how it's read. Read it
+   * with `sourceOf`, which ignores one that isn't well-formed.
+   */
+  source?: TableSource;
   [key: string]: unknown;
 }
 
-export const TABLE_FORMAT_VERSION = 1;
+/** Where a table or bundle came from (SPEC section 5, D66). Every member is optional. */
+export interface TableSource {
+  /** An absolute URI: `https:`, `file:`, or any other scheme. */
+  uri?: string;
+  /** A media type: `text/csv`. */
+  format?: string;
+  /** When it was read, ISO 8601, as `created_at`. */
+  retrieved_at?: string;
+}
+
+/** SPEC section 12: 3 since cells' own formulas (D52); 2 had no `cells/`, 1 one `rows.ndjson`. */
+export const TABLE_FORMAT_VERSION = 3;
 
 /**
  * The bundle's manifest: its root `meta.json` (SPEC section 5). A
@@ -331,6 +393,29 @@ export interface ValidationError {
 
 // ---- Parsed Table ----
 
+/** A line of `rows.ndjson` that couldn't be read as a row, and the row it came after (null: before every row). */
+export interface UnreadLine {
+  after: string | null;
+  text: string;
+}
+
+/**
+ * One line of a table's `cells/` (SPEC section 3, "A cell's own formula";
+ * D52): the cell's row and field, and its formula in the stored form.
+ * Keys this reader doesn't know are kept, for a writer to put back.
+ */
+export interface CellFormula {
+  id: string;
+  field: string;
+  /** Its formula, in the stored form: absent for a line that's only a note. */
+  expr?: string;
+  /** A note on the cell, outside its value (D57). */
+  note?: string;
+  /** Absent means `table-expr-v1`. */
+  dialect?: string;
+  [key: string]: unknown;
+}
+
 export interface ParsedTable {
   schema: TableSchema;
   rows: Row[];
@@ -343,12 +428,62 @@ export interface ParsedTable {
    */
   bodies?: Record<string, string>;
   /**
+   * Lines of `rows.ndjson` that couldn't be read as rows (a typo, a
+   * merge-conflict marker), kept as they were: each after the row it
+   * followed (`after` its id; null, before every row). A writer puts them
+   * back where they were (SPEC section 3, "Reader error contract").
+   */
+  unread?: UnreadLine[];
+  /**
+   * Which rows each of its rows files held when it was read (SPEC section
+   * 3, D51), in file order: a writer writes each row back to its file, and
+   * only the files that changed. Absent for a new table, laid out from
+   * `0001`.
+   */
+  rowFiles?: { name: string; ids: string[] }[];
+  /**
+   * Its `cells/` lines (SPEC section 3, D52), in the order read: every
+   * one, a line whose row or field isn't there and a repeat included, for a
+   * writer keeps them all. Which applies is `cellFormulas()`'s to say.
+   */
+  cells?: CellFormula[];
+  /** Lines of `cells/` that couldn't be read, kept as they were. */
+  unreadCells?: string[];
+  /**
    * Set when the table's rows are not in `rows` (it is empty) but in the
    * bundle's index (SPEC section 8), as an app holds a large table:
    * how many there are, and a number that changes with every edit to
    * them. A writer leaves such a table's `rows.ndjson` alone.
    */
-  indexed?: { count: number; version: number };
+  /**
+   * Set when the table was read without its rows (a reader's `rows:
+   * "later"`): `rows` is empty until they're read, and `estimate` is about
+   * how many there are, judged from the rows files' sizes and the start of
+   * the first. A writer leaves such a table's rows files alone.
+   */
+  loading?: { estimate: number };
+  indexed?: {
+    count: number;
+    version: number;
+    /**
+     * Fields an undo or redo has just brought back: the index has their
+     * values, hidden since they were removed (alterIndex's `restore`).
+     */
+    restore?: string[];
+    /**
+     * Its index on this device was made from this same file and is taken as
+     * it is: nothing is read, so nothing says it's being read.
+     */
+    kept?: true;
+  };
+  /**
+   * Its edit history, as `history.ndjson` holds it (SPEC section 14):
+   * carried whole, so a table that travels as an archive keeps it. Set by
+   * the archive reader; the directory reader leaves the file where it is.
+   * A writer never changes a history that is on disk: the directory
+   * writer puts this text there only when there is no file yet.
+   */
+  history?: string;
   /**
    * Parse-level diagnostics from the skip-and-collect reader —
    * malformed NDJSON lines, rows missing a system id, malformed
@@ -371,4 +506,13 @@ export interface ParsedBundle {
   /** Bundle-level problems: an unreadable manifest, a directory that isn't a table. */
   diagnostics?: ValidationError[];
   path: string;
+  /**
+   * What a single-file `.table` (SPEC section 13) holds besides what's
+   * parsed: `attachments/`, each table's `history.ndjson`, and files no
+   * reader knows, by path inside `<name>.table/`, as their bytes. A
+   * single-file save writes them back as they are. A folder's stay on
+   * disk, and aren't read here (`filesOfFolder` reads them to save the
+   * folder as a single file).
+   */
+  files?: Record<string, Uint8Array>;
 }

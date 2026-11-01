@@ -10,6 +10,7 @@ import { AdwAlertDialog, AdwDialog, AdwHeaderBar, AdwToolbarView, AdwWindowTitle
 import { GtkBox, GtkButton, GtkLabel, GtkScrolledWindow, GtkTextBuffer, GtkTextView } from "@gtkx/jsx/gtk";
 import { pageSave } from "@workspace.sh/table-ui/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { bodyFileName } from "@workspace.sh/table-core";
 
 /** How long typing pauses before it's saved. */
 const SAVE_AFTER_MS = 700;
@@ -26,6 +27,8 @@ export interface RowPageProps {
 }
 
 export function RowPage({ rowId, rowTitle, content, onSave, onClose }: RowPageProps) {
+  // Its file, as the writer names it (D64); a row named only by its id has no title in it.
+  const pageFile = bodyFileName(rowId, rowTitle === rowId ? undefined : rowTitle);
   // The buffer starts from the page as opened; saves coming back as
   // `content` must not reset it under the cursor.
   const [initial] = useState(content);
@@ -86,7 +89,7 @@ export function RowPage({ rowId, rowTitle, content, onSave, onClose }: RowPagePr
       }}
     >
       <AdwToolbarView
-        topBar={<AdwHeaderBar titleWidget={<AdwWindowTitle title={rowTitle} subtitle={`bodies/${rowId}.md${content.length === 0 ? " · new" : ""}`} />} />}
+        topBar={<AdwHeaderBar titleWidget={<AdwWindowTitle title={rowTitle} subtitle={`bodies/${pageFile}${content.length === 0 ? " · new" : ""}`} />} />}
         bottomBar={
           <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={12}>
             <GtkLabel label={status} hexpand xalign={0} cssClasses={["dim-label"]} />
@@ -103,7 +106,7 @@ export function RowPage({ rowId, rowTitle, content, onSave, onClose }: RowPagePr
       {confirming ? (
         <AdwAlertDialog
           heading="Delete this page?"
-          body={`Its text is gone, so closing deletes bodies/${rowId}.md.`}
+          body={`Its text is gone, so closing deletes bodies/${pageFile}.`}
           closeResponse="keep"
           defaultResponse="keep"
           responses={[

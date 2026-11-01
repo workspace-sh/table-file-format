@@ -2,10 +2,11 @@
 // from @expo/ui), inset and grouped as Settings is: a section for each
 // file, headed by its title and file name; a row for each table, with its
 // row count, or a tick for the table on screen; and New Table, with the
-// system's plus.
+// system's plus. A table held down offers Close File, for its whole file.
 
 import {
   Button,
+  ContextMenu,
   HStack,
   Host,
   Image,
@@ -24,7 +25,7 @@ const primary = foregroundStyle("primary");
 // A section header as Settings sets one: small, grey, the title in capitals.
 const headerText = [font({ size: 13 }), secondary, lineLimit(1)];
 
-export function TablesList({ tree, active, onChoose, onNewTable }: TablesListProps) {
+export function TablesList({ tree, active, onChoose, onNewTable, onClose }: TablesListProps) {
   return (
     <Host style={{ flex: 1 }}>
       <List modifiers={[listStyle("insetGrouped")]}>
@@ -40,7 +41,7 @@ export function TablesList({ tree, active, onChoose, onNewTable }: TablesListPro
           >
             {file.tables.map((t) => {
               const on = t.key === active;
-              return (
+              const row = (
                 <Button key={t.key} onPress={() => onChoose(t.key)}>
                   <HStack>
                     <Text modifiers={[primary, ...(on ? [font({ weight: "semibold" })] : [])]}>{t.title}</Text>
@@ -48,6 +49,15 @@ export function TablesList({ tree, active, onChoose, onNewTable }: TablesListPro
                     {on ? <Image systemName="checkmark" /> : <Text modifiers={[secondary]}>{String(t.rowCount)}</Text>}
                   </HStack>
                 </Button>
+              );
+              if (!file.closable) return row;
+              return (
+                <ContextMenu key={t.key}>
+                  <ContextMenu.Items>
+                    <Button label="Close File" systemImage="xmark" role="destructive" onPress={() => onClose(file.bundle)} />
+                  </ContextMenu.Items>
+                  <ContextMenu.Trigger>{row}</ContextMenu.Trigger>
+                </ContextMenu>
               );
             })}
             <Button label="New Table" systemImage="plus" onPress={() => onNewTable(file.bundle)} />

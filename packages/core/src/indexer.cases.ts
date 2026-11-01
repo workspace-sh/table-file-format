@@ -5,8 +5,9 @@
 
 import { applyView, searchRows } from "./query.js";
 import { arraySource, memoryViewRows } from "./row-source.js";
-import { buildIndex, buildSearchIndex, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
+import { alterIndex, buildIndex, buildSearchIndex, fillIndex, indexFilling, storedRows, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
+import type { SqlValue } from "./indexer.js";
 
 /** The parts of node:assert/strict the cases use. */
 export interface CaseAssert {
@@ -308,7 +309,7 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     const lookup: TableSchema = {
       fields: [
         { name: "n", type: "number" },
-        { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: "(sum (column n))" } },
+        { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: "(sum (values n))" } },
       ],
     };
     const rows: Row[] = [{ id: "a", n: 1 }, { id: "b", n: 2 }];
@@ -543,5 +544,280 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     assert.equal(stepped.count, 1000);
     assert.deepEqual(await stepped.rows(0, 1000), await whole.rows(0, 1000));
     assert.equal(await isIndexStale(db, "t", "new"), false);
+  });
+
+  // -- A change of fields, in place (#551) --------------------------------
+
+  const formula = (expr: string) => ({ dialect: "table-expr-v1", expr }) as const;
+  const field = (name: string) => schema.fields.find((f) => f.name === name)!;
+  const without = (...gone: string[]) => schema.fields.filter((f) => !gone.includes(f.name));
+
+  /** Random views over the fields of `to`, and searches. */
+  function views(r: ReturnType<typeof random>, to: TableSchema, count: number): { view: View; search: string | undefined }[] {
+    const names = to.fields.map((f) => f.name);
+    return Array.from({ length: count }, () => {
+      const filter = Array.from({ length: r.int(2) }, () => ({ ...randomFilter(r), field: r.pick(names) }) as ViewFilter);
+      const sort = Array.from({ length: r.int(3) }, () => ({ field: r.pick(names), direction: r.pick(["asc", "desc"] as const) }));
+      const search = r.int(3) === 0 ? r.pick(["needle", "ünï", "ap", "x", "r1", "2026", "low", "zzz"]) : undefined;
+      return { view: { id: "v", name: "v", layout: "table", filter, sort } as View, search };
+    });
+  }
+
+  /**
+   * The index changed from `schema` to `to` in place, filled a few rows at
+   * a time with edits between, answers what a build of the same rows with
+   * `to` answers: never anything else while it fills, and once it's done,
+   * the same queries, with the same ones left to memory.
+   */
+  async function changedInPlace(label: string, to: TableSchema, options: { seed: number; from?: TableSchema; stray?: (row: Row, i: number) => void; edits?: boolean; search?: "later"; then?: TableSchema }) {
+    const from = options.from ?? schema;
+    const r = random(options.seed);
+    let rows = makeRows(options.seed, 300);
+    rows.forEach((row, i) => options.stray?.(row, i));
+    const bodies = bodiesFor(rows, options.seed);
+    const db = driver();
+    await buildIndex(db, { name: "t", schema: from, rows, bodies, key: "k", ...(options.search ? { search: options.search } : {}) });
+    // What the file holds after the change: no values for a field that went, nor a formula's.
+    const kept = (row: Row, now: TableSchema) => {
+      const out = { ...row };
+      for (const f of from.fields) if (!now.fields.some((g) => g.name === f.name && !g.computed)) delete out[f.name];
+      return out;
+    };
+    let now = to;
+    assert.equal(await alterIndex(db, "t", from, to), true, `${label}: changed in place`);
+    rows = rows.map((row) => kept(row, to));
+    const table = () => ({ path: "", schema: now, rows, views: [], meta: {} as never, bodies }) as ParsedTable;
+    let steps = 0;
+    let answered = 0;
+    for (;;) {
+      // Whatever is asked meanwhile is answered rightly, or left to memory.
+      for (const { view, search } of views(r, now, 15)) if (await check(db, table(), view, search, `${label}, filling ${steps}`)) answered++;
+      // Unsorted and unsearched, it's answered from the first.
+      assert.ok(await check(db, table(), { id: "v", name: "v", layout: "table" }, undefined, `${label}: in file order`), `${label}: answered in file order while it fills`);
+      if (options.edits && steps < 4) {
+        const edited = { ...rows[r.int(rows.length)]! };
+        Object.assign(edited, kept(makeRows(5000 + steps, 1)[0]!, now), { id: edited.id });
+        const added = { ...kept(makeRows(6000 + steps, 1)[0]!, now), id: `new-${steps}` };
+        const gone = r.pick(rows.filter((x) => x.id !== edited.id)).id;
+        await putRows(db, { name: "t", schema: now, rows: [edited, added], key: `k${steps}` });
+        await removeRows(db, { name: "t", schema: now, ids: [gone], key: `k${steps}b` });
+        rows = [...rows.map((x) => (x.id === edited.id ? edited : x)).filter((x) => x.id !== gone), added];
+      }
+      if (options.then && steps === 2) {
+        // Changed again before it's done.
+        assert.equal(await alterIndex(db, "t", now, options.then), true, `${label}: changed again`);
+        now = options.then;
+        rows = rows.map((row) => kept(row, now));
+      }
+      steps++;
+      // A host may ask for the search's own index meanwhile: it waits for the search text.
+      await buildSearchIndex(db, "t", 64);
+      if (!(await fillIndex(db, "t", now, 64))) break;
+    }
+    assert.equal(await indexFilling(db, "t"), false);
+    while (await buildSearchIndex(db, "t", 64)) {
+      // A step at a time.
+    }
+    // The full-text index agrees with the rows it was made from.
+    await db.run("insert into x1(x1, rank) values('integrity-check', 1)");
+    const fresh = driver();
+    await buildIndex(fresh, { name: "t", schema: now, rows, bodies, key: "z" });
+    // Each field sorted by alone, then random views.
+    const sorts = now.fields.map((f) => ({ view: { id: "v", name: "v", layout: "table", sort: [{ field: f.name, direction: "asc" }] } as View, search: undefined }));
+    const promised: string[] = [];
+    for (const { view, search } of [...sorts, ...views(r, now, 120)]) {
+      const query = { filter: view.filter, sort: view.sort, search };
+      const mine = await queryIndex(db, { name: "t", schema: now, query });
+      const theirs = await queryIndex(fresh, { name: "t", schema: now, query });
+      assert.equal(mine === null, theirs === null, `${label}: the same promises for ${JSON.stringify(query)}`);
+      if (mine) assert.ok(await check(db, table(), view, search, `${label}, filled`));
+      if (mine && !view.filter?.length && !search && view.sort?.length === 1) promised.push(view.sort[0]!.field);
+    }
+    return { steps, answered, promised };
+  }
+
+  test("a formula field added is worked out a step at a time, and shown at once", async () => {
+    const triple = { name: "triple", type: "number" as const, computed: formula("(* n 3)") };
+    const { steps } = await changedInPlace("formula added", { fields: [...schema.fields, triple] }, { seed: 31, edits: true });
+    assert.ok(steps > 3, `filled in ${steps} steps`);
+  });
+
+  test("a field added between others takes what the rows hold under its name", async () => {
+    const fields = [...schema.fields];
+    fields.splice(2, 0, { name: "note", type: "string" });
+    await changedInPlace("field added", { fields }, { seed: 32, edits: true, stray: (row, i) => i % 3 === 0 && (row.note = i % 9 === 0 ? 4 : `note ${i}`) });
+  });
+
+  test("fields removed leave the rows, the columns and the search without them", async () => {
+    await changedInPlace("fields removed", { fields: without("flag", "when", "name") }, { seed: 33, edits: true });
+  });
+
+  test("fields moved and retyped answer as a build of the new fields does", async () => {
+    // `stamp` holds instants as text: as a datetime, it's sorted by instant.
+    const from: TableSchema = { fields: [...schema.fields, { name: "stamp", type: "string" }] };
+    const fields = [field("level"), { name: "stamp", type: "datetime" as const }, field("n"), { ...field("when"), type: "string" as const }, field("name"), field("flag"), field("tags"), field("double"), field("day")];
+    const { promised } = await changedInPlace("moved and retyped", { fields }, { seed: 34, from, edits: true, stray: (row, i) => i % 4 !== 0 && (row.stamp = dates[i % dates.length]!) });
+    assert.ok(promised.includes("stamp") && promised.includes("when"), `sorted by the index once filled: ${promised.join(", ")}`);
+  });
+
+  test("a searched field's values worked out again are searched as they now are", async () => {
+    // `name` becomes a formula: the search finds what it gives, not what the rows held.
+    const to: TableSchema = { fields: schema.fields.map((f) => (f.name === "name" ? { ...f, computed: formula('(concatenate "row " level)') } : f)) };
+    await changedInPlace("searched formula", to, { seed: 39, edits: true });
+  });
+
+  test("a field's wrong values are counted the same whether edited before or after the fill reaches them", async () => {
+    const rows = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, n: i, ...(i === 10 || i === 250 ? { note: 4 } : i % 2 ? { note: `note ${i}` } : {}) })) as Row[];
+    const to: TableSchema = { fields: [...schema.fields, { name: "note", type: "string" }] };
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    assert.equal(await alterIndex(db, "t", schema, to), true);
+    assert.equal(await fillIndex(db, "t", to, 64), true);
+    // Row 250, ahead of the fill, is put right; row 10, behind it, still holds a number.
+    const fixed = rows.map((r) => (r.id === "r250" ? { ...r, note: "fine" } : r));
+    await putRows(db, { name: "t", schema: to, rows: [fixed[250]!], key: "k2" });
+    while (await fillIndex(db, "t", to, 64)) {
+      // To the end.
+    }
+    const byNote = { sort: [{ field: "note", direction: "asc" as const }] };
+    assert.equal(await queryIndex(db, { name: "t", schema: to, query: byNote }), null, "row 10 still holds a number");
+    // Put right too, the field is sorted by the index.
+    await putRows(db, { name: "t", schema: to, rows: [{ ...rows[10]!, note: "ten" }], key: "k3" });
+    assert.ok(await queryIndex(db, { name: "t", schema: to, query: byNote }));
+  });
+
+  test("a formula changed, or taken away, is worked out again", async () => {
+    await changedInPlace("formula changed", { fields: schema.fields.map((f) => (f.name === "double" ? { ...f, computed: formula("(+ n 1)") } : f)) }, { seed: 35, edits: true });
+    await changedInPlace("formula gone", { fields: schema.fields.map((f) => (f.name === "double" ? { name: "double", type: "number" as const } : f)) }, { seed: 36, edits: true });
+  });
+
+  test("a change made while the last is still being filled carries on from it", async () => {
+    const triple = { name: "triple", type: "number" as const, computed: formula("(* n 3)") };
+    const first: TableSchema = { fields: [field("name"), { ...field("level"), type: "date" as const }, ...without("name", "level", "flag"), triple] };
+    const then: TableSchema = { fields: [...first.fields.filter((f) => f.name !== "when"), { name: "flag2", type: "string" }] };
+    await changedInPlace("changed twice", first, { seed: 37, edits: true, then, search: "later" });
+  });
+
+  test("a field removed is gone from rows read and saved, its values kept hidden in the rows", async () => {
+    const db = driver();
+    const rows = makeRows(41, 300);
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    const gone: TableSchema = { fields: without("name") };
+    assert.equal(await alterIndex(db, "t", schema, gone), true);
+    while (await fillIndex(db, "t", gone, 64)) {
+      // To the end.
+    }
+    const held = async () => (await db.all("select count(*) as n from r1 where json_type(j, '$.name') is not null"))[0]!.n as number;
+    assert.equal(await held(), rows.filter((r) => "name" in r).length, "kept in the rows' JSON");
+    // Read without it.
+    const read = await (await queryIndex(db, { name: "t", schema: gone }))!.rows(0, 300);
+    assert.equal(read.filter((r) => "name" in r).length, 0);
+    // Saved without it.
+    let text = "";
+    for await (const piece of storedRows(db, { name: "t", schema: gone })) text += piece;
+    assert.equal(text.split("\n").filter((l) => l.includes('"name":')).length, 0);
+    assert.equal(text.split("\n").filter(Boolean).length, 300);
+    // A row removed is given back whole, so put back (undo) it's as it was, its hidden value with it.
+    const named = rows.filter((r) => typeof r.name === "string").at(-1)!;
+    const [back] = await removeRows(db, { name: "t", schema: gone, ids: [named.id], key: "k2" });
+    assert.equal(back!.row.name, named.name);
+    // A row edited meanwhile keeps its hidden value (the app's row hasn't got it).
+    const edited = rows.filter((r) => typeof r.name === "string")[0]!;
+    const { name: _, ...shown } = edited;
+    await putRows(db, { name: "t", schema: gone, rows: [{ ...shown, n: 12345 }], key: "k3" });
+    assert.equal((await held()) , rows.filter((r) => "name" in r).length - 1, "only the removed row's has gone");
+  });
+
+  test("a field removed and then restored (undo) comes back with its values; a new field of its name starts empty", async () => {
+    const rows = makeRows(43, 300);
+    const named = rows.filter((r) => typeof r.name === "string");
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    // Removed, and a formula added while it's hidden: the fill writes every row's JSON again.
+    const triple = { name: "triple", type: "number" as const, computed: formula("(* n 3)") };
+    const gone: TableSchema = { fields: [...without("name"), triple] };
+    const whole: TableSchema = { fields: [...schema.fields, triple] };
+    assert.equal(await alterIndex(db, "t", schema, gone), true);
+    while (await fillIndex(db, "t", gone, 64)) {
+      // To the end.
+    }
+    // An edit to another field meanwhile, on a row with a name.
+    const { name: _, ...shown } = named[0]!;
+    await putRows(db, { name: "t", schema: gone, rows: [{ ...shown, n: 777 }], key: "k2" });
+    // Undo: the field comes back where it was, with its values.
+    assert.equal(await alterIndex(db, "t", gone, whole, { restore: ["name"] }), true);
+    while (await fillIndex(db, "t", whole, 64)) {
+      // To the end.
+    }
+    const now = rows.map((r) => (r.id === named[0]!.id ? { ...r, n: 777 } : r));
+    const fresh = driver();
+    await buildIndex(fresh, { name: "t", schema: whole, rows: now, key: "z" });
+    for (const query of [{}, { sort: [{ field: "name", direction: "asc" as const }] }, { filter: [{ field: "name", operator: "contains" as const, value: "a" }] }, { search: "apple" }]) {
+      const mine = await queryIndex(db, { name: "t", schema: whole, query });
+      const theirs = await queryIndex(fresh, { name: "t", schema: whole, query });
+      assert.equal(mine === null, theirs === null, JSON.stringify(query));
+      if (mine) assert.deepEqual(await mine.rows(0, 300), await theirs!.rows(0, 300), JSON.stringify(query));
+    }
+    // Removed again, and a new field takes the name: it starts empty.
+    assert.equal(await alterIndex(db, "t", whole, gone), true);
+    const renamed: TableSchema = { fields: [...gone.fields, { name: "name", type: "string" }] };
+    assert.equal(await alterIndex(db, "t", gone, renamed), true);
+    while (await fillIndex(db, "t", renamed, 64)) {
+      // To the end.
+    }
+    const read = await (await queryIndex(db, { name: "t", schema: renamed }))!.rows(0, 300);
+    assert.equal(read.filter((r) => "name" in r).length, 0, "a new field holds nothing");
+    assert.equal((await db.all("select count(*) as n from r1 where json_type(j, '$.name') is not null"))[0]!.n, 0);
+  });
+
+  test("a fill writes a batch of rows in one statement, not one a row", async () => {
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows: makeRows(42, 300), key: "k" });
+    const to: TableSchema = { fields: [...schema.fields, { name: "triple", type: "number", computed: formula("(* n 3)") }] };
+    assert.equal(await alterIndex(db, "t", schema, to), true);
+    // Every statement the fill sends, whichever way it's sent.
+    let updates = 0;
+    const counted: SqlDriver = {
+      exec: (sql) => db.exec(sql),
+      run: (sql, params) => ((updates += /^\s*update r/i.test(sql) ? 1 : 0), db.run(sql, params)),
+      all: (sql, params) => db.all(sql, params),
+      ...(db.batch ? { batch: (sql: string, lists: SqlValue[][]) => ((updates += /^\s*update r/i.test(sql) ? lists.length : 0), db.batch!(sql, lists)) } : {}),
+    };
+    let steps = 0;
+    while (await fillIndex(counted, "t", to, 64)) steps++;
+    assert.equal(steps, 5);
+    assert.equal(updates, 5, "one update a batch of 64 rows");
+    // And it is filled: sorted by the index, as a build gives.
+    assert.ok(await queryIndex(db, { name: "t", schema: to, query: { sort: [{ field: "triple", direction: "asc" }] } }));
+  });
+
+  test("a build drops a fill left under way: its fields are counted as the build found them", async () => {
+    const rows = Array.from({ length: 300 }, (_, i) => ({ id: `r${i}`, n: i, ...(i === 5 ? { note: 4 } : {}) })) as Row[];
+    const to: TableSchema = { fields: [...schema.fields, { name: "note", type: "string" }] };
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    assert.equal(await alterIndex(db, "t", schema, to), true);
+    // Built again before the fill was done (as an app that couldn't change it in place does).
+    await buildIndex(db, { name: "t", schema: to, rows, key: "k2" });
+    assert.equal(await indexFilling(db, "t"), false);
+    while (await fillIndex(db, "t", to, 64)) {
+      // Nothing left to fill.
+    }
+    // Row 5's note is a number: the index doesn't promise the field.
+    assert.equal(await queryIndex(db, { name: "t", schema: to, query: { sort: [{ field: "note", direction: "asc" }] } }), null);
+  });
+
+  test("a change it can't make in place says so, and the index is left as it was", async () => {
+    const db = driver();
+    const rows = makeRows(38, 50);
+    await buildIndex(db, { name: "t", schema, rows, key: "k" });
+    const added: TableSchema = { fields: [...schema.fields, { name: "x", type: "string" }] };
+    // Not the schema it was built for.
+    assert.equal(await alterIndex(db, "t", added, schema), false);
+    // A formula over other rows.
+    const across: TableSchema = { fields: [...schema.fields, { name: "rank", type: "number", computed: formula("(sum (values n))") }] };
+    assert.equal(await alterIndex(db, "t", schema, across), false);
+    assert.equal(await alterIndex(driver(), "t", schema, added), false, "no index");
+    assert.equal((await queryIndex(db, { name: "t", schema }))?.count, 50);
   });
 }

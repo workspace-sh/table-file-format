@@ -15,7 +15,8 @@ import type { Field, TableSchema } from "./types.js";
 /** The ISO 4217 code a field's own format names, if it names one. */
 export function currencyOf(field: Pick<Field, "format"> | undefined): string | undefined {
   const f = field?.format;
-  return f?.startsWith("currency:") ? f.slice("currency:".length).toUpperCase() : undefined;
+  // `currency:USD:parens` is still dollars: `:parens` says only how a negative looks (D53).
+  return f?.startsWith("currency:") ? f.slice("currency:".length).split(":")[0]!.toUpperCase() : undefined;
 }
 
 /**

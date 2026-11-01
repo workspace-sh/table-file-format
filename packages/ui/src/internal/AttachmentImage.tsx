@@ -7,16 +7,8 @@
  */
 import { html } from "react-strict-dom";
 import { SvgUri } from "react-native-svg";
-
-export interface AttachmentImageProps {
-  src: string;
-  /** The attachment's file name, which says whether it's an SVG. */
-  name: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  style?: any;
-  /** How it fills its box: cropped to cover it, or whole within it. */
-  fit: "cover" | "contain";
-}
+import type { AttachmentImageProps } from "./AttachmentImage.types";
+export type { AttachmentImageProps } from "./AttachmentImage.types";
 
 export function AttachmentImage({ src, name, style, fit }: AttachmentImageProps) {
   if (!/\.svg$/i.test(name)) return <html.img src={src} alt="" style={style} />;

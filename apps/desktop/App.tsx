@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { ScrollView } from "react-native";
+import { ScrollView, Settings } from "react-native";
 // Gesture handler root view enables RNGH's native gesture recognizers
 // for the entire subtree. Required once per app at the root.
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
-import { newId, textDirection } from "@workspace.sh/table-core";
-import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, TABLE_TYPES, filesOfFolder, newId, newViewId, textDirection } from "@workspace.sh/table-core";
+import type { BundleMeta, Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
   BoardView,
@@ -20,6 +20,8 @@ import {
   DisplaySettingsProvider,
   type DisplaySettings,
   PageGutter,
+  PageScrollContext,
+  pageScrollOver,
   notifyLayoutChanged,
   PageReveal,
   type PageRevealRect,
@@ -33,45 +35,78 @@ import type { DisplaySettingKind, PlaceMeasure } from "@workspace.sh/table-ui/sh
 import { useGlassEditor } from "@workspace.sh/glass-bar";
 import { inspectorStore } from "./inspectorStore";
 import { windowControls } from "./Inspector";
-import { watchRowMenus } from "./MacControls";
-import { cancelSettingsForm, dismissSettingsForm, onSettingsFormEvent, settingsFormJson, settingsFormShown } from "./MacSettings";
-import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
-import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendAppSettings, sendSettingsForm, setAppSettings, setInspectorCell, setInspectorShown, setSidebar, showAppSettings, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
 import {
+  cancelSettingsForm,
+  datePickerClose,
+  datePickerSet,
+  datePickerShown,
+  dismissSettingsForm,
+  onSettingsFormEvent,
+  popUpChoose,
+  popUpTitles,
+  setSettingsTransport,
+  settingsFormJson,
+  settingsFormShown,
+  watchRowMenus,
+} from "@workspace.sh/table-mac-controls";
+import { formulaEditorJson, onFormulaEditorEvent, useMacFormulaEditor } from "./MacFormulaEditor";
+import { driveFormulaEditor, onSidebar, pickInSidebar, pressInspectorCell, sendAppSettings, sendSettingsForm, setAppSettings, setInspectorCell, setInspectorShown, setSettingsForm, setSidebar, showAppSettings, toggleNativeSidebar, type InspectorCell } from "./nativeSidebar";
+
+// Settings forms go to this window's own inspector (TableShell.swift), and what's done in them
+// comes back with the sidebar's events (onSettingsFormEvent, below).
+setSettingsTransport({ setForm: setSettingsForm, setShown: setInspectorShown });
+import {
+  ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  HISTORY_KEY,
+  appendFolderHistory,
+  appendStoredHistory,
+  clearStoredHistory,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   SIDEBAR_KEY,
   STORAGE_KEY,
   TOOLBAR_HINTS,
   appCommands,
-  archiveFileName,
+  singleFileName,
+  asStored,
   attachmentAt,
   attachmentName,
   bundleOf,
   bundleTables,
   bundleToArchive,
   clearSaved,
+  closedIn,
   derive,
   displayChoices,
   exportFailedText,
   fileText,
   flattenFilesTree,
+  forgetStoredHistories,
   fromBundle,
   hintWithShortcut,
+  ingestingText,
+  isSpreadsheetFile,
   initialAppState,
   loadArrangements,
   loadDisplay,
   loadSaved,
   loadSidebarPrefs,
-  openArchive,
   openFailedText,
+  openSpreadsheet,
+  readingText,
   rowTitleFor,
   save,
   schemaVersions,
+  spreadsheetText,
   tableNameOf,
   toBundle,
+  tooLargeToArchiveText,
   viewCallbacks,
   withNewFixtures,
+  savedFrom,
   type AppCommand,
   type AppAction,
   type AppCommandId,
@@ -81,18 +116,21 @@ import {
   type Making,
   type NamePrompt,
   type SheetGridShown,
+  sheetReaders,
 } from "@workspace.sh/table-app";
 import { isSheet } from "@workspace.sh/table-core";
 import { openStore } from "./nativeStore";
 import { checkFs } from "./fsCheck";
-import { OPENED_KEY, reopenFolders, useFolders } from "./folders";
-import { useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
-import { chooseFile, chooseFolder, choosePath } from "./panels";
+import { LARGE_KEY, OPENED_KEY, reopenFolders, useFolders, type OpenedDocuments } from "./folders";
+import { useFolderHistories, useIndexedTables, useSearchBehind, useTableApp, type TableAppAdapter } from "@workspace.sh/table-app/react";
+import { bundleDir, openIndexDatabase, openZip, removeAllFolders, removeFolder } from "./indexHost";
+import { chooseFile, choosePath } from "./panels";
 import { readBytes, writeBytes } from "./bytes";
+import { EmbedTest } from "./EmbedTest";
 import { desktopFs } from "./desktopFs";
 import { FileSystem } from "react-native-file-access";
-import { joinPath } from "@workspace.sh/table-core/io";
-import { chooseMenuItem, copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, datePickerClose, datePickerSet, datePickerShown, popUpChoose, popUpTitles, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setUndo, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
+import { joinPath, writeBundleTo } from "@workspace.sh/table-core/io";
+import { chooseMenuItem, copyText, firstResponder, focusSearch, menuTitles, onMenu, onQuit, onSearch, postClick, postCommand, postKey, postSearch, pressAlertButton, postRightClick, postScroll, adoptToolbarInsets, setSearchText, setToolbarFilesMode, setToolbarLabel, toolbarInset, setUnsaved, setMenuItem, setUndo, setWindowTitle, setWindowWidth as resizeWindow } from "./menu";
 import { attachmentUrl } from "./attachments";
 import { fixtureAttachments } from "@workspace.sh/table-fixtures/native-attachments";
 import { FileView } from "./FileView";
@@ -107,6 +145,8 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
+/** The examples as the app ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: bundleMetas };
 /** The content's side margin, which what scrolls sideways runs over (PageGutter). */
 const CONTENT_GUTTER = 24;
 /** The line under the toolbar that "how far down" is measured at, in window points. */
@@ -183,6 +223,13 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
+  },
+  // What's said in place of a large table's rows, or above them while they're read.
+  indexedNote: {
+    fontSize: 12,
+    opacity: 0.7,
+    paddingBlock: 8,
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
   validityOk: {
     // Hinted's span doesn't take the line's size on native, so it's said here.
@@ -278,36 +325,48 @@ const styles = css.create({
   },
 });
 
+// Every editing callback is optional: a large table still being read into its index is shown with none.
 interface ViewCallbacks {
-  onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
-  onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
-  onAddEnumValue: (fieldName: string, value: string) => void;
+  onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
+  onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  onRenameField?: (fieldName: string, to: string) => void;
+  onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice, or a field: table-app asks first when rows hold it. */
-  onRemoveEnumValue: (fieldName: string, value: string) => void;
-  onDeleteField: (fieldName: string) => void;
+  onRemoveEnumValue?: (fieldName: string, value: string) => void;
+  onDeleteField?: (fieldName: string) => void;
   /** Where you are in the table, for history (the cell selected), and putting it back. */
   onPlace?: (place: { rowId?: string; field?: string }) => void;
   restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
   onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
-  onMoveField: (fieldName: string, delta: -1 | 1) => void;
+  onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
+  onAddField?: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
   /** Opens a table's new-field editor each time it changes: File › New Field and the toolbar's "+". */
   newFieldRequest?: number;
-  onAddRow: () => string | void;
-  onDeleteRow: (rowId: string) => void;
-  onOpenBody: (rowId: string) => void;
-  onUpdateView: (patch: Partial<View>) => void;
+  onAddRow?: () => string | void;
+  onDeleteRow?: (rowId: string) => void;
+  onOpenBody?: (rowId: string) => void;
+  onUpdateView?: (patch: Partial<View>) => void;
   relatedTables: Record<string, ParsedTable>;
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  cells?: import("@workspace.sh/table-core").CellFormula[];
+  onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
+  onAskMerge?: (rowId: string, field: string) => void;
+  onUnmerge?: (rowId: string, field: string) => void;
+  onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: SheetGridShown;
+  /** A large table's rows, from its index (useIndexedTables): the view reads a window of them at a time. */
+  source?: ViewRows;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
   onAttachFile?: (rowId: string, fieldName: string) => void;
 }
+
+const NO_ROWS: Row[] = [];
 
 function renderView(
   view: View,
@@ -341,7 +400,14 @@ function renderView(
           {...common}
           onUpdateView={cb.onUpdateView}
           onUpdateRow={cb.onUpdateRow}
+          cells={cb.cells}
+          onSetCellFormula={cb.onSetCellFormula}
+          onSetIteration={cb.onSetIteration}
+          onAskMerge={cb.onAskMerge}
+          onUnmerge={cb.onUnmerge}
+          onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
@@ -358,6 +424,7 @@ function renderView(
           allRows={cb.allRows}
           tableKey={cb.tableKey}
           sheet={cb.sheet}
+          source={cb.source}
           onInsertRow={cb.onInsertRow}
           onAttachFile={cb.onAttachFile}
         />
@@ -403,7 +470,7 @@ function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () =>
       { text: prompt.action, onPress: (value) => then(value ?? "") },
     ],
     "plain-text",
-    [{ placeholder: prompt.placeholder }],
+    [{ placeholder: prompt.placeholder, ...(prompt.value ? { default: prompt.value } : {}) }],
   );
 }
 
@@ -414,18 +481,18 @@ function askName(prompt: NamePrompt, then: (name: string) => void, cancel: () =>
  * from a local database and the disk).
  */
 export default function App() {
-  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: Library } | undefined>(undefined);
+  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; folders: OpenedDocuments } | undefined>(undefined);
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved.
-    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, DISPLAY_KEY, SIDEBAR_KEY])
+    void openStore([STORAGE_KEY, ARRANGEMENTS_KEY, OPENED_KEY, LARGE_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, folders: await reopenFolders(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
   }, []);
-  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders} />;
+  return loaded === undefined ? null : <TableApp store={loaded.store} reopened={loaded.folders.library} documents={loaded.folders.documents} first={loaded.folders.first} />;
 }
 
-function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: Library }) {
+function TableApp({ store, reopened, documents, first }: { store: KeyValueStore | null; reopened: Library; documents: Map<string, string>; first: Record<string, Row[]> }) {
   // Everything the app holds is table-app's state (docs/APP-STATE.md): what
   // was saved, or the fixtures when nothing usable was (fixture tables
   // added since the last save still appear), the folders opened last time,
@@ -435,28 +502,68 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // Edited bundles are written a moment after the last edit: an opened
   // folder's back to the folder (folders.ts), the rest to this Mac's store.
   const writeRef = useRef<TableAppAdapter["write"]>(async () => {});
+  // Read a folder table's history again once it's been added to (useFolderHistories, below).
+  const rereadHistory = useRef<(key: string) => void>(() => {});
+  // The large tables' save, set once their hook is made below.
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
+  // A single file's working folder packed back into it after a write (folders.ts), set once its hook is made below.
+  const packDocuments = useRef<(bundles: string[]) => Promise<void>>(async () => {});
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: bundleMetas };
       const saved = loadSaved(store);
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const s = initialAppState({
         tables: { ...initial.tables, ...reopened.tables },
         bundles: { ...initial.bundles, ...reopened.bundles },
         opened: reopened.paths,
+        ...(reopened.singleFiles ? { singleFiles: reopened.singleFiles } : {}),
         stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+        // Each edit goes to its table's history (SPEC section 14).
+        writesHistory: true,
       });
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    { store, write: (...args) => writeRef.current(...args), delayMs: WRITE_AFTER_MS },
+    {
+      store,
+      write: (...args) => writeRef.current(...args),
+      // What was edited, added to the table's history: in its folder for one opened from disk or
+      // a large table's (each bundle a folder), else in this Mac's store beside the table.
+      appendHistory: async (key, events) => {
+        const now = stateRef.current;
+        const bundle = bundleOf(key);
+        const folder = now.opened[bundle] ?? (now.tables[key]?.indexed ? bundleDir(bundle) : undefined);
+        if (folder) {
+          await appendFolderHistory(desktopFs, joinPath(folder, BundleEntry.tables, tableNameOf(key)), events);
+          await packDocuments.current([bundle]);
+          rereadHistory.current(key);
+          return;
+        }
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
+      },
+      delayMs: WRITE_AFTER_MS,
+    },
     systemLocale,
   );
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs, opened: folderPaths } = state;
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Development only: table embeds over a folder (EmbedTest.tsx), opened by the development hook.
+  const [embedTest, setEmbedTest] = useState<string | null>(null);
+  // `-open crm/deals#pipeline` on the command line: the table, and optionally
+  // the view, shown first, as the Linux app's `--open`. The system reads a
+  // launch argument as a default of that name.
+  useEffect(() => {
+    const open: unknown = Settings.get("open");
+    if (typeof open !== "string" || !open) return;
+    const [key, viewId] = open.split("#");
+    if (!key || !stateRef.current.tables[key]) return;
+    dispatch(viewId ? { type: "showView", key, viewId } : { type: "showTable", key });
+  }, [dispatch]);
   const showProblem = useCallback((title: string, message: string) => Alert.alert(title, message), []);
-  const folders = useFolders({ store, bundles, paths: folderPaths });
+  const folders = useFolders({ store, bundles, paths: folderPaths, documents });
+  packDocuments.current = folders.pack;
   // A quit that couldn't write: the next quits whatever happens, until a write succeeds.
   const quitFailed = useRef(false);
   // A write that failed: said once, with Try Again, which writes what's left now.
@@ -482,15 +589,37 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       }),
     [flush],
   );
-  // The fixtures themselves are never saved, so an untouched app keeps
-  // following them as they change; an opened folder's tables live in the folder.
-  writeRef.current = async (edited, all, metas) => {
+  // An example is saved only once it's edited, so the app follows the examples
+  // as they change until then; an opened folder's tables live in the folder.
+  writeRef.current = async (edited, all, metas, closed) => {
     const opened = new Set(Object.keys(stateRef.current.opened));
-    save(store, {
-      tables: Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
-      bundles: Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
-    });
+    // A table held in the index has no rows here: only what's left of it is kept in this store.
+    // An example is kept only once it's edited (savedFrom).
+    save(
+      store,
+      savedFrom(
+        Object.fromEntries(Object.entries(all).filter(([key]) => !opened.has(bundleOf(key)))),
+        Object.fromEntries(Object.entries(metas).filter(([key]) => !opened.has(key))),
+        closed,
+        EXAMPLES,
+      ),
+    );
+    // A file closed: its history kept here and a large table's folder go (an opened folder stays on disk).
+    for (const bundle of closedIn(edited, metas)) {
+      forgetStoredHistories(store, bundle);
+      await removeFolder(bundle);
+      // And a large single file's stamp beside its folder (folders.ts).
+      await desktopFs.remove(`${bundleDir(bundle)}.stamp`);
+    }
     await folders.write(edited.filter((b) => opened.has(b)), all, metas);
+    // A large table's rows, to the file beside its index; and the rest of a bundle kept as a
+    // folder for one (its index's), so the folder is the whole .table. The writer leaves an
+    // indexed table's rows file to the index.
+    await saveIndexed.current(all);
+    // An opened single file holding a large table: its rows, saved above, packed back into it too.
+    await folders.pack([...new Set(Object.entries(all).flatMap(([key, table]) => (table.indexed && opened.has(bundleOf(key)) ? [bundleOf(key)] : [])))]);
+    const kept = new Set(Object.entries(all).flatMap(([key, table]) => (table.indexed && !opened.has(bundleOf(key)) ? [bundleOf(key)] : [])));
+    for (const bundle of kept) await writeBundleTo(desktopFs, bundleDir(bundle), toBundle(all, metas, bundle));
   };
   // What reading last time's folders found wrong, once.
   useEffect(() => {
@@ -511,7 +640,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     }
     ask(asking.confirm, (response) => {
       // Starting again from the examples: what this Mac saved goes too; opened folders stay.
-      if (asking.on.type === "reset" && response === "reset") clearSaved(store);
+      if (asking.on.type === "reset" && response === "reset") {
+        clearSaved(store);
+        clearStoredHistory(store);
+        // The folders this Mac kept for large tables go with it.
+        void removeAllFolders().catch(() => {});
+      }
       dispatch({ type: "answer", response });
     });
   }, [state.asking, store]);
@@ -524,46 +658,97 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
 
   // Export: the shown table's whole bundle as a real .table.zip (D27, D37),
   // so the tables it links together travel together. `path` skips the panel.
+  // What reading an archive gave: its large tables' first rows, held for showing meanwhile.
+  const holdFirst = useRef<(first: Record<string, Row[]>) => void>(() => {});
+  // Every row of a large table, from its index (set once the hook is made below).
+  const everyRow = useRef<(key: string, table: ParsedTable) => Promise<Row[]>>(async () => []);
   const exportZip = useCallback(
     async (path?: string) => {
       const bundle = bundleOf(activeTablePath);
-      const where = path ?? (await choosePath("Export as a .table.zip", archiveFileName(bundle)));
+      const where = path ?? (await choosePath("Export as a .table.zip", singleFileName(bundle)));
       if (!where) return;
       try {
-        await writeBytes(where, await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
+        // A table held in the index has its rows read out of it for the archive, which is made in
+        // memory; one too large for that is refused, since an archive without its rows is no copy.
+        const whole = { ...tables };
+        for (const [key, held] of Object.entries(tables)) {
+          if (bundleOf(key) !== bundle || !held.indexed) continue;
+          if (held.indexed.count > ARCHIVE_ROWS) {
+            const { heading, body } = tooLargeToArchiveText(tableNameOf(key), held.indexed.count);
+            return dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
+          }
+          const { indexed: _index, ...rest } = held;
+          whole[key] = { ...rest, rows: await everyRow.current(key, held) };
+        }
+        // Each table's history goes with it, everything written so far included (SPEC section 14):
+        // from its folder for one opened from disk or a large table's, else from this Mac's store.
+        await flush();
+        const now = stateRef.current;
+        const going = await withHistories(whole, async (key) => {
+          const folder = now.opened[bundleOf(key)] ?? (now.tables[key]?.indexed ? bundleDir(bundleOf(key)) : undefined);
+          if (folder) return (await desktopFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
+          return (store && storedHistory(store, key)) || undefined;
+        });
+        // An opened document's attachments, and files no reader knows, go with it (SPEC section 13).
+        const folder = now.opened[bundle];
+        const files = folder ? await filesOfFolder(desktopFs, folder) : {};
+        if (files[".gitignore"] && new TextDecoder().decode(files[".gitignore"]).trim() === "index.sqlite*") delete files[".gitignore"];
+        await writeBytes(where, await bundleToArchive(bundle, { ...toBundle(going, bundles, bundle), files }));
       } catch (error) {
-        dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+        dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       }
     },
-    [activeTablePath, tables, bundles],
+    [activeTablePath, tables, bundles, flush, store],
   );
   // Import: a .table.zip becomes one more bundle here, saying what the reader
-  // skipped (D25). Only a file with no table in it is refused. `path` skips the panel.
+  // skipped (D25). Only a file with no table in it is refused. A spreadsheet
+  // someone already has (CSV, TSV and the like) becomes a new .table file.
+  // `path` skips the panel.
   const importZip = useCallback(async (path?: string) => {
-    const where = path ?? (await chooseFile("Open a .table.zip", ["zip"]));
+    const where = path ?? (await chooseFile("Open a .table.zip or a spreadsheet", ["zip", "csv", "tsv", "tab", "txt"]));
     if (!where) return;
+    const name = where.split("/").pop() ?? where;
+    if (isSpreadsheetFile(name)) {
+      try {
+        const opened = openSpreadsheet(spreadsheetText(await readBytes(where)), name, Object.keys(stateRef.current.bundles));
+        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        dispatch({ type: "opened", library, skipped: opened.skipped });
+      } catch (error) {
+        dispatch({ type: "tell", message: { heading: openFailedText(name, error) } });
+      }
+      return;
+    }
     try {
-      const opened = await openArchive(await readBytes(where), Object.keys(stateRef.current.bundles));
-      const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      // A large table in it stays compressed on its way into its index (indexHost.ts): it comes
+      // with no rows, and its first rows beside it to show meanwhile.
+      const { opened, first } = await openZip(await readBytes(where), Object.keys(stateRef.current.bundles));
+      // An arrived table's history is kept in this Mac's store for a table kept there; a large
+      // table's goes into its folder with the rest of it.
+      const arrived = fromBundle(opened.key, opened.bundle);
+      const stored = Object.fromEntries(Object.entries(arrived).filter(([, table]) => !table.indexed));
+      const library = { tables: { ...arrived, ...keepArrivedHistories(store, stored) }, bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      holdFirst.current(Object.fromEntries(Object.entries(first).map(([table, rows]) => [`${opened.key}/${table}`, rows])));
       dispatch({ type: "opened", library, skipped: opened.skipped });
     } catch (error) {
       dispatch({ type: "tell", message: { heading: openFailedText(where.split("/").pop() ?? where, error) } });
     }
   }, []);
 
-  // Open a .table folder and show its first table; one already open is shown again.
+  // Open a .table (a folder or a single file) and show its first table; one already open is shown again.
   const openFolder = useCallback(
     async (path: string | null) => {
       if (!path) return;
       const { opened, tables: held } = stateRef.current;
-      const heldKey = Object.entries(opened).find(([, p]) => p === path)?.[0];
+      const heldKey = Object.entries(opened).find(([, p]) => folders.documentOf(p) === path)?.[0];
       if (heldKey) {
         const first = Object.keys(held).find((t) => bundleOf(t) === heldKey);
         if (first) dispatch({ type: "showTable", key: first });
         return;
       }
-      const library = await folders.open([path]);
+      const { library, first } = await folders.open([path]);
       for (const [key, messages] of Object.entries(library.problems)) showProblem(`Problems reading ${key}.table`, messages.join("\n"));
+      // A large table's first rows, shown while the rest is read into the index (folders.ts).
+      holdFirst.current(first);
       if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
     },
     [folders, showProblem],
@@ -577,7 +762,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // over the table as the web has. Sent whenever they change.
   useEffect(() => {
     setAppSettings(
-      displayChoices(display, systemLocale, "System").map((c) => ({
+      displayChoices(display, systemLocale, "System", state.active || undefined).map((c) => ({
         id: c.kind,
         name: c.name,
         note: c.note ?? c.label,
@@ -585,7 +770,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         options: c.options,
       })),
     );
-  }, [display, systemLocale]);
+  }, [display, systemLocale, state.active]);
   // The sidebar hidden, kept with the other sidebar prefs as the web keeps it.
   const sidebarCollapsed = sidebarPrefs.collapsed === true;
   // The sidebar is the window's own (nativeSidebar): the split view shows,
@@ -626,17 +811,52 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   );
   // A folder opened from disk goes by its own name.
   const folderName = (bundle: string) => folderPaths[bundle]?.split("/").pop();
-  const derived = derive(state, { locale: systemLocale, attachmentsOf, fileNameOf: folderName });
+  // Tables held in the index (large ones): read, edited and saved there, as on the phone.
+  const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
+  saveIndexed.current = indexed.save;
+  holdFirst.current = indexed.hold;
+  // The first rows of large documents reopened at launch, shown while the rest is read (folders.ts).
+  useEffect(() => {
+    indexed.hold(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  everyRow.current = indexed.everyRow;
+  // A table's folder, where its history is: one opened from disk, or a large table's.
+  const historyFolder = (key: string): string | undefined =>
+    state.opened[bundleOf(key)] ?? (state.tables[key]?.indexed ? bundleDir(bundleOf(key)) : undefined);
+  // The folder tables' histories, read so the Files side can show them as it draws.
+  const folderHistories = useFolderHistories(
+    Object.keys(state.tables).filter((key) => historyFolder(key) !== undefined),
+    async (key) => {
+      const folder = historyFolder(key);
+      return folder ? ((await desktopFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined) : undefined;
+    },
+  );
+  rereadHistory.current = folderHistories.reread;
+  const historyText = (key: string): string | undefined =>
+    historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
+  const derived = derive(behind, {
+    locale: systemLocale,
+    attachmentsOf,
+    fileNameOf: folderName,
+    hasHistory: (key) => historyText(key) !== undefined,
+    ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
+  });
   const { table, view, summary, direction } = derived;
   // File › New Field, and the toolbar's "+": each one opens the table's new-field editor.
   const [newFieldAsk, setNewFieldAsk] = useState(0);
   const shownLayoutRef = useRef(view?.layout);
   shownLayoutRef.current = view?.layout;
+  // Which tables have a history: one gaining its first lists its history.ndjson.
+  const historied = Object.keys(tables).filter((key) => historyText(key) !== undefined).join("\n");
   const files = useMemo(
     () => derived.filesTree.map((b) => ({ ...b, name: folderPaths[b.bundle] ? `${folderName(b.bundle)}/` : b.name })),
     // derived.filesTree is made anew each render; it follows these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, state.openedDirs, attachmentsOf, folderPaths],
+    [filesMode, tables, bundles, sidebarPrefs.foldedFiles, activeTablePath, state.openedDirs, attachmentsOf, folderPaths, historied],
   );
   // The file shown from the Files side, in place of the view.
   const shownFile = filesMode ? state.shownFile : null;
@@ -652,7 +872,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     return {
       file,
       folder: `${bundle.name}${parts.slice(0, -1).map((p) => `${p}/`).join("")}`,
-      content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path),
+      content: attachment ? undefined : fileText(tables, bundles, shownFile.bundle, shownFile.path, historyText),
       url: attachment ? attachmentUrl(attachment.tableKey, attachment.name, folderPaths) : undefined,
     };
   }, [shownFile, files, tables, bundles, folderPaths]);
@@ -694,6 +914,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
   // survives rows drawn a window at a time), and put back on Back or Forward.
   const scroller = useRef<ScrollView>(null);
   const scrollY = useRef(0);
+  // The page's scroll, told to the table's rows: a large table's draws only those on screen.
+  const pageScroller = useMemo(() => pageScrollOver(scroller), []);
   // Where the scroll rests at its top: the system insets it under the
   // toolbar, so that is above zero by the toolbar's height.
   const restY = useRef(0);
@@ -727,7 +949,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       if (dy !== 0) scroller.current?.scrollTo({ y: Math.max(restY.current, scrollY.current + dy), animated: false });
     });
   }, []);
-  // A right-click on a row shows its menu (MacControls.tsx).
+  // A right-click on a row shows its menu (@workspace.sh/table-mac-controls).
   useEffect(() => watchRowMenus(), []);
   const restoringN = state.restoring?.n;
   useEffect(() => {
@@ -800,6 +1022,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
             personal: derived.arranged,
             onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
             onReset: () => dispatch({ type: "resetArrangement" }),
+            sheetReaders: sheetReaders(state.tables, state.active, settingsView),
             onDelete: viewCount > 1 ? () => dispatch({ type: "deleteView" }) : undefined,
             onClose: () => dispatch({ type: "settings", open: false }),
             onCancel: () => dispatch({ type: "settings", open: false, revert: true }),
@@ -905,7 +1128,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     // The toolbar's "+" is a menu of both.
     setToolbarLabel("new", "New");
     setToolbarLabel("view-settings", "View Settings");
-    setToolbarLabel("export-zip", commandOf("export-zip").label);
+    setToolbarLabel("export-zip", commandOf("export-file").label);
   }, [settingsOpen]);
   useEffect(() => setToolbarFilesMode(filesMode), [filesMode]);
   // The toolbar's search field: what's typed in it searches the view, and
@@ -923,9 +1146,14 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
     find: focusSearch,
     "reset-demo": () => dispatch({ type: "reset", fresh }),
     "new-file": () => dispatch({ type: "create", making: { kind: "file" } }),
-    "open-folder": () => void chooseFolder("Choose a .table folder to open").then(openFolder),
-    "open-zip": () => void importZip(),
-    "export-zip": () => void exportZip(),
+    // A .table in either form (the panel offers a folder one as one item, a package), or a
+    // spreadsheet someone already has, which becomes a new .table.
+    open: () =>
+      void chooseFile("Open a .table, or a spreadsheet to make one from", [TABLE_TYPES.folder, TABLE_TYPES.file, "csv", "tsv", "tab", "txt"]).then((path) => {
+        if (path && isSpreadsheetFile(path.split("/").pop() ?? path)) return importZip(path);
+        return openFolder(path);
+      }),
+    "export-file": () => void exportZip(),
     "toggle-sidebar": toggleSidebar,
     "tables-mode": () => chooseFilesMode(false),
     "files-mode": () => chooseFilesMode(true),
@@ -958,6 +1186,11 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       dispatch({ type: "answer", response: "create", text: title });
     };
     (globalThis as { __tableDesktop?: unknown }).__tableDesktop = {
+      // Table embeds over the `.table` folders in `folder` (EmbedTest.tsx); null closes it.
+      embedTest: (folder: string | null) => {
+        setEmbedTest(folder);
+        return folder ? `embeds over ${folder}` : "embeds closed";
+      },
       tables: () => Object.keys(stateRef.current.tables),
       show: (key: string, viewId?: string) => {
         if (!stateRef.current.tables[key]) return `no table ${key}`;
@@ -1012,7 +1245,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         return `importing ${path}`;
       },
       newView: () => {
-        dispatch({ type: "addView", id: newId() });
+        dispatch({ type: "addView", id: newViewId() });
         return "made view";
       },
       // Set display settings, as the Display controls will.
@@ -1020,6 +1253,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         dispatch({ type: "display", choice: { kind: "locale", value: next.locale ?? "" } });
         dispatch({ type: "display", choice: { kind: "dateFormat", value: next.dateFormat ?? "iso" } });
         dispatch({ type: "display", choice: { kind: "formulaSyntax", value: next.formulaSyntax ?? "excel" } });
+        dispatch({ type: "display", choice: { kind: "resizeHandles", value: next.resizeHandles ?? "pills" } });
         return "display set";
       },
       attachmentUrl: (key: string, file: string) => attachmentUrl(key, file, stateRef.current.opened) ?? null,
@@ -1138,6 +1372,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // The reset, as if Reset were chosen in its alert (the alert itself can't be pressed from a script).
       reset: () => {
         clearSaved(store);
+        clearStoredHistory(store);
         dispatch({ type: "reset", fresh });
         dispatch({ type: "answer", response: "reset" });
         return `reset; kept ${Object.keys(stateRef.current.opened).join(", ") || "no folders"}`;
@@ -1159,7 +1394,9 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
       // Forget saved edits, opened folders, arrangements and the sidebar's folds; the next launch starts from the fixtures.
       clearSaved: () => {
         clearSaved(store);
+        clearStoredHistory(store);
         store?.removeItem(OPENED_KEY);
+        store?.removeItem(LARGE_KEY);
         store?.removeItem(ARRANGEMENTS_KEY);
         store?.removeItem(SIDEBAR_KEY);
         return "saved edits, opened folders, arrangements and sidebar forgotten";
@@ -1188,7 +1425,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         if (e.type === "selectTable") dispatch({ type: "showTable", key: e.key });
         else if (e.type === "selectView") dispatch({ type: "showView", key: e.key, viewId: e.viewId });
         else if (e.type === "toggleFile") dispatch({ type: "toggleFile", bundle: e.bundle });
-        else if (e.type === "newView") dispatch({ type: "addView", id: newId() });
+        else if (e.type === "newView") dispatch({ type: "addView", id: newViewId() });
+        else if (e.type === "close") dispatch({ type: "close", bundle: e.bundle });
         else if (e.type === "newTable") dispatch({ type: "create", making: { kind: "table", bundle: bundleOf(activeRef.current) } });
         else if (e.type === "filesMode") chooseFilesMode(e.files);
         else if (e.type === "toggleDir") dispatch({ type: "toggleDir", id: `${e.bundle}/${e.path}`, open: e.open });
@@ -1211,6 +1449,8 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
 
   // The view's rows and a Sheet view's saved grid, worked out as on the web (table-app).
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
+  // The rows of a large table still being read, shown until its own view's rows are here.
+  const reading = view.layout === "table" && !indexed.source ? indexed.reading : undefined;
 
   return (
     <GestureHandlerRootView
@@ -1240,8 +1480,12 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
             <PageReveal.Provider value={pageReveal}>
             <ScrollView
               ref={scroller}
-              onScroll={(e) => onScrolled(e.nativeEvent.contentOffset.y)}
+              onScroll={(e) => {
+                onScrolled(e.nativeEvent.contentOffset.y);
+                pageScroller.onScroll(e);
+              }}
               scrollEventThrottle={16}
+              onContentSizeChange={pageScroller.onContentSizeChange}
               style={{ flex: 1, marginHorizontal: -CONTENT_GUTTER }}
               contentContainerStyle={{ paddingTop: 12, paddingBottom: 24, paddingHorizontal: CONTENT_GUTTER }}
               showsVerticalScrollIndicator
@@ -1250,15 +1494,27 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
               // that off). It is also what the system's scroll-edge effect
               // behind the toolbar needs. TODO(#383): the soft style; see
               // native/TablePanels/TableShell.swift.
-              onLayout={() => void adoptToolbarInsets()}
+              onLayout={(e) => {
+                void adoptToolbarInsets();
+                pageScroller.onLayout(e);
+              }}
             >
+              <PageScrollContext.Provider value={pageScroller.pageScroll}>
               <html.div style={styles.subtitle}>
-                <html.span>{summary.count}</html.span>
-                <html.span>·</html.span>
+                {/* While a large table is read, how far that has got is in the count's place, and nothing is said of its rows yet. */}
+                {indexed.building ? (
+                  <html.span>{readingText(indexed.building)}</html.span>
+                ) : (
+                  // A search of a large table takes a moment: the count waits for its rows.
+                  <html.span>{indexed.stale && state.search.trim().length > 0 ? "Searching…" : summary.count}</html.span>
+                )}
+                {!indexed.building && <html.span>·</html.span>}
                 {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
-                <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
-                  {summary.validity}
-                </Hinted>
+                {!indexed.building && (
+                  <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                    {summary.validity}
+                  </Hinted>
+                )}
                 {/* D22: schema-version is a "the schema changed" signal, not a format version. */}
                 {summary.schemaChanged && (
                   <>
@@ -1268,23 +1524,70 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
                     </Hinted>
                   </>
                 )}
+                {/* Its index couldn't be made: said here, on the table, not as an alert. */}
+                {summary.held && (
+                  <>
+                    <html.span>·</html.span>
+                    <Hinted hint={summary.held.hint} style={styles.schemaBumpBadge}>
+                      {summary.held.label}
+                    </Hinted>
+                  </>
+                )}
               </html.div>
 
               <CellEditorContext.Provider value={glass.editor}>
-              {renderView(shownView, visibleRows, table.schema, table.bodies, {
-                ...callbacks,
-                onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
-                restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
-                onPlaceMeasure,
-                relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
-                allRows: table.rows,
-                tableKey: tableNameOf(activeTablePath),
-                sheet,
-                onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
-                onAttachFile: attachFile,
-                newFieldRequest: newFieldAsk,
-              })}
+              {indexed.lost ? (
+                <html.span style={styles.indexedNote}>This table's rows are no longer on this Mac. Open its .table again to bring them back.</html.span>
+              ) : table.indexed && view.layout !== "table" ? (
+                <html.span style={styles.indexedNote}>This layout isn't shown for a table this large yet. Change the view's layout to Table in its settings.</html.span>
+              ) : table.indexed && !indexed.source && !reading ? null : (
+                // A large table shows its rows at once, as its file has them, and as many as
+                // have been read so far, while it is read into its index (LARGE-TABLES-PLAN,
+                // decision 1): to scroll through and look at. The view's own order, filters and
+                // groups, search and editing come with the index. One table view for both, so
+                // where you had scrolled to is where you still are when the reading is done.
+                <>
+                  {reading && <html.span style={styles.indexedNote}>{ingestingText(shownView)}</html.span>}
+                  {renderView(
+                    reading ? asStored(shownView) : shownView,
+                    reading ? NO_ROWS : visibleRows,
+                    table.schema,
+                    reading ? undefined : table.bodies,
+                    reading
+                      ? {
+                          source: reading,
+                          relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                          onOpenRelation: () => {},
+                          allRows: NO_ROWS,
+                          tableKey: tableNameOf(activeTablePath),
+                        }
+                      : {
+                          ...callbacks,
+                          onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
+                          restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
+                          onPlaceMeasure,
+                          relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                          allRows: table.rows,
+                          cells: table.cells,
+                          tableKey: tableNameOf(activeTablePath),
+                          sheet,
+                          onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
+                          onAttachFile: attachFile,
+                          newFieldRequest: newFieldAsk,
+                          ...(table.indexed
+                            ? {
+                                source: indexed.source,
+                                // Removing a choice takes it out of every row that holds it, which the index can't yet do in place.
+                                onRemoveEnumValue: undefined,
+                                onDeleteField: undefined,
+                              }
+                            : {}),
+                        },
+                  )}
+                </>
+              )}
               </CellEditorContext.Provider>
+              </PageScrollContext.Provider>
             </ScrollView>
             </PageReveal.Provider>
             </PageGutter.Provider>
@@ -1294,6 +1597,7 @@ function TableApp({ store, reopened }: { store: KeyValueStore | null; reopened: 
         </html.div>
         </DisplaySettingsProvider>
         </PlatformControlsProvider>
+        {__DEV__ && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
       </PortalHost>
       </AttachmentsProvider>
     </GestureHandlerRootView>

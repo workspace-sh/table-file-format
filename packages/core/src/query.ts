@@ -59,8 +59,13 @@ export function applyView(
   // results live only in the returned rows — never in parsed.rows.
   // `options.tables` lets lookups and linked rows reach other tables (D36),
   // and the table's own views let formulas read its Sheet views (D41).
-  let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...compute }).rows;
-  if (view.filter) rows = applyFilters(rows, view.filter);
+  let rows = computeRows(parsed.schema, parsed.rows, { views: parsed.views, ...(parsed.cells ? { cells: parsed.cells } : {}), ...(parsed.meta?.iteration ? { iteration: parsed.meta.iteration } : {}), ...compute }).rows;
+  if (view.filter) rows = applyFilters(rows, view.filter, parsed.schema);
+  // Rows hidden by hand (D58).
+  if (view.hidden && view.hidden.length > 0) {
+    const hidden = new Set(view.hidden);
+    rows = rows.filter((r) => !hidden.has(r.id));
+  }
   // Manual order takes precedence over sort. The user dragged things
   // into place; the view becomes manual-order until the order array is
   // cleared.

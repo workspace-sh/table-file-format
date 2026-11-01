@@ -49,7 +49,7 @@ test("a formula that reads other rows is worked out whole each time", () => {
   const sum = {
     fields: [
       { name: "amount", type: "number" },
-      { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: '(sum (column "amount"))' } },
+      { name: "total", type: "number", computed: { dialect: "table-expr-v1", expr: '(sum (values "amount"))' } },
     ],
   } as TableSchema;
   const data: Row[] = [{ id: "a", amount: 1 }, { id: "b", amount: 2 }];

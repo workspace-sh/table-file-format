@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
 import { bundles as fixtures } from "@workspace.sh/table-fixtures";
 
-import { derive, initialAppState, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
+import { derive, initialAppState, isEditable, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
 import { fromBundle } from "./bundles.ts";
 import { newView } from "./creating.ts";
 import { viewAddress } from "./history.ts";
@@ -35,18 +35,18 @@ const viewOf = (s: AppState) => viewIdOf(s, s.active);
 test("starts on the default table's first view, with its address recorded and its file unfolded", () => {
   const s = start({ stored: { sidebar: { foldedFiles: ["projects", "crm"] } } });
   assert.equal(s.active, "projects/projects");
-  assert.equal(viewOf(s), "v1");
-  assert.deepEqual(s.history.at, { address: viewAddress("projects/projects", "v1") });
+  assert.equal(viewOf(s), "juycicwios88m");
+  assert.deepEqual(s.history.at, { address: viewAddress("projects/projects", "juycicwios88m") });
   assert.deepEqual(s.sidebar.foldedFiles, ["crm"]);
   assert.deepEqual(s.dirty, []);
   assert.equal(s.asking, null);
 });
 
 test("starts at an address: its table, its view, and its row's page when it has one", () => {
-  const s = start({ start: viewAddress("projects/projects", "v4", "p10") });
+  const s = start({ start: viewAddress("projects/projects", "9d493f96hyaax", "ryumw55g4nqi7ytmzrudb7fyru") });
   assert.equal(s.active, "projects/projects");
-  assert.equal(viewOf(s), "v4");
-  assert.equal(s.openPage, "p10");
+  assert.equal(viewOf(s), "9d493f96hyaax");
+  assert.equal(s.openPage, "ryumw55g4nqi7ytmzrudb7fyru");
   assert.equal(start({ start: "nowhere.table#view=x" }).active, "projects/projects");
 });
 
@@ -59,17 +59,17 @@ test("the viewer's stored settings come in as they were", () => {
 // Where you are
 
 test("showTable shows the table on the view it was left on, and closes a page open elsewhere", () => {
-  let s = run(start(), { type: "showView", key: "crm/deals", viewId: "open" }, { type: "showTable", key: "projects/projects" });
-  s = run(s, { type: "openPage", rowId: "p10" }, { type: "showTable", key: "crm/deals" });
+  let s = run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }, { type: "showTable", key: "projects/projects" });
+  s = run(s, { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showTable", key: "crm/deals" });
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "open");
+  assert.equal(viewOf(s), "6wfiqak18zfgo");
   assert.equal(s.openPage, null);
 });
 
 test("choosing a view from the sidebar closes the page open, even in the same table", () => {
-  const s = run(start(), { type: "openPage", rowId: "p10" }, { type: "showView", key: "projects/projects", viewId: "v2" });
+  const s = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showView", key: "projects/projects", viewId: "mufe9nmjruiq5" });
   assert.equal(s.openPage, null);
-  const t = run(start(), { type: "openPage", rowId: "p10" }, { type: "showTable", key: "projects/projects" });
+  const t = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "showTable", key: "projects/projects" });
   assert.equal(t.openPage, null);
 });
 
@@ -80,9 +80,9 @@ test("showTable and showView ignore what isn't held", () => {
 });
 
 test("openPage opens a row of the table on screen, and null closes it", () => {
-  let s = run(start(), { type: "openPage", rowId: "p10" });
-  assert.equal(s.openPage, "p10");
-  assert.equal(tableApp(s, { type: "openPage", rowId: "t1" }), s, "a row that isn't in this table");
+  let s = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" });
+  assert.equal(s.openPage, "ryumw55g4nqi7ytmzrudb7fyru");
+  assert.equal(tableApp(s, { type: "openPage", rowId: "ytjc8tj8w8ftnbf9h86s5k9jfk" }), s, "a row that isn't in this table");
   s = run(s, { type: "openPage", rowId: null });
   assert.equal(s.openPage, null);
 });
@@ -90,11 +90,11 @@ test("openPage opens a row of the table on screen, and null closes it", () => {
 test("follow goes where an address leads, on the Tables side, opening the row's page when it has one", () => {
   const s = run(
     start({ stored: { sidebar: { files: true } } }),
-    { type: "follow", target: { key: "crm/deals", viewId: "all", openBody: "dl-1" } },
+    { type: "follow", target: { key: "crm/deals", viewId: "hnmryzi51j6jz", openBody: "jddy8scd44w9r1kqur3j4meoii" } },
   );
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "all");
-  assert.equal(s.openPage, "dl-1");
+  assert.equal(viewOf(s), "hnmryzi51j6jz");
+  assert.equal(s.openPage, "jddy8scd44w9r1kqur3j4meoii");
   assert.equal(s.sidebar.files, undefined);
 });
 
@@ -109,7 +109,7 @@ test("search and settings are set as asked", () => {
 test("leaving: another view or table clears the search and closes the settings", () => {
   const busy = run(start(), { type: "search", text: "ship" }, { type: "settings", open: true });
   for (const action of [
-    { type: "showView", key: "projects/projects", viewId: "v2" },
+    { type: "showView", key: "projects/projects", viewId: "mufe9nmjruiq5" },
     { type: "showTable", key: "crm/deals" },
     { type: "follow", target: { key: "crm/deals", openBody: null } },
   ] satisfies AppAction[]) {
@@ -121,7 +121,7 @@ test("leaving: another view or table clears the search and closes the settings",
 
 test("leaving: choosing the view already on screen keeps both", () => {
   const busy = run(start(), { type: "search", text: "ship" }, { type: "settings", open: true });
-  const s = run(busy, { type: "showView", key: "projects/projects", viewId: "v1" }, { type: "showTable", key: "projects/projects" });
+  const s = run(busy, { type: "showView", key: "projects/projects", viewId: "juycicwios88m" }, { type: "showTable", key: "projects/projects" });
   assert.equal(s.search, "ship");
   assert.equal(s.settingsOpen, true);
 });
@@ -162,15 +162,15 @@ test("history: each view shown is recorded once, and back and forward walk it", 
     start(),
     { type: "showTable", key: "crm/deals" },
     { type: "showTable", key: "crm/deals" },
-    { type: "showView", key: "crm/deals", viewId: "open" },
+    { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" },
   );
-  assert.deepEqual(s.history.back.map((e) => e.address), [viewAddress("projects/projects", "v1"), viewAddress("crm/deals", "pipeline")]);
+  assert.deepEqual(s.history.back.map((e) => e.address), [viewAddress("projects/projects", "juycicwios88m"), viewAddress("crm/deals", "6dc54nqbzhf64")]);
   s = run(s, { type: "back" }, { type: "back" });
   assert.equal(s.active, "projects/projects");
   assert.equal(derive(s).canGoBack, false);
   assert.equal(derive(s).canGoForward, true);
   s = run(s, { type: "forward" });
-  assert.equal(viewOf(s), "pipeline");
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
 });
 
 test("history: back with nowhere to go changes nothing", () => {
@@ -180,18 +180,18 @@ test("history: back with nowhere to go changes nothing", () => {
 });
 
 test("history: back skips a view deleted since, and opens again the page it was left with", () => {
-  let s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "dl-1" }, { type: "showTable", key: "projects/projects" });
+  let s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "jddy8scd44w9r1kqur3j4meoii" }, { type: "showTable", key: "projects/projects" });
   s = run(s, { type: "addView", id: "gone" }, { type: "deleteView" }, { type: "answer", response: "delete" });
-  assert.equal(viewOf(s), "v1");
+  assert.equal(viewOf(s), "juycicwios88m");
   s = run(s, { type: "back" });
   assert.equal(s.active, "crm/deals");
-  assert.equal(viewOf(s), "pipeline");
-  assert.equal(s.openPage, "dl-1");
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
+  assert.equal(s.openPage, "jddy8scd44w9r1kqur3j4meoii");
 });
 
 test("history: a reset starts it again", () => {
   const s = run(start(), { type: "showTable", key: "crm/deals" }, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" });
-  assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "v1") }, forward: [] });
+  assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "juycicwios88m") }, forward: [] });
 });
 
 // Rule 3: the file on screen unfolds
@@ -211,13 +211,13 @@ test("edits change the table on screen and mark its bundle to write", () => {
   const s = run(
     start(),
     { type: "showTable", key: "crm/deals" },
-    { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" },
-    { type: "updateBody", rowId: "dl-2", content: "# Notes" },
+    { type: "updateRow", rowId: "jddy8scd44w9r1kqur3j4meoii", field: "title", value: "Renamed" },
+    { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "# Notes" },
     { type: "addChoice", name: "stage", value: "Parked" },
   );
   const deals = s.tables["crm/deals"]!;
-  assert.equal(deals.rows.find((r) => r.id === "dl-1")!.title, "Renamed");
-  assert.equal(deals.bodies?.["dl-2"], "# Notes");
+  assert.equal(deals.rows.find((r) => r.id === "jddy8scd44w9r1kqur3j4meoii")!.title, "Renamed");
+  assert.equal(deals.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"], "# Notes");
   assert.deepEqual(s.dirty, ["crm"]);
 });
 
@@ -226,10 +226,10 @@ test("a page's save names its table, so one landing after a move edits that tabl
     start(),
     { type: "showTable", key: "crm/deals" },
     { type: "showTable", key: "projects/projects" },
-    { type: "updateBody", rowId: "dl-2", content: "# Late", table: "crm/deals" },
+    { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "# Late", table: "crm/deals" },
   );
-  assert.equal(s.tables["crm/deals"]!.bodies?.["dl-2"], "# Late");
-  assert.equal(s.tables["projects/projects"]!.bodies?.["dl-2"], undefined);
+  assert.equal(s.tables["crm/deals"]!.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"], "# Late");
+  assert.equal(s.tables["projects/projects"]!.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"], undefined);
   assert.deepEqual(s.dirty, ["crm"]);
 });
 
@@ -267,17 +267,17 @@ test("addRow puts the adapter's id at the end", () => {
 });
 
 test("insertRow goes where the sheet says, and nowhere a sort decides", () => {
-  let s = run(start(), { type: "showView", key: "household-budget/budget", viewId: "sheet" });
+  let s = run(start(), { type: "showView", key: "household-budget/budget", viewId: "435dx9iqim5iz" });
   const before = rowIds(s);
   s = run(s, { type: "insertRow", anchor: before[1]!, where: "above", id: "r-new" });
   assert.deepEqual(rowIds(s).slice(0, 3), [before[0], "r-new", before[1]]);
-  const sorted = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "by-date" });
-  assert.equal(tableApp(sorted, { type: "insertRow", anchor: "opening", where: "below", id: "x" }), sorted);
+  const sorted = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "87jkeekgwbfgr" });
+  assert.equal(tableApp(sorted, { type: "insertRow", anchor: "z4bfkjkfy5csqpyjgrj8ctqz4o", where: "below", id: "x" }), sorted);
 });
 
 test("insertRow is refused outside a Sheet view, even an unsorted one", () => {
   const s = start();
-  assert.equal(tableApp(s, { type: "insertRow", anchor: "p1", where: "below", id: "x" }), s);
+  assert.equal(tableApp(s, { type: "insertRow", anchor: "xsdxifzn73ohismzm8q5uri8fe", where: "below", id: "x" }), s);
 });
 
 test("a page open closes when another table shows, even one with a row of the same id", () => {
@@ -288,53 +288,53 @@ test("a page open closes when another table shows, even one with a row of the sa
     paths: { "crm-2": "/x/crm-2.table" },
     problems: {},
   };
-  const open = run(start(), { type: "showTable", key: "crm/companies" }, { type: "openPage", rowId: "co-atlas" });
-  assert.equal(open.openPage, "co-atlas");
+  const open = run(start(), { type: "showTable", key: "crm/companies" }, { type: "openPage", rowId: "wexwuo344aoowkqiieeb8fk56z" });
+  assert.equal(open.openPage, "wexwuo344aoowkqiieeb8fk56z");
   const s = run(open, { type: "opened", library: copy });
   assert.equal(s.active, "crm-2/companies");
   assert.equal(s.openPage, null);
-  const back = run(s, { type: "openPage", rowId: "co-atlas" }, { type: "back" });
+  const back = run(s, { type: "openPage", rowId: "wexwuo344aoowkqiieeb8fk56z" }, { type: "back" });
   assert.equal(back.active, "crm/companies");
-  assert.equal(back.openPage, "co-atlas", "the page this table was left with, not the other table's row of the same id");
+  assert.equal(back.openPage, "wexwuo344aoowkqiieeb8fk56z", "the page this table was left with, not the other table's row of the same id");
 });
 
 test("deleteRow asks first; cancel keeps the row, delete removes it and closes its page", () => {
-  const asked = run(start(), { type: "openPage", rowId: "p10" }, { type: "deleteRow", rowId: "p10" });
+  const asked = run(start(), { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "deleteRow", rowId: "ryumw55g4nqi7ytmzrudb7fyru" });
   assert.equal(asked.asking?.kind, "confirm");
   assert.match(asked.asking!.kind === "confirm" ? asked.asking.confirm.body : "", /page/);
-  assert.ok(rowIds(asked).includes("p10"), "nothing changes before the answer");
+  assert.ok(rowIds(asked).includes("ryumw55g4nqi7ytmzrudb7fyru"), "nothing changes before the answer");
   const kept = run(asked, { type: "answer", response: "cancel" });
   assert.equal(kept.asking, null);
-  assert.ok(rowIds(kept).includes("p10"));
+  assert.ok(rowIds(kept).includes("ryumw55g4nqi7ytmzrudb7fyru"));
   assert.deepEqual(kept.dirty, []);
   const gone = run(asked, { type: "answer", response: "delete" });
   assert.equal(gone.asking, null);
-  assert.ok(!rowIds(gone).includes("p10"));
+  assert.ok(!rowIds(gone).includes("ryumw55g4nqi7ytmzrudb7fyru"));
   assert.equal(gone.openPage, null);
   assert.deepEqual(gone.dirty, ["projects"]);
 });
 
 test("deleteRow leaves another row's page open", () => {
-  const s = run(start(), { type: "openPage", rowId: "p13" }, { type: "deleteRow", rowId: "p10" }, { type: "answer", response: "delete" });
-  assert.equal(s.openPage, "p13");
+  const s = run(start(), { type: "openPage", rowId: "jqujockyrs4yw6k6uue9h97tp1" }, { type: "deleteRow", rowId: "ryumw55g4nqi7ytmzrudb7fyru" }, { type: "answer", response: "delete" });
+  assert.equal(s.openPage, "jqujockyrs4yw6k6uue9h97tp1");
 });
 
 test("an answer that isn't one of the question's responses does nothing", () => {
-  const asked = run(start(), { type: "deleteRow", rowId: "p1" });
+  const asked = run(start(), { type: "deleteRow", rowId: "xsdxifzn73ohismzm8q5uri8fe" });
   const s = run(asked, { type: "answer", response: "reset" });
   assert.equal(s.asking, null);
-  assert.ok(rowIds(s).includes("p1"));
+  assert.ok(rowIds(s).includes("xsdxifzn73ohismzm8q5uri8fe"));
   assert.equal(tableApp(start(), { type: "answer", response: "delete" }).asking, null);
 });
 
 test("deleteView asks first, then shows the table's next view", () => {
-  const asked = run(start(), { type: "showView", key: "crm/deals", viewId: "open" }, { type: "deleteView" });
+  const asked = run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }, { type: "deleteView" });
   assert.equal(asked.asking?.kind, "confirm");
-  assert.ok(asked.tables["crm/deals"]!.views.some((v) => v.id === "open"));
+  assert.ok(asked.tables["crm/deals"]!.views.some((v) => v.id === "6wfiqak18zfgo"));
   const s = run(asked, { type: "answer", response: "delete" });
-  assert.ok(!s.tables["crm/deals"]!.views.some((v) => v.id === "open"));
-  assert.equal(viewOf(s), "pipeline");
-  assert.equal(s.viewIds["crm/deals"], "pipeline", "no table is left pointing at a view that's gone");
+  assert.ok(!s.tables["crm/deals"]!.views.some((v) => v.id === "6wfiqak18zfgo"));
+  assert.equal(viewOf(s), "6dc54nqbzhf64");
+  assert.equal(s.viewIds["crm/deals"], "6dc54nqbzhf64", "no table is left pointing at a view that's gone");
   assert.deepEqual(s.dirty, ["crm"]);
 });
 
@@ -351,7 +351,7 @@ test("updateView: most changes are made at once", () => {
 });
 
 test("updateView: turning off a sheet that formulas read asks first, and stop makes the change", () => {
-  const asked = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "by-date" }, { type: "updateView", patch: { coordinates: undefined } });
+  const asked = run(start(), { type: "showView", key: "household-budget/ledger", viewId: "87jkeekgwbfgr" }, { type: "updateView", patch: { coordinates: undefined } });
   assert.equal(asked.asking?.kind, "confirm");
   assert.equal(asked.tables["household-budget/ledger"]!.views[0]!.coordinates, true);
   assert.equal(run(asked, { type: "answer", response: "cancel" }).tables["household-budget/ledger"]!.views[0]!.coordinates, true);
@@ -366,7 +366,7 @@ test("reset asks first; reset brings the examples back, keeping folders opened f
     start(),
     { type: "opened", library: mine },
     { type: "showTable", key: "projects/projects" },
-    { type: "updateRow", rowId: "p1", field: "title", value: "Changed" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "title", value: "Changed" },
     { type: "reset", fresh: examples() },
   );
   assert.equal(edited.asking?.kind, "confirm");
@@ -408,7 +408,7 @@ test("create a file makes a bundle of its own", () => {
 
 test("arrange is this viewer's own; save for everyone writes it into the view, reset drops it", () => {
   let s = run(start(), { type: "arrange", patch: { sort: [{ field: "title", direction: "asc" }] } });
-  assert.deepEqual(s.arrangements["projects/projects"]?.["v1"], { sort: [{ field: "title", direction: "asc" }] });
+  assert.deepEqual(s.arrangements["projects/projects"]?.["juycicwios88m"], { sort: [{ field: "title", direction: "asc" }] });
   assert.equal(s.tables["projects/projects"]!.views[0]!.sort, undefined);
   assert.deepEqual(s.dirty, []);
   assert.equal(derive(s).arranged, true);
@@ -441,7 +441,7 @@ test("Cancel puts back everything the view settings changed; Done keeps it", () 
 
   const kept = run(changed, { type: "settings", open: false });
   assert.equal(kept.tables["projects/projects"]!.views[0]!.name, "Renamed");
-  assert.deepEqual(kept.arrangements["projects/projects"]?.["v1"], { group: { field: "status" } });
+  assert.deepEqual(kept.arrangements["projects/projects"]?.["juycicwios88m"], { group: { field: "status" } });
   assert.equal(kept.settingsBefore, null);
 });
 
@@ -520,6 +520,40 @@ function one(bundle: string): Library {
   return { tables: { [`${bundle}/${bundle}`]: table }, bundles: { [bundle]: { title: "Notes" } }, paths: {}, problems: {} };
 }
 
+test("replaced: a file read again takes the place of what's held of it, its unwritten edits let go", () => {
+  const opened = run(start(), { type: "opened", library: { ...one("notes"), singleFiles: { notes: "/docs/notes.table" } } });
+  // Edited, and the save found the file changed elsewhere: still to write.
+  const edited = { ...opened, dirty: ["notes", "crm"] };
+  const again = one("notes");
+  const fresh: Library = { ...again, tables: { "notes/ideas": again.tables["notes/notes"]! }, paths: { notes: "/app/work/notes.table" }, singleFiles: { notes: "/docs/notes.table" } };
+  const s = run(edited, { type: "replaced", library: fresh });
+  assert.deepEqual(Object.keys(s.tables).filter((k) => k.startsWith("notes/")), ["notes/ideas"], "a table the file no longer has is gone");
+  assert.deepEqual(s.dirty, ["crm"], "the file's edits aren't written over it; others still are");
+  assert.equal(s.active, "notes/ideas");
+  assert.deepEqual(s.singleFiles, { notes: "/docs/notes.table" });
+});
+
+test("renaming a field renames it everywhere in its file, and undo and redo take every table with it", () => {
+  const s0 = run(start(), { type: "showTable", key: "crm/deals" }, { type: "place", place: { rowId: "r", field: "company" } });
+  const formula = (s: AppState, key: string, field: string) => s.tables[key]!.schema.fields.find((f) => f.name === field)?.computed?.expr;
+  const s1 = run(s0, { type: "renameField", name: "company", to: "account" });
+  assert.ok(s1.tables["crm/deals"]!.rows.every((r) => "account" in r && !("company" in r)));
+  assert.equal(formula(s1, "crm/deals", "industry"), '(related "account" "industry")');
+  assert.equal(formula(s1, "crm/companies", "open_pipeline"), '(sum (linked "deals" "account" "open_value"))');
+  assert.ok(s1.dirty.includes("crm"));
+  assert.equal(s1.place.field, "account", "the cell selected stays selected");
+  assert.equal(s1.tables["crm/contacts"], s0.tables["crm/contacts"]);
+  // Undone: both tables as they were; redone: both renamed again.
+  const s2 = run(s1, { type: "undo" });
+  assert.equal(s2.tables["crm/deals"], s0.tables["crm/deals"]);
+  assert.equal(s2.tables["crm/companies"], s0.tables["crm/companies"]);
+  const s3 = run(s2, { type: "redo" });
+  assert.equal(formula(s3, "crm/companies", "open_pipeline"), '(sum (linked "deals" "account" "open_value"))');
+  assert.ok(s3.tables["crm/deals"]!.rows.every((r) => "account" in r));
+  // A name in use is refused, and changes nothing.
+  assert.equal(run(s0, { type: "renameField", name: "company", to: "stage" }), s0);
+});
+
 test("opened: a folder is held and shown, and isn't written back until edited", () => {
   const s = run(start({ stored: { sidebar: { files: true } } }), { type: "opened", library: { ...one("notes"), paths: { notes: "/x/notes.table" } } });
   assert.equal(s.active, "notes/notes");
@@ -529,10 +563,10 @@ test("opened: a folder is held and shown, and isn't written back until edited", 
 });
 
 test("opened: an archive has no folder yet, so it's written; what was skipped is told", () => {
-  const s = run(start(), { type: "opened", library: one("notes"), skipped: ["rows.ndjson line 2: bad"] });
+  const s = run(start(), { type: "opened", library: one("notes"), skipped: ["rows/0001.ndjson: line 2 isn't JSON"] });
   assert.deepEqual(s.opened, {});
   assert.deepEqual(s.dirty, ["notes"]);
-  assert.deepEqual(s.telling, { heading: `Opened "Notes", but skipped 1 thing it couldn't read:`, body: "rows.ndjson line 2: bad" });
+  assert.deepEqual(s.telling, { heading: `Opened "Notes", but skipped 1 thing it couldn't read:`, body: "rows/0001.ndjson: line 2 isn't JSON" });
   assert.equal(run(s, { type: "told" }).telling, null);
 });
 
@@ -542,10 +576,10 @@ test("tell shows a message until told", () => {
 });
 
 test("written clears what was written, but not a bundle edited again meanwhile", () => {
-  const edited = run(start(), { type: "updateRow", rowId: "p1", field: "title", value: "A" }, { type: "showTable", key: "crm/deals" }, { type: "updateRow", rowId: "dl-1", field: "title", value: "B" });
+  const edited = run(start(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "title", value: "A" }, { type: "showTable", key: "crm/deals" }, { type: "updateRow", rowId: "jddy8scd44w9r1kqur3j4meoii", field: "title", value: "B" });
   assert.deepEqual(edited.dirty, ["projects", "crm"]);
   const snapshot = edited.tables;
-  const again = run(edited, { type: "updateRow", rowId: "dl-1", field: "title", value: "C" });
+  const again = run(edited, { type: "updateRow", rowId: "jddy8scd44w9r1kqur3j4meoii", field: "title", value: "C" });
   const s = run(again, { type: "written", bundles: ["projects", "crm"], tables: snapshot });
   assert.deepEqual(s.dirty, ["crm"]);
   assert.deepEqual(run(s, { type: "written", bundles: ["crm"] }).dirty, []);
@@ -554,10 +588,10 @@ test("written clears what was written, but not a bundle edited again meanwhile",
 // Selectors
 
 test("derive: the view on screen as this viewer sees it, with its summary and breadcrumb", () => {
-  const s = run(start(), { type: "showView", key: "crm/deals", viewId: "all" }, { type: "search", text: "zzzz-nothing" });
+  const s = run(start(), { type: "showView", key: "crm/deals", viewId: "hnmryzi51j6jz" }, { type: "search", text: "zzzz-nothing" });
   const d = derive(s, { locale: "en-GB" });
   assert.equal(d.table, s.tables["crm/deals"]);
-  assert.equal(d.view.id, "all");
+  assert.equal(d.view.id, "hnmryzi51j6jz");
   assert.equal(d.shown.rows.length, 0);
   assert.equal(d.summary.count, "0 of 8 matching");
   assert.equal(d.breadcrumb.text, "CRM (crm.table) › Deals");
@@ -567,7 +601,7 @@ test("derive: the view on screen as this viewer sees it, with its summary and br
 });
 
 test("derive: a search of only spaces isn't searching", () => {
-  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "all" }, { type: "search", text: "  " }));
+  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "hnmryzi51j6jz" }, { type: "search", text: "  " }));
   assert.equal(d.summary.count, "8 of 8 rows");
 });
 
@@ -577,10 +611,10 @@ test("derive: the viewer's language sets the direction; the platform's when they
 });
 
 test("derive: the sidebar expands the table on screen and marks its view", () => {
-  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "open" }));
+  const d = derive(run(start(), { type: "showView", key: "crm/deals", viewId: "6wfiqak18zfgo" }));
   const views = d.sidebarEntries.filter((e) => e.kind === "view");
   assert.ok(views.every((e) => e.key === "crm/deals"));
-  assert.deepEqual(views.filter((e) => e.view.active).map((e) => e.view.id), ["open"]);
+  assert.deepEqual(views.filter((e) => e.view.active).map((e) => e.view.id), ["6wfiqak18zfgo"]);
 });
 
 test("derive: the Files side's tree, only on that side", () => {
@@ -590,13 +624,13 @@ test("derive: the Files side's tree, only on that side", () => {
 });
 
 test("derive: commands say what's possible, and the address names the open page", () => {
-  const s = run(start(), { type: "setSidebarCollapsed", collapsed: true }, { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "dl-1" });
+  const s = run(start(), { type: "setSidebarCollapsed", collapsed: true }, { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "jddy8scd44w9r1kqur3j4meoii" });
   const d = derive(s);
   const byId = Object.fromEntries(d.commands.map((c) => [c.id, c]));
   assert.equal(byId["toggle-sidebar"]!.label, "Show Sidebar");
   assert.equal(byId["go-back"]!.enabled, true);
   assert.equal(byId["go-forward"]!.enabled, false);
-  assert.equal(d.address, viewAddress("crm/deals", "pipeline", "dl-1"));
+  assert.equal(d.address, viewAddress("crm/deals", "6dc54nqbzhf64", "jddy8scd44w9r1kqur3j4meoii"));
 });
 
 test("derive: schema changed since opened", () => {
@@ -610,18 +644,18 @@ test("viewCallbacks dispatch the named actions, with the adapter's ids", () => {
   let n = 0;
   const cb = viewCallbacks(start(), (a) => seen.push(a), () => `id-${++n}`);
   assert.equal(cb.onAddRow(), "id-1");
-  cb.onInsertRow("p1", "below");
-  cb.onDeleteRow("p1");
-  cb.onOpenBody("p10");
-  cb.onOpenRelation(viewAddress("crm/deals", "all"));
+  cb.onInsertRow("xsdxifzn73ohismzm8q5uri8fe", "below");
+  cb.onDeleteRow("xsdxifzn73ohismzm8q5uri8fe");
+  cb.onOpenBody("ryumw55g4nqi7ytmzrudb7fyru");
+  cb.onOpenRelation(viewAddress("crm/deals", "hnmryzi51j6jz"));
   cb.onOpenRelation("nowhere.table");
   cb.onAddEnumValue("status", "New");
   assert.deepEqual(seen, [
     { type: "addRow", id: "id-1" },
-    { type: "insertRow", anchor: "p1", where: "below", id: "id-2" },
-    { type: "deleteRow", rowId: "p1" },
-    { type: "openPage", rowId: "p10" },
-    { type: "follow", target: { key: "crm/deals", viewId: "all", openBody: null } },
+    { type: "insertRow", anchor: "xsdxifzn73ohismzm8q5uri8fe", where: "below", id: "id-2" },
+    { type: "deleteRow", rowId: "xsdxifzn73ohismzm8q5uri8fe" },
+    { type: "openPage", rowId: "ryumw55g4nqi7ytmzrudb7fyru" },
+    { type: "follow", target: { key: "crm/deals", viewId: "hnmryzi51j6jz", openBody: null } },
     { type: "addChoice", name: "status", value: "New" },
   ]);
 });
@@ -629,16 +663,16 @@ test("viewCallbacks dispatch the named actions, with the adapter's ids", () => {
 test("history: the cell selected and how far down come back with a view, and a new view starts at its top", () => {
   let s = run(
     start(),
-    { type: "place", place: { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } } },
+    { type: "place", place: { rowId: "4csppbyqkcmq3kf4y7zbxeeumg", field: "status", top: { rowId: "1h38m5st7rwanz3hyjb6dy8igr", offset: 18 } } },
     { type: "showTable", key: "crm/deals" },
   );
   assert.deepEqual(s.place, {}, "a view arrived at afresh starts at its top");
-  s = run(s, { type: "place", place: { rowId: "dl-2", field: "value" } }, { type: "back" });
-  assert.deepEqual(s.place, { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } });
-  assert.deepEqual(s.restoring?.place, { rowId: "p3", field: "status", top: { rowId: "p2", offset: 18 } });
+  s = run(s, { type: "place", place: { rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", field: "value" } }, { type: "back" });
+  assert.deepEqual(s.place, { rowId: "4csppbyqkcmq3kf4y7zbxeeumg", field: "status", top: { rowId: "1h38m5st7rwanz3hyjb6dy8igr", offset: 18 } });
+  assert.deepEqual(s.restoring?.place, { rowId: "4csppbyqkcmq3kf4y7zbxeeumg", field: "status", top: { rowId: "1h38m5st7rwanz3hyjb6dy8igr", offset: 18 } });
   const n = s.restoring!.n;
   s = run(s, { type: "forward" });
-  assert.deepEqual(s.place, { rowId: "dl-2", field: "value" });
+  assert.deepEqual(s.place, { rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", field: "value" });
   assert.equal(s.restoring!.n, n + 1);
 });
 
@@ -653,30 +687,30 @@ const indexedStart = (): AppState => {
 test("edits to an indexed table's rows are queued for the index, in order, and its rows stay out of the state", () => {
   const s = run(
     indexedStart(),
-    { type: "updateRow", rowId: "p1", field: "name", value: "Renamed" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Renamed" },
     { type: "addRow", id: "p-new" },
-    { type: "updateBody", rowId: "p1", content: "A page" },
+    { type: "updateBody", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "A page" },
   );
   assert.deepEqual(s.tables["projects/projects"]!.rows, []);
   assert.deepEqual(
     s.indexWork.map(({ n, kind, rowId }) => [n, kind, rowId]),
-    [[1, "cell", "p1"], [2, "add", "p-new"], [3, "body", "p1"]],
+    [[1, "cell", "xsdxifzn73ohismzm8q5uri8fe"], [2, "add", "p-new"], [3, "body", "xsdxifzn73ohismzm8q5uri8fe"]],
   );
-  assert.equal(s.tables["projects/projects"]!.bodies?.p1, "A page");
+  assert.equal(s.tables["projects/projects"]!.bodies?.["xsdxifzn73ohismzm8q5uri8fe"], "A page");
   // Nothing to write until the index has them.
   assert.equal(s.dirty.includes("projects") && s.indexWork.length === 0, false);
 });
 
 test("deleting an indexed table's row asks first, then queues it", () => {
-  const asked = run(indexedStart(), { type: "deleteRow", rowId: "p3" });
+  const asked = run(indexedStart(), { type: "deleteRow", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" });
   assert.equal(asked.asking?.kind, "confirm");
   assert.deepEqual(asked.indexWork, []);
   const s = run(asked, { type: "answer", response: "delete" });
-  assert.deepEqual(s.indexWork.map(({ kind, rowId }) => [kind, rowId]), [["remove", "p3"]]);
+  assert.deepEqual(s.indexWork.map(({ kind, rowId }) => [kind, rowId]), [["remove", "4csppbyqkcmq3kf4y7zbxeeumg"]]);
 });
 
 test("once the app has made them, the edits leave the queue and the table is to be written", () => {
-  const edited = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "name", value: "A" }, { type: "addRow", id: "p-new" });
+  const edited = run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "A" }, { type: "addRow", id: "p-new" });
   const during = run(edited, { type: "addRow", id: "later" });
   const s = run(during, { type: "indexed", key: "projects/projects", count: 18, done: 2 });
   assert.deepEqual(s.indexWork.map((w) => w.rowId), ["later"]);
@@ -703,17 +737,17 @@ const titleOf = (s: AppState, rowId: string) => s.tables["crm/deals"]!.rows.find
 
 test("undo puts the table back as it was before its last edit, and redo makes the edit again", () => {
   const before = run(start(), { type: "showTable", key: "crm/deals" });
-  const was = titleOf(before, "dl-1");
+  const was = titleOf(before, "jddy8scd44w9r1kqur3j4meoii");
   assert.equal(derive(before).canUndo, false);
-  const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
+  const edited = run(before, { type: "updateRow", rowId: "jddy8scd44w9r1kqur3j4meoii", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
   assert.equal(derive(edited).canUndo, true);
   assert.equal(derive(edited).canRedo, false);
 
   const once = run(edited, { type: "undo" });
   assert.equal(rowIds(once).includes("dl-new"), false);
-  assert.equal(titleOf(once, "dl-1"), "Renamed");
+  assert.equal(titleOf(once, "jddy8scd44w9r1kqur3j4meoii"), "Renamed");
   const twice = run(once, { type: "undo" });
-  assert.equal(titleOf(twice, "dl-1"), was);
+  assert.equal(titleOf(twice, "jddy8scd44w9r1kqur3j4meoii"), was);
   assert.equal(twice.tables["crm/deals"], before.tables["crm/deals"]);
   assert.equal(derive(twice).canUndo, false);
   assert.equal(tableApp(twice, { type: "undo" }), twice);
@@ -789,17 +823,17 @@ test("undo: where you are isn't an edit, and stays", () => {
 });
 
 test("undo: a page typed in goes back whole, and one opened again is its own step", () => {
-  const before = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "dl-2" });
-  const was = before.tables["crm/deals"]!.bodies?.["dl-2"];
-  const typed = run(before, { type: "updateBody", rowId: "dl-2", content: "a" }, { type: "updateBody", rowId: "dl-2", content: "ab" });
+  const before = run(start(), { type: "showTable", key: "crm/deals" }, { type: "openPage", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h" });
+  const was = before.tables["crm/deals"]!.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"];
+  const typed = run(before, { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "a" }, { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "ab" });
   assert.equal(typed.undo["crm/deals"]!.past.length, 1);
-  assert.equal(run(typed, { type: "undo" }).tables["crm/deals"]!.bodies?.["dl-2"], was);
+  assert.equal(run(typed, { type: "undo" }).tables["crm/deals"]!.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"], was);
 
-  const later = run(typed, { type: "openPage", rowId: null }, { type: "openPage", rowId: "dl-2" }, { type: "updateBody", rowId: "dl-2", content: "abc" });
+  const later = run(typed, { type: "openPage", rowId: null }, { type: "openPage", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h" }, { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "abc" });
   assert.equal(later.undo["crm/deals"]!.past.length, 2);
-  assert.equal(run(later, { type: "undo" }).tables["crm/deals"]!.bodies?.["dl-2"], "ab");
+  assert.equal(run(later, { type: "undo" }).tables["crm/deals"]!.bodies?.["neh69ghtrhcnhgnbbzqnfwjb4h"], "ab");
   // Another row's page between two saves of this one is its own step too.
-  const other = run(typed, { type: "updateBody", rowId: "dl-1", content: "x" }, { type: "updateBody", rowId: "dl-2", content: "abc" });
+  const other = run(typed, { type: "updateBody", rowId: "jddy8scd44w9r1kqur3j4meoii", content: "x" }, { type: "updateBody", rowId: "neh69ghtrhcnhgnbbzqnfwjb4h", content: "abc" });
   assert.equal(other.undo["crm/deals"]!.past.length, 3);
 });
 
@@ -829,6 +863,10 @@ test("undo: a reset, a file opened over a table, and a table read again let its 
   assert.deepEqual(run(edited, { type: "reset", fresh: examples() }, { type: "answer", response: "reset" }).undo, {});
   assert.equal(run(edited, { type: "opened", library: examples() }).undo[key], undefined);
   assert.equal(run(edited, { type: "reloaded", key, table: edited.tables[key]! }).undo[key], undefined);
+  // Why it's held in memory is said in its summary, not as an alert; read again with an index, it's gone.
+  const held = run(edited, { type: "reloaded", key, table: edited.tables[key]!, held: "too big to index" });
+  assert.equal(held.held?.[key], "too big to index");
+  assert.equal(run(held, { type: "reloaded", key, table: edited.tables[key]! }).held?.[key], undefined);
   // A table whose rows have just gone to the index: the steps listed them as they were here.
   assert.equal(run(edited, { type: "indexed", key, count: 18 }).undo[key], undefined);
 });
@@ -850,21 +888,21 @@ test("undo on an indexed table: its views go back here, and nothing is asked of 
 
 test("undo on an indexed table: a cell goes back to what the index said it held, once it has said", () => {
   const key = indexedStart().active;
-  const edited = run(indexedStart(), { type: "updateRow", rowId: "p1", field: "name", value: "A" });
+  const edited = run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "A" });
   assert.equal(derive(edited).canUndo, true);
   // The app hasn't made the edit yet, so what undoes it isn't known: nothing happens.
   assert.equal(tableApp(edited, { type: "undo" }), edited);
 
-  const made = run(edited, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } });
+  const made = run(edited, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Was" } } });
   const undone = run(made, { type: "undo" });
-  assert.deepEqual(workOf(undone), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
+  assert.deepEqual(workOf(undone), [{ kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Was" }]);
   assert.equal(derive(undone).canUndo, false);
   assert.equal(derive(undone).canRedo, true);
   // The undo is an edit like any other to the app, and is not itself a step.
-  const heard = run(undone, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "A" } } });
+  const heard = run(undone, { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "A" } } });
   assert.equal(derive(heard).canUndo, false);
   const redone = run(heard, { type: "redo" });
-  assert.deepEqual(workOf(redone), [{ kind: "cell", rowId: "p1", field: "name", value: "A" }]);
+  assert.deepEqual(workOf(redone), [{ kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "A" }]);
   assert.equal(derive(redone).canUndo, true);
   assert.equal(derive(redone).canRedo, false);
 });
@@ -874,36 +912,36 @@ test("undo on an indexed table: a row added is removed, and a row removed comes 
   const added = run(indexedStart(), { type: "addRow", id: "p-new" });
   assert.deepEqual(workOf(run(added, { type: "undo" })).at(-1), { kind: "remove", rowId: "p-new" });
 
-  const paged = run(indexedStart(), { type: "updateBody", rowId: "p3", content: "# Its page" }, { type: "indexed", key, count: 17, done: 1 });
-  const removed = run(paged, { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
-  assert.equal(removed.tables[key]!.bodies?.["p3"], undefined);
-  const row = { id: "p3", name: "Third" };
+  const paged = run(indexedStart(), { type: "updateBody", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", content: "# Its page" }, { type: "indexed", key, count: 17, done: 1 });
+  const removed = run(paged, { type: "deleteRow", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" }, { type: "answer", response: "delete" });
+  assert.equal(removed.tables[key]!.bodies?.["4csppbyqkcmq3kf4y7zbxeeumg"], undefined);
+  const row = { id: "4csppbyqkcmq3kf4y7zbxeeumg", name: "Third" };
   // The queue was empty, so the count starts again: the removal is the first edit in it.
-  const made = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row, at: 3 } } });
+  const made = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", row, at: 3 } } });
   const undone = run(made, { type: "undo" });
-  assert.deepEqual(workOf(undone), [{ kind: "restore", rowId: "p3", row, at: 3, content: "# Its page" }]);
-  assert.equal(undone.tables[key]!.bodies?.["p3"], "# Its page");
+  assert.deepEqual(workOf(undone), [{ kind: "restore", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", row, at: 3, content: "# Its page" }]);
+  assert.equal(undone.tables[key]!.bodies?.["4csppbyqkcmq3kf4y7zbxeeumg"], "# Its page");
   const redone = run(undone, { type: "indexed", key, count: 17, done: 1 }, { type: "redo" });
-  assert.deepEqual(workOf(redone), [{ kind: "remove", rowId: "p3" }]);
-  assert.equal(redone.tables[key]!.bodies?.["p3"], undefined);
+  assert.deepEqual(workOf(redone), [{ kind: "remove", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" }]);
+  assert.equal(redone.tables[key]!.bodies?.["4csppbyqkcmq3kf4y7zbxeeumg"], undefined);
 });
 
 test("undo on an indexed table: a page typed in goes back whole, here and in the index", () => {
   const key = indexedStart().active;
   const typed = run(
     indexedStart(),
-    { type: "updateBody", rowId: "p1", content: "a" },
-    { type: "updateBody", rowId: "p1", content: "ab" },
+    { type: "updateBody", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "a" },
+    { type: "updateBody", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "ab" },
     { type: "indexed", key, count: 17, done: 2 },
   );
   assert.equal(typed.undo[key]!.past.length, 1);
   const undone = run(typed, { type: "undo" });
-  assert.equal(undone.tables[key]!.bodies?.["p1"], undefined);
-  assert.deepEqual(workOf(undone), [{ kind: "body", rowId: "p1", content: "" }]);
+  assert.equal(undone.tables[key]!.bodies?.["xsdxifzn73ohismzm8q5uri8fe"], undefined);
+  assert.deepEqual(workOf(undone), [{ kind: "body", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "" }]);
   assert.ok(undone.dirty.includes("projects"));
   const redone = run(undone, { type: "redo" });
-  assert.equal(redone.tables[key]!.bodies?.["p1"], "ab");
-  assert.deepEqual(workOf(redone).at(-1), { kind: "body", rowId: "p1", content: "ab" });
+  assert.equal(redone.tables[key]!.bodies?.["xsdxifzn73ohismzm8q5uri8fe"], "ab");
+  assert.deepEqual(workOf(redone).at(-1), { kind: "body", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "ab" });
 });
 
 test("undo on an indexed table: an edit that changed nothing, or failed, leaves no step", () => {
@@ -911,10 +949,10 @@ test("undo on an indexed table: an edit that changed nothing, or failed, leaves 
   const s = run(
     indexedStart(),
     { type: "updateRow", rowId: "nobody", field: "name", value: "A" },
-    { type: "updateRow", rowId: "p1", field: "name", value: "B" },
-    { type: "updateRow", rowId: "p2", field: "name", value: "C" },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "B" },
+    { type: "updateRow", rowId: "1h38m5st7rwanz3hyjb6dy8igr", field: "name", value: "C" },
     // The second was made; the first found no row; the third is still to make.
-    { type: "indexed", key, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+    { type: "indexed", key, count: 17, done: 2, back: { 2: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Was" } } },
   );
   assert.deepEqual(s.undo[key]!.past.map((step) => ("rows" in step ? [step.rows.n, step.rows.back?.kind ?? null] : null)), [[2, "cell"], [3, null]]);
 });
@@ -926,21 +964,25 @@ test("undo on an indexed table: edits to its views and its rows go back in the o
   const titleNow = (s: AppState) => s.tables[key]!.views.find((v) => v.id === view)!.title;
   const s = run(
     before,
-    { type: "updateRow", rowId: "p1", field: "name", value: "A" },
-    { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "p1", field: "name", value: "Was" } } },
+    { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "A" },
+    { type: "indexed", key, count: 17, done: 1, back: { 1: { kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Was" } } },
     { type: "updateView", patch: { title: "Renamed view" } },
   );
   const once = run(s, { type: "undo" });
   assert.equal(titleNow(once), titleNow(before));
   assert.deepEqual(once.indexWork, []);
-  assert.deepEqual(workOf(run(once, { type: "undo" })), [{ kind: "cell", rowId: "p1", field: "name", value: "Was" }]);
+  assert.deepEqual(workOf(run(once, { type: "undo" })), [{ kind: "cell", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "name", value: "Was" }]);
 });
 
-test("undo on an indexed table: a change to its fields changes what the index holds, so earlier steps are let go", () => {
+test("undo on an indexed table: a change to its fields is a step, and earlier steps are kept (#562)", () => {
   const key = indexedStart().active;
   const s = run(indexedStart(), { type: "updateView", patch: { title: "Renamed view" } }, { type: "addField", field: { name: "extra", type: "string" } });
-  assert.equal(s.undo[key], undefined);
-  assert.equal(derive(s).canUndo, false);
+  assert.equal(s.undo[key]?.past.length, 2);
+  assert.equal(derive(s).undoName, "Add Field");
+  // Undone in turn: the field goes, then the view's title.
+  const once = run(s, { type: "undo" });
+  assert.equal(once.tables[key]!.schema.fields.some((f) => f.name === "extra"), false);
+  assert.equal(derive(once).undoName, "Rename View");
 });
 
 test("undo says what it would take back: the step's name, and the commands' labels", () => {
@@ -951,7 +993,7 @@ test("undo says what it would take back: the step's name, and the commands' labe
   assert.equal(label(before, "redo"), "Redo");
 
   const title = before.tables["crm/deals"]!.schema.fields.find((f) => f.name === "title")!.title ?? "Title";
-  const edited = run(before, { type: "updateRow", rowId: "dl-1", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
+  const edited = run(before, { type: "updateRow", rowId: "jddy8scd44w9r1kqur3j4meoii", field: "title", value: "Renamed" }, { type: "addRow", id: "dl-new" });
   assert.equal(derive(edited).undoName, "Add Row");
   assert.equal(label(edited, "undo"), "Undo Add Row");
   const once = run(edited, { type: "undo" });
@@ -979,17 +1021,83 @@ test("undo names: each kind of edit has its own", () => {
 test("undo names on an indexed table: its rows' edits are named as any are", () => {
   const key = indexedStart().active;
   const field = indexedStart().tables[key]!.schema.fields[0]!;
-  const cell = run(indexedStart(), { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  const cell = run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: field.name, value: "A" });
   assert.equal(field.title, undefined);
   assert.equal(derive(cell).undoName, `Edit ${field.name[0]!.toUpperCase()}${field.name.slice(1)}`);
   // A field with no title is called by its key, as a menu writes a name.
-  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "p1", field: "close_date", value: "A" })).undoName, "Edit Close Date");
-  const titled = run(indexedStart(), { type: "updateField", name: field.name, patch: { title: "the name" } }, { type: "updateRow", rowId: "p1", field: field.name, value: "A" });
+  assert.equal(derive(run(indexedStart(), { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: "close_date", value: "A" })).undoName, "Edit Close Date");
+  const titled = run(indexedStart(), { type: "updateField", name: field.name, patch: { title: "the name" } }, { type: "updateRow", rowId: "xsdxifzn73ohismzm8q5uri8fe", field: field.name, value: "A" });
   assert.equal(derive(titled).undoName, "Edit the name");
   assert.equal(derive(run(indexedStart(), { type: "addRow", id: "p-new" })).undoName, "Add Row");
-  assert.equal(derive(run(indexedStart(), { type: "updateBody", rowId: "p1", content: "a" })).undoName, "Edit Page");
-  const removed = run(indexedStart(), { type: "deleteRow", rowId: "p3" }, { type: "answer", response: "delete" });
+  assert.equal(derive(run(indexedStart(), { type: "updateBody", rowId: "xsdxifzn73ohismzm8q5uri8fe", content: "a" })).undoName, "Edit Page");
+  const removed = run(indexedStart(), { type: "deleteRow", rowId: "4csppbyqkcmq3kf4y7zbxeeumg" }, { type: "answer", response: "delete" });
   assert.equal(derive(removed).undoName, "Delete Row");
-  const heard = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "p3", row: { id: "p3" }, at: 3 } } });
+  const heard = run(removed, { type: "indexed", key, count: 16, done: 1, back: { 1: { kind: "restore", rowId: "4csppbyqkcmq3kf4y7zbxeeumg", row: { id: "4csppbyqkcmq3kf4y7zbxeeumg" }, at: 3 } } });
   assert.equal(derive(run(heard, { type: "undo" })).redoName, "Delete Row");
+});
+
+test("undo on an indexed table: a change of fields is a step, and a field deleted comes back said to be restored (#562)", () => {
+  const before = indexedStart();
+  const key = before.active;
+  const fields = (s: AppState) => s.tables[key]!.schema.fields.map((f) => f.name);
+  const gone = fields(before)[1]!;
+  const deleted = run(before, { type: "deleteField", name: gone }, { type: "answer", response: "delete" });
+  assert.equal(fields(deleted).includes(gone), false);
+  assert.equal(derive(deleted).canUndo, true, "a step to undo");
+  // Undone: the field is back where it was, and the index is to restore its values.
+  const undone = run(deleted, { type: "undo" });
+  assert.deepEqual(fields(undone), fields(before));
+  assert.deepEqual(undone.tables[key]!.indexed?.restore, [gone]);
+  assert.equal(undone.tables[key]!.rows.length, 0, "rows stay in the index");
+  // Said until the index has changed: an edit's count doesn't clear it.
+  assert.deepEqual(run(undone, { type: "indexed", key, count: 17 }).tables[key]!.indexed?.restore, [gone]);
+  // Redone: gone again, nothing to restore.
+  const redone = run(undone, { type: "redo" });
+  assert.equal(fields(redone).includes(gone), false);
+  assert.equal(redone.tables[key]!.indexed?.restore, undefined);
+  // A later change of fields clears it: a field added then is new.
+  const later = run(undone, { type: "addField", field: { name: "extra", type: "string" } });
+  assert.equal(later.tables[key]!.indexed?.restore, undefined);
+});
+
+test("a single file opened is said to be one: Export as a Single File is off for it, on for a folder, and closing it forgets it", () => {
+  const { tables, bundles } = examples();
+  const s = initialAppState({ tables, bundles });
+  const exportOn = (state: AppState) => derive(state).commands.find((c) => c.id === "export-file")!.enabled;
+  assert.equal(exportOn(s), true);
+  const one = { tables: { "sent/tasks": { ...tables["projects/tasks"]! } }, bundles: { sent: bundles.projects! }, paths: { sent: "/cache/x/sent.table" }, problems: {}, singleFiles: { sent: "/docs/sent.table" } };
+  const opened = run(s, { type: "opened", library: one });
+  assert.equal(opened.active.startsWith("sent/"), true);
+  assert.deepEqual(opened.singleFiles, { sent: "/docs/sent.table" });
+  assert.equal(exportOn(opened), false);
+  // Another table, from a folder: on again.
+  assert.equal(exportOn(run(opened, { type: "showTable", key: "projects/tasks" })), true);
+  // Closed: forgotten.
+  const closed = run(opened, { type: "close", bundle: "sent" }, { type: "answer", response: "close" });
+  assert.deepEqual(closed.singleFiles, {});
+});
+
+// Opened without its rows (a reader's rows: "later")
+
+test("a table opened without its rows can't be edited until they're read; then it has them, as the reader read them", () => {
+  const s0 = start();
+  const key = s0.active;
+  const table = s0.tables[key]!;
+  const loading = { ...s0, tables: { ...s0.tables, [key]: { ...table, rows: [], loading: { estimate: table.rows.length } } } };
+  assert.equal(isEditable(loading.tables[key]), false);
+  // An edit asked meanwhile changes nothing: not its fields, not its views.
+  const asked = run(loading, { type: "addField", field: { name: "extra", type: "string" } }, { type: "updateView", patch: { name: "Renamed" } });
+  assert.equal(asked.tables[key], loading.tables[key]);
+  assert.equal(asked.undo[key], undefined);
+  const read = run(loading, { type: "rowsRead", key, rows: table.rows, rowFiles: [{ name: "0001.ndjson", ids: table.rows.map((r) => r.id) }], unread: [], diagnostics: [] });
+  assert.equal(read.tables[key]!.loading, undefined);
+  assert.deepEqual(read.tables[key]!.rows, table.rows);
+  assert.deepEqual(read.tables[key]!.rowFiles, [{ name: "0001.ndjson", ids: table.rows.map((r) => r.id) }]);
+  assert.equal(isEditable(read.tables[key]), true);
+  // Now an edit is made, and reading its rows again changes nothing.
+  assert.ok(run(read, { type: "addField", field: { name: "extra", type: "string" } }).tables[key]!.schema.fields.some((f) => f.name === "extra"));
+  assert.equal(run(read, { type: "rowsRead", key, rows: [], rowFiles: [], unread: [], diagnostics: [] }), read);
+  // A table whose rows are being read into its index can't be edited yet either.
+  assert.equal(isEditable(read.tables[key], true), false);
+  assert.equal(isEditable(undefined), false);
 });

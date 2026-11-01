@@ -18,7 +18,7 @@ export default function FilesScreen() {
   const active = app?.state.active;
   // Built once as the sheet opens: what's open in it is the browser's own.
   const nodes = useMemo(
-    () => (tables && bundles ? filesNodes(filesTree(tables, bundles, { activeTable: active, attachmentsOf: fixtureAttachments })) : []),
+    () => (tables && bundles ? filesNodes(filesTree(tables, bundles, { activeTable: active, attachmentsOf: fixtureAttachments, hasHistory: (key) => app?.historyText(key) !== undefined })) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -30,7 +30,7 @@ export default function FilesScreen() {
       const shown = attachmentShown(attachment.name, fixtureAttachmentUrls[attachment.tableKey]?.[attachment.name]);
       return "image" in shown ? { kind: "image", uri: shown.image } : { kind: "note", text: shown.note };
     }
-    const text = fileText(app.state.tables, app.state.bundles, bundle, path);
+    const text = fileText(app.state.tables, app.state.bundles, bundle, path, app.historyText);
     return text === undefined ? { kind: "note", text: "This file isn't written by saving." } : { kind: "text", text };
   };
   // The sheet's own header names what's showing: Files, or the file open,

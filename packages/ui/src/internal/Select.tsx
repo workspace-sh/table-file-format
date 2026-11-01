@@ -8,7 +8,7 @@
  * picked, and a click outside or Escape closes it.
  */
 import type { SelectHandle, SelectProps } from "../controlSlots";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentRef } from "react";
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import { measureAnchor, type AnchorRect } from "./measureAnchor";
@@ -30,7 +30,7 @@ export const Select = forwardRef<SelectHandle, SelectProps>(function Select(
   const anchor = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const optionRefs = useRef<any[]>([]);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
 
   const open = async () => {
     setRect(await measureAnchor(anchor.current));

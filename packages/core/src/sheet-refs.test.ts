@@ -220,7 +220,7 @@ test("a long chain reached from another table doesn't either", () => {
   const schema = {
     fields: [
       { name: "entry", type: "string" as const, relation: { table: "ledger" } },
-      { name: "balance", type: "number" as const, computed: { dialect: "table-expr-v1" as const, expr: '(lookup "entry" "balance")' } },
+      { name: "balance", type: "number" as const, computed: { dialect: "table-expr-v1" as const, expr: '(related "entry" "balance")' } },
     ],
   };
   const [row] = computeRows(schema, [{ id: "s", entry: "r49999" }], { tables: { ledger: ledgerTable }, self: "summary" }).rows;

@@ -17,7 +17,7 @@ import {
 import { sheetDirectory } from "@workspace.sh/table-ui/shared";
 
 import { arrangedView, type Arrangement } from "./arrangements.ts";
-import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
+import { bundleOf, bundleTables, relatedTables, tableNameOf } from "./bundles.ts";
 
 /** A Sheet view's grid as saved: every row in grid order, each row's number, the sheets a formula may name. */
 export interface SheetGridShown {
@@ -69,7 +69,8 @@ export function showView(
   const { arrangement, search = "", viewerText } = options;
   const shown = arrangedView(view, arrangement);
   const viewRows = applyView(table, shown, {
-    tables: bundleTables(tables, bundleOf(key)),
+    // Lookups and rollups through a relation to another .table reach it too.
+    tables: relatedTables(tables, bundleOf(key)),
     self: tableNameOf(key),
     ...(arrangement?.sort && viewerText ? { text: viewerText } : {}),
   });

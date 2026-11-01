@@ -29,6 +29,7 @@ const FORMAT_WORDS: Record<string, string> = {
   relative: "Relative date",
   integer: "Whole number",
   percent: "Percent",
+  fraction: "Fraction",
   "duration:seconds": "Duration",
   markdown: "Markdown",
   url: "Link",
@@ -37,8 +38,11 @@ const FORMAT_WORDS: Record<string, string> = {
 };
 
 function formatWords(format: string): string {
+  // Negatives in brackets (D53).
+  if (format.endsWith(":parens") && (format.startsWith("currency:") || format.startsWith("decimal:"))) return `${formatWords(format.slice(0, -":parens".length))}, negatives in brackets`;
   if (format.startsWith("currency:")) return `Currency (${format.slice("currency:".length)})`;
   if (format.startsWith("decimal:")) return `${format.slice("decimal:".length)} decimal places`;
+  if (format.startsWith("scientific:")) return `Scientific, ${format.slice("scientific:".length)} decimal places`;
   return FORMAT_WORDS[format] ?? format;
 }
 

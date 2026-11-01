@@ -3,7 +3,7 @@
 // These turn that into what core deals in: a bundle, its tables by name,
 // and an address resolved within the right bundle.
 
-import { parseAddress, tableOrder } from "@workspace.sh/table-core";
+import { addressedView, parseAddress, tableOrder } from "@workspace.sh/table-core";
 import type { Address, BundleMeta, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
 
 /** `crm/deals` → `crm` */
@@ -24,6 +24,52 @@ export function bundleTables(tables: Record<string, ParsedTable>, bundle: string
       .filter(([key]) => key.startsWith(prefix))
       .map(([key, t]) => [key.slice(prefix.length), t]),
   );
+}
+
+/**
+ * A table that a relation names and its bundle doesn't hold, in another
+ * `.table` (SPEC section 2, "relation"): the file of that name beside the
+ * bundle, held under its own name as a bundle key. Its table of that name,
+ * or its only table. Undefined when no such file is held.
+ */
+export function otherFileTable(tables: Record<string, ParsedTable>, name: string): string | undefined {
+  if (name.length === 0 || name.includes("/")) return undefined;
+  if (tables[`${name}/${name}`]) return `${name}/${name}`;
+  const prefix = `${name}/`;
+  const keys = Object.keys(tables).filter((key) => key.startsWith(prefix));
+  return keys.length === 1 ? keys[0] : undefined;
+}
+
+/**
+ * The tables a bundle's relations, lookups and rollups reach, by the names
+ * they use: the bundle's own, and, for a name it doesn't hold, the table of
+ * that name in the `.table` beside it (otherFileTable), when that is held.
+ */
+export function relatedTables(tables: Record<string, ParsedTable>, bundle: string): Record<string, ParsedTable> {
+  const own = bundleTables(tables, bundle);
+  const reached: Record<string, ParsedTable> = { ...own };
+  for (const table of Object.values(own)) {
+    for (const field of table.schema.fields) {
+      const name = field.relation?.table;
+      if (!name || reached[name]) continue;
+      const key = otherFileTable(tables, name);
+      if (key) reached[name] = tables[key]!;
+    }
+  }
+  return reached;
+}
+
+/** The `.table` files a bundle's relations name and it doesn't hold, by name (SPEC section 2): to be read beside it. */
+export function otherFilesNamed(tables: Record<string, ParsedTable>, bundle: string): string[] {
+  const own = bundleTables(tables, bundle);
+  const names = new Set<string>();
+  for (const table of Object.values(own)) {
+    for (const field of table.schema.fields) {
+      const name = field.relation?.table;
+      if (name && !own[name] && !name.includes("/")) names.add(name);
+    }
+  }
+  return [...names].sort();
 }
 
 /** One bundle as core's `ParsedBundle`, ready to download. */
@@ -73,7 +119,9 @@ export function keyForAddress(
   }
   if (tables[path]) return path;
   const within = `${fromBundle}/${path}`;
-  return tables[within] ? within : null;
+  if (tables[within]) return within;
+  // A name the bundle doesn't hold: the .table of that name beside it (SPEC section 2).
+  return otherFileTable(tables, path) ?? null;
 }
 
 /** Where an address leads: a held table, the view it names, and the row whose page opens. */
@@ -101,7 +149,9 @@ export function addressTarget(
   const key = keyForAddress(addr, tables, bundles, fromBundle);
   if (!key) return null;
   const openBody = addr.rowId && tables[key]?.bodies?.[addr.rowId] !== undefined ? addr.rowId : null;
-  return { key, ...(addr.viewId ? { viewId: addr.viewId } : {}), openBody };
+  // By id or by name; one no view has stays as written, so a stale address reads as one.
+  const viewId = addr.viewId ? (addressedView(tables[key]?.views ?? [], addr.viewId)?.id ?? addr.viewId) : undefined;
+  return { key, ...(viewId ? { viewId } : {}), openBody };
 }
 
 /** What following an address sets in an app, as addressTarget found it. */

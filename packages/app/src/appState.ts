@@ -6,18 +6,21 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { isSheet, textDirection, type Address, type BundleMeta, type Field, type ParsedTable, type TableSchema, type View } from "@workspace.sh/table-core";
-import { canInsertAt, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
+import { coordinateOf, isSheet, mergeOfRange, mergeOver, renameField, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
+import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
 import { arrange, arrangedView, isArranged, reset as resetArrangement, savingForEveryone, type Arrangement, type Arrangements } from "./arrangements.ts";
 import { tableBreadcrumb, type Breadcrumb } from "./breadcrumb.ts";
-import { addressTarget, applyTarget, bundleOf, type AddressTarget } from "./bundles.ts";
+import { addressTarget, applyTarget, bundleOf, bundleTables, tableNameOf, type AddressTarget } from "./bundles.ts";
 import { appCommands, type AppCommand } from "./commands.ts";
+import { canClose, closePrompt, withClosed } from "./closing.ts";
 import { CANCEL, type Confirm } from "./confirm.ts";
 import { creating, namePrompt, newView, type Making, type NamePrompt } from "./creating.ts";
 import { viewerLocale, viewerOrder, withDisplayChoice } from "./displaySettings.ts";
 import {
+  bumpSchemaVersion,
   deletingField,
+  fieldRenameProblem,
   deletingRow,
   deletingView,
   removingChoice,
@@ -27,6 +30,9 @@ import {
   viewPatchPrompt,
   withBody,
   withCell,
+  withCellFormula,
+  withCellNote,
+  withIteration,
   withChoice,
   withField,
   withFieldMoved,
@@ -39,13 +45,15 @@ import {
   withViewPatch,
   type FieldPlace,
 } from "./edits.ts";
+import { afterCellEdit, departedCount, type Departed } from "./departed.ts";
+import { indexChanges, logged, NO_EDIT_LOG, pruned, recorded, settledPages, written, type EditLogState } from "./editLog.ts";
 import { filesTree, type FilesTreeBundle } from "./filesTree.ts";
 import type { IndexEdit } from "./indexed.ts";
 import { addressLive, goBack, goForward, NO_HISTORY, viewAddress, visited, type History, type Place } from "./history.ts";
 import { leaving } from "./leaving.ts";
 import type { Library } from "./library.ts";
 import { afterReset, resetPrompt } from "./resetting.ts";
-import { showView, type ShownView } from "./showView.ts";
+import { sheetShown, showView, type ShownView } from "./showView.ts";
 import { flattenSidebar, sidebarTree, type SidebarBundle, type SidebarEntry } from "./sidebar.ts";
 import { withFileToggled, withFileUnfolded, type SidebarPrefs } from "./sidebarPrefs.ts";
 import { firstTableKey, firstViews, NO_TABLE } from "./starting.ts";
@@ -66,7 +74,10 @@ export type Pending =
   | { type: "deleteView"; key: string; viewId: string; nextViewId: string }
   | { type: "updateView"; key: string; viewId: string; patch: Partial<View> }
   | { type: "reset"; fresh: Library }
-  | { type: "create"; making: Making };
+  | { type: "create"; making: Making }
+  | { type: "close"; bundle: string }
+  | { type: "note"; key: string; rowId: string; field: string }
+  | { type: "merge"; key: string; viewId: string };
 
 /** A question waiting for its answer: a Confirm, or a name to type. */
 export type Asking = { kind: "confirm"; confirm: Confirm; on: Pending } | { kind: "name"; prompt: NamePrompt; on: Pending };
@@ -97,8 +108,16 @@ export interface AppState {
   openPage: string | null;
   /** Each bundle opened from a folder, and where: opaque here, the app's to use. A reset keeps these. */
   opened: Record<string, string>;
+  /**
+   * The bundles that are single-file `.table`s, and where each file is
+   * (Library.singleFiles): `opened` then names its working folder. Such a
+   * file isn't offered as a single-file export: it is one already.
+   */
+  singleFiles?: Record<string, string>;
   /** Each table's schema-version when it was opened, for "schema changed" (D22). */
   openedAt: Record<string, number>;
+  /** Tables held in memory because their index couldn't be made: why, by key (said in their summary). */
+  held?: Record<string, string>;
   /** The file shown from the Files side (`sidebar.files`). */
   shownFile: ShownFile | null;
   /** Folders on the Files side the viewer opened or closed, by `bundle/path`. */
@@ -125,8 +144,13 @@ export interface AppState {
   settingsBefore: SettingsBefore | null;
   asking: Asking | null;
   telling: Telling | null;
-  /** Bundles edited since they were last written. */
+  /**
+   * Bundles edited since they were last written. One no longer held was
+   * closed: the app's write removes what it kept of it.
+   */
   dirty: string[];
+  /** Bundles closed here, for the app to keep: an example closed stays out of the next launch's. */
+  closed: string[];
   /**
    * Edits to rows of tables held in the index (`ParsedTable.indexed`),
    * in order, for the app to make there: their rows aren't in `tables`
@@ -140,6 +164,18 @@ export interface AppState {
    * an edit, and isn't here.
    */
   undo: Record<string, { past: UndoStep[]; future: UndoStep[] }>;
+  /**
+   * What was edited and not yet written to its table's history
+   * (`history.ndjson`, SPEC section 14), for the app to append and then
+   * say so (`editsWritten`). Kept only when the app writes history
+   * (`AppStart.writesHistory`).
+   */
+  editLog: EditLogState;
+  /**
+   * Rows a discrete edit took out of the view on screen, for the toast that
+   * says so and puts them back (departed.ts, #598); null when there's none.
+   */
+  departed: Departed | null;
 }
 
 /**
@@ -153,7 +189,11 @@ export interface AppState {
  * to edits that are one stretch of the same thing (typing in a page),
  * which undo as one.
  */
-export type UndoStep = { name: string; run?: string } & ({ table: ParsedTable } | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } });
+export type UndoStep = { name: string; run?: string } & (
+  /** `others`: other tables the edit changed with it (a field renamed, and the formulas that read it), undone with it. */
+  | { table: ParsedTable; others?: Record<string, ParsedTable> }
+  | { rows: { n: number; back: IndexEdit | null; forth: IndexEdit; page?: string } }
+);
 
 /** The most steps kept for a table, the fewest, and the rows those steps may list between them. */
 const UNDO_STEPS = 100;
@@ -186,6 +226,18 @@ export type AppAction =
   | { type: "settings"; open: boolean; revert?: boolean }
   // Edits to the view on screen: ViewProps' callbacks, one to one
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
+  /** A cell given its own formula (D52), in the stored form; null takes it away. */
+  | { type: "setCellFormula"; rowId: string; field: string; expr: string | null }
+  /** A cell's note (D57); empty takes it away. */
+  | { type: "setCellNote"; rowId: string; field: string; note: string }
+  /** The table's loops worked out by repeating (D60); null, a loop is #REF!. */
+  | { type: "setIteration"; iteration: { max: number; change: number } | null }
+  /** Ask which block of a Sheet view's cells to merge, starting from a cell (D58). */
+  | { type: "askMerge"; rowId: string; field: string }
+  /** Show the merged block over a cell as its cells again (D58). */
+  | { type: "unmerge"; rowId: string; field: string }
+  /** Ask for a cell's note, starting from the one it has (D57). */
+  | { type: "askCellNote"; rowId: string; field: string; note?: string }
   | { type: "addRow"; id: string }
   | { type: "insertRow"; anchor: string; where: "above" | "below"; id: string }
   | { type: "deleteRow"; rowId: string }
@@ -193,7 +245,13 @@ export type AppAction =
   // screen (a page saved as it's typed, its last save landing after a move).
   | { type: "updateBody"; rowId: string; content: string; table?: string }
   | { type: "updateField"; name: string; patch: Partial<Field> }
-  | { type: "addField"; field: Field; place?: FieldPlace }
+  | { type: "addField"; field: Field; place?: FieldPlace }  /**
+   * The field's name (its key) becomes `to`, everywhere it's used: its
+   * rows, views and cells, and every formula that reads it, in its table
+   * or another of its file (renameField). Its id and title stay.
+   */
+  | { type: "renameField"; name: string; to: string }
+
   | { type: "moveField"; name: string; delta: -1 | 1 }
   // A field's settings, cancelled: the schema as they opened, version and all.
   | { type: "restoreSchema"; schema: TableSchema }
@@ -217,6 +275,20 @@ export type AppAction =
   // Files, and questions
   | { type: "create"; making: Making }
   | { type: "opened"; library: Library; skipped?: string[] }
+  /**
+   * Files read again in place of what's held of them: their tables are
+   * the ones read, and edits not yet written are let go. After a save
+   * found the file changed elsewhere (ChangedElsewhere), for the file as
+   * it now is.
+   */
+  | { type: "replaced"; library: Library }
+  /**
+   * Close a file: asks first, then it leaves what's held and is marked to
+   * write (closing.ts). `fromFolder` is for an app that knows better than
+   * `opened` where the file lives (one whose every file is a folder on
+   * disk): true when closing leaves the folder where it is.
+   */
+  | { type: "close"; bundle: string; fromFolder?: boolean }
   | { type: "reset"; fresh: Library }
   | { type: "answer"; response: string; text?: string }
   | { type: "tell"; message: Telling }
@@ -231,9 +303,26 @@ export type AppAction =
   /** Put the table on screen back as it was before its last edit; and forward again. */
   | { type: "undo" }
   | { type: "redo" }
+  /** The toast saying rows left the view is gone (its time is up, or it was dismissed). */
+  | { type: "departedDone" }
+  /** Put back every row the toast counted, as they were before, as one step (#598). */
+  | { type: "putBackDeparted" }
   | { type: "indexed"; key: string; count: number; done?: number; back?: Record<number, IndexEdit> }
-  /** A table read again, to hold in place of the one held: an indexed table whose index couldn't be made, now in memory. */
-  | { type: "reloaded"; key: string; table: ParsedTable };
+  /**
+   * A table read again, to hold in place of the one held: an indexed table
+   * whose index couldn't be made, now in memory. `held` says why, on the
+   * table (its summary), not as an alert.
+   */
+  | { type: "reloaded"; key: string; table: ParsedTable; held?: string }
+  /**
+   * A table opened without its rows (`loading`, a reader's rows: "later")
+   * has them now, with what the reader said of them: it can be edited.
+   */
+  | { type: "rowsRead"; key: string; rows: Row[]; rowFiles: { name: string; ids: string[] }[]; unread: UnreadLine[]; diagnostics: ValidationError[] }
+  /** The app has appended the first `count` of a table's kept edits to its history. */
+  | { type: "editsWritten"; key: string; count: number }
+  /** Every page's stretch of changes is over (typing has been still a while, or the app is about to close): each is said, the open one too. */
+  | { type: "pagesSettled" };
 
 /** The viewer's own settings, as the app loaded them from its store. */
 export interface StoredPrefs {
@@ -247,9 +336,15 @@ export interface AppStart {
   bundles: Record<string, BundleMeta>;
   /** Bundles opened from folders, and where. */
   opened?: Record<string, string>;
+  /** Of those, the single files, and where each file is. */
+  singleFiles?: Record<string, string>;
   stored?: StoredPrefs;
   /** Where to open: an address, as a link or the page's own address gives it. */
   start?: Address | string;
+  /** The app appends edits to each table's history (`state.editLog`), so they are kept for it. */
+  writesHistory?: boolean;
+  /** Bundles closed before, as the app kept them. */
+  closed?: string[];
 }
 
 export function initialAppState(input: AppStart): AppState {
@@ -261,6 +356,7 @@ export function initialAppState(input: AppStart): AppState {
     viewIds: firstViews(tables),
     openPage: null,
     opened: input.opened ?? {},
+    ...(input.singleFiles ? { singleFiles: input.singleFiles } : {}),
     openedAt: schemaVersions(tables),
     shownFile: null,
     openedDirs: {},
@@ -276,8 +372,11 @@ export function initialAppState(input: AppStart): AppState {
     asking: null,
     telling: null,
     dirty: [],
+    closed: input.closed ?? [],
     indexWork: [],
     undo: {},
+    editLog: input.writesHistory ? { ...NO_EDIT_LOG, on: true } : NO_EDIT_LOG,
+    departed: null,
   };
   const target = input.start ? addressTarget(input.start, tables, bundles, "") : null;
   const state = target ? follow(base, target) : base;
@@ -348,8 +447,30 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
       openPage: place.page && rows.some((r) => r.id === place.page) ? place.page : null,
     };
   }
+  next = withDeparted(prev, next, action);
+  // What the action edited, kept for the table's history.
+  if (next.editLog.on) {
+    const open = next.openPage !== null ? { key: next.active, rowId: next.openPage } : null;
+    // (Deleting a row asks first: its answer is the edit.)
+    const edits = ROW_EDITS.has(action.type) || (action.type === "answer" && (prev.asking?.on.type === "deleteRow" || prev.asking?.on.type === "note"));
+    let editLog = next.tables === prev.tables ? next.editLog : pruned(next.editLog, next.tables);
+    // The examples put back as they shipped: their files are new, and what was edited before is no part of them.
+    if (action.type === "answer" && prev.asking?.on.type === "reset" && next.tables !== prev.tables) editLog = { ...NO_EDIT_LOG, on: true };
+    if (edits) editLog = recorded(editLog, prev.tables, next.tables, open);
+    // A page left: its stretch of changes is over.
+    else if (next.openPage !== prev.openPage || next.active !== prev.active) editLog = settledPages(editLog, next.tables, open);
+    if (editLog !== next.editLog) next = { ...next, editLog };
+  }
   return next;
 }
+
+/**
+ * The actions that edit rows or pages, whose changes go to the table's
+ * history. Any other action that replaces a table isn't an edit to say:
+ * a file opened or read again, rows moved into the index, the examples
+ * reset, a field's change and what it does to the rows.
+ */
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "setCellFormula", "setCellNote", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -367,19 +488,25 @@ function placeOf(state: AppState): Place {
  * (each save of the same page while it's typed in).
  *
  * A table held in the index has its rows there, not here: an edit to its
- * views is kept here, one to its rows as it's queued for the index
- * (`queued`), and an edit to its fields changes what the index holds, so
- * what was kept before it is let go.
+ * views or its fields is kept here (the index is changed back in place on
+ * undo), and one to its rows as it's queued for the index (`queued`).
  */
 function edit(state: AppState, name: string, change: (table: ParsedTable) => ParsedTable, key = state.active, run?: string): AppState {
+  // Its rows not read yet: nothing of it is changed until they are (isEditable).
+  if (state.tables[key]?.loading) return state;
   const tables = onTable(state.tables, key, change);
   if (tables === state.tables) return state;
   const next = { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
   const before = state.tables[key]!;
   if (before.indexed) {
     const after = tables[key]!;
-    if (after.schema !== before.schema) return { ...next, undo: without(state.undo, [key]) };
-    if (after.views === before.views) return next;
+    // A change of fields is made in the index where it is, so undo can make it the other way (#562).
+    // What an undo had brought back is the index's now: a field added later is new.
+    if (after.schema !== before.schema && after.indexed?.restore) {
+      const { restore: _, ...indexed } = after.indexed;
+      next.tables = { ...tables, [key]: { ...after, indexed } };
+    }
+    if (after.schema === before.schema && after.views === before.views) return next;
   }
   const stack = state.undo[key] ?? { past: [], future: [] };
   const last = stack.past.at(-1);
@@ -399,6 +526,44 @@ function edit(state: AppState, name: string, change: (table: ParsedTable) => Par
 function cellEditName(state: AppState, field: string, key = state.active): string {
   const title = state.tables[key]?.schema.fields.find((f) => f.name === field)?.title;
   return `Edit ${title ?? field.replace(/[_-]+/g, " ").replace(/(^|\s)\p{Ll}/gu, (letter) => letter.toUpperCase())}`;
+}
+
+/**
+ * The toast's rows after an action (departed.ts): counted on by a discrete
+ * edit that takes a row out of the view on screen; over when another view
+ * or table shows, or another kind of edit is made.
+ */
+function withDeparted(prev: AppState, next: AppState, action: AppAction): AppState {
+  if (!next.departed && action.type !== "updateRow") return next;
+  let departed = next.departed;
+  if (action.type === "updateRow" && next.tables !== prev.tables) {
+    const before = prev.tables[prev.active];
+    const after = next.tables[prev.active];
+    if (before && after) departed = afterCellEdit(departed, before, after, prev.active, currentView(prev), action.rowId, action.field);
+  } else if (ROW_EDITS.has(action.type) && next.tables !== prev.tables) {
+    departed = null;
+  }
+  if (departed && (next.active !== departed.key || viewIdOf(next, next.active) !== departed.viewId)) departed = null;
+  return departed === next.departed ? next : { ...next, departed };
+}
+
+/** This viewer's own arrangements of a table's views, a field of it renamed. */
+function arrangementsRenamed(arrangements: Arrangements, key: string, from: string, to: string): Arrangements {
+  const mine = arrangements[key];
+  if (!mine || !JSON.stringify(mine).includes(JSON.stringify(from))) return arrangements;
+  const field = <T extends { field: string }>(x: T): T => (x.field === from ? { ...x, field: to } : x);
+  const views = Object.fromEntries(
+    Object.entries(mine).map(([id, a]) => [
+      id,
+      {
+        ...a,
+        ...(a.filter ? { filter: a.filter.map(field) } : {}),
+        ...(a.sort ? { sort: a.sort.map(field) } : {}),
+        ...(a.group ? { group: field(a.group) } : {}),
+      },
+    ]),
+  );
+  return { ...arrangements, [key]: views };
 }
 
 /** A change that is only a new title: a rename. */
@@ -433,13 +598,20 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
     const held = tables === state.tables ? state : { ...state, tables, dirty: marked(state.dirty, bundleOf(key)) };
     return { ...queued(held, key, made), undo: moved(step) };
   }
-  // A table held in the index: its views go back, and the rest stays what the index holds.
-  const table = now.indexed ? { ...now, views: step.table.views } : step.table;
+  // A table held in the index: its views and fields go back, its rows stay what the index holds.
+  // Fields that come back come back with their values, which the index kept hidden (#562).
+  const restore = step.table.schema.fields.filter((f) => !now.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
+  const table = now.indexed
+    ? { ...now, views: step.table.views, schema: step.table.schema, indexed: { count: now.indexed.count, version: now.indexed.version, ...(restore.length > 0 ? { restore } : {}) } }
+    : step.table;
+  // Other tables the edit changed with this one go back (or forward) with it, and are kept as they are now for the way back.
+  const others = step.others ? Object.fromEntries(Object.keys(step.others).flatMap((k) => (state.tables[k] ? [[k, state.tables[k]!]] : []))) : undefined;
+  const dirty = Object.keys(step.others ?? {}).reduce((d, k) => marked(d, bundleOf(k)), marked(state.dirty, bundleOf(key)));
   return {
     ...state,
-    tables: { ...state.tables, [key]: table },
-    dirty: marked(state.dirty, bundleOf(key)),
-    undo: moved({ name: step.name, table: now, ...run }),
+    tables: { ...state.tables, ...step.others, [key]: table },
+    dirty,
+    undo: moved({ name: step.name, table: now, ...run, ...(others ? { others } : {}) }),
   };
 }
 
@@ -538,6 +710,13 @@ function moved(state: AppState, to: { history: History; address: string; place?:
   return { ...follow(state, target), history: to.history, restoring: { place: to.place ?? {}, n: (state.restoring?.n ?? 0) + 1 } };
 }
 
+/** A Sheet view's grid as saved (D41): its columns and its rows, in order. Undefined for any other view. */
+function sheetGridOf(state: AppState, key: string, view: View): { columns: string[]; rows: string[] } | undefined {
+  const table = state.tables[key];
+  const order = table && sheetShown(state.tables, key, view)?.order;
+  return order ? { columns: visibleFields(view, table.schema), rows: order } : undefined;
+}
+
 function currentView(state: AppState): View | undefined {
   const id = viewIdOf(state, state.active);
   return state.tables[state.active]?.views.find((v) => v.id === id);
@@ -597,6 +776,60 @@ function step(state: AppState, action: AppAction): AppState {
         return queued(state, state.active, { kind: "cell", rowId: action.rowId, field: action.field, value: action.value }, { name: cellEditName(state, action.field), back: null });
       }
       return edit(state, cellEditName(state, action.field), (t) => withCell(t, action.rowId, action.field, action.value));
+    case "setCellFormula":
+      if (state.tables[state.active]?.indexed) {
+        // Made in the index, which knows what it had: undo is the edit it gives back.
+        return queued(state, state.active, { kind: "formula", rowId: action.rowId, field: action.field, expr: action.expr }, { name: cellEditName(state, action.field), back: null });
+      }
+      return edit(state, cellEditName(state, action.field), (t) => withCellFormula(t, action.rowId, action.field, action.expr));
+    case "setIteration":
+      // An index works a row out at a time: a table that iterates is held in memory (canBeIndexed), so one in an index can't.
+      if (state.tables[state.active]?.indexed) return state;
+      return edit(state, action.iteration ? "Repeat Loops" : "Stop Repeating Loops", (t) => withIteration(t, action.iteration));
+    case "askMerge": {
+      const view = currentView(state);
+      const grid = view && sheetGridOf(state, state.active, view);
+      if (!view || !grid) return state;
+      const at = coordinateOf(action.field, action.rowId, grid);
+      return {
+        ...state,
+        asking: {
+          kind: "name",
+          prompt: { heading: "Merge Cells", action: "Merge", placeholder: "B2:C4", ...(at ? { value: `${at}:` } : {}) },
+          on: { type: "merge", key: state.active, viewId: view.id },
+        },
+      };
+    }
+    case "unmerge": {
+      const view = currentView(state);
+      const grid = view && sheetGridOf(state, state.active, view);
+      if (!view || !grid) return state;
+      const at = mergeOver(view, action.field, action.rowId, grid.columns, grid.rows);
+      if (at === -1) return state;
+      const merged = view.merged!.filter((_, i) => i !== at);
+      return edit(state, "Unmerge Cells", (t) => withViewPatch(t, view.id, { merged: merged.length > 0 ? merged : undefined }));
+    }
+    case "askCellNote": {
+      const table = state.tables[state.active];
+      if (!table) return state;
+      // Called as its column is (Edit Budget, Note on Budget).
+      const title = cellEditName(state, action.field).slice("Edit ".length);
+      // Held in memory, the note it has is here; in an index, the view says what it read.
+      const note = table.indexed ? action.note : table.cells?.find((c) => c.id === action.rowId && c.field === action.field)?.note;
+      return {
+        ...state,
+        asking: {
+          kind: "name",
+          prompt: { heading: `Note on ${title}`, action: "Save", placeholder: "A note on this cell", ...(note ? { value: note } : {}) },
+          on: { type: "note", key: state.active, rowId: action.rowId, field: action.field },
+        },
+      };
+    }
+    case "setCellNote":
+      if (state.tables[state.active]?.indexed) {
+        return queued(state, state.active, { kind: "note", rowId: action.rowId, field: action.field, note: action.note }, { name: "Edit Note", back: null });
+      }
+      return edit(state, "Edit Note", (t) => withCellNote(t, action.rowId, action.field, action.note));
     case "addRow":
       if (state.tables[state.active]?.indexed) {
         return queued(state, state.active, { kind: "add", rowId: action.id }, { name: "Add Row", back: { kind: "remove", rowId: action.id } });
@@ -628,6 +861,31 @@ function step(state: AppState, action: AppAction): AppState {
     }
     case "updateField":
       return edit(state, onlyTitle(action.patch) ? "Rename Field" : "Change Field", (t) => withFieldPatch(t, action.name, action.patch));
+    case "renameField": {
+      const key = state.active;
+      const table = state.tables[key];
+      if (!table || fieldRenameProblem(table, action.name, action.to) !== null) return state;
+      const bundle = bundleOf(key);
+      const held = bundleTables(state.tables, bundle);
+      const renamed = renameField(held, tableNameOf(key), action.name, action.to);
+      const changed = Object.keys(renamed).filter((n) => renamed[n] !== held[n]).map((n) => `${bundle}/${n}`);
+      const bumped = (k: string) => {
+        const t = renamed[tableNameOf(k)]!;
+        return t.schema === state.tables[k]!.schema ? t : { ...t, schema: bumpSchemaVersion(t.schema) };
+      };
+      const made = edit(state, "Rename Field", () => bumped(key), key);
+      if (made === state) return state;
+      const others = changed.filter((k) => k !== key);
+      const stack = made.undo[key]!;
+      const step = stack.past.at(-1)!;
+      return {
+        ...made,
+        tables: { ...made.tables, ...Object.fromEntries(others.map((k) => [k, bumped(k)])) },
+        undo: { ...made.undo, [key]: { ...stack, past: [...stack.past.slice(0, -1), { ...step, others: Object.fromEntries(others.map((k) => [k, state.tables[k]!])) }] } },
+        arrangements: arrangementsRenamed(made.arrangements, key, action.name, action.to),
+        ...(made.place.field === action.name ? { place: { ...made.place, field: action.to } } : {}),
+      };
+    }
     case "addField":
       return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active), action.place));
     case "moveField":
@@ -690,7 +948,7 @@ function step(state: AppState, action: AppAction): AppState {
       return arrangements === state.arrangements ? state : { ...state, arrangements };
     }
     case "display":
-      return { ...state, display: withDisplayChoice(state.display, action.choice.kind, action.choice.value) };
+      return { ...state, display: withDisplayChoice(state.display, action.choice.kind, action.choice.value, state.active || undefined) };
     case "setFilesSide":
       if (!!state.sidebar.files === action.files) return state;
       return { ...state, sidebar: action.files ? { ...state.sidebar, files: true } : tablesSide(state.sidebar) };
@@ -727,13 +985,27 @@ function step(state: AppState, action: AppAction): AppState {
           undo: without(state.undo, Object.keys(library.tables)),
           bundles: { ...state.bundles, ...library.bundles },
           opened: { ...state.opened, ...library.paths },
+          ...(library.singleFiles || state.singleFiles ? { singleFiles: { ...without(state.singleFiles ?? {}, keys), ...library.singleFiles } } : {}),
           openedAt: { ...state.openedAt, ...schemaVersions(library.tables) },
           viewIds: { ...firstViews(library.tables), ...state.viewIds },
           dirty: unkept.reduce(marked, state.dirty),
+          closed: state.closed.filter((b) => !(b in library.bundles)),
           ...(told ? { telling: told } : {}),
         },
         firstTableKey(library.tables),
       );
+    }
+    case "replaced": {
+      const keys = Object.keys(action.library.bundles);
+      const held = (key: string) => keys.includes(bundleOf(key));
+      const cleared = { ...state, tables: Object.fromEntries(Object.entries(state.tables).filter(([key]) => !held(key))), dirty: state.dirty.filter((b) => !keys.includes(b)) };
+      return tableApp(cleared, { type: "opened", library: action.library });
+    }
+    case "close": {
+      const meta = state.bundles[action.bundle];
+      if (!meta || !canClose(state.bundles, action.bundle)) return state;
+      const prompt = closePrompt(meta.title ?? action.bundle, action.fromFolder ?? state.opened[action.bundle] !== undefined);
+      return { ...state, asking: { kind: "confirm", confirm: prompt, on: { type: "close", bundle: action.bundle } } };
     }
     case "reset":
       return {
@@ -762,9 +1034,47 @@ function step(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         tables: { ...state.tables, [action.key]: action.table },
+        ...(action.held !== undefined || state.held?.[action.key] !== undefined
+          ? { held: { ...without(state.held ?? {}, [action.key]), ...(action.held !== undefined ? { [action.key]: action.held } : {}) } }
+          : {}),
         indexWork: state.indexWork.filter((w) => w.key !== action.key),
         undo: without(state.undo, [action.key]),
       };
+    case "rowsRead": {
+      const table = state.tables[action.key];
+      if (!table?.loading) return state;
+      const { loading: _, ...rest } = table;
+      const read: ParsedTable = { ...rest, rows: action.rows };
+      if (action.rowFiles.length > 0) read.rowFiles = action.rowFiles;
+      if (action.unread.length > 0) read.unread = action.unread;
+      if (action.diagnostics.length > 0) read.diagnostics = [...(table.diagnostics ?? []), ...action.diagnostics];
+      // What it couldn't read is said, as opening says it when the rows come with the rest.
+      const bundle = bundleOf(action.key);
+      const told = state.telling ? null : skippedText(state.bundles[bundle]?.title ?? bundle, action.diagnostics.map((d) => `${tableNameOf(action.key)}: ${d.message}`));
+      return { ...state, tables: { ...state.tables, [action.key]: read }, ...(told ? { telling: told } : {}) };
+    }
+    case "editsWritten": {
+      const editLog = written(state.editLog, action.key, action.count);
+      return editLog === state.editLog ? state : { ...state, editLog };
+    }
+    case "pagesSettled": {
+      const editLog = settledPages(state.editLog, state.tables, null);
+      return editLog === state.editLog ? state : { ...state, editLog };
+    }
+    case "departedDone":
+      return state.departed ? { ...state, departed: null } : state;
+    case "putBackDeparted": {
+      const gone = state.departed;
+      if (!gone) return state;
+      const count = departedCount(gone);
+      const putBack = edit(
+        { ...state, departed: null },
+        count === 1 ? "Put Back Row" : `Put Back ${count} Rows`,
+        (t) => gone.rows.reduce((table, r) => withCell(table, r.rowId, r.field, r.was), t),
+        gone.key,
+      );
+      return putBack.tables === state.tables ? { ...state, departed: null } : putBack;
+    }
     case "undo":
       return stepBack(state, "past");
     case "redo":
@@ -772,17 +1082,28 @@ function step(state: AppState, action: AppAction): AppState {
     case "indexed": {
       const table = state.tables[action.key];
       if (!table) return state;
-      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1 };
+      // What an undo brought back stays said until the app has changed the index for it (a later edit to the fields clears it).
+      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1, ...(table.indexed?.restore ? { restore: table.indexed.restore } : {}) };
       const tables = { ...state.tables, [action.key]: { ...table, indexed } };
       // Its rows have just gone to the index: the steps kept list them as they were here.
       if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };
       const done = action.done;
       const heard = stepsHeard(state.undo[action.key], done, action.back);
+      // The edits now made, for the table's history: said here, where what each replaced is heard.
+      const editLog = logged(
+        state.editLog,
+        action.key,
+        indexChanges(
+          state.indexWork.filter((w) => w.key === action.key && w.n <= done),
+          action.back,
+        ),
+      );
       return {
         ...state,
         tables,
         indexWork: state.indexWork.filter((w) => w.key !== action.key || w.n > done),
         dirty: marked(state.dirty, bundleOf(action.key)),
+        ...(editLog !== state.editLog ? { editLog } : {}),
         ...(heard && heard !== state.undo[action.key] ? { undo: { ...state.undo, [action.key]: heard } } : {}),
       };
     }
@@ -794,6 +1115,21 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
   if (action.response === CANCEL.id) return state;
   if (asking.kind === "confirm" && !asking.confirm.responses.some((r) => r.id === action.response)) return state;
   switch (on.type) {
+    case "merge": {
+      const view = state.tables[on.key]?.views.find((v) => v.id === on.viewId);
+      const grid = view && sheetGridOf(state, on.key, view);
+      if (!view || !grid) return state;
+      const merge = mergeOfRange(action.text ?? "", grid.columns, grid.rows);
+      if (!merge) return { ...state, telling: { heading: `“${(action.text ?? "").trim()}” isn't a block of cells`, body: "Type two of its corners, as B2:C4." } };
+      return edit(state, "Merge Cells", (t) => withViewPatch(t, view.id, { merged: withMerge(view, merge, grid.columns, grid.rows) }), on.key);
+    }
+    case "note": {
+      // Saved in the table it was asked of, wherever the screen is now.
+      if (state.tables[on.key]?.indexed) {
+        return queued(state, on.key, { kind: "note", rowId: on.rowId, field: on.field, note: action.text ?? "" }, { name: "Edit Note", back: null });
+      }
+      return edit(state, "Edit Note", (t) => withCellNote(t, on.rowId, on.field, action.text ?? ""), on.key);
+    }
     case "deleteRow":
       // Its page, if open, goes with it (settle's rule).
       if (state.tables[on.key]?.indexed) {
@@ -832,9 +1168,35 @@ function answered(state: AppState, asking: Asking, action: { response: string; t
           restoring: null,
           shownFile: null,
           dirty: state.dirty.filter((b) => keep.includes(b)),
+          closed: [],
         },
         firstTableKey(on.fresh.tables),
       );
+    }
+    case "close": {
+      const { bundle } = on;
+      if (!canClose(state.bundles, bundle)) return state;
+      const gone = Object.keys(state.tables).filter((k) => bundleOf(k) === bundle);
+      const inIt = (id: string) => id.startsWith(`${bundle}/`);
+      const bundles = without(state.bundles, [bundle]);
+      const tables = without(state.tables, gone);
+      const next: AppState = {
+        ...state,
+        tables,
+        bundles,
+        opened: without(state.opened, [bundle]),
+        ...(state.singleFiles ? { singleFiles: without(state.singleFiles, [bundle]) } : {}),
+        openedAt: without(state.openedAt, gone),
+        viewIds: without(state.viewIds, gone),
+        undo: without(state.undo, gone),
+        indexWork: state.indexWork.filter((w) => bundleOf(w.key) !== bundle),
+        openedDirs: Object.fromEntries(Object.entries(state.openedDirs).filter(([id]) => !inIt(id))),
+        shownFile: state.shownFile?.bundle === bundle ? null : state.shownFile,
+        // Written away: the app removes what it kept of it.
+        dirty: marked(state.dirty, bundle),
+        closed: withClosed(state.closed, bundle),
+      };
+      return bundleOf(state.active) === bundle ? show({ ...next, openPage: null }, firstTableKey(tables)) : next;
     }
     case "create": {
       const made = creating(state.tables, state.bundles, on.making, action.text);
@@ -855,6 +1217,8 @@ export interface DeriveOptions {
   newTableIn?: "active" | "every" | "none";
   /** A table's attachment file names, for the Files side. */
   attachmentsOf?: (tableKey: string) => string[];
+  /** Whether a table has an edit history where the app keeps it, for the Files side to list it. */
+  hasHistory?: (tableKey: string) => boolean;
   /** What a bundle's file is called where it is (an opened folder's own name), for the breadcrumb. */
   fileNameOf?: (bundle: string) => string | undefined;
   /** For a table held in the index: how many rows its view shows now, and before the search, once the app has read them. */
@@ -913,8 +1277,8 @@ function lastAnswer<A extends unknown[], R>(f: (...args: A) => R): (...args: A) 
 }
 
 const summaryLast = lastAnswer(
-  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined) =>
-    viewSummary(table, { shown, inView, searching, openedAt }),
+  (table: ParsedTable, shown: number, inView: number, searching: boolean, openedAt: number | undefined, held: string | undefined, filteredBy: string) =>
+    viewSummary(table, { shown, inView, searching, openedAt, ...(held !== undefined ? { held } : {}), ...(filteredBy ? { filteredBy: filteredBy.split("\n") } : {}) }),
 );
 
 let lastShown: { asked: unknown[]; answer: ShownView } | undefined;
@@ -930,6 +1294,13 @@ function shownLast(tables: Record<string, ParsedTable>, key: string, view: View,
   return answer;
 }
 
+/**
+ * An indexed table's rows here: none, and always the same none. A new
+ * empty list each time was a new prop for the table on every draw of the
+ * app, which drew every row of the table again (a selection, a second).
+ */
+const INDEXED_ROWS: Row[] = [];
+
 export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const table = state.tables[state.active] ?? NO_TABLE;
   const viewId = viewIdOf(state, state.active);
@@ -941,7 +1312,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
   const shown: ShownView =
     held && !table.indexed
       ? shownLast(state.tables, state.active, view, arrangement, state.search, locale)
-      : { view: arrangedView(view, arrangement), rows: [], inView: options.indexedShown?.inView ?? table.indexed?.count ?? 0 };
+      : { view: arrangedView(view, arrangement), rows: INDEXED_ROWS, inView: options.indexedShown?.inView ?? table.indexed?.count ?? 0 };
   const live = (a: string) => addressLive(a, state.tables, state.bundles);
   const canGoBack = goBack(state.history, live) !== null;
   const canGoForward = goForward(state.history, live) !== null;
@@ -968,6 +1339,9 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
       shown.inView,
       state.search.trim().length > 0,
       state.openedAt[state.active],
+      state.held?.[state.active],
+      // As one string, so an unchanged filter is the same answer.
+      (shown.view.filter ?? []).map((f) => f.field).join("\n"),
     ),
     breadcrumb: tableBreadcrumb(state.active, state.tables, state.bundles, options.fileNameOf?.(bundleOf(state.active))),
     mode,
@@ -982,6 +1356,7 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
             activeTable: state.active,
             opened: state.openedDirs,
             ...(options.attachmentsOf ? { attachmentsOf: options.attachmentsOf } : {}),
+            ...(options.hasHistory ? { hasHistory: options.hasHistory } : {}),
           })
         : [],
     canGoBack,
@@ -990,7 +1365,17 @@ export function derive(state: AppState, options: DeriveOptions = {}): Derived {
     canRedo,
     undoName,
     redoName,
-    commands: appCommands({ sidebarCollapsed: state.sidebar.collapsed === true, filesMode: mode === "files", canGoBack, canGoForward, canUndo, canRedo, undoName, redoName }),
+    commands: appCommands({
+      sidebarCollapsed: state.sidebar.collapsed === true,
+      filesMode: mode === "files",
+      canGoBack,
+      canGoForward,
+      canUndo,
+      canRedo,
+      undoName,
+      redoName,
+      singleFile: state.singleFiles?.[bundleOf(state.active)] !== undefined,
+    }),
     address: viewAddress(state.active, view.id, state.openPage ?? undefined),
   };
 }
@@ -1000,6 +1385,11 @@ export type ViewCallbacks = Required<
   Pick<
     ViewProps,
     | "onUpdateRow"
+    | "onSetCellFormula"
+    | "onSetIteration"
+    | "onAskMerge"
+    | "onUnmerge"
+    | "onAskCellNote"
     | "onUpdateField"
     | "onAddEnumValue"
     | "onRemoveEnumValue"
@@ -1014,7 +1404,9 @@ export type ViewCallbacks = Required<
     | "onOpenRelation"
     | "onInsertRow"
   >
->;
+> &
+  /** Absent while a table is still being read (fieldRenameProblem). */
+  Pick<ViewProps, "onRenameField">;
 
 /**
  * The view on screen's callbacks, each dispatching its action. `newId`
@@ -1024,7 +1416,13 @@ export type ViewCallbacks = Required<
 export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => void, newId: () => string): ViewCallbacks {
   return {
     onUpdateRow: (rowId, field, value) => dispatch({ type: "updateRow", rowId, field, value }),
+    onSetCellFormula: (rowId, field, expr) => dispatch({ type: "setCellFormula", rowId, field, expr }),
+    onSetIteration: (iteration) => dispatch({ type: "setIteration", iteration }),
+    onAskMerge: (rowId, field) => dispatch({ type: "askMerge", rowId, field }),
+    onUnmerge: (rowId, field) => dispatch({ type: "unmerge", rowId, field }),
+    onAskCellNote: (rowId, field, note) => dispatch({ type: "askCellNote", rowId, field, ...(note !== undefined ? { note } : {}) }),
     onUpdateField: (name, patch) => dispatch({ type: "updateField", name, patch }),
+    ...(state.tables[state.active] && !state.tables[state.active]!.loading ? { onRenameField: (name: string, to: string) => dispatch({ type: "renameField", name, to }) } : {}),
     onAddEnumValue: (name, value) => dispatch({ type: "addChoice", name, value }),
     onRemoveEnumValue: (name, value) => dispatch({ type: "removeChoice", name, value }),
     onDeleteField: (name) => dispatch({ type: "deleteField", name }),
@@ -1045,4 +1443,13 @@ export function viewCallbacks(state: AppState, dispatch: (action: AppAction) => 
     },
     onInsertRow: (anchor, where) => dispatch({ type: "insertRow", anchor, where, id: newId() }),
   };
+}
+
+/**
+ * Whether a table can be edited yet: not while its rows are still being
+ * read, whether into memory (`loading`) or into its index (`reading`, the
+ * indexed tables' build). The one flag every screen greys out its editing by.
+ */
+export function isEditable(table: ParsedTable | undefined, reading = false): boolean {
+  return !!table && !table.loading && !reading;
 }

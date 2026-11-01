@@ -30,11 +30,14 @@ type Props = {
   onValueChange?: (value: string) => void;
   onSelectionChange?: (selection: { start: number; end: number }) => void;
   onSubmit?: (value: string) => void;
+  /** Backspace at the very start with nothing selected: a prefix drawn before the field can go. */
+  onDeleteAtStart?: () => void;
   modifiers?: ModifierConfig[];
 };
 
 type NativeEvent<T> = { nativeEvent: T };
-type NativeProps = Omit<Props, "onValueChange" | "onSelectionChange" | "onSubmit"> & {
+type NativeProps = Omit<Props, "onValueChange" | "onSelectionChange" | "onSubmit" | "onDeleteAtStart"> & {
+  onDeleteAtStart?: () => void;
   onValueChange?: (e: NativeEvent<{ value: string }>) => void;
   onSelectionChange?: (e: NativeEvent<{ start: number; end: number }>) => void;
   onSubmit?: (e: NativeEvent<{ value: string }>) => void;
@@ -42,7 +45,7 @@ type NativeProps = Omit<Props, "onValueChange" | "onSelectionChange" | "onSubmit
 
 const Native: React.ComponentType<NativeProps> = requireNativeView("GlassBar", "FormulaFieldView");
 
-export function FormulaField({ modifiers, onValueChange, onSelectionChange, onSubmit, ...rest }: Props) {
+export function FormulaField({ modifiers, onValueChange, onSelectionChange, onSubmit, onDeleteAtStart, ...rest }: Props) {
   return (
     <Native
       {...rest}
@@ -51,6 +54,7 @@ export function FormulaField({ modifiers, onValueChange, onSelectionChange, onSu
       onValueChange={onValueChange ? (e) => onValueChange(e.nativeEvent.value) : undefined}
       onSelectionChange={onSelectionChange ? (e) => onSelectionChange({ start: e.nativeEvent.start, end: e.nativeEvent.end }) : undefined}
       onSubmit={onSubmit ? (e) => onSubmit(e.nativeEvent.value) : undefined}
+      onDeleteAtStart={onDeleteAtStart ? () => onDeleteAtStart() : undefined}
     />
   );
 }

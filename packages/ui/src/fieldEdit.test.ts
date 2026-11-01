@@ -1,10 +1,15 @@
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { Field } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 import {
   addableChoices,
+  CHOICE_COLOURS,
+  choiceColour,
+  choiceLabel,
+  choicesPatch,
+  movedChoices,
   alignLabel,
   alignPatch,
   fieldFormula,
@@ -40,6 +45,27 @@ test("a number's format picker: currency keeps its code, decimal its places", ()
   assert.deepEqual(value.choose(""), { format: undefined });
   assert.equal(value.notes.length, 1);
   assert.equal(value.notes[0]!.kind, "note");
+});
+
+test("scientific keeps its places, and negatives in brackets go with decimal and currency only (D53)", () => {
+  const n = (format?: string): Field => ({ name: "n", type: "number", ...(format ? { format } : {}) });
+  const sci = formatState(n("scientific:3"), [n("scientific:3")], {})!;
+  assert.equal(sci.kind, "scientific");
+  assert.equal(sci.digits, 3);
+  assert.equal(sci.takesParens, false);
+  assert.deepEqual(sci.choose("decimal"), { format: "decimal:3" });
+  const money = formatState(n("currency:EUR:parens"), [n("currency:EUR:parens")], {})!;
+  assert.equal(money.kind, "currency");
+  assert.equal(money.code, "EUR");
+  assert.equal(money.parens, true);
+  assert.deepEqual(money.currency("GBP"), { format: "currency:GBP:parens" });
+  assert.deepEqual(money.choose("decimal"), { format: "decimal:2:parens" });
+  // A kind that can't show brackets drops them.
+  assert.deepEqual(money.choose("fraction"), { format: "fraction" });
+  assert.deepEqual(money.setParens(false), { format: "currency:EUR" });
+  const places = formatState(n("decimal:1"), [n("decimal:1")], {})!;
+  assert.deepEqual(places.setParens(true), { format: "decimal:1:parens" });
+  assert.ok(places.choices.some((c) => c.value === "fraction"));
 });
 
 test("a formula shows its inputs' currency, and warns when shown in another", () => {
@@ -80,7 +106,7 @@ test("a changed formula saves, with a new type when its family changes; the same
   const quarter = f(budget, "quarter");
   assert.equal(fieldFormula(quarter, budget, "(+ jan feb mar)").save, undefined);
   assert.deepEqual(fieldFormula(quarter, budget, "=jan*2").save, { computed: { expr: "(* jan 2)", dialect: "table-expr-v1" } });
-  assert.equal(fieldFormula(quarter, budget, '(concat item "!")').save?.type, "string");
+  assert.equal(fieldFormula(quarter, budget, '(concatenate item "!")').save?.type, "string");
   assert.equal(fieldFormula(quarter, budget, "(+ jan").compiled.ok, false);
 });
 
@@ -96,4 +122,43 @@ test("a new field's key comes from its name, never clashing; a formula field nee
   assert.deepEqual(half.computed, { expr: "(/ jan 2)", dialect: "table-expr-v1" });
   assert.equal(half.type, "number");
   assert.equal(addableChoices().at(-1)!.value, "formula");
+});
+
+describe("a field's choices, as Field settings changes them", () => {
+  const field: Field = { name: "status", type: "string", constraints: { enum: ["todo", { value: "doing", color: "blue" }, "done"] } };
+
+  it("are written back bare when a choice has no label or colour, and as an object when it has either", () => {
+    assert.deepEqual(choicesPatch(field, [{ value: "todo", label: "To do" }, { value: "doing" }, { value: "done", color: "green" }]).constraints?.enum, [
+      { value: "todo", label: "To do" },
+      "doing",
+      { value: "done", color: "green" },
+    ]);
+  });
+
+  it("keep the field's other constraints", () => {
+    const required: Field = { ...field, constraints: { ...field.constraints, required: true } };
+    assert.equal(choicesPatch(required, [{ value: "todo" }]).constraints?.required, true);
+  });
+
+  it("take a label only when it says something the value doesn't", () => {
+    assert.deepEqual(choiceLabel({ value: "todo", color: "red" }, "  To do "), { value: "todo", color: "red", label: "To do" });
+    assert.deepEqual(choiceLabel({ value: "todo", label: "To do" }, "todo"), { value: "todo" });
+    assert.deepEqual(choiceLabel({ value: "todo", label: "To do" }, "  "), { value: "todo" });
+  });
+
+  it("take a colour, and None takes it away", () => {
+    assert.deepEqual(choiceColour({ value: "todo" }, "red"), { value: "todo", color: "red" });
+    assert.deepEqual(choiceColour({ value: "todo", label: "To do", color: "red" }, "none"), { value: "todo", label: "To do" });
+    assert.equal(CHOICE_COLOURS[0]!.value, "none");
+  });
+
+  it("move one place, and stay as they are past either end", () => {
+    const choices = [{ value: "a" }, { value: "b" }, { value: "c" }];
+    assert.deepEqual(
+      movedChoices(choices, 2, 0).map((c) => c.value),
+      ["c", "a", "b"],
+    );
+    assert.equal(movedChoices(choices, 0, -1), choices);
+    assert.equal(movedChoices(choices, 2, 3), choices);
+  });
 });

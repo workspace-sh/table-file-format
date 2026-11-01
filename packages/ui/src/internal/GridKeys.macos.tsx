@@ -7,9 +7,9 @@
  */
 import { forwardRef, useImperativeHandle, useRef, type ComponentType, type ReactNode } from "react";
 import { View } from "react-native";
-import type { GridKeysHandle, GridKeysProps } from "./GridKeys";
+import type { GridKeysHandle, GridKeysProps } from "./GridKeys.types";
 
-export type { GridKeysHandle, GridKeysProps } from "./GridKeys";
+export type { GridKeysHandle, GridKeysProps } from "./GridKeys.types";
 
 interface HandledKey {
   key: string;
@@ -41,7 +41,7 @@ const NAMED = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End",
 const TYPED = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i));
 const HANDLED: HandledKey[] = [...NAMED.map((key) => ({ key })), ...TYPED.map((key) => ({ key, metaKey: false, ctrlKey: false }))];
 
-export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridKeys({ onKeyDown, children }, ref) {
+export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridKeys({ onKeyDown, children, grow, most }, ref) {
   const view = useRef<{ focus?: () => void } | null>(null);
   useImperativeHandle(ref, () => ({ focus: () => view.current?.focus?.() }));
   return (
@@ -57,7 +57,7 @@ export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridK
         const { key, shiftKey, metaKey, ctrlKey, altKey } = e.nativeEvent;
         onKeyDown({ key, shiftKey, metaKey, ctrlKey, altKey });
       }}
-      style={SHRINK}
+      style={most !== undefined ? [grow ? GROW : SHRINK, { maxWidth: most }] : grow ? GROW : SHRINK}
     >
       {children}
     </KeyView>
@@ -66,3 +66,5 @@ export const GridKeys = forwardRef<GridKeysHandle, GridKeysProps>(function GridK
 
 // As wide as the table in it, so it sits in a row (edge to edge) as the table did.
 const SHRINK = { flexShrink: 0 };
+// Or as wide as the row, for a table that fills the page's width.
+const GROW = { flexShrink: 0, flexGrow: 1 };

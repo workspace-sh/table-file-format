@@ -46,12 +46,6 @@
   /// What the two items say when they'd act on the table: "Undo Edit Title".
   NSString *_undoTitle;
   NSString *_redoTitle;
-  /// What was chosen from the pop-up menu on screen (popUp).
-  NSString *_popUpChoice;
-  /// Development only: the last pop-up menu's titles, and a choice to make from the next one.
-  NSArray<NSString *> *_popUpTitles;
-  NSString *_armedTitle;
-  NSTimeInterval _armedDelay;
 }
 
 RCT_EXPORT_MODULE();
@@ -68,7 +62,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"menu", @"quit", @"search", @"contextMenu" ];
+  return @[ @"menu", @"quit", @"search" ];
 }
 
 - (void)startObserving
@@ -81,8 +75,6 @@ RCT_EXPORT_MODULE();
   // The toolbar's buttons and its search field (TableToolbar.swift).
   [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarCommand:) name:@"TableDesktopCommand" object:nil];
   [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarSearch:) name:@"TableDesktopSearch" object:nil];
-  // A right-click (or Control-click) in the content (TableShell.swift).
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(contextClick:) name:@"TableDesktopContextMenu" object:nil];
 }
 
 - (void)stopObserving
@@ -91,7 +83,6 @@ RCT_EXPORT_MODULE();
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopShouldTerminate" object:nil];
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopCommand" object:nil];
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopSearch" object:nil];
-  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopContextMenu" object:nil];
 }
 
 - (void)toolbarCommand:(NSNotification *)notification
@@ -104,12 +95,6 @@ RCT_EXPORT_MODULE();
 {
   if (!_observed) return;
   [self sendEventWithName:@"search" body:@{ @"text" : notification.userInfo[@"text"] ?: @"" }];
-}
-
-- (void)contextClick:(NSNotification *)notification
-{
-  if (!_observed) return;
-  [self sendEventWithName:@"contextMenu" body:@{ @"target" : notification.userInfo[@"target"] ?: @"" }];
 }
 
 - (void)shouldTerminate:(NSNotification *)notification
@@ -337,130 +322,6 @@ RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
                                         pressure:1];
     [NSApp postEvent:event atStart:NO];
   }
-}
-
-/// Show the system's menu of `items` and resolve with the id of the one
-/// chosen, or null when it's dismissed. Each item: { id, title, checked,
-/// disabled, symbol (an SF Symbol's name) } or { separator: true }.
-/// `at` is a point in the content, measured as React measures, where the
-/// ticked item (else the menu's top) goes: what a pop-up button does.
-/// Without it the menu opens where the click that asked for it landed
-/// (else at the pointer), as a context menu does.
-RCT_EXPORT_METHOD(popUp:(NSArray<NSDictionary *> *)items
-                  at:(nullable NSDictionary *)at
-                  resolve:(RCTPromiseResolveBlock)resolve
-                  reject:(RCTPromiseRejectBlock)reject)
-{
-  NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
-  menu.autoenablesItems = NO;
-  NSMenuItem *ticked = nil;
-  for (NSDictionary *item in items) {
-    if ([item[@"separator"] boolValue]) {
-      [menu addItem:NSMenuItem.separatorItem];
-      continue;
-    }
-    NSMenuItem *menuItem = [[NSMenuItem alloc] initWithTitle:item[@"title"] ?: @"" action:@selector(popUpChose:) keyEquivalent:@""];
-    menuItem.target = self;
-    menuItem.representedObject = item[@"id"];
-    menuItem.enabled = ![item[@"disabled"] boolValue];
-    if ([item[@"checked"] boolValue]) {
-      menuItem.state = NSControlStateValueOn;
-      ticked = menuItem;
-    }
-    if ([item[@"symbol"] isKindOfClass:NSString.class]) {
-      menuItem.image = [NSImage imageWithSystemSymbolName:item[@"symbol"] accessibilityDescription:nil];
-    }
-    [menu addItem:menuItem];
-  }
-  NSWindow *window = NSApp.keyWindow ?: NSApp.mainWindow ?: NSApp.windows.firstObject;
-  NSView *view = window.contentView;
-  NSValue *clicked = TableShell.recentClick;
-  NSPoint point = [view convertPoint:clicked != nil ? clicked.pointValue : window.mouseLocationOutsideOfEventStream fromView:nil];
-  NSView *root = TableShell.rootView;
-  if (at != nil && root != nil) {
-    view = root;
-    double y = [at[@"y"] doubleValue];
-    point = NSMakePoint([at[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y);
-  }
-  _popUpChoice = nil;
-  NSMutableArray<NSString *> *titles = [NSMutableArray new];
-  for (NSMenuItem *item in menu.itemArray) {
-    [titles addObject:item.isSeparatorItem ? @"-" : [NSString stringWithFormat:@"%@%@%@", item.state == NSControlStateValueOn ? @"✓ " : @"", item.title, item.image != nil ? @" (symbol)" : @""]];
-  }
-  _popUpTitles = titles;
-  if (_armedTitle != nil) {
-    // A timer in the common modes: nothing sent to the main queue runs while a menu is open.
-    NSString *title = _armedTitle;
-    _armedTitle = nil;
-    NSTimer *timer = [NSTimer timerWithTimeInterval:_armedDelay repeats:NO block:^(NSTimer *fired) {
-      NSInteger index = [menu indexOfItemWithTitle:title];
-      if (index >= 0) self->_popUpChoice = [menu itemAtIndex:index].representedObject;
-      [menu cancelTrackingWithoutAnimation];
-    }];
-    [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
-  }
-  // Returns when the menu closes, the chosen item's action already sent.
-  [menu popUpMenuPositioningItem:ticked atLocation:point inView:view];
-  resolve(_popUpChoice ?: [NSNull null]);
-}
-
-- (void)popUpChose:(NSMenuItem *)item
-{
-  _popUpChoice = item.representedObject;
-}
-
-/// The system's date picker in a popover pointing at `rect` (a cell, as
-/// React measures: x, y, width, height in the content). `kind` is "date",
-/// "time" or "datetime"; `date` is milliseconds since 1970, or null for
-/// none yet. Resolves with the date chosen, or null when nothing changed.
-RCT_EXPORT_METHOD(pickDate:(NSString *)kind
-                  date:(nullable NSNumber *)date
-                  rect:(NSDictionary *)rect
-                  resolve:(RCTPromiseResolveBlock)resolve
-                  reject:(RCTPromiseRejectBlock)reject)
-{
-  NSView *root = TableShell.rootView;
-  if (root == nil) {
-    resolve([NSNull null]);
-    return;
-  }
-  double height = [rect[@"height"] doubleValue];
-  double y = [rect[@"y"] doubleValue];
-  NSRect at = NSMakeRect([rect[@"x"] doubleValue], root.isFlipped ? y : root.bounds.size.height - y - height, [rect[@"width"] doubleValue], height);
-  [TableDatePicker.shared showWithKind:kind date:date rect:at in:root done:^(NSNumber *chosen) {
-    resolve(chosen ?: [NSNull null]);
-  }];
-}
-
-/// Development only: whether the date picker is showing; setting its date
-/// as a click in it would; and closing it as a click outside would.
-RCT_EXPORT_METHOD(datePickerShown:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{
-  resolve(@(TableDatePicker.shared.isShown));
-}
-RCT_EXPORT_METHOD(datePickerSet:(nonnull NSNumber *)date)
-{
-  [TableDatePicker.shared setWithDate:date];
-}
-RCT_EXPORT_METHOD(datePickerClose)
-{
-  [TableDatePicker.shared close];
-}
-
-/// Development only: the titles of the last pop-up menu shown (a ticked one and one with a symbol are marked).
-RCT_EXPORT_METHOD(popUpTitles:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{
-  resolve(_popUpTitles ?: @[]);
-}
-
-/// Development only: choose from the next pop-up menu by title, `seconds`
-/// after it opens, as a click on the item would; an empty title dismisses
-/// it. Set before the menu opens: nothing can be asked of the app while
-/// one is open.
-RCT_EXPORT_METHOD(popUpChoose:(NSString *)title after:(nonnull NSNumber *)seconds)
-{
-  _armedTitle = title;
-  _armedDelay = seconds.doubleValue;
 }
 
 /// Development only: turn the scroll wheel by `lines` (positive scrolls

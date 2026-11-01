@@ -4,17 +4,21 @@
  * converters belong in optional sibling packages.
  *
  * Pure string ⇄ data — no filesystem, browser-safe, so it ships in the
- * barrel. RFC 4180 quoting on the way out; a tolerant RFC 4180 parser
- * on the way in (quoted fields, embedded commas / newlines / escaped
- * `""`, optional BOM).
+ * barrel. RFC 4180 quoting on the way out. On the way in the text is read
+ * by Papa Parse (quoted fields, embedded separators and newlines, escaped
+ * `""`, a leading BOM; commas, tabs, semicolons or pipes, whichever the
+ * file uses).
  *
  * Export is **lossy by definition**: relations serialise to their raw
  * id(s), attachments to their filename, and long-form bodies aren't
  * represented at all. Call `csvExportWarnings()` to surface what a
  * given table would lose before exporting.
  */
+import { withFieldIds } from "./fieldIds.js";
 import type { Field, ParsedTable, Row, TableSchema } from "./types.js";
+import Papa from "papaparse";
 import { newId } from "./id.js";
+import { columnLetter } from "./formula.js";
 
 export interface FromCSVResult {
   rows: Row[];
@@ -95,7 +99,7 @@ function csvCell(s: string): string {
 // ---- Import ----
 
 export function fromCSV(csv: string, schema?: TableSchema): FromCSVResult {
-  const table = parseCSV(csv);
+  const table = delimitedCells(csv);
   if (table.length === 0) {
     return { rows: [], schema: schema ?? { fields: [] } };
   }
@@ -137,6 +141,11 @@ function coerce(cell: string, field: Field | undefined): unknown {
     case "year": {
       const n = Number(cell);
       return Number.isFinite(n) ? n : cell;
+    }
+    case "any": {
+      // Each cell as what it is (D56): a plain number a number, anything else its text.
+      const t = cell.trim();
+      return PLAIN_NUMBER.test(t) ? Number(t) : cell;
     }
     case "boolean": {
       const t = cell.trim().toLowerCase();
@@ -187,66 +196,145 @@ function inferType(values: string[]): Field["type"] {
 }
 
 /**
- * RFC 4180 parser → array of rows, each an array of string cells.
- * Handles quoted fields, embedded commas / newlines, escaped `""`, a
- * leading BOM, and both LF and CRLF line endings. A trailing newline
- * does not produce a spurious empty final row.
+ * Whether a sheet's first line looks like data, not headings (D59): every
+ * column whose cells below are all numbers, dates or yes/no has one of
+ * those in its first line too, and there's at least one such column. A
+ * heading is words: "qty" over numbers says the line is a header.
  */
-function parseCSV(input: string): string[][] {
-  const text = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  let i = 0;
-
-  const pushField = () => {
-    row.push(field);
-    field = "";
-  };
-  const pushRow = () => {
-    pushField();
-    rows.push(row);
-    row = [];
-  };
-
-  while (i < text.length) {
-    const ch = text[i]!;
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 2;
-        } else {
-          inQuotes = false;
-          i++;
-        }
-      } else {
-        field += ch;
-        i++;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-      i++;
-    } else if (ch === ",") {
-      pushField();
-      i++;
-    } else if (ch === "\n") {
-      pushRow();
-      i++;
-    } else if (ch === "\r") {
-      // swallow CRLF (and a bare CR) as one line break
-      pushRow();
-      i += text[i + 1] === "\n" ? 2 : 1;
-    } else {
-      field += ch;
-      i++;
-    }
+export function firstLineIsData(csv: string): boolean {
+  const lines = delimitedCells(csv);
+  if (lines.length < 2) return false;
+  const [first, ...rest] = lines as [string[], ...string[][]];
+  let typed = 0;
+  for (let i = 0; i < first.length; i++) {
+    const below = rest.map((cells) => (cells[i] ?? "").trim()).filter((v) => v !== "");
+    const kind = below.length > 0 && below.every((v) => ISO_DATE.test(v) || ISO_DATETIME.test(v)) ? "date" : inferType(below);
+    if (kind === "string") continue;
+    typed++;
+    const head = (first[i] ?? "").trim();
+    const fits = kind === "date" ? ISO_DATE.test(head) || ISO_DATETIME.test(head) : kind === "boolean" ? /^(true|false)$/i.test(head) : head !== "" && Number.isFinite(Number(head));
+    if (!fits) return false;
   }
-  // Flush a final field/row unless the input ended exactly on a newline
-  // (no dangling content) — avoids a spurious empty trailing row.
-  if (field !== "" || row.length > 0) {
-    pushRow();
-  }
-  return rows;
+  return typed > 0;
 }
+
+// -- A spreadsheet someone already has, opened as a table ----
+
+/**
+ * A delimited text file's cells, line by line, read by Papa Parse (the
+ * parser most JavaScript reads CSV with): commas, tabs, semicolons (Excel
+ * where the comma is the decimal mark) or pipes, whichever the file uses,
+ * with quoted cells, line ends of either kind and a leading byte-order
+ * mark handled. Lines with nothing in them are left out.
+ */
+export function delimitedCells(text: string): string[][] {
+  const parsed = Papa.parse<string[]>(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text, {
+    delimitersToGuess: [",", "\t", ";", "|"],
+    skipEmptyLines: "greedy",
+  });
+  return parsed.data;
+}
+
+export interface TableFromCSVOptions {
+  /**
+   * A field's stored key for a column's heading, unlike any in `taken`.
+   * The heading itself, numbered when it repeats, when not given; an app
+   * gives the rule its own new fields follow (a plain key keeps formulas
+   * plain).
+   */
+  keyOf?: (heading: string, taken: ReadonlySet<string>) => string;
+  /**
+   * False: the first line is a row like the others, and the fields are
+   * named for their columns, `A`, `B`, `C`… (D59). True when not given.
+   */
+  header?: boolean;
+}
+
+export interface TableFromCSV {
+  schema: TableSchema;
+  rows: Row[];
+  /** Cells left out because their row had more of them than the file has headings. */
+  extraCells: number;
+}
+
+/** A number as a spreadsheet writes one that is a quantity: no leading zeros or plus, and few enough digits to keep exactly. */
+const PLAIN_NUMBER = /^-?(0|[1-9]\d{0,14})(\.\d+)?$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
+
+/**
+ * A spreadsheet as a table (CSV, TSV, or any text `delimitedCells` reads): its first line is the headings, each a field
+ * (the heading kept as the field's title, a key made for its name), and
+ * every other line a row. What a column holds decides its type, as
+ * `fromCSV` infers it, and a column of ISO dates is dates. Nothing is
+ * guessed past that: `03/04/2025` and `£1,200` stay the text they are,
+ * for whoever knows what they mean to set.
+ *
+ * A column headed `id` gives the rows their ids when every row has its
+ * own; otherwise it is a column like any other and the rows get new ids.
+ * A heading left empty is "Column N". Lines with nothing in them are no
+ * rows.
+ */
+export function tableFromCSV(csv: string, options: TableFromCSVOptions = {}): TableFromCSV {
+  const lines = delimitedCells(csv);
+  if (lines.length === 0) return { schema: { fields: [] }, rows: [], extraCells: 0 };
+  // Without a header row (D59): every line is a row, and each column is called by its letter.
+  const header = options.header !== false;
+  const widest = header ? 0 : Math.max(...lines.map((cells) => cells.length));
+  const headings = header ? lines[0]!.map((cell) => cell.trim()) : Array.from({ length: widest }, (_, i) => columnLetter(i));
+  const data = header ? lines.slice(1) : lines;
+  const column = (i: number) => data.map((cells) => cells[i] ?? "").filter((cell) => cell !== "");
+
+  // The rows' own ids, when a column gives every row a different one.
+  const idAt = headings.indexOf("id");
+  const ids = idAt >= 0 ? data.map((cells) => (cells[idAt] ?? "").trim()) : [];
+  const ownIds = idAt >= 0 && ids.every((id) => id !== "") && new Set(ids).size === ids.length;
+
+  const numbered = (heading: string, taken: ReadonlySet<string>) => {
+    if (!taken.has(heading)) return heading;
+    let n = 2;
+    while (taken.has(`${heading} ${n}`)) n++;
+    return `${heading} ${n}`;
+  };
+  const keyOf = options.keyOf ?? numbered;
+  // `id` is each row's own, never a field's key.
+  const taken = new Set<string>(["id"]);
+  const columns: { at: number; field: Field }[] = [];
+  headings.forEach((heading, at) => {
+    if (ownIds && at === idAt) return;
+    const title = heading === "" ? `Column ${at + 1}` : heading;
+    const name = keyOf(title, taken);
+    taken.add(name);
+    const values = column(at);
+    const guessed = inferType(values);
+    // Mostly plain numbers, with some words among them ("n/a", "TBC"): each kept as what it is (D56).
+    const numbers = values.filter((v) => PLAIN_NUMBER.test(v.trim())).length;
+    const mixed = guessed === "string" && numbers > 0 && numbers * 2 >= values.length && numbers < values.length;
+    const type: Field["type"] = mixed
+      ? "any"
+      : values.length > 0 && values.every((v) => ISO_DATE.test(v.trim()))
+        ? "date"
+        : values.length > 0 && values.every((v) => ISO_DATETIME.test(v.trim()))
+          ? "datetime"
+          : // Digits that aren't an amount (a phone number, a postcode, an account number) stay as written.
+            (guessed === "integer" || guessed === "number") && !values.every((v) => PLAIN_NUMBER.test(v.trim()))
+            ? "string"
+            : guessed;
+    columns.push({ at, field: { name, ...(title !== name ? { title } : {}), type } });
+  });
+
+  let extraCells = 0;
+  const rows: Row[] = data.map((cells, r) => {
+    extraCells += cells.slice(headings.length).filter((cell) => cell !== "").length;
+    const row: Row = { id: ownIds ? ids[r]! : newId() };
+    for (const { at, field } of columns) {
+      const cell = cells[at];
+      if (cell === undefined || cell === "") continue;
+      row[field.name] = field.type === "date" || field.type === "datetime" ? cell.trim() : coerce(cell, field);
+    }
+    return row;
+  });
+  // Each field with its id (D62), from its name: a sheet read twice reads the same.
+  return { schema: withFieldIds({ fields: columns.map((c) => c.field) }), rows, extraCells };
+}
+

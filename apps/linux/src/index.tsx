@@ -1,19 +1,45 @@
-import { createRoot } from "@gtkx/react";
-import { rmSync } from "node:fs";
+import { createRoot, quit } from "@gtkx/react";
+import { execFileSync } from "node:child_process";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { loadClosed } from "./closedFiles.js";
 import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
-import { openWorkerIndexHost } from "./indexClient.js";
+import { measure, measuring } from "./measure.js";
+import { openWorkerIndexHost } from "@workspace.sh/table-gtk/embed";
 import { fixturesDir } from "./fixtures.js";
+import { setFormulaEngine } from "@workspace.sh/table-core";
+import { loadEdn } from "@workspace.sh/edn";
 
-// `.table` folders named on the command line, or the repo's fixtures.
-// Spliced out of argv: GTKX hands the rest to GApplication, which refuses
-// positional arguments it wasn't told to open.
+// Formulas are worked out by the EDN core (Rust, natively), but those it leaves to `.table`'s own
+// workbook (#638). Without it, the workbook works them all out, as before.
+setFormulaEngine(await loadEdn({ binding: "native" }).catch((e: unknown) => (console.warn(`formulas aren't worked out, the EDN core didn't load: ${String(e)}`), null)));
+
+// What's named on the command line (a file manager names what it opens), or
+// the repo's fixtures. Spliced out of argv: GTKX hands the rest to
+// GApplication, which refuses options it doesn't know. `.table` folders are
+// read here, before the window is up; anything else (a single file, a
+// spreadsheet) goes back to GApplication, which hands it to App's onOpen.
 const args = process.argv.splice(2);
 const named = args.filter((arg) => !arg.startsWith("-"));
-// `--open=crm/deals#pipeline`: the table, and optionally the view, shown
+const isFolder = (path: string) => existsSync(path) && statSync(path).isDirectory();
+
+/** Whether this app is running already: GApplication then makes this launch hand its files to it, and end. */
+function runningAlready(id: string): boolean {
+  try {
+    const reply = execFileSync("gdbus", ["call", "--session", "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method", "org.freedesktop.DBus.NameHasOwner", id], { encoding: "utf8", timeout: 2000 });
+    return reply.includes("true");
+  } catch {
+    return false;
+  }
+}
+const elsewhere = named.length > 0 && runningAlready("sh.workspace.TableDemo");
+// Read by the window that's open already, not here: every path goes to it.
+const readHere = elsewhere ? [] : named.filter(isFolder);
+process.argv.push(...(elsewhere ? named : named.filter((path) => !isFolder(path))));
+// `--open=crm/deals#Pipeline`: the table, and optionally the view (by its name or id), shown
 // first. How the headless screenshots reach a particular view.
 const open = args.find((arg) => arg.startsWith("--open="))?.slice("--open=".length);
 const [openTable, openView] = open ? open.split("#") : [];
@@ -25,9 +51,16 @@ const examples = join(dataHome, "examples");
 // This viewer's own settings (display language, dates, formula syntax).
 const settings = jsonFileStore(join(dataHome, "settings.json"));
 const fixtures = fixturesDir();
-const paths = named.length > 0 ? named : fixtures ? copiesOf(fixtures, examples) : [];
+// The examples: each copied once, but for the ones closed here, and with them whatever else was made
+// or opened into their folder (a new file, an archive), which is the app's to keep.
+const examplesNow = () => {
+  if (fixtures) copiesOf(fixtures, examples, loadClosed(settings));
+  return existsSync(examples) ? bundlesIn(examples) : [];
+};
+const paths = named.length > 0 ? readHere : examplesNow();
 
-const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM });
+// Drawn from each table's small files at once; their rows are read after (the window is up meanwhile).
+const library = await loadLibrary(paths, [], { indexedFrom: INDEXED_FROM, rowsLater: true });
 for (const [bundle, problems] of Object.entries(library.problems)) {
   for (const problem of problems) console.warn(`${bundle}: ${problem}`);
 }
@@ -54,3 +87,6 @@ createRoot().render(
     indexedFrom={INDEXED_FROM}
   />,
 );
+
+// TABLE_MEASURE=1 (scripts/measure-large.sh): how long a large table takes, timed from the app's start.
+if (measuring) void measure(0, process.env["TABLE_MEASURE_ROW"], () => quit());

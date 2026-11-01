@@ -2,7 +2,7 @@
 // into a workbook, D37), a new `.table` file. What each app does after the
 // name is asked for; how it asks is the app's own.
 
-import { newBundle, newId, newTable } from "@workspace.sh/table-core";
+import { newBundle, newTable, newViewId } from "@workspace.sh/table-core";
 import type { BundleMeta, ParsedTable, View } from "@workspace.sh/table-core";
 
 import { bundleTables, fromBundle } from "./bundles.ts";
@@ -19,7 +19,7 @@ export interface Made {
 }
 
 /** A new view: a plain table of everything, for its settings to make into what's wanted. `id`: the app's, else a new one. */
-export function newView(id: string = newId()): View {
+export function newView(id: string = newViewId()): View {
   return { id, name: "New view", layout: "table" };
 }
 
@@ -49,8 +49,10 @@ export function withNewFile(
   bundles: Record<string, BundleMeta>,
   title: string,
   now?: Date,
+  /** Names already used where it will be kept (folders on disk the app doesn't hold): its key is unlike these too. */
+  taken: readonly string[] = [],
 ): Made {
-  const key = tableKeyFor(title, Object.keys(bundles));
+  const key = tableKeyFor(title, [...Object.keys(bundles), ...taken]);
   const name = tableKeyFor(title, []);
   const made = newBundle(title, `${key}.table`, name, now);
   return {
@@ -62,7 +64,10 @@ export function withNewFile(
 }
 
 /** What's being made: a table in a bundle, or a `.table` file. */
-export type Making = { kind: "table"; bundle: string } | { kind: "file" };
+export type Making =
+  | { kind: "table"; bundle: string }
+  /** `taken`: names already used where the file will be kept, which the app doesn't hold (other `.table` folders on disk). */
+  | { kind: "file"; taken?: string[] };
 
 /** Asking for the new thing's name: each app shows it its own way. */
 export interface NamePrompt {
@@ -71,6 +76,8 @@ export interface NamePrompt {
   action: string;
   /** The name field's placeholder. */
   placeholder: string;
+  /** What's in the field to start with: the note being edited (D57). Absent: empty. */
+  value?: string;
 }
 
 export function namePrompt(making: Making, bundles: Record<string, BundleMeta>): NamePrompt {
@@ -97,6 +104,6 @@ export function creating(
   const title = name?.trim();
   if (!title) return null;
   const made =
-    making.kind === "table" ? withNewTable(tables, bundles, making.bundle, title, now) : withNewFile(tables, bundles, title, now);
+    making.kind === "table" ? withNewTable(tables, bundles, making.bundle, title, now) : withNewFile(tables, bundles, title, now, making.taken);
   return { ...made, search: "", openBody: null };
 }

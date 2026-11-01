@@ -14,6 +14,7 @@
 // reads a window of them, and its groups and totals, the same way.
 
 import * as Gdk from "@gtkx/gi/gdk";
+import * as GLib from "@gtkx/gi/glib";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
@@ -25,6 +26,7 @@ import {
   GtkEventControllerKey,
   GtkGestureClick,
   GtkGestureDrag,
+  GtkFixed,
   GtkOverlay,
   GtkImage,
   GtkLabel,
@@ -34,7 +36,7 @@ import {
   GtkViewport,
 } from "@gtkx/jsx/gtk";
 import type { MenuItem } from "@gtkx/react/internal";
-import { columnLetter, effectiveAlign, isSheet, memoryViewRows, type Field, type FieldAlignment, type Row } from "@workspace.sh/table-core";
+import { columnLetter, effectiveAlign, isSheet, memoryViewRows, mergedBlocks, mergeOver, type Field, type FieldAlignment, type Row, type ViewTotal } from "@workspace.sh/table-core";
 import {
   canInsertAt,
   describeCell,
@@ -52,15 +54,18 @@ import {
   DEFAULT_ROW_HEIGHT,
   type RowMark,
   linesFor,
-  ROW_NUMBER_WIDTH,
   TOTAL_LABELS,
+  TOTAL_NAMES,
+  totalKindsFor,
   visibleFields,
   type ViewProps,
   rowNumber,
+  rowNumberWidth,
   fieldHint,
   fieldHintText,
   rowActions,
   columnActions,
+  ADD_FIELD_WIDTH,
   SQUEEZED_CELL_WIDTH,
   type FieldAction,
   type RowAction,
@@ -72,16 +77,25 @@ import {
   cellPicks,
   editorKind,
   gridKey,
+  mirroredKey,
   type GridPlace,
   useDisplaySettings,
+  ownFormula,
+  ownNote,
+  hiddenPatch,
+  frozenColumnsOf,
 } from "@workspace.sh/table-ui/shared";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CellValue } from "./CellValue.js";
 import { EditableCell } from "./EditableCell.js";
+import { FieldAbout } from "./FieldAbout.js";
 import { AddField, FieldEditor } from "./FieldEditor.js";
 import { FormulaPanel } from "./FormulaPanel.js";
-import { styles } from "./theme.js";
+import { styles, tintClass, useDark } from "./theme.js";
+import { useRowColors } from "./rowColors.js";
+import { drawnOf, NO_LIMIT, scrollerHeight, useEmbedded } from "./embedded.js";
 import { gridKeyOf } from "./gridKeys.js";
+import { Steady } from "./steady.js";
 
 /** The web grid's rule for the chrome: its two outer borders. */
 const TABLE_CHROME = 2;
@@ -90,6 +104,37 @@ const HEADER_HEIGHT = 36;
 const ROW_RULE = 1;
 /** A group's heading above its first row, rule included. */
 const GROUP_ROW_HEIGHT = 33;
+
+/**
+ * The slot of each place from `first` on, `count` of them: a place built
+ * before keeps its slot, and the others take the slots let go, then new
+ * ones. `held` is the last call's, and is left as this one's.
+ */
+function slotsFor(held: { current: Map<number, number> }, first: number, count: number): number[] {
+  const was = held.current;
+  const now = new Map<number, number>();
+  const taken = new Set<number>();
+  for (let place = first; place < first + count; place++) {
+    const slot = was.get(place);
+    if (slot !== undefined) {
+      now.set(place, slot);
+      taken.add(slot);
+    }
+  }
+  const free = [...was.values()].filter((slot) => !taken.has(slot)).sort((a, b) => a - b);
+  let fresh = Math.max(-1, ...was.values()) + 1;
+  const out: number[] = [];
+  for (let place = first; place < first + count; place++) {
+    let slot = now.get(place);
+    if (slot === undefined) {
+      slot = free.shift() ?? fresh++;
+      now.set(place, slot);
+    }
+    out.push(slot);
+  }
+  held.current = now;
+  return out;
+}
 /** How far past the screen rows are kept built, in pixels. */
 const DRAW_DISTANCE = 900;
 /**
@@ -101,8 +146,28 @@ const DRAW_DISTANCE = 900;
 const MAX_BODY_HEIGHT = 8_000_000;
 /** How close the screen's edge comes to the last built row before more are built. */
 const DRAW_MARGIN = 300;
-/** A row menu's circular button and its margin. */
-const ROW_MENU_WIDTH = 42;
+/** The frame's margin from the window's edges, each side. None when the table is embedded: where it sits has its own. */
+const WINDOW_FRAME_MARGIN = 12;
+/** Past this width the first column stays put while the others scroll sideways (table-ui's TOUCH_VIEWPORT_MAX). */
+const FREEZE_FROM_WIDTH = 720;
+/** How much of a row's bottom edge takes a drag to resize it, as on the web. */
+const ROW_LINE_HEIGHT = 6;
+/** A column's line down the table: how wide a strip takes the pointer, and how much of it is before the column's end. */
+const COLUMN_LINE_WIDTH = 6;
+const COLUMN_LINE_BEFORE = 4;
+/** A grabber: the short bar a selected row's grip is drawn as when Display's "Resize handles" says so. */
+const GRABBER_WIDTH = 26;
+const GRABBER_HEIGHT = 9;
+/**
+ * How far a scroller is scrolled across from where its content starts, and the adjustment's value for
+ * being that far. Left to right they are the same; right to left the content starts at the right, where
+ * GTK's value is at its greatest.
+ */
+const acrossFromStart = (across: Gtk.Adjustment, rtl: boolean) => (rtl ? across.getUpper() - across.getPageSize() - across.getValue() : across.getValue());
+const acrossValue = (across: Gtk.Adjustment, rtl: boolean, fromStart: number) => (rtl ? across.getUpper() - across.getPageSize() - fromStart : fromStart);
+/** How long a sideways scroll is still before its columns are brought into line. */
+const SNAP_AFTER_MS = 180;
+const SNAP_GLIDE_MS = 160;
 
 function xalignOf(align: FieldAlignment): number {
   return align === "center" ? 0.5 : align === "end" ? 1 : 0;
@@ -125,11 +190,14 @@ function Cell({
   classes = [],
   cellRef,
   onFocused,
+  tooltip,
 }: {
   width: number;
   height: number;
   children: ReactNode;
   classes?: string[];
+  /** Shown on hover: the cell's note (D57). */
+  tooltip?: string;
   /** A body cell: it takes the keyboard's focus, and says when it has it. */
   cellRef?: (widget: Gtk.Box | null) => void;
   onFocused?: (focused: boolean) => void;
@@ -142,6 +210,7 @@ function Cell({
       heightRequest={height}
       hexpand={false}
       cssClasses={[styles.cell, styles.columnRule, ...classes]}
+      tooltipText={tooltip}
       controllers={onFocused ? <GtkEventControllerFocus onEnter={() => onFocused(true)} onLeave={() => onFocused(false)} /> : undefined}
     >
       {children}
@@ -156,6 +225,12 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "add-page": "row.open",
   "insert-above": "row.above",
   "insert-below": "row.below",
+  "cell-note": "row.note",
+  "merge-cells": "row.merge",
+  "unmerge-cells": "row.unmerge",
+  "hide-row": "row.hide",
+  "fit-row": "row.fit",
+  "reset-row-height": "row.reset-height",
   delete: "row.delete",
 };
 
@@ -166,22 +241,35 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
  */
 function rowMenu(actions: RowAction[]): MenuItem[] {
   const section = (ids: RowAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: ROW_ACTION[a.id] }));
-  return [section(["open-page", "add-page"]), section(["insert-above", "insert-below"]), section(["delete"])]
+  return [section(["open-page", "add-page", "cell-note", "merge-cells", "unmerge-cells"]), section(["insert-above", "insert-below"]), section(["hide-row", "fit-row", "reset-row-height"]), section(["delete"])]
     .filter((items) => items.length > 0)
     .map((items) => ({ section: items }));
 }
 
 /**
- * A column's header, with its menu: table-ui/shared's columnActions, on a
- * right-click. The menu hangs from a button laid over the header that is
+ * A column's header, with its menu: About This Field, then table-ui/shared's
+ * columnActions, on a right-click. The menu hangs from a button laid over the header that is
  * never seen or pressed itself: a popover needs a widget of its own to
  * open from, and the header's own click opens the field's editor.
  */
-function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; overlays: ReactNode; children: ReactNode }) {
+function HeaderMenu({
+  actions,
+  onAbout,
+  overlays,
+  menuRef,
+  children,
+}: {
+  actions: FieldAction[];
+  /** About This Field: what the column is, which is there to read whether or not the table can be changed. */
+  onAbout: () => void;
+  overlays: ReactNode;
+  /** The way to open it from the keyboard (Alt+Down on one of the column's cells). */
+  menuRef?: (button: Gtk.MenuButton | null) => void;
+  children: ReactNode;
+}) {
   const button = useRef<Gtk.MenuButton | null>(null);
-  if (actions.length === 0) return <GtkOverlay overlays={overlays}>{children}</GtkOverlay>;
   const section = (ids: FieldAction["id"][]) => actions.filter((a) => ids.includes(a.id)).map((a) => ({ label: a.label, action: `field.${a.id}` }));
-  const items: MenuItem[] = [section(["insert-left", "insert-right"]), section(["reset-width"]), section(["delete-field"])]
+  const items: MenuItem[] = [[{ label: "About This Field", action: "field.about" }], section(["insert-left", "insert-right"]), section(["reset-width"]), section(["delete-field"])]
     .filter((entries) => entries.length > 0)
     .map((entries) => ({ section: entries }));
   return (
@@ -192,6 +280,7 @@ function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; o
           prefix="field"
           actions={
             <>
+              <GSimpleAction name="about" onActivate={onAbout} />
               {actions.map((a) => (
                 <GSimpleAction key={a.id} name={a.id} onActivate={a.onSelect} />
               ))}
@@ -202,7 +291,10 @@ function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; o
       overlays={
         <>
           <GtkMenuButton
-            ref={button}
+            ref={(widget: Gtk.MenuButton | null) => {
+              button.current = widget;
+              menuRef?.(widget);
+            }}
             opacity={0}
             canTarget={false}
             canFocus={false}
@@ -218,11 +310,21 @@ function HeaderMenu({ actions, overlays, children }: { actions: FieldAction[]; o
   );
 }
 
+/** One cursor of each name, for every handle: a new one at each render would be a new prop to set on each. */
+const cursors = new Map<string, Gdk.Cursor | null>();
+function cursorNamed(name: string): Gdk.Cursor | null {
+  if (!cursors.has(name)) cursors.set(name, Gdk.Cursor.newFromName(name, null));
+  return cursors.get(name)!;
+}
+
 /**
- * A body row, with its menu. The menu is a button at the row's end as well
- * as a right-click anywhere on the row: GNOME has no menu bar, and a
- * right-click alone isn't discoverable. Its actions live on the row, so
- * both reach the same items.
+ * A body row, with its menu: a right-click anywhere on it, or the Menu key
+ * with the keyboard on one of its cells, as on the web and the Mac. The
+ * menu hangs from a button laid over the row that is never seen or pressed
+ * itself (a popover needs a widget of its own to open from); `menuRef`
+ * gives the table the way to open it from the keyboard. The menu itself is
+ * made the first time it's opened: built for every row, it was some thirty
+ * widgets a row, which a jump paid for row after row.
  */
 function BodyRow({
   rowId,
@@ -232,6 +334,15 @@ function BodyRow({
   onOpenBody,
   onDeleteRow,
   onInsertRow,
+  onFitRow,
+  onResetRowHeight,
+  onCellNote,
+  onHideRow,
+  onMergeCells,
+  onUnmergeCells,
+  menuRef,
+  frozen,
+  tint = [],
   children,
 }: {
   rowId: string;
@@ -241,15 +352,54 @@ function BodyRow({
   onOpenBody?: (rowId: string) => void;
   onDeleteRow?: (rowId: string) => void;
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
+  /** Fit the row's height to what it holds. */
+  onFitRow?: (rowId: string) => void;
+  /** Only for a row that was resized: back to the view's height. */
+  onResetRowHeight?: (rowId: string) => void;
+  /** The note of this row's selected cell (D57). */
+  onCellNote?: () => void;
+  /** Leave the row out of this view by hand (D58). */
+  onHideRow?: (rowId: string) => void;
+  onMergeCells?: () => void;
+  onUnmergeCells?: () => void;
+  /** How to open the row's menu (from the keyboard), or null as the row goes. */
+  menuRef?: (open: (() => void) | null) => void;
+  /** The row's first column, when it stays put while the rest scroll sideways: laid over the row's start. */
+  frozen?: ReactNode;
+  /** The row's colour from the view's colour rules (D53), as a class. */
+  tint?: string[];
   children: ReactNode;
 }) {
   const button = useRef<Gtk.MenuButton | null>(null);
-  if (!menu) return <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>;
+  // Made once it's asked for, and opened as soon as it's there.
+  const [made, setMade] = useState(false);
+  const opening = useRef(false);
+  const open = () => {
+    if (made) return void button.current?.popup();
+    opening.current = true;
+    setMade(true);
+  };
+  useEffect(() => {
+    if (!made || !opening.current) return;
+    opening.current = false;
+    button.current?.popup();
+  }, [made]);
+  const openNow = useRef(open);
+  openNow.current = open;
+  // In the table's map of rows' menus under the row it is now: a place given another row is given another menuRef.
+  useEffect(() => {
+    menuRef?.(() => openNow.current());
+    return () => menuRef?.(null);
+  }, [menuRef]);
+  // As wide as its cells and no wider: its rule stops at the last real column, short of the "+" after it.
+  if (!menu) {
+    const cells = <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow, ...tint]}>{children}</GtkBox>;
+    return frozen ? <GtkOverlay halign={Gtk.Align.START} overlays={frozen}>{cells}</GtkOverlay> : cells;
+  }
   return (
-    <GtkBox
-      // The row's rule is under its cells and stops with them: the menu button is after the table, not in it.
-      cssClasses={[styles.rowWithMenu]}
-      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+    <GtkOverlay
+      halign={Gtk.Align.START}
+      controllers={<GtkGestureClick button={3} onPressed={open} />}
       actionGroups={
         <GSimpleActionGroup
           prefix="row"
@@ -258,33 +408,61 @@ function BodyRow({
               <GSimpleAction name="open" enabled={!!onOpenBody} onActivate={() => onOpenBody?.(rowId)} />
               <GSimpleAction name="above" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "above")} />
               <GSimpleAction name="below" enabled={canInsert} onActivate={() => onInsertRow?.(rowId, "below")} />
+              <GSimpleAction name="fit" enabled={!!onFitRow} onActivate={() => onFitRow?.(rowId)} />
+              <GSimpleAction name="reset-height" enabled={!!onResetRowHeight} onActivate={() => onResetRowHeight?.(rowId)} />
+              <GSimpleAction name="note" enabled={!!onCellNote} onActivate={() => onCellNote?.()} />
+              <GSimpleAction name="hide" enabled={!!onHideRow} onActivate={() => onHideRow?.(rowId)} />
+              <GSimpleAction name="merge" enabled={!!onMergeCells} onActivate={() => onMergeCells?.()} />
+              <GSimpleAction name="unmerge" enabled={!!onUnmergeCells} onActivate={() => onUnmergeCells?.()} />
               <GSimpleAction name="delete" enabled={!!onDeleteRow} onActivate={() => onDeleteRow?.(rowId)} />
             </>
           }
         />
       }
+      overlays={
+        <>
+        {frozen}
+        <GtkMenuButton
+          ref={button}
+          opacity={0}
+          canTarget={false}
+          canFocus={false}
+          halign={Gtk.Align.START}
+          tooltipText="Row Actions"
+          popover={
+            made ? (
+            <GtkPopoverMenu
+              flags={Gtk.PopoverMenuFlags.NESTED}
+              hasArrow={false}
+              menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onFitRow, onResetRowHeight, onDeleteRow, ...(onCellNote ? { onCellNote } : {}), ...(onHideRow ? { onHideRow } : {}), ...(onMergeCells ? { onMergeCells } : {}), ...(onUnmergeCells ? { onUnmergeCells } : {}) }))} />}
+            />
+            ) : undefined
+          }
+        />
+        </>
+      }
     >
-      <GtkBox cssClasses={[styles.bodyRow]}>{children}</GtkBox>
-      <GtkMenuButton
-        ref={button}
-        iconName="view-more-symbolic"
-        cssClasses={["flat", "circular", styles.rowMenu]}
-        valign={Gtk.Align.CENTER}
-        marginStart={4}
-        // With its margin, exactly ROW_MENU_WIDTH: what the bands that stop short of it leave.
-        widthRequest={ROW_MENU_WIDTH - 4}
-        tooltipText="Row Actions"
-        popover={
-          <GtkPopoverMenu
-            flags={Gtk.PopoverMenuFlags.NESTED}
-            hasArrow={false}
-            menuModel={<GMenu items={rowMenu(rowActions(rowId, { onOpenBody, hasBody, ...(canInsert ? { onInsertRow } : {}), onDeleteRow }))} />}
-          />
-        }
-      />
-    </GtkBox>
+      <GtkBox halign={Gtk.Align.START} cssClasses={[styles.bodyRow, ...tint]}>{children}</GtkBox>
+    </GtkOverlay>
   );
 }
+
+/** How far down a table is (the row at the top of what's seen, and how far into it), and how far across from its start. */
+export interface ScrollPlace {
+  rowId: string;
+  offset: number;
+  across?: number;
+}
+
+/**
+ * The table's props on GTK. It owns its scroller, so how far down it is
+ * scrolled is its own to say (`onScrollPlace`) and to put back
+ * (`restorePlace.place.top`), where the web's page does that for its table.
+ */
+export type GtkTableViewProps = ViewProps & {
+  onScrollPlace?: (top: ScrollPlace) => void;
+  restorePlace?: { place: { rowId?: string; field?: string; top?: ScrollPlace }; n: number } | null;
+};
 
 export function TableView({
   view,
@@ -293,12 +471,21 @@ export function TableView({
   bodies,
   relatedTables,
   onUpdateRow,
+  cells: cellFormulas,
+  onSetCellFormula,
+  onSetIteration,
+  onAskCellNote,
+  onAskMerge,
+  onUnmerge,
   onUpdateView,
   onUpdateField,
+  onRenameField,
   onAddEnumValue,
   onMoveField,
   onAddField,
   onDeleteField,
+  onRemoveEnumValue,
+  onRestoreSchema,
   newFieldRequest,
   onAddRow,
   onDeleteRow,
@@ -310,9 +497,30 @@ export function TableView({
   allRows,
   source: given,
   tableKey,
-}: ViewProps) {
+  onPlace,
+  onScrollPlace,
+  restorePlace,
+}: GtkTableViewProps) {
+  const dark = useDark();
+  // A view's colour rules (D53), worked out once per row as it's drawn.
+  const colorsOf = useRowColors(view, schema);
   // A field's editor open, by name, and "add a field" open.
   const [editingField, setEditingField] = useState<string | null>(null);
+  // The schema as it was when a field's editor opened, for its Cancel.
+  const schemaBefore = useRef<typeof schema | null>(null);
+  // A field renamed with its editor open: the editor follows it, and what Cancel puts back has the new name.
+  const renamedField = useRef<{ from: string; to: string } | null>(null);
+  useEffect(() => {
+    const renamed = renamedField.current;
+    renamedField.current = null;
+    if (renamed && schemaBefore.current && editingField === renamed.to) {
+      schemaBefore.current = { ...schemaBefore.current, fields: schemaBefore.current.fields.map((f) => (f.name === renamed.from ? { ...f, name: renamed.to } : f)) };
+      return;
+    }
+    schemaBefore.current = editingField ? schema : null;
+    // Only as an editor opens or closes: the schema changes under it as it edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingField]);
   // Where the new field goes: at the end, or beside a column (its menu's Insert Field Left or Right).
   const [addingField, setAddingField] = useState<false | { place?: { name: string; side: "before" | "after" } }>(false);
   // The app's New Field (its menu): the same editor, each time it's asked for.
@@ -325,17 +533,25 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newFieldRequest]);
   const schemaEditable = !!(onUpdateField && onAddEnumValue && onMoveField);
+  // The column whose About This Field is open (FieldAbout).
+  const [aboutField, setAboutField] = useState<string | null>(null);
   // A formula cell opened to see how it was worked out (FormulaPanel).
   const [openFormula, setOpenFormula] = useState<{ rowId: string; name: string } | null>(null);
   // The row just added from "New Row": its first cell opens for typing.
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const fields = visibleFields(view, schema);
   const fieldMap = fieldsByName(schema);
+  const embedded = useEmbedded();
+  const frameMargin = embedded ? 0 : WINDOW_FRAME_MARGIN;
+  // At the sides, embedded: the page's own margin, which the scroller runs over (`gutter`). The first
+  // column, when it stays put, then rests on that margin, in line with the page's text, not at the edge.
+  const sideMargin = embedded ? (embedded.gutter ?? 0) : WINDOW_FRAME_MARGIN;
+  const pinAt = embedded ? sideMargin : 0;
   // Resizing: live sizes while a handle is dragged, saved to the view
   // (columnWidths, rowHeights; SPEC section 4) when it's let go, as on the web.
   const rtl = useDirection() === "rtl";
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; name: string } | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; name: string; by: "grip" | "line" } | null>(null);
   const resizeFrom = useRef(0);
   // Each row's own height, else the view's default; the row being resized follows the drag.
   const heightOf = (rowId: string) => (liveRow?.rowId === rowId ? liveRow.h : rowHeightOf(view, rowId));
@@ -347,7 +563,9 @@ export function TableView({
       memoryViewRows(rows, { schema, ...(groupField !== undefined ? { group: groupField } : {}), ...(view.totals ? { totals: view.totals } : {}) }),
     [given, rows, schema, groupField, view.totals],
   );
-  const count = source.count;
+  // Embedded and cut to a count, only the first rows are drawn; the totals and each group's count are still the whole view's.
+  const cut = embedded?.cut === true && embedded.rows !== undefined;
+  const count = drawnOf(embedded, embedded?.rows, source.count);
   // Where each row is, built or not: one height each, but for a group's
   // heading above its first row and the rows with a height of their own.
   const ownHeights = useMemo(
@@ -356,8 +574,8 @@ export function TableView({
   );
   const facts = useViewFacts(source, ownHeights);
   const defaultHeight = view.rowHeight ?? DEFAULT_ROW_HEIGHT;
-  const marks: RowMark[] = facts.groups.map((g) => ({ place: g.start, before: GROUP_ROW_HEIGHT }));
-  for (const [id, place] of facts.places) marks.push({ place, taller: heightOf(id) - defaultHeight });
+  const marks: RowMark[] = facts.groups.filter((g) => g.start < count).map((g) => ({ place: g.start, before: GROUP_ROW_HEIGHT }));
+  for (const [id, place] of facts.places) if (place < count) marks.push({ place, taller: heightOf(id) - defaultHeight });
   const layout = rowLayout(count, defaultHeight + ROW_RULE, marks);
   const bodyHeight = layout.height;
   const groupStarts = new Map(facts.groups.map((g) => [g.start, g]));
@@ -378,9 +596,57 @@ export function TableView({
     const range = Math.max(1, adjustment.getUpper() - adjustment.getPageSize());
     return (bodyHeight - laidOut) * Math.min(1, Math.max(0, value / range));
   };
-  const follow = () => {
+  // How far down the table is, said for history once the scrolling rests (placeNow is set where the rows are known).
+  const placeNow = useRef<(() => void) | null>(null);
+  const topToRestore = useRef<number | null>(null);
+  const restoreTopNow = useRef<(() => void) | null>(null);
+  const placeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeSoon = () => {
+    if (placeTimer.current) clearTimeout(placeTimer.current);
+    placeTimer.current = setTimeout(() => placeNow.current?.(), 150);
+  };
+  useEffect(
+    () => () => {
+      if (placeTimer.current) clearTimeout(placeTimer.current);
+    },
+    [],
+  );
+  /** Scroll so that `wanted` (a distance down the whole table, header and all) is at the top of what's seen, building the rows there. */
+  const scrollBodyTo = (wanted: number) => {
     const adjustment = scroller.current?.getVadjustment();
     if (!adjustment) return;
+    const page = adjustment.getPageSize();
+    const range = Math.max(1, adjustment.getUpper() - page);
+    // value + shiftAt(value) = wanted, for a shift that grows evenly down the scroller.
+    const value = bodyHeight <= MAX_BODY_HEIGHT ? Math.min(range, wanted) : Math.min(range, wanted / (1 + (bodyHeight - laidOut) / range));
+    const shift = bodyHeight <= MAX_BODY_HEIGHT ? 0 : shiftAt(adjustment, value);
+    const top = value + shift - HEADER_HEIGHT - ROW_RULE;
+    setBuilt({ from: top - DRAW_DISTANCE, to: top + page + DRAW_DISTANCE, shift });
+    lastValue.current = value;
+    adjustment.setValue(value);
+  };
+  // The frozen band (D58): at the top of the window once the header has gone up under it.
+  // It lies over the window, its own sideways scroll kept with the table's.
+  const bandRef = useRef<Gtk.ScrolledWindow | null>(null);
+  const placeBand = () => {
+    const band = bandRef.current;
+    const down = scroller.current?.getVadjustment();
+    if (!band || !down) return;
+    const under = down.getValue() > frameMargin;
+    if (band.getVisible() !== under) band.setVisible(under);
+    if (under) alignBand();
+  };
+  const alignBand = () => {
+    const across = scroller.current?.getHadjustment();
+    const bandAcross = bandRef.current?.getHadjustment();
+    if (!across || !bandAcross || !bandRef.current?.getVisible()) return;
+    if (Math.abs(bandAcross.getValue() - across.getValue()) >= 0.5) bandAcross.setValue(across.getValue());
+  };
+  const follow = () => {
+    placeBand();
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment) return;
+    placeSoon();
     const value = adjustment.getValue();
     const page = adjustment.getPageSize();
     const jumped = Math.abs(value - lastValue.current) > 3 * page;
@@ -400,6 +666,17 @@ export function TableView({
   // move is a jump. revealCell does it, from where the row is known to be.
   // (The viewport is this table's own for that: `scrollToFocus` off.)
   const content = useRef<Gtk.Box | null>(null);
+  // The frozen first column as it is now, for revealCell: how wide, and which cell of a row it is.
+  // A sideways scroll the table makes itself: where it put the columns, and the timer of one under way.
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placedAcross = useRef<number | null>(null);
+  const placeAcross = (across: Gtk.Adjustment, value: number) => {
+    if (snapTimer.current) clearTimeout(snapTimer.current);
+    snapTimer.current = null;
+    placedAcross.current = value;
+    across.setValue(value);
+  };
+  const frozenNow = useRef<{ width: number; cellOf?: (place: number) => Gtk.Widget | undefined }>({ width: 0 });
   const revealCell = (place: number, cell: Gtk.Widget | undefined) => {
     const window = scroller.current;
     if (!window) return;
@@ -416,11 +693,22 @@ export function TableView({
     }
     const [found, bounds] = cell && content.current ? cell.computeBounds(content.current) : [false, null];
     if (!found || !bounds) return;
+    // The first column, when it stays put, is always in view, and covers that much of the others' start.
+    if (frozenNow.current.width > 0 && cell === frozenNow.current.cellOf?.(place)) return;
+    const covered = frozenNow.current.width > 0 ? frozenNow.current.width + pinAt : 0;
     const across = window.getHadjustment();
+    const page = across.getPageSize();
+    // Across what is scrolled: the frame's margin and line come before the cells.
+    const left = bounds.getX() + sideMargin + 1;
+    const right = left + bounds.getWidth();
     let x = across.getValue();
-    if (bounds.getX() < x) x = bounds.getX();
-    else if (bounds.getX() + bounds.getWidth() > x + across.getPageSize()) x = bounds.getX() + bounds.getWidth() - across.getPageSize();
-    if (x !== across.getValue()) across.setValue(x);
+    if (rtl) {
+      // Right to left the first column is at the window's right, and it's the cell's right it covers.
+      if (right > x + page - covered) x = Math.min(across.getUpper() - page, right - page + covered);
+      else if (left < x) x = left;
+    } else if (left - covered < x) x = Math.max(0, left - covered);
+    else if (right > x + page) x = right - page;
+    if (x !== across.getValue()) placeAcross(across, x);
   };
   const firstBuilt = Math.min(layout.at(built.from), Math.max(0, count - 1));
   const lastBuilt = Math.min(layout.at(built.to), count - 1);
@@ -428,6 +716,10 @@ export function TableView({
   const after = count ? Math.max(0, laidOut - (layout.topOf(lastBuilt) + layout.heightOf(lastBuilt) - built.shift)) : 0;
   // The built rows: one that hasn't arrived from the index yet is undefined, and drawn empty.
   const builtRows = useViewWindow(source, firstBuilt, lastBuilt + 1);
+  const slotOf = useRef(new Map<number, number>());
+  // The view's first rows that stay at the top with the header (D58), read wherever the window is.
+  const frozenRowCount = Math.max(0, Math.min(view.frozen?.rows ?? 0, count));
+  const topRows = useViewWindow(source, 0, frozenRowCount);
   const builtPlace = new Map<string, number>();
   const builtRow = new Map<string, Row>();
   builtRows.forEach((row, i) => {
@@ -436,19 +728,165 @@ export function TableView({
     builtRow.set(row.id, row);
   });
   const totals = view.totals ?? {};
-  const showTotals = Object.keys(totals).length > 0;
+  // The footer is there whenever a total could be chosen; with none chosen it is quiet (no rules), as on the web.
+  // Not under a table cut to its first rows, though: an empty band there reads as part of what was left out.
+  const quietTotals = Object.keys(totals).length === 0;
+  const showTotals = !quietTotals || (!!onUpdateView && !(cut && source.count > count));
+  const chooseTotal = (name: string, kind: ViewTotal | null) => {
+    const next = { ...(view.totals ?? {}) };
+    if (kind) next[name] = kind;
+    else delete next[name];
+    onUpdateView?.({ totals: Object.keys(next).length ? next : undefined });
+  };
 
   // The visible width, from the scroller's own adjustment: its page size is
   // what's on screen, and it changes as the window or sidebar does.
   const [containerWidth, setContainerWidth] = useState(0);
   // Rows go above or below another only in a sheet (D41), and not when a sort places them.
   const canInsert = !!onInsertRow && isSheet(view) && canInsertAt(view);
-  const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert;
+  const hasMenu = !!onOpenBody || !!onDeleteRow || canInsert || !!onUpdateView;
   // The row menu's button sits after the last column: its room comes out
   // of the columns' share, so it stays on screen.
-  const chrome = TABLE_CHROME + (coords ? ROW_NUMBER_WIDTH : 0) + (hasMenu ? ROW_MENU_WIDTH : 0);
+  // What the columns don't get: the frame and its margins, a sheet's row numbers, and the "+" after the last column.
+  // A sheet's row numbers: their gutter is as wide as the largest of them (table-ui's rowNumberWidth), worked
+  // out once from how many rows the view has and the sheet's own numbering, not from the rows on screen.
+  const largestNumber = useMemo(() => {
+    let most = source.count;
+    if (sheet?.position) for (const n of sheet.position.values()) if (n > most) most = n;
+    return most;
+  }, [source.count, sheet?.position]);
+  const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
+  const chrome = TABLE_CHROME + 2 * sideMargin + numberWidth + (onAddField ? ADD_FIELD_WIDTH : 0);
   // A table that nearly fits is shown whole: its columns give a little before it scrolls sideways.
   const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome, SQUEEZED_CELL_WIDTH);
+  // On a wide window the first column (and a sheet's row numbers) stays put while the others scroll
+  // sideways, as on the web and the Mac. Each row's first cell is laid over the row's start and moved
+  // along with the scrolling, by its margin: the rows stay one scroller's, so nothing else changes.
+  // How many columns stay put: the view's own (D58), else the first; always one left to scroll.
+  const frozenCount = fields.length > 1 && containerWidth > FREEZE_FROM_WIDTH ? Math.max(0, Math.min(frozenColumnsOf(view), fields.length - 1)) : 0;
+  const freeze = frozenCount > 0;
+  const frozenNames = fields.slice(0, frozenCount);
+  const scrolling = fields.slice(frozenCount);
+  const frozenWidth = freeze ? numberWidth + frozenNames.reduce((n, name) => n + colWidth(name), 0) : 0;
+  const scrolledAcross = useRef(0);
+  const pinned = useRef(new Map<string, { widget: Gtk.Widget; from: number }>());
+  /** A ref for something that stays where it is across the table (`from` its start) however far it is scrolled. */
+  const pin = (key: string, from = 0) => (widget: Gtk.Widget | null) => {
+    if (!widget) return void pinned.current.delete(key);
+    pinned.current.set(key, { widget, from });
+    placePinned(key, widget, from, scrolledAcross.current);
+  };
+  // Where the first column rests on a page's margin (`pinAt`), each of its cells has a skirt before it:
+  // the page's ground over the margin, as wide as the table has gone under it, up to the margin's width.
+  const skirts = useRef(new Map<string, Gtk.Widget>());
+  const skirt = (key: string) => (widget: Gtk.Widget | null) => {
+    if (!widget) return void skirts.current.delete(key);
+    skirts.current.set(key, widget);
+    const held = pinned.current.get(key);
+    if (held) placePinned(key, held.widget, held.from, scrolledAcross.current);
+  };
+  const placePinned = (key: string, widget: Gtk.Widget, from: number, x: number) => {
+    const before = skirts.current.get(key);
+    const over = before ? Math.min(x, pinAt) : 0;
+    if (before) {
+      before.setVisible(over > 0);
+      before.setSizeRequest(over, -1);
+    }
+    widget.setMarginStart(from + x - over);
+  };
+  // Scrolled sideways, the columns come to rest with one starting at the edge (the first column's end
+  // when that stays put), so none is left cut in half there with its title out of sight. A scroll the
+  // table makes itself, to bring a cell into view, stays where it was put.
+  const snapNow = useRef<(() => void) | null>(null);
+  snapNow.current = () => {
+    const across = scroller.current?.getHadjustment();
+    if (!across) return;
+    // Counted from the table's start, whichever side that is.
+    const value = acrossFromStart(across, rtl);
+    const end = across.getUpper() - across.getPageSize();
+    // At either end there's nothing to bring into line.
+    if (value <= 0 || value >= end - 1) return;
+    let nearest = 0;
+    const nearer = (to: number) => {
+      if (Math.abs(to - value) < Math.abs(nearest - value)) nearest = to;
+    };
+    // Where the table is scrolled to with each column in turn starting at the edge. The first is there
+    // unscrolled, the frame's margin showing; one that starts past the end can't come to the edge.
+    let at = sideMargin + 1 - pinAt + (freeze ? 0 : numberWidth);
+    for (const name of scrolling.slice(0, -1)) {
+      at += colWidth(name);
+      if (at < end) nearer(at);
+    }
+    nearer(end);
+    if (Math.abs(nearest - value) < 1) return;
+    // A glide, not a jump: the eye follows the columns to where they rest.
+    const started = Date.now();
+    const step = () => {
+      const t = Math.min(1, (Date.now() - started) / SNAP_GLIDE_MS);
+      placeAcross(across, acrossValue(across, rtl, t < 1 ? value + (nearest - value) * (1 - (1 - t) ** 3) : nearest));
+      snapTimer.current = t < 1 ? setTimeout(step, 16) : null;
+    };
+    step();
+  };
+  useEffect(
+    () => () => {
+      if (snapTimer.current) clearTimeout(snapTimer.current);
+    },
+    [],
+  );
+  // How far across to put the table back (`restorePlace`). A view just shown has no width to scroll
+  // yet, so this waits until it has: tried now, and again as the scroller grows.
+  const acrossToRestore = useRef<number | null>(null);
+  const restoreAcross = () => {
+    const across = scroller.current?.getHadjustment();
+    const wanted = acrossToRestore.current;
+    if (wanted === null || !across || across.getUpper() - across.getPageSize() < wanted - 1) return;
+    acrossToRestore.current = null;
+    placeAcross(across, acrossValue(across, rtl, wanted));
+  };
+  /** Scrolled past the frame's margin and edge, the first column rests against the window's own edge. */
+  const pinAcross = () => {
+    const across = scroller.current?.getHadjustment();
+    const x = freeze && across ? Math.max(0, Math.round(acrossFromStart(across, rtl)) - sideMargin - 1 + pinAt) : 0;
+    if (x === scrolledAcross.current) return;
+    scrolledAcross.current = x;
+    for (const [key, { widget, from }] of pinned.current) placePinned(key, widget, from, x);
+    // A column's line that has gone under the first column can't be taken through it.
+    for (const { widget, at } of columnLineWidgets.current.values()) widget.setVisible(at > x + frozenWidth);
+  };
+  const lastAcross = useRef(0);
+  const scrollAcross = (value: number) => {
+    // Right to left GTK says the value again after laying out, a hair off: that isn't a scroll.
+    const moved = Math.abs(value - lastAcross.current) >= 0.01;
+    lastAcross.current = value;
+    if (!moved) return pinAcross();
+    // Where it rests is said for history, with how far down it is.
+    placeSoon();
+    const placed = placedAcross.current;
+    placedAcross.current = null;
+    // Anyone else's scroll ends a glide, and is brought into line once it has been still a moment.
+    if (placed === null || Math.abs(placed - value) >= 1) {
+      acrossToRestore.current = null;
+      if (snapTimer.current) clearTimeout(snapTimer.current);
+      snapTimer.current = setTimeout(() => snapNow.current?.(), SNAP_AFTER_MS);
+    }
+    pinAcross();
+  };
+  // What a row starts with: its frozen part laid over it and room left under that, or the gutter in line.
+  // (It is its cells' height, at the top of its row or the foot of the totals: the row's own rule shows past it.)
+  const rowStart = (key: string, height: number, classes: string[], number: string, firstCell: ReactNode, valign = Gtk.Align.START) =>
+    freeze
+      ? {
+          frozen: (
+            <GtkBox ref={pin(key)} halign={Gtk.Align.START} valign={valign} cssClasses={classes}>
+              {pinAt > 0 ? <GtkBox ref={skirt(key)} name="pinned-skirt" visible={false} cssClasses={[styles.pinnedSkirt]} /> : null}
+              {gutter(number, height)}
+              {firstCell}
+            </GtkBox>
+          ),
+          inLine: <GtkBox widthRequest={frozenWidth} heightRequest={height} />,
+        }
+      : { frozen: undefined, inLine: gutter(number, height) };
   // A column that was dragged, back to its share of the width.
   const resetWidth = (name: string) => {
     if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
@@ -458,115 +896,248 @@ export function TableView({
 
   // A column's handle is on its end edge (the left, right to left, where
   // dragging leftwards widens it); a row's grip is on its bottom edge.
+  // How far a drag has gone, across the window. GTK says a drag's offset against the widget it began
+  // on, where that widget is now; these handles move as their column or row is resized, which takes the
+  // movement back out of the offset (a handle that follows the pointer would seem not to have moved).
+  // So it is measured against the window, which stays put. (A drag with no pointer behind it, as a test
+  // makes, has no start to measure from: its offset is taken as it is.)
+  const dragFrom = useRef<{ x: number; y: number } | null>(null);
+  const inWindow = (gesture: Gtk.GestureDrag, dx: number, dy: number) => {
+    const [started, x, y] = gesture.getStartPoint();
+    const widget = gesture.getWidget();
+    const root = widget?.getRoot() as unknown as Gtk.Widget | null | undefined;
+    if (!started || !widget || !root) return null;
+    const [found, wx, wy] = widget.translateCoordinates(root, x + dx, y + dy);
+    return found ? { x: wx, y: wy } : null;
+  };
+  const dragBegan = (gesture: Gtk.GestureDrag) => {
+    dragFrom.current = inWindow(gesture, 0, 0);
+  };
+  const dragGone = (gesture: Gtk.GestureDrag, dx: number, dy: number): { dx: number; dy: number } => {
+    const from = dragFrom.current;
+    const now = from ? inWindow(gesture, dx, dy) : null;
+    return from && now ? { dx: now.x - from.x, dy: now.y - from.y } : { dx, dy };
+  };
+  // Resizing a column, from its header's edge or from its line down the table: dragging sets its
+  // width, and a double click puts it back to its share.
+  const columnResize = (name: string) => {
+    const widthAt = (dx: number) => resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx);
+    return [
+      <GtkGestureClick key="click" onPressed={(presses) => presses === 2 && resetWidth(name)} />,
+      <GtkGestureDrag
+        key="drag"
+        onDragBegin={(_x, _y, self) => {
+          resizeFrom.current = colWidth(name);
+          dragBegan(self);
+        }}
+        onDragUpdate={(dx, dy, self) => {
+          const gone = dragGone(self, dx, dy);
+          setLiveWidths((live) => ({ ...live, [name]: widthAt(gone.dx) }));
+        }}
+        onDragEnd={(dx, dy, self) => {
+          const gone = dragGone(self, dx, dy);
+          // A press that didn't move is a click, not a width.
+          if (gone.dx !== 0) onUpdateView?.({ columnWidths: { ...(view.columnWidths ?? {}), [name]: widthAt(gone.dx) } });
+          setLiveWidths({});
+        }}
+      />,
+    ];
+  };
   const columnHandle = (name: string) =>
     onUpdateView ? (
       <GtkBox
         name={`resize-column-${name}`}
         widthRequest={6}
         halign={Gtk.Align.END}
-        cssClasses={[styles.columnHandle]}
+        cssClasses={[styles.columnHandle, ...(liveWidths[name] !== undefined ? [styles.columnHandleLit] : [])]}
         tooltipText="Drag to resize the column; double-click to reset it"
-        cursor={Gdk.Cursor.newFromName("col-resize", null)}
-        controllers={[
-          <GtkGestureClick key="click" onPressed={(presses) => presses === 2 && resetWidth(name)} />,
-          <GtkGestureDrag
-            key="drag"
-            onDragBegin={() => {
-              resizeFrom.current = colWidth(name);
-            }}
-            onDragUpdate={(dx) => setLiveWidths((live) => ({ ...live, [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) }))}
-            onDragEnd={(dx) => {
-              // A press that didn't move is a click, not a width.
-              if (dx !== 0) onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(resizeFrom.current, rtl ? -dx : dx) } });
-              setLiveWidths({});
-            }}
-          />,
-        ]}
+        cursor={cursorNamed("col-resize")}
+        controllers={columnResize(name)}
       />
     ) : null;
+  // With a pointer a column also resizes from its line anywhere down the table, as on the web and the
+  // Mac: a strip over the rows at each column's end, faint when pointed at and full while dragged, as
+  // its header's edge is. The first column's stays with it where that column stays put, and a line that
+  // has scrolled under the first column is out of reach until it comes out.
+  const columnLineWidgets = useRef(new Map<string, { widget: Gtk.Widget; at: number }>());
+  const columnLines = () => {
+    if (!onUpdateView) return null;
+    let x = numberWidth;
+    return fields.map((name, i) => {
+      x += colWidth(name);
+      const at = x;
+      const stays = freeze && i < frozenCount;
+      return (
+        <GtkBox
+          key={name}
+          name={`resize-column-line-${name}`}
+          ref={(widget: Gtk.Box | null) => {
+            if (stays) pin(`column-line:${name}`, at - COLUMN_LINE_BEFORE)(widget);
+            if (!widget) return void columnLineWidgets.current.delete(name);
+            if (stays) return void columnLineWidgets.current.delete(name);
+            columnLineWidgets.current.set(name, { widget, at });
+            widget.setVisible(!freeze || at > scrolledAcross.current + frozenWidth);
+          }}
+          halign={Gtk.Align.START}
+          marginStart={at - COLUMN_LINE_BEFORE + (stays ? scrolledAcross.current : 0)}
+          widthRequest={COLUMN_LINE_WIDTH}
+          cssClasses={[styles.columnLine, ...(liveWidths[name] !== undefined ? [styles.columnLineLit] : [])]}
+          tooltipText="Drag to resize the column; double-click to reset it"
+          cursor={cursorNamed("col-resize")}
+          controllers={columnResize(name)}
+        />
+      );
+    });
+  };
   const numberOf = (row: Row, index: number): number => rowNumber(sheet?.position, row.id, index);
 
   const gutter = (content: string, height: number) =>
     coords ? (
-      <GtkLabel label={content} widthRequest={ROW_NUMBER_WIDTH} heightRequest={height} cssClasses={[styles.rowNumber]} />
+      <GtkLabel label={content} name="row-number" widthRequest={numberWidth} heightRequest={height} cssClasses={[styles.rowNumber]} />
     ) : null;
 
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
 
+  // Resizing a row, from its grip or from the line under it: dragging goes in whole lines, and a
+  // double click fits the row to what it holds. `name` is the column the grip is under.
+  const saveRowHeight = (rowId: string, h: number) => {
+    if (h !== rowHeightOf(view, rowId)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [rowId]: h } });
+  };
+  /** A row's height for what it holds: each cell's text in its column's width. */
+  const fittedHeightOf = (row: Row) =>
+    fittedRowHeight(
+      fields.map((field) => ({
+        show: describeCell(fieldMap.get(field), row[field], display, relatedTables),
+        width: colWidth(field),
+      })),
+    );
+  // From the row's menu: fit it, or put it back to the view's height.
+  const fitRow = (rowId: string) => {
+    const row = builtRow.get(rowId);
+    if (row) saveRowHeight(rowId, fittedHeightOf(row));
+  };
+  const resetRowHeight = (rowId: string) => {
+    if (!onUpdateView || view.rowHeights?.[rowId] === undefined) return;
+    const { [rowId]: _gone, ...rest } = view.rowHeights;
+    onUpdateView({ rowHeights: Object.keys(rest).length > 0 ? rest : undefined });
+  };
+  const rowResize = (row: Row, by: "grip" | "line", name: string) => {
+    const saveHeight = (h: number) => saveRowHeight(row.id, h);
+    return [
+      <GtkGestureDrag
+        key="drag"
+        onDragBegin={(_x, _y, self) => {
+          resizeFrom.current = heightOf(row.id);
+          dragBegan(self);
+        }}
+        onDragUpdate={(dx, dy, self) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dragGone(self, dx, dy).dy), name, by })}
+        onDragEnd={(dx, dy, self) => {
+          saveHeight(snappedRowHeight(resizeFrom.current, dragGone(self, dx, dy).dy));
+          setLiveRow(null);
+        }}
+      />,
+      <GtkGestureClick
+        key="fit"
+        onPressed={(nPress) => {
+          if (nPress === 2) saveHeight(fittedHeightOf(row));
+        }}
+      />,
+    ];
+  };
+  /** How many lines a row being dragged by `by` has, for its label. */
+  const draggedLines = (row: Row, by: "grip" | "line") => {
+    if (liveRow?.rowId !== row.id || liveRow.by !== by) return null;
+    const n = linesFor(liveRow.h);
+    return `${n} ${n === 1 ? "line" : "lines"}`;
+  };
   // A row's grip: only on the row with the selected cell (so nothing else
   // can be dragged by a scroll), at its bottom edge under the start of that
-  // cell, so it is in view wherever the table has been scrolled. Dragging
-  // resizes that row in whole lines; a double click fits it to what it holds.
+  // cell, so it is in view wherever the table has been scrolled.
   const rowGrip = (row: Row) => {
     const [selectedRow, selectedName] = focusedCell?.split("\u0000") ?? [];
-    if (!onUpdateView || (selectedRow !== row.id && liveRow?.rowId !== row.id)) return null;
+    const dragged = liveRow?.rowId === row.id && liveRow.by === "grip";
+    if (!onUpdateView || (selectedRow !== row.id && !dragged)) return null;
     const gripName = (selectedRow === row.id ? selectedName : liveRow?.name) ?? fields[0]!;
-    let cellStart = coords ? ROW_NUMBER_WIDTH : 0;
+    let cellStart = numberWidth;
     for (const field of fields) {
       if (field === gripName) break;
       cellStart += colWidth(field);
     }
-    const saveHeight = (h: number) => onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
+    const label = draggedLines(row, "grip");
+    // The look is the viewer's (Display's "Resize handles"): a pill at the cell's start, or a short
+    // bar centred on its bottom edge, ringed in the page's colour, as on the web and phones.
+    const grabbers = display.resizeHandles === "grabbers";
+    const at = grabbers ? cellStart + Math.round((colWidth(gripName) - GRABBER_WIDTH) / 2) : cellStart + 4;
     return (
-      <GtkBox name="resize-row" halign={Gtk.Align.START} valign={Gtk.Align.END} marginStart={cellStart + 4} marginBottom={2} spacing={6}>
+      <GtkBox
+        name="resize-row"
+        // Under the first column where that stays put, the grip stays with it.
+        ref={freeze && frozenNames.includes(gripName) ? pin("grip", at) : undefined}
+        halign={Gtk.Align.START}
+        valign={Gtk.Align.END}
+        marginStart={at + (freeze && frozenNames.includes(gripName) ? scrolledAcross.current : 0)}
+        marginBottom={grabbers ? 0 : 1}
+        spacing={6}
+      >
         <GtkBox
           name="resize-row-grip"
           halign={Gtk.Align.CENTER}
           valign={Gtk.Align.CENTER}
-          widthRequest={28}
-          heightRequest={14}
-          cssClasses={[styles.rowGrip]}
+          widthRequest={grabbers ? GRABBER_WIDTH : 28}
+          heightRequest={grabbers ? GRABBER_HEIGHT : 8}
+          cssClasses={[grabbers ? styles.rowGrabber : styles.rowGrip]}
           tooltipText="Drag to resize the row; double-click to fit it"
-          cursor={Gdk.Cursor.newFromName("row-resize", null)}
-          controllers={[
-            <GtkGestureDrag
-              key="drag"
-              onDragBegin={() => {
-                resizeFrom.current = heightOf(row.id);
-              }}
-              onDragUpdate={(_dx, dy) => setLiveRow({ rowId: row.id, h: snappedRowHeight(resizeFrom.current, dy), name: gripName })}
-              onDragEnd={(_dx, dy) => {
-                saveHeight(snappedRowHeight(resizeFrom.current, dy));
-                setLiveRow(null);
-              }}
-            />,
-            <GtkGestureClick
-              key="fit"
-              onPressed={(nPress) => {
-                if (nPress !== 2) return;
-                saveHeight(
-                  fittedRowHeight(
-                    fields.map((name) => ({
-                      show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-                      width: colWidth(name),
-                    })),
-                  ),
-                );
-              }}
-            />,
-          ]}
+          cursor={cursorNamed("row-resize")}
+          controllers={rowResize(row, "grip", gripName)}
         >
-          <GtkImage iconName="list-drag-handle-symbolic" pixelSize={12} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />
+          {grabbers ? null : <GtkImage iconName="list-drag-handle-symbolic" pixelSize={8} hexpand halign={Gtk.Align.CENTER} valign={Gtk.Align.CENTER} />}
         </GtkBox>
-        {liveRow?.rowId === row.id ? (
-          <GtkLabel
-            label={`${linesFor(liveRow.h)} ${linesFor(liveRow.h) === 1 ? "line" : "lines"}`}
-            cssClasses={[styles.rowGripLabel]}
-          />
-        ) : null}
+        {label !== null ? <GtkLabel label={label} cssClasses={[styles.rowGripLabel]} /> : null}
       </GtkBox>
     );
   };
+  // With a pointer a row also resizes from the line under it, anywhere along it, as a column does
+  // from its line: a strip inside the row's bottom edge that lights when pointed at and while it is
+  // dragged. The lines are counted at the row's start, in view however far across the table is.
+  const rowLine = (row: Row) => {
+    if (!onUpdateView) return null;
+    const label = draggedLines(row, "line");
+    return (
+      <>
+        <GtkBox
+          name="resize-row-line"
+          // As wide as the row's cells: like its rule, it stops at the last column.
+          halign={Gtk.Align.START}
+          widthRequest={numberWidth + fields.reduce((sum, field) => sum + colWidth(field), 0)}
+          valign={Gtk.Align.END}
+          heightRequest={ROW_LINE_HEIGHT}
+          cssClasses={[styles.rowLine, ...(label !== null ? [styles.rowLineLit] : [])]}
+          tooltipText="Drag to resize the row; double-click to fit it"
+          cursor={cursorNamed("row-resize")}
+          // A row still on its way from the index has no height to change yet.
+          controllers={row.id ? rowResize(row, "line", fields[0]!) : undefined}
+        />
+        {label !== null ? (
+          <GtkLabel
+            ref={pin("line-label", 8)}
+            label={label}
+            halign={Gtk.Align.START}
+            valign={Gtk.Align.END}
+            marginStart={8 + scrolledAcross.current}
+            marginBottom={8}
+            canTarget={false}
+            cssClasses={[styles.rowGripLabel]}
+          />
+        ) : null}
+      </>
+    );
+  };
 
-  const header = (
-    <GtkBox>
-    <GtkBox cssClasses={[styles.headerRow]}>
-      {gutter("", HEADER_HEIGHT)}
-      {fields.map((name, i) => {
+  const headerCell = (name: string, i: number) => {
         const field: Field | undefined = fieldMap.get(name);
         const title = field?.title ?? name;
-        // Right-click the header to insert a field beside it, put back a width that was dragged, or delete it.
+        // Right-click the header to read what the field is, insert a field beside it, put back a width that was dragged, or delete it.
         const menu = columnActions(name, {
           ...(onAddField ? { onInsertField: (beside: string, side: "before" | "after") => setAddingField({ place: { name: beside, side } }) } : {}),
           ...(onUpdateView && view.columnWidths?.[name] !== undefined ? { onResetWidth: resetWidth } : {}),
@@ -574,10 +1145,19 @@ export function TableView({
           rtl,
         });
         return (
-          <HeaderMenu key={name} actions={menu} overlays={columnHandle(name)}>
+          <HeaderMenu
+            key={name}
+            actions={menu}
+            onAbout={() => setAboutField(name)}
+            overlays={columnHandle(name)}
+            menuRef={(button) => {
+              if (button) headerMenus.current.set(name, button);
+              else headerMenus.current.delete(name);
+            }}
+          >
           <Cell width={colWidth(name)} height={HEADER_HEIGHT}>
             <GtkLabel
-              label={coords ? `${columnLetter(i)}  ${title}` : title}
+              label={coords ? `${columnLetter(i)} ${title}` : title}
               xalign={xalignOf(effectiveAlign(field))}
               hexpand
               ellipsize={Pango.EllipsizeMode.END}
@@ -591,24 +1171,40 @@ export function TableView({
           </Cell>
           </HeaderMenu>
         );
-      })}
+  };
+  const headerStart = rowStart("header", HEADER_HEIGHT, [styles.frozenHeader], "", freeze ? frozenNames.map((name, i) => headerCell(name, i)) : null);
+  const header = (
+    <GtkBox>
+    <GtkOverlay overlays={headerStart.frozen}>
+    <GtkBox cssClasses={[styles.headerRow]}>
+      {headerStart.inLine}
+      {scrolling.map((name, i) => headerCell(name, i + frozenCount))}
     </GtkBox>
+    </GtkOverlay>
       {/* The "+" for a new field: after the last column, outside the table's lines, faint until pointed at. */}
       {onAddField ? (
         <GtkButton
           iconName="list-add-symbolic"
           cssClasses={["flat", "circular", styles.addPlace]}
           valign={Gtk.Align.CENTER}
-          marginStart={4}
-          widthRequest={ROW_MENU_WIDTH - 4}
+          halign={Gtk.Align.CENTER}
+          // A cell of its own, ADD_FIELD_WIDTH wide, as on the web and the Mac.
+          marginStart={3}
+          marginEnd={3}
+          widthRequest={ADD_FIELD_WIDTH - 6}
           tooltipText="Add Field"
           onClicked={() => setAddingField({})}
         />
       ) : null}
     </GtkBox>
   );
-  // What follows the last real column (a row's menu, the "+"): a group's band and the new-row band stop short of it.
-  const trailing = hasMenu || onAddField ? <GtkBox widthRequest={ROW_MENU_WIDTH} /> : null;
+  // What follows the last real column (the "+"): a group's band and the new-row band stop short of it.
+  const trailing = onAddField ? <GtkBox widthRequest={ADD_FIELD_WIDTH} /> : null;
+  // The group's field, as its bands say it: "CITY · MANCHESTER".
+  const groupTitle = groupField !== undefined ? (fieldMap.get(groupField)?.title ?? groupField) : "";
+  // Each row's menu and each column's, to open from the keyboard.
+  const rowMenus = useRef(new Map<string, () => void>());
+  const headerMenus = useRef(new Map<string, Gtk.MenuButton>());
 
   const editable = !!onUpdateRow;
 
@@ -616,6 +1212,13 @@ export function TableView({
   // what each key does is table-ui/shared's gridKey, as the web's is.
   const cells = useRef(new Map<string, Gtk.Box>());
   const [focusedCell, setFocusedCell] = useState<string | null>(null);
+  frozenNow.current = {
+    width: frozenWidth,
+    cellOf: (place) => {
+      const id = builtRows[place - firstBuilt]?.id;
+      return id === undefined ? undefined : cells.current.get(`${id}\u0000${fields[0]}`);
+    },
+  };
   // A cell asked to open for editing. It clears once the cell has heard it
   // (the cell's effect runs first), so the cell doesn't open again when its
   // row is scrolled away and built anew.
@@ -641,15 +1244,7 @@ export function TableView({
     focusWhenBuilt.current = at;
     const page = adjustment.getPageSize();
     // Where the scroller would be with the row in the middle of the screen, were the body its full height.
-    const wanted = Math.max(0, layout.topOf(at.row) + HEADER_HEIGHT + ROW_RULE - (page - layout.heightOf(at.row)) / 2);
-    const range = Math.max(1, adjustment.getUpper() - page);
-    // value + shiftAt(value) = wanted, for a shift that grows evenly down the scroller.
-    const value = bodyHeight <= MAX_BODY_HEIGHT ? wanted : Math.min(range, wanted / (1 + (bodyHeight - laidOut) / range));
-    const shift = bodyHeight <= MAX_BODY_HEIGHT ? 0 : shiftAt(adjustment, value);
-    const top = value + shift - HEADER_HEIGHT - ROW_RULE;
-    setBuilt({ from: top - DRAW_DISTANCE, to: top + page + DRAW_DISTANCE, shift });
-    lastValue.current = value;
-    adjustment.setValue(value);
+    scrollBodyTo(Math.max(0, layout.topOf(at.row) + HEADER_HEIGHT + ROW_RULE - (page - layout.heightOf(at.row)) / 2));
   };
   useLayoutEffect(() => {
     const at = focusWhenBuilt.current;
@@ -658,6 +1253,73 @@ export function TableView({
     const cell = rowId === undefined ? undefined : cells.current.get(cellKey(rowId, fields[at.col]!));
     if (!cell) return;
     focusWhenBuilt.current = null;
+    cell.grabFocus();
+  });
+  // Where you are, for history: the cell the keyboard is on, said as it changes, and how far
+  // down the table is. Going back to the view puts both back (`restorePlace`).
+  const placeReport = useRef(onPlace);
+  placeReport.current = onPlace;
+  useEffect(() => {
+    const [rowId, name] = focusedCell?.split("\u0000") ?? [];
+    placeReport.current?.(rowId && name ? { rowId, field: name } : {});
+    // Again for a new view: the app starts each view's place afresh.
+  }, [focusedCell, view.id]);
+  placeNow.current = () => {
+    const adjustment = scroller.current?.getVadjustment();
+    if (!adjustment || !onScrollPlace || count === 0) return;
+    const y = Math.max(0, adjustment.getValue() + built.shift - HEADER_HEIGHT - ROW_RULE);
+    const place = Math.min(layout.at(y), count - 1);
+    const rowId = builtRows[place - firstBuilt]?.id;
+    const across = scroller.current ? Math.round(acrossFromStart(scroller.current.getHadjustment(), rtl)) : 0;
+    if (rowId !== undefined) onScrollPlace({ rowId, offset: Math.round(y - layout.itemTop(place)), ...(across > 0 ? { across } : {}) });
+  };
+  // A cell to take the keyboard if the rows a restored scroll built include it: going to it mustn't move the table again.
+  const focusIfBuilt = useRef<GridPlace | null>(null);
+  // How far down to put the table back. A view just shown isn't laid out yet (its scroller has no
+  // length to scroll), so this waits until it is: tried now, and again as the scroller grows.
+  restoreTopNow.current = () => {
+    const wanted = topToRestore.current;
+    const adjustment = scroller.current?.getVadjustment();
+    if (wanted === null || !adjustment) return;
+    const page = adjustment.getPageSize();
+    if (adjustment.getUpper() - page < Math.min(wanted, laidOut + HEADER_HEIGHT - page) - 1) return;
+    topToRestore.current = null;
+    scrollBodyTo(wanted);
+  };
+  const restoreTop = () => restoreTopNow.current?.();
+  useEffect(() => {
+    const place = restorePlace?.place;
+    if (!place) return;
+    let current = true;
+    void (async () => {
+      const col = place.field ? fields.indexOf(place.field) : -1;
+      const row = place.rowId && col >= 0 ? await source.placeOf(place.rowId) : -1;
+      const top = place.top ? await source.placeOf(place.top.rowId) : -1;
+      if (!current) return;
+      if (place.top?.across) {
+        acrossToRestore.current = place.top.across;
+        restoreAcross();
+      }
+      if (place.top && top >= 0) {
+        topToRestore.current = layout.itemTop(top) + place.top.offset + HEADER_HEIGHT + ROW_RULE;
+        focusIfBuilt.current = row >= 0 ? { row, col } : null;
+        restoreTop();
+      } else if (row >= 0) focusCell({ row, col });
+    })();
+    return () => {
+      current = false;
+    };
+    // Each place once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restorePlace?.n]);
+  useLayoutEffect(() => {
+    const at = focusIfBuilt.current;
+    if (!at) return;
+    if (at.row < firstBuilt || at.row > lastBuilt) return void (focusIfBuilt.current = null);
+    const rowId = builtRows[at.row - firstBuilt]?.id;
+    const cell = rowId === undefined ? undefined : cells.current.get(cellKey(rowId, fields[at.col]!));
+    if (!cell) return;
+    focusIfBuilt.current = null;
     cell.grabFocus();
   });
   const placeOf = (key: string): GridPlace | null => {
@@ -686,6 +1348,20 @@ export function TableView({
     // Only a cell itself: typing in an editor, or on a button in a cell, is theirs.
     const focus = (cells.current.values().next().value?.getRoot() as Gtk.Window | undefined)?.getFocus();
     const key = [...cells.current].find(([, widget]) => widget === focus)?.[0];
+    // The Menu key, or Shift+F10: the row's menu, as a right-click opens it.
+    if (key && (keyval === Gdk.KEY_Menu || (keyval === Gdk.KEY_F10 && (state & Gdk.ModifierType.SHIFT_MASK) !== 0))) {
+      const menu = rowMenus.current.get(key.split("\u0000")[0]!);
+      if (!menu) return false;
+      menu();
+      return true;
+    }
+    // Alt+Down: the menu of the column the cell is in, as a right-click on its header opens it.
+    if (key && keyval === Gdk.KEY_Down && (state & Gdk.ModifierType.ALT_MASK) !== 0) {
+      const menu = headerMenus.current.get(key.split("\u0000")[1]!);
+      if (!menu) return false;
+      menu.popup();
+      return true;
+    }
     const k = gridKeyOf(keyval, state);
     if (!key || !k) return false;
     const at = placeOf(key);
@@ -694,7 +1370,8 @@ export function TableView({
     const name = fields[at.col]!;
     const field = fieldMap.get(name);
     const row = builtRow.get(rowId);
-    const action = gridKey(at, count, fields.length, k, {
+    // Right to left, Left and Right are where they are on screen.
+    const action = gridKey(at, count, fields.length, rtl ? mirroredKey(k) : k, {
       editable: editable && editorKind(field) !== "readonly",
       boolean: field?.type === "boolean",
       picks: cellPicks(field),
@@ -711,6 +1388,9 @@ export function TableView({
       case "clear":
         onUpdateRow!(rowId, name, undefined);
         break;
+      case "note":
+        onAskCellNote?.(rowId, name, ownNote(cellFormulas, rowId, name, row));
+        break;
       case "toggle":
         onUpdateRow!(rowId, name, !(row?.[name] === true));
         break;
@@ -724,50 +1404,108 @@ export function TableView({
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
   // Only rows in memory have a grid to type formulas against (Sheet views are never indexed).
-  const grid = viewGrid(view, fields, isImmediate(source) ? (source.ids(0, count) as string[]) : [], sheet);
+  // Kept while what it's made of is, as it's given to every cell (and each row is kept while its cells are).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fields are the view's and schema's
+  const grid = useMemo(() => viewGrid(view, fields, isImmediate(source) ? (source.ids(0, count) as string[]) : [], sheet), [view, schema, source, count, sheet]);
   const openField = openFormula ? fieldMap.get(openFormula.name) : undefined;
   // While a formula is open: its column tinted, the cells it read outlined.
   const inputCells = openFormula ? formulaInputCells(openField, openFormula.rowId, view, fields, sheet?.order) : new Set<string>();
 
-  const body = builtRows.map((row, i) => {
+  // A Sheet view's merged cells (D58): each block a box over its cells, showing its top-left cell's
+  // value; a click on it is a click on that cell. Over the rows as they're shown, in memory and not
+  // grouped (a group's heading would come between its rows).
+  const shownIds = view.coordinates === true && view.merged?.length && groupField === undefined && isImmediate(source) ? (source.ids(0, count) as string[]) : [];
+  const merges = shownIds.length > 0 ? mergedBlocks(view, fields, shownIds, sheet?.order ?? shownIds, freeze ? frozenCount : 0) : [];
+  // Placed down the rows by a Fixed, not a margin: GTK holds a margin to 32,767, which a long sheet passes.
+  const mergeTops = useRef(new Map<Gtk.Widget, number>());
+  useLayoutEffect(() => {
+    for (const [widget, y] of mergeTops.current) {
+      const fixed = widget.getParent();
+      if (fixed instanceof Gtk.Fixed) fixed.move(widget, 0, y);
+      else mergeTops.current.delete(widget);
+    }
+  });
+  const mergeBoxes = merges.map((block, i) => {
+    const last = block.row + block.rows - 1;
+    if (last < firstBuilt || block.row > lastBuilt) return null;
+    // From the first of its rows that's built: nothing is laid out above the built ones.
+    const top = Math.max(block.row, firstBuilt);
+    const y = layout.topOf(top) - built.shift;
+    const height = layout.topOf(last) + layout.heightOf(last) - layout.topOf(top) - ROW_RULE;
+    let x = numberWidth;
+    for (let c = 0; c < block.column; c++) x += colWidth(fields[c]!);
+    let width = -1;
+    for (let c = block.column; c < block.column + block.columns; c++) width += colWidth(fields[c]!);
+    const row = builtRows.find((r) => r?.id === block.rowId) ?? (isImmediate(source) ? (source.row(block.rowId) as Row | undefined) : undefined);
+    const field = fieldMap.get(block.field);
+    const key = cellKey(block.rowId, block.field);
+    const stays = freeze && block.column < frozenCount;
+    return (
+      <GtkBox
+        key={`merge:${i}`}
+        name="merged-cells"
+        ref={(widget: Gtk.Box | null) => {
+          if (stays) pin(`merge:${i}`, x)(widget);
+          if (widget) mergeTops.current.set(widget, y);
+        }}
+        marginStart={x + (stays ? scrolledAcross.current : 0)}
+        widthRequest={width}
+        heightRequest={height}
+        cssClasses={[styles.frozen, styles.cell, ...(row ? tintClass(colorsOf(row).cells[block.field] ?? colorsOf(row).row, dark) : []), ...(focusedCell === key ? [styles.selectedCell] : [])]}
+        controllers={
+          <GtkGestureClick
+            onReleased={() => {
+              const at = placeOf(key);
+              if (at) focusCell(at);
+            }}
+          />
+        }
+      >
+        <GtkBox hexpand valign={Gtk.Align.CENTER}>
+          <CellValue field={field} value={row?.[block.field]} relatedTables={relatedTables} lines={1} xalign={xalignOf(effectiveAlign(field))} />
+        </GtkBox>
+      </GtkBox>
+    );
+  });
+
+  // A row's widgets are kept for the next row to be built in its place, whose
+  // values they're given (a widget made is what costs, on GTK): each place
+  // built has a slot, its React key, which it keeps while it stays built,
+  // and the slots of places no longer built go to the places now built. So
+  // a jump or a scroll takes the rows it leaves for the ones it comes to.
+  // What a cell holds is its own row's, made again for each: an editor open
+  // in it stays with the row it edits.
+  const slots = slotsFor(slotOf, firstBuilt, builtRows.length);
+  // A row the same as at the last render, its handlers aside, is the element it was: React passes over
+  // it, and its widgets aren't given their props again (an edit redraws its own row, not every row).
+  const steadyHeld = useRef<Steady | null>(null);
+  const steadyRows = (steadyHeld.current ??= new Steady());
+  const body = builtRows.map((built, i) => {
+    let row = built;
     const index = firstBuilt + i;
     const group = groupStarts.get(index);
     const starts = group ? { label: groupLabel(group.key, groupField!, schema), count: group.count } : undefined;
     const heading = starts ? (
       <GtkBox>
-        <GtkLabel label={`${starts.label}  ·  ${starts.count}`} xalign={0} hexpand heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]} />
+        <GtkBox hexpand heightRequest={GROUP_ROW_HEIGHT} cssClasses={[styles.groupRow]}>
+          {/* What the band says stays at the table's start as the columns scroll under it. */}
+          <GtkBox ref={pin(`group:${index}`)} spacing={8}>
+            <GtkLabel label={`${groupTitle} · ${starts.label}`} xalign={0} cssClasses={[styles.groupLabel]} />
+            <GtkLabel label={String(starts.count)} cssClasses={[styles.groupCount]} />
+          </GtkBox>
+        </GtkBox>
         {trailing}
       </GtkBox>
     ) : null;
-    // On its way from the index: an empty row of its height, so nothing moves when it arrives.
-    if (!row) {
-      return (
-        <GtkBox key={`empty-${index}`} orientation={Gtk.Orientation.VERTICAL}>
-          {heading}
-          <GtkBox>
-            <GtkBox hexpand heightRequest={layout.heightOf(index)} cssClasses={[styles.bodyRow]} />
-            {trailing}
-          </GtkBox>
-        </GtkBox>
-      );
-    }
-    const rowHeight = heightOf(row.id);
+    // On its way from the index: a row of its height with the table's own columns, cells and lines, and no
+    // values yet, so the grid stays whole and only the values arrive, and nothing moves. It is made as a
+    // row with values is, so that when they come it's the same widgets, given them.
+    const awaited = !row;
+    if (!row) row = { id: "" };
+    const rowHeight = awaited ? layout.heightOf(index) - ROW_RULE : heightOf(row.id);
     const lines = linesFor(rowHeight);
-    return (
-    <GtkBox key={row.id} orientation={Gtk.Orientation.VERTICAL}>
-      {heading}
-      <GtkOverlay overlays={rowGrip(row)}>
-      <BodyRow
-        rowId={row.id}
-        menu={hasMenu}
-        hasBody={bodies?.[row.id] !== undefined}
-        canInsert={canInsert}
-        onOpenBody={onOpenBody}
-        onDeleteRow={onDeleteRow}
-        onInsertRow={onInsertRow}
-      >
-        {gutter(String(numberOf(row, index)), rowHeight)}
-        {fields.map((name, i) => {
+    const colors = colorsOf(row);
+    const bodyCell = (name: string, i: number) => {
           const field = fieldMap.get(name);
           const xalign = xalignOf(effectiveAlign(field));
           return (
@@ -779,12 +1517,17 @@ export function TableView({
                 ...(openFormula?.name === name ? [styles.formulaColumn] : []),
                 ...(inputCells.has(`${row.id}\u0000${name}`) ? [styles.formulaInput] : []),
                 ...(focusedCell === cellKey(row.id, name) ? [styles.selectedCell] : []),
+                ...tintClass(colors.cells[name], dark),
+                ...(ownNote(cellFormulas, row.id, name, row) !== undefined ? [styles.noted] : []),
               ]}
+              tooltip={ownNote(cellFormulas, row.id, name, row)}
               cellRef={(widget) => {
+                if (awaited) return;
                 if (widget) cells.current.set(cellKey(row.id, name), widget);
                 else cells.current.delete(cellKey(row.id, name));
               }}
               onFocused={(focused) => {
+                if (awaited) return;
                 if (focused) revealCell(index, cells.current.get(cellKey(row.id, name)));
                 setFocusedCell((was) => (focused ? cellKey(row.id, name) : was === cellKey(row.id, name) ? null : was));
               }}
@@ -796,16 +1539,19 @@ export function TableView({
                 marginTop={lines > 1 ? 10 : 0}
                 // A formula cell opens how it was worked out; its value isn't typed.
                 controllers={
-                  field?.computed ? <GtkGestureClick onReleased={() => setOpenFormula({ rowId: row.id, name })} /> : undefined
+                  field?.computed && !awaited ? <GtkGestureClick onReleased={() => setOpenFormula({ rowId: row.id, name })} /> : undefined
                 }
                 tooltipText={field?.computed ? "How This Was Worked Out" : undefined}
               >
-                {editable ? (
+                {awaited ? null : editable ? (
                   <EditableCell
+                    key={row.id}
                     field={field}
                     value={row[name]}
                     onCommit={(next) => onUpdateRow!(row.id, name, next)}
-                    relatedTables={relatedTables}
+                    // Only a relation shows another table's rows. The tables change at every edit, so the
+                    // other cells aren't given them, and stay as they were.
+                    relatedTables={field?.relation ? relatedTables : undefined}
                     onOpenRelation={onOpenRelation}
                     lines={lines}
                     xalign={xalign}
@@ -817,12 +1563,25 @@ export function TableView({
                       if (at) focusCell(afterEdit(at, how, count, fields.length));
                     }}
                     onAttach={onAttachFile ? () => onAttachFile(row.id, name) : undefined}
+                    onAddChoice={onAddEnumValue ? (value) => onAddEnumValue(name, value) : undefined}
+                    formula={
+                      onSetCellFormula
+                        ? {
+                            fields: schema.fields,
+                            ...(grid ? { grid: { ...grid, here: row.id } } : {}),
+                            ...(ownFormula(cellFormulas, row.id, name, row) !== undefined ? { own: ownFormula(cellFormulas, row.id, name, row)! } : {}),
+                            syntax: formulaSyntax,
+                            onSet: (expr) => onSetCellFormula(row.id, name, expr),
+                          }
+                        : undefined
+                    }
                   />
                 ) : (
                   <CellValue
+                    key={row.id}
                     field={field}
                     value={row[name]}
-                    relatedTables={relatedTables}
+                    relatedTables={field?.relation ? relatedTables : undefined}
                     onOpenRelation={onOpenRelation}
                     lines={lines}
                     xalign={xalign}
@@ -830,21 +1589,70 @@ export function TableView({
                 )}
                 {i === 0 && bodies?.[row.id] !== undefined && onOpenBody ? (
                   <GtkButton
-                    iconName="document-open-symbolic"
-                    cssClasses={["flat", "circular"]}
+                    label="Page"
+                    cssClasses={["flat", styles.pageBadge]}
                     valign={Gtk.Align.CENTER}
-                    tooltipText="Open the row's page"
+                    tooltipText="This row has a page. Click to open it."
                     onClicked={() => onOpenBody(row.id)}
                   />
                 ) : null}
               </GtkBox>
             </Cell>
           );
-        })}
+    };
+    // The frozen start covers the row's own background: it takes the row's colour too.
+    const start = rowStart(awaited ? `awaited:${index}` : `row:${row.id}`, rowHeight, [styles.frozen, ...tintClass(colors.row, dark)], awaited ? "" : String(numberOf(row, index)), freeze ? frozenNames.map((name, i) => bodyCell(name, i)) : null);
+    return steadyRows.take(`slot:${slots[i]}`, (
+    <GtkBox key={`slot:${slots[i]}`} name={awaited ? "awaited-row" : "table-row"} orientation={Gtk.Orientation.VERTICAL}>
+      {heading}
+      <GtkOverlay
+        overlays={
+          <>
+            {rowLine(row)}
+            {awaited ? null : rowGrip(row)}
+          </>
+        }
+      >
+      {awaited ? (
+        // Its menu does nothing yet.
+        <BodyRow rowId="" tint={[]} menu={hasMenu} hasBody={false} canInsert={false} frozen={start.frozen}>
+          {start.inLine}
+          {scrolling.map((name, i) => bodyCell(name, i + frozenCount))}
+        </BodyRow>
+      ) : (
+      <BodyRow
+        rowId={row.id}
+        tint={tintClass(colors.row, dark)}
+        menu={hasMenu}
+        hasBody={bodies?.[row.id] !== undefined}
+        canInsert={canInsert}
+        onOpenBody={onOpenBody}
+        onDeleteRow={onDeleteRow}
+        onInsertRow={onInsertRow}
+        onFitRow={onUpdateView ? fitRow : undefined}
+        onResetRowHeight={onUpdateView && view.rowHeights?.[row.id] !== undefined ? resetRowHeight : undefined}
+        {...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {})}
+        {...(coords && sheet && onAskMerge && onUnmerge && focusedCell?.startsWith(`${row.id}\u0000`)
+          ? mergeOver(view, focusedCell.slice(row.id.length + 1), row.id, fields, sheet.order) !== -1
+            ? { onUnmergeCells: () => onUnmerge(row.id, focusedCell.slice(row.id.length + 1)) }
+            : { onMergeCells: () => onAskMerge(row.id, focusedCell.slice(row.id.length + 1)) }
+          : {})}
+        {...(onAskCellNote && focusedCell?.startsWith(`${row.id}\u0000`)
+          ? { onCellNote: () => onAskCellNote(row.id, focusedCell.slice(row.id.length + 1), ownNote(cellFormulas, row.id, focusedCell.slice(row.id.length + 1), row)) }
+          : {})}
+        menuRef={(open) => {
+          if (open) rowMenus.current.set(row.id, open);
+          else rowMenus.current.delete(row.id);
+        }}
+        frozen={start.frozen}
+      >
+        {start.inLine}
+        {scrolling.map((name, i) => bodyCell(name, i + frozenCount))}
       </BodyRow>
+      )}
       </GtkOverlay>
     </GtkBox>
-    );
+    ), index);
   });
 
   // "New Row" is open space under the last row: a band as wide as the real
@@ -853,7 +1661,7 @@ export function TableView({
     <GtkBox>
       <GtkButton
         hexpand
-        cssClasses={["flat", styles.addPlace, styles.addRowBand]}
+        cssClasses={["flat", styles.addRowBand]}
         onClicked={() => {
           const id = onAddRow();
           if (typeof id === "string") {
@@ -862,50 +1670,190 @@ export function TableView({
           }
         }}
       >
-        <GtkBox spacing={6} halign={Gtk.Align.START} marginStart={coords ? ROW_NUMBER_WIDTH : 0}>
-          <GtkImage iconName="list-add-symbolic" />
-          <GtkLabel label="New Row" />
-        </GtkBox>
+        <GtkLabel ref={pin("new-row")} label="+ New row" xalign={0} halign={Gtk.Align.START} />
       </GtkButton>
       {trailing}
     </GtkBox>
   ) : null;
 
-  const footer = showTotals ? (
-    <GtkBox cssClasses={[styles.totalsRow]}>
-      {gutter("", HEADER_HEIGHT)}
-      {fields.map((name) => {
+  const totalCell = (name: string) => {
         const kind = totals[name];
         const field = fieldMap.get(name);
         const total = kind ? shownTotal(facts.totals[name], kind) : undefined;
+        const xalign = xalignOf(effectiveAlign(field));
+        const content =
+          kind && total ? (
+            // As wide as the cell's inside: the value has the room its column gives it, and ellipsizes past that.
+            <GtkBox hexpand widthRequest={Math.max(0, colWidth(name) - 34)}>
+              <GtkLabel label={TOTAL_LABELS[kind]} cssClasses={[styles.totalLabel]} />
+              {total.numeric ? (
+                <CellValue field={field} value={total.value} relatedTables={relatedTables} lines={1} xalign={1} />
+              ) : (
+                <GtkLabel label={String(total.value ?? "")} cssClasses={[styles.tabular]} />
+              )}
+            </GtkBox>
+          ) : onUpdateView ? (
+            // A place a total could go: seen when the cell is pointed at.
+            <GtkLabel label="Calculate" xalign={xalign} hexpand widthRequest={Math.max(0, colWidth(name) - 34)} cssClasses={[styles.totalPlaceholder]} />
+          ) : (
+            <GtkLabel label="" />
+          );
+        if (!onUpdateView) {
+          return (
+            <Cell key={name} width={colWidth(name)} height={HEADER_HEIGHT}>
+              {content}
+            </Cell>
+          );
+        }
+        // The cell is the menu of what can be worked out under its column.
+        const kinds = totalKindsFor(field);
         return (
-          <Cell key={name} width={colWidth(name)} height={HEADER_HEIGHT}>
-            {kind && total ? (
-              <GtkBox hexpand>
-                <GtkLabel label={TOTAL_LABELS[kind]} cssClasses={[styles.totalLabel]} />
-                {total.numeric ? (
-                  <CellValue field={field} value={total.value} relatedTables={relatedTables} lines={1} xalign={1} />
-                ) : (
-                  <GtkLabel label={String(total.value ?? "")} cssClasses={[styles.tabular]} />
-                )}
-              </GtkBox>
-            ) : (
-              <GtkLabel label="" />
-            )}
-          </Cell>
+          <GtkMenuButton
+            key={name}
+            widthRequest={colWidth(name)}
+            heightRequest={HEADER_HEIGHT}
+            hexpand={false}
+            cssClasses={["flat", styles.totalCell, ...(quietTotals ? [] : [styles.columnRule])]}
+            tooltipText={`Calculate ${field?.title ?? name}`}
+            actionGroups={
+              <GSimpleActionGroup
+                prefix="total"
+                actions={
+                  <>
+                    {/* Each carries whether it is the one chosen, which the menu draws as a tick beside it. */}
+                    <GSimpleAction name="none" state={GLib.Variant.newBoolean(!totals[name])} onActivate={() => chooseTotal(name, null)} />
+                    {kinds.map((k) => (
+                      <GSimpleAction key={k} name={k} state={GLib.Variant.newBoolean(totals[name] === k)} onActivate={() => chooseTotal(name, k)} />
+                    ))}
+                  </>
+                }
+              />
+            }
+            popover={
+              <GtkPopoverMenu
+                hasArrow={false}
+                menuModel={
+                  <GMenu
+                    items={[
+                      { section: [{ label: "None", action: "total.none" }] },
+                      { section: kinds.map((k) => ({ label: TOTAL_NAMES[k], action: `total.${k}` })) },
+                    ]}
+                  />
+                }
+              />
+            }
+          >
+            {content}
+          </GtkMenuButton>
+        );
+  };
+  const footerStart = rowStart("footer", HEADER_HEIGHT, [styles.frozen], "", freeze && showTotals ? frozenNames.map((name) => totalCell(name)) : null, Gtk.Align.END);
+  const footer = showTotals ? (
+    <GtkOverlay overlays={footerStart.frozen}>
+    <GtkBox cssClasses={[quietTotals ? styles.totalsRowQuiet : styles.totalsRow]}>
+      {footerStart.inLine}
+      {scrolling.map((name) => totalCell(name))}
+    </GtkBox>
+    </GtkOverlay>
+  ) : null;
+
+  // The header and the view's frozen rows (D58), laid over the top of the window once the table has gone
+  // up under it: drawn again, to look at, while the rows themselves scroll on beneath. At rest it isn't
+  // there, so nothing is drawn twice.
+  const bandCell = (name: string, height: number, children: ReactNode) => (
+    <Cell key={name} width={colWidth(name)} height={height}>
+      {children}
+    </Cell>
+  );
+  const bandHeaderCell = (name: string, i: number) => {
+    const title = fieldMap.get(name)?.title ?? name;
+    return bandCell(
+      name,
+      HEADER_HEIGHT,
+      <GtkLabel label={coords ? `${columnLetter(i)} ${title}` : title} xalign={xalignOf(effectiveAlign(fieldMap.get(name)))} hexpand ellipsize={Pango.EllipsizeMode.END} maxWidthChars={1} cssClasses={[styles.headerCell]} />,
+    );
+  };
+  // As its row draws it: its colour, its lines, its alignment.
+  const bandValue = (row: Row, name: string) => {
+    const height = heightOf(row.id);
+    const lines = linesFor(height);
+    return (
+      <Cell key={name} width={colWidth(name)} height={height} classes={tintClass(colorsOf(row).cells[name], dark)}>
+        <GtkBox hexpand valign={lines > 1 ? Gtk.Align.START : Gtk.Align.CENTER} marginTop={lines > 1 ? 10 : 0}>
+          <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} lines={lines} xalign={xalignOf(effectiveAlign(fieldMap.get(name)))} />
+        </GtkBox>
+      </Cell>
+    );
+  };
+  const bandHeader = rowStart("band:header", HEADER_HEIGHT, [styles.frozenBandHeader], "", freeze ? frozenNames.map((name, i) => bandHeaderCell(name, i)) : null);
+  const band = (
+    <GtkScrolledWindow
+      ref={bandRef}
+      name="frozen-band"
+      valign={Gtk.Align.START}
+      visible={false}
+      canTarget={false}
+      hscrollbarPolicy={Gtk.PolicyType.EXTERNAL}
+      vscrollbarPolicy={Gtk.PolicyType.NEVER}
+      propagateNaturalHeight
+    >
+    <GtkViewport scrollToFocus={false}>
+    <GtkBox orientation={Gtk.Orientation.VERTICAL} halign={Gtk.Align.START} marginStart={sideMargin} marginEnd={sideMargin} cssClasses={[styles.frozenBand]}>
+      {/* As wide as the table, "+" and all, so it scrolls as far across. */}
+      <GtkBox>
+        <GtkOverlay overlays={bandHeader.frozen}>
+          <GtkBox cssClasses={[styles.frozenBandHeader]}>
+            {bandHeader.inLine}
+            {scrolling.map((name, i) => bandHeaderCell(name, i + frozenCount))}
+          </GtkBox>
+        </GtkOverlay>
+        {trailing}
+      </GtkBox>
+      {topRows.map((row, i) => {
+        if (!row) return null;
+        const colors = colorsOf(row);
+        const start = rowStart(`band:${row.id}`, heightOf(row.id), [styles.frozen, ...tintClass(colors.row, dark)], String(numberOf(row, i)), freeze ? frozenNames.map((name) => bandValue(row, name)) : null);
+        return (
+          <GtkOverlay key={row.id} overlays={start.frozen}>
+            <GtkBox cssClasses={[styles.bodyRow, ...tintClass(colors.row, dark)]}>
+              {start.inLine}
+              {scrolling.map((name) => bandValue(row, name))}
+            </GtkBox>
+          </GtkOverlay>
         );
       })}
     </GtkBox>
-  ) : null;
+    </GtkViewport>
+    </GtkScrolledWindow>
+  );
 
-  return (
+  const table = (
     <GtkScrolledWindow
       ref={scroller}
       hexpand
-      vexpand
+      // Embedded and asked for so many rows: the header and those rows (and the headings of their groups), when there are more.
+      // Cut to them, it is as tall as what it draws, and nothing scrolls.
+      {...scrollerHeight(embedded, cut ? NO_LIMIT : embedded?.rows !== undefined && count > embedded.rows ? HEADER_HEIGHT + ROW_RULE + layout.itemTop(embedded.rows) : null)}
       cssClasses={[styles.table]}
-      vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} />}
-      hadjustment={<GtkAdjustment onNotifyPageSize={(size) => setContainerWidth(Math.floor(size ?? 0))} />}
+      vadjustment={<GtkAdjustment onNotifyValue={follow} onNotifyPageSize={follow} onNotifyUpper={() => restoreTopNow.current?.()} />}
+      hadjustment={
+        <GtkAdjustment
+          onNotifyPageSize={(size) => {
+            setContainerWidth(Math.floor(size ?? 0));
+            pinAcross();
+            restoreAcross();
+          }}
+          // Right to left, how far it is scrolled from its start changes with its width too.
+          onNotifyUpper={() => {
+            pinAcross();
+            restoreAcross();
+          }}
+          onNotifyValue={(value) => {
+            scrollAcross(value ?? 0);
+            alignBand();
+          }}
+        />
+      }
     >
       <GtkViewport scrollToFocus={false}>
       <GtkBox
@@ -913,12 +1861,23 @@ export function TableView({
         orientation={Gtk.Orientation.VERTICAL}
         halign={Gtk.Align.START}
         valign={Gtk.Align.START}
+        // The table is a framed card in the window, as it is on the web and the Mac.
+        cssClasses={[styles.tableFrame]}
+        overflow={Gtk.Overflow.HIDDEN}
+        marginStart={sideMargin}
+        marginEnd={sideMargin}
+        marginTop={frameMargin}
+        marginBottom={frameMargin}
         controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, state) => onGridKey(keyval, state)} />}
       >
         {header}
-        {before > 0 ? <GtkBox heightRequest={before} /> : null}
-        {body}
-        {after > 0 ? <GtkBox heightRequest={after} /> : null}
+        <GtkOverlay overlays={<>{merges.length > 0 ? <GtkFixed>{mergeBoxes}</GtkFixed> : null}{columnLines()}</>}>
+          <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+            {before > 0 ? <GtkBox heightRequest={before} /> : null}
+            {body}
+            {after > 0 ? <GtkBox heightRequest={after} /> : null}
+          </GtkBox>
+        </GtkOverlay>
         {addRow}
         {footer}
       </GtkBox>
@@ -934,6 +1893,10 @@ export function TableView({
             fields={schema.fields}
             relatedTables={relatedTables}
             onSave={onUpdateField ? (patch) => onUpdateField(openFormula.name, patch) : undefined}
+            {...(ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow) !== undefined ? { own: ownFormula(cellFormulas, openFormula.rowId, openFormula.name, openRow)! } : {})}
+            onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(openFormula.rowId, openFormula.name, expr) : undefined}
+            // Rows from an index are worked out a row at a time: a table that repeats its loops is held whole (D60).
+            onSetIteration={given ? undefined : onSetIteration}
             onClose={() => setOpenFormula(null)}
             grid={grid ? { ...grid, here: openFormula.rowId } : undefined}
             allRows={allRows}
@@ -941,19 +1904,63 @@ export function TableView({
           />
         );
       })() : null}
+      {aboutField ? (
+        <FieldAbout
+          key={aboutField}
+          field={fieldMap.get(aboutField)}
+          name={aboutField}
+          schema={schema}
+          onSettings={
+            schemaEditable
+              ? () => {
+                  setEditingField(aboutField);
+                  setAboutField(null);
+                }
+              : undefined
+          }
+          onClose={() => setAboutField(null)}
+        />
+      ) : null}
       {editingField && schemaEditable ? (() => {
         const field = schema.fields.find((f) => f.name === editingField);
         if (!field) return null;
         return (
           <FieldEditor
-            key={editingField}
+            // By the field's id where it has one: a rename keeps the same editor open.
+            key={field.id ?? editingField}
             field={field}
             fieldIndex={schema.fields.indexOf(field)}
             totalFields={schema.fields.length}
             fields={schema.fields}
             grid={grid}
             onUpdate={(patch) => onUpdateField!(editingField, patch)}
+            onRename={
+              onRenameField
+                ? (to) => {
+                    renamedField.current = { from: editingField, to };
+                    onRenameField(editingField, to);
+                    setEditingField(to);
+                  }
+                : undefined
+            }
             onAddChoice={(value) => onAddEnumValue!(editingField, value)}
+            onRemoveChoice={onRemoveEnumValue ? (value) => onRemoveEnumValue(editingField, value) : undefined}
+            onDelete={
+              onDeleteField
+                ? () => {
+                    setEditingField(null);
+                    onDeleteField(editingField);
+                  }
+                : undefined
+            }
+            onCancel={
+              onRestoreSchema
+                ? () => {
+                    if (schemaBefore.current) onRestoreSchema(schemaBefore.current);
+                    setEditingField(null);
+                  }
+                : undefined
+            }
             onMove={(delta) => onMoveField!(editingField, delta)}
             onClose={() => setEditingField(null)}
           />
@@ -970,4 +1977,6 @@ export function TableView({
       ) : null}
     </GtkScrolledWindow>
   );
+  // An embed shows a cut of the table, in a document that scrolls: it has no band.
+  return embedded ? table : <GtkOverlay overlays={band}>{table}</GtkOverlay>;
 }

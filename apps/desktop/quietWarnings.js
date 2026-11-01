@@ -1,3 +1,5 @@
+import { LogBox } from "react-native";
+
 // table-ui's styles are written once for the web and native. On native,
 // react-strict-dom warns for each property only the web has (whiteSpace,
 // outlineStyle, position: fixed...). That is expected here, and in
@@ -11,3 +13,8 @@ if (__DEV__) {
     warn(...args);
   };
 }
+
+// No warning banner over the app in development: warnings still go to the
+// console and the debugger, and a crash still shows its red screen. The
+// banner sat over the UI being refined, and it's read where it's logged.
+LogBox.ignoreAllLogs();

@@ -80,7 +80,7 @@ export function memoryViewRows(rows: Row[], options: ViewRowsOptions = {}): View
   let shown = rows;
   if (options.group !== undefined) {
     shown = [];
-    for (const [key, members] of Object.entries(applyGroup(rows, options.group, options.schema))) {
+    for (const [key, members] of applyGroup(rows, options.group, options.schema)) {
       if (members.length === 0) continue;
       groups.push({ key, start: shown.length, count: members.length });
       for (const row of members) shown.push(row);

@@ -1,0 +1,38 @@
+# Typecheck and test the library on every pull request and push to develop,
+# on the Node in .nvmrc (its SQLite has FTS5, which the index needs). Nothing
+# else ran them, so errors built up unseen.
+
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tests read the fixtures (fixtures -> workspace-fixtures, a submodule).
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install the Mac demo (not an npm workspace)
+        run: npm ci --prefix apps/desktop
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test core
+        run: npm run core:test
+      - name: Test table-ui
+        run: npm run ui:test
+      - name: Test table-app
+        run: npm run app:test
