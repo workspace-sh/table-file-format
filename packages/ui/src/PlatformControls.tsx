@@ -16,6 +16,7 @@ import { DateInput } from "./internal/DateInput";
 import { Toggle as PlatformToggle } from "./internal/Toggle";
 import { Sheet as PlatformSheet } from "./internal/Sheet";
 import { SettingsForm as PlatformSettingsForm } from "./internal/SettingsForm";
+import { PageMark as PlatformPageMark } from "./internal/PageMark";
 
 const defaults: PlatformControls = {
   RowActions,
@@ -24,12 +25,13 @@ const defaults: PlatformControls = {
   Toggle: PlatformToggle,
   Sheet: PlatformSheet,
   SettingsForm: PlatformSettingsForm,
+  PageMark: PlatformPageMark,
 };
 
 const Context = createContext<PlatformControls>(defaults);
 
 export function PlatformControlsProvider({ value, children }: { value: Partial<PlatformControls>; children: ReactNode }) {
-  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm, ChooseMany: chooseMany, ChooseOne: chooseOne, CellProblem: cellProblem } = value;
+  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm, ChooseMany: chooseMany, ChooseOne: chooseOne, CellProblem: cellProblem, PageMark: pageMark } = value;
   const merged = useMemo<PlatformControls>(
     () => ({
       RowActions: rowActions ?? defaults.RowActions,
@@ -41,8 +43,10 @@ export function PlatformControlsProvider({ value, children }: { value: Partial<P
       ChooseMany: chooseMany ?? null,
       ChooseOne: chooseOne ?? null,
       CellProblem: cellProblem ?? null,
+      // Null is the host's choice of the chip; left out, the platform's mark.
+      PageMark: pageMark !== undefined ? pageMark : defaults.PageMark,
     }),
-    [rowActions, select, dateInput, toggle, sheet, settingsForm, chooseMany, chooseOne, cellProblem],
+    [rowActions, select, dateInput, toggle, sheet, settingsForm, chooseMany, chooseOne, cellProblem, pageMark],
   );
   return <Context.Provider value={merged}>{children}</Context.Provider>;
 }
