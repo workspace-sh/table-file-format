@@ -5,3 +5,8 @@
  * `systemColors.macos.ts`, which swaps its lines.
  */
 export function adoptSystemColors(_styles: object): void {}
+
+/** The platform colour (by the name PlatformColor takes) that plays `role` here: none on the web or Android. */
+export function systemColorName(_role: string): string | undefined {
+  return undefined;
+}
