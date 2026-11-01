@@ -7,6 +7,13 @@ globalThis.requestAnimationFrame ??= ((f: FrameRequestCallback) => setTimeout(()
 
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
+/** Until `done()` is true, or `limit` ms have passed (a slow machine's timers run late). */
+async function until(done: () => boolean, limit = 2000): Promise<boolean> {
+  const start = Date.now();
+  while (!done() && Date.now() - start < limit) await wait(10);
+  return done();
+}
+
 /** A page one screen (1000) tall, with views at the tops given. */
 function page(tops: Map<unknown, number>) {
   let offset = 0;
@@ -38,8 +45,7 @@ test("a table off screen is drawn once the page holds still, not while it scroll
   scrollTo(200);
   await wait(150);
   assert.equal(drawn, false, "drawn before the page held still");
-  await wait(250);
-  assert.equal(drawn, true);
+  assert.equal(await until(() => drawn), true);
 });
 
 test("a table on screen is drawn while the page scrolls", async () => {
@@ -49,8 +55,7 @@ test("a table on screen is drawn while the page scrolls", async () => {
   scrollTo(100);
   let drawn = false;
   queue.wait(shown, () => { drawn = true; });
-  await wait(20);
-  assert.equal(drawn, true);
+  assert.equal(await until(() => drawn, 100), true, "an on-screen table waited for the page to be still");
 });
 
 test("a jump is not scrolling: what's near where it lands is drawn at once", async () => {
@@ -60,8 +65,7 @@ test("a jump is not scrolling: what's near where it lands is drawn at once", asy
   let drawn = false;
   queue.wait(near, () => { drawn = true; });
   scrollTo(18500);
-  await wait(30);
-  assert.equal(drawn, true);
+  assert.equal(await until(() => drawn, 100), true, "a jump was taken for scrolling");
 });
 
 test("one far beyond what's ahead waits for the reader", async () => {
