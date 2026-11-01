@@ -296,7 +296,15 @@ export interface PlatformControls {
   ChooseOne?: ChooseOneSlot;
   /** Why a cell's draft wasn't saved; absent or null, the views' own note under the cell. */
   CellProblem?: CellProblemSlot;
+  /**
+   * The mark beside a row's title when the row has a page, drawn alone (no chip around it). Null: the
+   * word "page" in a chip. The platform's by default: iOS the `doc.text` symbol, elsewhere the chip.
+   */
+  PageMark?: PageMarkSlot | null;
 }
+
+/** A row's page mark (PlatformControls.PageMark): small, about a line of text high. */
+export type PageMarkSlot = () => ReactElement | null;
 
 /**
  * Why a cell's draft wasn't saved (D42), shown at the cell while it's

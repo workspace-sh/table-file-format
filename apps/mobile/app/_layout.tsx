@@ -11,7 +11,7 @@ import { LogBox, useColorScheme } from "react-native";
 // reached the stack (it stayed Light in Dark: light screen, dark text).
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import * as ExpoHaptics from "expo-haptics";
-import { AttachmentsProvider, DisplaySettingsProvider, HapticsProvider, type Haptics } from "@workspace.sh/table-ui";
+import { AttachmentsProvider, DisplaySettingsProvider, HapticsProvider, screenBackground, type Haptics } from "@workspace.sh/table-ui";
 import { fixtureAttachmentUrls } from "@workspace.sh/table-fixtures/native-attachments";
 import { TableAppProvider, useTableAppContext } from "../TableAppContext";
 
@@ -20,6 +20,14 @@ import { TableAppProvider, useTableAppContext } from "../TableAppContext";
 // banner sat over the UI being refined, and it's read where it's logged.
 LogBox.ignoreAllLogs();
 
+// The screen in the colour the table's views are drawn to sit on (table-ui's
+// screenBackground: iOS's system background, white in Light and black in
+// Dark), not the stock themes' flat grey (242), which showed round them.
+const onScreen = <T extends typeof DefaultTheme>(theme: T): T =>
+  screenBackground === undefined ? theme : { ...theme, colors: { ...theme.colors, background: screenBackground as unknown as string } };
+const LIGHT = onScreen(DefaultTheme);
+const DARK = onScreen(DarkTheme);
+
 export default function Layout() {
   // The navigation follows the system's appearance, as the views do: a
   // light stack under dark content would hide it, and iOS 26's glass
@@ -27,7 +35,7 @@ export default function Layout() {
   const scheme = useColorScheme();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={scheme === "dark" ? DARK : LIGHT}>
       <TableAppProvider>
         <Providers>
           <Stack>
