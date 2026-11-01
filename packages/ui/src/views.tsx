@@ -1846,6 +1846,16 @@ const styles = css.create({
     borderWidth: 0,
     cursor: "pointer",
   },
+  bodyMark: {
+    display: "flex",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    padding: 0,
+    marginInlineStart: 6,
+    backgroundColor: "transparent",
+  },
   bodyBadge: {
     // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
     display: "flex",
@@ -3052,7 +3062,11 @@ function DragGhost({
 }
 
 function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle?: boolean }) {
-  if (!onClick) return <html.span style={[styles.bodyBadge, besideTitle && styles.bodyBadgeBesideTitle]}>page</html.span>;
+  // A mark (the platform's or the host's: PlatformControls.PageMark) alone, with no chip around it; else the word.
+  const { PageMark } = usePlatformControls();
+  const badge = PageMark ? styles.bodyMark : styles.bodyBadge;
+  const content = PageMark ? <PageMark /> : "page";
+  if (!onClick) return <html.span aria-label="Has a page" style={[badge, besideTitle && styles.bodyBadgeBesideTitle]}>{content}</html.span>;
   // Beside a title, the hint's wrapper takes the badge's place and margins:
   // on native it's a Text, and a button inside one loses its own.
   return (
@@ -3063,9 +3077,9 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
         e.stopPropagation();
         onClick();
       }}
-      style={[styles.bodyBadge, styles.bodyBadgeButton, besideTitle && styles.bodyBadgeButtonBesideTitle]}
+      style={[badge, styles.bodyBadgeButton, besideTitle && styles.bodyBadgeButtonBesideTitle]}
     >
-      page
+      {content}
     </html.button>
     </Hinted>
   );
