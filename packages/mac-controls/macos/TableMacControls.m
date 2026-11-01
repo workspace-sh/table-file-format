@@ -208,10 +208,21 @@ RCT_EXPORT_MODULE();
       view = view.superview;
     }
     [controls sendEventWithName:@"contextMenu" body:@{ @"target" : target }];
-    // A Control-click is not also a click; and a right-click that has a menu
-    // goes no further (in a development build React Native would show its
-    // own menu for it as well).
-    return event.type == NSEventTypeLeftMouseDown || target.length > 0 ? nil : event;
+    // A right-click that has a menu goes no further (in a development build
+    // React Native would show its own menu for it as well). A Control-click is
+    // never also a click: without a row's menu it goes on as the right-click
+    // it is, for anything else in the window with a menu of its own.
+    if (target.length > 0) return nil;
+    if (event.type != NSEventTypeLeftMouseDown) return event;
+    return [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
+                              location:event.locationInWindow
+                         modifierFlags:event.modifierFlags
+                             timestamp:event.timestamp
+                          windowNumber:event.windowNumber
+                               context:nil
+                           eventNumber:event.eventNumber
+                            clickCount:event.clickCount
+                              pressure:event.pressure];
   }];
 }
 
