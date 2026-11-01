@@ -8,6 +8,11 @@
 // until the reader scrolls toward it. Until its turn, an embed keeps the room
 // its link says it will take, as it does while it's read, so nothing moves
 // while it waits.
+//
+// Drawing a table holds the page for several frames, so one off screen is
+// drawn while the page is still, never while it's scrolled: drawn mid-scroll,
+// the scroll stalled and then jumped. While the page is still, tables further
+// ahead are drawn too, so the reader seldom scrolls to one not yet drawn.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageScroll } from "@workspace.sh/table-ui";
@@ -16,8 +21,11 @@ import { embedAddresses } from "./embed.ts";
 /** The document's page, as table-ui's views know it (its PageScroll): what the order is kept over. */
 export type EmbedPage = Pick<PageScroll, "now" | "subscribe" | "scrollBy" | "topOf">;
 
-/** How far beyond what's on screen a table is drawn without being scrolled to, in screens. */
-const AHEAD_SCREENS = 2;
+/** How far beyond what's on screen a table is drawn without being scrolled to, in screens: while the page is still. */
+const AHEAD_SCREENS = 6;
+
+/** How long the page holds still after a scroll before a table off screen is drawn. */
+const STILL_MS = 250;
 
 /** How long the page's width holds still, while a window is resized, before a drawn table takes the new one. */
 const RESIZE_QUIET_MS = 300;
@@ -53,20 +61,55 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
   const waiting = new Set<Waiting>();
   let busy = false;
   let listening: (() => void) | null = null;
+  // When the page last scrolled, and the turn put off until it holds still.
+  let offset = page.now().offset;
+  let movedAt = -Infinity;
+  let whenStill: ReturnType<typeof setTimeout> | null = null;
   const stopListening = () => {
     listening?.();
     listening = null;
+    if (whenStill) clearTimeout(whenStill);
+    whenStill = null;
+  };
+  // Scrolled since last seen. A jump (the page put back where the reader
+  // left it, a link followed) is not scrolling: the reader waits where it
+  // lands, so what's near is drawn at once.
+  const noteMove = () => {
+    const { offset: now, height } = page.now();
+    if (now === offset) return;
+    const jumped = Math.abs(now - offset) > height / 2;
+    offset = now;
+    if (jumped) return;
+    movedAt = performance.now();
+    if (whenStill) clearTimeout(whenStill);
+    whenStill = setTimeout(() => {
+      whenStill = null;
+      void take();
+    }, STILL_MS);
+  };
+  const onPage = () => {
+    noteMove();
+    void take();
   };
 
   // A frame drawn after the last turn, so the table just drawn is on screen before the next starts.
   const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
 
-  const take = async () => {
-    if (busy || waiting.size === 0) return;
+  // Asked again while a turn was being chosen or drawn: choose again after.
+  let again = false;
+  const take = async (): Promise<void> => {
+    if (busy) {
+      again = true;
+      return;
+    }
+    if (waiting.size === 0) return;
     busy = true;
+    again = false;
+    let drew = false;
     try {
-      const { offset, height } = page.now();
       const measured = await Promise.all([...waiting].map(async (w) => ({ w, top: await page.topOf(w.view) })));
+      // Where the page is once they're measured: it may have moved meanwhile.
+      const { offset, height } = page.now();
       let next: Waiting | null = null;
       let nearest = Infinity;
       for (const { w, top } of measured) {
@@ -79,7 +122,10 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
           next = w;
         }
       }
-      if (!next || nearest > AHEAD_SCREENS * height) return;
+      // Scrolling: only one on screen is drawn now (it would otherwise show
+      // its empty room); the rest wait until the page holds still.
+      const still = performance.now() - movedAt >= STILL_MS;
+      if (!next || nearest > (still ? AHEAD_SCREENS * height : 0)) return;
       waiting.delete(next);
       if (waiting.size === 0) stopListening();
       // The next is started once this one has settled: started a frame
@@ -87,10 +133,11 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
       // columns, and this one was shown later for it.
       await next.go();
       await nextFrame();
+      drew = true;
     } finally {
       busy = false;
     }
-    void take();
+    if (drew || again) void take();
   };
 
   return {
@@ -98,7 +145,11 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
       const w = { view, go };
       waiting.add(w);
       // Scrolled toward, or moved by what's above it: maybe its turn now.
-      listening ??= page.subscribe(() => void take());
+      if (!listening) {
+        // Wherever the page is now is where it starts from.
+        offset = page.now().offset;
+        listening = page.subscribe(onPage);
+      }
       void take();
       return () => {
         waiting.delete(w);
@@ -118,8 +169,9 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
  *
  * Its turn ends once its height has held still a moment (the table measures
  * its columns after its first layout), or after a limit. And drawn above
- * what's on screen, the table takes its own height in place of the room it
- * was kept: the page scrolls by the difference, so what the reader is
+ * what's on screen, each change in the table's height (its own in place of
+ * the room it was kept, then again once its columns are measured) scrolls
+ * the page by the difference, so what the reader is
  * looking at stays where it is.
  */
 export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPage | null) {
@@ -127,7 +179,6 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
   const [turn, setTurn] = useState(false);
   // Drawn, and its height has held still (or the turn's limit passed).
   const [settledTurn, setSettledTurn] = useState(false);
-  const settling = useRef(false);
   const height = useRef<number | null>(null);
   const settled = useRef<(() => void) | null>(null);
   const quiet = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +207,6 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
     return queue.wait(host.current, () => new Promise<void>((done) => {
       settled.current = done;
       limit.current = setTimeout(endTurn, SETTLE_LIMIT_MS);
-      settling.current = true;
       setTurn(true);
     }));
   }, [queue, ready, turn]);
@@ -177,8 +227,9 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
       if (quiet.current) clearTimeout(quiet.current);
       quiet.current = setTimeout(endTurn, SETTLE_QUIET_MS);
     }
-    if (!settling.current || before === null || before === h || !page) return;
-    settling.current = false;
+    // Every change, not only the first: the table measures its columns
+    // after its first layout, and grows again then.
+    if (before === null || before === h || !page) return;
     void page.topOf(host.current).then((top) => {
       if (top !== null && top + before <= page.now().offset) page.scrollBy(h - before);
     });
