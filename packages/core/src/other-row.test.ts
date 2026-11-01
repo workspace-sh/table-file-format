@@ -80,7 +80,7 @@ test("typed as field(\"q1\", \"income\") or in the stored form, it's stored the 
   assert.ok(excel.ok && stored.ok);
   assert.equal(excel.stored, '(/ q1 (field "q1" "income"))');
   assert.equal(stored.stored, excel.stored);
-  // q1 looks like a cell address (column Q, row 1), so it prints braced as a field.
+  // q1 looks like a cell address (values Q, row 1), so it prints braced as a field.
   assert.equal(printFormula(excel.stored), '={q1} / field("q1", "income")');
 });
 

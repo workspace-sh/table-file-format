@@ -1,4 +1,4 @@
-import { newId } from "./id.js";
+import { newFieldId, newViewId } from "./id.js";
 import { TABLE_FORMAT_VERSION, type ParsedBundle, type ParsedTable } from "./types.js";
 
 /**
@@ -14,11 +14,11 @@ export function newTable(title: string, path: string, now: Date = new Date()): P
   return {
     path,
     schema: {
-      fields: [{ name: "title", type: "string" }],
+      fields: [{ id: newFieldId(), name: "title", type: "string" }],
       "schema-version": 1,
     },
     rows: [],
-    views: [{ id: newId(), name: "All", layout: "table" }],
+    views: [{ id: newViewId(), name: "All", layout: "table" }],
     meta: {
       title,
       created_at: stamp,

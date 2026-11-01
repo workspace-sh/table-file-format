@@ -3,6 +3,7 @@
 // (EXPO_PUBLIC_TABLE_MEASURE=1) or development, opened by a link:
 //
 //   sh.workspace.table.mobile://sqlite?rows=100000&modes=async,sync&cases=1&yield=50&batch=1000 (yield: ms between macrotasks)
+//   sh.workspace.table.mobile://sqlite?alter=<url of a .table.zip>&drop=note (a change of fields: alterProbe.ts)
 //
 // Each step is shown, posted to the measuring server (Simulator) and kept
 // in the app's documents as sqlite-probe.json (a device:
@@ -14,6 +15,7 @@ import { useLocalSearchParams } from "expo-router";
 import { MEASURING, report } from "../measure";
 import { cases, features, heartbeat, saveResults, timings, type Mode, type Results } from "../sqliteProbe";
 import { saveProbe } from "../saveProbe";
+import { alterProbe } from "../alterProbe";
 
 // React's own clock (sqliteProbe.ts's heartbeat): renders when asked, and says when it has committed.
 function Heartbeat() {
@@ -29,7 +31,7 @@ function Heartbeat() {
 }
 
 export default function SqliteProbe() {
-  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string; ckpt?: string; commit?: string; save?: string }>();
+  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string; ckpt?: string; commit?: string; save?: string; alter?: string; drop?: string }>();
   const [lines, setLines] = useState<string[]>([]);
   const ran = useRef(false);
 
@@ -51,6 +53,12 @@ export default function SqliteProbe() {
     };
     void (async () => {
       try {
+        if (params.alter) {
+          // Only a change of fields in the index (#551), of the archive at this address.
+          await keep("alter", await alterProbe(params.alter, params.drop ?? "note", say));
+          await keep("done", true);
+          return;
+        }
         if (params.save) {
           // Only how long reads wait during a save, of the archive at this address.
           await keep("save", await saveProbe(params.save, say));
@@ -66,7 +74,7 @@ export default function SqliteProbe() {
         await keep("error", String(error));
       }
     })();
-  }, [params.rows, params.modes, params.cases, params.yield, params.batch, params.ckpt, params.commit, params.save]);
+  }, [params.rows, params.modes, params.cases, params.yield, params.batch, params.ckpt, params.commit, params.save, params.alter, params.drop]);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16 }}>

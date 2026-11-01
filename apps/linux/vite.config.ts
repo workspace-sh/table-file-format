@@ -27,6 +27,7 @@ export default defineConfig({
       { find: /^@workspace\.sh\/table-app$/, replacement: here("../../packages/app/src/index.ts") },
       { find: /^@workspace\.sh\/table-app\/node$/, replacement: here("../../packages/app/src/node.ts") },
       { find: /^@workspace\.sh\/table-app\/react$/, replacement: here("../../packages/app/src/react.ts") },
+      { find: /^@workspace\.sh\/edn$/, replacement: here("../../edn/js/src/index.ts") },
       { find: /^@workspace\.sh\/table-fixtures$/, replacement: here("../../packages/table-fixtures/src/index.ts") },
     ],
     dedupe: ["react", "@gtkx/react", "@gtkx/css", "@gtkx/runtime", "fflate", "nanoid"],

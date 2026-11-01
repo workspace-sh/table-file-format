@@ -9,12 +9,15 @@ import { BoardView, CalendarView, GalleryView, ListView, TableView } from "@work
 export interface ViewCallbacks {
   onUpdateRow: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField: (fieldName: string, patch: Partial<Field>) => void;
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue: (fieldName: string, value: string) => void;
   onRemoveEnumValue: (fieldName: string, value: string) => void;
   onDeleteField: (fieldName: string) => void;
   onMoveField: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField: (field: Field) => void;
+  onAddField: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
+  /** Opens the table's new-field editor each time it changes: the More menu's New Field. */
+  newFieldRequest?: number;
   onAddRow: () => string | void;
   onDeleteRow: (rowId: string) => void;
   onOpenBody: (rowId: string) => void;
@@ -23,6 +26,12 @@ export interface ViewCallbacks {
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  cells?: import("@workspace.sh/table-core").CellFormula[];
+  onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
+  onAskMerge?: (rowId: string, field: string) => void;
+  onUnmerge?: (rowId: string, field: string) => void;
+  onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: SheetGridShown;
@@ -74,13 +83,21 @@ export function renderView(
           {...common}
           onUpdateView={cb.onUpdateView}
           onUpdateRow={cb.onUpdateRow}
+          cells={cb.cells}
+          onSetCellFormula={cb.onSetCellFormula}
+          onSetIteration={cb.onSetIteration}
+          onAskMerge={cb.onAskMerge}
+          onUnmerge={cb.onUnmerge}
+          onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
           onMoveField={cb.onMoveField}
           onRestoreSchema={cb.onRestoreSchema}
           onAddField={cb.onAddField}
+          newFieldRequest={cb.newFieldRequest}
           onAddRow={cb.onAddRow}
           onDeleteRow={cb.onDeleteRow}
           onOpenBody={cb.onOpenBody}

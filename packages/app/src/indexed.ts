@@ -5,17 +5,27 @@
 import {
   applyView,
   buildIndex,
+  cellsRowLocal,
+  OWN_FORMULAS,
+  CELL_NOTES,
+  setIndexedCellFormula,
+  setIndexedCellNote,
   memoryViewRows,
+  parseRowsText,
   putRows,
   queryIndex,
   removeRows,
   rowLocal,
   searchRows,
+  type CellFormula,
   type IndexQuery,
+  type LazyZipEntry,
   type ParsedTable,
   type Row,
   type SqlDriver,
   type TableSchema,
+  type UnreadLine,
+  type ValidationError,
   type View,
   type ViewRows,
 } from "@workspace.sh/table-core";
@@ -27,6 +37,7 @@ export const INDEXED_FROM = 50_000;
 export function viewQuery(view: View, search = ""): IndexQuery {
   return {
     ...(view.filter ? { filter: view.filter } : {}),
+    ...(view.hidden && view.hidden.length > 0 ? { hidden: view.hidden } : {}),
     ...(view.sort ? { sort: view.sort } : {}),
     ...(view.order ? { order: view.order } : {}),
     ...(search.trim().length > 0 ? { search } : {}),
@@ -40,8 +51,12 @@ export function viewQuery(view: View, search = ""): IndexQuery {
  * their own row, and with no Sheet view, whose formulas read by place
  * (LARGE-TABLES-PLAN section 1). Any other is held in memory.
  */
-export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views">): boolean {
+export function canBeIndexed(table: Pick<ParsedTable, "schema" | "views" | "cells"> & { meta?: ParsedTable["meta"] }): boolean {
   if (table.views.some((v) => v.coordinates === true)) return false;
+  // Worked out by iteration (D60), it's worked out whole, in passes: not a row at a time.
+  if (table.meta?.iteration) return false;
+  // Cells' own formulas are worked out a row at a time with their rows, so each must read only its own (D52).
+  if (!cellsRowLocal(table.cells)) return false;
   const computed = table.schema.fields.filter((f) => f.computed);
   return computed.length === 0 || rowLocal(table.schema, computed);
 }
@@ -81,6 +96,25 @@ let edits = 0;
 /** A key no saved file has: an edited index is stale until its rows are saved and it's stamped again. */
 const editedKey = () => `edited:${Date.now()}:${++edits}`;
 
+/**
+ * A row read out of the index as it's written back: without its cells' own
+ * formulas' results (D52), which are never stored, and without the
+ * formulas it carries for an editor. `keep` is a field whose result stays:
+ * the one a value is being typed into.
+ */
+function storedOf(row: Row, table: ParsedTable, keep?: string): Row {
+  const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
+  // Always a copy: a caller changes it, and the row read stays what was there.
+  const next: Row = { ...row };
+  delete next[CELL_NOTES];
+  if (!own) return next;
+  delete next[OWN_FORMULAS];
+  for (const field of Object.keys(own)) {
+    if (field !== keep && !table.schema.fields.find((f) => f.name === field)?.computed) delete next[field];
+  }
+  return next;
+}
+
 /** A cell of an indexed table's row set. Gives back what the cell held ({ value }), or null when there's no such row. */
 export async function setIndexedCell(
   db: SqlDriver,
@@ -89,15 +123,18 @@ export async function setIndexedCell(
   rowId: string,
   field: string,
   value: unknown,
-): Promise<{ value: unknown } | null> {
+): Promise<{ value: unknown; formula?: string } | null> {
   const all = await queryIndex(db, { name, schema: table.schema });
   const row = await all?.row(rowId);
   if (!row) return null;
-  const next = { ...row };
+  // A value typed over a cell's own formula takes its place (D52): the formula goes, and undo brings it back.
+  const formula = (row[OWN_FORMULAS] as Record<string, string> | undefined)?.[field];
+  const next = storedOf(row, table, field);
   if (value === undefined) delete next[field];
   else next[field] = value as never;
   await putRows(db, { name, schema: table.schema, rows: [next], key: editedKey() });
-  return { value: row[field] };
+  if (formula !== undefined) await setIndexedCellFormula(db, { name, schema: table.schema, rowId, field, expr: null, key: editedKey() });
+  return { value: row[field], ...(formula !== undefined ? { formula } : {}) };
 }
 
 /** A new, empty row at the end of an indexed table. */
@@ -106,7 +143,7 @@ export async function addIndexedRow(db: SqlDriver, name: string, table: ParsedTa
 }
 
 /** A row of an indexed table removed. Gives back the row and its place in the file order, or null when there's no such row. */
-export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<{ row: Row; at: number } | null> {
+export async function removeIndexedRow(db: SqlDriver, name: string, table: ParsedTable, rowId: string): Promise<{ row: Row; at: number; cells?: CellFormula[] } | null> {
   return (await removeRows(db, { name, schema: table.schema, ids: [rowId], key: editedKey() }))[0] ?? null;
 }
 
@@ -115,17 +152,18 @@ export async function setIndexedBody(db: SqlDriver, name: string, table: ParsedT
   const all = await queryIndex(db, { name, schema: table.schema });
   const row = await all?.row(rowId);
   if (!row) return;
-  await putRows(db, { name, schema: table.schema, rows: [row], bodies: { [rowId]: content }, key: editedKey() });
+  await putRows(db, { name, schema: table.schema, rows: [storedOf(row, table)], bodies: { [rowId]: content }, key: editedKey() });
 }
 
 /** A row removed from an indexed table put back where it was, with its page. */
-export async function restoreIndexedRow(db: SqlDriver, name: string, table: ParsedTable, row: Row, at: number, content?: string): Promise<void> {
+export async function restoreIndexedRow(db: SqlDriver, name: string, table: ParsedTable, row: Row, at: number, content?: string, cells?: CellFormula[]): Promise<void> {
   await putRows(db, {
     name,
     schema: table.schema,
     rows: [row],
     at: { [row.id]: at },
     ...(content !== undefined ? { bodies: { [row.id]: content } } : {}),
+    ...(cells ? { cells } : {}),
     key: editedKey(),
   });
 }
@@ -140,7 +178,11 @@ export type IndexEdit =
   | { kind: "add"; rowId: string }
   | { kind: "remove"; rowId: string }
   | { kind: "body"; rowId: string; content: string }
-  | { kind: "restore"; rowId: string; row: Row; at: number; content?: string };
+  | { kind: "restore"; rowId: string; row: Row; at: number; content?: string; cells?: CellFormula[] }
+  /** A cell given its own formula (D52), or none (null). */
+  | { kind: "formula"; rowId: string; field: string; expr: string | null }
+  /** A cell's note set, or taken away (empty) (D57). */
+  | { kind: "note"; rowId: string; field: string; note: string };
 
 /**
  * Make queued edits in the index, in order. Says how many rows the table
@@ -158,16 +200,22 @@ export async function makeIndexEdits(
   for (const edit of edits) {
     if (edit.kind === "cell") {
       const was = await setIndexedCell(db, name, table, edit.rowId, edit.field, edit.value);
-      back.push(was ? { kind: "cell", rowId: edit.rowId, field: edit.field, value: was.value } : null);
+      back.push(!was ? null : was.formula !== undefined ? { kind: "formula", rowId: edit.rowId, field: edit.field, expr: was.formula } : { kind: "cell", rowId: edit.rowId, field: edit.field, value: was.value });
     } else if (edit.kind === "add") {
       await addIndexedRow(db, name, table, edit.rowId);
       back.push({ kind: "remove", rowId: edit.rowId });
     } else if (edit.kind === "remove") {
       const was = await removeIndexedRow(db, name, table, edit.rowId);
-      back.push(was ? { kind: "restore", rowId: edit.rowId, row: was.row, at: was.at } : null);
+      back.push(was ? { kind: "restore", rowId: edit.rowId, row: was.row, at: was.at, ...(was.cells ? { cells: was.cells } : {}) } : null);
     } else if (edit.kind === "restore") {
-      await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content);
+      await restoreIndexedRow(db, name, table, edit.row, edit.at, edit.content, edit.cells);
       back.push({ kind: "remove", rowId: edit.rowId });
+    } else if (edit.kind === "note") {
+      const was = await setIndexedCellNote(db, { name, rowId: edit.rowId, field: edit.field, note: edit.note, key: editedKey() });
+      back.push(was && (was.was ?? "") !== edit.note.trim() ? { kind: "note", rowId: edit.rowId, field: edit.field, note: was.was ?? "" } : null);
+    } else if (edit.kind === "formula") {
+      const was = await setIndexedCellFormula(db, { name, schema: table.schema, rowId: edit.rowId, field: edit.field, expr: edit.expr, key: editedKey() });
+      back.push(was && (was.was ?? null) !== edit.expr ? { kind: "formula", rowId: edit.rowId, field: edit.field, expr: was.was ?? null } : null);
     } else {
       await setIndexedBody(db, name, table, edit.rowId, edit.content);
       back.push(null);
@@ -191,54 +239,84 @@ export function rowsInBytes(bytes: Uint8Array): Iterable<Row> {
   return rowsInChunks([bytes]);
 }
 
-/** The same, for a `rows.ndjson` that comes in pieces: a line may be split across two. */
-export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: number) => void): Iterable<Row> {
+/**
+ * Splits a `rows.ndjson` that comes in pieces into its rows: a line may run
+ * across two pieces. `push` each piece in turn, then `end`.
+ */
+function rowSplitter(onBytes?: (bytes: number) => void, strict?: () => string): { push(chunk: Uint8Array): Iterable<Row>; end(): Iterable<Row> } {
   const decoder = new TextDecoder();
   const rowOf = (line: Uint8Array): Row | undefined => {
     if (line.length === 0) return undefined;
     const text = decoder.decode(line);
     if (text.trim().length === 0) return undefined;
+    let row: unknown;
     try {
-      const row: unknown = JSON.parse(text);
-      return row !== null && typeof row === "object" && typeof (row as Row).id === "string" ? (row as Row) : undefined;
+      row = JSON.parse(text);
     } catch {
-      return undefined;
+      row = undefined;
     }
+    if (row !== null && typeof row === "object" && !Array.isArray(row) && typeof (row as Row).id === "string" && (row as Row).id !== "") return row as Row;
+    // Read for an index, a line that isn't a row stops it: the index writes the rows back, and would leave the line out (#567).
+    if (strict) throw new Error(`a line of ${strict()} couldn't be read`);
+    return undefined;
   };
   // The start of a line whose end is in the next piece.
   let carry: Uint8Array | null = null;
-  for (const chunk of chunks) {
-    let start = 0;
-    for (;;) {
-      const end = chunk.indexOf(NEWLINE, start);
-      if (end < 0) break;
-      let line = chunk.subarray(start, end);
-      if (carry) {
-        const joined: Uint8Array = new Uint8Array(carry.length + line.length);
-        joined.set(carry);
-        joined.set(line, carry.length);
-        line = joined;
-        carry = null;
+  return {
+    *push(chunk) {
+      let start = 0;
+      for (;;) {
+        const end = chunk.indexOf(NEWLINE, start);
+        if (end < 0) break;
+        let line = chunk.subarray(start, end);
+        if (carry) {
+          const joined: Uint8Array = new Uint8Array(carry.length + line.length);
+          joined.set(carry);
+          joined.set(line, carry.length);
+          line = joined;
+          carry = null;
+        }
+        // Said a line at a time, not a piece at a time: a piece can be most of the file.
+        onBytes?.(line.length + 1);
+        const row = rowOf(line);
+        if (row) yield row;
+        start = end + 1;
       }
-      // Said a line at a time, not a piece at a time: a piece can be most of the file.
-      onBytes?.(line.length + 1);
-      const row = rowOf(line);
-      if (row) yield row;
-      start = end + 1;
-    }
-    if (start < chunk.length) {
-      const rest = chunk.subarray(start);
-      if (carry) {
-        const joined: Uint8Array = new Uint8Array(carry.length + rest.length);
-        joined.set(carry);
-        joined.set(rest, carry.length);
-        carry = joined;
-      } else carry = rest.slice();
-    }
-  }
-  if (carry) onBytes?.(carry.length);
-  const last = carry ? rowOf(carry) : undefined;
-  if (last) yield last;
+      if (start < chunk.length) {
+        const rest = chunk.subarray(start);
+        if (carry) {
+          const joined: Uint8Array = new Uint8Array(carry.length + rest.length);
+          joined.set(carry);
+          joined.set(rest, carry.length);
+          carry = joined;
+        } else carry = rest.slice();
+      }
+    },
+    *end() {
+      if (carry) onBytes?.(carry.length);
+      const last = carry ? rowOf(carry) : undefined;
+      carry = null;
+      if (last) yield last;
+    },
+  };
+}
+
+/** The same, for a `rows.ndjson` that comes in pieces: a line may be split across two. */
+export function* rowsInChunks(chunks: Iterable<Uint8Array>, onBytes?: (bytes: number) => void): Iterable<Row> {
+  const split = rowSplitter(onBytes);
+  for (const chunk of chunks) yield* split.push(chunk);
+  yield* split.end();
+}
+
+/**
+ * The same, for pieces read as they come (a file read a piece at a time over
+ * an asynchronous API, as the Mac's is). Given `strict`, a line that isn't a
+ * row throws, naming the file `strict` says it's in.
+ */
+export async function* rowsInAsyncChunks(chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, onBytes?: (bytes: number) => void, strict?: () => string): AsyncIterable<Row> {
+  const split = rowSplitter(onBytes, strict);
+  for await (const chunk of chunks) yield* split.push(chunk);
+  yield* split.end();
 }
 
 /** How many lines of `bytes` hold something: its rows, near enough to say how far a build has got. */
@@ -278,8 +356,20 @@ export async function buildIndexFromBytes(
   options: {
     name: string;
     schema: TableSchema;
-    rows: Uint8Array | { chunks: Iterable<Uint8Array>; size: number; keep?: (chunk: Uint8Array) => void };
+    // `chunks` may come as they're read (an async iterable); `keep` may write them away asynchronously, and each is waited for.
+    // `files`, in place of `chunks`: a table's rows files (D51), each said to `onFile` with the place its first row takes, as it's begun.
+    rows:
+      | Uint8Array
+      | {
+          chunks?: Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
+          files?: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[];
+          size: number;
+          keep?: (chunk: Uint8Array, file: string) => unknown;
+          onFile?: (file: string, first: number) => unknown;
+        };
     bodies?: Record<string, string>;
+    /** Cells' own formulas (D52), kept with the rows. */
+    cells?: CellFormula[];
     key: string;
     onProgress?: (done: number, total: number) => void;
     /** Rows per transaction and per batch, as buildIndex takes them: for a device that stalls on a long commit or a long batch. */
@@ -294,14 +384,26 @@ export async function buildIndexFromBytes(
   let read = 0;
   const total = () => (pieces ? (read > 0 ? Math.max(done, Math.round((done / read) * pieces.size)) : 0) : counted);
   options.onProgress?.(0, total());
-  function* taken(): Iterable<Uint8Array> {
-    for (const chunk of pieces!.chunks) {
-      pieces!.keep?.(chunk);
-      yield chunk;
+  // The rows file being read, for saying where a line that couldn't be read is.
+  let reading = "";
+  async function* taken(): AsyncIterable<Uint8Array> {
+    for (const file of pieces!.files ?? [{ name: "", chunks: pieces!.chunks ?? [] }]) {
+      reading = file.name;
+      // Every row of the files before has been taken by now: a piece is asked for only once the last one's rows are.
+      await pieces!.onFile?.(file.name, done + 1);
+      let last = NEWLINE;
+      for await (const chunk of file.chunks) {
+        await pieces!.keep?.(chunk, file.name);
+        if (chunk.length > 0) last = chunk[chunk.length - 1]!;
+        yield chunk;
+      }
+      // A file whose last line has no end: its row is its own, not the start of the next file's first.
+      if (last !== NEWLINE) yield new Uint8Array([NEWLINE]);
     }
   }
   async function* streamed(): AsyncIterable<Row> {
-    for (const row of whole ? rowsInBytes(whole) : rowsInChunks(taken(), (bytes) => (read += bytes))) {
+    const where = () => (reading ? `rows/${reading}` : "its rows");
+    for await (const row of whole ? rowsInAsyncChunks([whole], undefined, where) : rowsInAsyncChunks(taken(), (bytes) => (read += bytes), where)) {
       done++;
       if (done % 5000 === 0) options.onProgress?.(done, total());
       yield row;
@@ -312,6 +414,7 @@ export async function buildIndexFromBytes(
     schema: options.schema,
     rows: streamed(),
     bodies: options.bodies,
+    ...(options.cells ? { cells: options.cells } : {}),
     key: options.key,
     search: "later",
     ...(options.commitEvery !== undefined ? { commitEvery: options.commitEvery } : {}),
@@ -320,3 +423,74 @@ export async function buildIndexFromBytes(
   options.onProgress?.(done, done);
   return done;
 }
+
+/** A large table's rows read into memory after all, with what couldn't be read kept (SPEC section 3): what a table held there needs. */
+export interface HeldRows {
+  rows: Row[];
+  /** Its cells' own formulas, as the file had them (D52). */
+  cells?: CellFormula[];
+  rowFiles: { name: string; ids: string[] }[];
+  unread: UnreadLine[];
+  diagnostics: ValidationError[];
+}
+
+/**
+ * A table's rows from an archive's rows files, read as a reader reads them:
+ * a line that isn't a row, or repeats a row's id, is kept to be written back
+ * and said, not dropped (#567, D54). For holding a table in memory when its
+ * index can't be made.
+ */
+export function readHeldRows(rows: LazyZipEntry, firstFile: string): HeldRows {
+  const decoder = new TextDecoder();
+  const held: HeldRows = { rows: [], rowFiles: [], unread: [], diagnostics: [] };
+  const seen = new Map<string, Row>();
+  for (const part of rows.parts ?? [{ name: firstFile, entry: rows }]) {
+    let text = "";
+    for (const chunk of part.entry.chunks()) text += decoder.decode(chunk, { stream: true });
+    text += decoder.decode();
+    const these = parseRowsText(text, held.diagnostics, held.unread, { file: `rows/${part.name}`, after: held.rows.at(-1)?.id ?? null, seen });
+    for (const r of these) held.rows.push(r);
+    held.rowFiles.push({ name: part.name, ids: these.map((r) => r.id) });
+  }
+  return held;
+}
+
+/** What a table read into memory takes from HeldRows: its rows, and the rest only when there is any, as a reader sets them. */
+export function withHeld(held: HeldRows): Pick<ParsedTable, "rows" | "rowFiles" | "unread" | "diagnostics" | "cells"> {
+  return {
+    rows: held.rows,
+    ...(held.cells && held.cells.length > 0 ? { cells: held.cells } : {}),
+    ...(held.rowFiles.length > 0 ? { rowFiles: held.rowFiles } : {}),
+    ...(held.unread.length > 0 ? { unread: held.unread } : {}),
+    ...(held.diagnostics.length > 0 ? { diagnostics: held.diagnostics } : {}),
+  };
+}
+
+/** What's said of a large table held in memory because no index could be made of it: why, and that the lines it couldn't read are kept. */
+export function heldText(table: string, error: unknown, held: HeldRows): string {
+  const why = `${table} is large, and its index couldn't be made (${error instanceof Error ? error.message : String(error)}). It's held in memory instead, and may be slow.`;
+  const lines = held.unread.length;
+  if (lines === 0) return why;
+  return `${why} ${lines === 1 ? "The line it couldn't read is kept as it is." : `The ${lines} lines it couldn't read are kept as they are.`}`;
+}
+
+/**
+ * A table's rows read out of its index, as a file holds them: each row
+ * without its cells' own formulas' results, and those formulas as the
+ * table's `cells` (D52). For writing an indexed table out whole (export).
+ */
+export function storedTableRows(table: Pick<ParsedTable, "schema">, rows: readonly Row[]): { rows: Row[]; cells?: CellFormula[] } {
+  const cells: CellFormula[] = [];
+  const stored = rows.map((row) => {
+    const own = row[OWN_FORMULAS] as Record<string, string> | undefined;
+    const notes = row[CELL_NOTES] as Record<string, string> | undefined;
+    if (!own && !notes) return row;
+    // One line a cell: its formula, its note, or both (D52, D57).
+    for (const field of new Set([...Object.keys(own ?? {}), ...Object.keys(notes ?? {})])) {
+      cells.push({ id: row.id, field, ...(own?.[field] !== undefined ? { expr: own[field] } : {}), ...(notes?.[field] !== undefined ? { note: notes[field] } : {}) });
+    }
+    return storedOf(row, table as ParsedTable);
+  });
+  return { rows: stored, ...(cells.length > 0 ? { cells } : {}) };
+}
+

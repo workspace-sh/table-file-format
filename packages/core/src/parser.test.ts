@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { parseBundle, parseTable } from "./parser.js";
+import { writeTable } from "./writer.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // packages/core/src/parser.test.ts → repo root → fixtures/
@@ -25,7 +26,7 @@ test("parseTable reads the projects table in projects.table", async () => {
 test("parseBundle reads the manifest and every table, in order (D37)", async () => {
   const b = await parseBundle(resolve(fixturesDir, "crm.table"));
   assert.equal(b.meta.format, "table");
-  assert.equal(b.meta.formatVersion, 1);
+  assert.equal(b.meta.formatVersion, 3);
   assert.equal(b.meta.title, "CRM");
   assert.deepEqual(b.meta.tables, ["companies", "contacts", "deals"]);
   assert.deepEqual(Object.keys(b.tables).sort(), ["companies", "contacts", "deals"]);
@@ -114,7 +115,7 @@ test("malformed NDJSON line is skipped and reported; good rows survive", async (
     assert.deepEqual(t.rows.map((r) => r.id), ["r1", "r3"]);
     assert.equal(t.diagnostics?.length, 1);
     assert.equal(t.diagnostics![0]!.rowIndex, 1); // zero-based line number
-    assert.match(t.diagnostics![0]!.message, /malformed line/);
+    assert.match(t.diagnostics![0]!.message, /line 2 isn't JSON .*kept as it is/);
   } finally {
     await rm(dirname(target), { recursive: true, force: true });
   }
@@ -132,10 +133,12 @@ test("git conflict markers degrade to reported skips, not total loss", async () 
   });
   try {
     const t = await parseTable(target);
-    // Both row variants parse (duplicate-id detection is validate()'s
-    // job); the three marker lines are reported skips.
-    assert.equal(t.rows.length, 2);
-    assert.equal(t.diagnostics?.length, 3);
+    // The first r1 is the row; the second repeats its id and, like the
+    // three marker lines, is a reported skip, kept as it is (D54).
+    assert.deepEqual(t.rows, [{ id: "r1", title: "ours" }]);
+    assert.equal(t.diagnostics?.length, 4);
+    assert.match(t.diagnostics![2]!.message, /line 4 repeats the id "r1" of a row before it, and is kept as it is/);
+    assert.deepEqual(t.unread?.map((u) => u.text), ["<<<<<<< HEAD", "=======", '{"id":"r1","title":"theirs"}', ">>>>>>> feature"]);
   } finally {
     await rm(dirname(target), { recursive: true, force: true });
   }
@@ -150,7 +153,7 @@ test("row missing system id is skipped and reported", async () => {
     const t = await parseTable(target);
     assert.deepEqual(t.rows.map((r) => r.id), ["r2"]);
     assert.equal(t.diagnostics?.length, 1);
-    assert.match(t.diagnostics![0]!.message, /missing system id/);
+    assert.match(t.diagnostics![0]!.message, /line 1 is a row without an id, and is kept as it is/);
   } finally {
     await rm(dirname(target), { recursive: true, force: true });
   }
@@ -182,11 +185,49 @@ test("clean parse carries no diagnostics field", async () => {
 test("parseTable reads bodies/{id}.md and keys them by row id", async () => {
   const t = await parseTable(tableDir("projects", "projects"));
   assert.ok(t.bodies, "bodies map should be present when bodies/ exists");
-  assert.ok("p2" in t.bodies!, "p2 should have a body in fixtures");
-  assert.match(t.bodies!.p2!, /Table file format spike/);
+  assert.ok("1h38m5st7rwanz3hyjb6dy8igr" in t.bodies!, "p2 should have a body in fixtures");
+  assert.match(t.bodies!["1h38m5st7rwanz3hyjb6dy8igr"]!, /Table file format spike/);
 });
 
 test("parseTable returns no bodies field when bodies/ is absent", async () => {
   const t = await parseTable(tableDir("projects", "tasks"));
   assert.equal(t.bodies, undefined);
+});
+
+test("lines that couldn't be read are kept: a save writes them back where they were (#567)", async () => {
+  const target = await scratchTable({
+    "schema.json": MINIMAL_SCHEMA,
+    "rows.ndjson":
+      "<<<<<<< HEAD\n" +
+      '{"id":"r1","title":"one"}\n' +
+      "{this is not json}\n" +
+      '{"id":"r2","title":"two"}\n' +
+      '{"title":"no id"}\n' +
+      '{"id":"r3","title":"three"}\n',
+  });
+  try {
+    const t = await parseTable(target);
+    assert.deepEqual(t.unread, [
+      { after: null, text: "<<<<<<< HEAD" },
+      { after: "r1", text: "{this is not json}" },
+      { after: "r2", text: '{"title":"no id"}' },
+    ]);
+    // Edited and saved: every line it couldn't read is still there, where it was.
+    await writeTable(target, { ...t, rows: t.rows.map((r) => (r.id === "r2" ? { ...r, title: "TWO" } : r)) });
+    assert.equal(
+      await readFile(join(target, "rows", "0001.ndjson"), "utf8"),
+      "<<<<<<< HEAD\n" +
+        '{"id":"r1","title":"one"}\n' +
+        "{this is not json}\n" +
+        '{"id":"r2","title":"TWO"}\n' +
+        '{"title":"no id"}\n' +
+        '{"id":"r3","title":"three"}\n',
+    );
+    // A row they followed is deleted: they go to the end, not away.
+    await writeTable(target, { ...t, rows: t.rows.filter((r) => r.id !== "r1") });
+    const after = await readFile(join(target, "rows", "0001.ndjson"), "utf8");
+    assert.ok(after.includes("{this is not json}") && after.includes("<<<<<<< HEAD") && after.includes('{"title":"no id"}'));
+  } finally {
+    await rm(dirname(target), { recursive: true, force: true });
+  }
 });

@@ -1,0 +1,3 @@
+[submodule "workspace-fixtures"]
+	path = workspace-fixtures
+	url = ../workspace-fixtures.git

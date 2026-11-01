@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_LIST_HEIGHT } from "./listLimits";
-import type { RowListProps } from "./RowList";
+import { settledPlace } from "../listSettle";
+import type { RowListProps } from "./RowList.types";
 
-export type { RowListHandle, RowListProps } from "./RowList";
+export type { RowListHandle, RowListProps } from "./RowList.types";
 
 /** How far past the screen rows are kept drawn, in pixels. */
 const DRAW_DISTANCE = 600;
@@ -152,7 +153,6 @@ export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, hand
     const { at, page } = where();
     const { laidOut: height, extra: more } = now.current;
     if (more <= 0) return;
-    const range = Math.max(1, height - page);
     // Two lists side by side follow one page: the first to rest moves it, and
     // the other takes the same shift, not a second move.
     const page_ = scroller ?? window;
@@ -162,13 +162,12 @@ export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, hand
       follow();
       return;
     }
-    const top = at + drawnShift.current;
-    const to = Math.min(range, Math.max(0, top / (1 + more / range)));
-    if (Math.abs(to - at) < 2) return;
-    last.current.settled = top - to;
-    settles.set(page_, { to, shift: top - to, when: performance.now() });
-    if (scroller) scroller.scrollTop += to - at;
-    else window.scrollBy({ top: to - at });
+    const settled = settledPlace(at, page, height, more, drawnShift.current);
+    if (!settled) return;
+    last.current.settled = settled.shift;
+    settles.set(page_, { to: settled.to, shift: settled.shift, when: performance.now() });
+    if (scroller) scroller.scrollTop += settled.to - at;
+    else window.scrollBy({ top: settled.to - at });
   }, [scroller, where, follow]);
 
   useEffect(() => {

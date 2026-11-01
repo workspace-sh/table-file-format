@@ -56,7 +56,7 @@ test("applySort: nulls sort last regardless of direction", () => {
 
 test("applyGroup: keys ordered by enum declaration when field has an enum", () => {
   const groups = applyGroup(rows, "status", schema);
-  assert.deepEqual(Object.keys(groups), ["todo", "doing", "done"]);
+  assert.deepEqual([...groups.keys()], ["todo", "doing", "done"]);
 });
 
 test("applyGroup: nulls bucket into '(empty)' and that bucket is last", () => {
@@ -66,17 +66,17 @@ test("applyGroup: nulls bucket into '(empty)' and that bucket is last", () => {
     { id: "c", title: "z", status: null as unknown as string },
   ];
   const groups = applyGroup(rowsWithNull, "status", schema);
-  assert.ok("(empty)" in groups);
-  assert.equal(groups["(empty)"]!.length, 2);
-  assert.equal(groups["todo"]!.length, 1);
-  const keys = Object.keys(groups);
+  assert.ok(groups.has("(empty)"));
+  assert.equal(groups.get("(empty)")!.length, 2);
+  assert.equal(groups.get("todo")!.length, 1);
+  const keys = [...groups.keys()];
   assert.equal(keys[keys.length - 1], "(empty)");
 });
 
-test("applyGroup: returns Record (not Map) per spec", () => {
-  const groups = applyGroup(rows, "status", schema);
-  assert.equal(typeof groups, "object");
-  assert.ok(!(groups instanceof Map));
+test("applyGroup: groups come in the order they're made, number-like values too (#568)", () => {
+  // Arrival order, not an object's (which puts "1", "2", "3" first, smallest first).
+  const groups = applyGroup([{ id: "a", n: 3 }, { id: "b", n: 1 }, { id: "c", n: "x" }, { id: "d", n: 2 }, { id: "e" }] as Row[], "n");
+  assert.deepEqual([...groups.keys()], ["3", "1", "x", "2", "(empty)"]);
 });
 
 test("applyView: filter then sort", () => {
@@ -195,4 +195,14 @@ test("applyView: order falls back to sort when order is empty", () => {
   // sort by priority asc; null last
   assert.equal(result[0]!.id, "r1"); // priority 1
   assert.equal(result[result.length - 1]!.id, "r4"); // null
+});
+
+test("a datetime filter compares instants, as a sort does, not text (#568)", () => {
+  const schema: TableSchema = { fields: [{ name: "when", type: "datetime" }] };
+  // 10:00+02:00 is 08:00Z: before 09:00Z, though as text it's after.
+  const rows: Row[] = [{ id: "a", when: "2026-01-02T10:00:00+02:00" }, { id: "b", when: "2026-01-02T09:30:00Z" }];
+  const after = applyFilters(rows, [{ field: "when", operator: "gt", value: "2026-01-02T09:00:00Z" }], schema);
+  assert.deepEqual(after.map((r) => r.id), ["b"]);
+  // Without the schema it can't know: as text, as before.
+  assert.deepEqual(applyFilters(rows, [{ field: "when", operator: "gt", value: "2026-01-02T09:00:00Z" }]).map((r) => r.id), ["a", "b"]);
 });

@@ -13,7 +13,7 @@
 import { useState, type ReactNode } from "react";
 import type { ImageSourcePropType } from "react-native";
 import type { AndroidHeaderActionsProps, MaterialSymbol } from "./AndroidHeader.types";
-import { useTheme } from "@react-navigation/native";
+import { useTheme } from "expo-router";
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -67,16 +67,19 @@ export function AndroidHeaderActions({ views, settingsOpen, onSettings, more }: 
   );
 }
 
+/** The theme's text colour as the icons take it: a plain colour (the stock themes' are). */
+const tintOf = (text: unknown): string | undefined => (typeof text === "string" ? text : undefined);
+
 function HeaderIcon({ symbol, label }: { symbol: MaterialSymbol; label: string }) {
   // Tinted as the header's title: the drawables' own fill is black.
   const { colors } = useTheme();
-  return <Icon source={symbols[symbol]} size={24} tint={colors.text} contentDescription={label} />;
+  return <Icon source={symbols[symbol]} size={24} tint={tintOf(colors.text)} contentDescription={label} />;
 }
 
 function Menu({ symbol, label, items }: { symbol: MaterialSymbol; label: string; items: AndroidHeaderActionsProps["views"] }) {
   const [open, setOpen] = useState(false);
   const { colors } = useTheme();
-  const icon = (name: MaterialSymbol): ReactNode => <Icon source={symbols[name]} size={24} tint={colors.text} />;
+  const icon = (name: MaterialSymbol): ReactNode => <Icon source={symbols[name]} size={24} tint={tintOf(colors.text)} />;
   return (
     <DropdownMenu expanded={open} onDismissRequest={() => setOpen(false)}>
       <DropdownMenu.Trigger>

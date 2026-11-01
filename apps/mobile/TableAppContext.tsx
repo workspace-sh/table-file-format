@@ -5,17 +5,28 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform } from "react-native";
-import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import { BundleEntry, HISTORY_FILE, filesOfFolder, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { joinPath } from "@workspace.sh/table-core/io";
 import { bundles as fixtureBundles } from "@workspace.sh/table-fixtures";
 import {
   ARCHIVE_ROWS,
   ARRANGEMENTS_KEY,
   DISPLAY_KEY,
+  HISTORY_KEY,
   SIDEBAR_KEY,
   STORAGE_KEY,
-  archiveFileName,
+  appendFolderHistory,
+  appendStoredHistory,
+  singleFileName,
   bundleOf,
   clearSaved,
+  clearStoredHistory,
+  closedIn,
+  forgetStoredHistories,
+  isSpreadsheetFile,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   derive,
   exportFailedText,
   fromBundle,
@@ -31,21 +42,26 @@ import {
   toBundle,
   tooLargeToArchiveText,
   withNewFixtures,
+  savedFrom,
   type AppAction,
   type AppCommandId,
   type AppState as TableAppState,
   type Confirm,
   type Derived,
   type KeyValueStore,
+  storedTableRows,
 } from "@workspace.sh/table-app";
-import { useTableApp } from "@workspace.sh/table-app/react";
+import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
-import { ZipError, chooseZip, readZip, shareZip, type OpenedZip } from "./files";
-import { useIndexedTables, type IndexedTables } from "./useIndexedTables";
-import { bundleDir, removeAllFolders } from "./indexHost";
-import { expoFs } from "./expoFs";
+import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZip } from "./files";
+import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
+import { pickDocument, releaseDocument, type HeldDocument } from "@workspace.sh/table-files";
+import { File } from "expo-file-system";
+import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
+import { bundleDir, openIndexDatabase, removeAllFolders, removeFolder } from "./indexHost";
+import { expoFs } from "@workspace.sh/table-files";
 import { writeBundleTo } from "@workspace.sh/table-core/io";
 
 // Every fixture bundle's tables, keyed `bundle/table` (D37), as the web,
@@ -57,6 +73,8 @@ const initialTables: Record<string, ParsedTable> = Object.assign(
 const bundleMetas: Record<string, BundleMeta> = Object.fromEntries(
   Object.entries(fixtureBundles).map(([name, b]) => [name, b.meta]),
 );
+/** The examples as the app ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: bundleMetas };
 // How long after the last edit the phone saves (the Mac and Linux apps use 400 ms): typing is one write, not one a key.
 const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
@@ -69,8 +87,11 @@ export interface TableAppContextValue {
   display: DisplaySettings;
   /** A command's label, as the other apps' menus word it. */
   labelOf: (id: AppCommandId) => string;
-  openZip: () => Promise<void>;
-  /** Take in a .table.zip's bytes, as choosing one does; resolves with the key it is held under. */
+  /** Open a .table where it is (a folder or a single file), or make one from a spreadsheet, chosen in the system's picker. */
+  open: () => Promise<void>;
+  /** Open a document already held (picked, or given to the app by the system), as Open… does after the picker. */
+  openHeld: (held: HeldDocument) => Promise<void>;
+  /** Take in a single-file .table's bytes as a copy, as measuring does; resolves with the key it is held under. */
   openBytes: (bytes: Uint8Array, name: string) => Promise<string>;
   /** The tables held in their index (large ones): the rows on screen, and how far a reading has got. */
   indexed: Pick<IndexedTables, "building" | "reading" | "source" | "stale" | "lost">;
@@ -79,6 +100,8 @@ export interface TableAppContextValue {
   systemLocale: string;
   /** Start again from the example tables, after asking; what the phone saved goes too. */
   resetDemo: () => void;
+  /** A table's history as NDJSON, from where the phone keeps it; undefined when it has none. For the Files sheet. */
+  historyText: (key: string) => string | undefined;
 }
 
 const Context = createContext<TableAppContextValue | null>(null);
@@ -108,60 +131,157 @@ function ask(prompt: Confirm, then: (response: string) => void) {
  * from the phone's own storage).
  */
 export function TableAppProvider({ children }: { children: ReactNode }) {
-  const [store, setStore] = useState<KeyValueStore | null | undefined>(undefined);
+  const [loaded, setLoaded] = useState<{ store: KeyValueStore | null; reopened: OpenedDocuments } | undefined>(undefined);
   useEffect(() => {
-    // No store (it failed to open) still runs, from the fixtures, unsaved.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY]).then(setStore, () => setStore(null));
+    // No store (it failed to open) still runs, from the fixtures, unsaved. The documents
+    // opened last time are held open again and read before the first screen.
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY])
+      .catch(() => null)
+      .then(async (store) => ({ store, reopened: await reopenDocuments(store, Object.keys(bundleMetas)) }))
+      .then(setLoaded);
   }, []);
-  if (store === undefined) return <Context.Provider value={null}>{children}</Context.Provider>;
-  return <Loaded store={store}>{children}</Loaded>;
+  if (loaded === undefined) return <Context.Provider value={null}>{children}</Context.Provider>;
+  return (
+    <Loaded store={loaded.store} reopened={loaded.reopened}>
+      {children}
+    </Loaded>
+  );
 }
 
-function Loaded({ store, children }: { store: KeyValueStore | null; children: ReactNode }) {
+function Loaded({ store, reopened, children }: { store: KeyValueStore | null; reopened: OpenedDocuments; children: ReactNode }) {
   // The platform's language, when the viewer hasn't chosen one.
   const systemLocale = useMemo(() => Intl.DateTimeFormat().resolvedOptions().locale, []);
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
+  // The tables as they are now, for where a table's history goes: a large table's folder, or the store.
+  const tablesNow = useRef<Record<string, ParsedTable>>({});
+  // Read a folder table's history again once it's been added to (useFolderHistories, below).
+  const rereadHistory = useRef<(key: string) => void>(() => {});
+  // The documents opened where they are (documents.ts), set once its hook is made below.
+  const documentsRef = useRef<Documents | null>(null);
+  // Each opened document's folder, by bundle key, as the state has it now.
+  const openedNow = useRef<Record<string, string>>({});
   const { state, dispatch, display, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: bundleMetas };
       const saved = loadSaved(store);
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const s = initialAppState({
-        ...initial,
+        tables: { ...initial.tables, ...reopened.library.tables },
+        bundles: { ...initial.bundles, ...reopened.library.bundles },
+        opened: reopened.library.paths,
+        ...(reopened.library.singleFiles ? { singleFiles: reopened.library.singleFiles } : {}),
         stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
+        // Each edit goes to its table's history (SPEC section 14).
+        writesHistory: true,
       });
       // "Schema changed" is since the fixtures, as saved edits carry over a launch.
       return { ...s, openedAt: { ...s.openedAt, ...INITIAL_SCHEMA_VERSIONS } };
     },
-    // Saved on the phone a moment after the last edit. The fixtures themselves are
-    // never saved, so an untouched app keeps following them as they change.
+    // Saved on the phone a moment after the last edit. An example is saved only once
+    // it's edited, so the app follows the examples as they change until then.
     {
       store,
-      write: async (_edited, tables, bundles) => {
+      write: async (edited, tables, bundles, closed) => {
+        // An opened document's tables live in the document: the rest are kept in this store.
+        const opened = new Set(Object.keys(openedNow.current));
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(store, { tables, bundles });
+        // An example is kept only once it's edited (savedFrom).
+        save(
+          store,
+          savedFrom(
+            Object.fromEntries(Object.entries(tables).filter(([key]) => !opened.has(bundleOf(key)))),
+            Object.fromEntries(Object.entries(bundles).filter(([key]) => !opened.has(key))),
+            closed,
+            EXAMPLES,
+          ),
+        );
+        // A file closed: its history kept here and a large table's folder go (an opened document stays where it is).
+        for (const bundle of closedIn(edited, bundles)) {
+          forgetStoredHistories(store, bundle);
+          await removeFolder(bundle);
+          // And a large single file's stamp beside its folder (documents.ts).
+          await expoFs.remove(`${bundleDir(bundle)}.stamp`);
+        }
+        await documentsRef.current?.write(edited.filter((b) => opened.has(b)), tables, bundles);
         await saveIndexed.current(tables);
+        // An opened single file holding a large table: its rows, saved above, packed back into it too.
+        await documentsRef.current?.pack([...new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && opened.has(bundleOf(key)) ? [bundleOf(key)] : [])))]);
         // A bundle kept as a folder (it has a large table) has the rest of its files written there too,
         // so the folder is the whole .table; the writer leaves an indexed table's rows file to the index.
-        const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed ? [bundleOf(key)] : [])));
+        const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && !opened.has(bundleOf(key)) ? [bundleOf(key)] : [])));
         for (const bundle of folders) await writeBundleTo(expoFs, bundleDir(bundle), toBundle(tables, bundles, bundle));
+      },
+      // What was edited, added to the table's history: in its document's folder for one opened
+      // where it is, in its folder for a large table (the bundle is a folder on the phone), else
+      // in the phone's store beside the table.
+      appendHistory: async (key, events) => {
+        const folder = openedNow.current[bundleOf(key)];
+        if (folder) {
+          await appendFolderHistory(expoFs, joinPath(folder, BundleEntry.tables, tableNameOf(key)), events);
+          await documentsRef.current?.pack([bundleOf(key)]);
+          rereadHistory.current(key);
+          return;
+        }
+        if (tablesNow.current[key]?.indexed) {
+          await appendFolderHistory(expoFs, joinPath(bundleDir(bundleOf(key)), BundleEntry.tables, tableNameOf(key)), events);
+          rereadHistory.current(key);
+          return;
+        }
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
       },
       delayMs: SAVE_AFTER_MS,
     },
     systemLocale,
   );
+  tablesNow.current = state.tables;
+  openedNow.current = state.opened;
+  const documents = useDocuments({ store, bundles: state.bundles, paths: state.opened, reopened });
+  documentsRef.current = documents;
+  // A table's folder, where its history is: its document's, or a large table's.
+  const historyFolder = (key: string): string | undefined =>
+    state.opened[bundleOf(key)] ?? (state.tables[key]?.indexed ? bundleDir(bundleOf(key)) : undefined);
+  // A table's history, from where appendHistory puts it: a folder, or the store.
+  const historyOf = async (key: string): Promise<string | undefined> => {
+    const folder = openedNow.current[bundleOf(key)];
+    if (folder) return (await expoFs.readText(joinPath(folder, BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
+    if (tablesNow.current[key]?.indexed) {
+      return (await expoFs.readText(joinPath(bundleDir(bundleOf(key)), BundleEntry.tables, tableNameOf(key), HISTORY_FILE))) ?? undefined;
+    }
+    return (store && storedHistory(store, key)) || undefined;
+  };
+  // The folder tables' histories (an opened document's, a large table's), read so the Files sheet can show them as it draws.
+  const folderHistories = useFolderHistories(
+    Object.keys(state.tables).filter((key) => historyFolder(key) !== undefined),
+    historyOf,
+  );
+  rereadHistory.current = folderHistories.reread;
+  const historyText = (key: string): string | undefined =>
+    historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there.
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: systemLocale }).shown.view, tell });
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: systemLocale }).shown.view, tell, openIndexDatabase });
   saveIndexed.current = indexed.save;
-  const derived = derive(state, {
+  // The first rows of large documents reopened at launch, shown while the rest is read (documents.ts).
+  useEffect(() => {
+    indexed.hold(reopened.first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const derived = derive(behind, {
     locale: systemLocale,
+    hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   /** What reading an archive gave, taken in: its large tables' first rows are held for showing meanwhile. */
   const take = (opened: OpenedZip): string => {
     indexed.hold(opened.first);
-    dispatch({ type: "opened", library: opened.library, skipped: opened.skipped });
+    // An arrived table's history is kept in the store for a table kept there; a large table's
+    // goes into its folder with the rest of it.
+    const arrived = opened.library.tables;
+    const stored = Object.fromEntries(Object.entries(arrived).filter(([, table]) => !table.indexed));
+    const tables = { ...arrived, ...keepArrivedHistories(store, stored) };
+    dispatch({ type: "opened", library: { ...opened.library, tables }, skipped: opened.skipped });
     return Object.keys(opened.library.bundles)[0]!;
   };
 
@@ -185,6 +305,7 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
         // or the old edits would come back at the next launch.
         if (asking.on.type === "reset" && response === "reset") {
           clearSaved(store);
+          clearStoredHistory(store);
           // The folders the phone kept for large tables go with it.
           void removeAllFolders().catch(() => {});
         }
@@ -209,19 +330,47 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
     display,
     labelOf: (id) => derived.commands.find((c) => c.id === id)!.label,
     systemLocale,
+    historyText,
     // The reducer asks first; on yes the saved edits are cleared above.
     resetDemo: () => dispatch({ type: "reset", fresh: { tables: initialTables, bundles: bundleMetas, paths: {}, problems: {} } }),
-    // A .table.zip from the Files app or elsewhere becomes one more file here, saying what was skipped (D25).
-    openZip: async () => {
+    // A .table from the Files app or elsewhere, opened where it is: a folder, or a single file
+    // edited in place (documents.ts). A spreadsheet someone already has becomes a new .table
+    // file here, saying what was skipped (D25). One already open is shown again.
+    open: async () => {
+      let held;
       try {
-        const opened = await chooseZip(Object.keys(state.bundles));
-        if (opened) take(opened);
+        held = await pickDocument(OPEN_TYPES);
       } catch (error) {
-        const heading = error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(".table.zip", error);
-        dispatch({ type: "tell", message: { heading } });
+        return dispatch({ type: "tell", message: { heading: openFailedText(".table", error) } });
       }
+      if (held) await value.openHeld(held);
     },
-    openBytes: async (bytes, name) => take(await readZip(bytes, Object.keys(state.bundles), name)),
+    openHeld: async (held) => {
+      if (!held.directory && isSpreadsheetFile(held.name)) {
+        try {
+          take(readSpreadsheet(await new File(held.uri).bytes(), Object.keys(state.bundles), held.name));
+        } catch (error) {
+          dispatch({ type: "tell", message: { heading: error instanceof ZipError ? openFailedText(error.fileName, error.reason) : openFailedText(held.name, error) } });
+        } finally {
+          releaseDocument(held.path);
+        }
+        return;
+      }
+      const uri = held.uri.replace(/\/+$/, "");
+      const heldKey = Object.entries(state.opened).find(([, folder]) => documents.documentOf(folder) === uri)?.[0];
+      if (heldKey) {
+        const first = Object.keys(state.tables).find((t) => bundleOf(t) === heldKey);
+        if (first) dispatch({ type: "showTable", key: first });
+        return;
+      }
+      const { library, first } = await documents.open([held]);
+      for (const [key, messages] of Object.entries(library.problems)) tell(`Problems reading ${key}.table`, messages.join("\n"));
+      // A large table's first rows, shown while the rest is read into the index (documents.ts).
+      indexed.hold(first);
+      if (Object.keys(library.tables).length > 0) dispatch({ type: "opened", library });
+    },
+    openBytes: async (bytes, name) =>
+      take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
     indexed,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
@@ -237,11 +386,17 @@ function Loaded({ store, children }: { store: KeyValueStore | null; children: Re
             return tell(heading, body);
           }
           const { indexed: _index, ...rest } = held;
-          whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+          whole[key] = { ...rest, ...storedTableRows(held, await indexed.everyRow(key, held)) };
         }
-        await shareZip(bundle, whole, state.bundles);
+        // Each table's history goes with it, everything written so far included (SPEC section 14);
+        // and an opened document's attachments and files no reader knows.
+        await flush();
+        const folder = state.opened[bundle];
+        const files = folder ? await filesOfFolder(expoFs, folder) : {};
+        if (files[".gitignore"] && new TextDecoder().decode(files[".gitignore"]).trim() === "index.sqlite*") delete files[".gitignore"];
+        await shareZip(bundle, await withHistories(whole, historyOf), state.bundles, files);
       } catch (error) {
-        dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+        dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       }
     },
   };

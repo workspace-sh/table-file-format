@@ -10,35 +10,10 @@
  * columns and all, so only the part in view lifts (the clip is native: the
  * package's preview parameters, patched in patches/).
  */
-import type { ComponentType, ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import { View } from "react-native";
-// react-native-ios-context-menu 3.2.1 is published without its built lib/,
-// types included: Metro runs its src/, and its props are typed here, for
-// this file only.
-// @ts-expect-error -- no type declarations in the published package
-import { ContextMenuView as UntypedContextMenuView } from "react-native-ios-context-menu";
+import { ContextMenuView } from "../contextMenu";
 import type { RowActionsProps } from "../controlSlots";
-
-interface ContextMenuViewProps {
-  menuConfig: {
-    menuTitle: string;
-    menuItems: {
-      actionKey: string;
-      actionTitle: string;
-      menuAttributes?: "destructive"[];
-      icon?: { type: "IMAGE_SYSTEM"; imageValue: { systemName: string } };
-    }[];
-  };
-  previewConfig?: {
-    previewType: "DEFAULT" | "CUSTOM";
-    previewSize?: "INHERIT" | "STRETCH";
-    borderRadius?: number;
-  };
-  onPressMenuItem?: (e: { nativeEvent: { actionKey: string } }) => void;
-  children?: ReactNode;
-}
-
-const ContextMenuView = UntypedContextMenuView as ComponentType<ContextMenuViewProps>;
 
 export function RowActions({ actions, children }: RowActionsProps): ReactElement {
   if (actions.length === 0) return children;

@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { Field, ParsedTable } from "@workspace.sh/table-core";
 import { describeCell, useDisplaySettings, type RelationLink, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { AttachmentImage } from "./AttachmentImage.js";
+import { ErrorMark } from "./ErrorMark.js";
 import { pillClass, styles, useDark } from "./theme.js";
 
 export interface CellValueProps {
@@ -20,6 +21,8 @@ export interface CellValueProps {
   lines?: number;
   /** Start, centre or end, as the field aligns (`effectiveAlign`). */
   xalign?: number;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
 /** Markup-safe text: GTK parses `&`, `<` and `>` in a markup label. */
@@ -85,7 +88,8 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
       />
     );
   }
-  if (!onOpenRelation) return <CellText text={link.label} />;
+  // Nowhere to follow it to: the row's name, as the link would show it.
+  if (!onOpenRelation) return <GtkLabel label={link.label} ellipsize={Pango.EllipsizeMode.END} />;
   return (
     <GtkButton
       cssClasses={["flat", styles.relationLink]}
@@ -98,7 +102,7 @@ function RelationValue({ link, onOpenRelation }: { link: RelationLink; onOpenRel
   );
 }
 
-export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0 }: CellValueProps) {
+export function CellValue({ field, value, relatedTables, onOpenRelation, lines, xalign = 0, inPanel }: CellValueProps) {
   const display = useDisplaySettings();
   const dark = useDark();
   const shown = describeCell(field, value, display, relatedTables);
@@ -123,7 +127,15 @@ export function CellValue({ field, value, relatedTables, onOpenRelation, lines, 
         </Clipped>
       );
     case "error":
-      return <CellText text={shown.code} xalign={xalign} cssClasses={[styles.formulaError]} />;
+      // Its kind's mark and what's wrong; hovering says why, and where the fix is (#685).
+      return (
+        <Clipped>
+          <GtkBox spacing={4} halign={xalign === 1 ? Gtk.Align.END : xalign === 0.5 ? Gtk.Align.CENTER : Gtk.Align.START} tooltipText={shown.explanation}>
+            <ErrorMark group={shown.group} cssClasses={[styles.formulaError]} />
+            <GtkLabel label={inPanel ? shown.withCode : shown.text} cssClasses={[styles.formulaError]} />
+          </GtkBox>
+        </Clipped>
+      );
     case "pills":
       return (
         <Clipped>

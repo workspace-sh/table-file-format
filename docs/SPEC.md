@@ -16,6 +16,13 @@ an Airtable base holds linked tables. The directory contains
 plain-text files designed for line-diffable storage in git, plus an
 optional rebuildable SQLite cache.
 
+**Two forms, one document (D49).** A `.table` is either that
+directory (the **folder form**) or a single file holding it (the
+**file form**: a zip of the directory, section 13). Both carry the
+same name and extension and are the same document; converting one
+to the other loses nothing but the cache. Sections 1 to 12 and 14
+describe the directory, which is what a file-form `.table` holds.
+
 **Written by tools, readable by people.** The files are text so that
 version control can diff, review and merge them, not so that people
 can edit them. A `.table/` is written by software — an app, a CLI, a
@@ -32,13 +39,16 @@ crm.table/
 ├── tables/                   REQUIRED: one directory per table
 │   ├── companies/
 │   │   ├── schema.json       REQUIRED
-│   │   ├── rows.ndjson       REQUIRED
+│   │   ├── rows/             REQUIRED: the rows, in one or more files (section 3)
+│   │   │   ├── 0001.ndjson
+│   │   │   └── …
+│   │   ├── cells/            OPTIONAL: cells' own formulas (section 3)
 │   │   ├── views.json        OPTIONAL
 │   │   ├── meta.json         OPTIONAL: the table's own title and description
 │   │   ├── history.ndjson    OPTIONAL: the table's edit history (section 14)
 │   │   ├── attachments/      OPTIONAL
 │   │   └── bodies/           OPTIONAL
-│   │       └── {row.id}.md
+│   │       └── {title}--{row.id}.md
 │   └── deals/
 │       └── …
 └── index.sqlite              OPTIONAL: gitignored rebuildable cache for the bundle
@@ -64,7 +74,7 @@ are relative to that table's directory, `tables/<name>/`.
 Readers MUST tolerate any of the optional members being absent. Readers
 MUST ignore unknown files at the bundle root and in each table's
 directory. A directory under `tables/` without both `schema.json` and
-`rows.ndjson` is not a table: readers SHOULD report it and otherwise
+`rows/` (or, from `formatVersion` 1, `rows.ndjson`) is not a table: readers SHOULD report it and otherwise
 ignore it. Writers SHOULD preserve unknown files on round-trip (treat
 them as the user's domain).
 
@@ -93,16 +103,19 @@ Defines the fields of every row, their types, and any constraints.
 {
   "fields": [
     {
+      "id": "kq3ufmy8b9xpe",
       "name": "title",
       "type": "string",
       "constraints": { "required": true }
     },
     {
+      "id": "7n1wsgc4hedra",
       "name": "status",
       "type": "string",
       "constraints": { "enum": ["planning", "active", "done"] }
     },
     {
+      "id": "za5jto9mx6cbi",
       "name": "summary",
       "type": "string",
       "format": "markdown"
@@ -113,10 +126,27 @@ Defines the fields of every row, their types, and any constraints.
 }
 ```
 
+### A field's id
+
+Every field has an `id`: 13 characters of z-base-32 (the alphabet
+`ybndrfg8ejkmcpqxot1uwisza345h769`, 65 bits), minted when the field is
+made, never shown, never changed, and unique among its table's fields
+(D62). It is the field's identity, whatever it is called: links and
+merges hold on to it. A field's `name` is the key its values have in
+every row and the word formulas use; its `title` is what people see.
+
+Writers MUST write an `id` on every field. A reader that finds a field
+without one gives it the id its name derives (reference:
+`derivedFieldId` in `@workspace.sh/table-core`: FNV-1a of the name,
+mixed by MurmurHash3's finaliser, as 13 z-base-32 characters), so a
+file from another tool opens, and the same file gets the same ids on
+every device. Two fields with one id are invalid (section 9); a writer
+gives the second the id its name derives.
+
 ### Field types
 
 `string`, `number`, `integer`, `boolean`, `date`, `datetime`, `time`,
-`year`, `array`, `object`, `duration`, `geopoint`, `geojson`.
+`year`, `array`, `object`, `duration`, `geopoint`, `geojson`, `any`.
 
 Field type names follow standard conventions used across text-first
 data formats. `.table/` is not aligned with any specific format —
@@ -124,7 +154,7 @@ borrowing the names is for readability, not compatibility.
 
 #### Value encodings
 
-Each type has exactly one JSON encoding in `rows.ndjson`. Two readers
+Each type has exactly one JSON encoding in the rows files. Two readers
 given the same file MUST see the same values, so the encoding is part
 of the format, not a reader's choice (DECISIONS D30).
 
@@ -143,6 +173,7 @@ of the format, not a reader's choice (DECISIONS D30).
 | `object` | object | `{"k": "v"}` |
 | `geopoint` | array `[longitude, latitude]` of two numbers, WGS 84 | `[-0.1276, 51.5072]` |
 | `geojson` | a GeoJSON object (RFC 7946) | `{"type": "Point", "coordinates": [-0.1276, 51.5072]}` |
+| `any` | any JSON value, each row its own kind (D56) | `42`, `"n/a"`, `true`, `[1, 2]` |
 
 Notes:
 
@@ -168,6 +199,12 @@ Notes:
   and the array form of Frictionless `geopoint`: longitude −180…180,
   latitude −90…90. The label `"lat, lon"` a UI shows is a display
   concern; the stored order is fixed.
+- **`any`** (D56) holds what a spreadsheet's column does: a number in
+  one row, text in the next. Each value keeps its own JSON kind; a
+  reader never coerces it. Sorted kind by kind (numbers, then text,
+  then `true`/`false`, then lists and objects by their JSON), each kind
+  in its own order. A filter compares like with like: `gt 5` matches
+  numbers above 5 and nothing else.
 - **`geojson`** earlier reference readers accepted only a string
   holding the GeoJSON text. Readers SHOULD still accept that form and
   parse it; writers MUST write the object.
@@ -208,6 +245,10 @@ not yet provided by the format. Until it is, store amounts as an
 
 `required`, `unique`, `enum`, `minimum`, `maximum`, `minLength`,
 `maxLength`, `pattern`.
+
+`unique`: no two rows hold the same value in the field. Empty values
+(absent, `null`, `""`) don't count, so a field that isn't `required`
+can be empty in any number of rows. Values compare as their JSON.
 
 #### Enum entries — string or object
 
@@ -254,10 +295,9 @@ labels apply to each item.
 ### Field annotations
 
 - `title: "<text>"` — the column's display name. Defaults to `name`.
-  Unlike `name`, it MAY change freely: `name` is the stored key that
-  rows, views, relations and computed-field expressions refer to, and
-  schema evolution never renames it (below). Renaming a column in a UI
-  means changing its `title`.
+  It MAY change freely, and changing it changes nothing else. `name` is
+  the stored key that rows, views, relations and computed-field
+  expressions refer to: changing it is renaming the field (below).
 - `align: "start" | "center" | "end"` — column alignment in grid
   layouts, relative to the reading direction: `start` is the left in a
   left-to-right layout and the right in a right-to-left one (D40).
@@ -278,9 +318,15 @@ labels apply to each item.
   the table named `<name>`, by that table's system `id`.
   `cardinality` defaults to `"one"`; `"many"` means the row value is
   an array of ids. The name resolves **within the same bundle first**
-  (section 1). A name the bundle doesn't contain is the app's to
-  resolve elsewhere, for example in other `.table` files in the same
-  workspace (D3).
+  (section 1). A name the bundle doesn't contain names **another
+  `.table` beside it**: `<name>.table` in the same folder as this
+  bundle. Its rows are that file's table named `<name>`, or, when the
+  file holds exactly one table, that table. When there is no such file,
+  or it holds neither, the relation is dangling: its values are kept,
+  and shown as unresolved, never dropped. An app MAY look further (a
+  workspace's other folders) only after this. Only the file beside it
+  is read for this: that file's own relations to further files are
+  resolved from that file, when it is open in its own right (D3, D47).
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
 - `computed: { expr, dialect }` — a formula; see "Computed fields".
@@ -296,7 +342,12 @@ Unknown tokens fall back to plain text.
 
 **Number** (`number`, `integer`, `year`): `integer`, `decimal:N`
 (N fraction digits), `percent`, `currency:<ISO-4217>` (e.g.
-`currency:USD`), `duration:seconds`.
+`currency:USD`), `duration:seconds`, `scientific:N` (N fraction
+digits: `scientific:2` shows 12345 as `1.23E+04`), `fraction` (`1.25`
+as `1 1/4`, to the nearest fraction with a denominator below 100).
+`decimal:N` and `currency:<ISO-4217>` MAY end `:parens`, which shows a
+negative number in brackets without its sign (`currency:USD:parens`
+shows −1200 as `($1,200.00)`). D53.
 
 **Currency is a unit** (DECISIONS D33). `currency:<ISO-4217>` names
 what the stored number is in, not only how it looks, so changing it
@@ -332,7 +383,7 @@ is derived, never stored:
 The expression lives in the schema (one definition for every row);
 the result is **never persisted** — recomputed on read, so there is
 no "stored 100 but recomputes to 110" staleness class. Writers drop
-computed fields from `rows.ndjson`, and validation skips them. The
+computed fields from the rows files, and validation skips them. The
 optional `index.sqlite` cache MAY materialise results for query speed.
 
 `expr` holds only the canonical `table-expr-v1` form (DECISIONS D29):
@@ -358,11 +409,16 @@ empty and reports it.
   place" below, and DECISIONS D41).
 - Function names are case-insensitive and stored lowercase; field
   names are case-sensitive.
+- `.table`'s own forms never take an OpenFormula function's name
+  (DECISIONS D38, D48). Three were renamed on 14 October 2026:
+  `column` is now `values`, `lookup` is `related`, and `concat` is
+  `concatenate`. A reader MUST read the former names as the new ones;
+  a writer MUST store the new ones.
 - A formula reads its own row, any other row it names by `id`, and any
   row it names by its place in a Sheet view.
 - Reading across rows and tables (DECISIONS D36):
-  - `(column "q1")` is every row's `q1`, as a list, in file order.
-  - `(lookup "company" "industry")` follows this row's relation field
+  - `(values "q1")` is every row's `q1`, as a list, in file order.
+  - `(related "company" "industry")` follows this row's relation field
     `company` to its row and reads `industry` there (a list for a
     relation of cardinality `many`).
   - `(linked "deals" "company" "value")` is the `value` of every row in
@@ -379,7 +435,8 @@ empty and reports it.
 **OpenFormula in the stored form.** Formula meaning is OpenFormula's
 (ODF 1.4 Part 4, DECISIONS D38). Its expressions are written as
 follows; the public conformance suite in `conformance/openformula/`
-uses exactly this form.
+uses exactly this form, with one addition of its own: `(ref "A1")`
+reads a cell of the test's sheet, and is not part of the stored form.
 
 - A function call `ROUND(2.348;2)` is `(round 2.348 2)`: lowercase,
   arguments in order.
@@ -395,16 +452,46 @@ uses exactly this form.
 - Precedence needs no rules here: the brackets say it. A client's
   typed syntax follows OpenFormula's Table 1 (5.5) when it compiles.
 
+**The stored form stays this small.** A formula, a field's or a cell's
+(section 3), is written only with lists `(f a b)`, bare words, numbers,
+strings, `true`, `false`, `nil` and vectors of rows for arrays.
+
+- A **bare word** is what EDN calls a symbol: it starts with a letter
+  or one of `* + ! - _ ? < > = & %` (not `+` or `-` followed by a
+  digit), and goes on with letters, digits and those characters, `.`
+  and `/`; `/` alone, division, is one too. At the head of a list it names a function; anywhere else, a
+  field of this row. A field whose name isn't a bare word, or is
+  `true`, `false` or `nil`, is reached with `(field "name")`.
+- EDN's other forms (keywords, maps, sets, tags, `N` and `M` numbers,
+  quoting, `#_`) are not formulas. A writer never stores them, and a
+  reader given one treats the formula as one it can't parse (above).
+- A function or form joins the stored form only if it is one of
+  `.table`'s own forms above, or a published standard defines it (D38:
+  OpenFormula first). A standard's formula converts to the stored form
+  and back: from the stored form to the standard's text and back gives
+  the same stored form, and from text to the stored form and back gives
+  text with the same meaning (spacing, case and brackets may differ).
+  No one application's formula language decides what a `.table` can
+  say.
+
 The reference evaluator doesn't read arrays or `nil` yet, and covers
 only the functions below; the engine that replaces it covers
 OpenFormula (#124). `conformance/openformula/REPORT.md` measures both.
 
-**Conformance tests and where they come from.** An implementation will
-check its formulas against public cases in `conformance/openformula/`,
-each written in the stored form above and naming where it came from.
-There are none yet: a source is listed here only once its licence and
-the origin of its expected answers are verified. OpenFormula itself
-contains no test cases.
+**Conformance tests and where they come from.** An implementation
+checks its formulas against the public cases in
+`conformance/openformula/`, each written in the stored form above and
+naming the file and cell it came from. They come from one source:
+
+| Source | Expected answers written by | Licence | Cases |
+| --- | --- | --- | --- |
+| LibreOffice's function tests, [`sc/qa/unit/data/functions`](https://github.com/LibreOffice/core/tree/master/sc/qa/unit/data/functions) at commit `a8b4e7c` | LibreOffice's test authors (11,062 typed values) and LibreOffice (995 calculated when the file was saved). LibreOffice's own test run passes them. | MPL-2.0 (LibreOffice's licence; the files state none of their own) | 11,293 |
+
+No case is taken from Excel. Other candidate sources (IronCalc's test
+workbooks, ECMA-376's worked examples, Formula.js's tests) are listed in
+`conformance/openformula/README.md` with what is and isn't known about
+each; none is used until it's verified and listed here. OpenFormula
+itself contains no test cases.
 
 | Functions | Behaviour |
 | --- | --- |
@@ -414,7 +501,7 @@ contains no test cases.
 | `sum` `min` `max` | any number of arguments, lists included; empty values are skipped |
 | `average` | the mean of its arguments, lists included; empty values are skipped |
 | `count` | how many non-empty values its arguments hold, lists included |
-| `column` `lookup` `linked` | read across rows and tables (above); each gives a list, or one value for a `lookup` of cardinality `one` |
+| `values` `related` `linked` | read across rows and tables (above); each gives a list, or one value for a `related` of cardinality `one` |
 | `round` | `(round x)` or `(round x digits)`; halves round away from zero |
 | `abs` | absolute value |
 | `=` `<>` | equality; two empties are equal |
@@ -422,8 +509,9 @@ contains no test cases.
 | `and` `or` `not` | `true` / `false` only |
 | `if` | `(if test then)` or `(if test then else)`; only the chosen branch is evaluated; an empty test takes `else` |
 | `isblank` | `true` when the value is empty |
-| `concat` | joins its arguments as text; empties add nothing |
+| `concatenate` | joins its arguments as text; empties add nothing (`&` in the typed form) |
 | `upper` `lower` `len` | text; `len` counts characters |
+| `today` `now` `rand` | no arguments: the reader's date (`YYYY-MM-DD`), the instant in UTC (`…T12:00:05Z`), a number from 0 up to 1. One moment for every cell worked out together; never stored, never remembered, so a table that uses them is worked out whenever it's read (D55) |
 
 **Empty values** (see "Empty values"): an empty argument makes
 arithmetic, comparison with `<`/`>`, and text functions empty; `sum`,
@@ -434,7 +522,16 @@ that uses them: `#DIV/0!` (division by zero), `#VALUE!` (wrong kind of
 argument, or wrong number of arguments), `#NAME?` (unknown function
 or field), `#REF!` (a computed field that depends on itself, directly or through
 other rows, or a reference to a row or table that isn't there), `#NUM!`
-(a result too large to represent).
+(a result too large to represent). A loop is `#REF!` unless the table
+asks for iteration (D60): its own `meta.json`'s
+`iteration: { "max": <passes>, "change": <smallest change> }` works its
+formulas out in whole passes, a loop reading what the pass before gave
+(0 on the first), up to `max` passes, until no number changes by more
+than `change`, as a spreadsheet's iterative calculation does.
+
+How an app shows an error is its own choice: the code is the value, and
+what anything that uses it sees. Workspace's apps show a few plain words
+and a mark for the kind of problem, with the code in the hover (D61).
 
 **Worked examples** (illustrative). Each row of this table is checked
 against the reference evaluator by `packages/core/src/spec-examples.test.ts`,
@@ -460,7 +557,7 @@ result; `empty` means the cell shows nothing.
 | `{"price": 1}` | `(* Price 2)` | `#NAME?` |
 | `{"price": 1}` | `(SUM price 1)` | `2` |
 | `{"unit price": 3, "quantity": 2}` | `(* (field "unit price") quantity)` | `6` |
-| `{"status": "active", "price": 5}` | `(concat status ": " price)` | `"active: 5"` |
+| `{"status": "active", "price": 5}` | `(concatenate status ": " price)` | `"active: 5"` |
 | `{}` | `(if (isblank status) "none" status)` | `"none"` |
 | `{"status": "done"}` | `(upper status)` | `"DONE"` |
 | `{}` | `(* 1e308 10)` | `#NUM!` |
@@ -484,9 +581,9 @@ whose `share` field is `(/ q1 (field "q1" "income"))`:
 | `rent` | `(- q1 (field "q1" "food"))` | `1800` |
 | `rent` | `(field "q1" "gone")` | `#REF!` |
 | `rent` | `(field "q1" "income" "extra")` | `#VALUE!` |
-| `rent` | `(sum (column "q1"))` | `16200` |
-| `rent` | `(count (column "q1"))` | `3` |
-| `rent` | `(/ q1 (max (column "q1")))` | `0.25` |
+| `rent` | `(sum (values "q1"))` | `16200` |
+| `rent` | `(count (values "q1"))` | `3` |
+| `rent` | `(/ q1 (max (values "q1")))` | `0.25` |
 <!-- other-row-examples:end -->
 
 **References by place** (DECISIONS D41). A Sheet view (section 4)
@@ -529,10 +626,22 @@ computed fields. The Excel-style authoring surface D29 describes is
 
 ### Schema evolution
 
-Schema evolution is **append-only**. Never remove or rename a field.
-Add new fields; mark old ones `deprecated: true` to retire them. To
-show a field under a new name, change its `title` (above); its `name`
-stays.
+A field MAY be added, removed or renamed.
+
+- **Removed:** its values go from every row, and its uses from every
+  view. A formula that read it shows its error until it's changed. To
+  retire a field and keep its values, mark it `deprecated: true`.
+- **Renamed** (DECISIONS D63): its `name` is rewritten everywhere the
+  `.table` uses it, in one save. That is the rows' keys, `primaryKey`,
+  every view key that names a field, `cells/` lines, every formula that
+  reads it (in its table or another), and every relation whose `field`
+  is it. Its `id` stays, so a link that names it by `id` still finds
+  it. A writer MUST NOT save a rename with some uses rewritten and
+  others not. `history.ndjson` isn't rewritten: what it recorded
+  before the rename names the field as it was then.
+- To show a field under another name and change nothing else, change
+  its `title` (above).
+
 Reordering enum values changes sort/group semantics and SHOULD bump
 `schema-version`.
 
@@ -542,15 +651,128 @@ Schema files MAY include third-party extension keys with the `x-`
 prefix. Readers MUST ignore unknown keys; writers MUST preserve them
 on round-trip.
 
-## 3. `rows.ndjson`
+## 3. Rows (`rows/`)
 
-One JSON object per line. Each row is independently parseable. Blank
-lines are skipped. The file ends with a trailing `\n` (POSIX-correct).
+A table's rows are NDJSON files in its `rows/` folder: one JSON object
+per line. Each row is independently parseable. Blank lines are
+skipped. Each file ends with a trailing `\n` (POSIX-correct).
 
 ```ndjson
 {"id":"p1","title":"Workspace v1","status":"active","priority":1}
 {"id":"p2","title":"Table file format spike","status":"done","priority":2}
 ```
+
+### The rows files (DECISIONS D51)
+
+The rows are split across files so that no file grows too large for
+version control without a large-file extension: GitHub warns at 50 MB
+and refuses 100 MB. Every table has the folder, however small; a small
+table's is one file, `rows/0001.ndjson`.
+
+- **Order.** The table's rows are the files' lines read in the files'
+  name order, as UTF-8 bytes compare: that is the table's file order.
+- **Size.** A writer starts a new file when the one it's writing has
+  passed **about 25 MB** (25,000,000 bytes): no file nears the 50 MB
+  warning, and the limit costs nothing to keep, since a writer counts
+  the bytes it writes. A single row larger than that has a file to
+  itself. Files are never rebalanced or merged, so their sizes vary:
+  where the files split depends on how the table was edited, and isn't
+  part of the canonical serialisation (below). A file emptied of rows
+  is removed.
+- **Names.** A file's name is a number of four digits, then any
+  lowercase letters, then `.ndjson`. New rows at the end go in the last
+  file, and a new file there takes the next number (`0002` after
+  `0001`, `10000` after `9999`). A file that passes the limit in the
+  middle of the table (rows inserted there) splits: its second half
+  goes to a new file whose name sorts between its own and the next,
+  made by adding letters (`0002m` between `0002` and `0003`; then
+  `0002g` before it, `0002t` after it, `0002am` between `0002a` and
+  `0002b`). Digits for files added at the end and letters for splits
+  sort the same as bytes compare and as file browsers sort numbers by
+  value, so the folder lists in file order everywhere. No file but the
+  new one is renamed.
+- **Before this** (`formatVersion` 1), a table's rows were one file,
+  `rows.ndjson`. A reader reads it as the table's only rows file; a
+  writer writes `rows/` and removes `rows.ndjson`.
+
+```
+tables/deals/rows/
+├── 0001.ndjson        ~25 MB
+├── 0002.ndjson
+├── 0002m.ndjson       the second half of 0002, after rows were inserted there
+└── 0003.ndjson        new rows go here, at the end
+```
+
+### A cell's own formula (`cells/`)
+
+A cell MAY have its own formula, kept beside the rows
+in the table's `cells/` folder, so the rows files hold only values
+(DECISIONS D52):
+
+```ndjson
+{"id":"r7","field":"total","expr":"(* price qty)"}
+```
+
+One line is one cell: the row's `id`, the field's `name`, and:
+
+- **`expr`**: the cell's formula, in the stored form of section 2
+  ("Computed fields"), with the same meaning: a bare word is a field
+  of this row.
+- **`dialect`** (optional): as a computed field's; absent means
+  `table-expr-v1`.
+- **`note`** (optional): a note on the cell, as a spreadsheet's cell
+  note: text, shown beside the cell and never in its value (D57). A
+  line may have a note and no `expr`: the cell then keeps its value.
+  Threaded discussion is the app's, not the file's.
+
+A line has an `expr`, a `note`, or both. What the formula does:
+
+- **In a stored field**, the cell shows the formula's result. The
+  result is never stored: a writer leaves the field out of that row in
+  the rows files. A row that has a value there as well was written by
+  an app that doesn't know `cells/`, after the formula was set: the
+  value wins, and a writer removes the formula's line.
+- **In a computed field**, the cell's formula is used instead of the
+  field's, for this row only. An app MAY mark such a cell, as a
+  spreadsheet marks a formula unlike its neighbours'.
+- **Any field but `id`** may have one (`id` isn't a field, section 3,
+  "System `id`").
+- **Its result is a value like any other.** Views sort, filter, group
+  and total by it; `values`, `related` and `linked` read it; another
+  formula may use it. It is checked against the field's type as a
+  typed value is, and one the field can't hold is `#VALUE!`. A loop,
+  through any mix of fields' and cells' formulas, is `#REF!` in every
+  cell on it.
+- **Validation** (section 9) treats the cell as a computed field's:
+  its result isn't checked against the field's constraints, and it
+  counts as filled for `required`.
+- **A formula that can't be read** (an `expr` that doesn't parse, a
+  `dialect` the reader doesn't know) makes the cell empty, and the
+  reader reports it, as for a computed field.
+
+Rules:
+
+- **Files.** NDJSON, named and split as the rows files are (section 3,
+  "The rows files"); a small table's is `cells/0001.ndjson`. The order
+  of lines carries no meaning.
+- **One line per cell.** Two lines for one cell (after a merge, say)
+  are read as a row's repeated `id` is (section 3, "A repeated `id`"):
+  the first is used, a later one the same exactly is left out, and one
+  that differs is kept as it is, and said, until that cell's formula is
+  next set, which replaces them.
+- **Lines are never lost by accident.** A line whose row or field the
+  reader can't find (a row that comes back in a merge, a field hidden
+  by an index, section 8) is ignored but kept, as is a line the reader
+  can't parse (section 3, "Reader error contract"). A writer removes a
+  cell's line only when that cell's formula is removed, its row is
+  deleted, or its field is removed from the schema.
+- **Other keys.** A reader ignores keys it doesn't know; a writer
+  keeps them.
+- **Canonical form.** Lines in the rows' file order, then the schema's
+  field order; keys in the order `id`, `field`, `expr`, `dialect`, `note`.
+- **A version bump.** A reader that doesn't know `cells/` ignores it
+  (section 1, unknown files) and shows such cells empty or with their
+  field's formula, so `cells/` came with `formatVersion` 3 (section 12).
 
 ### System `id`
 
@@ -564,10 +786,14 @@ within the table. Readable ids (`p1`, `budget-2026`) are legal — a
 `.table/` written by another tool, or by an agent outside a managed
 workspace, should not need opaque identifiers.
 
-**Writer-minted ids** SHOULD be 25 characters from the lowercase
-base36 alphabet `0-9a-z` (~129 bits; reference: `newId()` in
-`@workspace.sh/table-core`). The alphabet is deliberately
-**case-safe**: ids are used verbatim as filenames (`bodies/{id}.md`),
+**Writer-minted ids** SHOULD be 26 characters of z-base-32, the
+alphabet `ybndrfg8ejkmcpqxot1uwisza345h769` (130 bits; reference:
+`newId()` in `@workspace.sh/table-core`), as a history entry's is.
+A view's id, like a field's, is 13 characters (65 bits; `newViewId()`):
+it only has to be unique among one table's views, and it travels in
+links. The length follows how many there can be: rows and history
+entries run to millions, minted on many devices and merged; a table
+has a handful of views and fields. The alphabet is deliberately **case-safe**: ids are used verbatim in filenames (`bodies/{title}--{id}.md`),
 and on case-insensitive filesystems (default APFS, NTFS) two ids
 differing only in letter case would resolve to the same path and
 silently overwrite each other. For the same reason, all ids — minted
@@ -580,12 +806,45 @@ constraint over user-facing fields, not row identity.
 
 ### Row ordering
 
-Row order in `rows.ndjson` is the table's **file order**. It means
-something: `(column "x")` reads in it, and a Sheet view with no saved
+Row order across the rows files (in their name order, then line
+order) is the table's **file order**. It means
+something: `(values "x")` reads in it, and a Sheet view with no saved
 sort numbers its rows in it (DECISIONS D41). How rows are shown is
 still each view's business (`sort`, `group`, `order`). Appending a new
 row to the end MUST be a valid edit, and so is inserting one at a
 position.
+
+### A repeated `id`
+
+Two lines with one `id` (both sides of a merge, say) are one row
+(DECISIONS D54). The **first**, in the files' name order and then line
+order, is the row. A later line that is the same row exactly (the same
+keys and values) is left out, and the reader says so. A later line that
+differs is a line the reader can't read (below): kept as it is, put
+back where it was, and said when the table is opened. Nothing either
+side wrote is lost, and the table is valid again once it's saved.
+
+### Keeping a table in git
+
+Not part of the format; a way to keep a table in git without conflicts.
+New rows go at the end of the last rows file, so two branches that each
+add rows change the same lines, and git calls it a conflict. A
+`.gitattributes` at the top of the repository merges these files by
+keeping both sides' lines, wherever a `.table` folder is in it:
+
+```
+**/*.table/tables/*/rows/*.ndjson   merge=union
+**/*.table/tables/*/cells/*.ndjson  merge=union
+**/*.table/tables/*/history.ndjson  merge=union
+```
+
+- Rows added on both branches all come through, ours then theirs: a
+  file order like any other.
+- A row changed on both branches comes through twice, and is read as
+  "A repeated `id`" says. So can a row neither changed, near one that
+  was: that copy is the same exactly, and is left out.
+- `history.ndjson` only ever has lines added (section 14), so a union is
+  what merging it means.
 
 ### Reader error contract
 
@@ -597,13 +856,22 @@ line-oriented text that passes through version control, transports
 and other people's tools — one damaged line or a merge-conflict marker
 must not make the whole table unreadable.
 
+A writer MUST NOT lose a line it couldn't read. Writing the table
+back, it puts each such line where it was, after the row it followed
+(at the end when that row has gone), exactly as it was: a typo or a
+conflict marker stays in the file for a person or a tool to fix,
+rather than being deleted by the next save. An app SHOULD say, when
+it opens the file, which lines it couldn't read. (The reference
+reader keeps them as `unread` on the parsed table; an index that
+writes the rows back out doesn't hold a table with such lines.)
+
 The one fatal case: `schema.json` missing or malformed. A `.table/`
 without a readable schema is not a table; there is nothing sound to
 degrade to.
 
 Reference shape: `parseTable` returns `diagnostics` (same structure
-as validation errors; `rowIndex` is the zero-based line number in
-`rows.ndjson`, or −1 for file-level problems). Strict consumers MAY
+as validation errors; `rowIndex` is the zero-based line number in its
+rows file, which the message names, or −1 for file-level problems). Strict consumers MAY
 treat any diagnostic as an error — the contract is that the *reader*
 does not have to.
 
@@ -664,6 +932,9 @@ two `"table"` views named "Active" and "Done").
 On an `array` value, `contains` and `not_contains` ask whether it has
 the given item, and `in` / `not_in` whether any of its items is in the
 given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
+On a `datetime` field those four compare the instants the values name,
+as sorting does, so values with different offsets compare rightly; a
+value that isn't a datetime compares as text.
 
 ### Sort behaviour
 
@@ -709,6 +980,21 @@ given list. An empty cell satisfies none of `gt`, `gte`, `lt` or `lte`.
   layout, for rows without their own in `rowHeights`. Each row shows
   as many lines of text as fit and clips the rest; absent means one
   line. Display-only.
+- `frozen: { columns?: <n>, rows?: <n> }` — the first `columns`
+  columns and the first `rows` rows of a table layout stay where they
+  are while the rest scroll (D58). Absent: the app's own choice (the
+  reference apps keep the first column). Display-only.
+- `hidden: ["<row id>", …]` — rows this view leaves out without a
+  filter, as a spreadsheet hides rows (D58). A Sheet view keeps their
+  numbers, as it does for filtered rows; formulas read them as ever.
+  Ids that match no row are ignored. A view's `fields` already hides
+  columns.
+- `merged: [{ "from": { "field": "<f>", "row": "<id>" }, "to": { … } }]`
+  — in a Sheet view, a block of cells shown as one, with the value of
+  its top-left cell (D58). The other cells keep their values, which are
+  shown again when the merge goes. A block whose rows aren't next to
+  each other in the grid (after a sort, say) isn't drawn merged.
+  Display-only.
 - `rowHeights: { "<row id>": <pixels> }` — the heights of single rows
   in a table layout, set by resizing a selected row. Rows not listed
   use `rowHeight`; ids that match no row are ignored. A row has one
@@ -746,6 +1032,33 @@ DECISIONS D41). A table may have several Sheet views, each its own grid.
   (DECISIONS D4); that changes only their screen, never a grid or a
   formula's answer, and a Sheet view shown that way keeps its grid's
   numbers.
+
+### Colour rules
+
+A view MAY colour rows or cells by their values (DECISIONS D53).
+`colors` is a list of rules:
+
+```json
+"colors": [
+  { "filter": [{ "field": "status", "operator": "eq", "value": "blocked" }], "color": "red" },
+  { "filter": [{ "field": "budget", "operator": "gt", "value": 10000 }], "color": "orange", "field": "budget" }
+]
+```
+
+- `filter`: the conditions, written as a view's `filter` is ("Filter
+  operators" above): a rule matches a row that meets all of them.
+- `color`: one of the choice colours (section 2, "Enum entries"):
+  `gray`, `brown`, `red`, `orange`, `yellow`, `lime`, `green`, `mint`,
+  `teal`, `cyan`, `blue`, `indigo`, `purple`, `pink`. Shown with the
+  reader's own light or dark pair; a name it doesn't know is `gray`.
+- `field` (optional): the cell to colour. Absent, the whole row.
+- **The first rule that matches wins**, for a row and for each cell; a
+  cell's own rule is shown over its row's.
+- Rules read what the row shows, results of formulas included, and
+  colour every layout that shows the row or the field (a card, a
+  calendar entry). They colour; they never hide, sort or change a
+  value, and the value is always still shown, since colour is never
+  the only carrier of meaning.
 
 ### Layout-specific fields
 
@@ -795,6 +1108,41 @@ table's own `title`, `description`, `created_at` and `modified_at`.
 It does not repeat `format` or `formatVersion`: those describe the
 bundle.
 
+### Where a table came from: `source`
+
+Either `meta.json` MAY say where its content came from, when it was made
+from something else: a CSV someone imported, a spreadsheet, a file at a
+web address.
+
+```json
+"source": {
+  "uri": "https://example.org/exports/sales.csv",
+  "format": "text/csv",
+  "retrieved_at": "2026-10-27T10:00:00Z"
+}
+```
+
+- `uri`: where it came from, as an absolute URI (`https:`, `file:`, or
+  any other scheme).
+- `format`: what it was, as a media type (`text/csv`,
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
+- `retrieved_at`: when it was read, as `created_at` is written.
+
+Every member is optional, and an object with none says nothing. In the
+bundle's `meta.json` it is the whole bundle's source; in a table's, that
+table's (one table of a bundle imported from a CSV, say).
+
+[`schema/meta.schema.json`](../schema/meta.schema.json) is the JSON
+Schema for both `meta.json` files, `source` included; every example's
+pass it.
+
+It is a record of origin and nothing more (DECISIONS D66). A reader MUST
+NOT read or compute anything differently because of it, and nothing
+follows the address. Writers keep it as it was read; one that makes a
+table from something else SHOULD write it. A `source` that is not an
+object, or a member that is not a string, is ignored, as an unknown key
+is.
+
 `modified_at` SHOULD be stamped only on **user-initiated** writes —
 not on mechanical re-materialisations (sync engines applying remote
 ops, cache rebuilds, format migrations). A sync engine that touches
@@ -823,14 +1171,30 @@ specify size limits.
 
 ## 7. `bodies/`
 
-Optional long-form markdown bodies, one file per row. Filename is the
-row's stable system `id` plus `.md`:
+Optional long-form markdown bodies, one file per row. Its name is the
+row's title, `--`, then the row's stable system `id`, and `.md`, so a
+person browsing the folder sees which row each page is (D64):
 
 ```
 bodies/
-├── p1.md
+├── atlas-freight--p1.md
 └── p2.md
 ```
+
+- **The id is the page's row.** A reader takes the row id from what
+  follows the name's first `--`, or the whole name before `.md` when it
+  has none. It MUST NOT use the title part: it is a reading aid, and a
+  page renamed by hand is still its row's.
+- **The title** is the row's first `string` field with a value, in
+  schema order, written lowercase, with its letters and digits (in any
+  script) kept, accents removed, everything else a single `-`, and cut
+  at 40 characters. It never holds `--`. A row with no title has
+  `{id}.md`; an id holding `--` itself is always written after one
+  (`--a--b.md`), so it reads back whole.
+- **Writers name each page for its row as it is now**, so a row given a
+  new title has its page renamed at the next save. A writer that doesn't
+  have the row to hand (it is held in the index) keeps the name the page
+  has.
 
 Each body is a standalone, readable markdown file. Bodies are intended
 for the **canonical long-form content** of a row — the Notion
@@ -840,11 +1204,12 @@ For shorter inline markdown content (a description, a one-paragraph
 summary), use a string field with `format: "markdown"` instead.
 
 Rules:
-- A body file MUST have a corresponding row in `rows.ndjson`. Orphan
+- A body file MUST have a corresponding row in the table. Orphan
   body files (file present, no row) are a validator warning.
 - A row WITHOUT a body file is valid; bodies are optional per row.
 - Writers wholesale-replace `bodies/` on `writeTable`: bodies not
-  present in the input are removed from disk. Partial-update APIs
+  present in the input are removed from disk, as is a page under its
+  row's old title once it has been written under the new. Partial-update APIs
   belong elsewhere (`writeBody(dir, id, content)` is intended but not
   yet implemented).
 
@@ -854,12 +1219,12 @@ OPTIONAL rebuildable cache for filtered queries and full-text search.
 Never the source of truth. There is one per bundle, at its root,
 covering every table in it, so relations between those tables are
 joins inside one database. Where this section says `schema.json` and
-`rows.ndjson`, read every table's.
+the rows files, read every table's.
 
 - Excluded from git via `.gitignore`.
 - When present and fresh, readers SHOULD use it for fast queries.
-- When absent or stale, readers MUST fall back to scanning
-  `rows.ndjson`.
+- When absent or stale, readers MUST fall back to scanning the rows
+  files.
 - Apps decide their own caching strategy; the format prescribes only
   the fallback rule.
 
@@ -874,7 +1239,7 @@ is always sufficient.
 
 ### When to index
 
-The text is the table. A reader that parses `rows.ndjson` and holds its
+The text is the table. A reader that parses the rows files and holds its
 rows in memory is a complete reader, and for a small table it is the
 fast one: nothing to build, and every read immediate. An index earns
 its place when a table is large enough that holding and re-reading
@@ -898,7 +1263,7 @@ How a reader gets from the files to rows on screen is its own choice.
 None of these changes what is on disk, and a `.table` written by one is
 read by any other. Three that work, from least to most machinery:
 
-1. **Hold it in memory.** Parse `rows.ndjson`, keep the rows, and
+1. **Hold it in memory.** Parse the rows files, keep the rows, and
    filter, sort and search them in place (`applyView`, `searchRows`).
    Nothing to build and nothing beside the files. This is the whole of a
    correct reader, and the right one for small tables, scripts,
@@ -916,7 +1281,7 @@ read by any other. Three that work, from least to most machinery:
 
 3. **Show at once, index behind.** What the reference apps do for a
    table past their line (see "When to index"):
-   - show the first rows straight from the head of `rows.ndjson`, in
+   - show the first rows straight from the head of the first rows file, in
      file order, while the index is built off the thread that draws,
      with how far it has got;
    - make the table usable as soon as its rows are in the index, and
@@ -926,7 +1291,7 @@ read by any other. Three that work, from least to most machinery:
    - read a window of rows at a time, drawing an empty row of the right
      height for one that hasn't arrived;
    - make edits in the index (`putRows`, `removeRows`), write them back
-     to `rows.ndjson` (`storedRows`), and stamp the index fresh
+     to the rows files (`storedRows`), and stamp the index fresh
      (`setIndexKey`);
    - open from memory instead when the index can't be made, and say so.
 
@@ -991,7 +1356,7 @@ search, with the same rows.
 
 The index stores the table's schema signature and an opaque `key` the
 caller chooses when it builds (a content hash of `schema.json` +
-`rows.ndjson` + bodies is the natural one). `isIndexStale(db, name,
+the rows files + `cells/` + bodies is the natural one). `isIndexStale(db, name,
 key)` compares it. A key from another content version, a missing
 index and an index of another format all read as stale.
 
@@ -1017,17 +1382,41 @@ by the fallback rule).
 An edit does not need a rebuild: `putRows` adds or replaces rows and
 their pages, and `removeRows` removes them, each a few statements (about
 a millisecond at a million rows), and both move the key. Rows added
-this way sit at the end of the file order. Schemas with formulas that
-read other rows (a change to one row changes others) refuse in-place
-edits and are rebuilt; so is a table whose schema changed or whose rows
-were inserted mid-file.
+this way sit at the end of the file order. Tables with formulas that
+read other rows (a change to one row changes others), in a field or in
+a cell, refuse in-place edits and are rebuilt; so is a table whose rows
+were inserted mid-file. Setting or removing a cell's formula is an
+edit like a value's, and moves the key.
+
+A change of fields does not need a rebuild either. `alterIndex` changes
+the index from the old schema to the new one where it is: a field
+added, removed, moved, retyped or given another formula. It renames
+columns to their fields' new places, adds empty ones for new fields,
+and hides a gone field: its values stay in each row's stored JSON, and
+its cells' formulas in the index, and every row read or saved leaves
+them out, so the files lose the field.
+The index answers for the new schema at once. An undo that brings the
+field back (`restore`) shows its values and its cells' formulas again; a new field that only
+reuses the name has them taken out, and starts empty. A build forgets
+what was hidden. What must be worked out again (a formula's results, a
+retyped, new or restored field's columns, the search text) is filled in
+afterwards, a batch at a time (`fillIndex`), behind whatever else is
+asked. Until a field is filled, the index
+doesn't promise it: a view sorted, filtered, grouped or totalled by it,
+or a search while the search text is filled, is computed in memory, and
+a formula's values, a field's or a cell's, are worked out as rows are
+read. Once filled, it
+answers what a build of the same rows with the new schema answers. A
+schema with formulas that read other rows, before or after the change,
+is rebuilt instead.
 
 ### A table held in the index
 
 An app MAY hold a large table's rows in the index alone, not in memory,
-reading `rows.ndjson` only to build it. `rows.ndjson` stays the truth:
+reading the rows files only to build it. They stay the truth:
 after edits the app writes the rows back out of the index in file order
-(`storedRows`), replaces `rows.ndjson` in one rename, and stamps the
+(`storedRows`), and the cells' formulas with them, replaces each rows
+or cells file it writes in one rename, and stamps the
 index with the new content's key (`setIndexKey`), so it is fresh for
 what was written. An index whose edits were never written is stale on
 the next open and is rebuilt from the file. The index file's journal
@@ -1037,7 +1426,7 @@ the next open and is rebuilt from the file. The index file's journal
 ### Full-text search includes bodies
 
 The cache indexes an FTS5 virtual table over all string-typed fields
-**and** the contents of `bodies/{id}.md`, keyed by row id. The
+**and** the contents of `bodies/{title}--{id}.md`, keyed by row id. The
 in-memory `searchRows` already searches bodies; an index that omitted
 them would silently return fewer hits than the fallback — the worst
 kind of divergence, invisible until a missing result is noticed.
@@ -1063,9 +1452,19 @@ A `.table/` is **valid** when:
 
 1. Every row has a non-empty system `id`, and ids are unique.
 2. Every row's field values match the declared types and constraints.
+   A cell with its own formula is checked as a computed field's is
+   (section 3, "A cell's own formula").
 3. If `primaryKey` is declared, no two rows share the same composite
    key.
 4. Every body file in `bodies/` has a matching row.
+   (A repeated `id` read as section 3 says is one row; its later lines
+   are lines the reader couldn't read, which don't make a table
+   invalid.)
+5. Every line in `cells/` names a row and a field the table has. A
+   writer keeps one that doesn't (section 3), but the table isn't valid
+   until it's resolved.
+6. No two fields share an `id` (section 2, "A field's id"). A field
+   without one isn't invalid: readers give it the id its name derives.
 
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
@@ -1077,10 +1476,17 @@ Stable addressing for rows, views, and tables — used by:
 
 - Cross-table relations (per-field `relation` references one row in
   another table, in the same bundle or another)
-- Cross-format references (a markdown body inside `bodies/{id}.md`
+- Cross-format references (a markdown body inside `bodies/{title}--{id}.md`
   linking to a row elsewhere, an external markdown file linking into
   a `.table/`, etc.)
 - Application-level deep links (URL hashes, share links)
+
+These addresses are the format's own, and work without Workspace.
+Inside a Workspace, its `workspace://` links address a document and a
+place in it; a table's rows are addressed there by their system `id`
+(the Workspace Protocol's
+[URI scheme](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/format/uri-scheme.md),
+"Tables").
 
 ### Address grammar
 
@@ -1099,12 +1505,23 @@ fragment:
   - `table=<name>`: the table in the bundle with this name (section 1).
     It MAY be omitted when the bundle holds exactly one table.
   - `row=<id>` — the row with this system `id`
-  - `view=<id>` — the view with this id
-  - `field=<name>` — a specific field on the row (cell-level
+  - `view=<id or name>` — the view with this `id`, or failing that the
+    first view (in `views.json` order) whose `name` matches it, ignoring
+    case. Ids are opaque (D23); a name is what a person writes by hand. A
+    link an app writes uses the id, which survives a rename
+  - `field=<id or name>` — a specific field on the row, by its `id`
+    (section 2, "A field's id") or, failing that, its `name` (cell-level
     addressing for future affordances; reserved)
+  - `rows=<n>`, `cards=<n>`, `rest=more`, `width=full`: how much of a
+    view to show at once, and how wide, where the address is drawn in
+    place (see "A view drawn in place" below). They say nothing about
+    which rows the view has.
 
 Multiple pairs join with `&` (the same convention as URL query
-strings). Order is not significant. Unknown keys MUST be tolerated
+strings). Keys and values are percent-encoded (as `encodeURIComponent`
+does), since an `id` may be any string: a row `a&b` is `row=a%26b`.
+Readers decode them, and read one that isn't valid percent-encoding as
+it stands. Order is not significant. Unknown keys MUST be tolerated
 by readers — apps MAY define additional keys (e.g. `query=`,
 `highlight=`) but consumers that don't recognise them should
 silently ignore.
@@ -1115,9 +1532,69 @@ silently ignore.
 docs/crm.table                                   # the whole bundle
 docs/crm.table#table=deals                       # one table in it
 docs/crm.table#table=deals&row=dl-1              # a row in that table
-docs/crm.table#table=deals&view=pipeline         # a view of that table
+docs/crm.table#table=deals&view=pipeline         # a view of that table, by its name
 docs/projects.table#row=p1                       # a one-table bundle may omit table=
 ../suppliers.table#table=suppliers&row=ACME_CORP # another bundle
+```
+
+### A view drawn in place
+
+An address may be drawn where it is written: a table's view inside a
+document that links to it (how a document marks such a link is the
+document format's own; in Markdown it is `embed=1` beside these keys).
+The address names the table and the view; with no `view=`, the table's
+first view.
+
+Two keys say how tall it is. Each is a whole number from 1; the view
+shows that many, and scrolls within itself for the rest:
+
+| Key | Layout | What is counted |
+|---|---|---|
+| `rows=<n>` | `table`, `list` | Rows. A table's header, and the headings of the groups those rows are in, are shown as well. |
+| `cards=<n>` | `board` | Cards down each column: the height is that of the column that reaches furthest by its nth card. |
+| `cards=<n>` | `gallery` | Cards: the lines that hold the first n. |
+
+A view with no more rows or cards than the number is shown whole. A
+key that doesn't count what the view's layout shows (`cards=` on a
+table, either on a `calendar`) is ignored, as is a value that isn't a
+whole number from 1; the app then uses a height of its own. An app MAY
+cap the number (the reference apps stop at 500). The keys limit height
+only: the view has the same rows, in the same order, as anywhere else.
+
+`rest=` says what becomes of the rows or cards past the count:
+
+| Value | The rest |
+|---|---|
+| absent, or `scroll` | The view scrolls within itself to them. |
+| `more` | They are not drawn, and nothing scrolls. Beneath the view a line says how many there are ("Show 12 more rows") and, when chosen, shows them: the view is then as it would be with no count. |
+
+With `rest=more` the view draws the first n in its own order: rows of a
+table or a list, cards of a gallery, and the first n cards of each
+column of a board, where a column that has more says how many
+("+2 more"). What is counted from the whole view stays whole: a
+table's totals, a group's count, a board column's count. Where rows are left
+out the view offers no place to add one, since a new row would go
+after rows that aren't shown; it is offered again once the rest is
+shown. `rest=more` without a
+count that the layout shows does nothing; any other value is read as
+`scroll`.
+
+`width=` says how wide a `table` layout is drawn:
+
+| Value | Width |
+|---|---|
+| absent | The app's own. The reference apps stop each column at a natural width for what it holds (the title wider, a checkbox narrower), so a table of a few columns is narrower than the document. |
+| `full` | Its columns share the whole width the document gives it, however few there are. |
+
+Any other value is read as absent. Other layouts already take the
+width they are given, and ignore it. A column resized in the view
+(`columnWidths`) keeps its width either way.
+
+```
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5            # five rows of a table view, then it scrolls
+docs/projects.table#table=tasks&view=Board%20by%20status&cards=3                    # a board, three cards down each column
+docs/projects.table#table=tasks&view=All%20tasks%20by%20priority&rows=5&rest=more   # only the first five rows, and "Show 3 more rows"
+docs/projects.table#table=tasks&view=juycicwios88m&width=full          # the same view by its id, the whole width of the document
 ```
 
 ### Resolution
@@ -1146,7 +1623,7 @@ serialisation; the relation declaration is the structured form.
 
 ### Reverse direction (markdown → row)
 
-A markdown body inside `bodies/{id}.md` MAY contain links that use
+A markdown body inside `bodies/{title}--{id}.md` MAY contain links that use
 the address grammar:
 
 ```markdown
@@ -1170,7 +1647,17 @@ CSV is the **only** format-specific converter that lives in core, via
   commas / newlines / escaped `""`, optional BOM, LF or CRLF). With a
   schema, cells are coerced to declared types (the lossless-with-schema
   path); without one, per-column types are inferred. Rows lacking an
-  `id` column get a freshly minted nanoid.
+  `id` column get a freshly minted nanoid. Tabs, semicolons and pipes
+  are read as separators too, whichever the file uses.
+- `tableFromCSV(csv, { keyOf? })` — a spreadsheet someone already has,
+  as a new table: each heading becomes a field (the heading kept as its
+  `title`, a key made for its `name`), each other line a row. Types are
+  inferred conservatively: a column of ISO dates is `date`, digits that
+  aren't a quantity (leading zeros, a `+`, more digits than a number
+  keeps) stay text, and anything ambiguous (`03/04/2025`, `£1,200`)
+  stays text for the person who knows what it means. With `{ header:
+  false }` (D59), the first line is a row like the others, and the
+  fields are named for their columns, `A`, `B`, `C`…
 - `toCSV(table, { fields? })` — RFC 4180-correct quoting. **Lossy by
   definition**: relations serialise to raw id(s), attachments to their
   filename, bodies aren't represented. `csvExportWarnings(table)`
@@ -1192,7 +1679,8 @@ docs/DECISIONS.md D14).
 
 The spec itself is versioned by `formatVersion` in the bundle's
 `meta.json` (section 5). The
-current value is `1`. Breaking changes bump the major; additive
+current value is `3` (D52: cells' own formulas in `cells/`; `2` had
+no `cells/`, and `1` had one `rows.ndjson` in place of `rows/`). Breaking changes bump the major; additive
 changes do not. Readers SHOULD warn on `formatVersion` higher than
 they recognise but MAY still attempt to read.
 
@@ -1228,27 +1716,105 @@ carry its own edit history in the format, so that "what did this row
 or page look like yesterday" works without git, uses the optional
 `history.ndjson` (section 14).
 
-## 13. Archive transport (`.table.zip`)
+## 13. The file form (a `.table` that is a single file)
 
-A `.table/` travelling through a context that cannot carry a
-directory (email, upload, chat drag-and-drop) is zipped. This is a
-transport convention only — the on-disk format is unchanged and
-`formatVersion` is unaffected (additive, per DECISIONS D26/D27).
+A `.table` can be kept as a single file: the **file form**, an archive
+in the canonical layout below holding the whole bundle. It is how a
+`.table` travels where a folder can't (email, upload, chat
+drag-and-drop), and how it's kept by anyone who wants one file. It has
+the same name and extension as the folder form; there is no other
+name for it (D50). The bundle inside is unchanged and `formatVersion`
+is unaffected (additive, per DECISIONS D26, D49, D50).
+
+### The file form
+
+A `.table` that is a regular file, not a directory, is an archive in
+the canonical layout below holding the whole bundle (D49). It is the
+same document as the folder it unzips to.
+
+- **Telling the forms apart.** Readers MUST decide by what is on
+  disk: a directory is the folder form, a regular file the file form.
+  They MUST NOT rely on a type looked up from the name alone (an
+  extension lookup, a search index's metadata), which can report one
+  form's type for the other.
+- **One name.** Both forms are `<name>.table`. A file-form `.table`
+  renamed to end `.zip` unzips anywhere to its folder form, and a
+  folder form zipped in this layout and named `.table` is a file form;
+  but `.table.zip` is not a name either form has, and apps don't
+  offer or write it (D50).
+- **Saving.** Writers save a document in the form it was opened in.
+  A new document is written in the folder form unless the user
+  chooses the file form.
+- **What a file-form save carries.** Everything the folder would
+  hold: every table's files, `attachments/`, `bodies/`,
+  `history.ndjson`, and unknown files (section 1's round-trip rule).
+  A writer MUST NOT omit attachments, and MUST NOT include
+  `index.sqlite`.
+- **Atomic replace.** A writer writes the whole new archive to a
+  sibling file (`<name>.table.tmp`), then renames it over the
+  document, so a reader sees the old file or the new one, never part
+  of either (compare section 1, "Writer atomicity").
+- **The index lives outside.** An app that indexes a file-form
+  document (section 8) keeps the index in its own storage, keyed to
+  that document. It is a cache like any `index.sqlite`: rebuildable
+  from the archive, never part of it.
+- **Size.** Rows compress well: the 1,000,000-row example's 165 MB
+  of rows is a 19.6 MB archive. A writer for a large table
+  SHOULD stream rows into the archive rather than build it in memory,
+  and a reader SHOULD inflate a large rows file as a stream. The
+  archive has no zip64 (below), so no file in it, and not the archive
+  itself, can pass 4 GiB, and it can't hold more than 65,535 files
+  (each row page is one): a document that would is kept in the folder
+  form, and a writer asked to save it as a file says so rather than
+  writing a broken one. The decompression-bomb cap (below, "Security")
+  is for archives that arrive from elsewhere; opening a document the
+  person chose, a reader MAY raise it, up to the 4 GiB limit.
+
+### Platform types
+
+On Apple platforms the two forms are two exported types sharing the
+extension `table` and the description "Table", as Numbers declares
+its package and single-file documents:
+
+| Form | Identifier | Conforms to |
+|---|---|---|
+| Folder | `sh.workspace.table` | `com.apple.package`, `public.composite-content` |
+| File | `sh.workspace.table.file` | `public.data`, `public.composite-content` |
+
+The file form conforms to `public.data`, not `public.zip-archive`, so
+the system treats it as a document and never offers to expand it.
+An app that opens `.table` declares both as document types it opens.
+
+On systems without packages (Linux, Windows) the folder form shows as
+a folder: a directory has no type of its own there, so an app tells it
+by its name. The file form is matched by its name, `*.table`. On Linux
+an app that opens it declares it in shared-mime-info as
+`application/vnd.workspace-sh.table`, with the glob `*.table`, the
+comment "Table", and no `sub-class-of` a zip type, for the reason the
+Apple file type isn't one: a file manager would offer to extract it.
+Its icon is `application-vnd.workspace-sh.table`, the name
+shared-mime-info gives that type. The folder form can't be matched
+(Linux's file managers type every directory `inode/directory`), so an
+app that opens it MAY offer itself for directories without becoming
+their default: a file manager's Open With.
+On the web a file input accepts `.table` (the file form); the folder
+form needs a directory picker.
 
 ### Canonical layout
 
-`<name>.table.zip` contains exactly **one** root-level directory,
-`<name>.table/`, holding the whole bundle: every table travels
-together, so relations between them still resolve.
+A file-form `<name>.table` contains exactly **one** root-level
+directory, `<name>.table/`, holding the whole bundle: every table
+travels together, so relations between them still resolve.
 
 ```
-crm.table.zip
+crm.table              (a single file)
 └── crm.table/
     ├── meta.json
     └── tables/
         ├── companies/
         │   ├── schema.json
-        │   ├── rows.ndjson
+        │   ├── rows/0001.ndjson
+        │   ├── cells/0001.ndjson
         │   ├── views.json
         │   ├── meta.json
         │   └── bodies/…
@@ -1256,14 +1822,16 @@ crm.table.zip
 ```
 
 Nested — not files-at-root — because both Finder and CLI `unzip`
-then produce the `.table/` directory directly, nothing scatters
-loose files into the extraction directory, and the table keeps its
-name even if the archive file is renamed.
+(given the file renamed to end `.zip`) then produce the `.table/`
+directory directly, nothing scatters loose files into the extraction
+directory, and the table keeps its name even if the file is renamed.
 
 Readers MUST ignore archiver junk (`__MACOSX/`, `.DS_Store`,
 `Thumbs.db`) and unknown entries (same tolerance as section 1).
-Writers SHOULD omit `index.sqlite` (rebuildable) and MAY omit
-`attachments/`.
+Writers MUST omit `index.sqlite` (rebuildable) and MUST NOT omit
+`attachments/` (above). A table's `history.ndjson` (section 14), when it has
+one, travels with it as it is: a writer copies the file's bytes and
+doesn't rewrite its lines.
 
 ### Security — extraction rules
 
@@ -1272,7 +1840,8 @@ whose resolved path escapes the extraction root (zip-slip): any
 `..` segment, absolute path, backslash, or drive prefix. Readers
 SHOULD cap total declared uncompressed size (reference: 1 GiB) to
 bound decompression-bomb exposure, and SHOULD verify per-entry CRC
-and size declarations.
+and size declarations. A file-form document the person opens is
+input they chose, and its cap MAY be raised ("The file form", Size).
 
 ### Reference implementation
 
@@ -1284,18 +1853,25 @@ comes from `fflate` (pure JS; DECISIONS D28). Callers pass archive
 BYTES — obtaining them from a path, fetch, or document picker is the
 platform's one line:
 
-- `readTableArchive(source: Uint8Array): Promise<ParsedTable>`
+- `readTableArchive(source: Uint8Array): Promise<ParsedBundle>`
   — same shape and skip-and-collect diagnostics contract as
   `parseTable` (section 3); missing/malformed `schema.json` is
   fatal. Reads entirely **in memory** — nothing is extracted to
   disk, so the zip-slip class cannot arise there (hostile names are
-  rejected anyway). Attachments are not materialised (section 6);
-  consumers needing attachment bytes extract the archive themselves
-  under the rules above.
+  rejected anyway). What it doesn't parse (attachments, each table's
+  `history.ndjson` is parsed; anything else) comes back as bytes in
+  the bundle's `files`, by path inside the bundle, never the index.
 - `writeTableArchive(name, input): Promise<Uint8Array>` —
   byte-deterministic for identical input (fixed timestamps, fixed
   entry order, canonical serialisation shared with `writeTable`),
-  per section 3's canonical-write-order rule.
+  per section 3's canonical-write-order rule, then the bundle's
+  `files` by path.
+- Over a `TableFs` (a platform's files, given `readBytes` and
+  `writeBytes`): `tableFormOf(fs, path)` says which form is on disk;
+  `readTableDocument(fs, path)` reads either; `filesOfFolder(fs, dir)`
+  reads what a folder holds besides its tables' text, for saving it as
+  a single file; and `writeTableFileTo(fs, path, bundle)` saves a
+  single file atomically (written to `<path>.tmp`, renamed over it).
 
 Constraints: methods stored/deflate only; UTF-8 names; no
 encryption, no multi-volume, no zip64 (readers MAY reject archives
@@ -1306,7 +1882,7 @@ beyond 4 GiB).
 
 An optional, append-only log of a table's edits, so a plain `.table`
 carries its own history without git (DECISIONS D44). It is **purely
-additive**: `rows.ndjson`, `bodies/` and the rest stay canonical, and a
+additive**: the rows files, `bodies/` and the rest stay canonical, and a
 reader that ignores this file loses nothing it needs to read the table.
 
 ```
@@ -1328,19 +1904,31 @@ Ops:
 {"id":"e2","at":"2026-10-01T15:02:00Z","by":"leslie","op":"insert","row":"p9","values":{"id":"p9","title":"New"}}
 {"id":"e3","at":"2026-10-01T15:03:00Z","by":"leslie","op":"delete","row":"p9","values":{"id":"p9","title":"New"}}
 {"id":"e4","at":"2026-10-01T15:05:00Z","by":"leslie","op":"page","row":"p1","from":"Old text","to":"New text"}
+{"id":"e5","at":"2026-10-01T15:06:00Z","by":"leslie","op":"formula","row":"p1","field":"total","to":"(* price qty)"}
 ```
 
 - `set`: one cell changed. `field` is the field key; `from` and `to`
   are the stored values. Only stored values are recorded: a formula,
-  lookup or rollup's result isn't in `rows.ndjson`, so it isn't here. As in `rows.ndjson`, an absent value means
+  lookup or rollup's result isn't in the rows files, so it isn't here. As in the rows files, an absent value means
   empty (section 3), so `from` is absent for a cell that was empty and
   `to` is absent for one that was cleared.
-- `insert`: a row was added. `values` is the row as written.
-- `delete`: a row was removed. `values` is the whole row as it was, so
-  it can be restored.
-- `page`: a row's page (`bodies/{id}.md`, section 7) changed. `from`
+- `insert`: a row was added. `values` is the row as written, and
+  `cells` (when it has any) its cells' own formulas: each cell's line
+  without `id` and `field`, by the field's name,
+  `{"total": {"expr": "(* price qty)"}}`.
+- `delete`: a row was removed. `values` is the whole row as it was, and
+  `cells` its cells' own formulas, so it can be restored.
+- `page`: a row's page (`bodies/{title}--{id}.md`, section 7) changed. `from`
   and `to` are the **complete** text before and after; `from` is absent
   for a new page and `to` is absent for a cleared one.
+- `note`: a cell's note (section 3, D57) was set, changed or removed.
+  `field` is the field key; `from` and `to` are the note before and
+  after, absent when it had none.
+- `formula`: a cell's own formula (section 3) was set, changed or
+  removed. `field` is the field key; `from` and `to` are the `expr`
+  before and after, absent when the cell had none. Setting a formula on
+  a stored field also clears its value, recorded as a `set` with no
+  `to`.
 
 Rules:
 

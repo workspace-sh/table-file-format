@@ -1,0 +1,19 @@
+[package]
+name = "workspace-edn-node"
+version = "0.1.0"
+description = "Native Node binding of workspace-edn (N-API), for Linux's app"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+workspace-edn = { path = "../core" }
+napi = { version = "3", default-features = false, features = ["napi4"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"

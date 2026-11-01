@@ -22,7 +22,7 @@ export function AppSettings({ onClose }: { onClose: () => void }) {
       id: "build",
       rows: [{ kind: "info", id: "build", label: "Build", value: BUILD_LABEL }],
     },
-    ...displayChoices(state.display, systemLocale, "System").map(
+    ...displayChoices(state.display, systemLocale, "System", state.active || undefined).map(
       (row): SettingsSection => ({
         id: row.kind,
         footer: row.note,

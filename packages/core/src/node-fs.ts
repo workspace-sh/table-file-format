@@ -3,7 +3,7 @@
 // reach node:fs.
 
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
 import type { TableFs } from "./io.js";
 
@@ -34,4 +34,38 @@ export const nodeFs: TableFs = {
     }
   },
   remove: (path) => rm(path, { recursive: true, force: true }),
+  async readBytes(path) {
+    try {
+      return new Uint8Array(await readFile(path));
+    } catch (err) {
+      if (missing(err) || (err as NodeJS.ErrnoException).code === "EISDIR") return null;
+      throw err;
+    }
+  },
+  writeBytes: (path, bytes) => writeFile(path, bytes),
+  async size(path) {
+    try {
+      const s = await stat(path);
+      return s.isFile() ? s.size : null;
+    } catch (err) {
+      if (missing(err)) return null;
+      throw err;
+    }
+  },
+  async readHead(path, bytes) {
+    let file;
+    try {
+      file = await open(path, "r");
+    } catch (err) {
+      if (missing(err)) return null;
+      throw err;
+    }
+    try {
+      const buffer = new Uint8Array(bytes);
+      const { bytesRead } = await file.read(buffer, 0, bytes, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await file.close();
+    }
+  },
 };

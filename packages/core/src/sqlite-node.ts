@@ -39,7 +39,15 @@ export function openNodeDatabase(path: string): NodeDatabase {
   };
   return {
     async exec(sql) {
-      db.exec(sql);
+      try {
+        db.exec(sql);
+      } catch (error) {
+        // Node 23's SQLite was built without FTS5, which the index's search needs; the Node in .nvmrc has it.
+        if (error instanceof Error && /no such module: fts5/.test(error.message)) {
+          throw new Error(`This Node (${process.version}) has SQLite without FTS5, which the index needs. Use the Node in .nvmrc (nvm use).`);
+        }
+        throw error;
+      }
     },
     async run(sql, params = []) {
       prepared(sql).run(...params);
@@ -51,6 +59,7 @@ export function openNodeDatabase(path: string): NodeDatabase {
       const statement = prepared(sql);
       for (const p of params) statement.run(...p);
     },
+    inProcess: true,
     close() {
       cache.clear();
       db.close();

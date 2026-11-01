@@ -145,3 +145,23 @@ export async function remoteEdits(
   });
   return { count: made.count, back };
 }
+
+/**
+ * A table's rows while they're being read (its `loading`): about as many as
+ * it has, none of them yet. A list sized from it has its scroll range from
+ * the first frame, and draws empty rows until the table has its own.
+ */
+export function loadingViewRows(key: string, estimate: number): ViewRows {
+  return {
+    count: estimate,
+    inView: estimate,
+    version: `loading ${key}`,
+    rows: async () => [],
+    peek: () => undefined,
+    ids: async () => [],
+    placeOf: async () => -1,
+    row: async () => undefined,
+    totals: async () => ({}),
+    groups: async () => [],
+  };
+}

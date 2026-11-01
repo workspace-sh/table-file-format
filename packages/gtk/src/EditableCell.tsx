@@ -6,8 +6,10 @@
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
 import {
+  GtkAdjustment,
   GtkBox,
   GtkButton,
+  GtkCalendar,
   GtkCheckButton,
   GtkDropDown,
   GtkEntry,
@@ -15,9 +17,14 @@ import {
   GtkEventControllerKey,
   GtkGestureClick,
   GtkLabel,
+  GtkMenuButton,
+  GtkPopover,
+  GtkSignalListItemFactory,
+  GtkSpinButton,
 } from "@gtkx/jsx/gtk";
-import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { type GridEditEnd, inputHints, commitDraft, currencySymbolOf, draftOf, editorKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
+import { enumOptions, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { pillClass, styles, useDark } from "./theme.js";
+import { type GridEditEnd, inputHints, cellFormulaText, FORMULA_PREFIX, commitDraft, type CellFormulaEntry, currencySymbolOf, dateOfStored, draftOf, editorKind, localDate, storedOfDate, type DateKind, relatesMany, relationOptions, relationToggled, useDisplaySettings, EMPTY_TEXT } from "@workspace.sh/table-ui/shared";
 import { useEffect, useRef, useState } from "react";
 import { CellValue } from "./CellValue.js";
 import { ListEditor } from "./ListEditor.js";
@@ -45,11 +52,22 @@ export interface EditableCellProps {
   editRequest?: { n: number; text?: string };
   /** Editing closed from the keyboard, and how: the grid moves on from it. */
   onEditEnd?: (how: GridEditEnd) => void;
+  /**
+   * Typing `=…` gives the cell its own formula (D52): what that needs, the
+   * formula it has now, and where it's saved. Absent: `=` is typed as text.
+   */
+  formula?: CellFormulaEntry & { syntax?: "excel" | "stored"; onSet: (expr: string) => void };
+  /** Add a choice to the field: a choice cell then offers "New Choice…", as iOS's bar does. Absent: only the field's choices. */
+  onAddChoice?: (value: string) => void;
 }
 
 /**
  * A choice cell being edited: a drop-down of the field's choices, and "—"
- * for none. Picking one saves it; leaving or Escape closes without.
+ * for none. Picking one saves it; leaving or Escape closes without. A
+ * field's own choices are drawn as the cell draws them, each a pill in its
+ * colour; a relation's rows are plain names. With `onAdd`, the last item is
+ * "New Choice…": the drop-down becomes an entry, and the name typed there,
+ * with Enter, is added to the field and picked.
  */
 function ChoiceEditor({
   field,
@@ -57,6 +75,7 @@ function ChoiceEditor({
   onClose,
   onCommit,
   choices,
+  onAdd,
 }: {
   field: Field | undefined;
   value: unknown;
@@ -64,38 +83,95 @@ function ChoiceEditor({
   onCommit: (next: unknown) => void;
   /** The choices, when they aren't the field's own (a relation's rows). */
   choices?: { value: string; label?: string }[];
+  /** A new choice, named: added to the field and picked. */
+  onAdd?: (value: string) => void;
 }) {
   const options = choices ?? enumOptions(field);
   const at = options.findIndex((o) => o.value === value) + 1;
-  const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value)];
+  const labels = [EMPTY_TEXT, ...options.map((o) => o.label ?? o.value), ...(onAdd ? [NEW_CHOICE] : [])];
+  const [naming, setNaming] = useState(false);
   const ref = useSelected<Gtk.DropDown>(at, labels.join("\u0000"));
+  const dark = useDark();
+  const colors = choices ? null : [undefined, ...enumOptions(field).map((o) => o.color)];
+  const keys = (
+    <>
+      <GtkEventControllerFocus onLeave={() => onClose("done")} />
+      <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose("escape"), true) : false)} />
+    </>
+  );
+  if (naming) {
+    return (
+      <GtkEntry
+        ref={(entry: Gtk.Entry | null) => {
+          entry?.grabFocus();
+        }}
+        hexpand
+        placeholderText="New choice"
+        onActivate={(entry) => {
+          const name = entry.getText().trim();
+          if (!name) return;
+          onClose("done");
+          onAdd!(name);
+        }}
+        controllers={keys}
+      />
+    );
+  }
   return (
     <GtkDropDown
       ref={ref}
       hexpand
       selected={at}
       model={<StringList strings={labels} />}
+      {...(colors
+        ? {
+            factory: (
+              <GtkSignalListItemFactory
+                onSetup={(object) => {
+                  const label = new Gtk.Label();
+                  label.setHalign(Gtk.Align.START);
+                  (object as Gtk.ListItem).setChild(label);
+                }}
+                onBind={(object) => {
+                  const item = object as Gtk.ListItem;
+                  const i = item.getPosition();
+                  const label = item.getChild() as Gtk.Label;
+                  label.setLabel(labels[i] ?? "");
+                  // "—", for none, is no choice, nor is "New Choice…": no pill.
+                  label.setCssClasses(i === 0 || i > options.length ? [] : [styles.pill, pillClass(colors[i], dark)]);
+                }}
+              />
+            ),
+          }
+        : {})}
       onNotifySelected={(index) => {
         if (index === null || index === at) return;
+        if (onAdd && index === options.length + 1) return setNaming(true);
         onClose("done");
         const next = index === 0 ? null : options[index - 1]!.value;
         if (next !== value) onCommit(next);
       }}
-      controllers={
-        <>
-          <GtkEventControllerFocus onLeave={() => onClose("done")} />
-          <GtkEventControllerKey onKeyPressed={(keyval) => (keyval === Gdk.KEY_Escape ? (onClose("escape"), true) : false)} />
-        </>
-      }
+      controllers={keys}
     />
   );
 }
 
-export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd }: EditableCellProps) {
+const NEW_CHOICE = "New Choice…";
+
+/** A picker's words and picture, by what it picks. */
+const PICKERS: Record<DateKind, { tooltip: string; icon: string }> = {
+  date: { tooltip: "Choose a Date", icon: "x-office-calendar-symbolic" },
+  datetime: { tooltip: "Choose a Date and Time", icon: "x-office-calendar-symbolic" },
+  time: { tooltip: "Choose a Time", icon: "preferences-system-time-symbolic" },
+};
+
+export function EditableCell({ field, value, onCommit, relatedTables, onOpenRelation, lines, xalign = 0, autoEdit, onAttach, editRequest, onEditEnd, formula, onAddChoice }: EditableCellProps) {
   const kind = editorKind(field);
   const { locale } = useDisplaySettings();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Editing the cell's own formula (D52): its `=` is drawn before the entry, not in it, and put back on saving.
+  const [asFormula, setAsFormula] = useState(false);
   // Why the typed text wasn't saved, and the date it probably meant.
   const [problem, setProblem] = useState<{ message: string; suggestion?: string } | null>(null);
   // The draft already asked about (an early year, D42): saved if saved again.
@@ -106,13 +182,74 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const entry = useRef<Gtk.Entry | null>(null);
   // Typed over what was there: the cursor goes after it, not selecting it.
   const typedOver = useRef(false);
+  // A date or a time is also picked: a day from a calendar, an hour and minute from two spinners, as the
+  // field has them. While the picker is open the entry losing the keyboard isn't the edit ending; what is
+  // picked goes into the entry as the cell stores it (table-ui's storedOfDate, as the phone's picker
+  // writes it: a date and time in UTC, shown here in the viewer's own time), and closing the picker saves it.
+  const dateKind: DateKind | null = field?.type === "date" || field?.type === "datetime" || field?.type === "time" ? field.type : null;
+  const dated = dateKind !== null;
+  const picking = useRef(false);
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+  const calendarButton = useRef<Gtk.MenuButton | null>(null);
+  // What the draft names, in the viewer's time: nothing while it names none.
+  const drafted = dateKind ? dateOfStored(dateKind, draft) : null;
+  // The keyboard leaving a date's entry isn't the edit ending when it has only gone to the
+  // picker's button, or the picker is open: looked at once the move is over.
+  const leftSoon = () =>
+    setTimeout(() => {
+      if (picking.current || closed.current) return;
+      const within = (widget: Gtk.Widget | null, of: Gtk.Widget | null) => {
+        for (let w = widget; w && of; w = w.getParent()) if (w === of) return true;
+        return false;
+      };
+      const focus = (entry.current?.getRoot() as Gtk.Window | null | undefined)?.getFocus() ?? null;
+      if (within(focus, entry.current) || within(focus, calendarButton.current)) return;
+      commit(entry.current?.getText() ?? draftNow.current, "blur");
+    }, 0);
+  /** One part picked: the draft becomes what it named with that part changed. A draft that names nothing yet starts from now, to the minute. */
+  const pick = (change: (from: Date) => Date) => {
+    if (!dateKind) return;
+    const now = new Date();
+    now.setSeconds(0, 0);
+    setDraft(storedOfDate(dateKind, change(dateOfStored(dateKind, draftNow.current) ?? now)));
+    setProblem(null);
+  };
+  const pickDay = (calendar: Gtk.Calendar) => {
+    const day = calendar.getDate();
+    pick((from) => localDate(day.getYear(), day.getMonth() - 1, day.getDayOfMonth(), from.getHours(), from.getMinutes(), from.getSeconds()));
+  };
+  // A calendar says a day was chosen only when the day's number changes. So the same number in
+  // another month (paged to, or chosen there) and today's own day in an empty field say nothing,
+  // and are heard another way: the month or the year moving, and a press on the calendar.
+  const calendar = useRef<Gtk.Calendar | null>(null);
+  /** The calendar's day as the draft would have it, or that the draft already names it (the calendar only followed what was typed). */
+  const followCalendar = () =>
+    setTimeout(() => {
+      const shown = calendar.current;
+      if (!shown || !dateKind || closed.current) return;
+      const day = shown.getDate();
+      const named = dateOfStored(dateKind, draftNow.current);
+      if (named && named.getFullYear() === day.getYear() && named.getMonth() === day.getMonth() - 1 && named.getDate() === day.getDayOfMonth()) return;
+      pickDay(shown);
+    }, 0);
+  const pickTime = (part: "hours" | "minutes", value: number) =>
+    pick((from) => {
+      const to = new Date(from.getTime());
+      if (part === "hours") to.setHours(value);
+      else to.setMinutes(value);
+      return to;
+    });
 
   const start = (text?: string) => {
     if (kind === "readonly") return;
     closed.current = false;
     queried.current = null;
     typedOver.current = text !== undefined;
-    setDraft(text ?? draftOf(value));
+    // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` before the entry.
+    const own = text === undefined && formula?.own !== undefined;
+    setAsFormula(own);
+    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
     setProblem(null);
     setEditing(true);
   };
@@ -150,7 +287,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   /** Saved (or nothing to save) and closed: true; refused, the editor stays: false. */
   const commit = (raw: string, how: "key" | "blur"): boolean => {
     if (closed.current) return false;
-    const result = commitDraft(field, value, raw, how, queried.current);
+    const result = commitDraft(field, value, asFormula ? FORMULA_PREFIX + raw : raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem({ message: result.check.message, suggestion: result.check.suggestion });
@@ -158,8 +295,22 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     }
     close();
     if (result.kind === "save") onCommit(result.value);
+    if (result.kind === "formula") formula?.onSet(result.expr);
     return true;
   };
+
+  // Gone while it's edited (its row scrolled far out of the rows built, or the table closed): what
+  // was typed is saved, as the keyboard leaving the cell would save it.
+  const editingNow = useRef(editing);
+  editingNow.current = editing;
+  const commitNow = useRef(commit);
+  commitNow.current = commit;
+  useEffect(
+    () => () => {
+      if (editingNow.current) commitNow.current(draftNow.current, "blur");
+    },
+    [],
+  );
 
   const shown = <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} xalign={xalign} />;
 
@@ -191,7 +342,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
     );
   }
 
-  if (kind === "boolean") {
+  // A formula that failed shows why, not an unticked box.
+  if (kind === "boolean" && !(value instanceof FormulaError)) {
     return (
       <GtkCheckButton
         active={value === true}
@@ -226,6 +378,14 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
         }}
         onCommit={onCommit}
         choices={kind === "relation" ? relationOptions(field, relatedTables) : undefined}
+        onAdd={
+          kind === "choice" && onAddChoice
+            ? (name) => {
+                if (!enumOptions(field).some((o) => o.value === name)) onAddChoice(name);
+                if (name !== value) onCommit(name);
+              }
+            : undefined
+        }
       />
     );
   }
@@ -233,7 +393,7 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
   const symbol = currencySymbolOf(field, locale);
   return (
     <GtkBox hexpand spacing={4}>
-      {symbol ? <GtkLabel label={symbol} cssClasses={["dim-label"]} /> : null}
+      {asFormula ? <GtkLabel name="formula-prefix" label={FORMULA_PREFIX} cssClasses={["dim-label"]} /> : symbol ? <GtkLabel label={symbol} cssClasses={["dim-label"]} /> : null}
       <GtkEntry
         ref={entry}
         hexpand
@@ -246,7 +406,8 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
         inputHints={inputHintsOf(inputHints(field))}
         text={draft}
         xalign={xalign}
-        cssClasses={problem ? ["error"] : []}
+        // The cell's own ring is the editor's frame, as on the web: the entry draws none of its own.
+        cssClasses={[styles.cellEntry, ...(problem ? ["error"] : [])]}
         // A year typed short: the icon is the fix, as the web's "Use 2026"
         // button is, inside the entry so the cell keeps its width.
         secondaryIconName={problem?.suggestion ? "object-select-symbolic" : problem ? "dialog-warning-symbolic" : undefined}
@@ -273,6 +434,11 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
                   onEditEnd?.("escape");
                   return true;
                 }
+                // Backspace before the formula's first character takes its `=`: what's left is a value (D52).
+                if (keyval === Gdk.KEY_BackSpace && asFormula && entry.current?.getPosition() === 0 && !entry.current.getSelectionBounds()[0]) {
+                  setAsFormula(false);
+                  return true;
+                }
                 // Tab saves and moves along, as in a spreadsheet, rather than leaving the table.
                 if (keyval === Gdk.KEY_Tab || keyval === Gdk.KEY_ISO_Left_Tab) {
                   const back = keyval === Gdk.KEY_ISO_Left_Tab || (state & Gdk.ModifierType.SHIFT_MASK) !== 0;
@@ -282,10 +448,69 @@ export function EditableCell({ field, value, onCommit, relatedTables, onOpenRela
                 return false;
               }}
             />
-            <GtkEventControllerFocus onLeave={() => commit(entry.current?.getText() ?? draft, "blur")} />
+            <GtkEventControllerFocus onLeave={() => (dated ? leftSoon() : commit(entry.current?.getText() ?? draft, "blur"))} />
           </>
         }
       />
+      {dateKind ? (
+        <GtkMenuButton
+          ref={calendarButton}
+          controllers={<GtkEventControllerFocus onLeave={leftSoon} />}
+          iconName={PICKERS[dateKind].icon}
+          cssClasses={["flat", "circular"]}
+          valign={Gtk.Align.CENTER}
+          tooltipText={PICKERS[dateKind].tooltip}
+          onNotifyActive={(active) => {
+            if (active) picking.current = true;
+          }}
+          popover={
+            <GtkPopover
+              onClosed={() => {
+                if (!picking.current) return;
+                picking.current = false;
+                // The picker closed: what was picked is saved, or the entry has the keyboard again to put it right.
+                if (!commit(draftNow.current, "key")) entry.current?.grabFocus();
+                else onEditEnd?.("escape");
+              }}
+            >
+              <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={8}>
+                {dateKind !== "time" ? (
+                  <GtkCalendar
+                    ref={calendar}
+                    {...(drafted ? { year: drafted.getFullYear(), month: drafted.getMonth(), day: drafted.getDate() } : {})}
+                    onDaySelected={pickDay}
+                    onNotifyMonth={followCalendar}
+                    onNotifyYear={followCalendar}
+                    // A press on the day already shown (today's, in an empty field) changes nothing the calendar would say.
+                    controllers={<GtkGestureClick name="pick-shown-day" propagationPhase={Gtk.PropagationPhase.CAPTURE} onPressed={followCalendar} />}
+                  />
+                ) : null}
+                {dateKind !== "date" ? (
+                  <GtkBox spacing={6} halign={Gtk.Align.CENTER}>
+                    <GtkSpinButton
+                      tooltipText="Hour"
+                      numeric
+                      wrap
+                      widthChars={2}
+                      adjustment={<GtkAdjustment lower={0} upper={23} stepIncrement={1} pageIncrement={6} value={drafted?.getHours() ?? 0} />}
+                      onValueChanged={(self) => pickTime("hours", self.getValueAsInt())}
+                    />
+                    <GtkLabel label=":" />
+                    <GtkSpinButton
+                      tooltipText="Minute"
+                      numeric
+                      wrap
+                      widthChars={2}
+                      adjustment={<GtkAdjustment lower={0} upper={59} stepIncrement={1} pageIncrement={10} value={drafted?.getMinutes() ?? 0} />}
+                      onValueChanged={(self) => pickTime("minutes", self.getValueAsInt())}
+                    />
+                  </GtkBox>
+                ) : null}
+              </GtkBox>
+            </GtkPopover>
+          }
+        />
+      ) : null}
     </GtkBox>
   );
 }

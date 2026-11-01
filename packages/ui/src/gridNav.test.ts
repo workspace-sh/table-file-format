@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { afterEdit, cellPicks, gridKey, type GridCell } from "./gridNav";
+import { afterEdit, cellPicks, gridKey, mirroredKey, type GridCell } from "./gridNav";
 
 const text: GridCell = { editable: true, boolean: false, picks: false, computed: false };
 const at = (row: number, col: number) => ({ row, col });
@@ -67,4 +67,14 @@ test("choices, lists and dates open a picker when typed on; text doesn't", () =>
   assert.equal(cellPicks({ name: "d", type: "date" }), true);
   assert.equal(cellPicks({ name: "l", type: "array" }), true);
   assert.equal(cellPicks({ name: "t", type: "string" }), false);
+});
+
+test("right to left, Left goes towards the row's end and Right towards its start; other keys are as they were", () => {
+  const cell: GridCell = { editable: true, boolean: false, picks: false, computed: false };
+  const at = { row: 1, col: 1 };
+  assert.deepEqual(gridKey(at, 3, 4, mirroredKey({ key: "ArrowLeft" }), cell), { kind: "select", at: { row: 1, col: 2 } });
+  assert.deepEqual(gridKey(at, 3, 4, mirroredKey({ key: "ArrowRight" }), cell), { kind: "select", at: { row: 1, col: 0 } });
+  // With Ctrl or ⌘ it jumps to the edge on that side.
+  assert.deepEqual(gridKey(at, 3, 4, mirroredKey({ key: "ArrowLeft", jump: true }), cell), { kind: "select", at: { row: 1, col: 3 } });
+  for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "Tab", "Enter", "a"]) assert.deepEqual(mirroredKey({ key, shift: true }), { key, shift: true });
 });

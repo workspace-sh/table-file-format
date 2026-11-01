@@ -19,6 +19,7 @@ import {
   Text,
   TextField,
   Toggle,
+  useNativeState,
 } from "@expo/ui/swift-ui";
 import { disabled, foregroundStyle, labelsHidden, multilineTextAlignment, onSubmit, pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
 import type { SettingsFormProps, SettingsRow, SettingsSection } from "../controlSlots";
@@ -46,16 +47,21 @@ function Choice({ row, compact }: { row: Extract<SettingsRow, { kind: "choice" }
 }
 
 function Field({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>; compact?: boolean }) {
+  // A new id is a new field (another filter): start from its value.
+  return <FieldOf key={row.id} row={row} compact={compact} />;
+}
+
+function FieldOf({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>; compact?: boolean }) {
+  // Expo UI 56 on: the field's text is native state, seeded once, and edits come as onTextChange.
+  const text = useNativeState(row.value);
   // The text as typed, for Return: SwiftUI's submit says only that it happened.
   let typed = row.value;
   const field = (
     <TextField
-      // A new id is a new field (another filter): start from its value.
-      key={row.id}
-      defaultValue={row.value}
+      text={text}
       autoFocus={row.autoFocus}
       placeholder={row.placeholder ?? row.label}
-      onValueChange={(value: string) => {
+      onTextChange={(value: string) => {
         typed = value;
         row.onChange(value);
       }}

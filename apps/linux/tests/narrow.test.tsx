@@ -40,7 +40,7 @@ async function splitView(): Promise<Adw.OverlaySplitView> {
 
 async function openNarrow(settings: KeyValueStore) {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" settings={settings} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" settings={settings} />);
   const window = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.Window;
   window.setDefaultSize(600, 700);
   window.setSizeRequest(360, 294);

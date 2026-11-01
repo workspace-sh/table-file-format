@@ -7,14 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		E8E089DA1640F14E029C4072 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 133BD66CE5E4C18D42B7B3B3 /* AppIcon.icon */; };
 		3CD378DFFC1D1EBAEE41E2DD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FBFEA35E733EC6BF88B29DD3 /* PrivacyInfo.xcprivacy */; };
 		5142014D2437B4B30078DB4F /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5142014C2437B4B30078DB4F /* AppDelegate.mm */; };
 		514201522437B4B40078DB4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 514201512437B4B40078DB4F /* Assets.xcassets */; };
 		514201552437B4B40078DB4F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 514201532437B4B40078DB4F /* Main.storyboard */; };
 		514201582437B4B40078DB4F /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 514201572437B4B40078DB4F /* main.m */; };
 		76E8CC01AB6E001531ECE453 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FBFEA35E733EC6BF88B29DD3 /* PrivacyInfo.xcprivacy */; };
+		E8E089DA1640F14E029C4072 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 133BD66CE5E4C18D42B7B3B3 /* AppIcon.icon */; };
 		ECA0F5CDA123B56828913CF8 /* libPods-TableDesktop-macOS.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E29CB1A9EDF9DC2477E99F66 /* libPods-TableDesktop-macOS.a */; };
+		F2289181793C5D07642D6685 /* table-file.icns in Resources */ = {isa = PBXBuildFile; fileRef = A9CD13E72110F4EC00256152 /* table-file.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		514201572437B4B40078DB4F /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		514201592437B4B40078DB4F /* TableDesktop.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TableDesktop.entitlements; sourceTree = "<group>"; };
 		63DACFB10ACD9338A4F17450 /* Pods-TableDesktop-macOS.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TableDesktop-macOS.debug.xcconfig"; path = "Target Support Files/Pods-TableDesktop-macOS/Pods-TableDesktop-macOS.debug.xcconfig"; sourceTree = "<group>"; };
+		A9CD13E72110F4EC00256152 /* table-file.icns */ = {isa = PBXFileReference; includeInIndex = 1; path = "table-file.icns"; sourceTree = "<group>"; };
 		E29CB1A9EDF9DC2477E99F66 /* libPods-TableDesktop-macOS.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TableDesktop-macOS.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		FBFEA35E733EC6BF88B29DD3 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -74,6 +76,7 @@
 				514201562437B4B40078DB4F /* Info.plist */,
 				514201572437B4B40078DB4F /* main.m */,
 				514201592437B4B40078DB4F /* TableDesktop.entitlements */,
+				A9CD13E72110F4EC00256152 /* table-file.icns */,
 			);
 			path = "TableDesktop-macOS";
 			sourceTree = "<group>";
@@ -214,6 +217,7 @@
 				E8E089DA1640F14E029C4072 /* AppIcon.icon in Resources */,
 				514201552437B4B40078DB4F /* Main.storyboard in Resources */,
 				76E8CC01AB6E001531ECE453 /* PrivacyInfo.xcprivacy in Resources */,
+				F2289181793C5D07642D6685 /* table-file.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -407,7 +411,7 @@
 				DEAD_CODE_STRIPPING = NO;
 				INFOPLIST_FILE = "TableDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -430,7 +434,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = "TableDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

@@ -6,23 +6,28 @@
     "start": "react-native start --port 8083",
     "macos": "react-native run-macos --port 8083",
     "typecheck": "tsc --noEmit",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package --error-on-fail"
   },
   "dependencies": {
     "@formatjs/intl-locale": "^5.3.12",
     "@formatjs/intl-pluralrules": "^6.3.15",
     "@formatjs/intl-relativetimeformat": "^12.3.15",
+    "@op-engineering/op-sqlite": "18.2.5",
     "@react-native-async-storage/async-storage": "^3.1.1",
+    "@workspace.sh/edn": "file:../../edn/js",
+    "@workspace.sh/glass-bar": "file:../../packages/glass-bar",
     "@workspace.sh/table-app": "file:../../packages/app",
     "@workspace.sh/table-core": "file:../../packages/core",
     "@workspace.sh/table-fixtures": "file:../../packages/table-fixtures",
+    "@workspace.sh/table-mac-controls": "file:../../packages/mac-controls",
     "@workspace.sh/table-ui": "file:../../packages/ui",
+    "fast-text-encoding": "1.0.6",
     "react": "19.1.4",
-    "react-native": "0.81.5",
+    "react-native": "0.81.6",
     "react-native-file-access": "^4.0.4",
     "react-native-gesture-handler": "^2.31.2",
     "react-native-get-random-values": "^2.0.0",
-    "react-native-macos": "^0.81.7",
+    "react-native-macos": "0.81.9",
     "react-strict-dom": "0.0.55"
   },
   "devDependencies": {
@@ -43,5 +48,9 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "op-sqlite": {
+    "iosSqlite": true
+  },
+  "//op-sqlite": "The large-table index's SQLite (#435): op-sqlite over the system's own (iosSqlite; macOS's is built with FTS5), not a copy of its own."
 }

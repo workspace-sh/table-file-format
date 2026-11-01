@@ -1,0 +1,752 @@
+// A device's indexes (SPEC section 8), for the apps that keep large tables
+// as folders of their own: iOS (apps/mobile) and the Mac (apps/desktop). A
+// bundle with a large table is a real .table folder in the app's own
+// space, with `index.sqlite` at its root and the table's rows files under
+// `tables/<name>/rows/`, which stay the truth. Files and SQLite are the
+// platform's, passed in (IndexHostPlatform); everything else is here, once.
+// (The web's worker, apps/web/src/sqlite, and Linux's do the same over
+// their own storage.)
+//
+// A large table never reaches the screen as rows. Its archive is read
+// here: the table's rows are left compressed, inflated a piece at a
+// time into the index and into the file beside it. The screen gets the
+// first rows to show meanwhile, and how far the reading is.
+//
+// The folder is the app's own: nothing else can change its files, so an
+// index is fresh as long as the app says so (its key is "saved"), and what
+// is recorded instead is that each rows file is whole, and its size
+// (`_keptfiles`): one cut short, by the app being ended while it was
+// written, isn't taken for the table. A table's rows files are the ones it
+// came with (D51), each row saved back to its own, as on Linux
+// (rowFilesIndexed.ts). Were these folders shown to other apps (the Files app),
+// freshness would need the files' own content, or their size and date.
+
+import {
+  archiveStamp,
+  rowPlaces,
+  BUNDLE_EXTENSION,
+  BundleEntry,
+  CELLS_DIR,
+  FIRST_ROWS_FILE,
+  LEGACY_ROWS_FILE,
+  ROWS_DIR,
+  alterIndex,
+  buildSearchIndex,
+  fillIndex,
+  queryIndex,
+  indexKey,
+  rowsBeingBuilt,
+  setIndexKey,
+  isRowsFileName,
+  rowsFileOrder,
+  storedCellsText,
+  storedRowLines,
+  utf8Length,
+  type CellFormula,
+  type LazyZipEntry,
+  type Row,
+  type SqlDriver,
+  type TableSchema,
+} from "@workspace.sh/table-core";
+import { joinPath, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, readHeldRows, type HeldRows } from "./indexed.ts";
+import { rowsServer, type RowsRequest } from "./remoteRows.ts";
+import { rowFilePlacer, rowFileStarts, setRowFileStarts, type RowFileStart } from "./rowFilesIndexed.ts";
+import { openArchive, type OpenedBundle } from "./tableFiles.ts";
+
+/** A database the host can close. */
+export interface ClosableDriver extends SqlDriver {
+  close(): Promise<void>;
+}
+
+/** A file being written, from empty, a piece at a time. */
+export interface FileWriter {
+  write(bytes: Uint8Array): unknown;
+  close(): unknown;
+}
+
+/** What a platform gives the host: its files and its SQLite. Paths are as `fs` speaks them. */
+export interface IndexHostPlatform {
+  /** Core's TableFs: the bundles' folders are written and removed through it, and a staged file moved over its target. */
+  fs: TableFs;
+  /** The folder the app keeps its bundles' folders in. */
+  home(): string;
+  /** A file's size in bytes, or null when there's no such file. */
+  size(path: string): Promise<number | null>;
+  /** A file emptied (made if missing) and opened for writing to its end. Its folder exists. */
+  writer(path: string): Promise<FileWriter>;
+  /** A file's first `size` bytes, `step` at a time. */
+  pieces(path: string, size: number, step: number): Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
+  /**
+   * The bundle's index database in its folder `dir`, opened (made if
+   * missing) on a new connection: `main` is the one the screen is answered
+   * on, `reader` one a save reads on, in a read transaction of its own.
+   */
+  openDatabase(dir: string, role: "main" | "reader"): Promise<ClosableDriver>;
+  /** Rows per statement in a build, where a platform wants smaller ones (core's default otherwise). */
+  batchSize?: number;
+}
+
+/** A bundle's index: what the screen asks of it. (The web's WebDatabase, without the statements themselves.) */
+export interface IndexDatabase {
+  /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
+  ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /** Make it again from the rows kept here: after a change to its fields it can't `alter`. */
+  build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
+  /**
+   * Write a table's rows out to its file and say the index is as the file
+   * is. False when an edit landed meanwhile: nothing is said, and the next
+   * save writes it. `whole`: the save a build is about to read, which runs
+   * to its end whatever happens (the screen holds edits for it).
+   */
+  save(name: string, schema: TableSchema, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
+  /** Rows of a table still being read, in file order, from those in so far. */
+  peek(name: string, start: number, end: number): Promise<Row[]>;
+  /** A view's rows, or edits to rows (table-app's remoteViewRows, remoteEdits). */
+  rows(request: RowsRequest): Promise<unknown>;
+  /** Make what's left of its search index, a step at a time behind whatever else is asked. */
+  search(name: string): Promise<void>;
+  /**
+   * After a change to a table's fields from `from` to `to`: change its index
+   * where it is (core's alterIndex), answering for `to` at once. False when
+   * it can't, and it's to be built again.
+   */
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
+  /**
+   * Work out what a change of fields left to work out (core's fillIndex), a
+   * step at a time behind whatever else is asked. Resolves when it's done;
+   * safe to ask when there's nothing to do.
+   */
+  fill(name: string, schema: TableSchema): Promise<void>;
+  /**
+   * Every row of a table just read from an archive and not yet in the
+   * index, inflated into memory: for holding the table there when no index
+   * can be made of it. Null when its archive is no longer held (after a
+   * relaunch); throws when the archive is damaged.
+   */
+  heldRows(name: string): HeldRows | null;
+  close(): Promise<void>;
+}
+
+/** What reading an archive here gives the screen. */
+export interface OpenedLarge {
+  opened: OpenedBundle;
+  /** Each large table's first rows, to show while the rest are read. */
+  first: Record<string, Row[]>;
+}
+
+/** The host: reading archives into indexes, and each bundle's index. */
+export interface IndexHost {
+  /** Where a bundle's folder is. */
+  bundleDir(bundle: string): string;
+  /**
+   * Read a single-file `.table`. Its large tables stay here, still compressed, on
+   * their way into the index: they come back with no rows and `indexed` set,
+   * with their first rows beside them. A bundle with such a table is written
+   * as a folder in the app's own space, whole but for those tables' rows,
+   * which `ensure` writes as it reads them.
+   */
+  openZip(bytes: Uint8Array, taken: Iterable<string>, from?: number): Promise<OpenedLarge>;
+  /** A bundle's index here, opened (or made) in its folder. */
+  openIndexDatabase(bundle: string): IndexDatabase;
+  /** Forget one bundle kept as a folder here, as closing it does: its index is closed and its folder removed. Nothing when there's none. */
+  removeFolder(bundle: string): Promise<void>;
+  /** Forget every bundle kept as a folder here: their indexes are closed and their folders removed. */
+  removeAllFolders(): Promise<void>;
+}
+
+/** Rows a step of the search index takes: small enough that what the screen asks between steps isn't kept waiting. */
+const SEARCH_STEP = 5000;
+/** How long the screen must have asked for nothing before a step of the search index is taken. */
+const QUIET_MS = 250;
+/** Rows shown from the head of a table while it is read. */
+const FIRST_ROWS = 200;
+/** How much of a large table's start is inflated for its first rows, and to judge how many rows it has. */
+const HEAD_BYTES = 256 * 1024;
+/** How much of a rows file is read at a time when an index is made again from it. */
+const READ_STEP = 1 << 20;
+/**
+ * Rows per transaction in a build. One transaction for the whole build
+ * leaves all of it in the write-ahead log until the end: at a million rows
+ * the log was 445 MB beside a 444 MB index, and stayed that size. Committed
+ * in steps, the log is folded into the index as the build goes. The step's
+ * size doesn't change how long a build takes or how long the screen waits
+ * during one (measured on an iPhone 16 Pro, Release, 100,000 rows: 11.3 s
+ * at 20,000 against 11.4 s for one transaction; see docs/LARGE-TABLES.md).
+ */
+const COMMIT_EVERY = 20_000;
+/** The most of its write-ahead log an index keeps on disk once the log has been folded in, in bytes. */
+const WAL_KEPT = 16 * 1024 * 1024;
+
+/** One bundle's database, open. */
+interface Held {
+  driver: ClosableDriver;
+  serve: (request: RowsRequest) => Promise<unknown>;
+}
+
+export function createIndexHost(platform: IndexHostPlatform): IndexHost {
+  const { fs } = platform;
+  const BATCH = platform.batchSize !== undefined ? { batchSize: platform.batchSize } : {};
+  const bundleDir = (bundle: string): string => joinPath(platform.home(), `${bundle}${BUNDLE_EXTENSION}`);
+  const tableDir = (bundle: string, table: string): string => joinPath(bundleDir(bundle), BundleEntry.tables, table);
+  const rowsDir = (bundle: string, table: string): string => joinPath(tableDir(bundle, table), ROWS_DIR);
+  // A table's first rows file: where one kept before D51, as rows.ndjson, is moved to.
+  const rowsPath = (bundle: string, table: string): string => joinPath(rowsDir(bundle, table), FIRST_ROWS_FILE);
+
+  const held = new Map<string, Promise<Held>>();
+  // When the screen last asked for something: the search index's steps wait for a quiet moment.
+  let lastAsked = 0;
+  // Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
+  const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[]; stamp: string | null }>();
+
+  function open(bundle: string): Promise<Held> {
+    let on = held.get(bundle);
+    if (!on) {
+      on = (async (): Promise<Held> => {
+        const dir = bundleDir(bundle);
+        await fs.mkdir(dir);
+        const driver = await platform.openDatabase(dir, "main");
+        // The page size is set before the first table; the rows file is the truth, so the index needn't outlive a crash whole.
+        await driver.exec(`pragma page_size = 32768; pragma journal_mode = wal; pragma synchronous = normal; pragma journal_size_limit = ${WAL_KEPT};`);
+        return { driver, serve: rowsServer(driver) };
+      })();
+      held.set(bundle, on);
+    }
+    return on;
+  }
+
+  // Requests run one at a time, in the order they came: the indexer's begin/commit pairs depend on it.
+  let queue: Promise<unknown> = Promise.resolve();
+  /** Take a turn in the queue. */
+  const inTurn = <T>(run: () => Promise<T>): Promise<T> => {
+    const turn = queue.then(run);
+    queue = turn.catch(() => {});
+    return turn;
+  };
+
+  // Bundles with a build under way, and when each is done. A build doesn't hold
+  // the queue: each of its statements takes a turn, so the screen's reads are
+  // answered between them, and see the rows it has put in so far (they are on
+  // its connection). Anything that would write to that bundle waits for it:
+  // a build is one transaction, and would take the write with it if it failed.
+  const building = new Map<string, Promise<unknown>>();
+  const afterBuild = <T>(bundle: string, run: () => Promise<T>): Promise<T> => (building.get(bundle) ?? Promise.resolve()).then(run);
+
+  // -- The rows files, beside the index ---------------------------------------
+
+  const KEPT = "create table if not exists _keptfiles(tbl text not null, name text not null, bytes integer not null, primary key(tbl, name))";
+  const rowsFile = (bundle: string, table: string, file: string): string => joinPath(rowsDir(bundle, table), file);
+
+  // The places of rows edited since the rows files were last written, each with the edit's number:
+  // a save writes again only the files holding them, and clears the marks it took in.
+  const DIRTY = "create table if not exists _dirtyrows(seq integer primary key autoincrement, tbl text not null, pos integer not null)";
+
+  /** A table made again from its files: no edit is waiting to be written to them. */
+  async function forgetEdits(db: SqlDriver, table: string): Promise<void> {
+    await db.exec(DIRTY);
+    await db.run("delete from _dirtyrows where tbl = ?", [table]);
+  }
+
+  /** Say a table's rows files are whole, each at its size: one cut short isn't taken for the table. */
+  async function kept(db: SqlDriver, table: string, files: { name: string; bytes: number }[]): Promise<void> {
+    await db.exec(KEPT);
+    await db.run("delete from _keptfiles where tbl = ?", [table]);
+    for (const f of files) await db.run("insert into _keptfiles(tbl, name, bytes) values(?, ?, ?)", [table, f.name, f.bytes]);
+  }
+
+  // Which archive a table's index was made from, while nothing has been saved over it since.
+  const FROM = "create table if not exists _fromarchive(tbl text primary key, stamp text not null)";
+  async function madeFrom(db: SqlDriver, table: string): Promise<string | null> {
+    await db.exec(FROM);
+    return ((await db.all("select stamp from _fromarchive where tbl = ?", [table]))[0]?.stamp as string | undefined) ?? null;
+  }
+  async function setMadeFrom(db: SqlDriver, table: string, stamp: string | null): Promise<void> {
+    await db.exec(FROM);
+    await db.run("delete from _fromarchive where tbl = ?", [table]);
+    if (stamp !== null) await db.run("insert into _fromarchive(tbl, stamp) values(?, ?)", [table, stamp]);
+  }
+
+  /** A table's rows files in pieces, in file order, when each is whole; null when one is missing or was cut short. */
+  async function keptRows(
+    db: SqlDriver,
+    bundle: string,
+    table: string,
+  ): Promise<{ files: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[]; size: number } | null> {
+    // Kept before D51 as the table's rows.ndjson: moved into rows/.
+    const legacy = joinPath(tableDir(bundle, table), LEGACY_ROWS_FILE);
+    if ((await platform.size(rowsPath(bundle, table))) === null && (await platform.size(legacy)) !== null) {
+      await fs.mkdir(rowsDir(bundle, table));
+      await fs.rename(legacy, rowsPath(bundle, table));
+    }
+    await db.exec(KEPT);
+    let files = (await db.all("select name, bytes from _keptfiles where tbl = ?", [table])).map((r) => ({ name: r.name as string, bytes: Number(r.bytes) }));
+    if (files.length === 0) {
+      // Kept before D51: one file, its size in _kept.
+      await db.exec("create table if not exists _kept(name text primary key, bytes integer not null)");
+      const whole = (await db.all("select bytes from _kept where name = ?", [table]))[0]?.bytes;
+      if (whole === undefined) return null;
+      files = [{ name: FIRST_ROWS_FILE, bytes: Number(whole) }];
+    }
+    const order = rowsFileOrder(files.map((f) => f.name));
+    const out: { name: string; chunks: Iterable<Uint8Array> | AsyncIterable<Uint8Array> }[] = [];
+    let size = 0;
+    for (const name of order) {
+      const path = rowsFile(bundle, table, name);
+      const have = await platform.size(path);
+      if (have === null || have !== files.find((f) => f.name === name)!.bytes) return null;
+      out.push({ name, chunks: platform.pieces(path, have, READ_STEP) });
+      size += have;
+    }
+    return { files: out, size };
+  }
+
+  // -- What the screen asks ---------------------------------------------------
+
+  async function openZip(bytes: Uint8Array, taken: Iterable<string>, from: number = INDEXED_FROM): Promise<OpenedLarge> {
+    const first: Record<string, Row[]> = {};
+    const counts: Record<string, number> = {};
+    const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[]; stamp: string | null }>();
+    // The archive, as a stamp: an index made from this same file is taken as it is (ensure).
+    const stamp = archiveStamp(bytes);
+    const opened = await openArchive(bytes, taken, {
+      // A large table's rows are left compressed: only their start is read here, so the
+      // screen has rows to show at once, however large the table. The rest is read by `ensure`.
+      rowsLazily: (name, table, rows) => {
+        if (!canBeIndexed(table)) return false;
+        const head = rows.head(HEAD_BYTES);
+        // How many rows it holds isn't known until it's all read: judged from how many its start holds.
+        // (To two figures, when judged: it is shown until the reading is done.)
+        const judged = Math.round((linesInBytes(head) / head.length) * rows.size);
+        const figures = 10 ** Math.max(0, String(judged).length - 2);
+        const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
+        if (count < from) return false;
+        large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}), stamp });
+        first[name] = firstRowsInBytes(head, FIRST_ROWS);
+        counts[name] = count;
+        return true;
+      },
+    });
+    for (const [name, count] of Object.entries(counts)) opened.bundle.tables[name]!.indexed = { count, version: 0 };
+    const anyLarge = large.size > 0;
+    // The same file opened again: a table whose index was made from it is taken as it is, said
+    // before anything is shown, so the screen never says it's being read.
+    if (anyLarge && stamp !== null) {
+      const { driver } = await open(opened.key);
+      for (const name of [...large.keys()]) {
+        const schema = opened.bundle.tables[name]!.schema;
+        const count = await inTurn(async () => {
+          if ((await madeFrom(driver, name)) !== stamp || (await indexKey(driver, name)) !== "saved") return null;
+          const before = await queryIndex(driver, { name, schema });
+          return before && (await keptRows(driver, opened.key, name)) !== null ? before.count : null;
+        });
+        if (count === null) continue;
+        opened.bundle.tables[name]!.indexed = { count, version: 0, kept: true };
+        large.delete(name);
+      }
+    }
+    if (anyLarge) {
+      // The folder, whole but for the large tables' rows (the writer leaves an indexed table's rows file alone).
+      await writeBundleTo(fs, bundleDir(opened.key), opened.bundle);
+      for (const [name, table] of large) waiting.set(`${opened.key}/${name}`, table);
+      // Not waited for: whatever is asked of this bundle next is answered after it.
+      void open(opened.key);
+    }
+    return { opened, first };
+  }
+
+  /** Make a table's index: from an archive just read, kept from before, or again from its rows kept here. */
+  async function ensure(
+    bundle: string,
+    db: SqlDriver,
+    name: string,
+    schema: TableSchema,
+    again: boolean,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<number> {
+    const fresh = again ? undefined : waiting.get(`${bundle}/${name}`);
+    // The same file opened again: its index, made from it and not saved over since, is taken as it is.
+    if (fresh && fresh.stamp !== null && (await madeFrom(db, name)) === fresh.stamp && (await indexKey(db, name)) === "saved") {
+      const before = await queryIndex(db, { name, schema });
+      if (before && (await keptRows(db, bundle, name)) !== null) {
+        waiting.delete(`${bundle}/${name}`);
+        return before.count;
+      }
+    }
+    if (fresh) {
+      // Read a piece at a time: into the index, and each rows file into its own file kept beside it.
+      await fs.mkdir(rowsDir(bundle, name));
+      const parts = fresh.rows.parts ?? [{ name: FIRST_ROWS_FILE, entry: fresh.rows }];
+      const starts: RowFileStart[] = [];
+      const sizes = new Map<string, number>();
+      let out: FileWriter | null = null;
+      try {
+        const count = await buildIndexFromBytes(db, {
+          name,
+          schema,
+          rows: {
+            files: parts.map((p) => ({ name: p.name, chunks: p.entry.chunks() })),
+            size: fresh.rows.size,
+            onFile: async (file, first) => {
+              await out?.close();
+              out = await platform.writer(rowsFile(bundle, name, file));
+              starts.push({ name: file, first });
+              sizes.set(file, 0);
+            },
+            keep: (chunk, file) => {
+              sizes.set(file, sizes.get(file)! + chunk.length);
+              return out!.write(chunk);
+            },
+          },
+          bodies: fresh.bodies,
+          ...(fresh.cells ? { cells: fresh.cells } : {}),
+          key: "saved",
+          commitEvery: COMMIT_EVERY,
+          ...BATCH,
+          ...(onProgress ? { onProgress } : {}),
+        });
+        await (out as FileWriter | null)?.close();
+        await setRowFileStarts(db, name, starts);
+        await kept(db, name, [...sizes].map(([file, bytes]) => ({ name: file, bytes })));
+        await setMadeFrom(db, name, fresh.stamp);
+        await forgetEdits(db, name);
+        waiting.delete(`${bundle}/${name}`);
+        return count;
+      } catch (error) {
+        // A damaged archive is found out at its end: nothing of it is kept.
+        try {
+          await (out as FileWriter | null)?.close();
+        } catch {
+          // Closed already.
+        }
+        for (const file of sizes.keys()) await fs.remove(rowsFile(bundle, name, file));
+        throw error;
+      }
+    }
+    if (!again) {
+      // Opened before: the index kept here.
+      const before = await queryIndex(db, { name, schema });
+      if (before) return before.count;
+    }
+    const rows = await keptRows(db, bundle, name);
+    if (!rows) throw new Error("its rows are no longer on this device");
+    const starts: RowFileStart[] = [];
+    const count = await buildIndexFromBytes(db, {
+      name,
+      schema,
+      rows: { ...rows, onFile: (file, first) => void starts.push({ name: file, first }) },
+      key: "saved",
+      commitEvery: COMMIT_EVERY,
+      ...BATCH,
+      ...(onProgress ? { onProgress } : {}),
+    });
+    await setRowFileStarts(db, name, starts);
+    // Its rows placed afresh: marks of where edits were would point at other rows now, and the files are the index.
+    await forgetEdits(db, name);
+    return count;
+  }
+
+  function build(bundle: string, name: string, schema: TableSchema, again: boolean, onProgress?: (done: number, total: number) => void): Promise<number> {
+    const done = afterBuild(bundle, () => open(bundle)).then(({ driver }) => {
+      // The database, asked a statement at a time, each in its turn.
+      const stepped: SqlDriver = {
+        exec: (sql) => inTurn(() => driver.exec(sql)),
+        run: (sql, params) => inTurn(() => driver.run(sql, params)),
+        all: (sql, params) => inTurn(() => driver.all(sql, params)),
+        ...(driver.batch ? { batch: (sql: string, params: Parameters<NonNullable<SqlDriver["batch"]>>[1]) => inTurn(() => driver.batch!(sql, params)) } : {}),
+      };
+      return ensure(bundle, stepped, name, schema, again, onProgress).then(async (count) => {
+        // What a build left in the log goes into the index, and the log is emptied.
+        await stepped.exec("pragma wal_checkpoint(truncate)").catch(() => {});
+        return count;
+      });
+    });
+    building.set(
+      bundle,
+      done.then(
+        () => {},
+        () => {},
+      ),
+    );
+    return done;
+  }
+
+  /**
+   * Write a table's rows out of the index to its rows files beside it (D51):
+   * each row to the file it came from, a file past about 25 MB split, and a
+   * file left without rows removed. Each is staged, and moved over its file
+   * only once all are written.
+   */
+  async function writeRows(
+    bundle: string,
+    name: string,
+    schema: TableSchema,
+    omit: string[] | undefined,
+    stop: () => boolean,
+    whole: boolean,
+  ): Promise<{ files: (RowFileStart & { bytes: number })[]; key: string | null; marked: number } | null> {
+    const dir = rowsDir(bundle, name);
+    await fs.mkdir(dir);
+    const staged = (file: string): string => joinPath(dir, `${file}.tmp`);
+    const encoder = new TextEncoder();
+    // Read on a connection of its own, in one read transaction: the rows as
+    // they stood when the save began, however long the writing takes, while
+    // the bundle's own connection goes on answering the screen and taking
+    // edits. (On that one connection a save held every read behind it.)
+    const reader = await platform.openDatabase(bundleDir(bundle), "reader");
+    // The files written, in file order, each with its size.
+    const written: (RowFileStart & { bytes: number })[] = [];
+    let out: FileWriter | null = null;
+    let stopped = false;
+    // The index's key as these rows have it: the files are this index and no later one.
+    let key: string | null = null;
+    // Its cells' own formulas (D52), read in the same transaction as the rows.
+    let cellsText = "";
+    // The last edit mark these files take in (cleared once they're saved).
+    let marked = 0;
+    // The files kept as they are: only those holding an edited row are written again.
+    let keptAsIs: (RowFileStart & { bytes: number })[] = [];
+    try {
+      // The reader's first look is what fixes what it sees, so it takes a turn of
+      // the bundle's own queue: every edit asked before this save has had its
+      // turn by then and is in the files, and none comes between.
+      await inTurn(async () => {
+        await reader.exec("begin");
+        key = await indexKey(reader, name);
+      });
+      const starts = await rowFileStarts(reader, name);
+      await reader.exec(DIRTY);
+      const marks = await reader.all("select pos, seq from _dirtyrows where tbl = ?", [name]);
+      marked = marks.reduce((m, r) => Math.max(m, Number(r.seq)), 0);
+      await reader.exec(KEPT);
+      const sizesKept = new Map((await reader.all("select name, bytes from _keptfiles where tbl = ?", [name])).map((r) => [r.name as string, Number(r.bytes)]));
+      // Which files hold an edited row: each mark is in the last file starting at or before it.
+      const fileOf = (pos: number): number => {
+        let k = 0;
+        while (k + 1 < starts.length && starts[k + 1]!.first <= pos) k++;
+        return k;
+      };
+      const touched = new Set(marks.map((r) => fileOf(Number(r.pos))));
+      // Only the files with edits, when it can be: all of them when a field is left out of every
+      // row, when a build is about to read them, or when nothing says which rows changed.
+      // (None marked, and the index as the files were last written: none of them.)
+      const none = marks.length === 0 && key === "saved";
+      const some =
+        !whole && !(omit && omit.length > 0) && starts.length > 0 && (marks.length > 0 || none) && starts.every((f, k) => touched.has(k) || sizesKept.has(f.name));
+      const ranges = some
+        ? [...touched].sort((a, b) => a - b).map((k) => ({ k, bounds: starts.slice(k, k + 2), from: k === 0 ? undefined : starts[k]!.first, before: starts[k + 1]?.first }))
+        : [{ k: -1, bounds: starts, from: undefined, before: undefined }];
+      if (some) keptAsIs = starts.filter((_, k) => !touched.has(k)).map((f) => ({ ...f, bytes: sizesKept.get(f.name)! }));
+      for (const range of ranges) {
+        const placer = rowFilePlacer(range.bounds);
+        const sizes = new Map<string, number>();
+        // What's been placed in the file being written and not yet written: a piece at a time, not a row at a time.
+        let pending = "";
+        const flush = async () => {
+          if (pending === "" || !out) return;
+          await out.write(encoder.encode(pending));
+          pending = "";
+        };
+        const rows = storedRowLines(reader, {
+          name,
+          schema,
+          ...(omit ? { omit } : {}),
+          ...(range.from !== undefined ? { from: range.from } : {}),
+          ...(range.before !== undefined ? { before: range.before } : {}),
+        });
+        for await (const batch of rows) {
+          // An edit has landed: these files would be out of date as they were finished, and the next save writes them.
+          if (stop()) {
+            stopped = true;
+            break;
+          }
+          for (const { pos, line } of batch) {
+            const bytes = utf8Length(line) + 1;
+            const starting = placer.place(pos, bytes);
+            if (starting !== null) {
+              await flush();
+              await out?.close();
+              out = await platform.writer(staged(starting));
+              sizes.set(starting, 0);
+            }
+            const file = placer.files[placer.files.length - 1]!.name;
+            sizes.set(file, sizes.get(file)! + bytes);
+            pending += `${line}\n`;
+          }
+          await flush();
+        }
+        await (out as FileWriter | null)?.close();
+        out = null;
+        if (stopped) break;
+        for (const f of placer.files) written.push({ ...f, bytes: sizes.get(f.name) ?? 0 });
+      }
+      // No rows at all: one empty file, so the folder is kept.
+      if (!stopped && written.length === 0 && keptAsIs.length === 0) {
+        const file = starts[0]?.name ?? FIRST_ROWS_FILE;
+        written.push({ name: file, first: 1, bytes: 0 });
+        out = await platform.writer(staged(file));
+      }
+      if (!stopped) cellsText = await storedCellsText(reader, { name, schema });
+      await reader.exec("commit");
+    } finally {
+      await (out as FileWriter | null)?.close();
+      await reader.close().catch(() => {});
+    }
+    if (stopped) {
+      // The files from the save before stay as they are, whole.
+      for (const f of written) await fs.remove(staged(f.name));
+      for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && entry.name.endsWith(".tmp")) await fs.remove(joinPath(dir, entry.name));
+      return null;
+    }
+    for (const f of written) await fs.rename(staged(f.name), joinPath(dir, f.name));
+    const files = [...keptAsIs, ...written].sort((a, b) => a.first - b.first);
+    // Files left without rows, and a rows.ndjson from before D51.
+    const now = new Set(files.map((f) => f.name));
+    for (const entry of (await fs.list(dir)) ?? []) if (!entry.directory && isRowsFileName(entry.name) && !now.has(entry.name)) await fs.remove(joinPath(dir, entry.name));
+    await fs.remove(joinPath(tableDir(bundle, name), LEGACY_ROWS_FILE));
+    // Cells' own formulas into cells/, beside the rows; none, no cells/ (D52).
+    const cellsDir = joinPath(tableDir(bundle, name), CELLS_DIR);
+    if (cellsText) {
+      await fs.mkdir(cellsDir);
+      await fs.writeText(joinPath(cellsDir, `${FIRST_ROWS_FILE}.tmp`), cellsText);
+      await fs.rename(joinPath(cellsDir, `${FIRST_ROWS_FILE}.tmp`), joinPath(cellsDir, FIRST_ROWS_FILE));
+    }
+    for (const entry of (await fs.list(cellsDir)) ?? []) if (!entry.directory && (!cellsText || entry.name !== FIRST_ROWS_FILE)) await fs.remove(joinPath(cellsDir, entry.name));
+    if (!cellsText && (await fs.list(cellsDir)) !== null) await fs.remove(cellsDir);
+    return { files, key, marked };
+  }
+
+  // A bundle's saves, one after another, and how many are under way.
+  const saving = new Map<string, Promise<unknown>>();
+  let savesUnderWay = 0;
+  // Edits asked of each table (`bundle/table`), counted: a save looks before and after.
+  const edited = new Map<string, number>();
+
+  /**
+   * Work made a step at a time (a search index, a fill), each behind
+   * whatever the screen asked meanwhile. `take` resolves true while there's more.
+   */
+  function inSteps(bundle: string, take: (driver: SqlDriver) => Promise<boolean>): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const step = (): void => {
+        // The screen comes first: a step waits until it has asked for nothing for a moment.
+        // So does a save: its rows are the person's edits on their way to the file.
+        if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(step, QUIET_MS / 2);
+        afterBuild(bundle, () => inTurn(async () => take((await open(bundle)).driver))).then(
+          (more) => (more ? void setTimeout(step, 0) : resolve()),
+          reject,
+        );
+      };
+      step();
+    });
+  }
+
+  function openIndexDatabase(bundle: string): IndexDatabase {
+    const asked = <T>(run: (h: Held) => Promise<T>): Promise<T> => {
+      lastAsked = Date.now();
+      return inTurn(async () => run(await open(bundle)));
+    };
+    return {
+      ensure: (name, schema, onProgress) => build(bundle, name, schema, false, onProgress),
+      build: (name, schema, onProgress) => build(bundle, name, schema, true, onProgress),
+      save: (name, schema, rows, omit, whole) => {
+        const run = async (): Promise<boolean> => {
+          // After a build of its bundle; then the rows are written beside what the screen asks, not ahead of it.
+          await afterBuild(bundle, () => Promise.resolve());
+          const table = `${bundle}/${name}`;
+          const had = edited.get(table) ?? 0;
+          const editedSince = () => !whole && (edited.get(table) ?? 0) !== had;
+          // Rows the file doesn't have yet are written whether or not the screen knows of them: the
+          // index says (edits made before the app was ended, whose save was stopped or never began).
+          const write = rows || (await asked(({ driver }) => indexKey(driver, name))) !== "saved";
+          const written = write ? await writeRows(bundle, name, schema, omit, editedSince, !!whole) : null;
+          if (write && written === null) return false;
+          // Said in one turn with the last look, so no edit comes between them.
+          return asked(async ({ driver }) => {
+            if (editedSince()) return false;
+            // The file is the index as the reader saw it, and every edit gives the index a
+            // new key: one that has moved on says the index holds something the file doesn't.
+            // Not asked of the save a build is about to read: the screen holds edits for that
+            // one, and it always ends saved.
+            if (!whole && written !== null && (await indexKey(driver, name)) !== written.key) return false;
+            if (written !== null) {
+              await setRowFileStarts(driver, name, written.files);
+              await kept(driver, name, written.files);
+              // Its rows are this device's now, not the archive's.
+              await setMadeFrom(driver, name, null);
+              // The edits these files took in are in them.
+              await driver.exec(DIRTY);
+              await driver.run("delete from _dirtyrows where tbl = ? and seq <= ?", [name, written.marked]);
+            }
+            await setIndexKey(driver, name, "saved");
+            return true;
+          });
+        };
+        savesUnderWay++;
+        const done = (saving.get(bundle) ?? Promise.resolve()).then(run, run).finally(() => {
+          savesUnderWay--;
+        });
+        saving.set(
+          bundle,
+          done.catch(() => {}),
+        );
+        return done;
+      },
+      peek: (name, start, end) => asked(({ driver }) => rowsBeingBuilt(driver, name, start, end)),
+      // An edit waits for a build of its bundle; a read is answered between the build's statements.
+      rows: (request) => {
+        if (request.ask !== "edits") return asked(({ serve }) => serve(request));
+        // Counted as it's asked, before its turn: a save under way sees it at once.
+        const table = `${bundle}/${request.name}`;
+        edited.set(table, (edited.get(table) ?? 0) + 1);
+        // The rows it changes, where they were and where they are: the files holding them are written again.
+        const ids = [...new Set(request.edits.flatMap((e) => (e.kind === "cell" || e.kind === "add" || e.kind === "remove" || e.kind === "restore" ? [e.rowId] : [])))];
+        return afterBuild(bundle, () =>
+          asked(async ({ driver, serve }) => {
+            const before = await rowPlaces(driver, request.name, ids);
+            const made = await serve(request);
+            const places = new Set([...before, ...(await rowPlaces(driver, request.name, ids))]);
+            if (places.size > 0) {
+              await driver.exec(DIRTY);
+              for (const pos of places) await driver.run("insert into _dirtyrows(tbl, pos) values(?, ?)", [request.name, pos]);
+            }
+            return made;
+          }),
+        );
+      },
+      search: (name) => inSteps(bundle, (driver) => buildSearchIndex(driver, name, SEARCH_STEP)),
+      // One transaction, in one turn, after a build of its bundle.
+      alter: (name, from, to, options = {}) => afterBuild(bundle, () => asked(({ driver }) => alterIndex(driver, name, from, to, options))),
+      fill: (name, schema) => inSteps(bundle, (driver) => fillIndex(driver, name, schema, SEARCH_STEP)),
+      heldRows: (name) => {
+        const entry = waiting.get(`${bundle}/${name}`);
+        if (!entry) return null;
+        const rows = { ...readHeldRows(entry.rows, FIRST_ROWS_FILE), ...(entry.cells ? { cells: entry.cells } : {}) };
+        waiting.delete(`${bundle}/${name}`);
+        return rows;
+      },
+      close: () =>
+        afterBuild(bundle, async () => {
+          await saving.get(bundle);
+          return inTurn(async () => {
+            const on = held.get(bundle);
+            held.delete(bundle);
+            if (on) await (await on).driver.close();
+          });
+        }),
+    };
+  }
+
+  async function removeFolder(bundle: string): Promise<void> {
+    if (held.has(bundle)) await openIndexDatabase(bundle).close();
+    for (const key of [...waiting.keys()]) if (key.startsWith(`${bundle}/`)) waiting.delete(key);
+    await fs.remove(bundleDir(bundle));
+  }
+
+  async function removeAllFolders(): Promise<void> {
+    for (const bundle of [...held.keys()]) await openIndexDatabase(bundle).close();
+    waiting.clear();
+    await fs.remove(platform.home());
+  }
+
+  return { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders };
+}
