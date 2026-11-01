@@ -9,9 +9,26 @@ import { enumValues } from "./types.js";
 import { instantOf } from "./encoding.js";
 import { byCodePoint, type TextOrder } from "./collate.js";
 
-export function applyFilters(rows: Row[], filters: ViewFilter[]): Row[] {
+export function applyFilters(rows: Row[], filters: ViewFilter[], schema?: TableSchema): Row[] {
   if (!filters.length) return rows;
-  return rows.filter((row) => filters.every((f) => matchesFilter(row, f)));
+  // Which filters are on a datetime field: those compare instants, as a sort does.
+  const datetime = new Set(schema?.fields.filter((f) => f.type === "datetime").map((f) => f.name) ?? []);
+  // And which on an `any` field: those compare like with like (D56).
+  const any = new Set(schema?.fields.filter((f) => f.type === "any").map((f) => f.name) ?? []);
+  return rows.filter((row) => filters.every((f) => matchesFilter(row, f, datetime.has(f.field), any.has(f.field))));
+}
+
+/**
+ * `a` against `b` for gt, gte, lt and lte. Two datetimes are compared as
+ * the instants they name (SPEC "Filter operators"), as a sort compares
+ * them: as text, values with different offsets misorder. Anything else, as
+ * JavaScript compares it.
+ */
+function ordered(a: unknown, b: unknown, datetime: boolean): [unknown, unknown] {
+  if (!datetime || typeof a !== "string" || typeof b !== "string") return [a, b];
+  const x = instantOf(a);
+  const y = instantOf(b);
+  return Number.isNaN(x) || Number.isNaN(y) ? [a, b] : [x, y];
 }
 
 /**
@@ -32,8 +49,8 @@ export function applySort(
 
 /** A value as a sort compares it, worked out once per row; null when empty. */
 export type SortKey = {
-  /** Numbers, then text, then true/false (SPEC "Sort behaviour"). */
-  kind: 0 | 1 | 2;
+  /** Numbers, then text, then true/false (SPEC "Sort behaviour"); in an `any` field, then lists and objects (D56). */
+  kind: 0 | 1 | 2 | 3;
   isString: boolean;
   num: number;
   text: string;
@@ -150,19 +167,21 @@ function sortOrder(field: Field | undefined, text: TextOrder | undefined) {
   const enumAt = new Map(declared.map((v, i) => [v, i]));
   const hasEnum = declared.length > 0;
   const isDatetime = field?.type === "datetime";
+  const isAny = field?.type === "any";
   return {
     hasEnum,
     isDatetime,
     key(v: unknown): SortKey {
       if (v === undefined || v === null || v === "") return null;
       const isString = typeof v === "string";
-      const kind = typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : 1;
-      const str = kind === 1 ? String(v) : "";
+      // In an `any` field a list or an object is a kind of its own, last, by its JSON (D56).
+      const kind = typeof v === "number" ? 0 : typeof v === "boolean" ? 2 : isAny && typeof v === "object" ? 3 : 1;
+      const str = kind === 1 ? String(v) : kind === 3 ? JSON.stringify(v) : "";
       const folded = text || kind !== 1 ? "" : str.toLowerCase();
       return {
         kind,
         isString,
-        num: kind === 1 ? 0 : Number(v),
+        num: kind === 1 || kind === 3 ? 0 : Number(v),
         text: str,
         folded,
         wide: WIDE.test(str) || WIDE.test(folded),
@@ -181,6 +200,7 @@ function sortOrder(field: Field | undefined, text: TextOrder | undefined) {
       if (!Number.isNaN(a.instant) && !Number.isNaN(b.instant) && a.instant !== b.instant) return a.instant - b.instant;
       // Different kinds in one field: numbers, then text, then true/false.
       if (a.kind !== b.kind) return a.kind - b.kind;
+      if (a.kind === 3) return codePoints(a.text, a.wide, b.text, b.wide);
       if (a.kind !== 1) return a.num - b.num;
       if (text) return text(a.text, b.text);
       // compareText, with each side's lower case worked out once.
@@ -193,7 +213,7 @@ export function applyGroup(
   rows: Row[],
   field: string,
   schema?: TableSchema,
-): Record<string, Row[]> {
+): Map<string, Row[]> {
   const buckets = new Map<string, Row[]>();
   for (const row of rows) {
     const value = row[field];
@@ -204,25 +224,22 @@ export function applyGroup(
     else buckets.set(key, [row]);
   }
 
+  // A Map, so its order is the one made here: an object would put keys
+  // like "3" first, smallest first, whatever came in (#568).
   const fieldDef = schema?.fields.find((f) => f.name === field);
   const order = enumValues(fieldDef);
-  const result: Record<string, Row[]> = {};
-
-  if (order.length > 0) {
-    for (const e of order) {
-      if (buckets.has(e)) {
-        result[e] = buckets.get(e)!;
-        buckets.delete(e);
-      }
+  const result = new Map<string, Row[]>();
+  for (const e of order) {
+    if (buckets.has(e)) {
+      result.set(e, buckets.get(e)!);
+      buckets.delete(e);
     }
   }
   for (const [k, v] of buckets) {
     if (k === "(empty)") continue;
-    result[k] = v;
+    result.set(k, v);
   }
-  if (buckets.has("(empty)")) {
-    result["(empty)"] = buckets.get("(empty)")!;
-  }
+  if (buckets.has("(empty)")) result.set("(empty)", buckets.get("(empty)")!);
   return result;
 }
 
@@ -252,16 +269,19 @@ export function inOrder<T>(items: T[], order: string[] | undefined, id: (item: T
 
 const isEmpty = (v: unknown) => v === undefined || v === null || v === "";
 
-export function matchesFilter(row: Row, f: ViewFilter): boolean {
+export function matchesFilter(row: Row, f: ViewFilter, datetime = false, likeWithLike = false): boolean {
   const v = row[f.field];
+  // In an `any` field, more or less than asks only values of the same kind: 7 is more than 5, "n/a" is neither (D56).
+  if (likeWithLike && (f.operator === "gt" || f.operator === "gte" || f.operator === "lt" || f.operator === "lte") && typeof v !== typeof f.value) return false;
+  const [x, y] = ordered(v, f.value, datetime) as [number, number];
   switch (f.operator) {
     case "eq": return v === f.value;
     case "neq": return v !== f.value;
     // An empty cell is greater or less than nothing (SPEC "Empty values"), not 0 by coercion.
-    case "gt": return !isEmpty(v) && (v as number) > (f.value as number);
-    case "gte": return !isEmpty(v) && (v as number) >= (f.value as number);
-    case "lt": return !isEmpty(v) && (v as number) < (f.value as number);
-    case "lte": return !isEmpty(v) && (v as number) <= (f.value as number);
+    case "gt": return !isEmpty(v) && x > y;
+    case "gte": return !isEmpty(v) && x >= y;
+    case "lt": return !isEmpty(v) && x < y;
+    case "lte": return !isEmpty(v) && x <= y;
     // On an array (a multi-select, say) these ask about its items (D35).
     case "contains": return Array.isArray(v) ? v.includes(f.value) : typeof v === "string" && v.includes(String(f.value));
     case "not_contains": return Array.isArray(v) ? !v.includes(f.value) : typeof v === "string" && !v.includes(String(f.value));

@@ -5,7 +5,7 @@ import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
 import type { TablesListProps } from "./tablesList.types";
 
-export function TablesList({ tree, active, onChoose, onNewTable }: TablesListProps) {
+export function TablesList({ tree, active, onChoose, onNewTable, onClose }: TablesListProps) {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={styles_sheet} contentContainerStyle={{ paddingBottom: 32 }}>
       {tree.map((file) => (
@@ -32,6 +32,11 @@ export function TablesList({ tree, active, onChoose, onNewTable }: TablesListPro
             >
               <html.span style={styles.rowAction}>+ New Table</html.span>
             </html.button>
+            {file.closable ? (
+              <html.button onClick={() => onClose(file.bundle)} style={[styles.row, styles.rowRule]}>
+                <html.span style={styles.rowDestructive}>Close File</html.span>
+              </html.button>
+            ) : null}
           </html.div>
         </html.div>
       ))}
@@ -107,4 +112,5 @@ const styles = css.create({
   rowTitleOn: { fontWeight: "600" },
   rowCount: { fontSize: 15, color: dim },
   rowAction: { fontSize: 17, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
+  rowDestructive: { fontSize: 17, color: { default: "#ff3b30", "@media (prefers-color-scheme: dark)": "#ff453a" } },
 });

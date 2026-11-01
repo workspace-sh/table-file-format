@@ -6,6 +6,7 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 type Modifier = "command" | "shift" | "option" | "control";
 
 interface TableMenuModule {
+  setUndo(canUndo: boolean, canRedo: boolean, undoTitle: string, redoTitle: string): void;
   setItem(
     id: string,
     menu: string,
@@ -18,8 +19,22 @@ interface TableMenuModule {
   ): void;
   copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
+  postRightClick(x: number, y: number): void;
+  postScroll(x: number, y: number, lines: number): void;
+  postClick(x: number, y: number): void;
   titles(menu: string): Promise<string[]>;
   setWindowWidth(width: number): void;
+  setWindowTitle(title: string, subtitle: string): void;
+  topInset(): Promise<number>;
+  adoptToolbarInsets(): Promise<string[]>;
+  setToolbarLabel(commandId: string, label: string): void;
+  setFilesMode(files: boolean): void;
+  setSearchText(text: string): void;
+  focusSearch(): void;
+  postCommand(commandId: string): void;
+  chooseMenuItem(menu: string, title: string): Promise<string>;
+  postSearch(text: string): void;
+  firstResponder(): Promise<Record<string, unknown>>;
   replyToQuit(quit: boolean): void;
   setUnsaved(unsaved: boolean): void;
   pressAlertButton(title: string): Promise<boolean>;
@@ -44,6 +59,17 @@ export interface MenuItem {
   checked?: boolean;
   /** False greys it out. */
   enabled?: boolean;
+}
+
+/**
+ * Edit › Undo and Redo are the table's when no text is being typed, and
+ * are on or off as it can be undone and redone; in a text field they stay
+ * the text's own. Choosing one comes back as the `undo` or `redo` command.
+ * The titles are what the items say when the table is what they'd act on
+ * ("Undo Edit Title"); for text they say the text's own ("Undo Typing").
+ */
+export function setUndo(canUndo: boolean, canRedo: boolean, undoTitle: string, redoTitle: string): void {
+  TableMenu?.setUndo(canUndo, canRedo, undoTitle, redoTitle);
 }
 
 /** Add the item, or update its title and key. */
@@ -95,12 +121,86 @@ export function postKey(characters: string, keyCode: number, modifiers: Modifier
   TableMenu?.postKey(characters, keyCode, modifiers);
 }
 
+/** Development only: click at a point, measured from the content's top left. */
+export function postClick(x: number, y: number): void {
+  TableMenu?.postClick(x, y);
+}
+
 /** Development: a menu's item titles, with their keys, as the menu bar has them. */
 export function menuTitles(menu: string): Promise<string[]> {
   return TableMenu?.titles(menu) ?? Promise.resolve([]);
 }
 
 /** Development: resize the window to this width in points, as dragging its edge would. */
+/** A toolbar button's label and hint, by its command's id. */
+export function setToolbarLabel(commandId: string, label: string): void {
+  TableMenu?.setToolbarLabel(commandId, label);
+}
+
+/** Which side of the sidebar the toolbar's switch shows. */
+export function setToolbarFilesMode(files: boolean): void {
+  TableMenu?.setFilesMode(files);
+}
+
+/** The toolbar's search field's text, when the app changes it. */
+export function setSearchText(text: string): void {
+  TableMenu?.setSearchText(text);
+}
+
+/** Put the cursor in the toolbar's search field. */
+export function focusSearch(): void {
+  TableMenu?.focusSearch();
+}
+
+/** Call `then` with the search field's text as it's typed. Returns the unsubscribe. */
+export function onSearch(then: (text: string) => void): () => void {
+  const sub = events?.addListener("search", (e: { text: string }) => then(e.text));
+  return () => sub?.remove();
+}
+
+/** Development only: turn the scroll wheel by `lines` over a point in the window, measured from its top left. */
+export function postScroll(x: number, y: number, lines: number): void {
+  TableMenu?.postScroll(x, y, lines);
+}
+export function postRightClick(x: number, y: number): void {
+  TableMenu?.postRightClick(x, y);
+}
+
+/** Development only: what has the keyboard. */
+export function firstResponder(): Promise<Record<string, unknown>> {
+  return TableMenu?.firstResponder() ?? Promise.resolve({});
+}
+
+/** Development only: text typed in the toolbar's search field. */
+export function postSearch(text: string): void {
+  TableMenu?.postSearch(text);
+}
+
+/** Development only: a toolbar button pressed, by its command's id. */
+/** Development only: choose a menu bar item by its title; resolves "chosen", "disabled" or "none". */
+export function chooseMenuItem(menu: string, title: string): Promise<string> {
+  return TableMenu?.chooseMenuItem(menu, title) ?? Promise.resolve("none");
+}
+
+export function postCommand(commandId: string): void {
+  TableMenu?.postCommand(commandId);
+}
+
+/** Let the system inset the view's scroll under the toolbar and soften what scrolls behind it. */
+export function adoptToolbarInsets(): Promise<string[]> {
+  return TableMenu?.adoptToolbarInsets() ?? Promise.resolve([]);
+}
+
+/** How far the toolbar comes down over the content, in points. */
+export function toolbarInset(): Promise<number> {
+  return TableMenu?.topInset() ?? Promise.resolve(0);
+}
+
+/** The window's title, and the line under it: the view on screen and where it lives. */
+export function setWindowTitle(title: string, subtitle: string): void {
+  TableMenu?.setWindowTitle(title, subtitle);
+}
+
 export function setWindowWidth(width: number): void {
   TableMenu?.setWindowWidth(width);
 }

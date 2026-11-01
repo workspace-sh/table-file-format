@@ -12,12 +12,15 @@
  * usual RN layout-event channel. Instead: attach a ref to the html.div,
  * call `measureInWindow` on attach to seed the initial size, then
  * subscribe to `Dimensions` change events to catch window resizes /
- * orientation changes. That covers macOS-desktop window-drag and iOS
- * rotation. Finer-grained resize tracking (sidebar drag, internal
- * layout shifts) is deferred until we need it.
+ * orientation changes, measuring again as the new layout settles. That
+ * covers iOS rotation. A change the system
+ * doesn't announce (a Mac window dragged wider, its sidebar or inspector
+ * opening) comes from the host, which says when its content's own view
+ * was laid out again (`notifyLayoutChanged`, internal/relayout).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Dimensions } from "react-native";
+import { LayoutChannel } from "./relayout";
 
 export interface ContainerMeasurement {
   measureProps: {
@@ -34,18 +37,60 @@ interface MeasurableNode {
   ) => void;
 }
 
-export function useContainerWidth(): ContainerMeasurement {
+/** How long a width held back (`later`) waits for the size to stop changing. */
+const LATER_MS = 250;
+
+/**
+ * `later(from, to)`: whether a new width can wait until the size stops
+ * changing, as when what's measured is laid out by it without being drawn
+ * again (a table whose columns share its width either side). It's taken
+ * once it has been still a moment.
+ */
+export function useContainerWidth(later?: (from: number, to: number) => boolean): ContainerMeasurement {
   const [width, setWidth] = useState(0);
   const nodeRef = useRef<MeasurableNode | null>(null);
+  const listen = useContext(LayoutChannel);
+  const shown = useRef(0);
+  const laterRef = useRef(later);
+  laterRef.current = later;
+  const waiting = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One measurement at a time: asked again while one is under way, it's
+  // measured once more when that one comes back, not once for every ask.
+  const measuring = useRef(false);
+  const again = useRef(false);
 
+  const take = useCallback((w: number) => {
+    if (waiting.current) clearTimeout(waiting.current);
+    waiting.current = null;
+    if (w === shown.current) return;
+    const show = () => {
+      waiting.current = null;
+      shown.current = w;
+      setWidth(w);
+    };
+    if (shown.current > 0 && laterRef.current?.(shown.current, w)) waiting.current = setTimeout(show, LATER_MS);
+    else show();
+  }, []);
+
+  const measureRef = useRef<() => void>(() => {});
   const measure = useCallback(() => {
     const node = nodeRef.current;
     if (!node?.measureInWindow) return;
+    if (measuring.current) {
+      again.current = true;
+      return;
+    }
+    measuring.current = true;
     node.measureInWindow((_x, _y, w) => {
-      if (typeof w !== "number") return;
-      setWidth((prev) => (prev === w ? prev : w));
+      measuring.current = false;
+      if (typeof w === "number") take(w);
+      if (again.current) {
+        again.current = false;
+        measureRef.current();
+      }
     });
-  }, []);
+  }, [take]);
+  measureRef.current = measure;
 
   const ref = useCallback(
     (el: unknown) => {
@@ -58,13 +103,33 @@ export function useContainerWidth(): ContainerMeasurement {
     [measure],
   );
 
-  // Re-measure on window resize / orientation change.
+  // Re-measure on window resize / orientation change. The event comes
+  // before the views have their new sizes, and a rotation's layout settles
+  // over a few frames, so it's measured again as it settles: once only
+  // could read the old width and keep it. A Mac window being resized sends
+  // a change at every step of the drag: each one starts the three again
+  // rather than adding three more, so a drag measures at most once a step
+  // (and settles once it stops), not three times a step for every table on
+  // screen, all queued behind each other.
   useEffect(() => {
+    let settling: ReturnType<typeof setTimeout>[] = [];
+    const stopSettling = () => {
+      for (const timer of settling) clearTimeout(timer);
+      settling = [];
+    };
     const sub = Dimensions.addEventListener("change", () => {
-      setTimeout(measure, 0);
+      stopSettling();
+      settling = [0, 100, 300].map((ms) => setTimeout(measure, ms));
     });
-    return () => sub.remove();
-  }, [measure]);
+    // And when the host says the space it's in was laid out again.
+    const stop = listen(measure);
+    return () => {
+      sub.remove();
+      stop();
+      stopSettling();
+      if (waiting.current) clearTimeout(waiting.current);
+    };
+  }, [measure, listen]);
 
   return { measureProps: { ref }, width };
 }

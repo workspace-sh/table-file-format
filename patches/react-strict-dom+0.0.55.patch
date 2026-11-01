@@ -1,0 +1,91 @@
+diff --git a/node_modules/react-strict-dom/dist/native/index.js b/node_modules/react-strict-dom/dist/native/index.js
+index d90afcb..3ff73c7 100644
+--- a/node_modules/react-strict-dom/dist/native/index.js
++++ b/node_modules/react-strict-dom/dist/native/index.js
+@@ -9,7 +9,7 @@
+ 'use strict';
+ import * as React from 'react';
+ import { useState, useEffect, useRef, useCallback } from 'react';
+-import { Platform, AccessibilityInfo, Animated, Easing, useWindowDimensions, useColorScheme, Text, Pressable, experimental_LayoutConformance, Image, TextInput } from 'react-native';
++import { Platform, AccessibilityInfo, Animated, Easing, Dimensions, useWindowDimensions, useColorScheme, Text, Pressable, experimental_LayoutConformance, Image, TextInput } from 'react-native';
+ import { jsx } from 'react/jsx-runtime';
+ import TextAncestor from 'react-native/Libraries/Text/TextAncestor';
+ import ViewNativeComponent from 'react-native/Libraries/Components/View/ViewNativeComponent';
+@@ -2237,6 +2237,54 @@ function resolveUnitlessLineHeight(style) {
+   }
+   return style;
+ }
++// Workspace patch (react-strict-dom 0.0.55; carry it onto a new version, or
++// drop it once upstream does the same): an element follows the window's size
++// only when its style depends on it, through viewport or font-relative units
++// (vw, vh, vmin, vmax, em, rem), a CSS variable, or a media query other than
++// the colour scheme's. With every element following it, turning a phone or
++// resizing a window rendered every element on screen again whether or not its
++// style changed: about 2 s of JavaScript for a document with tables in it,
++// during which nothing else on the page could settle. An element that doesn't
++// follow the window still reads its size whenever it renders.
++function styleFollowsWindow(style) {
++  if (style == null || typeof style !== 'object') return false;
++  if (Array.isArray(style)) {
++    for (let i = 0; i < style.length; i++) {
++      if (styleFollowsWindow(style[i])) return true;
++    }
++    return false;
++  }
++  for (const propName in style) {
++    const value = style[propName];
++    if (value instanceof CSSLengthUnitValue) {
++      if (value.unit !== 'px') return true;
++      continue;
++    }
++    if (value instanceof CSSUnparsedValue) return true;
++    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
++      for (const variant in value) {
++        if (variant.startsWith('@media') && variant !== mqDark) return true;
++        const inner = value[variant];
++        if (inner instanceof CSSLengthUnitValue && inner.unit !== 'px') return true;
++        if (inner instanceof CSSUnparsedValue) return true;
++      }
++    }
++  }
++  return false;
++}
++function noWindowSubscription() {
++  return () => {};
++}
++function subscribeToWindow(onChange) {
++  const subscription = Dimensions.addEventListener('change', onChange);
++  return () => subscription.remove();
++}
++function windowNow() {
++  return Dimensions.get('window');
++}
++function useWindowDimensionsFor(style) {
++  return React.useSyncExternalStore(styleFollowsWindow(style) ? subscribeToWindow : noWindowSubscription, windowNow);
++}
+ function useStyleProps(flatStyle, options) {
+   const {
+     customProperties,
+@@ -2249,7 +2297,7 @@ function useStyleProps(flatStyle, options) {
+     fontScale,
+     height,
+     width
+-  } = useWindowDimensions();
++  } = useWindowDimensionsFor(flatStyle);
+   const colorScheme = useColorScheme();
+   const {
+     scale: viewportScale
+@@ -3295,6 +3343,13 @@ function createStrictDOMTextInputComponent(tagName, defaultProps) {
+           type: 'keydown'
+         });
+       };
++      // Workspace patch: Return is the key handler's, as Enter is on the web,
++      // where it never takes focus from the input. Blurring on Return as well
++      // ran the field's blur after its Enter, undoing what Enter decided (a
++      // value refused and kept open to fix was dropped by the blur).
++      if (tagName === 'input') {
++        nativeProps.submitBehavior = 'submit';
++      }
+     }
+     nativeProps.onSelectionChange = function (e) {
+       const {

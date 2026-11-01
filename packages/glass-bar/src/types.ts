@@ -11,7 +11,23 @@ export type GlassBarState =
    * A selected cell: its label ("Owner · iOS Pro launch") and value or
    * formula; a line about the field when it has one; `info`, an ⓘ for more.
    */
-  | { kind: "selected"; label: string; value: string; monospaced?: boolean; about?: string; info?: boolean }
+  | {
+      kind: "selected";
+      label: string;
+      value: string;
+      /** Drawn before the value, apart from it: the `=` of a cell's own formula. */
+      prefix?: string;
+      monospaced?: boolean;
+      about?: string;
+      info?: boolean;
+      /**
+       * What the field is, a line or two ("Choice · 4 choices · required"),
+       * with `factsTitle` (its name) over it: the ⓘ shows them in a popover
+       * (#704). Absent, the ⓘ calls `onInfo`.
+       */
+      facts?: string;
+      factsTitle?: string;
+    }
   /** The editor. */
   | GlassBarEditing
   /** Picking a field's choices: no keyboard. `multiple`: each tap turns one on or off. */
@@ -42,8 +58,15 @@ export type GlassBarEditing = {
    */
   expandable?: boolean;
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
-  /** Shown before the field, in the field's own type: a currency's symbol. */
+  /** Shown before the field, in the field's own type: a currency's symbol, or a formula's `=`. */
   prefix?: string;
+  /**
+   * The prefix can be taken away (a cell's own formula's `=`): tapping it, or
+   * Backspace at the very start, calls `onPrefixRemove`. `false` once it has
+   * gone. Either way, set means the field is the bar's own native one, which
+   * reports that Backspace, so the edit keeps its field when the prefix goes.
+   */
+  prefixRemovable?: boolean;
   /** Word suggestions, autocorrection and capitals. Off for anything but prose. Default on. */
   suggestions?: boolean;
   /** Buttons above the capsule: operators, or suggestions. */
@@ -86,28 +109,110 @@ export type GlassBarWorking = {
 /** A stretch of a formula to colour, by UTF-16 offsets. */
 export type GlassBarSpan = { start: number; end: number; kind: "ref" | "fn" | "str" | "num" | "op" };
 
+/**
+ * A file's details, shown in a popover from More (More › Details, #704):
+ * what it is and where, and its last few changes. `more` goes on to deeper
+ * work, such as the whole history, which is a sheet.
+ */
+export type GlassBarDetails = {
+  title: string;
+  subtitle?: string;
+  rows: { label: string; value: string }[];
+  /** A second list under a line: the last few changes, say. */
+  recent?: { label: string; value: string }[];
+  more?: { label: string; onPress: () => void };
+};
+
 /** One action in the More menu. */
-export type GlassBarAction = { label: string; symbol?: string; onPress: () => void };
+export type GlassBarAction = {
+  label: string;
+  symbol?: string;
+  /** Shown, but not to be pressed now: Undo with nothing to undo. */
+  disabled?: boolean;
+  /** A line above it in the menu: where a new group of actions starts. */
+  startsGroup?: boolean;
+  /**
+   * Side by side with the actions next to it that are also `row`, as one
+   * row of icons with short labels (Mail's and Notes' menus): for a few
+   * actions on the same thing, such as a file's Rename, Move and Details.
+   * iOS; elsewhere they're listed as usual.
+   */
+  row?: boolean;
+  onPress: () => void;
+};
+
+/**
+ * A light message above the bar, saying what an edit did that can't be
+ * seen (rows that left the view, #598), with Undo. `lead` is the part that
+ * changes as it counts, drawn to roll from one number to the next; `n`
+ * moves each time it changes.
+ */
+export type GlassBarToast = {
+  lead: string;
+  rest: string;
+  /** All of it, to be read out. */
+  label: string;
+  n: number;
+  onUndo: () => void;
+};
 
 export type GlassBarProps = {
   state: GlassBarState;
+  /** A message above the bar, at rest or with a cell selected (never over an editor's choices). */
+  toast?: GlassBarToast | null;
   /** More's menu. Without it, More calls `onMore`. */
   moreActions?: GlassBarAction[];
+  /** Shown: the file's details, in a popover from More. */
+  details?: GlassBarDetails | null;
+  /** The details' popover was closed (a tap outside it). */
+  onDetailsClose?: () => void;
   ref?: import("react").Ref<GlassBarHandle>;
   onFilter?: () => void;
+  /**
+   * At rest, what the lead button is: its SF Symbol and what VoiceOver reads.
+   * It still calls `onFilter`. Absent: Filter. (A document's bar, say, makes
+   * it Edit.)
+   */
+  restLead?: { symbol: string; label: string };
+  /**
+   * At rest, a notice that shares the lead's glass: one capsule, the lead's
+   * button at its start and the notice after a line, across the room up to
+   * Search and More ("Read-only" over where a document is from, beside its
+   * Edit a Copy). Tapped, the notice calls `onPress`; the lead still calls `onFilter`.
+   */
+  restNotice?: { title: string; detail?: string; onPress?: () => void };
   onMore?: () => void;
-  /** Rest: Search tapped. */
+  /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
+  /**
+   * How Search sits at rest. `field` (the default): a capsule across the bar.
+   * `button`: a circle beside More, minimised as iOS minimises a toolbar's
+   * search, which leaves the bar's middle to the content. Pressing it opens
+   * the field with the keyboard up. Either way, while there's a query the
+   * field stays open, so what was found stays in reach.
+   */
+  searchStyle?: "field" | "button";
+  /** What Search is called, as the placeholder and for VoiceOver ("Search rows"). Default: Search. */
+  searchLabel?: string;
   onQueryChange?: (query: string) => void;
   /** Searching: Close, or Return. The query stays. */
   onSearchEnd?: () => void;
   onClearQuery?: () => void;
+  /**
+   * What the search found, shown at the end of the field ("2 of 7"): a
+   * document's find, where the matches are in the text rather than a list
+   * of rows. With `onSearchStep`, chevrons go to the next and previous one.
+   */
+  searchResult?: string;
+  onSearchStep?: (step: 1 | -1) => void;
   /** Selected: the capsule tapped, to edit. */
   onEdit?: () => void;
   /** Selected: ✕. */
   onDeselect?: () => void;
   /** Selected: the ⓘ, for what the field is. */
   onInfo?: () => void;
+  /** Selected, in the ⓘ's popover: open the field's settings. Absent: the popover has no button. */
+  onInfoSettings?: () => void;
   /** Expanded, under a formula's working: open the field's settings. */
   onFieldSettings?: () => void;
   /** Editing or choosing: ✕. Discards the edit. */
@@ -122,6 +227,8 @@ export type GlassBarProps = {
    */
   onSubmit?: (value: string) => void;
   onChip?: (id: string) => void;
+  /** Editing: the removable prefix tapped, or Backspace at the very start. */
+  onPrefixRemove?: () => void;
   onFix?: () => void;
   onChoose?: (id: string) => void;
   /** The "+" after the choices: add a new one. */

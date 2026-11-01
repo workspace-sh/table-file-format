@@ -13,7 +13,14 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    // The Mac's files and SQLite (./mac-index-host) come from the Mac app
+    // that uses them (optional peers); it isn't an npm workspace, so they're
+    // in its own node_modules.
+    "paths": {
+      "@op-engineering/op-sqlite": ["../../apps/desktop/node_modules/@op-engineering/op-sqlite"],
+      "react-native-file-access": ["../../apps/desktop/node_modules/react-native-file-access"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

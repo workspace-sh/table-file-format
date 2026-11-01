@@ -4,21 +4,26 @@
 // in the stack's search field. What's below is
 // table-ui's views, scrolling under the glass bars.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { Alert, Platform, Pressable, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
 import { Stack, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
-import { isSheet, newId } from "@workspace.sh/table-core";
+import { isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
-import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, tableNameOf, viewCallbacks } from "@workspace.sh/table-app";
+import { asStored, bundleOf, bundleTables, ingestingText, readingText, rowTitleFor, sheetReaders, tableNameOf, undoRedoMenu, viewCallbacks, viewsMenu } from "@workspace.sh/table-app";
+import { useDepartedToast } from "@workspace.sh/table-app/react";
 import { BodyEditor, CellEditorContext, PageGutter, PageScrollContext, PortalHost, ViewSettings, canInsertAt, pageScrollOver } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { GlassBar } from "@workspace.sh/glass-bar";
+import { EmbedTest } from "../EmbedTest";
 import { useTableAppContext } from "../TableAppContext";
 import { renderView } from "../renderView";
 import { MEASURING, openZipFrom, runMeasure, timeEdit } from "../measure";
+import { pathOfUri } from "@workspace.sh/table-files";
+import { holdDocument } from "@workspace.sh/table-files";
 import { AndroidHeaderActions, AndroidTablesButton, type MaterialSymbol } from "../AndroidHeader";
 import { useGlassEditor } from "../useGlassEditor";
 import { AppSettings } from "../AppSettings";
@@ -41,6 +46,10 @@ export default function TableScreen() {
   const router = useRouter();
   // The app's own settings (display, reset), from the More menu.
   const [appSettings, setAppSettings] = useState(false);
+  // The More menu's New Field: each one opens the table's new-field editor.
+  const [newFieldAsk, setNewFieldAsk] = useState(0);
+  // Development only: table embeds over a folder (EmbedTest.tsx), opened by the development hook.
+  const [embedTest, setEmbedTest] = useState<string | null>(null);
   const tables = app?.state.tables;
   const bundles = app?.state.bundles;
   const active = app?.state.active;
@@ -58,7 +67,8 @@ export default function TableScreen() {
     if (search === "") searchBar.current?.clearText();
   }, [search]);
   // The table's scroll position, so the editor can keep its cell in view.
-  const scroller = useRef<ScrollView>(null);
+  // ScrollView's instance (React Native 0.88 types the component, not its instance).
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
   const scrollY = useRef(0);
   // Where this screen is scrolled, for the table's rows: they are drawn
   // only where they're on screen (RowList.native.tsx).
@@ -102,6 +112,8 @@ export default function TableScreen() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoring?.n]);
+  // Rows an edit took out of the view: said above the bar, with Undo (#598).
+  const toast = useDepartedToast(app?.state, app?.dispatch);
   const glass = useGlassEditor({
     onScrollBy: (dy) => scroller.current?.scrollTo({ y: scrollY.current + dy, animated: true }),
     query: search ?? "",
@@ -110,17 +122,30 @@ export default function TableScreen() {
   });
   // Development only: lets a script drive the app through React Native's
   // debugger connection, as the Mac's __tableDesktop does (taps can't be
-  // sent from an agent's session). Not in release builds.
+  // sent from an agent's session). Not in release builds, unless built for
+  // measuring (measure.ts), whose timings need production JavaScript.
   useEffect(() => {
-    if (!__DEV__ || !app) return;
+    if (!(__DEV__ || MEASURING) || !app) return;
     (globalThis as { __tableMobile?: unknown }).__tableMobile = {
+      // Table embeds over the `.table` folders in `folder` (EmbedTest.tsx); null closes it.
+      embedTest: (folder: string | null) => setEmbedTest(folder),
       push: (path: "/tables") => router.push(path),
       back: () => router.back(),
       dispatch: app.dispatch,
       state: () => app.state,
       // Measuring large tables (#126): see measure.ts.
       openZipFrom: (url: string) => openZipFrom(url, app.openBytes),
+      // A .table (a folder or a single file) at this `file://` URL, opened where it is, as Open… does after the picker.
+      openDocumentAt: (uri: string) => app.openHeld(holdDocument(pathOfUri(uri))),
       timeEdit: () => timeEdit(app.state, app.dispatch),
+      // The page's scroll, as a finger or the scroll indicator would move it.
+      scrollTo: (y: number, animated = false) => scroller.current?.scrollTo({ y, animated }),
+      scrolled: () => page.pageScroll.now(),
+      // The screen turned, as turning the phone does: the Simulator can't be turned from a script (iOS only).
+      rotate: (to: "landscape" | "portrait") => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        if (Platform.OS === "ios") (require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files")).requestOrientation(to);
+      },
     };
   });
   // A measuring build (EXPO_PUBLIC_TABLE_MEASURE=1) opens what its local
@@ -133,8 +158,33 @@ export default function TableScreen() {
     measured.current = true;
     void runMeasure(() => appRef.current!.state, app.dispatch, (path) => router.push(path as "/tables"), app.openBytes);
   });
+  // Shaking the phone undoes, as iOS's own apps do: asked first, by what it
+  // would undo. Only iOS has the shake (@workspace.sh/table-files), so it's loaded there.
+  const shake = useRef<{ ask?: () => void }>({});
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { onShakeToUndo } = require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files");
+    return onShakeToUndo(() => shake.current.ask?.());
+  }, []);
+  // The page's sides: the margin, or the safe area where it's wider, as in
+  // landscape, where the Dynamic Island and the corners take the sides. What
+  // runs over the margin to the screen's edge (PageGutter) runs over the
+  // smaller side's, so it never passes the screen's edge.
+  const insets = useSafeAreaInsets();
+  const sideLeft = Math.max(MOBILE_H_PADDING, insets.left);
+  const sideRight = Math.max(MOBILE_H_PADDING, insets.right);
+  const gutter = Math.min(sideLeft, sideRight);
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
+  shake.current.ask = () => {
+    const step = derived.canUndo ? ("undo" as const) : derived.canRedo ? ("redo" as const) : null;
+    if (!step) return;
+    Alert.alert(labelOf(step), undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: step === "undo" ? "Undo" : "Redo", onPress: () => dispatch({ type: step }) },
+    ]);
+  };
   const { table, view, summary } = derived;
   const { view: shownView, rows: visibleRows, sheet } = derived.shown;
   // The rows of a large table still being read, shown until its own view's rows are here.
@@ -144,27 +194,42 @@ export default function TableScreen() {
   const toggleSettings = () => dispatch({ type: "settings", open: !state.settingsOpen });
   // The same actions on both platforms, each with its system's symbol: SF
   // Symbols in iOS's toolbar menus, Material Symbols in Android's.
-  const views: { key: string; label: string; sf?: SFSymbol; material?: MaterialSymbol; on?: boolean; onPress: () => void }[] = [
-    ...table.views.map((v) => ({
-      key: v.id,
-      label: v.name,
-      on: v.id === view.id,
-      onPress: () => dispatch({ type: "showView", key: state.active, viewId: v.id }),
-    })),
-    { key: "new", label: "New View", sf: "plus", material: "add", onPress: () => dispatch({ type: "addView", id: newId() }) },
-  ];
-  const fileActions: { label: string; sf: SFSymbol; material: MaterialSymbol; onPress: () => void }[] = [
+  const views = viewsMenu({
+    views: table.views,
+    view: view.id,
+    showView: (viewId) => dispatch({ type: "showView", key: state.active, viewId }),
+    addView: () => dispatch({ type: "addView", id: newViewId() }),
+  }) as { key: string; label: string; sf?: SFSymbol; material?: MaterialSymbol; on?: boolean; onPress: () => void }[];
+  const canAddFieldHere = view.layout === "table" && !table.indexed;
+  // In the order they read, top to bottom, from what's done most to least:
+  // opening and making files, adding to what's open, stepping back and
+  // forward, then the file as a whole, and Settings last.
+  const fileActions: { label: string; sf: SFSymbol; material?: MaterialSymbol; disabled?: boolean; startsGroup?: boolean; onPress: () => void }[] = [
+    { label: labelOf("open"), sf: "folder", material: "folder_open", onPress: () => void app.open() },
+    { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
+    // New Field is here because on a phone the end of the header, where its "+" is, is usually off screen.
+    ...(canAddFieldHere
+      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
+      : []),
     {
+      startsGroup: !canAddFieldHere,
       label: `New Table in ${state.bundles[bundle]?.title ?? bundle}`,
       sf: "tablecells.badge.ellipsis",
       material: "table",
       onPress: () => dispatch({ type: "create", making: { kind: "table", bundle } }),
     },
-    { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
-    { label: labelOf("open-zip"), sf: "folder", material: "folder_open", onPress: () => void app.openZip() },
-    { label: labelOf("export-zip"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
-    { label: "Files", sf: "folder.badge.gearshape", material: "folder_open", onPress: () => router.push("/files") },
-    { label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
+    // The table on screen, back a step and forward again (APP-STATE, "Undo").
+    ...undoRedoMenu({
+      canUndo: derived.canUndo,
+      canRedo: derived.canRedo,
+      undoName: derived.undoName,
+      redoName: derived.redoName,
+      undo: () => dispatch({ type: "undo" }),
+      redo: () => dispatch({ type: "redo" }),
+    }).map((item, i) => ({ ...item, sf: item.sf as SFSymbol, material: item.material as MaterialSymbol | undefined, startsGroup: i === 0 })),
+    { startsGroup: true, label: "Files", sf: "folder.badge.gearshape", material: "folder_open", onPress: () => router.push("/files") },
+    { label: labelOf("export-file"), sf: "square.and.arrow.up", material: "share", onPress: () => void app.exportZip() },
+    { startsGroup: true, label: "Settings", sf: "gearshape", material: "settings", onPress: () => setAppSettings(true) },
   ];
 
   return (
@@ -173,7 +238,7 @@ export default function TableScreen() {
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
       <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
-      <PageGutter.Provider value={MOBILE_H_PADDING}>
+      <PageGutter.Provider value={gutter}>
       <PortalHost>
         <ScrollView
           ref={scroller}
@@ -182,13 +247,7 @@ export default function TableScreen() {
             page.onScroll(e);
           }}
           scrollEventThrottle={16}
-          onLayout={(e) => {
-            page.onLayout(e);
-            // (The scroll view measures as any view does; its type doesn't say so.)
-            (scroller.current as unknown as { measureInWindow?: (done: (x: number, y: number) => void) => void } | null)?.measureInWindow?.(
-              (_x, y) => page.setWindowTop(y),
-            );
-          }}
+          onLayout={page.onLayout}
           onContentSizeChange={page.onContentSizeChange}
           // Where a scroll comes to rest is where you are, for history.
           onScrollEndDrag={(e) => {
@@ -200,7 +259,7 @@ export default function TableScreen() {
           style={{ flex: 1 }}
           // Room under the last row for the glass control on iOS.
           // and, while an editor is open, room for any cell to scroll clear of it.
-          contentContainerStyle={{ paddingHorizontal: MOBILE_H_PADDING, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
+          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped. On iOS the
           // glass bar's editor leaves that room itself (`reserve`) and scrolls
@@ -264,6 +323,16 @@ export default function TableScreen() {
                 <html.span style={styles.schemaBumpBadge}>{summary.schemaChangedLabel}</html.span>
               </html.button>
             )}
+            {/* Its index couldn't be made: said here, on the table, not as an alert; a tap says why. */}
+            {summary.held && (
+              <html.button
+                aria-label={`${summary.held.label}: why`}
+                onClick={() => Alert.alert(summary.held!.label, summary.held!.hint)}
+                style={styles.validityButton}
+              >
+                <html.span style={styles.schemaBumpBadge}>{summary.held.label}</html.span>
+              </html.button>
+            )}
           </html.div>
           {appSettings && <AppSettings onClose={() => setAppSettings(false)} />}
           {state.settingsOpen && (
@@ -277,6 +346,7 @@ export default function TableScreen() {
               personal={derived.arranged}
               onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
               onReset={() => dispatch({ type: "resetArrangement" })}
+              sheetReaders={sheetReaders(state.tables, state.active, view)}
               onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
               onClose={() => dispatch({ type: "settings", open: false })}
               onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
@@ -311,12 +381,14 @@ export default function TableScreen() {
                       ...callbacks,
                       relatedTables: bundleTables(state.tables, bundle),
                       allRows: table.rows,
+                      cells: table.cells,
                       tableKey: tableNameOf(state.active),
                       sheet,
                       onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
                       onPlace: (p) => dispatch({ type: "place", place: { rowId: p.rowId, field: p.field } }),
                       restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
                       onPlaceMeasure,
+                      newFieldRequest: newFieldAsk,
                       ...(table.indexed
                         ? {
                             source: indexed.source,
@@ -342,6 +414,7 @@ export default function TableScreen() {
             onClose={() => dispatch({ type: "openPage", rowId: null })}
           />
         )}
+        {(__DEV__ || MEASURING) && embedTest ? <EmbedTest folder={embedTest} onClose={() => setEmbedTest(null)} /> : null}
       </PortalHost>
       </PageGutter.Provider>
       </CellEditorContext.Provider>
@@ -400,7 +473,8 @@ export default function TableScreen() {
         <GlassBar
           ref={glass.bar}
           {...glass.props}
-          moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, onPress: a.onPress }))}
+          toast={toast}
+          moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
         />
       )}
     </>

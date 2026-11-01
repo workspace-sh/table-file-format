@@ -5,12 +5,15 @@ import { DisplayControls, useDirection, type DisplaySettings } from "@workspace.
 import type { DisplaySettingKind } from "@workspace.sh/table-ui/shared";
 import { buildLabel, displayChoices, sidebarTree, type ShownFile } from "@workspace.sh/table-app";
 import { filesTree, type FilesTreeDir } from "@workspace.sh/table-app";
+import { Icon } from "./Icon.tsx";
 
 const styles = css.create({
   root: {
     display: "flex",
     flexDirection: "column",
     width: 240,
+    // At least the height of what holds it (the page's, beside the table), so its edge runs the whole height.
+    minHeight: "100%",
     paddingBlock: 16,
     paddingInline: 12,
     borderInlineEndWidth: 1,
@@ -67,7 +70,7 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#f5f5f7",
     },
   },
-  /** An on-disk name beside a title: a folder, or a view's id. */
+  /** An on-disk name beside a title: a table's folder. */
   diskName: {
     fontSize: 11,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -186,13 +189,44 @@ const styles = css.create({
   fileRow: {
     display: "flex",
     flexDirection: "row",
-    alignItems: "baseline",
+    alignItems: "center",
     gap: 6,
     cursor: "pointer",
     borderRadius: 6,
     paddingInline: 8,
     paddingBlock: 6,
     marginTop: 4,
+  },
+  /** Close, at the end of the file's row: quiet until pointed at. */
+  closeFile: {
+    display: "inline-flex",
+    flexShrink: 0,
+    marginInlineStart: "auto",
+    padding: 2,
+    borderWidth: 0,
+    borderRadius: 4,
+    cursor: "pointer",
+    backgroundColor: {
+      default: "transparent",
+      ":hover": {
+        default: "#e8e8ed",
+        "@media (prefers-color-scheme: dark)": "#26262b",
+      },
+    },
+    color: {
+      default: "#8e8e93",
+      ":hover": {
+        default: "#1c1c1e",
+        "@media (prefers-color-scheme: dark)": "#f5f5f7",
+      },
+    },
+  },
+  /** A "New …" or "Open …" action: its icon, then its name. */
+  actionIcon: {
+    display: "inline-flex",
+    flexShrink: 0,
+    width: 12,
+    marginInlineEnd: 6,
   },
   fileTitle: {
     flexShrink: 0,
@@ -216,13 +250,13 @@ const styles = css.create({
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
   },
-  /** A group's fold toggle, as in shadcn/ui's sidebar: › turns down when open. */
+  /** A group's fold toggle, as in shadcn/ui's sidebar: Lucide's chevron turns down when open. */
   groupChevron: {
-    display: "inline-block",
+    display: "inline-flex",
+    flexShrink: 0,
+    alignSelf: "center",
     width: 12,
-    fontSize: 13,
-    lineHeight: "13px",
-    textAlign: "center",
+    height: 12,
     transitionProperty: "transform",
     transitionDuration: "150ms",
     color: {
@@ -233,10 +267,9 @@ const styles = css.create({
   groupChevronOpen: {
     transform: "rotate(90deg)",
   },
-  // In a right-to-left layout the › glyph is mirrored (‹) before it's
-  // turned, so open turns it the other way to point down too.
-  groupChevronOpenRtl: {
-    transform: "rotate(-90deg)",
+  // In a right-to-left layout a closed group's chevron points left, the way the text reads.
+  groupChevronRtl: {
+    transform: "scaleX(-1)",
   },
   tableChevron: {
     marginInlineEnd: 6,
@@ -252,9 +285,13 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
-  /** "+ New table", level with the tables' names, past their arrows. */
+  /** "New table": its + where the tables' chevrons are, its name level with theirs. */
   tableAction: {
-    paddingInlineStart: 44,
+    paddingInlineStart: 26,
+  },
+  /** "New view": its name level with the views'. */
+  viewAction: {
+    paddingInlineStart: 40,
   },
   firstAction: {
     marginTop: 6,
@@ -266,6 +303,7 @@ const styles = css.create({
     },
   },
   newTable: {
+    gap: 0,
     borderWidth: 0,
     backgroundColor: "transparent",
     fontSize: 13,
@@ -367,9 +405,11 @@ interface SidebarProps {
   onNewTable: (bundle: string) => void;
   /** Make a new .table file holding one table, and switch to it. */
   onNewFile: () => void;
+  /** Close a .table file (asks first). */
+  onCloseFile: (bundle: string) => void;
   /** Add a view to this table and open its settings. */
   onNewView: () => void;
-  /** Open a `.table.zip` as one more table. */
+  /** Open a single-file `.table` as one more table. */
   onOpenFile: () => void;
   /** This viewer's locale and default date format. */
   display: DisplaySettings;
@@ -379,9 +419,21 @@ interface SidebarProps {
   onFilesMode: (files: boolean) => void;
   /** A table's attachment file names, by its `bundle/table` key. */
   attachmentsOf: (tableKey: string) => string[];
+  /** The tables with a history, by `bundle/table` key: the Files side lists their history.ndjson. */
+  withHistory: readonly string[];
   /** The file shown in place of a view, if any. */
   shownFile: ShownFile | null;
   onShowFile: (file: ShownFile) => void;
+}
+
+/** A fold toggle: Lucide's chevron, down when open, toward the text's end when closed. */
+function Chevron({ open, table = false }: { open: boolean; table?: boolean }) {
+  const rtl = useDirection() === "rtl";
+  return (
+    <html.span style={[styles.groupChevron, table && styles.tableChevron, open ? styles.groupChevronOpen : rtl && styles.groupChevronRtl]}>
+      <Icon name="chevron" size={12} />
+    </html.span>
+  );
 }
 
 /** A file of a `.table`, by its bundle and its path inside `<bundle>.table/`. */
@@ -400,6 +452,7 @@ export function Sidebar({
   onToggleDisplay,
   onNewTable,
   onNewFile,
+  onCloseFile,
   onNewView,
   onOpenFile,
   display,
@@ -407,11 +460,11 @@ export function Sidebar({
   filesMode,
   onFilesMode,
   attachmentsOf,
+  withHistory,
   shownFile,
   onShowFile,
 }: SidebarProps) {
   const browserLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
-  const rtl = useDirection() === "rtl";
   return (
     <html.div style={styles.root}>
       <html.div style={styles.headingRow}>
@@ -442,6 +495,7 @@ export function Sidebar({
           onToggleFile={onToggleFile}
           activeTablePath={activeTablePath}
           attachmentsOf={attachmentsOf}
+          withHistory={withHistory}
           shownFile={shownFile}
           onShowFile={onShowFile}
         />
@@ -455,7 +509,7 @@ export function Sidebar({
           folded: foldedFiles,
           expanded: [activeTablePath],
           active: { key: activeTablePath, viewId: activeViewId },
-        }).map(({ bundle, title: bundleTitle, file, folded, tables: rows, offersNewTable }) => {
+        }).map(({ bundle, title: bundleTitle, file, folded, tables: rows, offersNewTable, closable }) => {
           return (
             <html.div key={bundle} style={styles.list}>
               {/* A file folds its tables away, as a shadcn/ui group does. */}
@@ -465,9 +519,22 @@ export function Sidebar({
                 onClick={() => onToggleFile(bundle)}
                 style={styles.fileRow}
               >
-                <html.span style={[styles.groupChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+                <Chevron open={!folded} />
                 <html.span dir="auto" style={styles.fileTitle}>{bundleTitle}</html.span>
                 <html.span dir="ltr" style={[styles.itemKey, styles.bundleFile]}>{file}</html.span>
+                {closable && (
+                  <html.button
+                    aria-label={`Close ${file}`}
+                    style={styles.closeFile}
+                    onClick={(e) => {
+                      // Close, not fold: the row around it folds.
+                      e.stopPropagation();
+                      onCloseFile(bundle);
+                    }}
+                  >
+                    <Icon name="close" size={14} />
+                  </html.button>
+                )}
               </html.div>
               {rows.map(({ key: path, title, folder, rowCount, expanded: open, views }) => {
                 return (
@@ -478,7 +545,7 @@ export function Sidebar({
                       style={[styles.item, styles.tableItem]}
                       onClick={() => onSelectTable(path)}
                     >
-                      <html.span style={[styles.groupChevron, styles.tableChevron, open && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+                      <Chevron open={open} table />
                       <html.span style={[styles.itemName, styles.titleAndName, open && styles.itemNameOpen]}>
                         <html.span dir="auto" style={styles.titleText}>{title}</html.span>
                         {/* Its folder under tables/, as the address bar names it. */}
@@ -496,16 +563,16 @@ export function Sidebar({
                             style={[styles.item, styles.viewItem, active && styles.itemActive]}
                             onClick={() => onSelect(id)}
                           >
-                            <html.span style={[styles.itemName, styles.titleAndName]}>
-                              <html.span dir="auto" style={styles.titleText}>{name}</html.span>
-                              {/* Its id in views.json, as the address bar names it. */}
-                              <html.span dir="ltr" style={styles.diskName}>{id}</html.span>
+                            {/* Its name only: a view's id is opaque (D23), for links, not for reading. */}
+                            <html.span dir="auto" style={[styles.itemName, styles.titleText]}>
+                              {name}
                             </html.span>
                             <html.span style={styles.itemLayout}>{layout}</html.span>
                           </html.div>
                         ))}
-                        <html.button style={[styles.item, styles.viewItem, styles.newTable]} onClick={onNewView}>
-                          + New view
+                        <html.button style={[styles.item, styles.viewAction, styles.newTable]} onClick={onNewView}>
+                          <html.span style={styles.actionIcon}><Icon name="plus" size={12} /></html.span>
+                          New view
                         </html.button>
                       </html.div>
                     )}
@@ -514,17 +581,20 @@ export function Sidebar({
               })}
               {offersNewTable && (
                 <html.button style={[styles.item, styles.newTable, styles.tableAction]} onClick={() => onNewTable(bundle)}>
-                  + New table
+                  <html.span style={styles.actionIcon}><Icon name="plus" size={12} /></html.span>
+                  New table
                 </html.button>
               )}
             </html.div>
           );
         })}
         <html.button style={[styles.item, styles.newTable, styles.firstAction]} onClick={onNewFile}>
-          + New .table file
+          <html.span style={styles.actionIcon}><Icon name="plus" size={12} /></html.span>
+          New .table file
         </html.button>
         <html.button style={[styles.item, styles.newTable]} onClick={onOpenFile}>
-          Open .table.zip…
+          <html.span style={styles.actionIcon}><Icon name="open" size={12} /></html.span>
+          Open .table or CSV…
         </html.button>
       </html.div>
       )}
@@ -535,13 +605,13 @@ export function Sidebar({
         onClick={onToggleDisplay}
         style={[styles.bundleHeader, styles.displayLabel]}
       >
-        <html.span style={[styles.groupChevron, !foldedDisplay && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+        <Chevron open={!foldedDisplay} />
         <html.span style={styles.bundleTitle}>Display</html.span>
       </html.div>
       {!foldedDisplay && (
         <>
       <DisplayControls
-        rows={displayChoices(display, browserLocale)}
+        rows={displayChoices(display, browserLocale, "Browser", activeTablePath || undefined)}
         onChoose={onDisplayChoose}
       />
         </>
@@ -574,6 +644,7 @@ function FilesTree({
   onToggleFile,
   activeTablePath,
   attachmentsOf,
+  withHistory,
   shownFile,
   onShowFile,
 }: {
@@ -583,16 +654,23 @@ function FilesTree({
   onToggleFile: (bundle: string) => void;
   activeTablePath: string;
   attachmentsOf: (tableKey: string) => string[];
+  /** The tables with a history, by `bundle/table` key: the Files side lists their history.ndjson. */
+  withHistory: readonly string[];
   shownFile: ShownFile | null;
   onShowFile: (file: ShownFile) => void;
 }) {
-  const rtl = useDirection() === "rtl";
   // Folders the viewer opened or closed; the rest follow filesTree's
   // defaults, which open on what you're looking at.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const historied = withHistory.join("\n");
   const trees = useMemo(
-    () => filesTree(tables, bundles, { folded: foldedFiles, activeTable: activeTablePath, opened, attachmentsOf }),
-    [tables, bundles, foldedFiles, activeTablePath, opened, attachmentsOf],
+    () => {
+      const has = new Set(withHistory);
+      return filesTree(tables, bundles, { folded: foldedFiles, activeTable: activeTablePath, opened, attachmentsOf, hasHistory: (key) => has.has(key) });
+    },
+    // `historied` stands for `withHistory`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tables, bundles, foldedFiles, activeTablePath, opened, attachmentsOf, historied],
   );
   const indent = (depth: number, file = false) => styles.indent(8 + depth * 14 + (file ? 18 : 0));
 
@@ -606,7 +684,7 @@ function FilesTree({
           style={[styles.fileEntry, indent(depth)]}
           onClick={() => setOpened((o) => ({ ...o, [`${bundle}/${dir.path}`]: !unfolded }))}
         >
-          <html.span style={[styles.groupChevron, styles.tableChevron, unfolded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+          <Chevron open={unfolded} table />
           <html.span dir="ltr" style={styles.fileName}>{dir.name}/</html.span>
           {dir.count !== undefined ? <html.span style={styles.fileNote}>{dir.count}</html.span> : null}
         </html.div>
@@ -647,7 +725,7 @@ function FilesTree({
               onClick={() => onToggleFile(bundle)}
               style={[styles.fileEntry, styles.fileTitle, indent(0)]}
             >
-              <html.span style={[styles.groupChevron, styles.tableChevron, !folded && (rtl ? styles.groupChevronOpenRtl : styles.groupChevronOpen)]}>›</html.span>
+              <Chevron open={!folded} table />
               <html.span dir="ltr" style={styles.fileName}>{name}</html.span>
             </html.div>
             {!folded && renderEntries(bundle, root, 1)}

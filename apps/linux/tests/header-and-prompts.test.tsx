@@ -36,22 +36,22 @@ async function openLedger(view: string) {
 
 describe("the line under a view's name", () => {
   it("counts the rows and says the table is valid", async () => {
-    await openLedger("as-entered");
+    await openLedger("f179qhc4jxi7y");
     expect(await screen.findByText("10 of 10 rows")).toBeDefined();
     const valid = await screen.findByText("schema valid");
     expect(valid.getTooltipText()).toMatch(/^Every row fits the schema/);
   });
 
   it("counts a table's errors, with the first as its hint", async () => {
-    appendFileSync(join(bundle, "tables", "ledger", "rows.ndjson"), `${JSON.stringify({ id: "bad", date: "2026-03-01", item: "Odd", amount: "lots" })}\n`);
-    await openLedger("as-entered");
+    appendFileSync(join(bundle, "tables", "ledger", "rows", "0001.ndjson"), `${JSON.stringify({ id: "bad", date: "2026-03-01", item: "Odd", amount: "lots" })}\n`);
+    await openLedger("f179qhc4jxi7y");
     const invalid = await screen.findByText("1 validation error");
     expect(invalid.getTooltipText()).toMatch(/^amount: /);
     expect(invalid.hasCssClass("error")).toBe(true);
   });
 
   it("says the schema changed once a field is added", async () => {
-    await openLedger("as-entered");
+    await openLedger("f179qhc4jxi7y");
     await screen.findByText("schema valid");
     expect(screen.queryByText("schema changed")).toBeNull();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
@@ -69,7 +69,7 @@ describe("the line under a view's name", () => {
 
 describe("a sheet that formulas read, turned off", () => {
   async function turnOff() {
-    await openLedger("by-date");
+    await openLedger("87jkeekgwbfgr");
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "View Settings" }));
     const sheet = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Gtk.Switch) as Gtk.Switch;
     expect(sheet.getActive()).toBe(true);
@@ -79,25 +79,26 @@ describe("a sheet that formulas read, turned off", () => {
 
   it("asks first, and Cancel keeps it a sheet", async () => {
     await turnOff();
-    await userEvent.click(await screen.findByText("Cancel"));
+    // The question's Cancel, not the settings' own (which would put the whole view back).
+    await userEvent.click((await screen.findAllByText("Cancel")).at(-1)!);
     // The switch shows the view as it still is, not where it was flicked.
     await waitFor(async () => {
       const sheet = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Gtk.Switch) as Gtk.Switch;
       expect(sheet.getActive()).toBe(true);
     });
-    expect((await ledgerOnDisk()).views.find((v) => v.id === "by-date")?.coordinates).toBe(true);
+    expect((await ledgerOnDisk()).views.find((v) => v.id === "87jkeekgwbfgr")?.coordinates).toBe(true);
   });
 
   it("Stop saves it as a plain table", async () => {
     await turnOff();
     await userEvent.click(await screen.findByText("Stop"));
-    await waitFor(async () => expect((await ledgerOnDisk()).views.find((v) => v.id === "by-date")?.coordinates).toBeUndefined());
+    await waitFor(async () => expect((await ledgerOnDisk()).views.find((v) => v.id === "87jkeekgwbfgr")?.coordinates).toBeUndefined());
   });
 });
 
 describe("a column header's tooltip", () => {
   it("says what the column is, as the web's hint does", async () => {
-    await openLedger("as-entered");
+    await openLedger("f179qhc4jxi7y");
     const header = (await screen.findAllByText("Balance")).find((w) => w.getTooltipText()?.startsWith("Balance\n")) as Gtk.Label;
     const lines = header.getTooltipText()!.split("\n");
     expect(lines[0]).toBe("Balance");

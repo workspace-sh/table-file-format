@@ -6,13 +6,9 @@
  * Uses `Element.getBoundingClientRect()` which is sync; wrapped in
  * `Promise.resolve()` so the consumer API matches the native variant.
  */
+import type { AnchorRect } from "./anchorRect";
+export type { AnchorRect } from "./anchorRect";
 
-export interface AnchorRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
 
 /** Returns `null` if the target is falsy or not a measurable element. */
 export function measureAnchor(target: unknown): Promise<AnchorRect | null> {

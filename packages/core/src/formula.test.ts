@@ -99,7 +99,7 @@ test("function names are case-insensitive and stored lowercase; field names are 
 });
 
 test("& joins text, as in a spreadsheet", () => {
-  assert.equal(stored('=status & ": " & price'), '(concat status ": " price)');
+  assert.equal(stored('=status & ": " & price'), '(concatenate status ": " price)');
 });
 
 test("precedence: * and / bind tighter than + and -, which bind tighter than comparisons", () => {
@@ -118,8 +118,8 @@ test("a minus on a number is that negative number; on anything else it negates",
 });
 
 test("strings follow the spreadsheet rule: \"\" is a quote", () => {
-  assert.equal(stored('=CONCAT("say ""hi""", name)'), '(concat "say \\"hi\\"" name)');
-  assert.equal(printFormula('(concat "say \\"hi\\"" name)'), '=concat("say ""hi""", name)');
+  assert.equal(stored('=CONCAT("say ""hi""", name)'), '(concatenate "say \\"hi\\"" name)');
+  assert.equal(printFormula('(concatenate "say \\"hi\\"" name)'), '=concatenate("say ""hi""", name)');
 });
 
 test("TRUE and FALSE are booleans, in any case", () => {
@@ -236,7 +236,7 @@ test("the stored form can be typed directly, and is stored canonically", () => {
 });
 
 test("typed in the stored form or Excel style, the same formula is stored the same way", () => {
-  const stored = compileFormula("(concat (upper owner) \"!\")");
+  const stored = compileFormula("(concatenate (upper owner) \"!\")");
   const excel = compileFormula('=UPPER(owner) & "!"');
   assert.ok(stored.ok && excel.ok);
   assert.equal(stored.stored, excel.stored);
@@ -279,20 +279,49 @@ test("a formula's type is told apart from a guess at it", () => {
   const known = (text: string, types: Record<string, "string" | "number" | "boolean"> = {}, lookup?: (relation: string, target: string) => "number" | "string" | undefined) => {
     const r = compileFormula(text, { fields: [...Object.keys(types), "product"] });
     assert.ok(r.ok, text);
-    return formulaTypeIfKnown(r.expr, new Map(Object.entries(types)), lookup ? { lookup } : {});
+    return formulaTypeIfKnown(r.expr, new Map(Object.entries(types)), lookup ? { related: lookup } : {});
   };
   // Worked out.
   assert.equal(known("=1 + 2"), "number");
   assert.equal(known("=UPPER(status)", { status: "string" }), "string");
   assert.equal(known("=owner", { owner: "string" }), "string");
   // A lookup reads a field of another table: its type when that table is at hand, a guess when it isn't.
-  assert.equal(known('=lookup("product", "price")'), null);
-  assert.equal(known('=lookup("product", "price")', {}, () => undefined), null);
-  assert.equal(known('=lookup("product", "price")', {}, (relation, target) => (relation === "product" && target === "price" ? "number" : undefined)), "number");
-  assert.equal(known('=lookup("product", "price") * 1'), "number");
+  assert.equal(known('=related("product", "price")'), null);
+  assert.equal(known('=related("product", "price")', {}, () => undefined), null);
+  assert.equal(known('=related("product", "price")', {}, (relation, target) => (relation === "product" && target === "price" ? "number" : undefined)), "number");
+  assert.equal(known('=related("product", "price") * 1'), "number");
   // The guess is still what a new field is given.
-  const r = compileFormula('=lookup("product", "price")', { fields: ["product"] });
+  const r = compileFormula('=related("product", "price")', { fields: ["product"] });
   assert.ok(r.ok);
   assert.equal(formulaType(r.expr), "string");
-  assert.equal(formulaType(r.expr, new Map(), { lookup: () => "number" }), "number");
+  assert.equal(formulaType(r.expr, new Map(), { related: () => "number" }), "number");
+});
+
+test("the names forms had before D48 are read as the names they have now, typed or stored", () => {
+  // Stored formulas written before: read as the same formula, and stored under the new name when saved again.
+  const stored = compileFormula('(/ (lookup "company" "value") (sum (column "spend")))');
+  assert.equal(stored.ok && stored.stored, '(/ (related "company" "value") (sum (values "spend")))');
+  // Typed: the old names still compile, to the new.
+  const typed = compileFormula('=lookup("company", "value") & concat("a", "b")', { fields: ["company"] });
+  assert.equal(typed.ok && typed.stored, '(concatenate (related "company" "value") (concatenate "a" "b"))');
+  // And a typed & is concatenate, printed back as &.
+  const amp = compileFormula("=first & last", { fields: ["first", "last"] });
+  assert.equal(amp.ok && amp.stored, "(concatenate first last)");
+  assert.equal(printFormula("(concatenate first last)"), "=concatenate(first, last)");
+  // The new names are what formulas are told they can use; the old ones aren't offered.
+  const bad = compileFormula("=nope(1)");
+  assert.ok(!bad.ok && bad.message.includes("related") && bad.message.includes("values") && !bad.message.includes("lookup"));
+});
+
+test("an unfinished edit keeps a formula that reads, an unknown function and all; one that doesn't read isn't stored", () => {
+  const keep = { fields: ["n"], keepUnknownFunctions: true };
+  const unknown = compileFormula("=frobnicate(n)", keep);
+  assert.ok(unknown.ok && unknown.stored === "(frobnicate n)");
+  // Worked out, it shows what's wrong.
+  const stored = compileFormula("(frobnicate n)", keep);
+  assert.ok(stored.ok && stored.stored === "(frobnicate n)");
+  // Without the option it's refused, as an edit being saved is.
+  assert.equal(compileFormula("=frobnicate(n)", { fields: ["n"] }).ok, false);
+  // Malformed text is never stored.
+  assert.equal(compileFormula("=sum(n,", keep).ok, false);
 });

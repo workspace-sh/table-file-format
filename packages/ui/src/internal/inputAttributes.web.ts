@@ -18,3 +18,6 @@ export function inputAttributes(hints: InputHints, type: string) {
 
 /** The browser has nothing more to set. */
 export function applyKeyboard(_el: unknown, _hints: InputHints): void {}
+
+/** Puts the text being typed exactly where the value was shown: the web's input already is. */
+export const cellInputFit = null;

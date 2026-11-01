@@ -1,0 +1,36 @@
+{
+  "name": "@workspace.sh/table-files",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The .table apps' files on iOS: rename(2) for core's writer, documents held open where they are by their bookmarks, a coordinated write for a file the app was only given, the shake that asks to undo, and a TableFs and index host over expo-file-system and expo-sqlite.",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "source": "./index.ts",
+      "react-native": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.ts",
+    "expo.ts",
+    "ios",
+    "expo-module.config.json",
+    "plugins"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace.sh/table-app": "file:../app",
+    "@workspace.sh/table-core": "file:../core"
+  },
+  "peerDependencies": {
+    "expo-file-system": "*",
+    "expo-modules-core": "*",
+    "expo-sqlite": "*"
+  }
+}

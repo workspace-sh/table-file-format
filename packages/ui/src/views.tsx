@@ -1,11 +1,13 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
+import { KeyboardOnShow } from "./keyboardOnShow";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Portal } from "./internal/Portal";
 import {
   bodyExcerpt,
   describeCell,
+  formulaErrorShow,
   fieldsByName,
   fittedRowHeight,
   formatValue,
@@ -21,20 +23,25 @@ import {
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
+  ADD_FIELD_WIDTH,
   MIN_RESIZED_COLUMN_WIDTH,
-  ROW_NUMBER_WIDTH,
+  rowNumberWidth,
+  SQUEEZED_CELL_WIDTH,
+  squeezedWidthOf,
+  roomiestWidthOf,
   MAX_ROW_HEIGHT,
   MIN_ROW_HEIGHT,
   TOTAL_LABELS,
   TOTAL_NAMES,
+  totalKindsFor,
   totalFor,
   visibleFields,
   pillColors,
   EMPTY_TEXT,
 } from "./display";
 import type { ViewProps } from "./viewProps";
-import { commitDraft, currencySymbolOf, draftOf, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
-import { explainFormula, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
+import { cellFormulaText, commitDraft, storedAsTyped, currencySymbolOf, FORMULA_PREFIX, draftOf, ownFormula, ownNote, type CellFormulaEntry, editorKind, inputKind, listFromText, listItems, listText, listToggled, relatesMany, relationOptions, relationToggled } from "./cellEdit";
+import { explainFormula, FORMULA_DIALECT, formulaDraftOf, formulaInputCells, viewGrid } from "./formulaCell";
 import { useCellEditor, type CellEditSession } from "./cellEditor";
 import {
   BOARD_GAP,
@@ -62,6 +69,7 @@ import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
 import { fieldHint, fieldHintText } from "./fieldHintFacts";
 import { FieldHint, Hinted } from "./FieldHint";
+import { ErrorMark } from "./internal/ErrorMark";
 import { isImageFile, useAttachmentUrl } from "./Attachments";
 import { AttachmentImage } from "./internal/AttachmentImage";
 import {
@@ -73,11 +81,18 @@ import {
   computeRows,
   coordinateOf,
   formatValue as formatCellValue,
+  FormulaError,
+  hasColorRules,
   memoryViewRows,
+  mergedBlocks,
+  mergeOver,
+  rowColors,
 } from "@workspace.sh/table-core";
 import { rowLayout, type RowMark } from "./rowLayout";
 import { useViewFacts, useViewWindow } from "./useViewRows";
 import type {
+  EnumColor,
+  RowColors,
   SheetRef,
   ViewTotal,
   Field,
@@ -93,17 +108,27 @@ import {
   SchemaFieldEditor,
 } from "./SchemaEditor";
 import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
+
+/** No place yet: for field settings shown apart from the header, which don't point at it. */
+const NO_ANCHOR: AnchorRect = { top: 0, left: 0, width: 0, height: 0 };
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
-import { SnapHScroll } from "./internal/SnapHScroll";
-import { HOVERS } from "./internal/hovers";
+import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
+import { PageScrollContext } from "./pageScroll";
+import { animateNextLayout } from "./internal/animateNextLayout";
+import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
+import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
-import { useViewportWidth } from "./internal/useViewportWidth";
+import { onWindowResize } from "./internal/onWindowResize";
+import { useCompactSide, useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
+import { PLATFORM_OS } from "./internal/platformOS";
+import { passThrough } from "./internal/passThrough";
+import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
 import { moveInColumns, moveInGrid, nudge } from "./cardNav";
-import { afterEdit, cellPicks, gridKey } from "./gridNav";
+import { afterEdit, cellPicks, gridKey, mirroredKey } from "./gridNav";
 import { BottomSheet } from "./internal/BottomSheet";
 import {
   firstDayOfWeek,
@@ -115,10 +140,10 @@ import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
 import { inputHints, type InputHintKind } from "./inputHints";
-import { applyKeyboard, inputAttributes } from "./internal/inputAttributes";
+import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
-import { rowActions } from "./controlSlots";
-import { MAX_LIST_HEIGHT } from "./internal/listLimits";
+import { columnActions, rowActions } from "./controlSlots";
+import { frozenColumnsOf, hiddenPatch } from "./viewEdit";
 import { SPAN_GAP } from "./internal/spanGap";
 import { RowList, type RowListHandle } from "./internal/RowList";
 
@@ -141,6 +166,22 @@ const MIN_CELL_WIDTH = 180; // MIN_CELL_WIDTH in display.ts, restated for StyleX
  * tablet-portrait. Above this, the mouse / wide-screen UX takes over.
  */
 const TOUCH_VIEWPORT_MAX = 720;
+// A board's carousel while a card is dragged: within this far of the
+// screen's edge the card pages it that way, first after a moment held
+// there (so passing through doesn't), then again at a steady pace.
+const CAROUSEL_EDGE = 44;
+const CAROUSEL_PAGE_FIRST_MS = 450;
+const CAROUSEL_PAGE_AGAIN_MS = 800;
+// How long a page's animated scroll takes to settle before measuring again.
+const CAROUSEL_SETTLE_MS = 350;
+// How long measuring the columns and cards again takes to come back.
+const CAROUSEL_MEASURED_MS = 60;
+// After a page turn, a column whose cards end above this far into what's on
+// screen is scrolled into view; an empty one, so this much of it shows.
+const CAROUSEL_IN_VIEW = 48;
+const CAROUSEL_EMPTY_COLUMN_SHOWN = 120;
+// A dragged card or row's floating copy.
+const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
 
 // CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
@@ -160,6 +201,11 @@ function hasWindowSize(): boolean {
 const GROUP_ROW_HEIGHT = 32;
 /** The line under each row (tableRow's borderBottomWidth). */
 const ROW_BORDER = 1;
+/** The line at the frozen column's end (frozenEdge's borderInlineEndWidth). */
+const FROZEN_EDGE = 1;
+
+/** A board column's width: one width, whatever the board's, so a scroll comes to rest on one (with BOARD_GAP between). */
+const BOARD_COLUMN_WIDTH = 280;
 
 const styles = css.create({
   // Table
@@ -199,6 +245,10 @@ const styles = css.create({
     display: "flex",
     flexDirection: "column",
   },
+  // Edge to edge, filling the width: grown to what's around it.
+  fitGrow: {
+    flexGrow: 1,
+  },
   bleedRow: {
     display: "flex",
     flexDirection: "row",
@@ -217,11 +267,19 @@ const styles = css.create({
     alignItems: "flex-start",
     marginTop: 8,
   },
-  /** Centres the "+" on the header row (33px). */
-  addFieldSlot: {
+  /**
+   * The "+" for a new field: a narrow header cell of its own after the
+   * last column, part of the table's width as any column is, with nothing
+   * under it. It takes its width from the columns (`ADD_FIELD_WIDTH`), so
+   * it sits on no column's title or resize edge, and the table still ends
+   * where its frame does.
+   */
+  headerAddCell: {
     display: "flex",
+    flexDirection: "row",
     alignItems: "center",
-    height: 35,
+    justifyContent: "center",
+    flexShrink: 0,
   },
   table: {
     display: "flex",
@@ -246,9 +304,42 @@ const styles = css.create({
   tableFrozenColumn: {
     display: "flex",
     flexDirection: "column",
-    // Right border distinguishes the frozen column from the
-    // scrollable pane; a subtle shadow would be nicer but needs
-    // careful cross-platform handling — defer.
+  },
+  // The line between the frozen column and the scrolling pane. On the
+  // frozen pane's rows, not the pane, so it stops at the last row: the
+  // "+ New row" band under it is open space, not another row.
+  // The column lines' strips (columnLines): a row over the pane laid out as
+  // its rows are, a slot for each column that clicks pass through, each
+  // strip a zero-width line at its slot's end, its handle on the end edge as
+  // a header's is. Laid out with the columns, the lines move with them as a
+  // window is resized, not once the table is measured again.
+  columnLines: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
+    display: "flex",
+    flexDirection: "row",
+    zIndex: 4,
+  },
+  columnLineSlot: {
+    position: "relative",
+    flexShrink: 0,
+  },
+  columnLine: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    insetInlineEnd: 0,
+    width: 0,
+    pointerEvents: "auto",
+  },
+  // The frozen column's rows end in its line (frozenEdge).
+  columnLinesEnd: (w: number) => ({
+    marginInlineEnd: w,
+  }),
+  frozenEdge: {
     borderInlineEndWidth: 1,
     borderInlineEndStyle: "solid",
     borderInlineEndColor: {
@@ -260,12 +351,32 @@ const styles = css.create({
   // content unless told it may shrink; without minWidth 0 it takes the
   // whole table's width, HScroll inside it never overflows, and the
   // table's rounded overflow: hidden cuts the far columns off.
-  tableScrollOuter: {
+  tableScrollBeside: {
     display: "flex",
     flexDirection: "column",
-    flex: 1,
     minWidth: 0,
   },
+  // Beside the frozen column: as wide as its columns' shares (`grow`, one
+  // each) and what it holds at a fixed width (`basis`).
+  paneShare: (grow: number, basis: number) => ({
+    flexGrow: grow,
+    flexShrink: 1,
+    flexBasis: basis,
+  }),
+  // The frozen column, when its column shares the width: one share, on what
+  // it holds at a fixed width (`basis`: row numbers, its line); never
+  // narrower than a column can be squeezed to.
+  frozenShare: (basis: number, least: number, grow: number) => ({
+    flexGrow: grow,
+    flexShrink: 0,
+    flexBasis: basis,
+    minWidth: least,
+  }),
+  // The columns that scroll are never narrower than they can be squeezed
+  // to: past that, the pane is wider than its frame and scrolls.
+  paneLeast: (w: number) => ({
+    minWidth: w,
+  }),
   tableScrollPane: {
     display: "flex",
     flexDirection: "column",
@@ -278,11 +389,117 @@ const styles = css.create({
   cellWidth: (w: number) => ({
     width: w,
   }),
+  // A table grows with its space only as far as its columns' natural widths.
+  frameMost: (w: number) => ({
+    maxWidth: w,
+  }),
+  // A column that shares the table's width with the others nobody resized,
+  // in the layout: it follows the window as it's resized, in the same pass
+  // as the text around it, rather than once the table is measured again.
+  // Never narrower than `least` (as narrow as a column can be squeezed):
+  // past that, it holds its width and the columns beside the frozen one scroll.
+  // No width of its own (width and basis 0), so what's in a cell never
+  // widens it: every row of a table shares its width the same way, its
+  // header, its rows and its totals alike, whatever each holds.
+  // Columns grow by their natural widths (`grow`), so a frame as wide as
+  // those (`frameMost`) has each at its own.
+  columnShare: (least: number, grow: number) => ({
+    flexGrow: grow,
+    flexShrink: 1,
+    flexBasis: 0,
+    width: 0,
+    minWidth: least,
+  }),
+  // A column's header slot (headerCell): what's in it is as wide as it is.
+  headerSlot: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    flexShrink: 0,
+  },
+  // A header in its slot: as tall as the header row.
+  slotFill: {
+    flexGrow: 1,
+  },
+  // A row that stops short of the "+" column after it.
+  rowStopsBefore: (w: number) => ({
+    marginInlineEnd: w,
+  }),
   rowHeight: (h: number) => ({
     height: h,
   }),
   positioned: {
     position: "relative",
+  },
+  // Native: the frozen column over the pane beside it, so its line's strip, which
+  // reaches past its edge, isn't under the pane's first cells.
+  frozenOverPane: {
+    position: "relative",
+    zIndex: 5,
+  },
+  // A Sheet view's merged cells (D58): a place of no height where the rows
+  // start, and each block a box over its cells, placed from there.
+  mergeLayer: {
+    position: "relative",
+    height: 0,
+    zIndex: 2,
+  },
+  mergeBox: {
+    position: "absolute",
+    boxSizing: "border-box",
+    display: "flex",
+    alignItems: "center",
+    paddingInline: 16,
+    overflow: "hidden",
+    fontSize: 13,
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#0e0e10",
+    },
+  },
+  mergeAt: (left: number, top: number, width: number, height: number) => ({
+    insetInlineStart: left,
+    top,
+    width,
+    height,
+  }),
+  // The header and a view's frozen rows (D58), over the rows scrolled up
+  // under the page's top: a place of no height that stays at the top of
+  // whatever scrolls the table, and the band hung from it.
+  bandAnchor: {
+    position: "sticky",
+    top: 0,
+    height: 0,
+    zIndex: 6,
+  },
+  band: {
+    position: "absolute",
+    top: 0,
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#0e0e10",
+    },
+    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.12)",
+    pointerEvents: "none",
+  },
+  bandRow: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  bandFrozen: {
+    flexShrink: 0,
+  },
+  bandRest: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  // On the web the table clips without being a place that scrolls, so the band can stay at the top.
+  tableClips: {
+    overflow: "clip",
   },
   // A line of no height under the selected row, outside its row-actions
   // wrapper, that the grip hangs from. On iOS that wrapper is a native
@@ -326,6 +543,69 @@ const styles = css.create({
     borderRadius: 1,
     backgroundColor: "#ffffff",
   },
+  // A selected cell's column grip (columnGrip): the row's grip on its side,
+  // straddling the cell's end edge at the row's middle.
+  columnGripAt: (x: number, bottom: number) => ({
+    insetInlineStart: x,
+    bottom,
+  }),
+  columnGripSlot: {
+    position: "absolute",
+    zIndex: 3,
+  },
+  // Room for a finger around the pill: 38 by 48, centred on the cell's edge.
+  columnGripHit: {
+    paddingBlock: 10,
+    paddingInline: 12,
+    cursor: "col-resize",
+  },
+  columnGrip: {
+    width: 14,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: "#0a84ff",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  columnGripBar: {
+    width: 1.5,
+    height: 12,
+    borderRadius: 1,
+    backgroundColor: "#ffffff",
+  },
+  // The grabbers look (the "Resize handles" display setting): the pill's
+  // place, left clear but for a short bar like an iOS sheet's grabber,
+  // ringed in the page's colour so it reads over whatever is under it.
+  gripClear: {
+    backgroundColor: "transparent",
+  },
+  rowGrabber: {
+    width: 26,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: "#0a84ff",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#000000",
+    },
+  },
+  columnGrabber: {
+    width: 9,
+    height: 26,
+    borderRadius: 4.5,
+    backgroundColor: "#0a84ff",
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: {
+      default: "#ffffff",
+      "@media (prefers-color-scheme: dark)": "#000000",
+    },
+  },
   // Beside the pill, out of the flow, so the pill stays put as it appears.
   rowGripLabel: {
     position: "absolute",
@@ -339,6 +619,12 @@ const styles = css.create({
     borderRadius: 6,
     paddingInline: 6,
     paddingBlock: 2,
+  },
+  // The same while a row's line is dragged: at the start of the row, just
+  // above the line.
+  rowLineLabel: {
+    bottom: 8,
+    insetInlineStart: 8,
   },
   /** A value that can't wrap: one line, cut short with an ellipsis. */
   oneLine: {
@@ -371,6 +657,13 @@ const styles = css.create({
   },
   tableRowLast: {
     borderBottomWidth: 0,
+  },
+  // Edge to edge, the header row is the frame's top: its background takes
+  // the frame's corners (the frame's radius less its border), which on the
+  // Mac the frame doesn't clip it to.
+  tableHeaderRound: {
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
   },
   tableHeaderRow: {
     backgroundColor: {
@@ -477,11 +770,14 @@ const styles = css.create({
     overflowX: "auto",
     paddingBottom: 8,
   },
+  // One width, whatever the board's: a narrower window shows fewer of them
+  // and the board scrolls, rather than every card wrapping again as the
+  // window is resized.
   boardColumn: {
     display: "flex",
     flexDirection: "column",
-    minWidth: 240,
-    maxWidth: 280,
+    width: BOARD_COLUMN_WIDTH,
+    flexShrink: 0,
     padding: 12,
     borderRadius: 8,
     backgroundColor: {
@@ -496,7 +792,7 @@ const styles = css.create({
   // Used when the board renders as a column carousel on narrow
   // viewports — the column takes a fixed width sized to ~84% of the
   // viewport so the next column peeks. min/max from `boardColumn`
-  // would clamp this to 240-280 which defeats the purpose; override.
+  // would hold it at 280, which defeats the purpose; override.
   boardColumnCarouselWidth: (w: number) => ({
     // The width includes the padding and border, so a column is as wide
     // as the snap step expects and the next one peeks. Measured on iOS,
@@ -548,7 +844,7 @@ const styles = css.create({
     position: "fixed",
     zIndex: 100,
     pointerEvents: "none",
-    width: 240,
+    width: 240, // GHOST_WIDTH
     opacity: 0.95,
     borderRadius: 8,
     boxShadow: "0 12px 32px rgba(0, 0, 0, 0.25)",
@@ -601,6 +897,14 @@ const styles = css.create({
     marginInlineStart: 6,
     fontSize: 11,
     fontWeight: "400",
+  },
+  /** Under a cut column's cards: how many more it has. */
+  boardMore: {
+    paddingInlineStart: 4,
+    fontSize: 11,
+    fontWeight: "400",
+    // Said outright, as a card's labels are: text on native takes no colour from what holds it, so it was black on the dark column.
+    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
   },
 
   // Gallery
@@ -780,13 +1084,19 @@ const styles = css.create({
   },
   calendarGrid: {
     display: "flex",
+    flexDirection: "column",
+  },
+  calendarWeek: {
+    display: "flex",
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
   },
   calendarDay: {
     // Same `dayColWidth(n)` applied at use-site as the header cells,
-    // so headers and grid share identical column geometry.
-    flexShrink: 0,
+    // so headers and grid share identical column geometry. It may give a
+    // point or two back when the widths come to more than the row has.
+    flexShrink: 1,
+    minWidth: 0,
     flexGrow: 0,
     boxSizing: "border-box",
     display: "flex",
@@ -1029,16 +1339,37 @@ const styles = css.create({
   // Pill (for enum values)
   pillAtStart: { alignSelf: "flex-start" },
   /** A footer cell inside a menu button: fills the row's height, as the others do. */
+  // A total in its slot (a menu's trigger): as wide and tall as the slot.
   totalCellFill: {
     alignSelf: "stretch",
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+  },
+  // A total's slot: the column's width, around the menu that wraps the cell.
+  totalSlot: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "stretch",
   },
   /** Pills cut to one line, with a "+N" for the rest. */
   pillListOneLine: {
     flexWrap: "nowrap",
     overflow: "hidden",
+    minWidth: 0,
   },
   pillMore: {
     flexShrink: 0,
+  },
+  pillShrinks: {
+    // On the row's centre line, as the pills beside it.
+    alignSelf: "center",
+    flexShrink: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
   },
   pill: {
     paddingInline: 10,
@@ -1072,10 +1403,15 @@ const styles = css.create({
   newRowHot: {
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#17171a" },
   },
+  // A place a row could go, not a row: faint until the pointer is on it.
+  // Where nothing hovers (a touch screen) it stays faint and still reads.
   newRowLabel: {
     fontSize: 13,
     whiteSpace: "nowrap",
-    color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+    color: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" },
+  },
+  newRowLabelHot: {
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
   },
   totalCell: {
     display: "flex",
@@ -1151,6 +1487,9 @@ const styles = css.create({
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
     backgroundColor: { default: "#fafafa", "@media (prefers-color-scheme: dark)": "#111114" },
   },
+  rowNumberWide: (width: number) => ({
+    width,
+  }),
   rowNumberCorner: {
     alignSelf: "stretch",
   },
@@ -1159,6 +1498,10 @@ const styles = css.create({
     fontSize: 10,
     fontWeight: "600",
     color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" },
+  },
+  // On native the letter stacks above the name instead of sitting before it: without the gap, so the two share an edge.
+  columnLetterStacked: {
+    marginInlineEnd: 0,
   },
   // The 14 symbolic enum colours (SPEC section 2, DECISIONS D43), mapped onto light and dark.
   pillGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" }, color: { default: "#3a3a3c", "@media (prefers-color-scheme: dark)": "#e5e5ea" } },
@@ -1175,10 +1518,34 @@ const styles = css.create({
   pillIndigo: { backgroundColor: { default: "#e1e4fb", "@media (prefers-color-scheme: dark)": "#1f2347" }, color: { default: "#4338ca", "@media (prefers-color-scheme: dark)": "#a5adff" } },
   pillPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" }, color: { default: "#6d28d9", "@media (prefers-color-scheme: dark)": "#c4a8ff" } },
   pillPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" }, color: { default: "#be185d", "@media (prefers-color-scheme: dark)": "#ff9ecb" } },
-  pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 4 },
+  // A view's colour rules (SPEC section 4, D53): a row or cell behind its values, in the choice's own background.
+  tintGray: { backgroundColor: { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#2c2c31" } },
+  tintBrown: { backgroundColor: { default: "#eee3d8", "@media (prefers-color-scheme: dark)": "#3b2a1d" } },
+  tintRed: { backgroundColor: { default: "#fde2e1", "@media (prefers-color-scheme: dark)": "#4a1f1f" } },
+  tintOrange: { backgroundColor: { default: "#fde8d4", "@media (prefers-color-scheme: dark)": "#4a2c14" } },
+  tintYellow: { backgroundColor: { default: "#fdf3c4", "@media (prefers-color-scheme: dark)": "#433a10" } },
+  tintLime: { backgroundColor: { default: "#eaf5cc", "@media (prefers-color-scheme: dark)": "#2b3a10" } },
+  tintGreen: { backgroundColor: { default: "#dcf5e3", "@media (prefers-color-scheme: dark)": "#16341f" } },
+  tintMint: { backgroundColor: { default: "#d8f5ea", "@media (prefers-color-scheme: dark)": "#12362b" } },
+  tintTeal: { backgroundColor: { default: "#d4f1f2", "@media (prefers-color-scheme: dark)": "#10353a" } },
+  tintCyan: { backgroundColor: { default: "#d6eefb", "@media (prefers-color-scheme: dark)": "#0f3447" } },
+  tintBlue: { backgroundColor: { default: "#dde9fd", "@media (prefers-color-scheme: dark)": "#15284a" } },
+  tintIndigo: { backgroundColor: { default: "#e1e4fb", "@media (prefers-color-scheme: dark)": "#1f2347" } },
+  tintPurple: { backgroundColor: { default: "#ece3fd", "@media (prefers-color-scheme: dark)": "#2d1f4a" } },
+  tintPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" } },
+  pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 },
+  // A cell with a note (D57): a small triangle in its top end corner, as spreadsheets mark one.
+  noted: {
+    backgroundImage: {
+      default: "linear-gradient(225deg, #e8a33d 9px, transparent 9px)",
+      "@media (prefers-color-scheme: dark)": "linear-gradient(225deg, #f5b94f 9px, transparent 9px)",
+    },
+  },
   choiceItem: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
   choiceCheck: { width: 12, fontSize: 12 },
   relationList: { display: "flex", flexDirection: "row", flexWrap: "wrap", columnGap: 8, rowGap: 2 },
+  /** Links cut to one line, with a "+N" for the rest; the last one shown is cut short if it must be. */
+  relationListOneLine: { flexWrap: "nowrap", overflow: "hidden", alignItems: "center", minWidth: 0 },
   link: {
     textDecorationLine: "underline",
     textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
@@ -1200,6 +1567,7 @@ const styles = css.create({
     backgroundColor: "transparent",
     cursor: "pointer",
     textAlign: "start",
+    maxWidth: "100%",
     fontSize: 13,
     color: {
       default: "#3478f6",
@@ -1215,8 +1583,6 @@ const styles = css.create({
    */
   /** A computed field whose formula failed (#DIV/0!, #VALUE!, …). */
   formulaError: {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: 12,
     color: {
       default: "#c00",
       "@media (prefers-color-scheme: dark)": "#ff6b6b",
@@ -1267,6 +1633,16 @@ const styles = css.create({
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
+  },
+  // A column's title, on one line however narrow its column: cut short
+  // with an ellipsis (the full title is in the hover hint), never broken
+  // across two. On native the button's nowrap doesn't reach the text;
+  // lineClamp does (numberOfLines).
+  headerTitle: {
+    lineClamp: 1,
+    overflow: "hidden",
+    minWidth: 0,
+    flexShrink: 1,
   },
   headerCellButtonCenter: {
     textAlign: "center",
@@ -1379,6 +1755,11 @@ const styles = css.create({
     // pushed out of the cell.
     minWidth: 0,
     minHeight: 22,
+  },
+  // On the web a cell shows the text cursor. Not on the Mac, as in Numbers
+  // and Finder's lists: there each view with a cursor of its own is one
+  // more region the window walks at every step of a resize.
+  cellIdleCursor: {
     cursor: "text",
   },
 
@@ -1466,6 +1847,12 @@ const styles = css.create({
     cursor: "pointer",
   },
   bodyBadge: {
+    // Its own width, its text centred: on native a button is a box that otherwise keeps its text at the start.
+    display: "flex",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
     paddingInline: 6,
     paddingBlock: 1,
     marginInlineStart: 6,
@@ -1534,20 +1921,41 @@ function headerAlignStyle(align: FieldAlignment) {
 
 
 
+/** A table cell's padding at each side (tableCell's paddingInline). */
+const CELL_PADDING_INLINE = 16;
+
 /** The width a table cell's content has, for pills to know how many fit. */
 const CellWidth = createContext<number | undefined>(undefined);
 
-/** A pill's width, roughly: its label, padding and the gap after it. */
-const pillWidth = (p: Pill) => String(p.label).length * 7.6 + 30;
+/** A pill's width, roughly: its label at 11 pt medium (about 6.2 pt a character), its padding and the gap after it. */
+const pillWidth = (p: Pill) => String(p.label).length * 6.2 + 24;
+/** A "+N" pill's width, with the gap before it. */
+const moreWidth = (n: number) => (String(n).length + 1) * 6.2 + 24;
 /** The pills that fit in `width`, leaving room for a "+N" when some don't. */
 function pillsThatFit(pills: Pill[], width: number): Pill[] {
   let used = 0;
   const out: Pill[] = [];
   for (let i = 0; i < pills.length; i++) {
     const w = pillWidth(pills[i]!);
-    const reserve = i < pills.length - 1 ? 40 : 0;
+    const reserve = i < pills.length - 1 ? moreWidth(pills.length - i - 1) : 0;
     if (out.length > 0 && used + w + reserve > width) break;
     out.push(pills[i]!);
+    used += w;
+  }
+  return out;
+}
+
+/** A related row's name, roughly: its label at 13 pt and the gap after it. */
+const linkWidth = (l: RelationLink) => String(l.label ?? l.id).length * 7 + 8;
+/** The links that fit in `width`, leaving room for a "+N" when some don't; the first always shows, cut short if it must be. */
+function linksThatFit(links: RelationLink[], width: number): RelationLink[] {
+  let used = 0;
+  const out: RelationLink[] = [];
+  for (let i = 0; i < links.length; i++) {
+    const w = linkWidth(links[i]!);
+    const reserve = i < links.length - 1 ? moreWidth(links.length - i - 1) : 0;
+    if (out.length > 0 && used + w + reserve > width) break;
+    out.push(links[i]!);
     used += w;
   }
   return out;
@@ -1568,9 +1976,11 @@ interface CellValueProps {
    * column stretches its children. On the web it's inline there already.
    */
   inColumn?: boolean;
+  /** In a formula's panel: a failed formula says its code too, in Excel style (#685). */
+  inPanel?: boolean;
 }
 
-function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn }: CellValueProps) {
+function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColumn, inPanel }: CellValueProps) {
   const clamp = lines !== undefined ? styles.clamp(lines) : undefined;
   const width = useContext(CellWidth);
   const display = useDisplaySettings();
@@ -1579,15 +1989,33 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
     case "relations":
       // One related row reads as itself; many sit in a row of links.
       if (!Array.isArray(value)) return <RelationCellValue link={shown.links[0]!} onOpenRelation={onOpenRelation} />;
-      return (
-        <html.div style={styles.relationList}>
-          {shown.links.map((link) => (
-            <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
-          ))}
-        </html.div>
-      );
+      {
+        // On one line in a table, as many as fit and then "+2", as choices
+        // are: a row's height stays the row's, not its longest list's.
+        const oneLine = width !== undefined && (lines ?? 1) <= 1;
+        const shownLinks = oneLine ? linksThatFit(shown.links, width) : shown.links;
+        const more = shown.links.length - shownLinks.length;
+        return (
+          <html.div style={[styles.relationList, oneLine && styles.relationListOneLine]}>
+            {shownLinks.map((link) => (
+              <RelationCellValue key={link.id} link={link} onOpenRelation={onOpenRelation} />
+            ))}
+            {more > 0 ? (
+              <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
+                +{more}
+              </html.span>
+            ) : null}
+          </html.div>
+        );
+      }
     case "error":
-      return <html.span style={styles.formulaError}>{shown.code}</html.span>;
+      // Its kind's mark and what's wrong; resting the pointer on it says why, and where the fix is (#685).
+      return (
+        <Hinted hint={shown.explanation} style={styles.formulaError} box>
+          <ErrorMark group={shown.group} />
+          <html.span style={styles.formulaError}>{inPanel ? shown.withCode : shown.text}</html.span>
+        </Hinted>
+      );
     case "pills": {
       // A single choice is its pill; a list sits in a row of them.
       if (!Array.isArray(value)) return <EnumPill pill={shown.pills[0]!} atStart={inColumn} />;
@@ -1595,9 +2023,15 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
       const shownPills = width !== undefined && (lines ?? 1) <= 1 ? pillsThatFit(shown.pills, width) : shown.pills;
       const more = shown.pills.length - shownPills.length;
       return (
-        <html.div style={[styles.pillList, more > 0 && styles.pillListOneLine]}>
+        <html.div style={[styles.pillList, width !== undefined && (lines ?? 1) <= 1 && styles.pillListOneLine]}>
           {shownPills.map((pill, i) => (
-            <EnumPill key={`${i}\u0000${String(pill.value)}`} pill={pill} />
+            <EnumPill
+              key={`${i}\u0000${String(pill.value)}`}
+              pill={pill}
+              // Only a pill too wide for the cell on its own gives way, so the
+              // "+N" after it is never cut off at the cell's edge.
+              shrinks={width !== undefined && i === 0 && pillWidth(pill) + (more > 0 ? moreWidth(more) : 0) > width}
+            />
           ))}
           {more > 0 ? (
             <html.span aria-label={`${more} more`} style={[styles.pill, styles.pillGray, styles.pillMore]}>
@@ -1645,6 +2079,47 @@ const PILL_COLORS = {
   pink: styles.pillPink,
 } as const;
 
+const TINT_COLORS = {
+  gray: styles.tintGray,
+  brown: styles.tintBrown,
+  red: styles.tintRed,
+  orange: styles.tintOrange,
+  yellow: styles.tintYellow,
+  lime: styles.tintLime,
+  green: styles.tintGreen,
+  mint: styles.tintMint,
+  teal: styles.tintTeal,
+  cyan: styles.tintCyan,
+  blue: styles.tintBlue,
+  indigo: styles.tintIndigo,
+  purple: styles.tintPurple,
+  pink: styles.tintPink,
+} as const;
+
+const NO_COLORS: RowColors = { cells: {} };
+
+/**
+ * A view's colour rules for each row (D53): none to work out when the view
+ * has none, and each row's worked out once while the rules stay the same.
+ */
+function useRowColors(view: Pick<View, "colors">, schema?: TableSchema): (row: Row) => RowColors {
+  return useMemo(() => {
+    if (!hasColorRules(view)) return () => NO_COLORS;
+    const seen = new WeakMap<Row, RowColors>();
+    return (row: Row) => {
+      let colors = seen.get(row);
+      if (!colors) seen.set(row, (colors = rowColors(view, row, schema)));
+      return colors;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.colors, schema]);
+}
+
+/** A colour rule's colour as a background (D53); none for no colour. */
+function tintOf(color: EnumColor | undefined) {
+  return color ? TINT_COLORS[color] : undefined;
+}
+
 /** What opening a link does, for assistive technology: "Email a@b.c", "Call +44…", "Open example.com". */
 function linkLabel(href: string, text: string): string {
   if (href.startsWith("mailto:")) return `Email ${text}`;
@@ -1653,10 +2128,11 @@ function linkLabel(href: string, text: string): string {
 }
 
 /** A choice as the schema describes it: its label, in its colour. */
-function EnumPill({ pill, atStart }: { pill: Pill; atStart?: boolean }) {
+function EnumPill({ pill, atStart, shrinks }: { pill: Pill; atStart?: boolean; shrinks?: boolean }) {
   // No colour, or a name this reader doesn't know, is gray (SPEC section 4).
   const color = pill.color && Object.hasOwn(PILL_COLORS, pill.color) ? PILL_COLORS[pill.color as keyof typeof PILL_COLORS] : styles.pillGray;
-  return <html.span style={[styles.pill, color, atStart && styles.pillAtStart]}>{pill.label}</html.span>;
+  // Too wide for its cell in a list on one line: its label is cut short.
+  return <html.span style={[styles.pill, color, atStart && styles.pillAtStart, shrinks && styles.pillShrinks]}>{pill.label}</html.span>;
 }
 
 /** A board column's heading: the choice's label when it has one. */
@@ -1714,12 +2190,23 @@ function RelationCellValue({
   // and a second opens the picker (CellLink).
   return (
     <CellLink onOpen={() => onOpenRelation(link.address)} label={`Open ${link.label}`} style={styles.relationLink}>
-      {link.label}
+      <html.span style={styles.clamp(1)}>{link.label}</html.span>
     </CellLink>
   );
 }
 
 interface EditableCellProps {
+  /**
+   * Typing `=…` gives the cell its own formula (D52): what that needs, the
+   * formula it has now, and where it's saved. Absent: `=` is typed as text.
+   */
+  formula?: CellFormulaEntry & { syntax?: "excel" | "stored"; onSet: (expr: string) => void };
+  /**
+   * Whose cell this is (its row's id). A list that recycles its rows hands
+   * a cell another row's value; what was being written in it belonged to
+   * the row before, and is dropped, never saved into the new one.
+   */
+  rowKey?: string;
   field: Field | undefined;
   value: unknown;
   onCommit: (next: unknown) => void;
@@ -1744,6 +2231,13 @@ interface EditableCellProps {
    */
   onSelect?: () => void;
   /**
+   * The cell around it takes the clicks (selects, and edits once selected),
+   * so the idle value has no handler of its own: a view that only lays out
+   * is folded into the one around it on native, one view fewer for every
+   * cell a table draws, each moved again at every step of a window resize.
+   */
+  clicksFromCell?: boolean;
+  /**
    * For an attachment column: what editing does instead of typing a name,
    * such as choosing a file to copy into the table's folder. Absent, the
    * name is typed as before.
@@ -1751,6 +2245,8 @@ interface EditableCellProps {
   onAttach?: () => void;
   /** Start editing; `text` replaces the value (a key typed on the cell). */
   editRequest?: EditRequest;
+  /** Told once the cell has taken `editRequest`, for the table to let it go. */
+  onEditHeard?: () => void;
   /** How editing ended from the keyboard, so the table can move on. */
   onEditEnd?: (how: EditEnd) => void;
   /**
@@ -1781,6 +2277,7 @@ interface KeyEventLike {
 }
 
 function EditableCell({
+  rowKey,
   field,
   value,
   onCommit,
@@ -1791,11 +2288,14 @@ function EditableCell({
   autoEdit,
   selected,
   onSelect,
+  clicksFromCell,
   onAttach,
   editRequest,
+  onEditHeard,
   onEditEnd,
   editOutside,
   outsideDraft,
+  formula,
 }: EditableCellProps) {
   // A computed field is derived on read and never stored, so there is
   // nothing to edit. (Hooks below stay unconditional; this only picks
@@ -1804,6 +2304,8 @@ function EditableCell({
   const readOnly = kind === "readonly";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>("");
+  // Editing the cell's own formula (D52): its `=` is drawn before the box, not in it, and put back on saving.
+  const [asFormula, setAsFormula] = useState(false);
   // Why the draft wasn't saved (D42), and which draft an early year was
   // already queried for, so Enter again keeps it.
   const [problem, setProblem] = useState<(CellCheck & { ok: false }) | null>(null);
@@ -1818,11 +2320,38 @@ function EditableCell({
   // lines have room; the cell itself is a row high. Measured from the cell.
   const cellAnchor = useRef<HTMLElement | null>(null);
   const [longAt, setLongAt] = useState<AnchorRect | null>(null);
+  // The phone turned or the window resized: the box goes where the cell is
+  // now, once the new layout has settled.
+  useEffect(
+    () =>
+      onWindowResize(() => {
+        for (const ms of [100, 300]) {
+          setTimeout(() => {
+            const el = cellAnchor.current;
+            if (el) void measureAnchor(el).then((at) => at && setLongAt(at));
+          }, ms);
+        }
+      }),
+    [],
+  );
   // Opened by typing a character: the caret goes after it, so the next
   // one adds to it. Opened any other way, the whole value is selected.
   const caretAtEnd = useRef(false);
+  // Given another row's cell (a recycled row): start again, as a new cell
+  // would. Closed, so the old input's blur as it goes saves nothing.
+  const [heldFor, setHeldFor] = useState(rowKey);
+  if (heldFor !== rowKey) {
+    setHeldFor(rowKey);
+    setEditing(false);
+    setDraft("");
+    setProblem(null);
+    setProblemAt(null);
+    setLongAt(null);
+    queried.current = null;
+    closed.current = true;
+  }
   const hints = inputHints(field);
-  const { Select: SelectControl, DateInput: DateInputControl } = usePlatformControls();
+  const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
@@ -1830,7 +2359,8 @@ function EditableCell({
       applyKeyboard(el, hints);
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
         focusInput(el);
-        const end = el.value.length;
+        // A native input's ref doesn't carry its value: what was typed is the draft.
+        const end = (typeof el.value === "string" ? el.value : draft).length;
         try {
           el.setSelectionRange(end, end);
         } catch {
@@ -1845,7 +2375,10 @@ function EditableCell({
     if (editOutside?.(text)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
-    setDraft(text ?? draftOf(value));
+    // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` outside the box.
+    const own = text === undefined && formula?.own !== undefined;
+    setAsFormula(own);
+    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -1857,6 +2390,8 @@ function EditableCell({
     else if (kind === "attachment" && onAttach) onAttach();
     else startEdit();
   };
+  // The idle value's own click, unless the cell around it takes them.
+  const idleClick = clicksFromCell ? undefined : clickToEdit;
 
   /**
    * Save the draft if the column can hold it (D42). Returns false, and
@@ -1865,7 +2400,7 @@ function EditableCell({
    * year is kept, since it's a valid date.
    */
   const commit = (raw: string, how: "key" | "blur" = "key"): boolean => {
-    const result = commitDraft(field, value, raw, how, queried.current);
+    const result = commitDraft(field, value, asFormula ? FORMULA_PREFIX + raw : raw, how, queried.current, formula);
     if (result.kind === "problem") {
       queried.current = result.queried;
       setProblem(result.check);
@@ -1877,6 +2412,7 @@ function EditableCell({
     setProblem(null);
     if (result.kind === "dropped") return false;
     if (result.kind === "save") onCommit(result.value);
+    if (result.kind === "formula") formula?.onSet(result.expr);
     return true;
   };
 
@@ -1897,6 +2433,7 @@ function EditableCell({
       if (kind === "attachment" && onAttach) onAttach();
       else startEdit(editRequest.text);
     }
+    if (editRequest) onEditHeard?.();
     // Each request once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRequest?.n]);
@@ -1924,14 +2461,14 @@ function EditableCell({
   // Being edited outside the cell: show what is typed, as it is typed.
   if (outsideDraft !== undefined) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
       </html.div>
     );
   }
 
-  // Boolean: toggle on click, no draft state
-  if (kind === "boolean") {
+  // Boolean: toggle on click, no draft state. A formula that failed shows why, not an unticked box.
+  if (kind === "boolean" && !(value instanceof FormulaError)) {
     return (
       <Toggle
         role="cell"
@@ -1954,7 +2491,7 @@ function EditableCell({
     ((kind === "list" && enumOptions(field).length > 0) || (kind === "relation" && relationOptions(field, relatedTables).length > 0))
   ) {
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
       </html.div>
     );
@@ -2005,7 +2542,7 @@ function EditableCell({
   const singleRelation = kind === "relation" && !relatesMany(field);
   const choiceOpts = singleRelation
     ? relationOptions(field, relatedTables)
-    : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value }));
+    : enumOpts.map((opt) => ({ value: opt.value, label: opt.label ?? opt.value, ...((opt as { color?: string }).color ? { color: (opt as { color?: string }).color } : {}) }));
   if (kind === "choice" || singleRelation) {
     if (!editing) {
       const shown = (
@@ -2032,12 +2569,12 @@ function EditableCell({
               onEditEnd?.("done");
             }}
             label={field?.title ?? field?.name}
-            trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+            trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
           />
         );
       }
       return (
-        <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+        <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
           {shown}
         </html.div>
       );
@@ -2048,6 +2585,18 @@ function EditableCell({
         ref={inputRef as any}
         value={typeof value === "string" ? value : ""}
         options={[{ value: "", label: EMPTY_TEXT }, ...choiceOpts]}
+        // Where the choices open from the cell itself (the Mac's popover), the
+        // cell keeps showing its value, its tag, while they're open, rather
+        // than turning into a button of its label.
+        {...(kind === "choice" && SelectControl.opensFromTrigger
+          ? {
+              trigger: (
+                <html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+                  <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+                </html.div>
+              ),
+            }
+          : {})}
         onChange={(next) => {
           commit(next);
           onEditEnd?.("done");
@@ -2092,12 +2641,12 @@ function EditableCell({
             onEditEnd?.("done");
           }}
           label={field?.title ?? field?.name}
-          trigger={<html.div style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
+          trigger={<html.div style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>{shown}</html.div>}
         />
       );
     }
     return (
-      <html.div onClick={clickToEdit} style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}>
+      <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         {shown}
       </html.div>
     );
@@ -2107,7 +2656,8 @@ function EditableCell({
   // swapped for @react-native-community/datetimepicker (or similar); the
   // RSD strict-subset purity is deliberately broken here in favour of
   // platform-native pickers — see PR description.
-  const inputType = inputKind(field);
+  // A number's box takes `=` when the cell can have a formula: a number input would refuse it.
+  const inputType = formula && inputKind(field) === "number" ? "text" : inputKind(field);
   // The stored value is a plain number; a currency format only changes
   // how it's shown. While editing, show the symbol beside the input so
   // it's clear what the number is in.
@@ -2126,7 +2676,7 @@ function EditableCell({
               void measureAnchor(el).then(setLongAt);
             }
           }}
-          style={[styles.cellEditableIdle, cellAlignStyle(align ?? "start")]}
+          style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}
         >
           <CellValue field={field} value={value} relatedTables={relatedTables} lines={lines} />
         </html.span>
@@ -2182,20 +2732,56 @@ function EditableCell({
       onBlur={() => {
         if (!closed.current) commit(draft, "blur");
       }}
-      onKeyDown={onEditKey}
+      onKeyDown={(e: KeyEventLike) => {
+        // Backspace before the formula's first character takes its `=`: what's left is a value (D52).
+        const el = inputRef.current as { selectionStart?: number | null; selectionEnd?: number | null } | null;
+        if (asFormula && e.key === "Backspace" && el?.selectionStart === 0 && el.selectionEnd === 0) {
+          e.preventDefault?.();
+          setAsFormula(false);
+          return;
+        }
+        onEditKey(e);
+      }}
       aria-invalid={problem && !problem.confirmable ? true : undefined}
-      style={styles.cellInput}
+      style={[styles.cellInput, cellInputFit]}
     />
   );
-  const field_ = currencySymbol ? (
-    <html.span style={styles.cellInputAffixed}>
-      <html.span style={styles.cellInputAffix}>{currencySymbol}</html.span>
+  // Before the box: a formula's `=`, or a currency's symbol. A div, not a span: on native a span is a run of
+  // text, and an input inside one doesn't sit on its line.
+  const affix = asFormula ? FORMULA_PREFIX : currencySymbol;
+  const field_ = affix ? (
+    <html.div style={styles.cellInputAffixed}>
+      <html.span style={styles.cellInputAffix}>{affix}</html.span>
       {input}
-    </html.span>
+    </html.div>
   ) : (
     input
   );
   if (!problem || !problemAt) return field_;
+  if (CellProblem) {
+    const suggestion = problem.suggestion;
+    return (
+      <>
+        {field_}
+        <CellProblem
+          message={problem.message}
+          confirmable={problem.confirmable === true}
+          suggestion={
+            suggestion
+              ? {
+                  label: `Use ${suggestion.slice(0, 4)}`,
+                  onUse: () => {
+                    setDraft(suggestion);
+                    if (commit(suggestion)) onEditEnd?.("done");
+                  },
+                }
+              : undefined
+          }
+          rect={problemAt}
+        />
+      </>
+    );
+  }
   return (
     <>
       {field_}
@@ -2270,6 +2856,12 @@ function ListCell({
   const items = listItems(value);
   const options = choices ?? enumOptions(field);
   const [open, setOpen] = useState(false);
+  // The platform's own list of several choices, where it has one (a popover on a Mac).
+  const { ChooseMany } = usePlatformControls();
+  const anchorId = `choices-${useId()}`;
+  // The value as last toggled: toggles come faster than the table draws again.
+  const latest = useRef(value);
+  latest.current = value;
   const [text, setText] = useState("");
   // Whether the text box was focused since it opened: once, not on every keystroke.
   const textFocused = useRef(false);
@@ -2314,6 +2906,7 @@ function ListCell({
   };
   const shown = (
     <html.div
+      id={anchorId}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         anchor.current = el;
@@ -2322,7 +2915,7 @@ function ListCell({
         if (selected !== false) void openPicker();
         else onSelect?.();
       }}
-      style={styles.cellEditableIdle}
+      style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor]}
     >
       <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
     </html.div>
@@ -2360,6 +2953,29 @@ function ListCell({
     );
   }
   const toggle = (choice: string) => onCommit(toggled ? toggled(choice) : listToggled(field, value, choice));
+  if (ChooseMany) {
+    return (
+      <>
+        {shown}
+        <ChooseMany
+          options={options.map((o) => {
+            // A relation's rows are named, not coloured choices.
+            const color = choices ? undefined : (o as { color?: string }).color;
+            return { value: o.value, label: o.label ?? o.value, ...(color ? { color } : {}) };
+          })}
+          selected={items}
+          onToggle={(choice) => {
+            const next = toggled ? toggled(choice) : listToggled(field, latest.current, choice);
+            latest.current = next;
+            onCommit(next);
+          }}
+          anchor={anchorId}
+          rect={rect}
+          onClose={() => close("done")}
+        />
+      </>
+    );
+  }
   return (
     <>
       {shown}
@@ -2416,11 +3032,18 @@ function DragGhost({
   pointerPos: { x: number; y: number } | null;
   children: ReactNode;
 }) {
+  const windowWidth = useViewportWidth();
   if (!pointerPos) return null;
+  // With a pointer, beside it, as a cursor carries it. Under a finger, centred
+  // on it and kept on screen: beside the finger, at the screen's edge where a
+  // card is taken to reach the next column, most of it was off screen.
+  const touch = PLATFORM_OS === "ios" || PLATFORM_OS === "android";
+  const x = touch ? Math.min(Math.max(8, pointerPos.x - GHOST_WIDTH / 2), windowWidth - GHOST_WIDTH - 8) : pointerPos.x + 14;
+  const y = touch ? pointerPos.y - 24 : pointerPos.y + 14;
   return (
     <Portal>
       <html.div
-        style={[styles.ghost, styles.ghostPosition(pointerPos.x + 14, pointerPos.y + 14)]}
+        style={[styles.ghost, styles.ghostPosition(x, y)]}
       >
         {children}
       </html.div>
@@ -2453,12 +3076,12 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
-function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
+function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolean; children: ReactNode; snapTo?: readonly number[] }) {
   if (!on) return <>{children}</>;
   return (
     <Bleed>
-      <HScroll>
-        <html.div style={styles.bleedRow}>
+      <HScroll snapTo={snapTo} scrollProps={fill ? { contentContainerStyle: PANE_CONTENT } : undefined}>
+        <html.div style={[styles.bleedRow, fill && styles.fitGrow]}>
           <GutterSpacer />
           {children}
           <GutterSpacer />
@@ -2468,9 +3091,47 @@ function EdgeToEdge({ on, children }: { on: boolean; children: ReactNode }) {
   );
 }
 
+const PANE_CONTENT = { flexGrow: 1 };
+
+/** A board's columns, side by side: a sideways scroller of their own on React Native; the web's board scrolls itself. */
+function BoardScroll({ children, snapTo }: { children: ReactNode; snapTo?: readonly number[] }) {
+  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo}>{children}</HScroll>;
+}
+
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
-function PaneScroll({ on, children }: { on: boolean; children: ReactNode }) {
-  return on ? <HScroll>{children}</HScroll> : <>{children}</>;
+function PaneScroll({
+  on,
+  children,
+  scroll,
+  snapTo,
+}: {
+  on: boolean;
+  children: ReactNode;
+  scroll?: { ref: { current: unknown }; x: { current: number } };
+  snapTo?: readonly number[];
+}) {
+  return on ? (
+    <HScroll
+      snapTo={snapTo}
+      // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      scrollProps={
+        scroll &&
+        ({
+          ref: scroll.ref,
+          // What it holds is at least as wide as the pane, for columns that
+          // share the width to fill it; wider (at their narrowest), it scrolls.
+          contentContainerStyle: PANE_CONTENT,
+          onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
+          scrollEventThrottle: 16,
+        } as any)
+      }
+    >
+      {children}
+    </HScroll>
+  ) : (
+    <>{children}</>
+  );
 }
 
 /** A cell's draft ("2026-03-01", "09:30", "2026-03-01T09:30") as a Date for the system's picker. */
@@ -2516,18 +3177,23 @@ const NO_ENTRIES: RowEntry[] = [];
 
 export function TableView({
   view,
+  cut,
+  fillWidth,
+  onWidest,
   rows,
   schema,
   bodies,
   relatedTables,
   onUpdateRow,
   onUpdateField,
+  onRenameField,
   onAddEnumValue,
   onRemoveEnumValue,
   onDeleteField,
   onMoveField,
   onRestoreSchema,
   onAddField,
+  newFieldRequest,
   onAddRow,
   onDeleteRow,
   onOpenBody,
@@ -2542,7 +3208,17 @@ export function TableView({
   onPlace,
   restorePlace,
   onPlaceMeasure,
+  cells,
+  onSetCellFormula,
+  onSetIteration,
+  onAskCellNote,
+  onAskMerge,
+  onUnmerge,
 }: ViewProps) {
+  // Every prop as given, to tell a drawing the screen asked for from one
+  // only the index's window caused (drawKey, below).
+  // eslint-disable-next-line prefer-rest-params
+  const tableProps = arguments[0] as Record<string, unknown>;
   const display = useDisplaySettings();
   const { formulaSyntax } = display;
   const rtl = useDirection() === "rtl";
@@ -2553,7 +3229,7 @@ export function TableView({
   // Resizing: live values while a handle is dragged, committed to the
   // view (columnWidths / rowHeights, SPEC section 4) when it's let go.
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
-  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number } | null>(null);
+  const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; by: "grip" | "line" } | null>(null);
   const resizeStart = useRef<{ at: number; size: number } | null>(null);
   // Each row's own height, else the view's default; the row being
   // resized follows the drag.
@@ -2564,7 +3240,15 @@ export function TableView({
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
   // The schema as a field's settings opened, for their Cancel to put back.
   const schemaBefore = useRef<TableSchema | null>(null);
+  // A field renamed with its settings open: they follow it, and what Cancel puts back has the new name.
+  const renamedField = useRef<{ from: string; to: string } | null>(null);
   useEffect(() => {
+    const renamed = renamedField.current;
+    renamedField.current = null;
+    if (renamed && schemaBefore.current && editingFieldName === renamed.to) {
+      schemaBefore.current = { ...schemaBefore.current, fields: schemaBefore.current.fields.map((f) => (f.name === renamed.from ? { ...f, name: renamed.to } : f)) };
+      return;
+    }
     schemaBefore.current = editingFieldName ? schema : null;
     // Only on opening and closing: what's changed since is what Cancel undoes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2583,17 +3267,43 @@ export function TableView({
   // A row's actions (open its page, insert, delete), offered the
   // platform's way: right-click on the web and macOS, touch and hold on a
   // phone. A host can replace the control (PlatformControlsProvider).
-  const { RowActions } = usePlatformControls();
+  const { RowActions, Sheet: SheetControl } = usePlatformControls();
+  // Field settings shown apart from the header (an inspector, a sheet) don't
+  // point at it, so they open on the click, not after it's measured.
+  const settingsApart = !!SheetControl.presentsSettings;
+  // Each row as last drawn, by id: what a key or a menu on a selected cell reads its note from (D57).
+  const drawnRows = useRef(new Map<string, Row>());
+  const noteFor = (rowId: string, name: string) => ownNote(cells, rowId, name, drawnRows.current.get(rowId));
   const actionsFor = (rowId: string) =>
-    rowActions(rowId, { onOpenBody, hasBody: bodies?.[rowId] !== undefined, onInsertRow, onDeleteRow });
+    rowActions(rowId, {
+      onOpenBody,
+      hasBody: bodies?.[rowId] !== undefined,
+      onInsertRow,
+      onFitRow: onUpdateView ? (id) => fitRow(id) : undefined,
+      onResetRowHeight: onUpdateView && view.rowHeights?.[rowId] !== undefined ? (id) => resetRowHeight(id) : undefined,
+      onDeleteRow,
+      ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
+      ...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {}),
+      // In a Sheet view, from the selected cell: merge a block, or show a merged one's cells again (D58).
+      ...(coords && sel?.rowId === rowId && sheet && onAskMerge && onUnmerge
+        ? mergeOver(view, sel.name, rowId, fields, sheet.order) !== -1
+          ? { onUnmergeCells: () => onUnmerge(rowId, sel.name) }
+          : { onMergeCells: () => onAskMerge(rowId, sel.name) }
+        : {}),
+    });
   // The totals footer (SPEC section 4, `totals`), like Notion's Calculate.
   const [totalsMenu, setTotalsMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  // The phone turned or the window resized: a menu or panel placed over a
+  // cell would stay where the cell was, so it's closed.
+  useEffect(
+    () =>
+      onWindowResize(() => {
+        setTotalsMenu(null);
+        setFormulaCell(null);
+      }),
+    [],
+  );
   const { Select: TotalsSelect } = usePlatformControls();
-  /** The totals a column can show: sums and the like for numbers, counts for anything. */
-  const totalKindsFor = (field: Field | undefined): ViewTotal[] => {
-    const isNumber = field?.type === "number" || field?.type === "integer" || field?.type === "year" || field?.computed !== undefined;
-    return [...(isNumber ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
-  };
   const chooseTotal = (name: string, kind: ViewTotal | null) => {
     const next = { ...(view.totals ?? {}) };
     if (kind) next[name] = kind;
@@ -2607,7 +3317,11 @@ export function TableView({
   // The selected cell, as a spreadsheet has one: arrows move it, Enter or
   // typing edits it (#85). Cleared when focus leaves the table.
   const [sel, setSel] = useState<{ rowId: string; name: string } | null>(null);
+  // A cell asked to open for editing (Enter, or a key typed on it). It clears
+  // once the cell has heard it (`onEditHeard`), so the cell doesn't open
+  // again when its row is scrolled away and drawn anew.
   const [editReq, setEditReq] = useState<{ rowId: string; name: string; req: EditRequest } | null>(null);
+  const editHeard = useCallback(() => setEditReq(null), []);
   // An editor outside the table (#352), when the host provides one: the
   // draft it is typing into a cell, or into a formula column, shown live.
   const editor = useCellEditor();
@@ -2630,18 +3344,27 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [editor, view.id, tableKey],
   );
+  // When this table goes (another view, another table), nothing in it is
+  // selected any more: the editor is told, or it goes on showing the cell.
+  useEffect(() => () => editor?.select(null), [editor, view.id, tableKey]);
   // The editor shows the selected cell, and can deselect it or edit it.
   useEffect(() => {
     if (!editor) return;
     const row = sel ? rowOf(sel.rowId) : undefined;
     const field = sel ? fieldMap.get(sel.name) : undefined;
     if (!sel || !row || !field) return editor.select(null);
+    // A cell with its own formula shows that formula, as it's edited: the "=" apart, then the text
+    // in the reader's syntax (the stored form untouched). Its value is in the cell itself.
+    const own = ownFormula(cells, sel.rowId, sel.name, row);
     editor.select({
       rowId: sel.rowId,
       name: sel.name,
       label: field.title ?? field.name,
       rowLabel: titleField ? formatValue(row[titleField]) : row.id,
-      text: field.computed
+      ...(own !== undefined ? { prefix: FORMULA_PREFIX } : {}),
+      text: own !== undefined
+        ? cellFormulaText(own, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
+        : field.computed
         ? formulaDraftOf(field, grid ? { ...grid, here: sel.rowId } : undefined, formulaSyntax)
         : field.relation
           ? // A link reads as the rows it points at, as the cell shows them.
@@ -2651,12 +3374,15 @@ export function TableView({
               return ids.map((id) => names.get(id) ?? id).join(", ");
             })()
           : formatCellValue(field, row[sel.name]),
-      formula: field.computed !== undefined,
+      formula: own === undefined && field.computed !== undefined,
       ...(field.description ? { description: field.description } : {}),
       // What the web's header hover says, for a platform with no hover.
       facts: (() => {
         const hint = fieldHint({ field, name: sel.name, schema, editable: false, formulaSyntax });
-        return [hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
+        // A formula that failed: what's wrong first, as a hover says it on the web (#685).
+        const value = row[sel.name];
+        const problem = value instanceof FormulaError ? formulaErrorShow(value, field, formulaSyntax).explanation : undefined;
+        return [problem, hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
       })(),
     });
   });
@@ -2684,6 +3410,19 @@ export function TableView({
   useEffect(() => () => editor?.attach(null), [editor]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gridRef = useRef<any>(null);
+  // Where the keys come from on macOS, which needs a view of its own for them (GridKeys).
+  const keysRef = useRef<GridKeysHandle | null>(null);
+  // On the Mac, a table that comes into view takes the keyboard, so the first
+  // arrow selects its first cell (gridKey) without a click first. Not on the
+  // web, where focusing would scroll the page, nor on a phone; nor where the
+  // host says not to (a document's embeds: KeyboardOnShow).
+  const keyboardOnShow = useContext(KeyboardOnShow);
+  useEffect(() => {
+    if (PLATFORM_OS !== "macos" || !keyboardOnShow) return;
+    const t = setTimeout(() => keysRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.id]);
   useEffect(() => {
     // A row in the index is selected by its id whether or not it's on screen: the list goes to it.
     if (focusRowId && (indexed || rows.some((r) => r.id === focusRowId))) {
@@ -2702,7 +3441,9 @@ export function TableView({
   // Where totals are chosen in the view's settings (a phone's settings
   // form), an empty footer is only noise: it shows once a column has a total.
   const { SettingsForm: settingsForm } = usePlatformControls();
-  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm);
+  // Nor under a table cut to its first rows (`cut`): an empty row there reads as part of what was left out.
+  const leavesOut = cut !== undefined && (given ? given.count : rows.length) > cut;
+  const showTotals = Object.keys(totals).length > 0 || (!!onUpdateView && !settingsForm && !leavesOut);
   // No totals chosen: the footer is only a place to choose one, so it
   // stays quiet (no fill, rules or separators) until "Calculate" is hovered.
   const quietTotals = Object.keys(totals).length === 0;
@@ -2729,7 +3470,9 @@ export function TableView({
   );
   const facts = useViewFacts(given ?? NO_SOURCE, indexed ? ownHeights : NO_IDS);
   const inMemory = indexed ? NO_ENTRIES : groupedRows(view, rows, schema);
-  const total = indexed ? given.count : inMemory.length;
+  // Cut to its first rows (`cut`), only those have a place; the totals and each group's count are still of every row.
+  const whole = indexed ? given.count : inMemory.length;
+  const total = cut === undefined ? whole : Math.min(whole, cut);
   const groupStarts = indexed
     ? new Map(facts.groups.map((g) => [g.start, { label: groupLabel(g.key, view.group?.field ?? "", schema), count: g.count }] as const))
     : null;
@@ -2767,7 +3510,10 @@ export function TableView({
   // The places of the rows with a height of their own.
   const tallAt = new Map<number, number>();
   for (const id of ownHeights) {
-    const place = indexed ? (facts.places.get(id) ?? -1) : placeOfId(id);
+    // From an index, a row's place is asked for and arrives a moment later;
+    // a row on screen (one being resized, or just saved) is already known
+    // from the rows drawn, so the rows below it move with it at once.
+    const place = indexed ? (facts.places.get(id) ?? placeOfId(id)) : placeOfId(id);
     if (place >= 0) tallAt.set(place, heightOf(id));
   }
   // A row's border is outside its height, so it adds its 1 px, except under
@@ -2795,33 +3541,63 @@ export function TableView({
     if (groupStarts) for (const place of groupStarts.keys()) marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER });
     else inMemory.forEach((d, place) => d.starts && marks.push({ place, before: GROUP_ROW_HEIGHT + ROW_BORDER }));
     for (const [place, height] of tallAt) marks.push({ place, taller: height - defaultHeight });
+    // The last row has no rule under it when nothing follows it (rowItemHeight).
+    if (total > 0 && !onAddRow) marks.push({ place: total - 1, taller: -ROW_BORDER });
     return rowLayout(total, defaultHeight + ROW_BORDER, marks);
   };
-  // A table too tall for a list to lay out as it is gives the list where every row is.
-  const tallLayout = total * (defaultHeight + ROW_BORDER) > MAX_LIST_HEIGHT ? layoutOf : undefined;
-  /** A place's item: its row as `draw` draws it, or an empty row of its height while it's on its way from the index. */
-  const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode): ReactNode => {
+  /**
+   * A place's item: its row as `draw` draws it, or, while it's on its way
+   * from the index, an empty row of its height in `pane`'s columns: the
+   * same cells and lines as a row, so the grid stays whole and only the
+   * values arrive.
+   */
+  const drawn = (place: number, draw: (entry: RowEntry, place: number) => ReactNode, pane: "frozen" | "rest"): ReactNode => {
     const entry = entryAt(place);
     if (entry) return draw(entry, place);
+    const frozen = pane === "frozen";
+    const names = frozen && frozenOn ? frozenNames : restNames;
+    const numbered = coords && (frozen || !frozenOn);
     return (
       <>
-        {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow]} />}
+        {startsAt(place) && <html.div style={[styles.tableRow, styles.groupRow, frozen ? styles.frozenEdge : restRowWidth()]} />}
         <html.div
-          style={[styles.tableRow, styles.rowHeight(tallAt.get(place) ?? defaultHeight), place === total - 1 && !onAddRow && styles.tableRowLast]}
-        />
+          style={[
+            styles.tableRow,
+            styles.rowHeight(tallAt.get(place) ?? defaultHeight),
+            frozen ? styles.frozenEdge : restRowWidth(),
+            place === total - 1 && !onAddRow && styles.tableRowLast,
+          ]}
+        >
+          {numbered && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]} />}
+          {names.map((name, idx) => (
+            <html.div
+              key={name}
+              style={[styles.tableCell, columnStyle(name), (idx !== names.length - 1 || closes(name)) && styles.tableCellSeparator]}
+            />
+          ))}
+        </html.div>
       </>
     );
   };
   // What the list is showing decides the window read from an index, with room either side.
+  // Further ahead the way the list is scrolling, so a fast scroll finds
+  // its rows already read rather than drawing each one twice, empty and then
+  // filled: two of the index's pages (VIEW_PAGE) ahead, a few rows behind.
+  const lastShown = useRef(0);
   const onShown = indexed
     ? (first: number, last: number) => {
-        const start = Math.max(0, Math.floor((first - 60) / 40) * 40);
-        const end = Math.ceil((last + 60) / 40) * 40;
+        const down = first >= lastShown.current;
+        lastShown.current = first;
+        const start = Math.max(0, Math.floor((first - (down ? 60 : 400)) / 40) * 40);
+        const end = Math.ceil((last + (down ? 400 : 60)) / 40) * 40;
         setShownRange((was) => (was.start === start && was.end === end ? was : { start, end }));
       }
     : undefined;
   const frozenRows = useRef<RowListHandle | null>(null);
   const paneRows = useRef<RowListHandle | null>(null);
+  // The columns beside the frozen one, when they scroll sideways in their own pane, and how far.
+  const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
+  const pageReveal = useContext(PageReveal);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
@@ -2851,15 +3627,24 @@ export function TableView({
     return new Map(out.map((r) => [r.id, r[field.name]] as const));
   })();
   const canAddField = !!onAddField;
-  // A new field lands at the end of the row, often past the right edge:
-  // bring its header into view once it has rendered.
+  // A new field can land past the right edge: bring its header into view
+  // once it has rendered.
   const [addedField, setAddedField] = useState<string | null>(null);
+  // The new-field editor, opened from somewhere other than its "+": a
+  // column's Insert Field Left or Right (with where the field goes, and the
+  // column's header to open by), or the host's New Field.
+  const [fieldAsk, setFieldAsk] = useState<{ id: number; anchor?: AnchorRect; place?: { name: string; side: "before" | "after" } } | null>(null);
+  const asks = useRef(0);
   const addField = (field: Field) => {
-    onAddField?.(field);
+    onAddField?.(field, fieldAsk?.place);
     setAddedField(field.name);
   };
+  const insertField = async (name: string, side: "before" | "after") => {
+    const anchor = (await measureAnchor(headerButtonRefs.current[name])) ?? undefined;
+    setFieldAsk({ id: ++asks.current, anchor, place: { name, side } });
+  };
   const addFieldButton = (compact: boolean) => (
-    <Hinted hint="Add a field">
+    <Hinted box hint="Add a field">
       <AddFieldButton
         compact={compact}
         hug={!compact}
@@ -2867,9 +3652,20 @@ export function TableView({
         fields={schema.fields}
         grid={grid}
         onAdd={addField}
+        request={fieldAsk}
+        onClosed={() => setFieldAsk(null)}
       />
     </Hinted>
   );
+  // The host's New Field: the end of the header comes into view, and the
+  // editor opens from its "+".
+  useEffect(() => {
+    if (!newFieldRequest || !canAddField) return;
+    const last = fields[fields.length - 1];
+    if (last) headerButtonRefs.current[last]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    setFieldAsk({ id: ++asks.current });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFieldRequest]);
   useEffect(() => {
     if (!addedField) return;
     const el = headerButtonRefs.current[addedField];
@@ -2889,8 +3685,27 @@ export function TableView({
   // portrait viewports it ate too much real estate (the title column
   // is the widest), so default it off there: the table falls back to
   // a single horizontal scroll over all fields, primary included.
-  const viewportWidth = useViewportWidth();
-  const freezePrimary = viewportWidth > TOUCH_VIEWPORT_MAX;
+  // On the Mac a table is laid out for a pointer however narrow its window:
+  // a window dragged under the touch width took the phone's layout a moment
+  // after the drag, when the window's size reached it, and the table jumped
+  // to columns of another width.
+  const compact = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const wide = PLATFORM_OS === "macos" || !compact;
+  // Frozen columns are, for now, the web's wide layout. Elsewhere a table is
+  // edge to edge, as the markdown library's tables are and the phone's always
+  // were: it fills the width when it fits, and when it doesn't it scrolls
+  // sideways over the page's margins, to its edges, rather than inside a
+  // frame with a margin either side.
+  const freezePrimary = wide && PLATFORM_OS === "web";
+  // The frozen columns are the first in the visible order: the view's
+  // `frozen.columns` of them (D58), the title field alone when it doesn't
+  // say, and never all of them, so something is left to scroll. Empty
+  // tables (no fields) still render a placeholder header. The left pane
+  // gets the frozen columns and the right pane the rest; with none
+  // frozen, the right pane gets all fields and the left pane is unused.
+  const frozenCount = freezePrimary ? Math.min(frozenColumnsOf(view), Math.max(1, fields.length - 1)) : 0;
+  const frozenNames = fields.slice(0, frozenCount);
+  const frozenOn = frozenNames.length > 0;
 
   // Responsive cell width: cells fill the table's CONTAINER when
   // there's room (wide windows) and snap to MIN_CELL_WIDTH on narrow
@@ -2900,7 +3715,10 @@ export function TableView({
   // Container-measured (not viewport-measured) so a sidebar-narrowed
   // main pane on web gets the right cell sizes, and an embedded
   // table inside a constrained panel does the right thing too.
-  const { measureProps, width: containerWidth } = useContainerWidth();
+  // In a frame, the layout keeps the columns right as its width changes
+  // (columnShare): the table isn't drawn again at each step of a window
+  // being resized, only once it's still.
+  const { measureProps, width: containerWidth } = useContainerWidth(() => wide);
 
   // Column-width model. The earlier version divided the container by
   // `fields + 1` (counting the "+ Field" slot) but then rendered that
@@ -2925,19 +3743,107 @@ export function TableView({
   //
   // Columns the user has resized keep their width; the rest share what's
   // left the same way.
-  const chrome = (freezePrimary ? 3 : 2) + (coords ? ROW_NUMBER_WIDTH : 0);
-  // "+ Field" sits under the table, not in a column of its own, so
-  // it takes no width from the grid.
-  const addFieldW = 0;
-  const colWidth = columnWidths(fields, { ...(view.columnWidths ?? {}), ...liveWidths }, containerWidth, chrome + addFieldW);
+  // A sheet's row numbers: their gutter is as wide as the largest of them, once.
+  const largestNumber = useMemo(() => {
+    let most = total;
+    if (sheet?.position) for (const n of sheet.position.values()) if (n > most) most = n;
+    return most;
+  }, [total, sheet?.position]);
+  const numberWidth = coords ? rowNumberWidth(largestNumber) : 0;
+  const chrome = (frozenOn ? 3 : 2) + numberWidth;
+  // The "+" for a new field is a narrow column of its own at the end of the
+  // header: it takes its width from the columns', as the borders do.
+  const addFieldW = canAddField && fields.length > 0 ? ADD_FIELD_WIDTH : 0;
+  // With it there, the last column ends in a line as the others do; without, the table's frame is its end.
+  const closes = (name: string) => addFieldW > 0 && name === fields[fields.length - 1];
+  const setWidths = { ...(view.columnWidths ?? {}), ...liveWidths };
+  // Squeezed past fitting, a framed table's columns hold the squeezed width
+  // and scroll, rather than growing to the comfortable one as its space shrinks.
+  // How narrow each column may go, by what it holds: a checkbox or a
+  // choice gives its room before the title or an amount does.
+  const leastOf = (name: string) => squeezedWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  // How wide each grows when there's room, and no wider: the table stops
+  // there. Asked to fill its width (`width=full`), none stops, and they
+  // share it evenly.
+  const mostOf = (name: string) => roomiestWidthOf(fieldMap.get(name), schema, name === fields[0]);
+  const growOf = (name: string) => (fillWidth ? 1 : mostOf(name));
+  const colWidth = columnWidths(
+    fields,
+    setWidths,
+    containerWidth,
+    chrome + addFieldW,
+    SQUEEZED_CELL_WIDTH,
+    wide ? SQUEEZED_CELL_WIDTH : undefined,
+    wide ? leastOf : undefined,
+    fillWidth ? undefined : mostOf,
+  );
+  // In a frame, the columns nobody resized share its width in the layout
+  // (columnShare), down to the squeezed width; past that they hold it and
+  // the columns beside the frozen one scroll. The layout does it, in the
+  // same pass as everything around the table: a window being resized moves
+  // them with it, and crossing from fitting to scrolling changes no view,
+  // where it had been a different table, built again, a moment after the
+  // window moved. `colWidth` is what they were when last measured: what
+  // grips and scroll positions go by, a step behind at most.
+  const shares = (name: string) => wide && typeof setWidths[name] !== "number";
+  // As narrow as a sharing column can be: the squeezed width, or, when a
+  // column dragged wider has made the table scroll, what they had before
+  // (a column dragged wider widens the table, rather than taking the
+  // others' room).
+  const flexibleWidth = fields.find((name) => typeof setWidths[name] !== "number");
+  const overflows =
+    containerWidth > 0 && fields.reduce((n, name) => n + colWidth(name), 0) > containerWidth - chrome - addFieldW;
+  const shareLeast = (name: string) =>
+    overflows && flexibleWidth !== undefined ? Math.max(leastOf(name), colWidth(name)) : leastOf(name);
+  const columnStyle = (name: string) => (shares(name) ? styles.columnShare(shareLeast(name), growOf(name)) : styles.cellWidth(colWidth(name)));
+  // Where the "+" column is, the scrolling pane's rows are as wide as their
+  // columns and stop there: no row line, group band or total runs under the
+  // "+", which is a place a column could go, not a column.
+  const restRowWidth = () =>
+    addFieldW > 0
+      ? !edgeToEdge || fills
+        ? styles.rowStopsBefore(addFieldW)
+        : styles.cellWidth(restNames.reduce((n, name) => n + colWidth(name), 0) + (coords && !frozenOn ? numberWidth : 0))
+      : false;
 
   // A column's resize handle is on its end edge; in a right-to-left
   // layout that's the left, so dragging leftwards widens it.
   const widen = (start: { at: number }, pageX: number) => (rtl ? start.at - pageX : pageX - start.at);
-  const columnResizer = (name: string) =>
+  // Back to an even share of the width: what a dragged column had before.
+  const resetWidth = (name: string) => {
+    if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
+    const { [name]: _gone, ...rest } = view.columnWidths;
+    onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+  };
+  // With a pointer, a column resizes from its line anywhere down the table
+  // (columnLines), as in Numbers or Sheets; on touch, from the header's edge.
+  const byLines = RESIZE_BY_LINES && !!onUpdateView;
+  // The lines of `names`' columns, as strips over a pane, each at the end of
+  // its column: it shows a line on hover, drags to resize, and a double
+  // click puts the column back to its share. In a row laid out as the
+  // pane's rows are (`from` before the columns, `end` after them), whose
+  // clicks pass through, so only the strips take the pointer.
+  const columnLines = (names: string[], from: number, end: number) => {
+    if (!byLines) return null;
+    return (
+      <html.div style={[styles.columnLines, passThrough, end > 0 && styles.columnLinesEnd(end)]}>
+        {from > 0 && <html.div style={[styles.columnLineSlot, passThrough, styles.cellWidth(from)]} />}
+        {names.map((name) => (
+          <html.div key={name} style={[styles.columnLineSlot, passThrough, columnStyle(name)]}>
+            <html.div style={styles.columnLine}>{columnResizer(name, true)}</html.div>
+          </html.div>
+        ))}
+      </html.div>
+    );
+  };
+  // On a column's line (`straddle`), the strip is centred on the line.
+  const columnResizer = (name: string, straddle = false) =>
     onUpdateView ? (
       <DragHandle
         edge="end"
+        straddle={straddle}
+        // A double click on the edge puts the column back to its share.
+        onDoubleTap={() => resetWidth(name)}
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
         }}
@@ -2958,64 +3864,150 @@ export function TableView({
       />
     ) : null;
 
+  const saveRowHeight = (rowId: string, h: number) => {
+    if (h !== rowHeightOf(view, rowId)) onUpdateView?.({ rowHeights: { ...(view.rowHeights ?? {}), [rowId]: h } });
+  };
+  // A row's height for what it holds: each cell's text in its column's width.
+  const fittedHeightOf = (row: Row) =>
+    fittedRowHeight(
+      fields.map((name) => ({
+        show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
+        width: colWidth(name),
+      })),
+    );
+  // From the row's menu: fit it, or put it back to the view's height.
+  const fitRow = (rowId: string) => {
+    const row = rowOf(rowId);
+    if (row) saveRowHeight(rowId, fittedHeightOf(row));
+  };
+  const resetRowHeight = (rowId: string) => {
+    if (view.rowHeights?.[rowId] === undefined) return;
+    const { [rowId]: _gone, ...rest } = view.rowHeights;
+    onUpdateView?.({ rowHeights: Object.keys(rest).length > 0 ? rest : undefined });
+  };
+  // Resizing a row, from its grip or its line: in whole lines, with a tick
+  // for each; a double tap fits it to what it holds.
+  const rowResize = (row: Row, by: "grip" | "line") => {
+    const saveHeight = (h: number) => saveRowHeight(row.id, h);
+    return {
+      onDragStart: (e: DragEvent) => {
+        resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
+        lastStep.current = heightOf(row.id);
+      },
+      onDragMove: (e: DragEvent) => {
+        const start = resizeStart.current;
+        if (!start) return;
+        const h = snappedRowHeight(start.size, e.pageY - start.at);
+        if (h !== lastStep.current) haptics.step?.();
+        lastStep.current = h;
+        setLiveRow({ rowId: row.id, h, by });
+      },
+      onDragEnd: (e: DragEvent) => {
+        const start = resizeStart.current;
+        resizeStart.current = null;
+        if (!start) return;
+        saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
+        setLiveRow(null);
+      },
+      onDoubleTap: () => saveHeight(fittedHeightOf(row)),
+    };
+  };
+  // How many lines a row being dragged by `by` has, for its label.
+  const draggedLines = (row: Row, by: "grip" | "line") => {
+    if (liveRow?.rowId !== row.id || liveRow.by !== by) return null;
+    const n = linesFor(liveRow.h);
+    return `${n} ${n === 1 ? "line" : "lines"}`;
+  };
+
   // A row's grip: only on the row with the selected cell, so nothing else
   // can be dragged by a scroll that starts on a row's edge. A pill on the
   // row's bottom edge under the start of the selected cell, so it's in
   // view wherever the row has been scrolled, that takes a touch as it
-  // lands. Dragging resizes the row in whole lines,
-  // with a tick for each; a double tap fits it to what it holds.
-  const rowGrip = (row: Row, cellStart: number) => {
+  // lands.
+  // As grabbers (the "Resize handles" setting), it's centred on the cell's
+  // bottom edge instead, as the column's is on its end edge.
+  const grabbers = display.resizeHandles === "grabbers";
+  const rowGrip = (row: Row, cellStart: number, cellWidth: number) => {
     if (!onUpdateView) return null;
-    const saveHeight = (h: number) => {
-      if (h !== rowHeightOf(view, row.id)) onUpdateView({ rowHeights: { ...(view.rowHeights ?? {}), [row.id]: h } });
-    };
-    const dragging = liveRow?.rowId === row.id ? liveRow.h : null;
+    const label = draggedLines(row, "grip");
+    // The pill's hit area is 52 wide; centred, its middle is the cell's.
+    const at = grabbers ? cellStart + cellWidth / 2 - 26 : cellStart + 4;
     return (
-      <html.div style={[styles.rowGripSlot, styles.rowGripAt(cellStart + 4)]}>
+      <html.div style={[styles.rowGripSlot, styles.rowGripAt(at)]}>
+        <DragHandle grabOnTouch {...rowResize(row, "grip")}>
+          <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
+            {grabbers ? (
+              <html.div style={[styles.rowGrip, styles.gripClear]}>
+                <html.div style={styles.rowGrabber} />
+              </html.div>
+            ) : (
+              <html.div style={styles.rowGrip}>
+                <html.div style={styles.rowGripBar} />
+                <html.div style={styles.rowGripBar} />
+              </html.div>
+            )}
+          </html.div>
+        </DragHandle>
+        {label !== null && <html.span style={styles.rowGripLabel}>{label}</html.span>}
+      </html.div>
+    );
+  };
+
+  // With a pointer, a row also resizes from the line under it, anywhere
+  // along it, as a column does from its line: a strip inside the row's
+  // bottom edge in each pane, lit in both while it's dragged. `labelled`
+  // is the pane that shows the lines while dragging (the first).
+  const rowLine = (row: Row, labelled: boolean) => {
+    if (!byLines) return null;
+    const label = labelled ? draggedLines(row, "line") : null;
+    return (
+      <DragHandle edge="bottom" lit={liveRow?.rowId === row.id && liveRow.by === "line"} {...rowResize(row, "line")}>
+        {label !== null && <html.span style={[styles.rowGripLabel, styles.rowLineLabel]}>{label}</html.span>}
+      </DragHandle>
+    );
+  };
+
+  // A selected cell's column grip, on touch: the row's grip turned on its
+  // side, on the cell's end edge at the middle of the row. Dragging resizes
+  // the column, as dragging a header's edge does with a pointer (where a
+  // column's lines do it, there's no grip: columnLines); a double tap puts
+  // the column back to its share.
+  const columnGrip = (name: string, cellEnd: number, rowHeight: number) => {
+    if (byLines || !onUpdateView) return null;
+    return (
+      <html.div style={[styles.columnGripSlot, styles.columnGripAt(cellEnd - 19, rowHeight / 2 - 24)]}>
         <DragHandle
           grabOnTouch
           onDragStart={(e) => {
-            resizeStart.current = { at: e.pageY, size: heightOf(row.id) };
-            lastStep.current = heightOf(row.id);
+            resizeStart.current = { at: e.pageX, size: colWidth(name) };
           }}
           onDragMove={(e) => {
             const start = resizeStart.current;
             if (!start) return;
-            const h = snappedRowHeight(start.size, e.pageY - start.at);
-            if (h !== lastStep.current) haptics.step?.();
-            lastStep.current = h;
-            setLiveRow({ rowId: row.id, h });
+            setLiveWidths((prev) => ({ ...prev, [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) }));
           }}
           onDragEnd={(e) => {
             const start = resizeStart.current;
             resizeStart.current = null;
             if (!start) return;
-            saveHeight(snappedRowHeight(start.size, e.pageY - start.at));
-            setLiveRow(null);
+            onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) } });
+            setLiveWidths({});
           }}
-          onDoubleTap={() =>
-            saveHeight(
-              fittedRowHeight(
-                fields.map((name) => ({
-                  show: describeCell(fieldMap.get(name), row[name], display, relatedTables),
-                  width: colWidth(name),
-                })),
-              ),
-            )
-          }
+          onDoubleTap={() => resetWidth(name)}
         >
-          <html.div role="button" aria-label="Resize row" style={styles.rowGripHit}>
-            <html.div style={styles.rowGrip}>
-              <html.div style={styles.rowGripBar} />
-              <html.div style={styles.rowGripBar} />
-            </html.div>
+          <html.div role="button" aria-label="Resize column" style={styles.columnGripHit}>
+            {grabbers ? (
+              <html.div style={[styles.columnGrip, styles.gripClear]}>
+                <html.div style={styles.columnGrabber} />
+              </html.div>
+            ) : (
+              <html.div style={styles.columnGrip}>
+                <html.div style={styles.columnGripBar} />
+                <html.div style={styles.columnGripBar} />
+              </html.div>
+            )}
           </html.div>
         </DragHandle>
-        {dragging !== null && (
-          <html.span style={styles.rowGripLabel}>
-            {linesFor(dragging)} {linesFor(dragging) === 1 ? "line" : "lines"}
-          </html.span>
-        )}
       </html.div>
     );
   };
@@ -3023,7 +4015,7 @@ export function TableView({
   // Where the selected cell starts in its pane: the grip sits under that
   // cell, so it's in view wherever the pane has been scrolled.
   const cellStartIn = (names: string[], name: string, numbered: boolean) => {
-    let x = numbered ? ROW_NUMBER_WIDTH : 0;
+    let x = numbered ? numberWidth : 0;
     for (const n of names) {
       if (n === name) break;
       x += colWidth(n);
@@ -3032,18 +4024,56 @@ export function TableView({
   };
 
   // Split fields into primary (frozen, leftmost) + rest (scrollable).
-  // Primary is the title field — first in the visible order. Empty
-  // tables (no fields) still render a placeholder header.
-  // When the primary is frozen, the left pane gets it and the right
-  // pane gets the rest. When not frozen, the right pane gets all
-  // fields and the left pane is unused.
-  const primaryName = freezePrimary ? fields[0] : undefined;
+  // Fitting or scrolling, the same two panes: sharing the frame's width, the
+  // frozen columns take their share and the pane beside them the rest
+  // (frozenShare, paneShare), so they're as even as in one pane.
   // Tables are edge to edge, as the markdown library's are: the framed
   // grid rests on the page's margin and scrolls sideways over it to the
   // screen's edges (Bleed). With a pinned first column the frame stays
   // put and its other columns scroll inside it.
-  const edgeToEdge = !primaryName;
-  const restNames = freezePrimary ? fields.slice(1) : fields;
+  const edgeToEdge = !frozenOn || fields.length === 0;
+  // Edge to edge on a wide screen, the columns share the page's width in
+  // the layout, as they do beside a pinned column: the scroller's content
+  // is at least as wide as the page, and the frame and its pane grow to it.
+  const fills = wide && edgeToEdge;
+  // As wide as the frame grows: its columns at their natural widths (or
+  // what a resized one was given), with its lines, row numbers and "+".
+  const frameMostWidth = fields.reduce((n, name) => n + (shares(name) ? mostOf(name) : colWidth(name)), 0) + chrome + addFieldW;
+  const frameMost = styles.frameMost(frameMostWidth);
+  const widest = wide && !fillWidth ? frameMostWidth : null;
+  useEffect(() => {
+    onWidest?.(widest);
+  }, [onWidest, widest]);
+  const restNames = fields.slice(frozenNames.length);
+  // The frozen columns' share of the width: theirs that share it (at their
+  // natural widths, as the columns grow by), on what they hold at a fixed
+  // width and at their narrowest.
+  const frozenSharing = frozenNames.filter(shares).reduce((n, name) => n + growOf(name), 0);
+  const frozenFixed = frozenNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0);
+  const frozenLeast = frozenNames.reduce((n, name) => n + (shares(name) ? shareLeast(name) : colWidth(name)), 0);
+  // Beside the frozen columns: a share for each of its columns that shares
+  // the width (its natural width, as the columns grow by), on what it holds
+  // at a fixed width; or, when none does and the frozen ones don't either,
+  // the rest of the frame.
+  const restSharing = restNames.filter(shares).reduce((n, name) => n + growOf(name), 0);
+  const restFixed = restNames.reduce((n, name) => n + (shares(name) ? 0 : colWidth(name)), 0) + addFieldW;
+  const paneShare = styles.paneShare(restSharing > 0 || !frozenOn || frozenSharing === 0 ? Math.max(1, restSharing) : 0, restFixed);
+  // Its columns at their narrowest: past that, it scrolls.
+  const restLeast = restNames.reduce((n, name) => n + (shares(name) ? shareLeast(name) : colWidth(name)), 0) + addFieldW;
+  // Where each column of the sideways-scrolling part starts, from that
+  // part's own start: a scroll comes to rest on one, so no column is left
+  // cut in half at the edge with its title out of sight. (Row numbers,
+  // when they scroll with the columns, stay before the first.)
+  const widthsKey = restNames.map((name) => colWidth(name)).join(",");
+  const columnStarts = useMemo(() => {
+    const starts: number[] = [];
+    let at = 0;
+    for (const width of widthsKey === "" ? [] : widthsKey.split(",").map(Number)) {
+      starts.push(at);
+      at += width;
+    }
+    return starts;
+  }, [widthsKey]);
 
   // Cell renderers — extracted because both panes share them.
   const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
@@ -3063,33 +4093,45 @@ export function TableView({
       return (
         <Hinted
           key={name}
+          box
           hint={hint}
           text={hintText}
           style={[
             styles.tableCell,
-            styles.cellWidth(colWidth(name)),
+            styles.slotFill,
             styles.tableHeaderCell,
             styles.positioned,
             cellAlignStyle(align),
-            !isLast && styles.tableCellSeparator,
+            (!isLast || closes(name)) && styles.tableCellSeparator,
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
-          {columnResizer(name)}
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
+          {!byLines && columnResizer(name)}
         </Hinted>
       );
     }
+    // Right-click the header (touch and hold on a phone) to insert a field
+    // beside it, put back a width that was dragged, or delete it.
+    const menu = columnActions(name, {
+      onInsertField: canAddField ? (n, side) => void insertField(n, side) : undefined,
+      onResetWidth: onUpdateView && view.columnWidths?.[name] !== undefined ? resetWidth : undefined,
+      onDeleteField,
+      rtl,
+    });
     return (
+      <RowActions key={name} actions={menu}>
       <Hinted
-        key={name}
+        box
         hint={isEditing ? null : hint}
         text={isEditing ? undefined : hintText}
         style={[
           styles.headerCellWrapper,
-          styles.cellWidth(colWidth(name)),
-          !isLast && styles.tableCellSeparator,
+          styles.slotFill,
+          (!isLast || closes(name)) && styles.tableCellSeparator,
+          // Its settings open: the header is selected, as a cell is.
+          isEditing && styles.cellSelected,
         ]}
       >
         <html.button
@@ -3100,6 +4142,10 @@ export function TableView({
           onClick={async () => {
             if (isEditing) {
               setEditingFieldName(null);
+            } else if (settingsApart) {
+              setEditingFieldName(name);
+              const rect = await measureAnchor(headerButtonRefs.current[name]);
+              if (rect) setAnchorRect(rect);
             } else {
               const rect = await measureAnchor(headerButtonRefs.current[name]);
               if (rect) setAnchorRect(rect);
@@ -3112,11 +4158,11 @@ export function TableView({
             headerAlignStyle(align),
           ]}
         >
-          {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+          {coords && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{columnLetter(fields.indexOf(name))}</html.span>}
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
-          <html.span>{field?.title ?? name}</html.span>
+          <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
-        {isEditing && field && anchorRect && (
+        {isEditing && field && (anchorRect || settingsApart) && (
           <SchemaFieldEditor
             // The field as the file has it. fieldMap's copy carries the
             // format it is *shown* with, which for a formula may be an
@@ -3126,8 +4172,17 @@ export function TableView({
             fieldIndex={fieldIndex}
             totalFields={schema.fields.length}
             align={opensTowardStart(name) !== rtl ? "right" : "left"}
-            anchorRect={anchorRect}
+            anchorRect={anchorRect ?? NO_ANCHOR}
             onUpdate={(patch) => onUpdateField!(name, patch)}
+            onRename={
+              onRenameField
+                ? (to) => {
+                    renamedField.current = { from: name, to };
+                    onRenameField(name, to);
+                    setEditingFieldName(to);
+                  }
+                : undefined
+            }
             onAddEnumValue={(value) => onAddEnumValue!(name, value)}
             onRemoveEnumValue={onRemoveEnumValue ? (value) => onRemoveEnumValue(name, value) : undefined}
             onDelete={
@@ -3158,10 +4213,21 @@ export function TableView({
             }}
           />
         )}
-        {columnResizer(name)}
+        {!byLines && columnResizer(name)}
       </Hinted>
+      </RowActions>
     );
   };
+  // Each header in a slot of its column's width, straight in the row: what
+  // wraps a header (its right-click menu, its tooltip) are views of their
+  // own on a Mac, and a width given inside them never reached the row.
+  const headerCell = (name: string, idxInPane: number, paneLen: number) => (
+    <html.div key={name} style={[styles.headerSlot, columnStyle(name)]}>
+      {renderHeaderCell(name, idxInPane, paneLen)}
+    </html.div>
+  );
+  // The "+" for a new field, in the header after the last column.
+  const headerAddCell = addFieldW > 0 && <html.div style={[styles.headerAddCell, styles.cellWidth(addFieldW)]}>{addFieldButton(true)}</html.div>;
 
   const renderTotalCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
@@ -3183,37 +4249,35 @@ export function TableView({
     ) : onUpdateView ? (
       <html.span style={[styles.totalPlaceholder, !HOVERS && styles.shown]}>Calculate</html.span>
     ) : null;
-    const cellStyle = [
+    const cellLook = [
       styles.tableCell,
-      styles.cellWidth(colWidth(name)),
       cellAlignStyle(effectiveAlign(field)),
-      idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
+      (idxInPane !== paneLen - 1 || closes(name)) && !quietTotals && styles.tableCellSeparator,
       styles.totalCell,
     ];
     // On a phone the footer cell is itself the system's menu of totals, as a
     // choice cell is its menu of choices; elsewhere it opens the popover below.
     if (onUpdateView && TotalsSelect.opensFromTrigger) {
+      // The menu wraps the cell in a view of its own, which the row lays
+      // out: the column's width goes on a slot around it, as a header's
+      // does, and the cell fills the slot. On the menu's own view, the
+      // totals took an even share of the row whatever the columns above.
       return (
-        <Select
-          key={name}
-          value={kind ?? ""}
-          options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
-          onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
-          label={`Calculate ${field?.title ?? name}`}
-          trigger={<html.div style={[...cellStyle, styles.totalCellFill]}>{content}</html.div>}
-        />
+        <html.div key={name} style={[styles.totalSlot, columnStyle(name)]}>
+          <Select
+            value={kind ?? ""}
+            options={[{ value: "", label: "None" }, ...totalKindsFor(field).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))]}
+            onChange={(next) => chooseTotal(name, (next || null) as ViewTotal | null)}
+            label={`Calculate ${field?.title ?? name}`}
+            trigger={<html.div style={[...cellLook, styles.totalCellFill]}>{content}</html.div>}
+          />
+        </html.div>
       );
     }
     return (
       <html.div
         key={name}
-        style={[
-          styles.tableCell,
-          styles.cellWidth(colWidth(name)),
-          cellAlignStyle(effectiveAlign(field)),
-          idxInPane !== paneLen - 1 && !quietTotals && styles.tableCellSeparator,
-          styles.totalCell,
-        ]}
+        style={[...cellLook.slice(0, 1), columnStyle(name), ...cellLook.slice(1)]}
         onClick={
           onUpdateView
             ? (e: { pageX: number; pageY: number }) =>
@@ -3230,6 +4294,9 @@ export function TableView({
       </html.div>
     );
   };
+
+  // A view's colour rules (D53), worked out once per row as it's drawn.
+  const colorsOf = useRowColors(view, schema);
 
   const renderBodyCell = (
     row: Row,
@@ -3256,7 +4323,11 @@ export function TableView({
         const typed = barDraft?.text ?? barFormula?.draft;
         if (typed !== undefined) {
           const done = open.save(typed);
-          if (!done.ok) return;
+          // A formula that can't be saved (an error is an error) doesn't hold the table: it's
+          // dropped, the column keeping the formula it had, and the tap moves on. A value that
+          // can't be held keeps its edit open, to be put right.
+          // Never held: what was typed is kept as it stands (D65).
+          if (!done.ok && !open.leave?.(typed)) open.cancel();
         }
         editor?.end(open.key);
         barSession.current = null;
@@ -3264,6 +4335,7 @@ export function TableView({
         setBarFormula(null);
       }
       setSel({ rowId: row.id, name });
+      keysRef.current?.focus();
       // While editing, the next cell tapped opens for editing too, as a
       // spreadsheet keeps typing from cell to cell. Only selected, a tap
       // only selects, so the table can be browsed without a keyboard.
@@ -3271,6 +4343,12 @@ export function TableView({
     };
     const isInputCell = inputCells.has(cellKey);
     const isSelected = sel?.rowId === row.id && sel.name === name;
+    drawnRows.current.set(row.id, row);
+    // A note on the cell (D57): a mark in its corner, and the note itself on hover.
+    const note = ownNote(cells, row.id, name, row);
+    // The cell takes the clicks for an editable value's idle view (EditableCell's
+    // clicksFromCell); a checkbox keeps its own.
+    const cellClicks = !!onUpdateRow && field?.type !== "boolean";
     const request = editReq?.rowId === row.id && editReq.name === name ? editReq.req : undefined;
     return (
       <html.div
@@ -3289,6 +4367,7 @@ export function TableView({
             : isFormula
             ? async () => {
                 setSel({ rowId: row.id, name });
+                keysRef.current?.focus();
                 if (isOpenCell) {
                   setFormulaCell(null);
                   return;
@@ -3296,23 +4375,33 @@ export function TableView({
                 const rect = await measureAnchor(cellRefs.current[cellKey]);
                 if (rect) setFormulaCell({ rowId: row.id, name, rect });
               }
+            : cellClicks
+            ? () => {
+                // Selected, a click edits it, as a key does (openCell).
+                if (isSelected) void openCell(row.id, name);
+                else select();
+              }
             : select
         }
         style={[
           styles.tableCell,
-          styles.cellWidth(colWidth(name)),
+          columnStyle(name),
           cellAlignStyle(align),
-          !isLast && styles.tableCellSeparator,
+          (!isLast || closes(name)) && styles.tableCellSeparator,
           isFormula && styles.formulaCellClickable,
           inOpenColumn && styles.formulaColumnTint,
           isInputCell && styles.formulaInputCell,
           isOpenCell && styles.formulaCellActive,
+          tintOf(colorsOf(row).cells[name]),
+          note !== undefined && styles.noted,
           isSelected && styles.cellSelected,
         ]}
+        {...(note !== undefined ? { title: note } : {})}
       >
-        <CellWidth.Provider value={colWidth(name) - 24}>
+        <CellWidth.Provider value={colWidth(name) - CELL_PADDING_INLINE * 2}>
         {onUpdateRow ? (
           <EditableCell
+            rowKey={row.id}
             field={field}
             value={shownValue}
             onCommit={(next) => onUpdateRow(row.id, name, next)}
@@ -3320,14 +4409,27 @@ export function TableView({
             onOpenRelation={onOpenRelation}
             lines={linesFor(heightOf(row.id))}
             align={align}
-            autoEdit={row.id === focusRowId && name === (primaryName ?? restNames[0])}
+            autoEdit={row.id === focusRowId && name === fields[0]}
             selected={isSelected}
             onSelect={select}
+            clicksFromCell={cellClicks}
             onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
             editRequest={request}
+            onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
+            formula={
+              onSetCellFormula
+                ? {
+                    fields: schema.fields,
+                    ...(grid ? { grid: { ...grid, here: row.id } } : {}),
+                    ...(ownFormula(cells, row.id, name, row) !== undefined ? { own: ownFormula(cells, row.id, name, row)! } : {}),
+                    syntax: formulaSyntax,
+                    onSet: (expr) => onSetCellFormula(row.id, name, expr),
+                  }
+                : undefined
+            }
           />
         ) : (
           <CellValue
@@ -3464,6 +4566,15 @@ export function TableView({
       const explain = (draft: string) =>
         explainFormula({ field, row, fields: schema.fields, draft, editable: true, grid: g, allRows, computeOptions: { tables: relatedTables, self: tableKey } });
       const initial = formulaDraftOf(field, g, formulaSyntax);
+      // The draft a problem was last said about: entered again, it's kept.
+      let asked: string | null = null;
+      const keepAsTyped = (t: string): { ok: true } => {
+        const expr = storedAsTyped(t, schema.fields.map((f) => f.name), g);
+        if (expr !== (field.computed?.expr ?? "")) onUpdateField!(name, { computed: { expr, dialect: FORMULA_DIALECT } });
+        setBarFormula(null);
+        barSession.current = null;
+        return { ok: true };
+      };
       setFormulaCell(null);
       setBarFormula({ rowId, name, draft: initial });
       session = {
@@ -3496,12 +4607,19 @@ export function TableView({
         },
         save: (t) => {
           const ex = explain(t);
-          if (ex.status?.kind === "error") return { ok: false, error: { message: ex.status.message } };
+          // A problem is said once; the same formula entered again is kept as it stands (D65).
+          if (ex.status?.kind === "error" && asked !== t) {
+            asked = t;
+            return { ok: false, error: { message: `${ex.status.message} Press Return again to keep it as typed.` } };
+          }
+          if (ex.status?.kind === "error") return keepAsTyped(t);
           if (ex.save) onUpdateField!(name, ex.save);
           setBarFormula(null);
           barSession.current = null;
           return { ok: true };
         },
+        // Left unfinished (a tap on another cell): kept as it stands, its cells saying what's wrong (D65).
+        leave: (t) => keepAsTyped(t).ok,
         cancel: () => {
           setBarFormula(null);
           barSession.current = null;
@@ -3519,7 +4637,17 @@ export function TableView({
       const linksOne = linked.length > 0 && !linksMany;
       const dated = hints.kind === "date" || hints.kind === "time" || hints.kind === "datetime";
       if (kind !== "text" && kind !== "choice" && !many && !linksOne && !linksMany) return false;
-      const initial = text ?? draftOf(row[name]);
+      // A cell with its own formula is edited as that formula (D52); `=…` typed gives it one.
+      const own = ownFormula(cells, rowId, name, row);
+      const cellFormula: CellFormulaEntry | undefined =
+        onSetCellFormula && kind === "text" && !dated
+          ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
+          : undefined;
+      // Its own formula, its `=` drawn as the bar's prefix and put back on saving.
+      const asFormula = text === undefined && cellFormula?.own !== undefined;
+      // Whether the `=` is still there: the reader may drop it (dropPrefix), and every save after says so.
+      let prefixed = asFormula;
+      const initial = text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name]));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
       // A multi-select's value as it's toggled, each toggle saved.
@@ -3532,7 +4660,16 @@ export function TableView({
         // The keyboard the field wants, as a cell's own input has (inputHints).
         keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
         suggestions: hints.autocorrect,
-        ...(kind === "text" && !dated && currencySymbolOf(field) ? { prefix: currencySymbolOf(field)! } : {}),
+        ...(asFormula
+          ? {
+              prefix: FORMULA_PREFIX,
+              dropPrefix: () => {
+                prefixed = false;
+              },
+            }
+          : kind === "text" && !dated && currencySymbolOf(field)
+            ? { prefix: currencySymbolOf(field)! }
+            : {}),
         ...(kind === "choice" || many
           ? {
               choices: enumOptions(field).map((o) => ({ id: o.value, label: o.label ?? o.value, colors: pillColors(o.color) })),
@@ -3604,7 +4741,8 @@ export function TableView({
             if (t !== row[name]) onUpdateRow!(rowId, name, t);
             return { ok: true };
           }
-          const r = commitDraft(field, row[name], t, "key", queried);
+          // The `=` put back, unless the reader dropped it: then what's left is a value.
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "key", queried, cellFormula);
           if (r.kind === "problem") {
             queried = r.queried;
             return { ok: false, error: { message: r.check.message, ...(r.check.suggestion ? { replace: r.check.suggestion } : {}) } };
@@ -3612,7 +4750,18 @@ export function TableView({
           setBarDraft(null);
           barSession.current = null;
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
           return { ok: true };
+        },
+        // Left unfinished (a tap on another cell): kept as typed, as leaving a cell on the web keeps it (D65).
+        leave: (t) => {
+          if (linksOne) return false;
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "blur", queried, cellFormula);
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
+          return true;
         },
         // Emptied as the Delete key does (the value goes, not ""), required or not:
         // the table then reports a required one as missing, as on the web.
@@ -3672,6 +4821,12 @@ export function TableView({
     const next = afterEdit({ row: placeOfId(rowId), col: fields.indexOf(name) }, how, total, fields.length);
     selectAt(next.row, next.col);
     gridRef.current?.focus?.({ preventScroll: true });
+    keysRef.current?.focus();
+    // And again once the cell's editor has gone. On the Mac the editor is
+    // still the first responder when this runs; when it's removed a moment
+    // later, AppKit hands the keyboard to the window, and the arrows stop
+    // reaching the table until a cell is clicked.
+    setTimeout(() => keysRef.current?.focus(), 0);
   };
   const onGridKey = (e: KeyEventLike) => {
     const tag = (e.target as { tagName?: string } | undefined)?.tagName;
@@ -3680,11 +4835,13 @@ export function TableView({
     const cur = sel && placeOfId(sel.rowId) >= 0 && fields.includes(sel.name) ? sel : null;
     const field = cur ? fieldMap.get(cur.name) : undefined;
     // What the key does is table-ui/shared's gridKey, as table-gtk's grid has it.
+    const pressed = { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey };
     const action = gridKey(
       cur ? { row: placeOfId(cur.rowId), col: fields.indexOf(cur.name) } : null,
       total,
       fields.length,
-      { key: e.key, shift: e.shiftKey, jump: e.metaKey || e.ctrlKey, alt: e.altKey },
+      // Right to left, Left and Right are where they are on screen.
+      rtl ? mirroredKey(pressed) : pressed,
       { editable: !!cur && editable(cur.name), boolean: field?.type === "boolean", picks: cellPicks(field), computed: !!field?.computed },
     );
     if (!action || action.kind === "leave") return;
@@ -3692,6 +4849,7 @@ export function TableView({
     e.preventDefault?.();
     if (action.kind === "select") return selectAt(action.at.row, action.at.col);
     if (!cur) return;
+    if (action.kind === "note") return onAskCellNote?.(cur.rowId, cur.name, noteFor(cur.rowId, cur.name));
     if (action.kind === "clear") return onUpdateRow!(cur.rowId, cur.name, undefined);
     void openCell(cur.rowId, cur.name, action.kind === "open" ? action.text : undefined);
   };
@@ -3710,8 +4868,31 @@ export function TableView({
   useEffect(() => {
     if (!sel) return;
     const cell = cellRefs.current[`${sel.rowId}\u0000${sel.name}`];
+    if (cell?.scrollIntoView) {
+      cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
     if (cell) {
-      cell.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      // Native has no scrollIntoView: the columns' own pane scrolls sideways
+      // here, and the page, which the app scrolls, is asked for the rest.
+      void measureAnchor(cell).then(async (rect) => {
+        if (!rect) return;
+        const pane = frozenNames.includes(sel.name) ? null : await measureAnchor(paneScroll.ref.current);
+        if (pane) {
+          const margin = 8;
+          const dx =
+            rect.left < pane.left
+              ? rect.left - pane.left - margin
+              : rect.left + rect.width > pane.left + pane.width
+                ? rect.left + rect.width - (pane.left + pane.width) + margin
+                : 0;
+          if (dx !== 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (paneScroll.ref.current as any)?.scrollTo?.({ x: Math.max(0, paneScroll.x.current + dx), animated: false });
+          }
+        }
+        pageReveal?.(rect);
+      });
       return;
     }
     // Off screen, the row isn't drawn and has no cell to scroll to: ask the
@@ -3741,11 +4922,269 @@ export function TableView({
             (onDeleteRow && RowActions.gesture ? `\n${RowActions.gesture} to delete it.` : "")
           }
         >
-          <html.span style={styles.newRowLabel}>+ New row</html.span>
+          <html.span style={[styles.newRowLabel, newRowHot && styles.newRowLabelHot]}>+ New row</html.span>
         </Hinted>
       )}
     </html.div>
   );
+
+  // An app makes some of the table's props afresh each time it draws (an
+  // inline callback, the bundle's tables gathered again), and draws again on
+  // every selection, as it hears where you are. A part counts as changed only
+  // when what it holds has: any two functions are the same part (each just
+  // asks the app to act, and a row drawn again takes the newer), and a small
+  // record is the same when every entry is.
+  const samePart = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a === "function" && typeof b === "function") return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) || Array.isArray(b)) return false;
+    const ka = Object.keys(a);
+    const rb = b as Record<string, unknown>;
+    return ka.length === Object.keys(b).length && ka.every((k) => (a as Record<string, unknown>)[k] === rb[k]);
+  };
+  // When the table draws again only because the window read from an index
+  // moved, or its rows arrived, a row on screen whose own row is the same
+  // isn't drawn again (RowList's stampOf and drawKey): over a long scroll
+  // that was nearly all the table's drawing. The selection and a row's
+  // dragged height are a row's own too (rowStamp). Anything else changed (a prop, the table's own state,
+  // its settings, the editor) draws every row again, as before.
+  const drawSeen = useRef<{ key: number; range: unknown; win: unknown; sel: unknown; live: unknown; rest: unknown[] } | null>(null);
+  const drawRest: unknown[] = [
+    ...Object.values(tableProps),
+    liveWidths,
+    editingFieldName,
+    anchorRect,
+    formulaCell,
+    totalsMenu,
+    focusRowId,
+    editReq,
+    barDraft,
+    barFormula,
+    newRowHot,
+    addedField,
+    fieldAsk,
+    display,
+    rtl,
+    editor,
+    facts,
+    frozenCount,
+    freezePrimary,
+    wide,
+    containerWidth,
+    pageReveal,
+  ];
+  const drawWas = drawSeen.current;
+  const windowOnly =
+    !!drawWas &&
+    (drawWas.range !== shownRange || drawWas.win !== windowRows || drawWas.sel !== sel || drawWas.live !== liveRow) &&
+    drawWas.rest.length === drawRest.length &&
+    drawWas.rest.every((v, i) => samePart(v, drawRest[i]));
+  const drawKey = windowOnly ? drawWas.key : (drawWas?.key ?? 0) + 1;
+  drawSeen.current = { key: drawKey, range: shownRange, win: windowRows, sel, live: liveRow, rest: drawRest };
+  // A row's own part of what it draws: its row, the group it starts, the
+  // cell selected in it, and its height while it's dragged. Those are the
+  // row's, not the table's: selecting a cell draws again the row it left
+  // and the row it's in, and a drag the row dragged, not every row drawn
+  // (on the Mac, a hundred of them, a second and a half each time).
+  const rowStamp = (place: number): readonly unknown[] => {
+    const entry = entryAt(place);
+    const selected = entry && sel?.rowId === entry.row.id ? sel.name : null;
+    const dragged = entry && liveRow?.rowId === entry.row.id ? liveRow : null;
+    return [entry?.row, entry?.starts?.label, entry?.starts?.count, selected, dragged];
+  };
+
+  // The header and the view's frozen rows (D58), over the top of whatever scrolls the page once the
+  // table has gone up under it: drawn again, to look at, while the rows scroll on beneath; its columns
+  // kept with the pane's sideways scroll. At rest it isn't drawn, so nothing is there twice. On the
+  // web: native's page scrolls in the app, out of the table's reach.
+  const frozenRowCount = Math.max(0, Math.min(view.frozen?.rows ?? 0, total));
+  const [banded, setBanded] = useState(false);
+  const bandTop = useRef<HTMLDivElement | null>(null);
+  const bandBox = useRef<HTMLDivElement | null>(null);
+  // How far the columns' pane is scrolled sideways, which the band's columns follow.
+  const bandAcross = useRef(0);
+  const followAcross = () => {
+    bandBox.current?.querySelectorAll<HTMLElement>("[data-band-rest]").forEach((rest) => {
+      rest.style.transform = `translateX(${-bandAcross.current}px)`;
+    });
+  };
+  useEffect(() => {
+    const top = bandTop.current;
+    const table = top?.parentElement;
+    if (PLATFORM_OS !== "web" || !top || !table) return;
+    // Whatever scrolled: the page or a pane the table is in, up and down; the table's own pane, across.
+    let asked = 0;
+    const onScroll = (event: Event) => {
+      const by = event.target;
+      if (by instanceof Element && by !== table && table.contains(by)) {
+        bandAcross.current = by.scrollLeft;
+        followAcross();
+        return;
+      }
+      const isPage = by === document || by === document.documentElement || by === document.body;
+      if (!isPage && !(by instanceof Element && by.contains(top))) return;
+      cancelAnimationFrame(asked);
+      asked = requestAnimationFrame(() => {
+        const edge = isPage ? 0 : (by as Element).getBoundingClientRect().top;
+        setBanded(top.getBoundingClientRect().top < edge - 1);
+      });
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(asked);
+      document.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, []);
+  // Drawn, it starts where the pane is.
+  useEffect(() => {
+    if (banded) followAcross();
+  }, [banded]);
+  const bandCell = (name: string, idx: number, len: number, height: number | null, content: ReactNode, extra?: unknown) => (
+    <html.div
+      key={name}
+      style={[
+        styles.tableCell,
+        styles.cellWidth(colWidth(name)),
+        height === null ? styles.tableHeaderCell : styles.rowHeight(height),
+        cellAlignStyle(effectiveAlign(fieldMap.get(name))),
+        (idx !== len - 1 || closes(name)) && styles.tableCellSeparator,
+        extra as never,
+      ]}
+    >
+      {content}
+    </html.div>
+  );
+  const bandHeader = (name: string, idx: number, len: number) =>
+    bandCell(
+      name,
+      idx,
+      len,
+      null,
+      <>
+        {coords && <html.span style={styles.columnLetter}>{columnLetter(fields.indexOf(name))}</html.span>}
+        <html.span>{fieldMap.get(name)?.title ?? name}</html.span>
+      </>,
+    );
+  const bandValue = (row: Row, name: string, idx: number, len: number) =>
+    bandCell(
+      name,
+      idx,
+      len,
+      heightOf(row.id),
+      <CellWidth.Provider value={colWidth(name) - CELL_PADDING_INLINE * 2}>
+        <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} lines={linesFor(heightOf(row.id))} />
+      </CellWidth.Provider>,
+      tintOf(colorsOf(row).cells[name]),
+    );
+  const bandRows: Row[] = [];
+  for (let place = 0; place < frozenRowCount; place++) {
+    const entry = entryAt(place);
+    if (entry) bandRows.push(entry.row);
+  }
+  const bandLine = (key: string, height: number | null, frozenPart: ReactNode, restPart: ReactNode, tint?: unknown) => (
+    <html.div key={key} style={[styles.bandRow, styles.tableRow, height === null ? styles.tableHeaderRow : styles.rowHeight(height), tint as never]}>
+      {frozenOn && <html.div style={[styles.bandRow, styles.bandFrozen, styles.frozenEdge]}>{frozenPart}</html.div>}
+      <html.div style={styles.bandRest}>
+        <html.div data-band-rest={true} style={styles.bandRow}>
+          {restPart}
+        </html.div>
+      </html.div>
+    </html.div>
+  );
+  const gutterCell = (corner: boolean, n?: number) => (
+    <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), corner && styles.rowNumberCorner]}>{n !== undefined && <html.span>{n}</html.span>}</html.div>
+  );
+  const band =
+    PLATFORM_OS === "web" ? (
+      <>
+        <html.div ref={bandTop} style={{ height: 0 } as never} />
+        <html.div style={styles.bandAnchor}>
+          {banded && (
+            <html.div ref={bandBox} data-testid="frozen-band" style={styles.band}>
+              {bandLine(
+                "header",
+                null,
+                <>
+                  {coords && gutterCell(true)}
+                  {frozenNames.map((name, idx) => bandHeader(name, idx, frozenNames.length))}
+                </>,
+                <>
+                  {coords && !frozenOn && gutterCell(true)}
+                  {restNames.map((name, idx) => bandHeader(name, idx, restNames.length))}
+                </>,
+              )}
+              {bandRows.map((row, i) =>
+                bandLine(
+                  row.id,
+                  heightOf(row.id),
+                  <>
+                    {coords && gutterCell(false, rowNumber(sheet?.position, row.id, i))}
+                    {frozenNames.map((name, idx) => bandValue(row, name, idx, frozenNames.length))}
+                  </>,
+                  <>
+                    {coords && !frozenOn && gutterCell(false, rowNumber(sheet?.position, row.id, i))}
+                    {restNames.map((name, idx) => bandValue(row, name, idx, restNames.length))}
+                  </>,
+                  tintOf(colorsOf(row).row),
+                ),
+              )}
+            </html.div>
+          )}
+        </html.div>
+      </>
+    ) : null;
+
+  // A Sheet view's merged cells (D58), over the rows as they're shown, in memory and not grouped (a
+  // group's heading would come between its rows): each block a box over its cells, with its top-left
+  // cell's value; a tap on it is a tap on that cell. A block is drawn in the pane its columns are in.
+  const mergedShown = coords && view.merged?.length && !indexed && !view.group ? inMemory.map((d) => d.row.id) : [];
+  const merges = mergedShown.length > 0 ? mergedBlocks(view, fields, mergedShown, sheet?.order ?? mergedShown, frozenNames.length) : [];
+  const mergeTop = merges.length > 0 ? layoutOf() : null;
+  const mergeLayer = (pane: "frozen" | "rest") => {
+    if (!mergeTop) return null;
+    const names = pane === "frozen" ? frozenNames : restNames;
+    const offset = pane === "frozen" ? 0 : frozenNames.length;
+    const gutter = coords && (pane === "frozen" || !frozenOn) ? numberWidth : 0;
+    const boxes = merges.filter((b) => (pane === "frozen" ? b.column < offset : b.column >= offset));
+    if (boxes.length === 0) return null;
+    return (
+      <html.div style={styles.mergeLayer}>
+        {boxes.map((block) => {
+          let left = gutter;
+          for (let c = offset; c < block.column; c++) left += colWidth(names[c - offset]!);
+          let width = -ROW_BORDER;
+          for (let c = block.column; c < block.column + block.columns; c++) width += colWidth(fields[c]!);
+          const last = block.row + block.rows - 1;
+          const top = mergeTop.topOf(block.row);
+          const height = mergeTop.topOf(last) + mergeTop.heightOf(last) - top - ROW_BORDER;
+          const entry = inMemory[block.row];
+          const field = fieldMap.get(block.field);
+          const selected = sel?.rowId === block.rowId && sel.name === block.field;
+          return (
+            <html.div
+              key={`${block.field}\u0000${block.rowId}`}
+              data-testid="merged-cells"
+              style={[
+                styles.mergeBox,
+                styles.mergeAt(left, top, width, height),
+                cellAlignStyle(effectiveAlign(field)),
+                entry && tintOf(colorsOf(entry.row).cells[block.field] ?? colorsOf(entry.row).row),
+                selected && styles.cellSelected,
+              ]}
+              onClick={() => {
+                setSel({ rowId: block.rowId, name: block.field });
+                keysRef.current?.focus();
+              }}
+            >
+              <CellWidth.Provider value={width - 32}>
+                <CellValue field={field} value={entry?.row[block.field]} relatedTables={relatedTables} lines={1} />
+              </CellWidth.Provider>
+            </html.div>
+          );
+        })}
+      </html.div>
+    );
+  };
 
   return (
     <>
@@ -3757,28 +5196,43 @@ export function TableView({
         <html.div {...measureProps} style={styles.tableGrow} />
       </html.div>
     )}
-    <EdgeToEdge on={edgeToEdge}>
+    <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
+    <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills} most={wide && !fillWidth ? frameMostWidth : undefined}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={(el: any) => {
         gridRef.current = el;
       }}
-      tabIndex={0}
+      // The keyboard's way into the table on the web. Not on native, where
+      // keys come through GridKeys: a focusable view there gets a system
+      // focus ring, which react-native-macos masks over the view's whole
+      // bounds, and a table's bounds are all its rows. AppKit renders that
+      // mask to a bitmap, and for thousands of rows it took gigabytes.
+      tabIndex={PLATFORM_OS === "web" ? 0 : undefined}
       onKeyDown={onGridKey}
-      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit]}
+      style={[styles.tableWithAdd, edgeToEdge && styles.tableFit, fills && styles.fitGrow, wide && !fillWidth && frameMost]}
     >
-    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, edgeToEdge ? styles.tableFit : styles.tableGrow]}>
+    <html.div {...(edgeToEdge ? {} : measureProps)} style={[styles.table, PLATFORM_OS === "web" && styles.tableClips, edgeToEdge ? styles.tableFit : styles.tableGrow, fills && styles.fitGrow, wide && !fillWidth && frameMost]}>
+      {band}
       <html.div style={styles.tablePanes}>
         {/* Frozen pane: primary (title) field — header + one cell per row,
             stacked vertically. The primary stays put while the user pans
             the rest pane horizontally. Omitted entirely on narrow
             viewports — the right pane then carries all fields. */}
-        {primaryName && (
-          <html.div style={styles.tableFrozenColumn}>
-            <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-              {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
-              {renderHeaderCell(primaryName, 0, 1)}
+        {frozenOn && (
+          <html.div
+            style={[
+              styles.tableFrozenColumn,
+              frozenSharing > 0 && styles.frozenShare(numberWidth + FROZEN_EDGE + frozenFixed, numberWidth + FROZEN_EDGE + frozenLeast, frozenSharing),
+              byLines && (PLATFORM_OS === "web" ? styles.positioned : styles.frozenOverPane),
+            ]}
+          >
+            {columnLines(frozenNames, numberWidth, FROZEN_EDGE)}
+            <html.div style={[styles.tableRow, styles.tableHeaderRow, styles.frozenEdge]}>
+              {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
+              {frozenNames.map((name, idx) => headerCell(name, idx, frozenNames.length))}
             </html.div>
+            {mergeLayer("frozen")}
             <RowList
               items={places}
               keyOf={rowKeyOf}
@@ -3786,11 +5240,13 @@ export function TableView({
               version={rowsVersion}
               raised={rowRaised}
               handle={frozenRows}
-              layout={tallLayout}
+              layout={layoutOf}
+              stampOf={rowStamp}
+              drawKey={drawKey}
               render={(place) => drawn(place, ({ row, starts }, i) => (
                 <>
                   {starts && (
-                    <html.div style={[styles.tableRow, styles.groupRow]}>
+                    <html.div style={[styles.tableRow, styles.groupRow, styles.frozenEdge]}>
                       <html.span style={styles.groupLabel}>
                         {groupTitle} · {starts.label}
                         <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
@@ -3803,24 +5259,30 @@ export function TableView({
                         styles.tableRow,
                         styles.rowHeight(heightOf(row.id)),
                         styles.positioned,
+                        styles.frozenEdge,
                         i === total - 1 && !onAddRow && styles.tableRowLast,
+                        tintOf(colorsOf(row).row),
                       ]}
                     >
-                      {coords && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
-                      {renderBodyCell(row, primaryName, 0, 1)}
+                      {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                      {frozenNames.map((name, idx) => renderBodyCell(row, name, idx, frozenNames.length))}
+                      {rowLine(row, true)}
                     </html.div>
                   </RowActions>
-                  {sel?.rowId === row.id && sel.name === primaryName && (
-                    <html.div style={styles.rowGripAnchor}>{rowGrip(row, cellStartIn([primaryName], primaryName, !!coords))}</html.div>
+                  {sel?.rowId === row.id && frozenNames.includes(sel.name) && (
+                    <html.div style={styles.rowGripAnchor}>
+                      {rowGrip(row, cellStartIn(frozenNames, sel.name, !!coords), colWidth(sel.name))}
+                      {columnGrip(sel.name, cellStartIn(frozenNames, sel.name, !!coords) + colWidth(sel.name), heightOf(row.id))}
+                    </html.div>
                   )}
                 </>
-              ))}
+              ), "frozen")}
             />
             {addRow && newRowBand(true)}
             {showTotals && (
-              <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
-                {coords && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
-                {renderTotalCell(primaryName, 0, 1)}
+              <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, !quietTotals && styles.frozenEdge, styles.tableRowLast]}>
+                {coords && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
+                {frozenNames.map((name, idx) => renderTotalCell(name, idx, frozenNames.length))}
               </html.div>
             )}
           </html.div>
@@ -3828,15 +5290,23 @@ export function TableView({
         {/* Scrollable pane: everything past the primary field, plus the
             `+ Field` affordance. Renders inside HScroll which delivers a
             horizontal scrollbar on web and an RN ScrollView on native. */}
-        <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollOuter}>
-          <PaneScroll on={!edgeToEdge}>
-            <html.div style={edgeToEdge ? styles.tablePaneFit : styles.tableScrollPane}>
-              <html.div style={[styles.tableRow, styles.tableHeaderRow]}>
-                {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+        <html.div style={edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow] : [styles.tableScrollBeside, paneShare]}>
+          <PaneScroll on={!edgeToEdge} scroll={paneScroll} snapTo={columnStarts}>
+            <html.div
+              style={[
+                edgeToEdge ? [styles.tablePaneFit, fills && styles.fitGrow, fills && styles.paneLeast(restLeast)] : [styles.tableScrollPane, styles.paneLeast(restLeast)],
+                byLines && styles.positioned,
+              ]}
+            >
+              {columnLines(restNames, coords && !frozenOn ? numberWidth : 0, edgeToEdge && !fills ? 0 : addFieldW)}
+              <html.div style={[styles.tableRow, styles.tableHeaderRow, edgeToEdge && styles.tableHeaderRound]}>
+                {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                 {restNames.map((name, idx) =>
-                  renderHeaderCell(name, idx, restNames.length),
+                  headerCell(name, idx, restNames.length),
                 )}
+                {headerAddCell}
               </html.div>
+              {mergeLayer("rest")}
               <RowList
                 items={places}
                 keyOf={rowKeyOf}
@@ -3844,15 +5314,17 @@ export function TableView({
                 version={rowsVersion}
                 raised={rowRaised}
                 handle={paneRows}
-                layout={tallLayout}
+                layout={layoutOf}
+                stampOf={rowStamp}
+                drawKey={drawKey}
                 onShown={onShown}
                 render={(place) => drawn(place, ({ row, starts }, i) => (
                   <>
                     {starts && (
                       // The frozen pane labels the group; this pane's band
                       // matches its height so the rows stay in line.
-                      <html.div style={[styles.tableRow, styles.groupRow]}>
-                        {!primaryName && (
+                      <html.div style={[styles.tableRow, styles.groupRow, restRowWidth()]}>
+                        {!frozenOn && (
                           <html.span style={styles.groupLabel}>
                             {groupTitle} · {starts.label}
                             <html.span style={styles.groupCount}>{`${SPAN_GAP}${starts.count}`}</html.span>
@@ -3866,27 +5338,31 @@ export function TableView({
                           styles.tableRow,
                           styles.rowHeight(heightOf(row.id)),
                           styles.positioned,
-                            i === total - 1 && !onAddRow && styles.tableRowLast,
+                          restRowWidth(),
+                          i === total - 1 && !onAddRow && styles.tableRowLast,
+                          tintOf(colorsOf(row).row),
                         ]}
                       >
-                        {coords && !primaryName && <html.div style={styles.rowNumber}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
+                        {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth)]}><html.span>{rowNumber(sheet?.position, row.id, i)}</html.span></html.div>}
                         {restNames.map((name, idx) =>
                           renderBodyCell(row, name, idx, restNames.length),
                         )}
+                        {rowLine(row, !frozenOn)}
                       </html.div>
                     </RowActions>
-                    {sel?.rowId === row.id && sel.name !== primaryName && (
+                    {sel?.rowId === row.id && !frozenNames.includes(sel.name) && (
                       <html.div style={styles.rowGripAnchor}>
-                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !primaryName))}
+                        {rowGrip(row, cellStartIn(restNames, sel.name, !!coords && !frozenOn), colWidth(sel.name))}
+                        {columnGrip(sel.name, cellStartIn(restNames, sel.name, !!coords && !frozenOn) + colWidth(sel.name), heightOf(row.id))}
                       </html.div>
                     )}
                   </>
-                ))}
+                ), "rest")}
               />
-              {addRow && newRowBand(!primaryName)}
+              {addRow && newRowBand(!frozenOn)}
               {showTotals && (
-                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet]}>
-                  {coords && !primaryName && <html.div style={[styles.rowNumber, styles.rowNumberCorner]} />}
+                <html.div style={[styles.tableRow, styles.totalsRow, quietTotals && styles.totalsRowQuiet, restRowWidth(), styles.tableRowLast]}>
+                  {coords && !frozenOn && <html.div style={[styles.rowNumber, styles.rowNumberWide(numberWidth), styles.rowNumberCorner]} />}
                   {restNames.map((name, idx) => renderTotalCell(name, idx, restNames.length))}
                 </html.div>
               )}
@@ -3895,14 +5371,11 @@ export function TableView({
         </html.div>
       </html.div>
     </html.div>
-      {canAddField && !edgeToEdge && (
-        <html.div style={styles.addFieldSlot}>{addFieldButton(true)}</html.div>
-      )}
     </html.div>
+    </GridKeys>
     </EdgeToEdge>
-    {/* Edge to edge, the grid keeps all the width and "+ Field" sits under
-        it, on the page's margin, rather than taking a strip beside it. */}
-    {canAddField && edgeToEdge && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
+    {/* A table with no columns has no header to put the "+" on. */}
+    {canAddField && fields.length === 0 && <html.div style={styles.addFieldBelow}>{addFieldButton(false)}</html.div>}
       {formulaCell && openFormulaField && (() => {
         const openRow = rowOf(formulaCell.rowId);
         if (!openRow) return null;
@@ -3921,9 +5394,14 @@ export function TableView({
                 value={value}
                 relatedTables={relatedTables}
                 lines={1}
+                inPanel
               />
             )}
             onSave={schemaEditable ? (patch) => onUpdateField!(name, patch) : undefined}
+            {...(ownFormula(cells, formulaCell.rowId, name, openRow) !== undefined ? { own: ownFormula(cells, formulaCell.rowId, name, openRow)! } : {})}
+            onSaveRow={onSetCellFormula ? (expr) => onSetCellFormula(formulaCell.rowId, name, expr) : undefined}
+            // Rows from an index are worked out a row at a time: a table that repeats its loops is held whole (D60).
+            onSetIteration={indexed ? undefined : onSetIteration}
             // The cell under a click, named as a tap names it on iOS: its
             // coordinate in a sheet, else its column. Only a page has points.
             referenceAt={
@@ -4060,7 +5538,8 @@ function useCardKeys({
   return {
     focusId,
     setFocusId,
-    containerProps: { ref: containerRef, tabIndex: 0 as const, onKeyDown },
+    // Focusable on the web only, as the table is (its tabIndex says why).
+    containerProps: { ref: containerRef, tabIndex: PLATFORM_OS === "web" ? (0 as const) : undefined, onKeyDown },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     cardRef: (id: string) => (el: any) => {
       cardRefs.current[id] = el;
@@ -4070,6 +5549,7 @@ function useCardKeys({
 
 export function BoardView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4078,7 +5558,9 @@ export function BoardView({
   onOpenBody,
   relatedTables,
   onOpenRelation,
+  onWidest,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const board = boardColumns(view, rows, schema);
   const groupField = board.field;
   const fields = cardFields(view, schema, groupField);
@@ -4091,6 +5573,7 @@ export function BoardView({
     register: registerColumn,
     hitTest,
     remeasure: remeasureColumns,
+    rectOf: columnRect,
   } = useDropTargets<string>();
   // Cards are drop targets too, so a card lands where it's dropped
   // within a column — before or after the card under the pointer —
@@ -4134,11 +5617,100 @@ export function BoardView({
   // navigate columns instead of starting a drag. Above the breakpoint
   // we fall back to free horizontal scroll with the default 240-280pt
   // columns and immediate drag activation (desktop / wide tablet).
-  const viewportWidth = useViewportWidth();
-  const isTouchViewport = viewportWidth <= TOUCH_VIEWPORT_MAX;
-  // Carousel column width: viewport minus side padding minus peek.
-  // 16pt side padding, ~52pt peek of the next column on the right.
-  const carouselColumnWidth = Math.max(240, viewportWidth - 16 - 52);
+  const compactSide = useCompactSide();
+  const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const windowWidth = useViewportWidth();
+  // A card held at the screen's edge while it's dragged pages the carousel
+  // that way, and again while it stays there: only the column on screen and
+  // a sliver of the next can be reached otherwise, and a card let go over
+  // that sliver went into a column out of sight, as if lost.
+  const carousel = useRef<CarouselPager | null>(null);
+  // The page the board is drawn in (a document's embed frame, or the app's
+  // page), scrolled so the column a page turns to has its cards in view.
+  const pageScroll = useContext(PageScrollContext);
+  // The finger and the card, as the last move left them, for what's under it once a page has turned.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = useRef<string | null>(null);
+  draggedRef.current = draggedRowId;
+  lastPointer.current = pointerPos;
+  const edgePaging = useRef<{ direction: -1 | 0 | 1; timer: ReturnType<typeof setTimeout> | null }>({ direction: 0, timer: null });
+  const stopEdgePaging = () => {
+    if (edgePaging.current.timer) clearTimeout(edgePaging.current.timer);
+    edgePaging.current = { direction: 0, timer: null };
+  };
+  useEffect(() => stopEdgePaging, []);
+  /**
+   * A page turned to a column shorter than the one it left, with the page
+   * scrolled down, showed an empty column: its cards were above what's on
+   * screen, and a card let go there went somewhere out of sight. Scroll up
+   * until its last card (or, empty, its top) is in view. True when it scrolled.
+   */
+  const bringColumnIntoView = (column: string, dragged: string): boolean => {
+    if (!pageScroll) return false;
+    const cards = (board.groups[column] ?? []).filter((r) => r.id !== dragged);
+    const last = cards[cards.length - 1];
+    const lastRect = last ? cardRect(last.id) : null;
+    const columnTop = columnRect(column)?.y ?? null;
+    const bottom = lastRect ? lastRect.y + lastRect.height : columnTop !== null ? columnTop + CAROUSEL_EMPTY_COLUMN_SHOWN : null;
+    if (bottom === null) return false;
+    const { offset, height } = pageScroll.now();
+    const visibleTop = pageScroll.windowTop() + offset;
+    if (bottom >= visibleTop + CAROUSEL_IN_VIEW) return false;
+    // Its last card a third of the way down what's on screen.
+    pageScroll.scrollBy(bottom - visibleTop - height / 3);
+    return true;
+  };
+  const pageAtEdge = (x: number) => {
+    if (!isTouchViewport || PLATFORM_OS === "web") return;
+    const direction = x > windowWidth - CAROUSEL_EDGE ? 1 : x < CAROUSEL_EDGE ? -1 : 0;
+    if (direction === edgePaging.current.direction) return;
+    stopEdgePaging();
+    if (direction === 0) return;
+    edgePaging.current.direction = direction;
+    const after = (ms: number) => {
+      edgePaging.current.timer = setTimeout(() => {
+        carousel.current?.page(direction);
+        // Where the columns and cards are once the page has turned, for the
+        // drop; then what's under the finger, which may not have moved: the
+        // column it's over and the gap between cards, outlined as a move shows them.
+        setTimeout(() => {
+          remeasureColumns();
+          remeasureCards();
+          setTimeout(() => {
+            const at = lastPointer.current;
+            const dragged = draggedRef.current;
+            if (!at || !dragged) return;
+            const hit = hitTest(at.x, at.y);
+            setHoveredColumn((prev) => (prev === hit ? prev : hit));
+            const slot = slotAt(at.x, at.y, hit, dragged);
+            setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+            if (hit && bringColumnIntoView(hit, dragged)) {
+              // Scrolled: where everything is now, and what's under the finger.
+              setTimeout(() => {
+                remeasureColumns();
+                remeasureCards();
+                setTimeout(() => {
+                  const now = lastPointer.current;
+                  if (!now || !draggedRef.current) return;
+                  const over = hitTest(now.x, now.y);
+                  setHoveredColumn((prev) => (prev === over ? prev : over));
+                  const gap = slotAt(now.x, now.y, over, draggedRef.current);
+                  setDropSlot((prev) => (prev?.id === gap?.id && prev?.after === gap?.after ? prev : gap));
+                }, CAROUSEL_MEASURED_MS);
+              }, CAROUSEL_SETTLE_MS);
+            }
+          }, CAROUSEL_MEASURED_MS);
+        }, CAROUSEL_SETTLE_MS);
+        after(CAROUSEL_PAGE_AGAIN_MS);
+      }, ms);
+    };
+    after(CAROUSEL_PAGE_FIRST_MS);
+  };
+  // Carousel column width: the screen's shorter side (as the layout is
+  // chosen, so a turned phone keeps its columns' width and shows more of
+  // them, rather than one column as wide as the screen) minus 16pt side
+  // padding and a ~52pt peek of the next column on the right.
+  const carouselColumnWidth = Math.max(240, compactSide - 16 - 52);
   // Snap interval: column width + the gap between columns (`styles.board.gap`).
   const carouselSnapInterval = carouselColumnWidth + 12;
   const dragLongPressMs = isTouchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
@@ -4155,7 +5727,12 @@ export function BoardView({
   const groups = board.groups;
   const columnKeys = board.keys;
 
-  const cardColumns = columnKeys.map((k) => (groups[k] ?? []).map((r) => r.id));
+  // The cards drawn in a column: all of them, or its first few when the board is cut (`cut`).
+  const drawnIn = (key: string): Row[] => {
+    const members = groups[key] ?? [];
+    return cut === undefined ? members : members.slice(0, cut);
+  };
+  const cardColumns = columnKeys.map((k) => drawnIn(k).map((r) => r.id));
   const cards = useCardKeys({
     move: (id, key) => moveInColumns(cardColumns, id, key),
     firstId: cardColumns.find((col) => col.length > 0)?.[0],
@@ -4188,7 +5765,7 @@ export function BoardView({
           <BoardColumnTitle field={schema.fields.find((f) => f.name === groupField)} value={key} />
           <html.span style={styles.boardCount}>{groupRows.length}</html.span>
         </html.div>
-        {groupRows.map((row) => (
+        {drawnIn(key).map((row) => (
           <DragHandle
             key={row.id}
             longPressMs={dragLongPressMs}
@@ -4206,6 +5783,7 @@ export function BoardView({
               canDrag
                 ? (e: DragEvent) => {
                     setPointerPos({ x: e.pageX, y: e.pageY });
+                    pageAtEdge(e.pageX);
                     const hit = hitTest(e.pageX, e.pageY);
                     setHoveredColumn((prev) => (prev === hit ? prev : hit));
                     const slot = slotAt(e.pageX, e.pageY, hit, row.id);
@@ -4218,8 +5796,15 @@ export function BoardView({
             onDragEnd={
               canDrag
                 ? (e: DragEvent) => {
+                    stopEdgePaging();
                     const target = hitTest(e.pageX, e.pageY);
-                    if (target && onUpdateRow) {
+                    // Let go over itself, the card goes back where it was: a long
+                    // press that didn't move (it starts a drag on a phone) moved
+                    // it to the end of its column, as a drop on no card does.
+                    const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
+                    if (target && onUpdateRow && !backWhereItWas) {
+                      // The card slides into its place and the columns to their heights.
+                      animateNextLayout();
                       const source = rows.find((r) => r.id === row.id);
                       if (source && source[groupField] !== target) {
                         onUpdateRow(row.id, groupField, columnValue(target));
@@ -4258,6 +5843,7 @@ export function BoardView({
               ]}
             >
               <Card
+                tint={colorsOf(row).row}
                 row={row}
                 fields={fields}
                 fieldMap={fieldMap}
@@ -4268,6 +5854,9 @@ export function BoardView({
             </html.div>
           </DragHandle>
         ))}
+        {groupRows.length > drawnIn(key).length ? (
+          <html.span style={styles.boardMore}>{`+${groupRows.length - drawnIn(key).length} more`}</html.span>
+        ) : null}
       </html.div>
     );
   });
@@ -4284,6 +5873,13 @@ export function BoardView({
       );
     })();
 
+  // As wide as its columns, side by side: what sits with it (an embed's
+  // caption line) ends where it does. A phone's carousel takes the width.
+  const boardWidest = isTouchViewport ? null : board.keys.length * BOARD_COLUMN_WIDTH + Math.max(0, board.keys.length - 1) * BOARD_GAP;
+  useEffect(() => {
+    onWidest?.(boardWidest);
+  }, [onWidest, boardWidest]);
+
   // Phone: snap-paging carousel — one column dominates the viewport,
   // peek of next at the right edge, swipe horizontally to advance.
   // Above the touch breakpoint: keep the free-scrolling multi-column
@@ -4297,7 +5893,7 @@ export function BoardView({
       <>
         <html.div {...cards.containerProps}>
           <Bleed>
-            <SnapHScroll snapInterval={carouselSnapInterval} gap={BOARD_GAP}>
+            <SnapHScroll snapInterval={carouselSnapInterval} gap={BOARD_GAP} pager={carousel}>
               {columnsContent}
             </SnapHScroll>
           </Bleed>
@@ -4309,11 +5905,14 @@ export function BoardView({
   return (
     <>
       <Bleed>
-        <html.div {...cards.containerProps} style={styles.board}>
-          <GutterSpacer gap={BOARD_GAP} />
-          {columnsContent}
-          <GutterSpacer gap={BOARD_GAP} />
-        </html.div>
+        {/* The web's board scrolls itself (overflowX); React Native's needs a scroller. */}
+        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))}>
+          <html.div {...cards.containerProps} style={styles.board}>
+            <GutterSpacer gap={BOARD_GAP} />
+            {columnsContent}
+            <GutterSpacer gap={BOARD_GAP} />
+          </html.div>
+        </BoardScroll>
       </Bleed>
       {ghost}
     </>
@@ -4323,6 +5922,7 @@ export function BoardView({
 
 export function GalleryView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4330,6 +5930,7 @@ export function GalleryView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const galleryField = view.gallery_field;
   const fields = cardFields(view, schema, galleryField);
   const fieldMap = fieldsByName(schema);
@@ -4346,7 +5947,9 @@ export function GalleryView({
   const { measureProps, width: containerWidth } = useContainerWidth();
   const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
 
-  const ids = rows.map((r) => r.id);
+  // Cut (`cut`), only the first cards are drawn.
+  const drawn = cut === undefined ? rows : rows.slice(0, cut);
+  const ids = drawn.map((r) => r.id);
   const cards = useCardKeys({
     move: (id, key) => moveInGrid(ids, cardsPerRow, id, key),
     firstId: ids[0],
@@ -4364,7 +5967,7 @@ export function GalleryView({
       }}
       style={styles.gallery}
     >
-      {rows.map((row) => {
+      {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         return (
@@ -4376,6 +5979,7 @@ export function GalleryView({
               styles.card,
               styles.galleryCard,
               styles.cellWidth(cardWidth),
+              tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
             ]}
           >
@@ -4411,6 +6015,7 @@ export function GalleryView({
 
 export function ListView({
   view,
+  cut,
   rows,
   schema,
   bodies,
@@ -4419,6 +6024,7 @@ export function ListView({
   relatedTables,
   onOpenRelation,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const fields = visibleFields(view, schema);
   const titleField = fields[0] ?? schema.fields[0]?.name;
   const secondaryFields = fields.slice(1);
@@ -4430,9 +6036,8 @@ export function ListView({
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const canDrag = !!onUpdateView;
-  const viewportWidth = useViewportWidth();
-  const dragLongPressMs =
-    viewportWidth <= TOUCH_VIEWPORT_MAX ? TOUCH_DRAG_LONGPRESS_MS : undefined;
+  const touchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
+  const dragLongPressMs = touchViewport ? TOUCH_DRAG_LONGPRESS_MS : undefined;
   const {
     register: registerRow,
     hitTest,
@@ -4451,7 +6056,9 @@ export function ListView({
 
   const computeOrder = (draggedId: string, targetRowId: string): string[] => orderMovedTo(rows, draggedId, targetRowId);
 
-  const listed = groupedRows(view, rows, schema);
+  // Cut (`cut`), only the first rows are drawn; a group's count is still of all its rows.
+  const everyRow = groupedRows(view, rows, schema);
+  const listed = cut === undefined ? everyRow : everyRow.slice(0, cut);
   const cards = useCardKeys({
     move: (id, key) => moveInColumns([listed.map((d) => d.row.id)], id, key),
     firstId: listed[0]?.row.id,
@@ -4531,9 +6138,10 @@ export function ListView({
               }}
               style={[
                 styles.listItem,
+                tintOf(colorsOf(row).row),
                 cards.focusId === row.id && styles.listItemFocused,
-                viewportWidth <= TOUCH_VIEWPORT_MAX && styles.listItemTouch,
-                i === rows.length - 1 && styles.listItemLast,
+                touchViewport && styles.listItemTouch,
+                i === listed.length - 1 && styles.listItemLast,
                 canDrag && styles.draggableHandle,
                 draggedRowId === row.id && styles.listItemDragging,
                 isDropTarget && styles.listItemDropTarget,
@@ -4609,6 +6217,7 @@ export function CalendarView({
   bodies,
   onOpenBody,
 }: ViewProps) {
+  const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
   const range = view.calendar_range;
 
@@ -4616,7 +6225,10 @@ export function CalendarView({
   // Google Calendar pattern. On a phone the cells show dots; wider,
   // they show each entry's title, and clicking a title opens it.
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  const isTouchViewport = useViewportWidth() <= TOUCH_VIEWPORT_MAX;
+  // A day's rows: the Mac's popover pointing at the day (ChooseOne), else a sheet.
+  const { ChooseOne } = usePlatformControls();
+  const dayAnchor = `day-${useId()}`;
+  const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
   // A title chip sits inside its day's button. The chip's click marks
   // itself handled so the day's click doesn't also open the sheet —
   // this works whether or not a platform lets a click stop propagating.
@@ -4720,72 +6332,82 @@ export function CalendarView({
         ))}
       </html.div>
       <html.div style={styles.calendarGrid}>
-        {cells.map((cell, i) => {
-          const key = dateKey(cell.date);
-          const dayRows = rowsByDate.get(key) ?? [];
-          const dotsToShow = Math.min(dayRows.length, 3);
-          const overflowCount = dayRows.length - dotsToShow;
-          const isToday = key === dateKey(today);
-          const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
-          const moreCount = dayRows.length - chips.length;
-          return (
-            <html.button
-              key={i}
-              onClick={() => {
-                if (chipClicked.current) {
-                  chipClicked.current = false;
-                  return;
-                }
-                setSelectedDateKey(key);
-              }}
-              style={[
-                styles.calendarDay,
-                styles.calendarDayButton,
-                styles.cellWidth(dayColWidth(i % 7)),
-                // The calendar's own border is the outer edge; the last
-                // column and last week don't draw a second one.
-                i % 7 === 6 && styles.noRightBorder,
-                i >= cells.length - 7 && styles.noBottomBorder,
-                !cell.inMonth && styles.calendarDayOther,
-              ]}
-            >
-              <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
-                {cell.date.getDate()}
-              </html.span>
-              {!isTouchViewport && chips.length > 0 && (
-                <html.div style={styles.calendarChips}>
-                  {chips.map((row) => (
-                    <html.span
-                      key={row.id}
-                      onClick={() => {
-                        chipClicked.current = true;
-                        onOpenBody?.(row.id);
-                      }}
-                      style={styles.calendarChip}
-                    >
-                      {labelOf(row)}
-                    </html.span>
-                  ))}
-                  {moreCount > 0 && (
-                    <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
+        {/* A week to a row, seven to a row whatever their widths come to: one
+            wrapping row of days put a week's last day at the start of the next
+            line, under the wrong weekday, when the widths came to more than the
+            calendar measured. */}
+        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, week) => (
+          <html.div key={week} style={styles.calendarWeek}>
+            {cells.slice(week * 7, week * 7 + 7).map((cell, j) => {
+              const i = week * 7 + j;
+              const key = dateKey(cell.date);
+              const dayRows = rowsByDate.get(key) ?? [];
+              const dotsToShow = Math.min(dayRows.length, 3);
+              const overflowCount = dayRows.length - dotsToShow;
+              const isToday = key === dateKey(today);
+              const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
+              const moreCount = dayRows.length - chips.length;
+              return (
+                <html.button
+                  key={i}
+                  onClick={() => {
+                    if (chipClicked.current) {
+                      chipClicked.current = false;
+                      return;
+                    }
+                    setSelectedDateKey(key);
+                  }}
+                  id={`${dayAnchor}-${key}`}
+                  style={[
+                    styles.calendarDay,
+                    styles.calendarDayButton,
+                    styles.cellWidth(dayColWidth(i % 7)),
+                    // The calendar's own border is the outer edge; the last
+                    // column and last week don't draw a second one.
+                    i % 7 === 6 && styles.noRightBorder,
+                    i >= cells.length - 7 && styles.noBottomBorder,
+                    !cell.inMonth && styles.calendarDayOther,
+                  ]}
+                >
+                  <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
+                    {cell.date.getDate()}
+                  </html.span>
+                  {!isTouchViewport && chips.length > 0 && (
+                    <html.div style={styles.calendarChips}>
+                      {chips.map((row) => (
+                        <html.span
+                          key={row.id}
+                          onClick={() => {
+                            chipClicked.current = true;
+                            onOpenBody?.(row.id);
+                          }}
+                          style={[styles.calendarChip, tintOf(colorsOf(row).row)]}
+                        >
+                          {labelOf(row)}
+                        </html.span>
+                      ))}
+                      {moreCount > 0 && (
+                        <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
+                      )}
+                    </html.div>
                   )}
-                </html.div>
-              )}
-              {isTouchViewport && dayRows.length > 0 && (
-                <html.div style={styles.calendarDayDots}>
-                  {Array.from({ length: dotsToShow }).map((_, j) => (
-                    <html.span key={j} style={styles.calendarDayDot} />
-                  ))}
-                  {overflowCount > 0 && (
-                    <html.span style={styles.calendarDayMore}>
-                      +{overflowCount}
-                    </html.span>
+                  {isTouchViewport && dayRows.length > 0 && (
+                    <html.div style={styles.calendarDayDots}>
+                      {Array.from({ length: dotsToShow }).map((_, j) => (
+                        <html.span key={j} style={styles.calendarDayDot} />
+                      ))}
+                      {overflowCount > 0 && (
+                        <html.span style={styles.calendarDayMore}>
+                          +{overflowCount}
+                        </html.span>
+                      )}
+                    </html.div>
                   )}
-                </html.div>
-              )}
-            </html.button>
-          );
-        })}
+                </html.button>
+              );
+            })}
+          </html.div>
+        ))}
       </html.div>
       {(() => {
         // Day-detail sheet — renders the selected day's rows as a
@@ -4802,6 +6424,20 @@ export function CalendarView({
               year: "numeric",
             })
           : "";
+        if (ChooseOne) {
+          return selectedDateKey && dayRows.length > 0 ? (
+            <ChooseOne
+              key={selectedDateKey}
+              options={dayRows.map((row) => ({ value: row.id, label: labelOf(row) }))}
+              anchor={`${dayAnchor}-${selectedDateKey}`}
+              onPick={(id) => {
+                setSelectedDateKey(null);
+                onOpenBody?.(id);
+              }}
+              onClose={() => setSelectedDateKey(null)}
+            />
+          ) : null;
+        }
         return (
           <BottomSheet
             visible={selectedDateKey !== null}
@@ -4844,13 +6480,15 @@ interface CardProps {
   onOpenRelation?: (address: string) => void;
   /** The row has a long-form body (its page); the card shows the PAGE badge. */
   hasBody?: boolean;
+  /** The row's colour from the view's colour rules (D53). */
+  tint?: EnumColor;
 }
 
-function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody }: CardProps) {
+function Card({ row, fields, fieldMap, relatedTables, onOpenRelation, hasBody, tint }: CardProps) {
   const titleField = fields[0];
   const restFields = fields.slice(1);
   return (
-    <html.div style={styles.card}>
+    <html.div style={[styles.card, tintOf(tint)]}>
       {titleField && (
         // The badge beside the title, not inside it (see the list's title).
         <html.div style={styles.titleWithBadge}>

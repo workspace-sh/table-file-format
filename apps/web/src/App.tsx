@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { html, css } from "react-strict-dom";
-import { computeRows, isSheet, newId } from "@workspace.sh/table-core";
+import { Icon } from "./Icon";
+import { computeRows, isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Field, ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
-import { openArchiveInWorker } from "./sqlite/client";
-import { useIndexedTables } from "./useIndexedTables";
+import { openArchiveInWorker, openWebDatabase } from "./sqlite/client";
 import {
   AttachmentsProvider,
   BodyEditor,
@@ -22,20 +22,28 @@ import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import {
   addressTarget,
-  archiveFileName,
+  singleFileName,
   attachmentAt,
   attachmentShown,
   browserStore,
   bundleOf,
-  bundleTables,
+  relatedTables,
   bundleToArchive,
   derive,
   clearSaved,
+  clearStoredHistory,
+  closedIn,
+  appendStoredHistory,
+  keepArrivedHistories,
+  storedHistory,
+  withHistories,
   confirmText,
   exportFailedText,
   fileText,
+  forgetStoredHistories,
   fromBundle,
   hintWithShortcut,
+  shortcutText,
   initialAppState,
   loadArrangements,
   loadDisplay,
@@ -45,6 +53,9 @@ import {
   ARCHIVE_ROWS,
   tooLargeToArchiveText,
   openFailedText,
+  isSpreadsheetFile,
+  openSpreadsheet,
+  spreadsheetText,
   rowTitleFor,
   save,
   schemaVersions,
@@ -53,11 +64,17 @@ import {
   toBundle,
   viewCallbacks,
   withNewFixtures,
+  savedFrom,
   type AppCommandId,
   type AttachmentShown,
   type ShownFile,
+  storedTableRows,
+  sheetReaders,
+  asStored,
+  readingText,
+  ingestingText,
 } from "@workspace.sh/table-app";
-import { useTableApp } from "@workspace.sh/table-app/react";
+import { useIndexedTables, useSearchBehind, useTableApp } from "@workspace.sh/table-app/react";
 import { Sidebar } from "./Sidebar";
 import { FileView } from "./FileView";
 import { addressInHash, useHashAddress } from "./useHashAddress";
@@ -69,6 +86,8 @@ const PLACE_LINE = 60;
 // How long after the last edit the demo saves, as the Mac and Linux apps do (400 ms): typing is one write, not one a key.
 const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
+/** The examples as the demo ships them: what's saved is what differs from them (savedFrom). */
+const EXAMPLES = { tables: initialTables, bundles: initialBundles };
 
 // What the Files side of the sidebar lists and opens: each bundle's files
 // as saving writes them, and fixture tables' attachments.
@@ -78,33 +97,6 @@ const NO_ROWS: Row[] = [];
 
 /** An archive smaller than this can't hold a table large enough to index, and is read on the page. */
 const WORKER_FROM_BYTES = 256 * 1024;
-
-/** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
-function asStored(view: View): View {
-  const { sort: _sort, order: _order, filter: _filter, group: _group, totals: _totals, ...rest } = view;
-  return rest;
-}
-
-/**
- * How far the reading has got. How many rows there are isn't known until the
- * last is read, so until then the total is "about", to two figures: a number
- * that changed with every step would read as a fault.
- */
-function readingText(building: { done: number; total: number }): string {
-  if (building.total <= 0) return "Reading rows";
-  if (building.done >= building.total) return `${building.done.toLocaleString()} rows read`;
-  const digits = Math.max(0, String(Math.round(building.total)).length - 2);
-  const about = Math.round(building.total / 10 ** digits) * 10 ** digits;
-  return `${building.done.toLocaleString()} of about ${Math.max(about, building.done).toLocaleString()} rows read`;
-}
-
-/** What the line above the first rows says while a large table is read. */
-function ingestingText(view: View): string {
-  const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
-  return arranged
-    ? "Showing rows as stored, as they're read. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
-    : "Showing rows as stored, as they're read. Search and editing are ready once the table is read. This happens once.";
-}
 
 const styles = css.create({
   indexedNote: {
@@ -141,14 +133,31 @@ const styles = css.create({
     // --page-gutter (strict.css), so what bleeds over it knows how far.
     paddingInline: "var(--page-gutter)",
     paddingBlock: 20,
-    overflow: "auto",
+    // The page scrolls, not this: it clips what's wider without being a place
+    // that scrolls, so a table's header can stay at the page's top (D58).
+    minWidth: 0,
+    overflowX: "clip",
+    overflowY: "visible",
   },
-  /** Holds the sidebar at full width, or slides it to nothing when collapsed. */
+  /**
+   * Holds the sidebar at full width, or slides it to nothing when collapsed.
+   * It stays the window's height as the page scrolls, and scrolls its own
+   * contents when they're taller: a long table moves the page, not the
+   * sidebar, and a long sidebar doesn't move the table.
+   */
   sidebarSlot: {
     display: "flex",
+    // As tall as its contents, scrolled by the slot (the drawer's rule, below):
+    // stretched to the slot's height, a long sidebar spilled past its own background.
+    alignItems: "flex-start",
+    alignSelf: "flex-start",
+    position: "sticky",
+    top: 0,
+    height: "100vh",
     flexShrink: 0,
     maxWidth: 320,
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "auto",
     visibility: "visible",
     transitionProperty: "max-width, visibility",
     transitionDuration: "200ms",
@@ -182,13 +191,15 @@ const styles = css.create({
     },
   },
   mainNarrow: {
-    paddingBlock: 12,
+    paddingTop: 8,
+    // Room at the end of the page for the bar, so the last rows clear it.
+    paddingBottom: 72,
   },
   topBar: {
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 4,
     marginBottom: 10,
   },
   menuButton: {
@@ -240,8 +251,84 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#0a0a0c",
     },
   },
-  searchNarrow: {
+  // At phone width, the bar along the foot of the screen: the page's own
+  // background and a hairline, nothing more.
+  bottomBar: {
+    position: "fixed",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 60,
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingInline: 6,
+    paddingTop: 6,
+    paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262b" },
+    backgroundColor: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#000000" },
+  },
+  // Raised by what the on-screen keyboard covers, so searching stays in view.
+  barLift: (y: number) => ({
+    transform: `translateY(${-y}px)`,
+  }),
+  // Search in the bar: the room the buttons leave, 16px type so a phone doesn't zoom in.
+  barSearch: {
+    flex: 1,
+    minWidth: 0,
+    width: "auto",
+    height: 38,
+    fontSize: 16,
+    borderRadius: 10,
+    marginInline: 4,
+  },
+  // At phone width, the bar's buttons: no border, a 44 point target, a drawn icon.
+  iconButton: {
+    position: "relative",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    height: 44,
+    borderWidth: 0,
+    borderRadius: 10,
+    backgroundColor: { default: "transparent", ":active": { default: "#e8e8ed", "@media (prefers-color-scheme: dark)": "#26262b" } },
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  iconOff: {
+    opacity: 0.3,
+    cursor: "default",
+  },
+  // The browser's own picker, over the "more" button: on a phone it opens
+  // the system's menu of choices.
+  nativeMenu: {
+    position: "absolute",
+    top: 0,
+    left: 0,
     width: "100%",
+    height: "100%",
+    opacity: 0,
+    cursor: "pointer",
+    fontSize: 16,
+  },
+  topBarTitles: {
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    minWidth: 0,
+  },
+  topBarName: {
+    fontSize: 17,
+    fontWeight: "600",
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    textOverflow: "ellipsis",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
   header: {
     display: "flex",
@@ -321,6 +408,32 @@ const styles = css.create({
     alignItems: "center",
     gap: 8,
   },
+  // Undo and Redo, joined: one control of two halves.
+  undoPair: {
+    display: "flex",
+    flexDirection: "row",
+  },
+  undoButton: {
+    paddingInline: 9,
+    fontSize: 14,
+    lineHeight: "14px",
+  },
+  undoFirst: {
+    borderStartEndRadius: 0,
+    borderEndEndRadius: 0,
+  },
+  undoLast: {
+    borderStartStartRadius: 0,
+    borderEndStartRadius: 0,
+    marginInlineStart: -1,
+  },
+  buttonOff: {
+    cursor: "default",
+    color: {
+      default: "#b0b0b6",
+      "@media (prefers-color-scheme: dark)": "#55555c",
+    },
+  },
   downloadButton: {
     paddingInline: 10,
     paddingBlock: 6,
@@ -372,13 +485,12 @@ export function App() {
   // the viewer's own settings come from this browser.
   const browserLocale = typeof navigator === "undefined" ? undefined : navigator.language;
   // Set once the indexed tables' hook below has run: a write can only come after.
-  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const saveIndexed = useRef<(tables: Record<string, ParsedTable>) => Promise<unknown>>(async () => {});
   const { state, dispatch, display: shownDisplay, flush } = useTableApp(
     () => {
-      const fixtures = { tables: initialTables, bundles: initialBundles };
       const saved = loadSaved(browserStore());
-      // Fixture tables added since this browser saved its edits still appear.
-      const initial = saved ? withNewFixtures(saved, fixtures) : fixtures;
+      // The examples, with this browser's edits to them, and its own files.
+      const initial = saved ? withNewFixtures(saved, EXAMPLES) : EXAMPLES;
       const store = browserStore();
       const start = addressInHash();
       const sidebar = loadSidebarPrefs(store);
@@ -386,6 +498,8 @@ export function App() {
         ...initial,
         stored: { sidebar, arrangements: loadArrangements(store), display: loadDisplay(store) },
         ...(start ? { start } : {}),
+        // Each edit goes to its table's history (SPEC section 14), kept in this browser beside the table.
+        writesHistory: true,
       });
       return {
         ...s,
@@ -396,14 +510,24 @@ export function App() {
         openedAt: INITIAL_SCHEMA_VERSIONS,
       };
     },
-    // Saved a moment after the last edit, in this browser. The fixtures themselves are
-    // never saved, so an untouched demo keeps following them as they change.
+    // Saved a moment after the last edit, in this browser. An example is saved only once
+    // it's edited, so the demo follows the examples as they change until then.
     {
       store: browserStore(),
-      write: async (_edited, tables, bundles) => {
+      write: async (edited, tables, bundles, closed) => {
         // A table held in the index has no rows here: only what's left of it is kept in this store.
-        save(browserStore(), { tables, bundles });
+        // An example is kept only once it's edited (savedFrom).
+        save(browserStore(), savedFrom(tables, bundles, closed, EXAMPLES));
+        // A file closed: its history kept here goes. (Its index stays in the browser's storage,
+        // as after Reset Demo Data, and is made again if a file of the same name is opened.)
+        for (const bundle of closedIn(edited, bundles)) forgetStoredHistories(browserStore(), bundle);
         await saveIndexed.current(tables);
+      },
+      // What was edited, added to the table's history in this browser; nowhere to keep it, kept to write.
+      appendHistory: async (key, events) => {
+        const store = browserStore();
+        if (!store) return false;
+        appendStoredHistory(store, key, events);
       },
       delayMs: SAVE_AFTER_MS,
     },
@@ -412,11 +536,19 @@ export function App() {
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there, in a worker.
-  const indexed = useIndexedTables({ state, dispatch, view: derive(state, { locale: browserLocale, attachmentsOf }).shown.view, tell });
+  // The view follows the search a step behind what's typed (useSearchBehind).
+  const behind = useSearchBehind(state);
+  const indexed = useIndexedTables({ state: behind, dispatch, view: derive(behind, { locale: browserLocale, attachmentsOf }).shown.view, tell, openIndexDatabase: openWebDatabase, closeUnheld: true });
   saveIndexed.current = indexed.save;
-  const derived = derive(state, {
+  // A table's history, as this browser keeps it beside the table: the Files side lists and shows it.
+  const historyText = (key: string): string | undefined => {
+    const store = browserStore();
+    return (store && storedHistory(store, key)) || undefined;
+  };
+  const derived = derive(behind, {
     locale: browserLocale,
     attachmentsOf,
+    hasHistory: (key) => historyText(key) !== undefined,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
   const { table, view, shown: shownArranged, summary } = derived;
@@ -440,13 +572,16 @@ export function App() {
     const asking = state.asking;
     if (!asking) return;
     if (asking.kind === "name") {
-      const text = window.prompt(asking.prompt.heading);
+      const text = window.prompt(asking.prompt.heading, asking.prompt.value ?? "");
       dispatch({ type: "answer", response: text === null ? "cancel" : "create", ...(text !== null ? { text } : {}) });
       return;
     }
     const ok = window.confirm(confirmText(asking.confirm));
     // Starting again from the examples: what this browser saved goes too.
-    if (ok && asking.on.type === "reset") clearSaved(browserStore());
+    if (ok && asking.on.type === "reset") {
+      clearSaved(browserStore());
+      clearStoredHistory(browserStore());
+    }
     dispatch({ type: "answer", response: ok ? asking.confirm.responses.at(-1)!.id : "cancel" });
   }, [state.asking]);
   useEffect(() => {
@@ -455,7 +590,7 @@ export function App() {
     dispatch({ type: "told" });
   }, [state.telling]);
 
-  // Download: the whole bundle as a real `.table.zip` (D27, D37), so the
+  // Download: the whole bundle as a single-file `.table` (D37, D50), so the
   // tables it links together travel together.
   const downloadTable = useCallback(async () => {
     const bundle = bundleOf(activeTablePath);
@@ -471,20 +606,24 @@ export function App() {
           return tell(heading, body);
         }
         const { indexed: _index, ...rest } = held;
-        whole[key] = { ...rest, rows: await indexed.everyRow(key, held) };
+        whole[key] = { ...rest, ...storedTableRows(held, await indexed.everyRow(key, held)) };
       }
-      bytes = await bundleToArchive(bundle, toBundle(whole, bundles, bundle));
+      // Each table's history goes with it, everything written so far included (SPEC section 14).
+      await flush();
+      const store = browserStore();
+      const going = await withHistories(whole, (key) => (store ? storedHistory(store, key) || undefined : undefined));
+      bytes = await bundleToArchive(bundle, toBundle(going, bundles, bundle));
     } catch (error) {
-      dispatch({ type: "tell", message: { heading: exportFailedText(archiveFileName(bundle), error) } });
+      dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       return;
     }
-    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/vnd.workspace-sh.table" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = archiveFileName(bundle);
+    a.download = singleFileName(bundle);
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-  }, [tables, bundles, activeTablePath, indexed.everyRow, tell]);
+  }, [tables, bundles, activeTablePath, indexed.everyRow, tell, flush]);
 
   // An archive's bytes, read. A small one is read here. One that could hold
   // a large table is read in a worker, where such a table's rows stay, on
@@ -494,11 +633,17 @@ export function App() {
       if (bytes.byteLength < WORKER_FROM_BYTES || typeof Worker === "undefined") return openArchive(bytes, Object.keys(bundles));
       const read = await openArchiveInWorker(bytes, Object.keys(bundles));
       if (read.index) {
-        indexed.hold(read.opened.key, read.index, Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])));
+        indexed.hold(Object.fromEntries(Object.entries(read.first).map(([name, rows]) => [`${read.opened.key}/${name}`, rows])), { [read.opened.key]: read.index });
         // Asked after, not before the rows show: the database opens behind them.
-        void read.index.persistent().then(
-          (kept) => kept || tell("Kept only while this page is open", "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded."),
-        );
+        void read.index.storage().then((storage) => {
+          if (storage === "kept") return;
+          tell(
+            "Kept only while this page is open",
+            storage === "elsewhere"
+              ? "Another tab of this app holds this browser's storage for large tables, so this one is held for now and gone when the page is closed or reloaded. Open it in that tab to keep it."
+              : "This browser gave no storage for a table this large, so it's held for now and gone when the page is closed or reloaded.",
+          );
+        });
       }
       return read.opened;
     },
@@ -506,20 +651,22 @@ export function App() {
     [bundles, indexed.hold, tell],
   );
 
-  // Open: a `.table.zip` becomes one more table here, saying what the
+  // Open: a single-file `.table` becomes one more table here, saying what the
   // reader skipped (D25). Only a file with no table in it is refused.
   const openTableFile = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".zip,application/zip";
+    // A single-file .table, or a spreadsheet someone already has (CSV, TSV and the like), which becomes a new .table file.
+    input.accept = ".table,.csv,.tsv,.tab,.txt,text/csv,text/tab-separated-values";
     input.style.display = "none";
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       input.remove();
       if (!file) return;
       try {
-        const opened = await openAnyArchive(new Uint8Array(await file.arrayBuffer()));
-        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const opened = isSpreadsheetFile(file.name) ? openSpreadsheet(spreadsheetText(bytes), file.name, Object.keys(bundles)) : await openAnyArchive(bytes);
+        const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
         dispatch({ type: "opened", library, skipped: opened.skipped });
       } catch (error) {
         dispatch({ type: "tell", message: { heading: openFailedText(file.name, error) } });
@@ -531,10 +678,12 @@ export function App() {
 
   // Development, or a production build made with VITE_TABLE_MEASURE=1 (the
   // numbers that count come from production builds, BENCHMARKING.md): opens
-  // a .table.zip from a URL as a chosen file is opened, and says how long
+  // a single-file .table from a URL as a chosen file is opened, and says how long
   // each step took (ms), for measuring large tables (#126): fetching it,
   // reading it (unzip and parse), and showing it (React's render and commit,
   // synchronously: a hidden tab has no frames to wait for).
+  const measured = useRef({ canUndo: false, canRedo: false, queued: 0 });
+  measured.current = { canUndo: derived.canUndo, canRedo: derived.canRedo, queued: state.indexWork.length };
   useEffect(() => {
     if (!import.meta.env.DEV && import.meta.env.VITE_TABLE_MEASURE !== "1") return;
     (window as { __tableWeb?: unknown }).__tableWeb = {
@@ -544,13 +693,17 @@ export function App() {
         const t1 = performance.now();
         const opened = await openAnyArchive(bytes);
         const t2 = performance.now();
-        const library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
         flushSync(() => dispatch({ type: "opened", library, skipped: opened.skipped }));
         const t3 = performance.now();
         return { key: opened.key, fetch: Math.round(t1 - t0), read: Math.round(t2 - t1), show: Math.round(t3 - t2) };
       },
       // What the index worker's answers took, for a bundle held in it.
-      workerTimings: (bundle: string) => indexed.timings(bundle),
+      workerTimings: (bundle: string) => indexed.databaseOf(bundle).then((db) => db.timings()),
+      // Any action, as the app's own controls send them.
+      act: (action: Parameters<typeof dispatch>[0]) => flushSync(() => dispatch(action)),
+      // Whether there's a step to undo or redo, and how many edits wait on the index.
+      undoing: () => ({ canUndo: measured.current.canUndo, canRedo: measured.current.canRedo, queued: measured.current.queued }),
       // Milliseconds to edit a row's title in the table on screen and render it.
       timeEdit: (rowId: string) => {
         const t0 = performance.now();
@@ -571,6 +724,7 @@ export function App() {
   }, [direction, pageLocale]);
   // At phone width the sidebar is a drawer, opened from the top bar.
   const narrow = useNarrow();
+  const keyboardInset = useKeyboardInset(narrow);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
   // The sidebar collapses out of the way, as shadcn/ui's does: a trigger
@@ -593,6 +747,23 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleSidebar]);
+  // Undo and redo: ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Y (Ctrl+Shift+Z too).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      const redo = (key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.shiftKey);
+      if (!redo && (key !== "z" || e.shiftKey)) return;
+      const t = e.target as HTMLElement | null;
+      // In a text box, undo belongs to the text.
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      dispatch({ type: redo ? "redo" : "undo" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dispatch]);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   // How far down the page the view is, kept for history as the row at a
@@ -700,7 +871,7 @@ export function App() {
   const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } | null => {
     const attachment = attachmentAt(file.bundle, file.path);
     if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrls[attachment.tableKey]?.[attachment.name]) };
-    const content = fileText(tables, bundles, file.bundle, file.path);
+    const content = fileText(tables, bundles, file.bundle, file.path, historyText);
     return content === undefined ? null : { content };
   };
   const shownContent = shownFile ? shownFileContent(shownFile) : null;
@@ -729,13 +900,15 @@ export function App() {
       onToggleDisplay={() => dispatch({ type: "setDisplayFolded", folded: !sidebarPrefs.foldedDisplay })}
       onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
       onNewFile={() => dispatch({ type: "create", making: { kind: "file" } })}
-      onNewView={() => dispatch({ type: "addView", id: newId() })}
+      onCloseFile={(bundle) => dispatch({ type: "close", bundle })}
+      onNewView={() => dispatch({ type: "addView", id: newViewId() })}
       onOpenFile={openTableFile}
       display={display}
       onDisplayChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
       filesMode={sidebarPrefs.files === true}
       onFilesMode={(files) => dispatch({ type: "setFilesSide", files })}
       attachmentsOf={attachmentsOf}
+      withHistory={Object.keys(tables).filter((key) => historyText(key) !== undefined)}
       shownFile={shownFile}
       onShowFile={(file) => {
         dispatch({ type: "showFile", file });
@@ -744,10 +917,111 @@ export function App() {
     />
   );
 
+  // The view's controls, in the header beside the title when the window is wide.
+  const actions = () => (
+    <>
+      {/* Undo and Redo, for a hand with no keyboard: each says what it would act on. */}
+      <html.div style={styles.undoPair}>
+        {(["undo", "redo"] as const).map((id) => {
+          const command = commandOf(id);
+          const can = command.enabled !== false;
+          return (
+            <Hinted key={id} hint={`${command.label} (${shortcutText(command, "web")})`}>
+              <html.button
+                aria-label={command.label}
+                disabled={!can}
+                onClick={() => dispatch({ type: id })}
+                style={[styles.downloadButton, styles.undoButton, id === "undo" ? styles.undoFirst : styles.undoLast, !can && styles.buttonOff]}
+              >
+                {id === "undo" ? "↶" : "↷"}
+              </html.button>
+            </Hinted>
+          );
+        })}
+      </html.div>
+      <Hinted hint={TOOLBAR_HINTS.viewSettings}>
+        <html.button
+          style={[styles.downloadButton, state.settingsOpen && styles.buttonOn]}
+          onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
+        >
+          View settings
+        </html.button>
+      </Hinted>
+      <Hinted hint={commandOf("export-file").hint}>
+        <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
+          Download as a Single File
+        </html.button>
+      </Hinted>
+      <html.input
+        type="search"
+        placeholder="Search…"
+        value={state.search}
+        onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+        style={styles.searchInput}
+      />
+    </>
+  );
+
   return (
     <DisplaySettingsProvider value={shownDisplay}>
     <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
     <html.div style={styles.root}>
+      {/* At phone width the view's controls are along the foot of the screen,
+          where a thumb reaches: the tables and views, search, Undo, and More
+          (the browser's own menu, which a phone shows as its system picker). */}
+      {narrow && (
+        <html.div role="toolbar" aria-label="View" style={[styles.bottomBar, styles.barLift(keyboardInset)]}>
+          <html.button
+            ref={menuButtonRef}
+            style={styles.iconButton}
+            aria-label="Tables and views"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <Icon name="menu" />
+          </html.button>
+          {!(shownFile && shownContent) && (
+            <>
+              <html.input
+                type="search"
+                placeholder="Search"
+                aria-label="Search this view"
+                enterKeyHint="search"
+                value={state.search}
+                onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
+                style={[styles.searchInput, styles.barSearch]}
+              />
+              <html.button
+                aria-label={commandOf("undo").label}
+                disabled={commandOf("undo").enabled === false}
+                onClick={() => dispatch({ type: "undo" })}
+                style={[styles.iconButton, commandOf("undo").enabled === false && styles.iconOff]}
+              >
+                <Icon name="undo" />
+              </html.button>
+              <html.div style={styles.iconButton}>
+                <Icon name="more" />
+                <html.select
+                  aria-label="More"
+                  value=""
+                  onChange={(e: { target: { value: string } }) => {
+                    const what = e.target.value;
+                    if (what === "redo") dispatch({ type: "redo" });
+                    else if (what === "settings") dispatch({ type: "settings", open: !state.settingsOpen });
+                    else if (what === "download") void downloadTable();
+                  }}
+                  style={styles.nativeMenu}
+                >
+                  <html.option value="" disabled>More</html.option>
+                  <html.option value="redo" disabled={commandOf("redo").enabled === false}>{commandOf("redo").label}</html.option>
+                  <html.option value="settings">{state.settingsOpen ? "Hide View Settings" : "View Settings"}</html.option>
+                  <html.option value="download">Download as a Single File</html.option>
+                </html.select>
+              </html.div>
+            </>
+          )}
+        </html.div>
+      )}
       {narrow ? (
         drawerOpen && (
           <>
@@ -770,17 +1044,11 @@ export function App() {
       <html.div style={[styles.main, narrow && styles.mainNarrow]}>
         {narrow && (
           <html.div style={styles.topBar}>
-            <html.button
-              ref={menuButtonRef}
-              style={styles.menuButton}
-              aria-label="Tables and views"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
-            >
-              ☰
-            </html.button>
-            {/* Where the view is, file and table: narrow, the breadcrumb lives up here. */}
-            <html.span dir="auto" style={styles.topBarTitle}>{derived.breadcrumb.text}</html.span>
+            {/* Where you are: the view, and its file and table under it. */}
+            <html.div style={styles.topBarTitles}>
+              <html.span dir="auto" style={styles.topBarName}>{shownFile ? shownFile.path : view.name}</html.span>
+              <html.span dir="auto" style={styles.topBarTitle}>{derived.breadcrumb.text}</html.span>
+            </html.div>
           </html.div>
         )}
         {shownFile && shownContent ? (
@@ -798,45 +1066,24 @@ export function App() {
               {derived.breadcrumb.text}
             </html.span>
           )}
+          {!narrow && (
           <html.div style={styles.headerTopRow}>
             <html.div style={styles.titleRow}>
-              {!narrow && (
-                <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "web")}>
-                  <html.button
-                    aria-label="Toggle the sidebar"
-                    aria-expanded={!sidebarCollapsed}
-                    onClick={toggleSidebar}
-                    style={styles.sidebarTrigger}
-                  >
-                    ◧
-                  </html.button>
-                </Hinted>
-              )}
+              <Hinted hint={hintWithShortcut(commandOf("toggle-sidebar"), "web")}>
+                <html.button
+                  aria-label="Toggle the sidebar"
+                  aria-expanded={!sidebarCollapsed}
+                  onClick={toggleSidebar}
+                  style={styles.sidebarTrigger}
+                >
+                  ◧
+                </html.button>
+              </Hinted>
               <html.span dir="auto" style={styles.title}>{view.name}</html.span>
             </html.div>
-            <html.div style={styles.headerActions}>
-            <Hinted hint={TOOLBAR_HINTS.viewSettings}>
-              <html.button
-                style={[styles.downloadButton, state.settingsOpen && styles.buttonOn]}
-                onClick={() => dispatch({ type: "settings", open: !state.settingsOpen })}
-              >
-                View settings
-              </html.button>
-            </Hinted>
-            <Hinted hint={commandOf("export-zip").hint}>
-              <html.button style={styles.downloadButton} onClick={() => void downloadTable()}>
-                Download .table.zip
-              </html.button>
-            </Hinted>
-            <html.input
-              type="search"
-              placeholder="Search…"
-              value={state.search}
-              onChange={(e: { target: { value: string } }) => dispatch({ type: "search", text: e.target.value })}
-              style={[styles.searchInput, narrow && styles.searchNarrow]}
-            />
-            </html.div>
+            <html.div style={styles.headerActions}>{actions()}</html.div>
           </html.div>
+          )}
           <html.div style={styles.subtitle}>
             {/* While a large table is read, how far that has got is in the count's place. */}
             {indexed.building ? (
@@ -870,6 +1117,15 @@ export function App() {
                 </Hinted>
               </>
             )}
+            {/* Its index couldn't be made: said here, on the table, not as an alert. */}
+            {summary.held && (
+              <>
+                <html.span>·</html.span>
+                <Hinted hint={summary.held.hint} style={styles.schemaBumpBadge}>
+                  {summary.held.label}
+                </Hinted>
+              </>
+            )}
           </html.div>
         </html.div>
         {state.settingsOpen && (
@@ -883,6 +1139,7 @@ export function App() {
             personal={derived.arranged}
             onSaveForEveryone={() => dispatch({ type: "saveForEveryone" })}
             onReset={() => dispatch({ type: "resetArrangement" })}
+            sheetReaders={sheetReaders(state.tables, state.active, view)}
             onDelete={table.views.length > 1 ? () => dispatch({ type: "deleteView" }) : undefined}
             onClose={() => dispatch({ type: "settings", open: false })}
             onCancel={() => dispatch({ type: "settings", open: false, revert: true })}
@@ -890,7 +1147,9 @@ export function App() {
         )}
         {indexed.lost ? (
           <html.div style={styles.indexedNote}>
-            This table's rows are no longer in this browser's storage. Open its .table.zip again to bring them back.
+            {indexed.lost === "elsewhere"
+              ? "This table is open in another tab, which holds this browser's storage for it. Use it there, or close that tab and reload this page."
+              : "This table's rows are no longer in this browser's storage. Open its .table file again to bring them back."}
           </html.div>
         ) : table.indexed && view.layout !== "table" ? (
           <html.div style={styles.indexedNote}>
@@ -912,7 +1171,7 @@ export function App() {
               reading
                 ? {
                     source: reading,
-                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
                     onOpenRelation: () => {},
                     allRows: NO_ROWS,
                     tableKey: tableNameOf(activeTablePath),
@@ -921,8 +1180,9 @@ export function App() {
                     ...callbacks,
                     // The bundle's tables by name, so lookups and rollups reach the ones
                     // they name (D36), within this bundle (D37).
-                    relatedTables: bundleTables(tables, bundleOf(activeTablePath)),
+                    relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
                     allRows: table.rows,
+                    cells: table.cells,
                     tableKey: tableNameOf(activeTablePath),
                     sheet,
                     onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
@@ -960,12 +1220,12 @@ export function App() {
   );
 }
 
-
 interface ViewCallbacks {
   /** For a table held in the index: what its table view reads its rows from. */
   source?: ViewRows;
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   onRemoveEnumValue?: (fieldName: string, value: string) => void;
   onDeleteField?: (fieldName: string) => void;
@@ -975,7 +1235,7 @@ interface ViewCallbacks {
   onPlaceMeasure?: (measure: PlaceMeasure | null) => void;
   onMoveField?: (fieldName: string, delta: -1 | 1) => void;
   onRestoreSchema?: (schema: TableSchema) => void;
-  onAddField?: (field: Field) => void;
+  onAddField?: (field: Field, place?: { name: string; side: "before" | "after" }) => void;
   onAddRow?: () => string | void;
   onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;
@@ -984,6 +1244,12 @@ interface ViewCallbacks {
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
   allRows: Row[];
+  cells?: import("@workspace.sh/table-core").CellFormula[];
+  onSetCellFormula?: (rowId: string, field: string, expr: string | null) => void;
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
+  onAskMerge?: (rowId: string, field: string) => void;
+  onUnmerge?: (rowId: string, field: string) => void;
+  onAskCellNote?: (rowId: string, field: string, note?: string) => void;
   /** This table's key among `relatedTables`. */
   tableKey: string;
   sheet?: { order: string[]; position: Map<string, number>; sheets: import("@workspace.sh/table-core").SheetRef[] };
@@ -1059,7 +1325,14 @@ function renderView(
           schema={schema}
           bodies={bodies}
           onUpdateRow={cb.onUpdateRow}
+          cells={cb.cells}
+          onSetCellFormula={cb.onSetCellFormula}
+          onSetIteration={cb.onSetIteration}
+          onAskMerge={cb.onAskMerge}
+          onUnmerge={cb.onUnmerge}
+          onAskCellNote={cb.onAskCellNote}
           onUpdateField={cb.onUpdateField}
+          onRenameField={cb.onRenameField}
           onAddEnumValue={cb.onAddEnumValue}
           onRemoveEnumValue={cb.onRemoveEnumValue}
           onDeleteField={cb.onDeleteField}
@@ -1081,4 +1354,28 @@ function renderView(
         />
       );
   }
+}
+
+/**
+ * How much of the window the on-screen keyboard covers, from the visual
+ * viewport. iOS Safari leaves a bar fixed to the foot of the page under
+ * the keyboard while its search field is typed in; this lifts it clear.
+ * 0 without a keyboard, or where there's no visual viewport.
+ */
+function useKeyboardInset(on: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const vv = typeof window === "undefined" ? undefined : window.visualViewport;
+    if (!on || !vv) return;
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setInset(0);
+    };
+  }, [on]);
+  return inset;
 }

@@ -2,7 +2,7 @@ import * as Gtk from "@gtkx/gi/gtk";
 import { cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing";
 import { loadLibrary } from "@workspace.sh/table-app/node";
 import { parseBundle } from "@workspace.sh/table-core/parser";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -34,7 +34,7 @@ async function name(text: string) {
 describe("making tables and files on Linux", () => {
   it("a new table goes into its bundle and the manifest's order", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
     // Asked in table-app's words, the same on the web and macOS; the name is trimmed.
     expect(await screen.findByText("New table in Projects")).toBeDefined();
@@ -48,7 +48,7 @@ describe("making tables and files on Linux", () => {
 
   it("a new .table file is made in the new-files folder", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
     await name("Garden");
     await waitFor(async () => {
@@ -59,9 +59,25 @@ describe("making tables and files on Linux", () => {
     });
   });
 
+  it("with a folder of your own open, a new .table file is made beside it, and never in a folder already there", async () => {
+    // No examples library: the app was started on this one folder.
+    mkdirSync(join(dir, "garden.table"));
+    writeFileSync(join(dir, "garden.table", "keep.txt"), "someone else's");
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New .table File" }));
+    await name("Garden");
+    await waitFor(async () => {
+      expect(existsSync(join(dir, "garden-2.table", "meta.json"))).toBe(true);
+      expect((await parseBundle(join(dir, "garden-2.table"))).meta.title).toBe("Garden");
+    });
+    // The folder that was there is as it was.
+    expect(readdirSync(join(dir, "garden.table"))).toEqual(["keep.txt"]);
+  });
+
   it("a blank name makes nothing", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" newFilesIn={dir} />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" newFilesIn={dir} />);
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New Table in Projects" }));
     await name("   ");
     // A table made would be shown at once; the one open is still open.
@@ -71,7 +87,7 @@ describe("making tables and files on Linux", () => {
 
   it("a new view opens its settings, where it's made into what's wanted", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
     expect(screen.queryByText("Filters")).toBeNull();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "New View" }));
     expect(await screen.findByText("Filters")).toBeDefined();

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
-import type { EnumColor, EnumOption, CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
+import type { EnumOption, CompileResult, ComputeOptions, Field, Grid, Row } from "@workspace.sh/table-core";
 import type { ReactNode } from "react";
 import type { SettingsRow, SettingsSection } from "./controlSlots";
 import { movesBack, revertPatch } from "./revert";
@@ -10,9 +10,11 @@ import {
   defaultAlignFor,
   enumOptions,
   printFormula,
+  renameProblem,
 } from "@workspace.sh/table-core";
 import { Portal } from "./internal/Portal";
-import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder } from "./formulaCell";
+import { PLATFORM_OS } from "./internal/platformOS";
+import { expectsReference, explainFormula, formulaDraftOf, formulaStatus, formulaPlaceholder, LOOP_ITERATION, loopNote } from "./formulaCell";
 import {
   addableChoices,
   ALIGN_CHOICES,
@@ -24,6 +26,11 @@ import {
   formatState,
   friendlyType,
   newChoice,
+  CHOICE_COLOURS,
+  choiceColour,
+  choiceLabel,
+  choicesPatch,
+  movedChoices,
   newField,
   requiredPatch,
   takesChoices,
@@ -56,15 +63,6 @@ export { friendlyType };
  * What a field holds, as people say it: a formula, one choice or several,
  * a link to rows, else its stored type ("Text", "Number").
  */
-/** The schema's choice colours (SPEC "enum colours"), for a choice's colour picker. */
-const CHOICE_COLOURS = [
-  // Not "": an empty selection draws a native picker blank.
-  { value: "none", label: "None" },
-  ...(["gray", "brown", "red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink"] as const).map((c) => ({
-    value: c,
-    label: c === "gray" ? "Grey" : c[0]!.toUpperCase() + c.slice(1),
-  })),
-];
 
 function typeShown(field: Field): string {
   if (field.computed) return "Formula";
@@ -151,7 +149,15 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#26262b",
     },
   },
+  // The name being edited takes the row's room; the type badge keeps its own.
+  nameInRow: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    marginInlineEnd: 8,
+  },
   typeBadge: {
+    flexShrink: 0,
     display: "flex",
     flexDirection: "row",
     alignItems: "baseline",
@@ -372,9 +378,37 @@ const styles = css.create({
     display: "flex",
     flexShrink: 0,
   },
+  plusMark: {
+    position: "relative",
+    width: 13,
+    height: 13,
+  },
+  plusBar: {
+    position: "absolute",
+    borderRadius: 1,
+    backgroundColor: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" },
+  },
+  plusAcross: {
+    left: 0,
+    right: 0,
+    top: 5.75,
+    height: 1.5,
+  },
+  plusDown: {
+    top: 0,
+    bottom: 0,
+    left: 5.75,
+    width: 1.5,
+  },
   addFieldCompact: {
     width: 30,
     height: 30,
+    // The "+" in the middle of its square: on native a button's text sits
+    // at its top unless it's centred.
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
     fontSize: 18,
     lineHeight: "18px",
     borderRadius: 6,
@@ -384,9 +418,12 @@ const styles = css.create({
       default: "transparent",
       ":hover": { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#1f1f23" },
     },
+    // A place a column could go, as "+ New row" is a place a row could:
+    // faint at rest, full strength under the pointer.
     color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
+      default: "#aeaeb2",
+      ":hover": "#1c1c1e",
+      "@media (prefers-color-scheme: dark)": { default: "#5a5a60", ":hover": "#f5f5f7" },
     },
   },
   fieldNameInput: {
@@ -566,7 +603,6 @@ function FormatPicker({
   const { kind, digits, code, notes } = state;
   const shown = state.choices;
   const choose = (next: string) => onUpdate(state.choose(next));
-  const set = (format: string) => onUpdate({ format: format || undefined });
   return (
     <>
       <html.span style={styles.label}>Format</html.span>
@@ -576,14 +612,14 @@ function FormatPicker({
         onChange={choose}
         style={styles.input}
       />
-      {kind === "decimal" && (
+      {(kind === "decimal" || kind === "scientific") && (
         <Select
           value={String(digits)}
           options={DECIMAL_PLACES.map((d) => ({
             value: String(d),
             label: `${d} decimal place${d === 1 ? "" : "s"}`,
           }))}
-          onChange={(next) => set(`decimal:${next}`)}
+          onChange={(next) => onUpdate(kind === "decimal" ? state.decimal(Number(next)) : state.scientific(Number(next)))}
           style={styles.input}
         />
       )}
@@ -591,9 +627,16 @@ function FormatPicker({
         <Select
           value={code}
           options={currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` }))}
-          onChange={(next) => set(`currency:${next}`)}
+          onChange={(next) => onUpdate(state.currency(next))}
           style={styles.input}
         />
+      )}
+      {state.takesParens && (
+        <html.div style={styles.checkRow}>
+          <Toggle role="setting" checked={state.parens} onChange={(on) => onUpdate(state.setParens(on))} style={styles.checkRow}>
+            Negatives in brackets
+          </Toggle>
+        </html.div>
       )}
       {notes.map((n) => (
         <html.span key={n.text} style={n.kind === "warn" ? styles.warnText : styles.noteText}>
@@ -632,6 +675,11 @@ interface SchemaFieldEditorProps {
   onCancel?: () => void;
   /** The table's fields, so a formula can warn about a name that doesn't exist. */
   fields?: Field[];
+  /**
+   * Rename the field: its name (the key formulas read it by) becomes `to`
+   * everywhere it's used. Absent: the name is shown, not edited.
+   */
+  onRename?: (to: string) => void;
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
   grid?: Grid;
 }
@@ -674,6 +722,7 @@ export function SchemaFieldEditor({
   onClose,
   onCancel,
   fields,
+  onRename,
   grid,
 }: SchemaFieldEditorProps) {
   const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
@@ -685,7 +734,8 @@ export function SchemaFieldEditor({
   const [beforeIndex] = useState(fieldIndex);
   const cancel = () => {
     if (onCancel) return onCancel();
-    const patch = revertPatch(before, field);
+    // A rename isn't put back here: it changed more than this field (Undo takes it back whole).
+    const { name: _renamed, ...patch } = revertPatch(before, field);
     if (Object.keys(patch).length > 0) onUpdate(patch);
     for (const delta of movesBack(beforeIndex, fieldIndex)) onMove(delta);
     onClose();
@@ -704,6 +754,13 @@ export function SchemaFieldEditor({
   const formulaChanged = formulaEdit?.save !== undefined;
   const saveFormula = () => {
     if (formulaEdit?.save) onUpdate(formulaEdit.save);
+  };
+  // The name, as it's being typed; renamed on Enter or on leaving the box, when it can be.
+  const [nameDraft, setNameDraft] = useState(field.name);
+  useEffect(() => setNameDraft(field.name), [field.name]);
+  const nameProblem = nameDraft === field.name ? null : renameProblem({ schema: { fields: fields ?? [field] } }, field.name, nameDraft);
+  const rename = () => {
+    if (onRename && nameDraft !== field.name && nameProblem === null) onRename(nameDraft);
   };
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -729,26 +786,41 @@ export function SchemaFieldEditor({
   };
 
   // The field's choices written back, each as { value, label?, color? } (SPEC "enum").
-  const setChoices = (next: EnumOption[]) =>
-    onUpdate({ constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } });
+  const setChoices = (next: EnumOption[]) => onUpdate(choicesPatch(field, next));
   const choices = hasEnum ? enumOptions(field) : [];
   const moveChoice = (from: number, to: number) => {
-    if (to < 0 || to >= choices.length) return;
-    const next = choices.slice();
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved!);
-    setChoices(next);
+    const next = movedChoices(choices, from, to);
+    if (next !== choices) setChoices(next);
   };
 
   const body = (
     <>
         <html.div style={styles.identity}>
-          <html.span>{field.name}</html.span>
+          {onRename ? (
+            <html.input
+              dir="auto"
+              type="text"
+              aria-label="Name in formulas"
+              value={nameDraft}
+              onChange={(e: { target: { value: string } }) => setNameDraft(e.target.value)}
+              onKeyDown={(e: { key: string }) => {
+                if (e.key === "Enter") rename();
+                if (e.key === "Escape") setNameDraft(field.name);
+              }}
+              onBlur={rename}
+              style={[styles.input, styles.fieldNameInput, styles.nameInRow]}
+            />
+          ) : (
+            <html.span>{field.name}</html.span>
+          )}
           <html.span style={styles.typeBadge}>
             <html.span>{typeShown(field)}</html.span>
             <html.span style={styles.typeBadgeTechnical}>· {field.type}</html.span>
           </html.span>
         </html.div>
+        {onRename ? (
+          <html.span style={nameProblem ? styles.errorText : styles.noteText}>{nameProblem ?? "Formulas read the field by this name. Renaming it renames it in every formula."}</html.span>
+        ) : null}
 
         {field.computed && (
           <>
@@ -825,16 +897,13 @@ export function SchemaFieldEditor({
                   aria-label={`Label for ${o.value}`}
                   value={o.label ?? o.value}
                   placeholder={o.value}
-                  onChange={(e: { target: { value: string } }) => {
-                    const t = e.target.value.trim();
-                    setChoices(choices.map((c, j) => (j === i ? { ...c, label: t && t !== c.value ? t : undefined } : c)));
-                  }}
+                  onChange={(e: { target: { value: string } }) => setChoices(choices.map((c, j) => (j === i ? choiceLabel(c, e.target.value) : c)))}
                   style={[styles.input, styles.choiceLabel]}
                 />
                 <Select
                   value={o.color ?? "none"}
                   options={CHOICE_COLOURS}
-                  onChange={(c) => setChoices(choices.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x)))}
+                  onChange={(c) => setChoices(choices.map((x, j) => (j === i ? choiceColour(x, c) : x)))}
                   style={[styles.input, styles.choiceColour]}
                 />
                 <html.button aria-label={`Move ${o.label ?? o.value} up`} disabled={i === 0} onClick={() => moveChoice(i, i - 1)} style={styles.smallButton}>
@@ -923,8 +992,11 @@ export function SchemaFieldEditor({
     const sections: SettingsSection[] = [
       {
         id: "identity",
+        ...(onRename ? { footer: nameProblem ?? "Formulas read the field by this name. Renaming it renames it in every formula." } : {}),
         rows: [
-          { kind: "info", id: "name", label: "Stored as", value: field.name },
+          onRename
+            ? { kind: "text", id: "name", label: "Name", value: nameDraft, onChange: setNameDraft, onSubmit: () => rename() }
+            : { kind: "info", id: "name", label: "Stored as", value: field.name },
           { kind: "info", id: "type", label: "Type", value: typeShown(field) },
         ],
       },
@@ -962,7 +1034,6 @@ export function SchemaFieldEditor({
     });
     const format = formatState(field, fields ?? [], display);
     if (format) {
-      const set = (f: string) => onUpdate({ format: f || undefined });
       const rows: SettingsRow[] = [
         {
           kind: "choice",
@@ -973,14 +1044,14 @@ export function SchemaFieldEditor({
           onChange: (next) => onUpdate(format.choose(next)),
         },
       ];
-      if (format.kind === "decimal") {
+      if (format.kind === "decimal" || format.kind === "scientific") {
         rows.push({
           kind: "choice",
           id: "digits",
           label: "Decimal places",
           value: String(format.digits),
           options: DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) })),
-          onChange: (next) => set(`decimal:${next}`),
+          onChange: (next) => onUpdate(format.kind === "decimal" ? format.decimal(Number(next)) : format.scientific(Number(next))),
         });
       }
       if (format.kind === "currency") {
@@ -990,8 +1061,11 @@ export function SchemaFieldEditor({
           label: "Currency",
           value: format.code,
           options: currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c)}` })),
-          onChange: (next) => set(`currency:${next}`),
+          onChange: (next) => onUpdate(format.currency(next)),
         });
+      }
+      if (format.takesParens) {
+        rows.push({ kind: "toggle", id: "parens", label: "Negatives in brackets", value: format.parens, onChange: (on) => onUpdate(format.setParens(on)) });
       }
       sections.push({ id: "format", footer: format.notes.map((n) => n.text).join(" ") || undefined, rows });
     }
@@ -1012,11 +1086,8 @@ export function SchemaFieldEditor({
         // removes it and touch and hold drags it into another place.
         onRemove: onRemoveEnumValue ? (i) => options[i] && onRemoveEnumValue(options[i]!.value) : undefined,
         onMove: (from, to) => {
-          if (from === to) return;
-          const next = options.slice();
-          const [moved] = next.splice(from, 1);
-          next.splice(to, 0, moved!);
-          setChoices(next);
+          const next = movedChoices(options, from, to);
+          if (next !== options) setChoices(next);
         },
         rows: [
           ...options.map(
@@ -1031,7 +1102,7 @@ export function SchemaFieldEditor({
                   label: o.value,
                   placeholder: o.value,
                   value: o.label ?? o.value,
-                  onChange: (t) => setChoices(options.map((c, j) => (j === i ? { ...c, label: t.trim() && t.trim() !== c.value ? t.trim() : undefined } : c))),
+                  onChange: (t) => setChoices(options.map((c, j) => (j === i ? choiceLabel(c, t) : c))),
                 },
                 {
                   kind: "choice",
@@ -1039,7 +1110,7 @@ export function SchemaFieldEditor({
                   label: "Colour",
                   value: o.color ?? "none",
                   options: CHOICE_COLOURS,
-                  onChange: (c) => setChoices(options.map((x, j) => (j === i ? { ...x, color: c === "none" ? undefined : (c as EnumColor) } : x))),
+                  onChange: (c) => setChoices(options.map((x, j) => (j === i ? choiceColour(x, c) : x))),
                 },
               ],
             }),
@@ -1160,8 +1231,30 @@ interface AddFieldButtonProps {
   compact?: boolean;
   /** Labelled, as wide as its label: it sits where it is put, rather than centred in a column's width. */
   hug?: boolean;
+  /**
+   * Opens the editor from elsewhere — a column's "Insert Field Left", or a
+   * toolbar's New Field — each time `id` changes: by `anchor` (the column's
+   * header), or by the "+" itself when there's none.
+   */
+  request?: { id: number; anchor?: AnchorRect } | null;
+  /** The editor has closed, a field added or not. */
+  onClosed?: () => void;
 }
 
+
+/**
+ * A "+" drawn as two bars, centred in its box. On native a text "+" sits
+ * where the font puts it, above the middle and by a different amount on
+ * each platform; the web's text "+" is centred, and takes its hover colour.
+ */
+function PlusMark() {
+  return (
+    <html.div style={styles.plusMark}>
+      <html.div style={[styles.plusBar, styles.plusAcross]} />
+      <html.div style={[styles.plusBar, styles.plusDown]} />
+    </html.div>
+  );
+}
 
 /** `items` two at a time; the last pair may have one. */
 function pairsOf<T>(items: T[]): T[][] {
@@ -1170,7 +1263,7 @@ function pairsOf<T>(items: T[]): T[][] {
   return pairs;
 }
 
-export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hug }: AddFieldButtonProps) {
+export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hug, request, onClosed }: AddFieldButtonProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<AddableChoice>("string");
@@ -1209,7 +1302,20 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
     setType("string");
     setFormulaDraft("");
     setOpen(false);
+    onClosed?.();
   };
+
+  const openAt = async (anchor?: AnchorRect) => {
+    const rect = anchor ?? (await measureAnchor(triggerRef.current));
+    if (rect) setAnchorRect(rect);
+    setOpen(true);
+  };
+  const requestId = request?.id;
+  useEffect(() => {
+    if (requestId === undefined) return;
+    void openAt(request?.anchor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
 
   // Open: typing goes straight into the name, and Escape closes.
   useEffect(() => {
@@ -1374,14 +1480,10 @@ export function AddFieldButton({ existingNames, onAdd, fields, grid, compact, hu
           triggerRef.current = el;
         }}
         aria-label="Add a field"
-        onClick={async () => {
-          const rect = await measureAnchor(triggerRef.current);
-          if (rect) setAnchorRect(rect);
-          setOpen(true);
-        }}
+        onClick={() => void openAt()}
         style={compact ? styles.addFieldCompact : styles.addFieldButton}
       >
-        {compact ? "+" : "+ Field"}
+        {compact ? PLATFORM_OS === "web" ? "+" : <PlusMark /> : "+ Field"}
       </html.button>
       {open && inSheet && SettingsForm && (
         // The platform's own form (iOS): the name, the type as a ticked
@@ -1455,6 +1557,15 @@ interface FormulaCellPanelProps {
    * edited here, and the panel is read-only.
    */
   onSave?: (patch: Partial<Field>) => void;
+  /** This cell's own formula, when it has one: its row's exception to the column's (D52). */
+  own?: string;
+  /**
+   * Save a formula for this row only, or (null) take this row's back to
+   * the column's (D52). Absent: the panel offers only the column's.
+   */
+  onSaveRow?: (expr: string | null) => void;
+  /** Work the table's loops out by repeating, or not (null) (D60). Absent: not offered. */
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
   /** Open the column's full editor — title, alignment and the rest. */
   onMoreOptions?: () => void;
   onClose: () => void;
@@ -1493,6 +1604,9 @@ export function FormulaCellPanel({
   allRows,
   computeOptions,
   referenceAt,
+  own,
+  onSaveRow,
+  onSetIteration,
 }: FormulaCellPanelProps) {
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1505,11 +1619,14 @@ export function FormulaCellPanel({
   const { formulaSyntax } = useDisplaySettings();
   // Edited here, from any cell, as Grist does — but it is the column's
   // formula, so saving says "every row" and every row changes.
-  const [draft, setDraft] = useState(() => formulaDraftOf(field, grid, formulaSyntax));
-  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions });
+  // A row with its own formula opens on it, for this row only (D52).
+  const [rowOnly, setRowOnly] = useState(own !== undefined);
+  const [draft, setDraft] = useState(() => (own !== undefined ? printFormula(own, { grid, syntax: formulaSyntax }) : formulaDraftOf(field, grid, formulaSyntax)));
+  const explained = explainFormula({ field, row, fields, draft, editable: !!onSave, grid, allRows, computeOptions, rowOnly, ...(own !== undefined ? { own } : {}) });
   const { compiled, changed, thisRow, otherRows, preview } = explained;
   const save = () => {
-    if (onSave && explained.save) onSave(explained.save);
+    if (rowOnly && onSaveRow && explained.saveRow) onSaveRow(explained.saveRow);
+    else if (!rowOnly && onSave && explained.save) onSave(explained.save);
   };
   const input = useRef<HTMLInputElement | null>(null);
   // A click outside the panel closes it, unless the formula is waiting for
@@ -1553,7 +1670,7 @@ export function FormulaCellPanel({
           <html.span>{field.title ?? field.name}</html.span>
           <html.span style={styles.typeBadge}>
             <html.span>Formula</html.span>
-            <html.span style={styles.typeBadgeTechnical}>· every row</html.span>
+            <html.span style={styles.typeBadgeTechnical}>{rowOnly ? "· this row" : "· every row"}</html.span>
           </html.span>
         </html.div>
 
@@ -1615,9 +1732,28 @@ export function FormulaCellPanel({
           </html.div>
         )}
 
+        {onSaveRow && onSave && (
+          <html.div style={styles.checkRow}>
+            <Toggle role="setting" checked={rowOnly} onChange={setRowOnly} style={styles.checkRow}>
+              This row only
+            </Toggle>
+          </html.div>
+        )}
         <html.span style={styles.noteText}>
-          One formula for the whole column. Every row is worked out the same way.
+          {rowOnly
+            ? "A formula for this row only. Every other row is worked out by the column's."
+            : own !== undefined
+              ? "This row has a formula of its own; the column's is shown. Saving it for every row leaves this row's as it is."
+              : "One formula for the whole column. Every row is worked out the same way."}
         </html.span>
+        {explained.loops && onSetIteration && (
+          <>
+            <html.span style={styles.noteText}>{loopNote(explained.loops)}</html.span>
+            <html.button onClick={() => onSetIteration(explained.loops === "stuck" ? LOOP_ITERATION : null)} style={styles.linkButton}>
+              {explained.loops === "stuck" ? "Repeat until it settles" : "Stop repeating"}
+            </html.button>
+          </>
+        )}
 
         <html.div style={styles.actionRow}>
           {onSave && (
@@ -1626,7 +1762,12 @@ export function FormulaCellPanel({
               onClick={save}
               style={[styles.button, changed && styles.primaryButton]}
             >
-              Save for every row
+              {rowOnly ? "Save for this row" : "Save for every row"}
+            </html.button>
+          )}
+          {own !== undefined && onSaveRow && (
+            <html.button onClick={() => onSaveRow(null)} style={styles.button}>
+              Use the column's formula
             </html.button>
           )}
           <html.button onClick={onClose} style={styles.button}>

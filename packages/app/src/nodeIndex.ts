@@ -1,18 +1,19 @@
 // A bundle's index on disk, for a Node app (Linux): `index.sqlite` at the
 // bundle's root (SPEC section 8), built from a table's files without ever
 // holding its rows, kept fresh as rows are edited, and saved back to
-// `rows.ndjson`. Nothing here draws: an app runs it off the thread that
+// its rows files. Nothing here draws: an app runs it off the thread that
 // does (apps/linux's index worker), or in place for a test.
 
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { buildIndex, buildSearchIndex, rowsBeingBuilt, isIndexStale, queryIndex, setIndexKey, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
 import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
+import { rowFilePlacer, rowFileStarts, setRowFileStarts } from "./rowFilesIndexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 
 /** What an app asks of a bundle's index: the indexer's SqlDriver, and the work on files that goes with it. */
@@ -34,41 +35,72 @@ export interface IndexHost extends SqlDriver {
    * when it's whole; safe to ask of one that already is.
    */
   search(name: string): Promise<void>;
-  /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields. */
+  /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields it can't `alter`. */
   build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the table's rows out of the index to its
-   * `rows.ndjson` (when `rows` is true), without the keys in `omit`
+   * rows files (when `rows` is true), without the keys in `omit`
    * (fields the table no longer has), and say the index is fresh for the
    * files as they now are.
+   *
+   * With turns to take (IndexHostOptions.turn), reads and edits are
+   * answered while it writes. An edit to the table made meanwhile stops
+   * it, the file left as it was: false then, and it's asked again after
+   * the edit. `whole` is the save a build is about to read, which nothing
+   * stops; the caller holds edits for it.
    */
-  save(name: string, tableDir: string, rows: boolean, omit?: string[]): Promise<void>;
+  save(name: string, tableDir: string, rows: boolean, omit?: string[], whole?: boolean): Promise<boolean>;
+  /**
+   * After a change to table `name`'s fields from `from` to `to`: change its
+   * index where it is (core's alterIndex), answering for `to` at once.
+   * False when it can't, and it's to be built again. `restore`: fields an
+   * undo brings back, with the values the index kept hidden.
+   */
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
+  /**
+   * Work out what a change of fields left to work out (core's fillIndex),
+   * a step at a time behind whatever else is asked: until it's done, a
+   * view sorted, filtered or grouped by those fields is worked out in
+   * memory. Resolves when it's done; safe to ask when there's nothing to do.
+   */
+  fill(name: string, schema: TableSchema): Promise<void>;
   close(): Promise<void>;
 }
 
 /** Rows a build commits at a time (buildIndex's `commitEvery`). */
 const BUILD_STEP = 20_000;
 
-/** How many rows a table's `rows.ndjson` holds: its lines that aren't blank. */
-export async function countRows(tableDir: string): Promise<number> {
-  let count = 0;
-  let blank = true;
-  for await (const chunk of createReadStream(join(tableDir, "rows.ndjson"))) {
-    for (const byte of chunk as Buffer) {
-      if (byte === 10) {
-        if (!blank) count++;
-        blank = true;
-      } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
-    }
-  }
-  return blank ? count : count + 1;
+/** A table's rows files on disk, in file order (SPEC section 3, D51): its `rows/` files, or formatVersion 1's `rows.ndjson`. */
+export function rowsFilesIn(tableDir: string): { name: string; path: string }[] {
+  const dir = join(tableDir, ROWS_DIR);
+  if (existsSync(dir) && statSync(dir).isDirectory()) return rowsFileOrder(readdirSync(dir)).map((name) => ({ name, path: join(dir, name) }));
+  const legacy = join(tableDir, LEGACY_ROWS_FILE);
+  return existsSync(legacy) ? [{ name: FIRST_ROWS_FILE, path: legacy }] : [];
 }
 
-/** Whether a table's rows file is large enough to be worth counting: under this many bytes it can't hold `rows` rows. */
+/** How many rows a table's rows files hold: their lines that aren't blank. */
+export async function countRows(tableDir: string): Promise<number> {
+  let count = 0;
+  for (const file of rowsFilesIn(tableDir)) {
+    let blank = true;
+    for await (const chunk of createReadStream(file.path)) {
+      for (const byte of chunk as Buffer) {
+        if (byte === 10) {
+          if (!blank) count++;
+          blank = true;
+        } else if (byte !== 13 && byte !== 32 && byte !== 9) blank = false;
+      }
+    }
+    if (!blank) count++;
+  }
+  return count;
+}
+
+/** Whether a table's rows are large enough to be worth counting: under this many bytes they can't hold `rows` rows. */
 export function mayHoldRows(tableDir: string, rows: number): boolean {
   try {
     // A row is at least `{"id":"x"}` and a newline.
-    return statSync(join(tableDir, "rows.ndjson")).size >= rows * 11;
+    return rowsFilesIn(tableDir).reduce((n, f) => n + statSync(f.path).size, 0) >= rows * 11;
   } catch {
     return false;
   }
@@ -77,7 +109,7 @@ export function mayHoldRows(tableDir: string, rows: number): boolean {
 const bodyFiles = (tableDir: string): string[] => {
   try {
     return readdirSync(join(tableDir, "bodies"))
-      .filter((name) => name.endsWith(".md"))
+      .filter((name) => rowIdOfBodyFile(name) !== null)
       .sort();
   } catch {
     return [];
@@ -88,30 +120,53 @@ const bodyFiles = (tableDir: string): string[] => {
 export async function tableContentKey(tableDir: string): Promise<string> {
   const hash = createHash("sha256");
   hash.update(readFileSync(join(tableDir, "schema.json")));
-  hash.update("\0");
-  for await (const chunk of createReadStream(join(tableDir, "rows.ndjson"))) hash.update(chunk as Buffer);
+  for (const file of rowsFilesIn(tableDir)) {
+    hash.update(`\0${file.name}\0`);
+    for await (const chunk of createReadStream(file.path)) hash.update(chunk as Buffer);
+  }
   for (const name of bodyFiles(tableDir)) {
     hash.update(`\0${name}\0`);
     hash.update(readFileSync(join(tableDir, "bodies", name)));
   }
+  // Cells' own formulas are part of what the index holds (D52).
+  const cellsDir = join(tableDir, CELLS_DIR);
+  if (existsSync(cellsDir)) {
+    for (const name of rowsFileOrder(readdirSync(cellsDir))) {
+      hash.update(`\0cells/${name}\0`);
+      hash.update(readFileSync(join(cellsDir, name)));
+    }
+  }
   return hash.digest("hex");
 }
 
-function rowsOf(tableDir: string, onRow: () => void): AsyncIterable<Row> {
-  return rowsFrom(createReadStream(join(tableDir, "rows.ndjson")), onRow);
+/**
+ * A table's rows for its index. A line that isn't a row stops the build: the
+ * index writes the rows back out, and would leave that line out of the file
+ * (#567), so such a table is held in memory instead, where it's kept.
+ */
+async function* rowsOf(tableDir: string, onRow: () => void, onFile: (name: string) => void = () => {}): AsyncIterable<Row> {
+  for (const file of rowsFilesIn(tableDir)) {
+    onFile(file.name);
+    yield* rowsFrom(createReadStream(file.path), onRow, file.path.endsWith(LEGACY_ROWS_FILE) ? "its rows" : `${ROWS_DIR}/${file.name}`);
+  }
 }
 
-async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}): AsyncIterable<Row> {
+async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () => {}, strict: string | false = false): AsyncIterable<Row> {
+  let at = 0;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    at++;
     if (line.trim().length === 0) continue;
     let row: unknown;
     try {
       row = JSON.parse(line);
     } catch {
-      // A line that doesn't parse is skipped, as the reader skips it (SPEC section 3).
+      row = null;
+    }
+    if (row === null || typeof row !== "object" || Array.isArray(row) || typeof (row as Row).id !== "string" || (row as Row).id === "") {
+      if (strict) throw new Error(`line ${at} of ${strict} couldn't be read`);
+      // Shown meanwhile, it's skipped, as the reader skips it (SPEC section 3).
       continue;
     }
-    if (row === null || typeof row !== "object" || typeof (row as Row).id !== "string") continue;
     onRow();
     yield row as Row;
   }
@@ -123,14 +178,16 @@ async function* rowsFrom(input: NodeJS.ReadableStream, onRow: () => void = () =>
  */
 export async function firstRows(tableDir: string, count: number): Promise<Row[]> {
   const rows: Row[] = [];
-  const input = createReadStream(join(tableDir, "rows.ndjson"));
-  try {
-    for await (const row of rowsFrom(input)) {
-      rows.push(row);
-      if (rows.length >= count) break;
+  for (const file of rowsFilesIn(tableDir)) {
+    const input = createReadStream(file.path);
+    try {
+      for await (const row of rowsFrom(input)) {
+        rows.push(row);
+        if (rows.length >= count) return rows;
+      }
+    } finally {
+      input.destroy();
     }
-  } finally {
-    input.destroy();
   }
   return rows;
 }
@@ -141,43 +198,129 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
   const key = await tableContentKey(tableDir);
   const total = onProgress ? await countRows(tableDir) : 0;
   const bodies: Record<string, string> = {};
-  for (const file of bodyFiles(tableDir)) bodies[file.slice(0, -".md".length)] = readFileSync(join(tableDir, "bodies", file), "utf8");
+  for (const file of bodyFiles(tableDir)) bodies[rowIdOfBodyFile(file)!] = readFileSync(join(tableDir, "bodies", file), "utf8");
   let done = 0;
+  // Where each rows file starts, by the place its first row takes in the index (positions run from 1).
+  const files: { name: string; first: number }[] = [];
   onProgress?.(0, total);
   await buildIndex(db, {
     name,
     schema,
-    rows: rowsOf(tableDir, () => {
-      done++;
-      if (done % 5000 === 0) onProgress?.(done, total);
-    }),
+    rows: rowsOf(
+      tableDir,
+      () => {
+        done++;
+        if (done % 5000 === 0) onProgress?.(done, total);
+      },
+      (file) => files.push({ name: file, first: done + 1 }),
+    ),
     bodies,
     key,
+    cells: cellsIn(tableDir),
     // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
     search: "later",
     // In steps: as one transaction the log beside the index grows as large as the index itself.
     commitEvery: BUILD_STEP,
   });
+  await setRowFileStarts(db, name, files);
   onProgress?.(done, total);
   return done;
 }
 
-/** Write table `name`'s rows out of the index to `tableDir`'s `rows.ndjson`, replacing it in one rename. */
-export async function saveTableRows(db: SqlDriver, name: string, tableDir: string, omit: string[] = []): Promise<void> {
+/**
+ * Write table `name`'s rows out of the index to `tableDir`'s rows files
+ * (SPEC section 3, D51): each row back in the file it came from, new rows
+ * in the last, a file past about 25 MB split (by number at the end, by
+ * letters in the middle), and a file left without rows removed. Each file
+ * is written beside itself and renamed over it, and only once every file
+ * is written. `stop` is asked before each piece: true leaves the files as
+ * they were, and gives false.
+ */
+export async function saveTableRows(
+  db: SqlDriver,
+  name: string,
+  tableDir: string,
+  omit: string[] = [],
+  options: { stop?: () => boolean; batchSize?: number; limit?: number } = {},
+): Promise<boolean> {
+  const limit = options.limit ?? ROWS_FILE_BYTES;
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
-  const target = join(tableDir, "rows.ndjson");
-  const out = createWriteStream(`${target}.tmp`);
-  try {
-    for await (const text of storedRows(db, { name, schema, omit })) {
-      if (!out.write(text)) await once(out, "drain");
-    }
+  const dir = join(tableDir, ROWS_DIR);
+  mkdirSync(dir, { recursive: true });
+  const starts = await rowFileStarts(db, name);
+  const placer = rowFilePlacer(starts, limit);
+  const written = placer.files;
+  let out: ReturnType<typeof createWriteStream> | null = null;
+  const close = async () => {
+    if (!out) return;
     out.end();
     await once(out, "finish");
+    out = null;
+  };
+  const open = (file: string) => {
+    out = createWriteStream(join(dir, `${file}.tmp`));
+  };
+  let stopped = false;
+  try {
+    for await (const batch of storedRowLines(db, { name, schema, omit, ...(options.batchSize ? { batchSize: options.batchSize } : {}) })) {
+      if (options.stop?.()) {
+        stopped = true;
+        break;
+      }
+      for (const { pos, line } of batch) {
+        const text = `${line}\n`;
+        const starting = placer.place(pos, Buffer.byteLength(text));
+        if (starting !== null) {
+          await close();
+          open(starting);
+        }
+        const stream = out as unknown as ReturnType<typeof createWriteStream>;
+        if (!stream.write(text)) await once(stream, "drain");
+      }
+    }
+    // No rows at all: one empty file, so the folder is kept.
+    if (written.length === 0 && !stopped) {
+      written.push({ name: starts[0]?.name ?? FIRST_ROWS_FILE, first: 1 });
+      open(written[0]!.name);
+    }
+    await close();
   } catch (error) {
-    out.destroy();
+    (out as ReturnType<typeof createWriteStream> | null)?.destroy();
+    for (const w of written) rmSync(join(dir, `${w.name}.tmp`), { force: true });
     throw error;
   }
-  renameSync(`${target}.tmp`, target);
+  if (stopped) {
+    for (const w of written) rmSync(join(dir, `${w.name}.tmp`), { force: true });
+    return false;
+  }
+  for (const w of written) renameSync(join(dir, `${w.name}.tmp`), join(dir, w.name));
+  // Files left without rows, and formatVersion 1's rows.ndjson, now in rows/.
+  const kept = new Set(written.map((w) => w.name));
+  for (const old of rowsFileOrder(readdirSync(dir))) if (!kept.has(old)) rmSync(join(dir, old), { force: true });
+  rmSync(join(tableDir, LEGACY_ROWS_FILE), { force: true });
+  await setRowFileStarts(db, name, written);
+  // Cells' own formulas (D52), out of the index into cells/: one file, or none when there are none.
+  const cellsText = await storedCellsText(db, { name, schema });
+  const cellsDir = join(tableDir, CELLS_DIR);
+  if (cellsText) {
+    mkdirSync(cellsDir, { recursive: true });
+    writeFileSync(join(cellsDir, `${FIRST_ROWS_FILE}.tmp`), cellsText);
+    renameSync(join(cellsDir, `${FIRST_ROWS_FILE}.tmp`), join(cellsDir, FIRST_ROWS_FILE));
+  }
+  if (existsSync(cellsDir)) {
+    for (const old of readdirSync(cellsDir)) if (!cellsText || old !== FIRST_ROWS_FILE) rmSync(join(cellsDir, old), { force: true });
+    if (!cellsText) rmSync(cellsDir, { recursive: true, force: true });
+  }
+  return true;
+}
+
+/** A table's cells' own formulas, read from its `cells/` (D52); what can't be read is left to the reader to say. */
+function cellsIn(tableDir: string): CellFormula[] {
+  const dir = join(tableDir, CELLS_DIR);
+  if (!existsSync(dir)) return [];
+  const cells: CellFormula[] = [];
+  for (const name of rowsFileOrder(readdirSync(dir))) for (const c of parseCellsText(readFileSync(join(dir, name), "utf8"), [], [], name)) cells.push(c);
+  return cells;
 }
 
 /**
@@ -192,7 +335,10 @@ export function largeTables(from: number = INDEXED_FROM): (tableDir: string) => 
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const viewsPath = join(tableDir, "views.json");
       const views = existsSync(viewsPath) ? (JSON.parse(readFileSync(viewsPath, "utf8")) as View[]) : [];
-      if (!canBeIndexed({ schema, views })) return false;
+      // Cells' own formulas (D52) go into the index when each reads only its own row.
+      const metaPath = join(tableDir, "meta.json");
+      const meta = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as ParsedTable["meta"]) : {};
+      if (!canBeIndexed({ schema, views, cells: cellsIn(tableDir), meta })) return false;
     } catch {
       // The reader says what's wrong with it.
       return false;
@@ -219,13 +365,17 @@ export interface IndexHostOptions {
    * caller holds writes to the database until the build is done.
    */
   turn?: <T>(run: () => Promise<T>) => Promise<T>;
+  /** Rows a save reads at a time (storedRows' batch), where the default isn't wanted. */
+  saveBatch?: number;
 }
 
 export function openIndexHost(bundleDir: string, options: IndexHostOptions = {}): IndexHost {
   const whole = openNodeDatabase(join(bundleDir, "index.sqlite"));
   ignoreIndex(bundleDir);
   const serve = rowsServer(whole);
-  const { turn } = options;
+  const { turn, saveBatch } = options;
+  // How many edits each table has had, for a save to know one was made while it wrote.
+  const edits = new Map<string, number>();
   // What a build asks through: each statement in its turn, when there are turns to take.
   const db: SqlDriver & { close(): void } = turn
     ? {
@@ -237,12 +387,16 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
       }
     : whole;
   return {
-    rows: serve,
+    rows: (request) => {
+      if (request.ask === "edits") edits.set(request.name, (edits.get(request.name) ?? 0) + 1);
+      return serve(request);
+    },
     peek: (name, start, end) => rowsBeingBuilt(whole, name, start, end),
     exec: whole.exec,
     run: whole.run,
     all: whole.all,
     batch: whole.batch!,
+    inProcess: true,
     async ensure(name, tableDir, onProgress) {
       const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
       const fresh = !(await isIndexStale(db, name, await tableContentKey(tableDir)));
@@ -264,9 +418,29 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
       await db.exec("pragma wal_checkpoint(truncate)");
       return count;
     },
-    async save(name, tableDir, rows, omit) {
-      if (rows) await saveTableRows(whole, name, tableDir, omit);
-      await setIndexKey(whole, name, await tableContentKey(tableDir));
+    async save(name, tableDir, rows, omit, wholeFile) {
+      const had = edits.get(name) ?? 0;
+      const editedSince = () => !wholeFile && (edits.get(name) ?? 0) !== had;
+      // Read through `db`: a piece of rows in each turn, the rest of what's asked between them.
+      if (rows && !(await saveTableRows(db, name, tableDir, omit, { stop: editedSince, ...(saveBatch ? { batchSize: saveBatch } : {}) }))) return false;
+      const key = await tableContentKey(tableDir);
+      // Stamped in one turn with the last look, so no edit comes between them:
+      // an index stamped fresh while it held an edit the file hadn't would keep it from the file.
+      const stamp = async () => {
+        if (editedSince()) return false;
+        await setIndexKey(whole, name, key);
+        return true;
+      };
+      return turn ? turn(stamp) : stamp();
+    },
+    // One transaction each, in one turn: nothing else asked comes between its statements.
+    alter: (name, from, to, options = {}) => (turn ? turn(() => alterIndex(whole, name, from, to, options)) : alterIndex(whole, name, from, to, options)),
+    async fill(name, schema) {
+      const step = () => fillIndex(whole, name, schema);
+      while (await (turn ? turn(step) : step())) {
+        // A step at a time.
+      }
+      await whole.exec("pragma wal_checkpoint(truncate)");
     },
     async close() {
       await whole.exec("pragma wal_checkpoint(truncate)").catch(() => {});

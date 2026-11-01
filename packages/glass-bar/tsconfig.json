@@ -14,9 +14,13 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    // Expo itself comes from the app that uses the bar (a peer dependency),
-    // and npm keeps it in the app's own node_modules, not the root's.
-    "paths": { "expo": ["../../apps/mobile/node_modules/expo"] }
+    // Expo and @expo/ui come from the app that uses the bar (peer
+    // dependencies), and npm keeps them in the app's own node_modules, not
+    // the root's.
+    "paths": {
+      "expo": ["../../apps/mobile/node_modules/expo"],
+      "@expo/ui/*": ["../../apps/mobile/node_modules/@expo/ui/*"]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

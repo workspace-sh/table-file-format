@@ -1,5 +1,5 @@
-// How this viewer wants tables shown: locale, default date format, and
-// which syntax formulas are shown in (#76).
+// How this viewer wants tables shown: locale, default date format, which
+// syntax each table's formulas are shown in (#76), and how resize handles look.
 // Personal, kept in this browser, never in a table (SPEC section 4). Reset
 // demo data leaves it alone: it's the viewer's, not the demo's.
 
@@ -17,6 +17,15 @@ export const DATE_FORMATS = ["iso", "short", "long", "weekday", "relative"];
 
 /** Excel style, or the stored `table-expr-v1` form. Either can be typed. */
 export const FORMULA_SYNTAXES = ["excel", "stored"] as const;
+
+/** How a selected cell's resize handles look on touch. */
+export const RESIZE_HANDLES = ["pills", "grabbers"] as const;
+
+/** How each look is offered. */
+export const RESIZE_HANDLE_LABELS: Record<(typeof RESIZE_HANDLES)[number], string> = {
+  pills: "Pills",
+  grabbers: "Grabbers",
+};
 
 /** How each date format is offered. */
 export const DATE_LABELS: Record<string, string> = {
@@ -40,8 +49,8 @@ export const FORMULA_LABELS: Record<(typeof FORMULA_SYNTAXES)[number], string> =
  * column doesn't say, and which syntax formulas are shown in. Each app
  * draws these; only the drawing differs.
  */
-export function displayChoices(display: DisplaySettings, ownLocale: string, ownName = "Browser"): DisplayChoiceRow[] {
-  return [
+export function displayChoices(display: DisplaySettings, ownLocale: string, ownName = "Browser", table?: string): DisplayChoiceRow[] {
+  const rows: DisplayChoiceRow[] = [
     {
       kind: "locale",
       name: "Language",
@@ -58,32 +67,62 @@ export function displayChoices(display: DisplaySettings, ownLocale: string, ownN
       note: "Where a column hasn't chosen its own date format.",
     },
     {
-      kind: "formulaSyntax",
-      name: "Formulas",
-      label: "Which syntax formulas are shown in",
-      value: display.formulaSyntax ?? "excel",
-      options: FORMULA_SYNTAXES.map((s) => ({ value: s, label: FORMULA_LABELS[s] })),
-      note: "Either can be typed. The file keeps one form.",
+      kind: "resizeHandles",
+      name: "Resize handles",
+      label: "How a selected cell's handles for resizing its row and column look",
+      value: display.resizeHandles ?? "pills",
+      options: RESIZE_HANDLES.map((h) => ({ value: h, label: RESIZE_HANDLE_LABELS[h] })),
+      note: "On touch screens. With a pointer, drag the lines between rows and columns.",
     },
   ];
+  // Chosen for the table on screen, so only while there is one.
+  if (table !== undefined) {
+    rows.splice(2, 0, {
+      kind: "formulaSyntax",
+      name: "Formulas",
+      label: "Which syntax this table's formulas are shown in",
+      value: storedFormulasIn(display, table) ? "stored" : "excel",
+      options: FORMULA_SYNTAXES.map((s) => ({ value: s, label: FORMULA_LABELS[s] })),
+      note: "For this table, on this device. Either can be typed; the file keeps one form.",
+    });
+  }
+  return rows;
 }
 
-/** `display` with one row's choice made. A default is stored as absent. */
-export function withDisplayChoice(display: DisplaySettings, kind: DisplaySettingKind, value: string): DisplaySettings {
+/** Whether table `table`'s formulas are shown in stored form here. */
+export function storedFormulasIn(display: DisplaySettings, table: string): boolean {
+  return display.storedFormulaTables?.includes(table) ?? false;
+}
+
+/** The display settings for table `table` on screen: its formulas in the syntax chosen for it. */
+export function displayFor<T extends DisplaySettings>(display: T, table: string): T {
+  const { formulaSyntax: _was, ...rest } = display;
+  return (storedFormulasIn(display, table) ? { ...rest, formulaSyntax: "stored" } : rest) as T;
+}
+
+/** `display` with one row's choice made; Formulas for table `table`. A default is stored as absent. */
+export function withDisplayChoice(display: DisplaySettings, kind: DisplaySettingKind, value: string, table?: string): DisplaySettings {
   if (kind === "locale") return { ...display, locale: value || undefined };
   if (kind === "dateFormat") return { ...display, dateFormat: value === "iso" ? undefined : value };
-  return { ...display, formulaSyntax: value === "stored" ? "stored" : undefined };
+  if (kind === "resizeHandles") return { ...display, resizeHandles: value === "grabbers" ? "grabbers" : undefined };
+  if (table === undefined) return display;
+  const others = (display.storedFormulaTables ?? []).filter((t) => t !== table);
+  const tables = value === "stored" ? [...others, table] : others;
+  const { storedFormulaTables: _was, ...rest } = display;
+  return tables.length > 0 ? { ...rest, storedFormulaTables: tables } : rest;
 }
 
 export function loadDisplay(store: KeyValueStore | null): DisplaySettings {
   try {
     const parsed: unknown = JSON.parse(store?.getItem(DISPLAY_KEY) ?? "{}");
     if (typeof parsed !== "object" || parsed === null) return {};
-    const { locale, dateFormat, formulaSyntax } = parsed as Record<string, unknown>;
+    const { locale, dateFormat, storedFormulaTables, resizeHandles } = parsed as Record<string, unknown>;
+    const stored = Array.isArray(storedFormulaTables) ? storedFormulaTables.filter((t): t is string => typeof t === "string") : [];
     return {
       ...(typeof locale === "string" && LOCALES.includes(locale) ? { locale } : {}),
       ...(typeof dateFormat === "string" && DATE_FORMATS.includes(dateFormat) ? { dateFormat } : {}),
-      ...(formulaSyntax === "stored" ? { formulaSyntax } : {}),
+      ...(stored.length > 0 ? { storedFormulaTables: stored } : {}),
+      ...(resizeHandles === "grabbers" ? { resizeHandles } : {}),
     };
   } catch {
     return {};
@@ -92,8 +131,8 @@ export function loadDisplay(store: KeyValueStore | null): DisplaySettings {
 
 export function saveDisplay(store: KeyValueStore | null, display: DisplaySettings): void {
   try {
-    const { locale, dateFormat, formulaSyntax } = display;
-    store?.setItem(DISPLAY_KEY, JSON.stringify({ locale, dateFormat, formulaSyntax }));
+    const { locale, dateFormat, storedFormulaTables, resizeHandles } = display;
+    store?.setItem(DISPLAY_KEY, JSON.stringify({ locale, dateFormat, storedFormulaTables, resizeHandles }));
   } catch {
     // Not kept past a reload; still applied now.
   }

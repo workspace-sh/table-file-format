@@ -35,6 +35,8 @@ export type GridAction =
   | { kind: "select"; at: GridPlace }
   /** Open the selected cell: its editor (with `text` typed over it), its picker, or its formula. */
   | { kind: "open"; text?: string }
+  /** Edit the selected cell's note (D57): Shift+F2, as a spreadsheet does. */
+  | { kind: "note" }
   /** Flip the selected checkbox. */
   | { kind: "toggle" }
   /** Empty the selected cell. */
@@ -65,6 +67,17 @@ function tabbed(at: GridPlace, back: boolean, rows: number, cols: number): GridP
 }
 
 /**
+ * A key as a right-to-left grid hears it: Left is towards the row's end
+ * and Right towards its start, since that is where they are on screen.
+ * Home, End and Tab follow the reading order either way.
+ */
+export function mirroredKey(k: GridKey): GridKey {
+  if (k.key === "ArrowLeft") return { ...k, key: "ArrowRight" };
+  if (k.key === "ArrowRight") return { ...k, key: "ArrowLeft" };
+  return k;
+}
+
+/**
  * What `key` does in a grid of `rows` × `cols` with `at` selected (null:
  * nothing is). Null when the grid leaves the key alone. With nothing
  * selected, a key that moves selects the first cell.
@@ -91,8 +104,10 @@ export function gridKey(at: GridPlace | null, rows: number, cols: number, k: Gri
       const next = tabbed(at, !!k.shift, rows, cols);
       return next ? { kind: "select", at: next } : { kind: "leave" };
     }
-    case "Enter":
     case "F2":
+      if (k.shift) return { kind: "note" };
+    // falls through
+    case "Enter":
       if (cell.boolean) return cell.editable ? { kind: "toggle" } : null;
       return cell.editable || cell.computed ? { kind: "open" } : null;
     case "Escape":

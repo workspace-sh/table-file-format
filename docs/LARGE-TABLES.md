@@ -18,7 +18,7 @@ The plan that follows from these numbers, for views reading through the index an
 
 "Open" is hash, parse, load, three indexes and a full-text index, following SPEC section 8: a temporary file, one transaction, then a swap.
 
-| Rows | `rows.ndjson` | Open | `index.sqlite` | View / search / point query | Whole-table totals | Peak memory |
+| Rows | `rows/` | Open | `index.sqlite` | View / search / point query | Whole-table totals | Peak memory |
 |---|---|---|---|---|---|---|
 | 50k | 22 MB | 0.5 s | 31 MB | < 0.1 ms | about 70 ms | small |
 | 100k | 44 MB | 0.9 s | 58 MB | < 0.1 ms | about 160 ms | small |
@@ -32,8 +32,8 @@ The plan that follows from these numbers, for views reading through the index an
 
 The limits are around SQLite, not in it.
 
-1. **Edits.** SPEC section 8 and D15 rebuild the whole index. That's under 1 s to about 100k rows and 11 s at 1M, so beyond about 200k rows an edit has to update the index in place. That means applying new log entries from a cursor rather than rebuilding.
-2. **The file.** A 1M-row `rows.ndjson` is 442 MB. GitHub blocks files over 100 MB, warns above 50 MB, and recommends objects under 1 MB. At 442 bytes a row, that's about 226k rows per file at most, or about 2,260 rows for a 1 MB shard. Very large tables need their rows split across files.
+1. **Edits.** Rebuilding the whole index on each edit (as SPEC section 8 and D15 first had it) takes under 1 s to about 100k rows and 11 s at 1M, so edits are made in the index in place: a row edit is a statement (`putRows`, `removeRows`), and a change of fields is changed in place and filled in behind (#551, #556, #562).
+2. **The file.** One file for every row outgrows git hosts: GitHub blocks files over 100 MB and warns above 50 MB. So a table's rows are files in `rows/`, the writer starting the next once one passes about 25 MB, and never moving rows between them (SPEC section 3, D51, #582). The 1M-row test table, 165 MB, is `0001.ndjson` to `0006.ndjson` at 25 MB and `0007.ndjson` at 15 MB.
 3. **Memory.** Parsing everything into objects first peaked at 2.5 GB at 1M rows. Streaming the text straight into SQLite avoids this.
 
 ## Engines
@@ -88,7 +88,7 @@ Whole-file codecs at 1M rows (442 MB):
 
 The options, in short:
 
-- **(a)** plain shards on disk and in git, compressed only in the `.table.zip` archive;
+- **(a)** plain shards on disk and in git, compressed only in the single-file form;
 - **(b)** compressed shards as the stored form;
 - **(c)** a derived columnar copy (Parquet at 72 MB).
 
@@ -131,7 +131,7 @@ Options for a large table:
 
 Leslie, 2 Oct: make large tables work on mobile first, then the web; the web demo stays client-side (SQLite through WebAssembly when it comes to that). This is the starting point, measured before any change (Phase 0).
 
-**How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and a `.table.zip`. The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
+**How:** `scripts/big-table.mts <rows> <dir>` writes a seeded, deal-shaped table (8 fields, one a formula; about 165 bytes a row) as a folder and as a single-file `.table` (in `single-file/`; until D50 it was a `.table.zip`, which the measurements below opened). The apps open the zip as a picked file is opened (`openArchive`), timed in three steps: fetch, read (unzip and parse) and show (render).
 - **iOS:** a Release build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, in the iOS 26 Simulator on this Mac. It asks `scripts/measure-server.py` what to open, edits the first row's title once, and posts the times back (`apps/mobile/measure.ts`). The app is reinstalled before each run. Memory is the process's peak resident size.
 - **Web:** the Vite development build in Chromium (`__tableWeb.openZipFrom`), with render and commit timed by `flushSync`. Measured before the rule in [BENCHMARKING.md](BENCHMARKING.md) (Release builds only); rerun in a production build before comparing.
 - **Data alone:** `scripts/big-table-read.mts` in Node 22, with no drawing: `openArchive`, then `applyView` (formulas, filters, sort) as `derive()` runs it on every render.
@@ -145,7 +145,7 @@ Leslie, 2 Oct: make large tables work on mobile first, then the web; the web dem
 
 On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all the rest is drawing. A web edit at 1,000 rows took 2.2 s.
 
-| Rows | rows.ndjson | Read (unzip, parse) | View (formulas, filter, sort) | Heap |
+| Rows | rows/ | Read (unzip, parse) | View (formulas, filter, sort) | Heap |
 |---|---|---|---|---|
 | 50,000 | 8 MB | 0.13 s | 0.04 s | 47 MB |
 | 100,000 | 16 MB | 0.26 s | 0.08 s | 86 MB |
@@ -175,7 +175,7 @@ On iOS, unzipping and parsing took 0.18 s at 1,000 rows and 0.9 s at 5,000; all 
 
 ### Drawing only the rows on screen, on the web (W1, 9 Oct 2026)
 
-The web's table draws its rows through LegendList (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS has since followed (below); macOS and Android still draw every row.
+The web's table draws its rows through a list of its own (`packages/ui/src/internal/RowList.web.tsx`), following the page's own scroller: a body as tall as all the rows, with the rows on screen placed in it. Every height is known before a row is drawn, so nothing is measured. A table's two panes are two lists with the same rows and heights. iOS has since followed (below); macOS and Android still draw every row.
 
 A production build made with `VITE_TABLE_MEASURE=1`, in headless Firefox at 1280 × 800 on the Linux rig (a 2017 MacBook, 8 GB), opening the same `.table.zip` files. "First rows" is from the pick to two frames after the rows are on screen. A jump sets the page's scroll position and waits two frames.
 
@@ -201,7 +201,7 @@ Checked by `apps/linux/tests/large-table.test.tsx` at 3,000 rows. A selected cel
 The phone's table draws the rows near the screen (`packages/ui/src/internal/RowList.native.tsx`): a body as tall as the list, with those rows placed in it by their known heights. It is the web's renderer for a list too tall for a browser (`TallRows`), with the same mapping past `MAX_LIST_HEIGHT`, since a million rows is more points than a 32-bit layout places exactly.
 
 - **The screen's own scroll view stays the scroller**, so the large title, the insets and Back's return to place are as they were. It says where it is scrolled through `PageScrollContext` (`packages/ui/src/pageScroll.ts`), and the table's two panes each draw from that same offset, so they show the same rows.
-- **Not LegendList, which the web uses.** Its React Native build draws only what it scrolls itself, and a list inside the screen's scroll view has no height of its own to window by.
+- **The same list as the web's**, not LegendList: its React Native build draws only what it scrolls itself, and a list inside the screen's scroll view has no height of its own to window by.
 - **An app that gives no `PageScrollContext` draws every row**, as before: macOS and Android today.
 
 iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, opening the same `.table.zip` files in memory. These times are a Debug build's on a Mac's processor and say only that the tables open; a Release build on a phone is still to be measured.
@@ -245,30 +245,63 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build, opening the same
 
 A table of 50,000 rows or more (`INDEXED_FROM`), opened from a folder, is held in the bundle's `index.sqlite` instead of in memory, as long as its formulas read only their own row and it has no Sheet view.
 
-- **Opening.** Its `rows.ndjson` isn't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows. Meanwhile the table shows its rows as the file has them, in the view's columns, under a count of rows read and a progress bar: the first 200 at once (`firstRows`), and every row read so far to scroll through, read from the index as it is built (`IndexHost.peek`; the worker's build takes a turn a statement, as the web's does). Nothing in them takes the keyboard, and search waits. When the reading is done the same table takes the view's own rows, where it was scrolled to. A fresh index opens at once. The table is ready when its rows are in: the search's own index, most of a build's time, is made after, a step at a time behind whatever the window asks for (`buildSearchIndex`), and until it is whole a search reads every row's text. At 1,000,000 rows on the rig: counting from 2.3 s, rows in and the table ready at 17.7 s (39 s when the search index was made first), a search 0.7 s until its index is whole about 30 s later, then 22 ms.
+- **Opening.** The table's fields and views are on screen at once, from its small files, before any rows are read (#605). Its rows files aren't parsed into memory. A worker (`apps/linux/src/indexWorker.ts`, over `node:sqlite`) hashes the table's files; if the index is missing or was built from other content it builds it, streaming the rows. Meanwhile the table shows its rows as the file has them, in the view's columns, under a count of rows read and a progress bar: the first 200 at once (`firstRows`), and every row read so far to scroll through, read from the index as it is built (`IndexHost.peek`; the worker's build takes a turn a statement, as the web's does). Nothing in them takes the keyboard, and search waits. When the reading is done the same table takes the view's own rows, where it was scrolled to. A fresh index opens at once. The table is ready when its rows are in: the search's own index, most of a build's time, is made after, a step at a time behind whatever the window asks for (`buildSearchIndex`), and until it is whole a search reads every row's text. At 1,000,000 rows on the rig: counting from 2.3 s, rows in and the table ready at 17.7 s (39 s when the search index was made first), a search 0.7 s until its index is whole about 30 s later, then 22 ms.
 - **Reading.** The table view reads a window of rows, its groups and its totals from a `ViewRows` (`indexedViewRows`), 200 rows at a time, and draws an empty row of the right height for one that hasn't arrived. Sorting, filtering, grouping and searching are queries. When the index can't promise an answer, every row is read out and the view is worked out in memory.
-- **Editing.** A cell edit, a new row and a deleted row are made in the index and show at once. 400 ms after the last one the rows are written back to `rows.ndjson` in file order, and the index is stamped fresh for them.
+- **Editing.** A cell edit, a new row and a deleted row are made in the index and show at once. 400 ms after the last one the rows are written back to its rows files in file order, each row to the file it came from (new rows to the last, a file past about 25 MB split), and the index is stamped fresh for them. The save doesn't hold the worker: each 5,000 rows it reads take a turn, and the search index's steps wait for it. At a million rows it takes 6 s, and a window of rows not read before, asked for half a second into it, is answered in 56 ms; an edit in 37 ms. An edit made meanwhile stops the save, the files left as they were, and the table is saved again after the edit; the index is stamped fresh only by a save no edit came into. The save before a change of fields runs to its end, and edits wait from before it starts until the index has changed.
 - **Scrolling.** GTK places widgets with single-precision numbers, so rows more than some millions of pixels down sat a few pixels off. Rows are laid out in a body of at most 8 million pixels, and the scroller's travel is mapped onto the whole table: dragging the bar goes anywhere, and scrolling moves a pixel a pixel.
 - **If the index can't be made** (no space, no SQLite), the table is read into memory and a notice says so.
 
-Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is about 680 MB beside a 165 MB `rows.ndjson`. A build commits every 20,000 rows, so the write-ahead log beside the index stays small while it runs (38 MB at its largest for a million rows; as one transaction it grew as large as the index).
+Seen in the built app, dark, at 100,000 and at 1,000,000 rows: the first rows while it builds, the view once built, a jump to the middle and to the last row. The million-row index is about 680 MB beside 165 MB of rows files. A build commits every 20,000 rows, so the write-ahead log beside the index stays small while it runs (38 MB at its largest for a million rows; as one transaction it grew as large as the index).
 
-- **Its fields.** A field's title, choices and place change in place. A field added or removed, or a formula changed, makes the index again from the saved rows (a removed field's values leave `rows.ndjson` first); the first rows show meanwhile, and edits made then wait for it.
+- **Undo.** An edit to a row is undone in the index, as it was made there: each edit comes back from the index with the one that undoes it (`makeIndexEdits`' `back`), a cell with what it held and a row removed with its place in the file order, and undo queues that (APP-STATE, "Undo"). The web and the phone do the same. On the web at 100,000 rows an undo or a redo shows in about 100 ms.
+- **Its fields** (#551). A field's title and choices change nothing in the index. A field added, removed, moved or retyped, or a formula added or changed, changes the index where it is (`alterIndex`): the rows are saved (a removed field's values leave the rows files), the index answers for the new fields at once, and what has to be worked out again (a formula's results, a new or retyped field's columns, the search text) is filled in behind whatever the window asks for (`fillIndex`, 5,000 rows a step). Until it's filled, a view sorted or filtered by those fields, or a search, is worked out in memory, and a formula's values are worked out as rows are read; once it's filled, the view is asked again. On the web, iOS and the Mac the same. Only a table with formulas that read other rows is built again. At 1,000,000 rows on the rig (in place, against 16.3 s to build again, during which nothing answers):
+
+  | Change | Answering again | Filled in behind |
+  |---|---|---|
+  | A formula added | 14 ms | 11.1 s |
+  | A field added | 53 ms | 7.7 s |
+  | A field retyped | 36 ms | 8.2 s |
+  | A field removed | 14 ms | 10.2 s |
+
+  A field removed is left out of every row read and saved at once, and its values stay in the index, hidden (#556, #562). A change of fields is an undo step, as on a small table: undo changes the index back in place, and a field deleted comes back with its values (the app says which fields an undo restores), written to the rows files again. A new field that only reuses a deleted field's name starts empty.
 - **Other layouts.** A board, gallery, list or calendar draws every row it's given, so it gets an indexed table's rows when the view shows 5,000 or fewer (a filter or a search narrows it); above that it says how many there are and what to do.
-- **Export.** A `.table.zip` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
+- **Export.** A single-file `.table` is made in memory, from the rows read out of the index, for a table of up to 250,000 rows; above that it says so, and the folder can be copied as it is.
 
-Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an archive of more than 250,000 rows. No timings from the app itself yet; the index's own are above.
+Not there yet for an indexed table: removing a choice (it has to come out of every row that holds it), checking its rows against the schema (the summary says "not checked"), and an export of more than 250,000 rows. A single file holding one is saved whole, whatever its size: only export builds an archive in memory. The app's own timings follow.
+
+**Timed in the app itself** (29 Oct 2026, #442, #745). `apps/linux/scripts/measure-large.sh` opens a table from `scripts/big-table.mts` in the built app (`npm run build`), on headless sway at 1280 × 800 on the rig (a 2017 MacBook, 8 GB; software rendering, no GPU). The app times itself (`TABLE_MEASURE=1`, `src/measure.ts`): it watches its own widgets, once a frame, and takes each time from the action to the frame that first shows the result; a jump is shown once every row on screen has arrived from the index. It opens the table twice: with no index, and then again. An edit is made as the app's controls make one (its `updateRow` action), not typed. The 100,000-row numbers are the range of three runs; the 1,000,000-row numbers are one run.
+
+| | 100,000 rows | 1,000,000 rows |
+|---|---|---|
+| The window, from the app's start | 0.96 to 0.97 s | 0.99 s |
+| First rows, from the app's start | 3.6 to 3.7 s | 3.7 s |
+| Table ready (sort, filter, search, edit), from the app's start | 5.7 to 5.8 s | 59 s |
+| The longest the window went without a frame meanwhile | 1.9 s | 2.0 s |
+| Jump to the middle | 1.28 to 1.31 s | 1.38 s |
+| Jump to the last row | 0.35 to 0.47 s | 0.36 s |
+| A search, before its index is whole | 0.21 to 0.29 s | 0.26 s |
+| An edit shown | 0.12 to 0.22 s | 0.21 s |
+| A place not read before, asked for while the edit is saved | 0.85 to 1.21 s | 0.93 s |
+| Opened again: first rows, and ready | 1.7 to 1.8 s, 3.1 to 3.2 s | 2.1 s, 3.6 s |
+
+- **Half the wait for first rows is the rig's software rendering.** With GTK's GL renderer on a machine with no GPU, Mesa's llvmpipe compiles its shaders on the app's thread, and the first draw of each new kind of widget pays for it. With `GSK_RENDERER=cairo` (`WRAP="env GSK_RENDERER=cairo"`), first rows come at 1.5 s and a jump to the middle takes 0.56 s. The rest of the wait is React making the first rows' GTK widgets, about 57 rows of about 100 widgets each (a profile: `PROFILE=<folder>`, one `.cpuprofile` for each step timed). On a desktop with a GPU the GL share should be small; that's unchecked.
+- **A row's widgets are kept for the next row built in its place** (#745). Each built place has a slot that it keeps while it stays built, and a jump hands the slots it leaves to the places it comes to. So a jump gives the rows already made their new values, and makes only what's in their cells. A row still on its way from the index is made as a row with values is, so its values arrive in the same widgets.
+- **An edit draws again only its own row** (#745). Each built row is kept as it was last drawn, and one whose cells would be drawn as before is passed over, though the table's handlers are new at each draw: they go through stand-ins that call the latest (`packages/gtk/src/steady.ts`). A cell is given the bundle's tables only when it shows a relation, as the tables change at every edit. What's left of an edit's time is the index's round trip and drawing that row.
+- **Ready at a million rows** is 59 s, against 17.7 s for the index alone (above): the build shares the machine with the window, which is drawing in software.
 
 ### What the web does (W2 and W3, 9 Oct 2026)
 
-A `.table.zip` of 256 KB or more is read in the page's worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps each bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
+A single-file `.table` of 256 KB or more is read in the page's worker (`apps/web/src/sqlite/worker.ts`), where SQLite's WebAssembly build keeps each bundle's index in the browser's own file storage (OPFS). A table of 50,000 rows or more that the index can hold never reaches the page as rows:
 
-- **Opening.** The worker reads the archive's directory and its small files, and inflates only the start of a large table's `rows.ndjson` (`LazyZipEntry.head`): enough for the first 200 rows and to judge how many there are. The page has those to show in a few hundred milliseconds, whatever the table's size, under a count of rows read and a bar. The rest is inflated a piece at a time, each piece going into the index and into a file kept beside it, which stays the truth. Its CRC is checked at the end; a damaged archive keeps nothing.
+- **Opening.** The worker reads the archive's directory and its small files, and inflates only the start of a large table's rows (`LazyZipEntry.head`, several rows files read as one): enough for the first 200 rows and to judge how many there are. The page has those to show in a few hundred milliseconds, whatever the table's size, under a count of rows read and a bar. The rest is inflated a piece at a time, each piece going into the index and into a file kept beside it, which stays the truth. Its CRC is checked at the end; a damaged archive keeps nothing.
 - **While it's read**, the table shows every row read so far, in file order, to scroll through and look at: the first 200 are with the page already, and the rest are asked of the worker, which sees the rows its build has put in (`rowsBeingBuilt`, on the build's own connection). The build doesn't hold the worker: each of its statements takes a turn, and before each the worker hears what the page has sent. Anything that would write to that bundle waits for the build. When the reading is done the same table view takes the view's own rows, so where you had scrolled to is where you still are.
 - **Reading and editing.** The indexer runs in the worker. The page holds a `ViewRows` whose every answer is one message (`remoteViewRows`), and an edit is one message that comes back with the next snapshot's rows for what's on screen already read (`peek`), so it shows in one draw.
+- **Saving.** 400 ms after the last edit the rows are written out of the index to the file beside it: 1.2 s at 100,000 rows, 13 s at a million. Like a build, a save doesn't hold the worker: each 5,000 rows it reads take a turn, so reads and edits are answered between them, and the search index's steps wait for it. An edit made meanwhile stops the save (the file would be out of date as it was finished) and the page saves again after the edit; the file is marked as not whole until a save ends, and the index is stamped as saved only by a save no edit came into. The save before a change of fields runs to its end, and edits wait from before it starts until the index has changed. A save writes the rows whenever the index isn't stamped as saved, whether or not the page knows of edits: after a reload it doesn't, and the index does.
+- **When no index can be made** (a line of its rows that can't be read, two rows of one id): the table is read from the archive into the page's memory instead, with a notice, and a line it couldn't read is kept (#567, D54). The Mac does the same.
 - **After a reload** the table is as it was left: the index and the rows file are still in the browser's storage, and nothing is built again. A rows file cut short (the page closed while it was written) isn't taken for the table. If the browser gave no storage, the index is in memory and a notice says the table goes with the page.
-- **One worker for every bundle.** The storage's pool of files belongs to the worker that opens it first; a second one would get memory only. (A second tab of the app does.)
-- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the rows are placed in a body of at most 8 million pixels and the page's scrolling is mapped onto the whole list (`TallRows` in `RowList.web.tsx`), as the GTK table does.
+- **One worker for every bundle.** The storage's pool of files belongs to the worker that opens it first; a second one would get memory only. A second tab of the app does: a large table opened in the first says there that it's open in another tab, which holds its storage, and one opened in the second is held in memory with a notice saying why.
+- **Leaving the page lets the storage go.** A browser may keep a page it has left, for Back, and its worker with it; the worker is ended as the page is left, so the app loaded afresh in that tab has the storage, and a page brought back by Back loads again. Checked in Firefox and Chrome: an edit, then a reload, another page and the app loaded afresh, and another page and Back all show the table with the edit; a second tab says the table is open in another.
+- **A list taller than a browser lays out** (it stops placing things some millions of pixels down; a million rows are 45 million): the list's body is at most 8 million pixels and the page's scrolling is mapped onto the whole list (`RowList.web.tsx`), as the GTK table does.
 - **A window deep in file order** is found by position in an index of positions alone, not by skipping to it: skipping passed over every whole row before it, and a jump to the middle of a million rows took from 100 to 700 ms depending on what was cached.
 - **The search index** is made after the table is ready, in steps of 5,000 rows, each waiting until the page has asked for nothing for a quarter of a second.
 
@@ -281,6 +314,7 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 | Jump to the middle | 136 ms | 92 ms | 106 ms | 105 ms |
 | A search, before its index is whole | 85 ms | 1.1 to 1.6 s | 87 ms | 0.6 to 0.9 s |
 | An edit shown | 35 ms | 71 ms | 31 ms | 67 ms |
+| A place not read before, asked for while an edit is being saved | 110 to 270 ms | 75 to 125 ms | 65 to 180 ms | 105 to 240 ms |
 | Reopened after the browser was restarted | yes | yes | yes | yes |
 
 - **Scrolling into a million rows while they're read:** six seconds in (Chrome; four in Firefox), with 60,000 rows read, a jump to row 40,000 had its rows on screen in 0.5 s (0.35 s), and the page never went longer than 0.28 s without a frame. Row 40,000 was still at the top when the reading finished.
@@ -290,19 +324,26 @@ A production build made with `VITE_TABLE_MEASURE=1`, at 1280 × 800 on the Linux
 - **At a million rows the wait to be ready is the build**, slower in the browser than in Node (15 s with `node:sqlite`) and slower in Chrome than in Firefox. First rows are on screen for all of it. A search in that time, and until its own index is whole some tens of seconds after, reads every row's text: about a second.
 - Linux reads and edits the same way now (`IndexHost.rows`), in its worker.
 
-`Download .table.zip` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice or a field. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
+`Download as a Single File` reads an indexed table's rows out of its index for the archive, up to 250,000 rows; past that it says so and makes none (an archive without a table's rows would look like a copy and not be one). Not there yet on the web for an indexed table: layouts other than Table (it says so), and removing a choice. A table removed leaves its index and rows file in the browser's storage. Safari is not measured.
 
 ### What iOS does (I2, 10 Oct 2026)
 
 The phone has a real file system and its own SQLite (expo-sqlite, through core's `expoDriver`), so it does what the web does with a folder in place of the browser's storage and no worker: expo-sqlite runs each statement on its own queue. `apps/mobile/indexHost.ts` is the counterpart of the web's worker and its client; `apps/mobile/useIndexedTables.ts` is the web's hook over it.
 
-- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own documents when its `.table.zip` is opened: `index.sqlite` at its root, the large table's `rows.ndjson` under `tables/<name>/`, and the rest of the bundle's files written by core's writer. A bundle with no large table is held as before, in memory and the phone's key-value store.
+- **Where it lives.** A bundle with a table of 50,000 rows or more becomes a `.table` folder in the app's own storage when its single file is opened: `index.sqlite` at its root, the large table's rows in their own files as the single file had them (#601), and the rest of the bundle's files written by core's writer. That folder is the single file's working folder: after each save it is packed back into the file where the file is, its unchanged files copied as they were (#602, d951d98). At launch the file is read again and the old folder removed. A bundle with no large table is held as before, in memory and the phone's key-value store.
 - **Opening** is the web's: the large table's rows stay compressed, their head gives the first 200 rows and a judged count, and the rest is inflated a piece at a time into the index and into the rows file. While it's read, every row read so far can be scrolled through.
 - **Reading and editing** go through `rowsServer`, `remoteViewRows` and `remoteEdits` in the app's own thread: there is no message to cross, only the turn each request takes.
-- **Saving** writes the rows out of the index to a staged file and moves it over `rows.ndjson` in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
+- **Saving** writes each row out of the index to the rows file it came from (a file past about 25 MB split, one left empty removed), each to a staged file moved over its own in one step. That move is `rename(2)`, from a small native module (`apps/mobile/modules/table-files`): the system's file manager won't move a file onto one that exists, and removing the target first leaves a moment with no file.
+- **A save runs beside the screen.** The rows are read on a second connection, in one read transaction, and written while the bundle's own connection goes on answering reads and taking edits. The rules are the web's (#415): an edit landing during a save stops it and nothing is recorded as saved (the index's key must still be the one the file was read at); the rows are written whenever the index isn't marked saved, whatever the screen remembers; the save before an index is made again holds edits from its start and runs to its end. With nothing drawn (`apps/mobile/saveProbe.ts`, from the probe's link `sqlite?save=<a single-file .table's address>`; iPhone 17 Pro Simulator, a development build), reads of 200 rows through the table, one after another:
+
+  | Rows | The save takes | Slowest read during a save, before | After | A read with nothing else going on |
+  |---|---|---|---|---|
+  | 50,000 | 0.5 s | 421 ms | 39 ms | 3 to 6 ms |
+  | 1,000,000 | 9.6 to 10.0 s | 9,600 ms | 84 ms | 12 to 14 ms |
+
 - **Freshness.** The folder is the app's own and nothing else can change its files, so the index's key is the constant `saved`, and what's recorded is that a rows file is whole, and its size (`_kept`): one cut short, by the app being ended as it was written, isn't taken for the table. If these folders are ever shown to other apps (the Files app), freshness will need the files' own content, or their size and date.
-- **When no index can be made** (no space, say): while the archive it came in is still held, the table is read from it into memory instead, with a notice. After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
-- **Export.** As the web's: `Export .table.zip…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
+- **When no index can be made** (no space, a line of its rows that can't be read, or two rows of one id): while the archive it came in is still held, the table is read from it into memory instead, with a notice, and a line it couldn't read is kept to be written back where it was (#567, D54). After a relaunch there is nothing to read it from, and the table says its rows are no longer on the phone.
+- **Export.** As the web's: `Export as a Single File…` reads an indexed table's rows out of its index for the archive, up to 250,000 rows (`ARCHIVE_ROWS`); past that it says so and shares none.
 
 iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that it works; a Release build on a phone is still to be measured.
 
@@ -312,19 +353,46 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that i
 | First rows | 1.2 s after | 0.9 s after |
 | Table ready (sort, filter, search, edit) | about 12 s, with a count of rows read meanwhile | 7.6 minutes, scrolling through the rows read so far meanwhile |
 | Search index whole | | about 2.5 minutes after that |
-| An edit | shown at once; in `rows.ndjson` after the save, with no staged file left | the same; the save rewrites all 165 MB |
+| An edit | shown at once; in the rows file after the save, with no staged file left | the same; the save rewrites all 165 MB |
 | Reopened after the app was ended | within 2 s, with the edit, not read again | 0.6 s, not read again |
-| Export `.table.zip` | all 50,000 rows, with the edit: 976 KB | none made; it says a table of up to 250,000 rows can be |
-| On the phone | | 822 MB: `rows.ndjson` 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
+| Export as a single file | all 50,000 rows, with the edit: 976 KB | none made; it says a table of up to 250,000 rows can be |
+| On the phone | | 822 MB: the rows file 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
 
 - **The build commits every 20,000 rows** (`commitEvery`). As one transaction, all of a build sits in SQLite's write-ahead log until its end: at a million rows the log reached 445 MB beside a 444 MB index, and a log keeps its size once written. In steps the log is folded into the index as the build goes and stayed under 38 MB; it is emptied when the build ends, and capped at 16 MB after (`journal_size_limit`). The build took 457 s in steps against 480 s as one transaction.
 - **The step's size is not what the screen waits on.** On a phone a build holds React's renders up for seconds whatever `batchSize` or `commitEvery` is, and committing every 20,000 rows costs no time there (11.3 s against 11.4 s at 100,000 rows); the measurements are in the next section. `batchSize` is core's default here for that reason.
 - **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, until a phone says otherwise. A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`. In sync mode the host builds in batches of 1,000 rows, since there the batch is the longest the screen waits.
 - **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
 
-Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice or a field; an archive of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice; an export of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
+
+### What the Mac does (22 Oct 2026)
+
+A large table that arrives in a single file is held as iOS holds one (above): the index host's folder for it is the file's working folder in the app's own storage, its rows files kept as the file had them, and after each save it is packed back into the file where it is (db88c76). At launch the file is read again and the old folder removed. A large table opened as a folder is still read into memory (#435).
+
+### Cells' own formulas in the index (23 Oct 2026)
+
+A table whose cells have formulas of their own (D52) is held in its index like any other, as long as each formula reads only its own row. The index keeps every `cells/` line (`_cells`), works each row out with its own formulas as it's built or edited, keeps their results out of the row's stored JSON (they're never stored), puts them back as rows are read, and writes `cells/` back with the rows. Measured on the rig with `scripts/cells-index.mts`: the 1,000,000-row table, with 250,000 of its rows' `weighted` given a formula of its own, each different, against the same table with none:
+
+| | 250,000 cell formulas | None |
+|---|---|---|
+| Build | 20.7 s | 17.5 s |
+| First 200 rows sorted by `weighted` | 1.22 s | 1.15 s |
+| A cell given a formula | 70 ms | |
+| Save (rows and `cells/`) | 8.6 s | 7.5 s |
+| Peak resident memory | 783 MB | 395 MB |
+
+### Saving a single file (23 Oct 2026)
+
+iOS, the Mac and Linux save a single file by packing its working folder back into it (`packTableFileFrom`): each file is read one at a time, a file the old archive holds unchanged is copied from it as it is, and only the files that changed are compressed again (#602). The new archive is built in memory and renamed over the old one. With rows files of at most about 25 MB (D51) that costs little, so the pack doesn't stream. Measured on the rig with `scripts/pack-peak.mts`, the 1,000,000-row table from `scripts/big-table.mts` (165 MB of rows in 7 files, a 19.6 MB single file):
+
+| Pack | Time | Peak resident memory |
+|---|---|---|
+| Whole (no file there yet) | 8.9 s | 347 MB |
+| After a row added to the last rows file | 0.9 to 1.6 s | 256 MB |
+
+Only export (`writeTableArchive`, from rows read out of an index) still stops at 250,000 rows (`ARCHIVE_ROWS`).
 
 ### iOS: the index over expo-sqlite, on a phone (10 Oct 2026)
 
@@ -375,7 +443,7 @@ A sync build that yields to something other than a timer shows all of it on a Ma
 
 **Not measured yet, on a phone:** the sitting above. Sync with a timer yield, and sync with the scheduler and a timer every 300 ms, are the two that could settle the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
 
-**If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading `rows.ndjson`) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
+**If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading the rows files) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
 **Running the probe on a phone.** The screen is `apps/mobile/app/sqlite.tsx` (logic in `apps/mobile/sqliteProbe.ts`), in a development build or one made with `EXPO_PUBLIC_TABLE_MEASURE=1`:
 
@@ -396,6 +464,79 @@ xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer 
 ```
 
 Link parameters: `rows` (comma-separated sizes), `sitting` (`1` runs every arrangement in the table above in turn, each under its own name: `sqlite?rows=100000&cases=0&sitting=1`), `modes` (`async`, `sync`), `cases` (`0` skips the indexer cases), `yield` (`yieldAfterMs`), `via` (what a yield waits on: `timer`, `scheduler`, `main`, `background`, `mixed`), `batch` (`batchSize`), `commit` (`commitEvery`), `ckpt` (`wal_autocheckpoint` during the build). `probe.json` holds every step as it finishes: `stallsOver250Ms` lists each gap with the statement in flight, and its last entry has the clocks.
+
+### Scrolling on macOS (13 Oct 2026)
+
+Scrolling the 1,000,000-row table on the Mac was far behind iOS. Two faults in how react-native-macos's views meet AppKit were the cause, and both are fixed in `apps/desktop/patches/react-native-macos+0.81.7.patch`. Two faults in how it was first measured hid how much they mattered, and are described after.
+
+**Measured** with the Mac app's scrolling run (`TableScrollBench`, see [BENCHMARKING.md](BENCHMARKING.md)): a Release build, Apple M1 with 8 GB, macOS 27.2 beta, a 1440 × 760 window, 8 columns, the table fully indexed; the page first scrolled 60,000 points down (about 1,300 rows); the app kept awake and nothing attached to it. Two runs of each.
+
+| | Neither fix | Both |
+|---|---|---|
+| **Slow** (1,440 px in 3 s): the table's place left empty | 0 and 25% | 0% |
+| …display refreshes the main thread answered, of 240 | 101 and 118 | 226 and 227 |
+| …text drawn | 32,028 times | 66 times |
+| **Brisk** (2,400 px/s for 3 s): empty | 28 and 33% | 0% |
+| …refreshes answered, of 240 | 110 and 118 | 170 and 174 |
+| **One flick** (to 7,200 px/s): empty | 27% | 3% |
+| **Eight flicks in a row**: empty | 40 and 41% | 1 to 4% |
+| …the main thread's longest gap | 155 and 218 ms | 74 and 120 ms |
+| **4 s at 14,400 px/s**: empty | 67% | 78% |
+
+A slow or brisk scroll and a flick now leave the table drawn. A scroll held at 14,400 px/s (320 rows a second) still outruns the rows, before and after: making rows is the limit there, not drawing them, and the main thread stays free meanwhile (a longest gap of 83 ms).
+
+**What is left: a hard flick.** One that starts at 14,400 px/s and falls away over a second and a half (10,149 px in all) shows an empty table for about the first 0.9 s, while it is fastest, and is drawn again by the time it has slowed (27 and 29% of its run empty; four in a row, 36%). The main thread's longest gap is 76 ms throughout: the page moves freely, and the rows arrive once they can be made as fast as they're passed.
+
+**The first fault: every text drawn again at every step of a scroll.** react-native-macos's view class (`RCTUIView`) declares its own `clipsToBounds`, which hides the property AppKit has had since macOS 14. AppKit was never told that a view clips, so it took every view to be able to draw anywhere: a view's visible area was the scroll view's and not its own, and changed with each step (`NSClipView _immediateScrollToPoint` → `NSViewHierarchyInvalidateVisibleRect` → `NS_viewVisibleRectDidChange` → `setNeedsDisplayInRect`). The patch passes `clipsToBounds` on to AppKit, and a text's own view always clips: a clipped view's visible area is its own bounds, which a scroll doesn't change.
+
+**The second: every text's layer visited at every step.** With the text no longer drawn again, its layer was still displayed: AppKit visits the layer of every view that draws in `-drawRect:` whenever its visible area may have changed. Nothing is drawn, but each visit works out the layer's place and scale, for every text in the rows kept drawn above and below the screen too. A text now draws into its layer's contents itself (`-wantsUpdateLayer`), only when asked to: its string, its size, the window's scale or the appearance changed. The drawings are kept, a thousand of them, by what was drawn and not by which view drew it, so a value a table repeats (a stage, an owner, a date) is drawn once.
+
+**What looks different.** Nine views of the fixtures were compared pixel for pixel against a build with neither fix. One thing differs: a link's underline sits one device pixel (half a point) higher. Not checked: the dark appearance, and text with an inline attachment.
+
+**Scrolling on the main thread, or off it.** Since #494 the app's scroll views take AppKit's responsive scrolling. `-scrollOnMainThread YES` on the command line opts out, to compare. With both fixes the run shows no difference: a brisk scroll leaves nothing empty either way, eight flicks leave 3.5% on the main thread against 1 to 4% off it, and the main thread's longest gap is about 70 ms in both. The default is unchanged.
+
+**A trackpad's gesture** (began, changed, ended, momentum) can be sent by the run only for scrolling on the main thread (`-scrollBenchGesture YES`): there it moves the page, and measures as the wheel does (a brisk scroll: nothing empty; eight flicks: 2%). With responsive scrolling AppKit takes a gesture's events from the system's own stream on its own thread, and ignores ones handed to a view or put on the app's queue; events posted to the app from another process arrive at the real pointer's place, not the place they name. That path needs a hand on the trackpad.
+
+#### How the first measurements went wrong
+
+Both of these made the app look far worse than it is, and the second looked like a fault in the app.
+
+- **`sample` attached during the run.** `sample <pid> 1` stops the app a thousand times a second. With it attached, eight flicks never caught up (96 to 99% empty); without it they do. `sample` says where the time goes, in a run of its own; what's felt is measured with nothing attached.
+- **App Nap.** The Mac was driven with its screen locked, so the app's window couldn't be seen, and about 25 seconds after each launch macOS napped the app: timers came late and it was given little processor time. A brisk scroll then left 70% of the table empty with the main thread 79% idle and the JavaScript thread 46% idle. It looked like something building up as the page was scrolled (a run after a long scroll started later after launch than one after a jump), and wasn't: the same jump, run 40 seconds after launch and not 17, was as bad, and with the app kept awake both were good. The run now holds an activity (`NSProcessInfo beginActivityWithOptions:`) for as long as it is armed.
+
+#### What was tried next, measured properly (14 Oct 2026)
+
+Each of these was built and measured in the same sitting as the build it is compared with, on the same Mac, two runs or more where a figure decided anything. The same commit measured hours apart differs (eight flicks left 1 to 4% of the table empty one afternoon and 7 to 9% that night), so a figure here is only to be read against the one beside it.
+
+| | As it is (600 points kept drawn) | 1,200 points | 1,200 points and any-slot recycling |
+|---|---|---|---|
+| Slow scroll: refreshes answered, of 240 | 226 to 228, every run | 227 to 232 in six runs, 152 to 210 in five | 156 |
+| Brisk scroll: refreshes answered, of 240 | 168 to 171 | 197 to 199 | 172 |
+| One flick: empty | 4.5 to 5.4% | 2.4 to 2.5% | 4.7% |
+| Eight flicks: empty | 6.8 to 8.7% | 2.6 to 4.0% | 8.8% |
+| A hard flick: empty | 26 to 29% | 19 to 30% | 12 to 26% |
+| Four hard flicks: empty | 37 to 38% | 33 to 35% | 30% |
+| A hard flick: the main thread's longest gap | 83 to 133 ms | 149 to 183 ms | 142 to 201 ms |
+
+- **More rows kept drawn (1,200 points past the screen, not 600) isn't taken.** It halves what a flick leaves empty, and in about half its runs a slow scroll then ran at 30 frames a second, not 60: most frames came 33 ms apart, with no more mounted or drawn than in the runs at 60. What differs from 600 points is how much is in the scrolled area at all: 3,033 views and 4,565 layers against 2,034 and 3,080. Each step of a scroll costs something for every layer there, and on this Mac half as many again puts a step at the edge of one refresh. A slow scroll is what a table is mostly doing, so it isn't traded for a flick.
+- **Any-slot recycling isn't taken.** A row coming on was given the slot of one just gone off (`RowList` today keys a row by its place modulo a number of slots, which reuses a row only when exactly that many are drawn). With 1,200 points it took a little more off repeated hard flicks and gave back what 1,200 points had gained on ordinary ones. It wasn't measured again on its own at 600 points.
+- **Rows drawn where the page will be, from its speed, aren't taken.** One flick left 21% empty and eight left 20%, against about 3% without, measured the afternoon before.
+- **What this points to is fewer views and layers in a row.** About 37 views and 56 layers are kept for each row drawn (the 27 more rows of 1,200 points are a thousand more views and fifteen hundred more layers). Fewer would cut both what a hard flick waits for (rows to mount) and what every step of every scroll costs, and would make keeping more rows drawn affordable. That is next: a lighter cell where nothing is being edited, column lines drawn once behind the rows, and only the columns in view.
+
+A first JavaScript profile, taken while napped, put about a third of the thread's busy time under React Strict DOM's element (`useNativeProps`, `useStyleProps`); that is still to be taken again.
+
+Ruled out along the way, for a table that scrolls worse after a while: rows on their way from the index (every row drawn was already read), the kept text drawings filling up, views or layers left in the window (their number doesn't change), and the window's Auto Layout engine growing (about 7,300 constraints throughout: every React view has its frame in it as constraints, since the window's split view and SwiftUI panes use Auto Layout, and that is a cost for each view put in or taken out, but a steady one).
+
+#### Sizes far down the table (#518)
+
+Near the end of the 1,000,000-row table, 45 million points down, a selected cell's row handle was drawn differently from row to row: its two 1.5 point bars as one thick bar, as two thick bars, or not at all, and its pill 12 or 16 points high where it should be 14. Nothing was clipped; the sizes were wrong.
+
+Yoga snaps a node to the pixel grid by its place in the whole tree, and sets its size to the difference of its two snapped edges (`roundLayoutResultsToPixelGrid`). Each edge is worked out as a `double` and handed back as a `float`, and past 33,554,432 a float holds only every fourth whole number: so both edges were multiples of 4, and so was every width and height down there. The patch takes the difference before narrowing it. The rows' places were already right (the box they sit in is laid out at a multiple of 4, as `RowList.native.tsx` notes); this is what was left.
+
+- **Nothing changes nearer the top.** For a view less than about 8 million points down, both edges and their difference are exact in a float, so the size is the same number as before.
+- **Checked** on five neighbouring rows around row 999,775, in both looks of the handle ("Resize handles": Pills and Grabbers): each is drawn as it is at the top of the table.
+- **No cost.** Measured 1,300 rows down as above, with the change and without, two runs each: one flick left 5.7 to 6.2% of the table empty with it and 5.9 to 6.3% without, eight flicks 7.5 to 8.3% and 6.0 to 8.4%.
+- **Not on iOS or Android yet.** Yoga's code is the same there (React Native 0.83, and Yoga's main branch), but the iOS app links React Native prebuilt, so a patch to its source isn't compiled in.
 
 ## Drawing a million rows: FlashList and LegendList (2 Oct 2026)
 
@@ -436,6 +577,8 @@ No blank frames in any run. The peak includes the app itself, about 300 MB in th
 - Heights that can be worked out keep it fast: a view's row height (the Airtable short to extra-tall kind), group headers, totals, a height stored with a row, and close estimates from a row's text.
 - Heights only content can tell (wrapped text, images, page previews) are the risk. Mitigations: cells clip to the view's lines unless a view asks to wrap; estimate then correct for wrapped views; and the table draws through one internal component, so a view that needs measured rows at scale could use FlashList on native later without touching the rest.
 - `apps/mobile/app/bench.tsx` stays, so the choice can be re-checked as either library changes.
+
+**Since (10 Oct 2026): the table's rows are drawn by a list of its own on every platform**, and LegendList is left in the phone's bench (`apps/mobile/app/bench.tsx`) alone. The table knows every row's height, which is all its list needs: a body as tall as the rows, and the ones on screen placed in it. On native that came first, since LegendList there draws only what it scrolls itself. On the web the same list was already drawing tables too tall for a browser, and at every other size it now goes to a row in 46 to 59 ms where LegendList took 276 to 332 ms (Ctrl+Down and Ctrl+Up at 100,000 rows, the rows already read: LegendList's own move took 130 ms to begin and 150 ms to draw). Scrolling steadily is the same or better (30, 120, 400 and 2,000 pixels a frame at 10,000 and 100,000 rows: slowest frames 34 to 89 ms against 26 to 319 ms), and 22 views of the examples are the same pixel for pixel.
 
 ## SQLite in the browser (Phase 3 spike, 2 Oct 2026)
 

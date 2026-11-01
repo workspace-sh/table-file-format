@@ -3,7 +3,7 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
-import { enumOptions, type Field, type ParsedTable } from "@workspace.sh/table-core";
+import { CELL_NOTES, compileFormula, enumOptions, OWN_FORMULAS, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
 import { relationLabel } from "./display";
@@ -43,9 +43,11 @@ export function inputKind(field: Field | undefined): InputKind {
   }
 }
 
-/** The text an edit starts from: the stored value, or nothing. */
+/** The text an edit starts from: the stored value (an object as its JSON), or nothing. */
 export function draftOf(value: unknown): string {
-  return value === undefined || value === null ? "" : String(value);
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object" && !Array.isArray(value)) return JSON.stringify(value);
+  return String(value);
 }
 
 /**
@@ -81,12 +83,67 @@ export type Commit =
    */
   | { kind: "problem"; check: CellCheck & { ok: false }; queried: string | null }
   /** Left by moving away with a draft the column can't hold: dropped, as there's no one to ask. */
-  | { kind: "dropped" };
+  | { kind: "dropped" }
+  /** `=…` typed: the cell's own formula (D52), in the stored form. */
+  | { kind: "formula"; expr: string };
+
+/** Typing `=…` in a cell gives it its own formula (D52): what that needs, and the formula it has now. */
+export interface CellFormulaEntry {
+  /** The table's fields, for the formula's names. */
+  fields: Field[];
+  /** The Sheet view's grid, for `=B7`. */
+  grid?: Grid;
+  /** The cell's own formula now, stored form: what an edit starts from. */
+  own?: string;
+}
+
+/**
+ * The cell's own formula, by row and field: the one a row read out of an
+ * index carries (OWN_FORMULAS), else the first among a table's `cells` (D54).
+ */
+export function ownFormula(cells: readonly CellFormula[] | undefined, rowId: string, field: string, row?: Record<string, unknown>): string | undefined {
+  const carried = row?.[OWN_FORMULAS] as Record<string, string> | undefined;
+  if (carried) return carried[field];
+  return cells?.find((c) => c.id === rowId && c.field === field)?.expr;
+}
+
+/** A cell's note (D57): the one a row read out of an index carries (CELL_NOTES), else its line's among a table's `cells`. */
+export function ownNote(cells: readonly CellFormula[] | undefined, rowId: string, field: string, row?: Record<string, unknown>): string | undefined {
+  const carried = row?.[CELL_NOTES] as Record<string, string> | undefined;
+  if (carried) return carried[field];
+  return cells?.find((c) => c.id === rowId && c.field === field && c.note !== undefined)?.note;
+}
+
+/**
+ * A cell's own formula as it's edited, without its `=`: in Excel syntax its
+ * Excel text, in stored syntax the stored form exactly as the file has it.
+ * The editor draws the `=` before the text, outside it, as it draws a
+ * currency's symbol, and puts it back on saving (FORMULA_PREFIX).
+ */
+export function cellFormulaText(own: string, grid?: Grid, syntax?: "excel" | "stored"): string {
+  if (syntax === "stored") return own;
+  const shown = printFormula(own, { grid, syntax: "excel" });
+  return shown.startsWith("=") ? shown.slice(1) : shown;
+}
+
+/** What a formula's text begins with, drawn before it while it's edited (cellFormulaText): D52's sign of a formula. */
+export const FORMULA_PREFIX = "=";
+
+/** What a cell with its own formula shows when it's edited: `=` and the formula, in the reader's syntax. */
+export function cellFormulaDraft(own: string, grid?: Grid, syntax?: "excel" | "stored"): string {
+  const shown = printFormula(own, { grid, ...(syntax ? { syntax } : {}) });
+  return shown.startsWith("=") ? shown : `=${shown}`;
+}
 
 /**
  * Save `raw` into a cell holding `current`, from a key (Enter, Tab) or by
  * leaving the editor (`blur`). `queried` is the draft already asked about.
- * An early year is kept on leaving, being a valid date.
+ *
+ * What's typed is never refused for good, as a spreadsheet keeps it (D65):
+ * a key asks once about a problem, and the same draft entered again is kept;
+ * leaving keeps it at once. A value the column can't hold is kept as typed,
+ * and the cell says so; a formula is kept as it reads (an unknown function
+ * shows #NAME?), or as typed when it doesn't (the cell says it can't be read).
  */
 export function commitDraft(
   field: Field | undefined,
@@ -94,13 +151,39 @@ export function commitDraft(
   raw: string,
   how: "key" | "blur",
   queried: string | null,
+  formula?: CellFormulaEntry,
 ): Commit {
-  const check = checkEntry(field, raw, queried === raw || how === "blur");
-  if (!check.ok) {
-    if (how === "blur") return { kind: "dropped" };
-    return { kind: "problem", check, queried: check.confirmable ? raw : queried };
+  const keep = how === "blur" || queried === raw;
+  // `=` begins a formula, in a stored field's cell, where the view can give it one (D52).
+  if (formula && field && !field.computed && raw.trimStart().startsWith("=")) {
+    const fields = formula.fields.map((f) => f.name);
+    const compiled = compileFormula(raw, { fields, ...(formula.grid ? { grid: formula.grid } : {}) });
+    if (!compiled.ok && !keep) return { kind: "problem", check: { ok: false, message: `${compiled.message} ${AGAIN}` }, queried: raw };
+    const expr = compiled.ok ? compiled.stored : storedAsTyped(raw, fields, formula.grid);
+    return expr === formula.own ? { kind: "unchanged" } : { kind: "formula", expr };
   }
+  const check = checkEntry(field, raw, keep);
+  if (!check.ok) {
+    if (!keep) return { kind: "problem", check: { ...check, message: check.confirmable ? check.message : `${check.message} ${AGAIN}` }, queried: raw };
+    // Kept as typed: the column can't hold it, and the cell says so.
+    const typed = raw.trim() === "" ? undefined : raw;
+    return typed !== current ? { kind: "save", value: typed } : { kind: "unchanged" };
+  }
+  // A cell with its own formula: whatever's typed over it (nothing, too) is saved, and takes its place.
+  if (formula?.own !== undefined) return { kind: "save", value: check.value };
   return check.value !== current ? { kind: "save", value: check.value } : { kind: "unchanged" };
+}
+
+/** Said after a problem a key met: entering the same again keeps it. */
+const AGAIN = "Press Enter again to keep it as typed.";
+
+/**
+ * A formula kept from an unfinished or refused edit (D65): as it reads, an unknown function
+ * kept as a call to it; else as typed, without its `=`, for the cells to say it can't be read.
+ */
+export function storedAsTyped(raw: string, fields: string[], grid?: Grid): string {
+  const kept = compileFormula(raw, { fields, ...(grid ? { grid } : {}), keepUnknownFunctions: true });
+  return kept.ok ? kept.stored : raw.trim().replace(/^=\s*/, "");
 }
 
 // ─── Lists ─────────────────────────────────────────────────────────────

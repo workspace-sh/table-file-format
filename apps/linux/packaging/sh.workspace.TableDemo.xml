@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A single-file .table (SPEC section 13, "Platform types"). Not a sub-class of a zip
+     type, so a file manager never offers to extract it. A folder .table is a folder
+     here: a directory has no type of its own, so it can't be matched. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.workspace-sh.table">
+    <comment>Table</comment>
+    <glob pattern="*.table"/>
+  </mime-type>
+</mime-info>

@@ -26,18 +26,22 @@ import { Animated, Dimensions, Easing, Keyboard, PlatformColor, StyleSheet, View
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Button,
+  ControlGroup,
   DatePicker,
+  Divider,
   GlassEffectContainer,
   HStack,
   Host,
   Image,
   Menu,
   Namespace,
+  Popover,
   ScrollView,
   Spacer,
   Text,
   TextField,
   VStack,
+  useNativeState,
   type TextFieldRef,
 } from "@expo/ui/swift-ui";
 import {
@@ -48,6 +52,8 @@ import {
   background,
   datePickerStyle,
   contentShape,
+  contentTransition,
+  disabled,
   fixedSize,
   font,
   foregroundStyle,
@@ -60,12 +66,24 @@ import {
   opacity,
   onSubmit as onSubmitModifier,
   onTapGesture,
+  truncationMode,
   padding,
   shapes,
   textInputAutocapitalization,
 } from "@expo/ui/swift-ui/modifiers";
 import { FormulaField } from "./FormulaField.ios";
-import type { GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+import type { GlassBarAction, GlassBarDetails, GlassBarEditing, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
+
+/**
+ * Expo UI's TextField, starting from `initial`. Since Expo UI 56 a field
+ * holds its text as native state (useNativeState) instead of taking a
+ * `defaultValue`, and reports edits as `onTextChange`: given the old props it
+ * opened empty and told nothing of what was typed. A new key starts it again.
+ */
+function SeededTextField({ initial, onChange, ...rest }: Omit<ComponentProps<typeof TextField>, "text" | "onTextChange"> & { initial: string; onChange?: (text: string) => void }) {
+  const text = useNativeState(initial);
+  return <TextField {...rest} text={text} onTextChange={onChange} />;
+}
 
 const SIZE = 48;
 const GAP = 8;
@@ -136,6 +154,16 @@ function useKeyboardLift(rest: number): { lift: Animated.Value; keyboard: number
   return { lift, keyboard };
 }
 
+/**
+ * A system colour (`tertiaryLabel`) for the bar's SwiftUI views. @expo/ui is
+ * typed against its app's React Native and the bar against the repo's, so
+ * the same PlatformColor carries two types; this is the one place they meet.
+ */
+type UIColor = NonNullable<ComponentProps<typeof Image>["color"]>;
+function systemColor(name: string): UIColor {
+  return PlatformColor(name) as unknown as UIColor;
+}
+
 export function GlassBar(props: GlassBarProps) {
   const { state } = props;
   const ns = useId();
@@ -204,7 +232,8 @@ export function GlassBar(props: GlassBarProps) {
   // Letting go of the Host after the operators' return changes nothing on
   // screen, so it must not count as a change: another spring there dipped
   // the group behind the keyboard.
-  const layout = layoutOf(state) + (expanded ? 100 : 0) + (collapsing === "shrinking" ? 200 : 0);
+  const toasting = !!props.toast && (state.kind === "rest" || state.kind === "selected");
+  const layout = layoutOf(state) + (expanded ? 100 : 0) + (collapsing === "shrinking" ? 200 : 0) + (toasting ? 1000 : 0);
   const expansion: Expansion = { can: canExpand, on: expanded, height: expandedHeight, toggle: () => setExpanded((e) => !e), settling: collapsing === "shrinking" };
   return (
     <Animated.View
@@ -238,6 +267,7 @@ export function GlassBar(props: GlassBarProps) {
             ]}
           >
             <VStack alignment="leading" spacing={GAP}>
+              {toasting ? <Toast {...props} ns={ns} /> : null}
               <Chips {...props} ns={ns} editor={editor} expansion={expansion} />
               <HStack spacing={expanded ? 0 : GAP} alignment="bottom">
                 <Lead {...props} ns={ns} expansion={expansion} />
@@ -258,8 +288,9 @@ type EditorHandle = GlassBarHandle & { value: () => string };
 type Expansion = { can: boolean; on: boolean; height: number; toggle: () => void; settling?: boolean };
 type Part = GlassBarProps & { ns: string; editor?: RefObject<EditorHandle | null>; expansion?: Expansion };
 
-function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
+function Lead({ state, ns, onFilter, restLead, restNotice, onDeselect, onCancel, expansion }: Part) {
   if (state.kind === "searching") return null; // absorbed into the search field
+  if (state.kind === "rest" && restNotice) return <LeadWithNotice state={state} ns={ns} onFilter={onFilter} restLead={restLead} restNotice={restNotice} />;
   // Expanded, ✕ is inside the capsule. This circle stays, shrunk to nothing
   // at the capsule's corner, so collapsing grows it back out of that corner:
   // a glass piece that appears afresh grows out of the whole capsule instead.
@@ -268,7 +299,7 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
   const action = rest ? onFilter : state.kind === "selected" ? onDeselect : onCancel;
   return (
     <Image
-      systemName={rest ? "line.3.horizontal.decrease" : "xmark"}
+      systemName={rest ? ((restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease") : "xmark"}
       size={rest ? 19 : 17}
       onPress={action}
       modifiers={[
@@ -277,26 +308,109 @@ function Lead({ state, ns, onFilter, onDeselect, onCancel, expansion }: Part) {
         glass("circle"),
         glassEffectId("lead", ns),
         contentShape(shapes.circle()),
-        accessibilityLabel(rest ? "Filter" : state.kind === "selected" ? "Deselect" : "Cancel"),
+        accessibilityLabel(rest ? (restLead?.label ?? "Filter") : state.kind === "selected" ? "Deselect" : "Cancel"),
       ]}
     />
   );
 }
 
-function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
+/**
+ * At rest with a notice: the lead's button and the notice in one capsule (the
+ * lead's glass identity, so a selection shrinks it back to the lead's circle),
+ * a line between them, the notice taking the room up to Search and More (up
+ * to NOTICE_MAX).
+ */
+/** The widest the notice's capsule grows: a phone's row in portrait, not landscape's. */
+const NOTICE_MAX = 340;
+
+function LeadWithNotice({ ns, onFilter, restLead, restNotice }: Pick<Part, "state" | "ns" | "onFilter" | "restLead" | "restNotice">) {
+  const notice = restNotice!;
+  return (
+    <HStack
+      spacing={0}
+      modifiers={[
+        frame({ maxWidth: NOTICE_MAX, minHeight: SIZE, alignment: "leading" }),
+        glass("roundedRectangle"),
+        glassEffectId("lead", ns),
+        // Wider rows (landscape, iPad) leave the room after it empty.
+        frame({ maxWidth: Infinity, alignment: "leading" }),
+      ]}
+    >
+      <Image
+        systemName={(restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease"}
+        size={19}
+        onPress={onFilter}
+        modifiers={[frame({ width: SIZE, height: SIZE }), contentShape(shapes.rectangle()), accessibilityLabel(restLead?.label ?? "Filter")]}
+      />
+      <Divider modifiers={[frame({ height: 26 })]} />
+      <HStack
+        spacing={0}
+        modifiers={[
+          padding({ leading: 12, trailing: 18 }),
+          frame({ maxWidth: Infinity, minHeight: SIZE, alignment: "leading" }),
+          contentShape(shapes.rectangle()),
+          ...(notice.onPress ? [onTapGesture(() => notice.onPress?.())] : []),
+          accessibilityLabel(notice.detail ? `${notice.title}, ${notice.detail}` : notice.title),
+        ]}
+      >
+        <VStack alignment="leading" spacing={1}>
+          <Text modifiers={[font({ size: 13, weight: "semibold" }), lineLimit(1)]}>{notice.title}</Text>
+          {notice.detail ? <Text modifiers={[font({ size: 12 }), secondary, lineLimit(1), truncationMode("middle")]}>{notice.detail}</Text> : null}
+        </VStack>
+        <Spacer />
+      </HStack>
+    </HStack>
+  );
+}
+
+function Trail({ state, ns, onMore, onSearchEnd, moreActions, details, onDetailsClose }: Part) {
   if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
-    // More is the system's menu, its button the same glass circle.
-    return (
+    // More is the system's menu, its button the same glass circle. SwiftUI
+    // puts a menu's first item next to its button, which at the foot of the
+    // screen is the bottom: the groups, and the actions in each, are given
+    // to it in reverse, so the menu reads top to bottom as `moreActions` does.
+    const groups: GlassBarAction[][] = [];
+    for (const a of moreActions) {
+      if (a.startsGroup || groups.length === 0) groups.push([a]);
+      else groups[groups.length - 1]!.push(a);
+    }
+    // In each group, a run of `row` actions is one row (kept in its order).
+    const shown = groups.reverse().map((g) => {
+      const parts: (GlassBarAction | GlassBarAction[])[] = [];
+      for (const a of g) {
+        const last = parts[parts.length - 1];
+        if (a.row && Array.isArray(last)) last.push(a);
+        else parts.push(a.row ? [a] : a);
+      }
+      return parts.reverse();
+    });
+    const button = (a: GlassBarAction) => (
+      <Button
+        key={a.label}
+        label={a.label}
+        systemImage={a.symbol as Symbol | undefined}
+        onPress={a.onPress}
+        modifiers={a.disabled ? [disabled(true)] : undefined}
+      />
+    );
+    const menu = (
       <Menu
         label={<Image systemName="ellipsis" size={19} modifiers={[frame({ width: SIZE, height: SIZE }), foregroundStyle("primary")]} />}
         modifiers={[glass("circle"), glassEffectId("trail", ns), contentShape(shapes.circle()), accessibilityLabel("More")]}
       >
-        {moreActions.map((a) => (
-          <Button key={a.label} label={a.label} systemImage={a.symbol as Symbol | undefined} onPress={a.onPress} />
-        ))}
+        {shown.flatMap((g, i) => [
+          ...(i > 0 ? [<Divider key={`${i}-line`} />] : []),
+          ...g.map((p) => (Array.isArray(p) ? <ControlGroup key={`${p[0]!.label}-row`}>{p.map(button)}</ControlGroup> : button(p))),
+        ])}
       </Menu>
+    );
+    return (
+      <Popover isPresented={!!details} onIsPresentedChange={(on) => { if (!on) onDetailsClose?.(); }} arrowEdge="bottom">
+        <Popover.Trigger>{menu}</Popover.Trigger>
+        <Popover.Content>{details ? <Details details={details} onDone={onDetailsClose} /> : <Spacer />}</Popover.Content>
+      </Popover>
     );
   }
   return (
@@ -312,6 +426,37 @@ function Trail({ state, ns, onMore, onSearchEnd, moreActions }: Part) {
         accessibilityLabel(searching ? "Close search" : "More"),
       ]}
     />
+  );
+}
+
+/**
+ * What an edit did that can't be seen, centred above the bar: a glass
+ * capsule like the bar's own, its count rolling from one number to the
+ * next as more is counted, and Undo.
+ */
+function Toast({ toast, ns }: Part) {
+  if (!toast) return null;
+  return (
+    <HStack spacing={0}>
+      <Spacer />
+      <HStack
+        spacing={10}
+        modifiers={[
+          padding({ leading: 16, trailing: 6, vertical: 6 }),
+          glassEffect({ glass: { variant: "regular", interactive: true }, shape: "capsule" }),
+          glassEffectId("toast", ns),
+          accessibilityLabel(toast.label),
+        ]}
+      >
+        <Image systemName="checkmark" size={14} modifiers={[secondary]} />
+        <HStack spacing={0}>
+          <Text modifiers={[font({ size: 15 }), contentTransition("numericText"), animation(Animation.default, toast.n), lineLimit(1)]}>{toast.lead}</Text>
+          <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{toast.rest}</Text>
+        </HStack>
+        <Button label="Undo" onPress={toast.onUndo} modifiers={[font({ size: 15, weight: "semibold" }), padding({ horizontal: 8, vertical: 4 })]} />
+      </HStack>
+      <Spacer />
+    </HStack>
   );
 }
 
@@ -429,7 +574,7 @@ function CardActions({ state, editor, onCancel, onSave, onChip }: Pick<Part, "ed
         systemName="xmark"
         size={15}
         onPress={onCancel}
-        modifiers={[frame({ width: 36, height: 36 }), background(PlatformColor("tertiarySystemFill"), shapes.circle()), contentShape(shapes.circle()), accessibilityLabel("Cancel")]}
+        modifiers={[frame({ width: 36, height: 36 }), background(systemColor("tertiarySystemFill"), shapes.circle()), contentShape(shapes.circle()), accessibilityLabel("Cancel")]}
       />
       <Spacer />
       {chips.map((c) => (
@@ -469,20 +614,53 @@ function Capsule(props: Part) {
   ];
   switch (state.kind) {
     case "rest":
+      // No search: the two buttons at the ends, and nothing between them.
+      if (!props.onSearch) return <Spacer />;
+      // Minimised: a circle beside More. It keeps the capsule's glass identity,
+      // so pressing it grows the field out of the circle.
+      if (props.searchStyle === "button" && !state.query)
+        return (
+          <HStack spacing={0}>
+            {/* A notice beside the lead takes the room instead. */}
+            {props.restNotice ? null : <Spacer />}
+            <Image
+              systemName="magnifyingglass"
+              size={18}
+              onPress={props.onSearch}
+              modifiers={[frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("capsule", ns), contentShape(shapes.circle()), accessibilityLabel(props.searchLabel ?? "Search")]}
+            />
+          </HStack>
+        );
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape, onTapGesture(() => props.onSearch?.()), accessibilityLabel("Search")]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || "Search"}</Text>
+          <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || (props.searchLabel ?? "Search")}</Text>
           <Spacer />
-          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
+          {/* The keyboard away, a document's matches can still be stepped
+              through. Clear then waits in the open field (a tap away), so the
+              query and its count keep their room. */}
+          {state.query ? <Steps {...props} /> : null}
+          {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "searching":
       return (
         <HStack spacing={10} modifiers={[padding({ leading: 16, trailing: 12 }), ...shape]}>
           <Image systemName="magnifyingglass" size={17} modifiers={[secondary]} />
-          <TextField key="search" defaultValue={state.query} placeholder="Search" autoFocus onValueChange={props.onQueryChange} />
-          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={PlatformColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
+          {/* Focused as it opens, so typing starts at once. Return puts the
+              keyboard away and keeps the query. */}
+          <SeededTextField
+            key="search"
+            initial={state.query}
+            placeholder={props.searchLabel ?? "Search"}
+            autoFocus
+            onChange={props.onQueryChange}
+            modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
+          />
+          {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
+          {state.query ? <Steps {...props} /> : null}
+          {state.query ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
     case "selected":
@@ -490,12 +668,17 @@ function Capsule(props: Part) {
         <HStack spacing={8} modifiers={[padding({ leading: 16, trailing: state.info ? 10 : 16, vertical: 6 }), ...shape, onTapGesture(() => props.onEdit?.()), accessibilityLabel(`${state.label}, ${state.value}. Edit`)]}>
           <VStack alignment="leading" spacing={1}>
             <Label text={state.label} size={11} />
-            <Text modifiers={[font({ size: state.monospaced ? 14 : 16, design: state.monospaced ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            <HStack spacing={6}>
+              {state.prefix ? <PrefixBadge text={state.prefix} size={14} /> : null}
+              <Text modifiers={[font({ size: state.monospaced || state.prefix ? 14 : 16, design: state.monospaced || state.prefix ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
+            </HStack>
             {/* The field's own help, as the web shows it on hover. */}
             {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
           </VStack>
           <Spacer />
-          {state.info ? (
+          {state.facts ? (
+            <Info title={state.factsTitle ?? state.label} facts={state.facts} onSettings={props.onInfoSettings} />
+          ) : state.info ? (
             <Image
               systemName="info.circle"
               size={19}
@@ -525,6 +708,88 @@ function Capsule(props: Part) {
     case "editing":
       return <Editor {...props} state={state} shape={shape} />;
   }
+}
+
+/** Previous and next match: a document's or a canvas's find, not a table's (its rows are filtered). */
+function Steps(props: Part) {
+  if (!props.onSearchStep) return null;
+  return (
+    <>
+      <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
+      <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
+    </>
+  );
+}
+
+/**
+ * The ⓘ on a selected cell: what the field is, in a popover from it, not an
+ * alert (an alert is for a warning). Field Settings… goes on to the field's
+ * settings, which are a sheet: configuration.
+ */
+function Info({ title, facts, onSettings }: { title: string; facts: string; onSettings?: () => void }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <Popover isPresented={shown} onIsPresentedChange={setShown} arrowEdge="bottom">
+      <Popover.Trigger>
+        <Image
+          systemName="info.circle"
+          size={19}
+          onPress={() => setShown(true)}
+          modifiers={[frame({ width: 32, height: 32 }), secondary, contentShape(shapes.circle()), accessibilityLabel("About this field")]}
+        />
+      </Popover.Trigger>
+      <Popover.Content>
+        <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 300, alignment: "leading" })]}>
+          <Text modifiers={[font({ size: 17, weight: "semibold" })]}>{title}</Text>
+          <Text modifiers={[font({ size: 15 }), secondary, fixedSize({ horizontal: false, vertical: true })]}>{facts}</Text>
+          {onSettings ? (
+            <Button
+              label="Field Settings…"
+              onPress={() => {
+                setShown(false);
+                // Once the popover has gone: a sheet presented while it's
+                // still leaving isn't shown.
+                setTimeout(onSettings, 350);
+              }}
+            />
+          ) : null}
+        </VStack>
+      </Popover.Content>
+    </Popover>
+  );
+}
+
+/** A file's details, as More › Details shows them: facts, then the last few changes. */
+function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () => void }) {
+  const row = (r: { label: string; value: string }, key: string) => (
+    <HStack key={key} spacing={12}>
+      <Text modifiers={[font({ size: 15 }), secondary]}>{r.label}</Text>
+      <Spacer />
+      <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{r.value}</Text>
+    </HStack>
+  );
+  return (
+    <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 320, alignment: "leading" })]}>
+      <VStack alignment="leading" spacing={2}>
+        <Text modifiers={[font({ size: 17, weight: "semibold" }), lineLimit(1)]}>{details.title}</Text>
+        {details.subtitle ? <Text modifiers={[font({ size: 13 }), secondary, lineLimit(1)]}>{details.subtitle}</Text> : null}
+      </VStack>
+      {details.rows.map((r, i) => row(r, `r${i}`))}
+      {details.recent?.length ? <Divider /> : null}
+      {details.recent?.map((r, i) => row(r, `h${i}`))}
+      {details.more ? (
+        <Button
+          label={details.more.label}
+          onPress={() => {
+            const go = details.more!.onPress;
+            onDone?.();
+            // Once the popover has gone: a sheet presented while it's still leaving isn't shown.
+            setTimeout(go, 350);
+          }}
+        />
+      ) : null}
+    </VStack>
+  );
 }
 
 type ChipLook = { on: boolean; tone?: { bg: string; fg: string } };
@@ -567,6 +832,27 @@ function DateCard({ state, ns, onPickDate, onClear }: { state: Extract<GlassBarS
 }
 
 /** A label, its leading "ƒ " drawn as the system's function symbol. */
+/**
+ * A cell's own formula's "=", drawn as a small badge apart from the formula
+ * so it never reads as part of the text (the stored form has no "=").
+ */
+function PrefixBadge({ text, size, onRemove, label }: { text: string; size: number; onRemove?: () => void; label?: string }) {
+  return (
+    <Text
+      modifiers={[
+        font({ size: size - 2, weight: "semibold", design: "monospaced" }),
+        secondary,
+        padding({ horizontal: 6, vertical: 1 }),
+        background(systemColor("tertiarySystemFill"), shapes.capsule()),
+        ...(onRemove ? [onTapGesture(onRemove)] : []),
+        ...(label ? [accessibilityLabel(label)] : []),
+      ]}
+    >
+      {text}
+    </Text>
+  );
+}
+
 function Label({ text, size }: { text: string; size: number }) {
   if (!text.startsWith("ƒ ")) return <Text modifiers={[font({ size }), secondary, lineLimit(1), layoutPriority(1)]}>{text}</Text>;
   return (
@@ -591,7 +877,7 @@ function Header({ label, detail, expansion }: { label: string; detail?: string; 
           modifiers={[
             frame({ width: 26, height: 26 }),
             foregroundStyle({ type: "hierarchical", style: "secondary" }),
-            background(PlatformColor("tertiarySystemFill"), shapes.circle()),
+            background(systemColor("tertiarySystemFill"), shapes.circle()),
             contentShape(shapes.circle()),
             accessibilityLabel(expansion.on ? "Collapse" : "Expand"),
           ]}
@@ -636,7 +922,7 @@ const LINE = { mono: 19, prose: 22 };
 /** The expanded capsule's header, its actions along the foot, and padding. */
 const EXPANDED_CHROME = 116;
 
-function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
+function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onChip, onFieldSettings, onPrefixRemove, editor, expansion }: Part & { state: GlassBarEditing; shape: ReturnType<typeof frame>[] }) {
   // Expo UI's TextField, or for a formula the bar's own coloured field: the same commands.
   const field = useRef<TextFieldRef>(null);
   const [spansFor, setSpansFor] = useState(state.initialValue);
@@ -670,7 +956,7 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
   });
   // Text wraps and grows; a number or a date stays on one line.
   const grows = state.mode !== "line" || !!state.expandable;
-  const mono = state.mode === "formula";
+  const mono = state.mode === "formula" || state.prefixRemovable !== undefined;
   const tall = !!expansion?.on;
   // The modifiers below keep one shape in both sizes, so SwiftUI keeps the
   // same field. Should it make a new one anyway, the new one starts from the
@@ -722,17 +1008,26 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
     >
       <Header label={state.label} detail={state.detail} expansion={expansion} />
       <HStack spacing={8} alignment="bottom">
-        {/* A currency's symbol, in the field's own type, as the web's cell shows it. */}
-        {state.prefix ? (
+        {/* A currency's symbol, or a cell's own formula's "=", in the field's own type, as the web's cell shows it.
+            The "=" can go: a tap, or Backspace at the start, and what's typed is a plain value. */}
+        {state.prefix && state.prefixRemovable ? (
+          <PrefixBadge
+            text={state.prefix}
+            size={15}
+            onRemove={onPrefixRemove}
+            label={`${state.prefix}, formula. Tap to type a value instead`}
+          />
+        ) : state.prefix ? (
           <Text modifiers={[font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }), secondary, padding({ vertical: 4 })]}>{state.prefix}</Text>
         ) : null}
-        {state.highlight ? (
+        {state.highlight || state.prefixRemovable !== undefined ? (
           <FormulaField
             key={state.editKey}
             ref={field}
             defaultValue={state.initialValue}
             autoFocus
-            spans={state.highlight(spansFor)}
+            onDeleteAtStart={state.prefixRemovable ? onPrefixRemove : undefined}
+            spans={state.highlight ? state.highlight(spansFor) : []}
             spansFor={spansFor}
             fontSize={15}
             minLines={tall && !working ? lines : 1}
@@ -743,13 +1038,13 @@ function Editor({ state, shape, onChange, onSave, onSubmit, onFix, onCancel, onC
             modifiers={[fixedSize({ horizontal: false, vertical: true }), padding({ vertical: 4 })]}
           />
         ) : (
-          <TextField
+          <SeededTextField
             key={state.editKey}
             ref={field}
-            defaultValue={state.initialValue}
+            initial={state.initialValue}
             autoFocus
             axis={grows ? "vertical" : "horizontal"}
-            onValueChange={change}
+            onChange={change}
             onSelectionChange={(sel) => { selection.current = sel; }}
             modifiers={[
               font({ size: mono ? 15 : 17, design: mono ? "monospaced" : "default" }),

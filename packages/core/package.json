@@ -52,24 +52,34 @@
       "types": "./dist/sqlite-expo.d.ts",
       "default": "./dist/sqlite-expo.js"
     },
+    "./sqlite-op": {
+      "source": "./src/sqlite-op.ts",
+      "types": "./dist/sqlite-op.d.ts",
+      "default": "./dist/sqlite-op.js"
+    },
+    "./app.plugin.cjs": "./app.plugin.cjs",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
-    "dist"
+    "dist",
+    "app.plugin.cjs"
   ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --import ../../edn/js/src/node-engine.ts --test src/**/*.test.ts",
     "test:watch": "node --import tsx --test --watch src/**/*.test.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.0.0",
+    "papaparse": "^5.7.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/papaparse": "^5.5.2",
+    "ajv": "8.20.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }

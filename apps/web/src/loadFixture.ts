@@ -2,14 +2,17 @@
 // change here. Each is a bundle (D37); its tables go into the demo's one
 // map under `bundle/table` keys, and its manifest beside them.
 
-import type { BundleMeta, ParsedTable, Row, TableMeta, TableSchema, View } from "@workspace.sh/table-core";
+import { parseCellsText, rowIdOfBodyFile, type BundleMeta, type CellFormula, type ParsedTable, type Row, type TableMeta, type TableSchema, type View } from "@workspace.sh/table-core";
 
 type Json<T> = Record<string, T>;
 const manifests = import.meta.glob<BundleMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
 const schemas = import.meta.glob<TableSchema>("../../../fixtures/*.table/tables/*/schema.json", { eager: true, import: "default" });
 const viewFiles = import.meta.glob<View[]>("../../../fixtures/*.table/tables/*/views.json", { eager: true, import: "default" });
 const metaFiles = import.meta.glob<TableMeta>("../../../fixtures/*.table/tables/*/meta.json", { eager: true, import: "default" });
-const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/rows.ndjson", { eager: true, query: "?raw", import: "default" });
+// A table's rows files in rows/ (D51), joined in their names' order.
+const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/rows/*.ndjson", { eager: true, query: "?raw", import: "default" });
+// Cells' own formulas and notes (D52, D57), in cells/ beside rows/, joined in their names' order.
+const cellFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/cells/*.ndjson", { eager: true, query: "?raw", import: "default" });
 const bodyFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/bodies/*.md", { eager: true, query: "?raw", import: "default" });
 // Attachments stay files (SPEC section 6): the demo only needs somewhere to show them from.
 const attachmentFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/attachments/*", { eager: true, query: "?url", import: "default" });
@@ -38,10 +41,15 @@ function parseNdjson(raw: string): Row[] {
 
 const views = byTableKey(viewFiles);
 const metas = byTableKey(metaFiles);
-const rows = byTableKey(rowFiles);
+const rows: Record<string, string> = {};
+for (const path of Object.keys(rowFiles).sort()) rows[tableKeyOf(path)] = (rows[tableKeyOf(path)] ?? "") + rowFiles[path]!;
+const cellLines: Record<string, string> = {};
+for (const path of Object.keys(cellFiles).sort()) cellLines[tableKeyOf(path)] = (cellLines[tableKeyOf(path)] ?? "") + cellFiles[path]!;
+const cells: Record<string, CellFormula[]> = Object.fromEntries(Object.entries(cellLines).map(([key, raw]) => [key, parseCellsText(raw, [], [], "cells/0001.ndjson")]));
 const bodies: Record<string, Record<string, string>> = {};
 for (const [path, content] of Object.entries(bodyFiles)) {
-  const id = path.split("/").pop()!.replace(/\.md$/, "");
+  const id = rowIdOfBodyFile(path.split("/").pop()!);
+  if (id === null) continue;
   (bodies[tableKeyOf(path)] ??= {})[id] = content;
 }
 
@@ -68,6 +76,7 @@ export const tables: Record<string, ParsedTable> = Object.fromEntries(
         views: views[key] ?? [],
         meta: metas[key] ?? {},
         ...(bodies[key] ? { bodies: bodies[key] } : {}),
+        ...(cells[key]?.length ? { cells: cells[key] } : {}),
       },
     ]),
 );
