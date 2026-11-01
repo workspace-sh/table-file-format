@@ -16,3 +16,8 @@ import { swapSystemColors } from "../systemColorRoles";
 export function adoptSystemColors(styles: object): void {
   swapSystemColors(styles, (role) => PlatformColor(role));
 }
+
+/** The platform colour (by the name PlatformColor takes) that plays `role`: on iOS, UIKit's of that name. */
+export function systemColorName(role: string): string | undefined {
+  return role;
+}
