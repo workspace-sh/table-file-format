@@ -1,0 +1,175 @@
+# What's supported
+
+[SPEC.md](SPEC.md) is the format: everything a `.table` can hold, and
+what a reader and a writer must do with it. This page is what the apps
+in this repository do with it today, part by part, and links each gap
+to the issue that tracks it. Nothing leaves the spec for being unbuilt.
+
+Audited against the code at develop `35f7e59` (15 Oct 2026, #560), and
+kept current as gaps close.
+
+**Yes** is shown and editable as the spec means it. **Partly** says
+what's missing. **No** is planned, with its issue.
+
+The apps: **Web** (`apps/web`), **iOS** (`apps/mobile`), **Mac**
+(`apps/desktop`), **Linux** (`apps/linux`). The web, iOS and the Mac
+draw the same views (`table-ui`), so they mostly agree; Linux draws its
+own (`table-gtk`).
+
+**Android isn't supported yet.** It shares iOS's code, but it hasn't
+been run on a device and likely stops at launch: its file module is
+Apple's only. What it lacks is listed in #429.
+
+## Files
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Open a `.table` folder | No | Yes | Yes | Yes | The web's example tables are built in, and it opens single files (below). |
+| Open a single-file `.table` | Yes | Yes | Yes | Yes | iOS, the Mac and Linux edit it in place; the web edits its own copy. |
+| Open a `.table` from the file manager, with its icon | — | Yes | Yes | Yes | Linux: `apps/linux/scripts/install-user.sh`; a folder by Open With → Table (#621). |
+| Save a single-file `.table` in place (D49, D50) | No | Yes | Yes | Yes | Edited as a working folder in the app's own storage, packed back after each write, only the files that changed compressed again (#602). The web: #571. |
+| Export as a single file | Yes | Yes | Yes | Yes | For a folder; a single file already is one. Large tables up to 250,000 rows (#434). |
+| Open a CSV as a new table | Yes | Yes | Yes | Yes | |
+| Export a CSV | No | No | No | No | #574 |
+| Import a CSV into a table | No | No | No | No | #519 |
+| Lines of a table's rows files that can't be read are kept, and said | Partly | Partly | Yes | Yes | Kept everywhere (#569), large tables too: one with such a line is held in memory instead of its index, and says so (#567). Said on opening a small table by the Mac and Linux (#574). |
+| A cell's note (`cells/` `note`, D57) | Yes | Yes | Yes | Yes | Shift+F2 or the row's Cell Note… edits it; a mark in the cell's corner, the note on hover. Seen on Linux and the web; iOS and the Mac share the web's code. |
+| CSV without a header row (D59) | Yes | Yes | Yes | Yes | Told by itself: a first line of numbers, dates or yes/no where the column below has them is data, and the fields are A, B, C…. |
+| A row twice after a git merge (D54) | Yes | Yes | Yes | Yes | The first copy is the row, a later one that differs is kept and said. A large table with one is held in memory instead of its index until it's saved. |
+| Warn about a newer `formatVersion` | No | No | No | No | #574 |
+| Edit history (`history.ndjson`) | Partly | Partly | Partly | Yes | Web, iOS and the Mac keep it in the app's own storage except for folders and large tables. |
+
+## Field types
+
+What a cell shows, and whether it can be typed in.
+
+| Type | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| `string` | Yes | Yes | Yes | Yes | |
+| `number` | Yes | Yes | Yes | Yes | `1e400` is saved as empty, not refused (#568). |
+| `integer` | Yes | Yes | Yes | Yes | |
+| `boolean` | Yes | Yes | Yes | Yes | |
+| `date` | Yes | Yes | Yes | Yes | |
+| `datetime` | Partly | Partly | Partly | Partly | Shown with a date format, it loses its time of day (#568). |
+| `time` | Yes | Yes | Yes | Yes | |
+| `year` | Partly | Partly | Partly | Partly | Shown; a typed year is refused (#568). |
+| `array` | Partly | Partly | Partly | Partly | Typed as a comma-separated list; numbers come back as text. |
+| `object` | Partly | Partly | Partly | Partly | Shown as JSON; not editable (#572). |
+| `duration` | Yes | Yes | Yes | Yes | Typed as ISO 8601 (`PT1H30M`). |
+| `geopoint` | Partly | Partly | Partly | Partly | Shown as two numbers; not editable (#572). |
+| `geojson` | Partly | Partly | Partly | Partly | Shown as JSON; a typed value is stored as text, not an object (#568). |
+| `any` (D56) | Yes | Yes | Yes | Yes | "Any value" in the type picker; a number typed is a number, anything else its text. A spreadsheet column mostly of numbers with some words opens as one. Sorted and filtered in memory, not by an index. |
+
+## Field settings
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Title, description, alignment | Yes | Yes | Yes | Yes | |
+| Number, currency and date formats | Yes | Yes | Yes | Yes | |
+| `scientific:N`, `fraction`, `:parens` (D53) | Yes | Yes | Yes | Yes | Shown and chosen in a field's format. iOS and the Mac share the web's code, not yet seen on either. |
+| Choices, with colours and labels | Yes | Yes | Yes | Yes | |
+| Required | Yes | Yes | Yes | Yes | |
+| Minimum, maximum, length, pattern | Partly | Partly | Partly | Partly | Enforced on entry; can't be set (#572). |
+| Unique | No | No | No | No | Not checked (#568). |
+| Relations: shown, picked, followed | Yes | Yes | Yes | Yes | A dangling one is marked in its cell. |
+| Relations: create one | No | No | No | No | #572 |
+| Deprecated | Partly | Partly | Partly | Partly | Can be set; still shown in views that list no fields. |
+| Attachments | Partly | Partly | Yes | Yes | Web and iOS show them for the example tables and can't attach (#574). `attachment: true` can't be set (#572). |
+| Icon | No | No | No | No | #33 |
+| Primary key | No | No | No | No | Checked if set; can't be set (#572). |
+| Delete a field | Yes | Yes | Yes | Yes | Undoable, values included, on large tables too (#566). |
+
+## Formulas
+
+Formulas mean what OpenFormula says (D38), stored in `.table`'s own
+form (SPEC section 2). Typed as in a spreadsheet on every platform.
+
+- **The functions there today:** `sum`, `average`, `count`, `min`,
+  `max`, `abs`, `round`, `if`, `and`, `or`, `not`, `isblank`, `len`,
+  `upper`, `lower`, `concatenate`, the arithmetic and comparison
+  operators, and `.table`'s own forms for other rows and tables:
+  `field`, `values`, `related`, `linked`, `at`, `range`, `row`, `rows`
+  (D36, D41, D48).
+- **Loops by iteration** (D60): a table whose own `meta.json` has
+  `iteration: { max, change }` works its loops out as a spreadsheet's
+  iterative calculation does; worked out whole, it's held in memory. A
+  looping cell's formula panel offers Repeat Until It Settles (100
+  passes, to 0.001), and Stop Repeating once it does; not for a table in
+  an index. Seen on Linux and the web; iOS and the Mac share the web's
+  code.
+- **Errors in plain words** (D61): a failed formula's cell says what's
+  wrong ("Divides by zero", "No field "price"", "Loops back on itself")
+  after a mark for its kind, in either formula syntax; Excel style puts
+  the code in the hover and the formula's panel. Lucide marks on the web
+  and Linux, SF Symbols on iOS and the Mac. Seen on the web and Linux;
+  the Mac's symbols are built (#691) and not yet seen on screen.
+- **The clock and chance:** `today`, `now`, `rand` (D55). No public
+  case can fix a clock, so `.table`'s own tests check them. A table
+  that uses them is held in memory, not in an index.
+- **Not there yet:** the rest of OpenFormula's 393 functions (#124),
+  `^`, `%` and `power`. A function is counted as supported only once
+  public test cases check it (D38): LibreOffice's function tests, in
+  [conformance/openformula/](../conformance/openformula/README.md),
+  whose `REPORT.md` says what each engine meets.
+- **A cell's own formula** (`cells/`, D52): read, written and worked
+  out by core on every platform, and kept through a save; validation and
+  history know it. Typed as `=…` in a stored field's cell: seen on Linux
+  and the web; iOS and the Mac share the web's code, not yet seen there.
+  A computed column's row exception: "This row only" in its formula's
+  panel, on the web, the Mac and Linux (iOS edits a formula in its bar,
+  which offers the column's only). A large table with them is held in
+  its index when each reads only its own row (Linux tested; iOS, the Mac
+  and the web share the host code): 1,000,000 rows with 250,000 in
+  LARGE-TABLES.md. One that reads other rows keeps the table in memory.
+
+## Views
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Table, board, list, gallery, calendar | Yes | Yes | Yes | Yes | |
+| Sheet views (`=B7`, row numbers kept under a filter) | Yes | Yes | Yes | Yes | |
+| Every filter operator | Yes | Yes | Yes | Yes | Two edge cases (#568). |
+| Sorts | Yes | Yes | Yes | Yes | |
+| Groups | Partly | Partly | Partly | Partly | Number-like groups come out in the wrong order (#568). |
+| Totals | Yes | Yes | Yes | Yes | |
+| Manual row order | Partly | Partly | Partly | Partly | By dragging in board and list views; not table or gallery (#573). |
+| Column widths, single rows' heights | Yes | Yes | Yes | Yes | |
+| A view's default row height, a calendar's range | Partly | Partly | Partly | Partly | Honoured; can't be set (#573). |
+| Personal arrangements, Save for Everyone | Yes | Yes | Yes | Yes | |
+| Hidden rows (`hidden`, D58) | Yes | Yes | Yes | Yes | Hide Row in a row's menu; View Settings shows them all again. A Sheet view keeps their numbers. Hidden columns are a view's columns. |
+| Frozen columns (`frozen.columns`, D58) | Yes | Yes | Yes | Yes | A view's first `frozen.columns` stay put on a wide window (the title alone when it doesn't say; never all of them). View Settings sets it: Freeze Columns. Seen on Linux and the web. iOS and the Mac draw a table edge to edge, with nothing frozen, and don't offer the setting. #674 |
+| Frozen rows (`frozen.rows`, D58) | Yes | No | No | Yes | Scrolled down, the header and the view's first `frozen.rows` rows stay at the top of what scrolls (the header alone when the view doesn't say). On the web, a wide window only: narrow, the table scrolls sideways edge to edge and the band can't stay. Not in a Linux embed. View Settings sets it: Freeze Rows. iOS and the Mac: the app scrolls the page, out of the table's reach. #658 |
+| Merged cells (`merged`, D58) | Yes | Yes | Yes | Yes | In a Sheet view, a block is drawn as one box with its top-left cell's value; a click selects that cell. Not drawn: a block across frozen and scrolling columns (as a spreadsheet won't merge them), one whose rows a reader's sort or search pulls apart, one in a grouped view. A selected cell's row menu offers Merge Cells… (a range, as B2:C4, from that cell; a block it overlaps goes) or, in a block, Unmerge Cells. Seen on Linux and the web; iOS and the Mac share the web's code, not yet seen. #658 |
+| Colour rules (`colors`, D53) | Yes | Yes | Yes | Yes | A row or one cell, in every layout; set in View Settings, one condition each (a rule with more, from another app, keeps the rest). iOS and the Mac share the web's code, not yet seen on either. |
+
+## Rows and pages
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Add, insert (Sheet views), delete rows | Yes | Yes | Yes | Yes | |
+| Row pages (`bodies/`) | Yes | Yes | Yes | Yes | Plain markdown text; not rendered. Links in them aren't followed (#575). |
+| Undo and redo | Yes | Yes | Yes | Yes | Rows, pages, fields and views. |
+| Validation summary | Yes | Yes | Yes | Yes | Large tables aren't checked (#434). Orphan pages and attachments aren't reported (#574). |
+
+## Large tables
+
+Tables of 50,000 rows or more are read through `index.sqlite` and not
+held in memory (SPEC section 8, [LARGE-TABLES.md](LARGE-TABLES.md)).
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Held in the index | Partly | Partly | Partly | Partly | Web, iOS and the Mac: tables that arrive in a single file. Linux: folders, and single files (indexed in their working folder). The Mac from a folder: #435. |
+| Edit, search, sort, filter at 1,000,000 rows | Yes | Yes | Yes | Yes | Tables with formulas over other rows, or a Sheet view, are held in memory. |
+| Change fields in place, undoable | Yes | Yes | Yes | Yes | #551, #556, #562 |
+| Two views of one table keep in step | Partly | Partly | Partly | Partly | Edits show in the other view when it next reads (#554). |
+| Layouts other than Table | No | No | No | Partly | Linux draws them for up to 5,000 rows in view (narrow with a filter or search); the others say so (#434). |
+
+## Addresses and embeds
+
+| | Web | iOS | Mac | Linux | Notes |
+|---|---|---|---|---|---|
+| Addresses inside the app (back, forward, linked rows) | Yes | Yes | Yes | Yes | |
+| Open an address from outside the app | Yes | No | No | No | Web: its URL. #575 |
+| `row=` selects the row; a missing one is said | No | No | No | Partly | Linux's `TableFile` drop-in selects it (#575). |
+| A relation's table in a `.table` beside it (D47) | Partly | Partly | Partly | Partly | Read from disk by the embeds; the apps only use files they hold (#575). |
+| A table drawn in a document (embed, `rows=`, `cards=`, `rest=`) | Partly | Partly | Partly | Yes | Linux's `TableEmbed`, in Workspace. `table-ui`'s drop-in holds large tables in memory (#515). |

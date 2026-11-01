@@ -12,21 +12,28 @@
  * and the rest) are two such lists hearing the same page, with the same
  * items and heights, so they show the same rows side by side.
  *
- * This is the web's TallRows (RowList.web.tsx), which draws a list too
- * tall for a browser the same way, and its reasoning is kept here. The
- * web's ordinary list is LegendList following the page's scroller, which
- * its native build can't do: it windows only what it scrolls itself.
+ * This is the web's list (RowList.web.tsx), which follows the page's
+ * scroller the same way, and its reasoning is kept here.
  */
-import { Fragment, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { View } from "react-native";
+import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type ComponentRef } from "react";
+import { Platform, View } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
-import { MAX_LIST_HEIGHT } from "./listLimits";
-import type { RowListProps } from "./RowList";
+import { settledPlace } from "../listSettle";
+import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
+import type { RowListProps } from "./RowList.types";
 
-export type { RowListHandle, RowListProps } from "./RowList";
+export type { RowListHandle, RowListProps } from "./RowList.types";
 
 /** How far past the screen rows are kept drawn, in points. */
 const DRAW_DISTANCE = 600;
+/**
+ * Where the list starts in the page is asked again when the page can't say
+ * (it isn't laid out yet), or doesn't answer at all: after each of these
+ * waits, in milliseconds. The rows don't wait for it.
+ */
+const MEASURE_AGAIN_MS = [50, 300, 1000, 3000];
+/** How long the page is given to answer before it's asked again. */
+const MEASURE_WAIT_MS = 250;
 
 export function RowList<T>(props: RowListProps<T>) {
   const page = useContext(PageScrollContext);
@@ -81,15 +88,38 @@ function topsOf<T>(items: readonly T[], sizeOf: (item: T, index: number) => numb
   };
 }
 
+/**
+ * One item as `render` draws it, drawn again only when it's another item,
+ * at another place, or `drawKey` or its `stamp` changes. Scrolling moves
+ * the drawn window without the table drawing again, so the rows already
+ * drawn are left as they are and only those coming on screen are drawn.
+ * Without a stamp, `drawKey` is `render` itself: any drawing of the table
+ * draws every row again.
+ */
+interface DrawnItemProps {
+  item: unknown;
+  index: number;
+  renderer: { current: (item: never, index: number) => ReactNode };
+  drawKey: unknown;
+  stamp: readonly unknown[] | undefined;
+}
+const sameStamp = (a: readonly unknown[] | undefined, b: readonly unknown[] | undefined) =>
+  a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
+const DrawnItem = memo(
+  function DrawnItem({ item, index, renderer }: DrawnItemProps) {
+    return <>{renderer.current(item as never, index)}</>;
+  },
+  (a, b) => a.item === b.item && a.index === b.index && a.drawKey === b.drawKey && sameStamp(a.stamp, b.stamp),
+);
+
 /** The last move a list made of a page to settle it, for the lists beside it. */
 const settles = new WeakMap<object, { to: number; shift: number; when: number }>();
 
 /**
  * The rows on screen, placed in a body as tall as the list, or as tall as
- * MAX_LIST_HEIGHT when the list is taller than can be laid out exactly
- * (a million rows is some 45 million points, past what a 32-bit layout
- * places to the point); the page's scrolling is then mapped onto the whole
- * list.
+ * NATIVE_MAX_LIST_HEIGHT when the list is taller still; the page's
+ * scrolling is then mapped onto the whole list. (A million rows at the
+ * standard height, 45 million points, is laid out as it is.)
  *
  * `shift` is how far the rows are from where the page is: the row at the
  * page's place plus `shift` is the one at the top of the screen. Scrolling
@@ -108,21 +138,27 @@ function WindowedRows<T>({
   handle,
   onShown,
   layout: layoutOf,
+  stampOf,
+  drawKey,
   page,
 }: RowListProps<T> & { page: PageScroll }) {
-  const body = useRef<View | null>(null);
+  const renderer = useRef(render);
+  renderer.current = render;
+  const body = useRef<ComponentRef<typeof View> | null>(null);
   // Given its layout, the list asks it; otherwise the heights are added up
   // once for these items (`version` changes when a height could have).
   const given = layoutOf !== undefined;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const added = useMemo(() => (given ? null : topsOf(items, sizeOf)), [given, items, version]);
   const layout: Tops = layoutOf ? layoutOf() : added!;
-  const laidOut = Math.min(layout.height, MAX_LIST_HEIGHT);
+  const laidOut = Math.min(layout.height, NATIVE_MAX_LIST_HEIGHT);
   const extra = layout.height - laidOut;
   // What is drawn: a stretch of the list, in its own points, and the shift it is drawn at.
   const [drawn, setDrawn] = useState({ from: 0, to: 3 * DRAW_DISTANCE, shift: 0 });
-  // The body's top within what the page scrolls; null until it's measured.
-  const [bodyTop, setBodyTop] = useState<number | null>(null);
+  // The body's top within what the page scrolls; null until it's measured,
+  // and taken as the page's own top meanwhile: the rows are drawn from the
+  // first, which is right for a list that starts on the first screen, and
+  // put right as soon as the page says where the list is.
   const top = useRef<number | null>(null);
   // Where the page was when last looked at; `jump` and `settled` are moves this list made itself.
   const last = useRef<{ at: number | null; jump: boolean; settled: number | null }>({ at: null, jump: false, settled: null });
@@ -138,7 +174,6 @@ function WindowedRows<T>({
   }, [page]);
 
   const follow = useCallback(() => {
-    if (top.current === null) return;
     const { at, page: screen } = where();
     if (screen <= 0) return;
     const { laidOut: height, extra: more } = now.current;
@@ -168,7 +203,6 @@ function WindowedRows<T>({
     const { at, page: screen } = where();
     const { laidOut: height, extra: more } = now.current;
     if (more <= 0) return;
-    const range = Math.max(1, height - screen);
     // Two lists side by side follow one page: the first to rest moves it, and
     // the other takes the same shift, not a second move.
     const moved = settles.get(page);
@@ -177,25 +211,53 @@ function WindowedRows<T>({
       follow();
       return;
     }
-    const start = at + drawnShift.current;
-    const to = Math.min(range, Math.max(0, start / (1 + more / range)));
-    if (Math.abs(to - at) < 2) return;
-    last.current.settled = start - to;
-    settles.set(page, { to, shift: start - to, when: Date.now() });
-    page.scrollBy(to - at);
+    const settled = settledPlace(at, screen, height, more, drawnShift.current);
+    if (!settled) return;
+    last.current.settled = settled.shift;
+    settles.set(page, { to: settled.to, shift: settled.shift, when: Date.now() });
+    page.scrollBy(settled.to - at);
   }, [page, where, follow]);
 
   // Where the list starts in the page: measured as it's laid out, and again
   // when the page or what's in it changes size (something above the list
   // may have changed height).
+  // Each asking replaces the one before; an answer to an old one is dropped.
+  const asking = useRef<{ n: number; again: ReturnType<typeof setTimeout> | null }>({ n: 0, again: null });
   const measure = useCallback(() => {
-    void page.topOf(body.current).then((measured) => {
-      if (measured === null) return;
-      top.current = measured;
-      setBodyTop(measured);
-      follow();
-    });
+    const ask = asking.current;
+    const n = ++ask.n;
+    if (ask.again) clearTimeout(ask.again);
+    const tryAt = (attempt: number) => {
+      let answered = false;
+      const later = () => {
+        if (ask.n !== n || attempt >= MEASURE_AGAIN_MS.length) return;
+        if (ask.again) clearTimeout(ask.again);
+        ask.again = setTimeout(() => tryAt(attempt + 1), MEASURE_AGAIN_MS[attempt]);
+      };
+      // A page that never answers is asked again as one that couldn't say.
+      const waited = setTimeout(() => {
+        if (!answered) later();
+      }, MEASURE_WAIT_MS);
+      void page.topOf(body.current).then((measured) => {
+        answered = true;
+        clearTimeout(waited);
+        if (ask.n !== n) return;
+        if (measured === null || !Number.isFinite(measured)) return later();
+        if (ask.again) clearTimeout(ask.again);
+        ask.again = null;
+        top.current = measured;
+        follow();
+      });
+    };
+    tryAt(0);
   }, [page, follow]);
+  useEffect(
+    () => () => {
+      asking.current.n++;
+      if (asking.current.again) clearTimeout(asking.current.again);
+    },
+    [],
+  );
 
   useEffect(() => {
     let rest: ReturnType<typeof setTimeout> | null = null;
@@ -214,9 +276,8 @@ function WindowedRows<T>({
   useEffect(() => follow(), [follow, layout.count, layout.height]);
 
   const count = items.length;
-  const ready = bodyTop !== null;
   const first = count ? Math.min(layout.at(drawn.from), count - 1) : 0;
-  const lastDrawn = count && ready ? Math.min(layout.at(drawn.to), count - 1) : -1;
+  const lastDrawn = count ? Math.min(layout.at(drawn.to), count - 1) : -1;
 
   const latestOnShown = useRef(onShown);
   latestOnShown.current = onShown;
@@ -252,6 +313,37 @@ function WindowedRows<T>({
     [page, where, follow],
   );
 
+  // The rows drawn sit in one box at the first of them, with each row in it
+  // at its offset from there. The layout engine keeps positions, and snaps
+  // them to pixels, as 32-bit floats: laid out 45 million points down, rows
+  // were rounded to the nearest 4 and overlapped or left gaps. So the box is
+  // laid out at a multiple of 4 (exact as a 32-bit float up to 67 million),
+  // and a transform, which isn't laid out, moves it the rest of the way; the
+  // offsets in the box are small, so every row is where it should be. The
+  // box has its rows' height: AppKit draws a view's text only when its
+  // frame is on screen, and a box of no height at the top left the Mac's
+  // rows farther down with their colours but no words.
+  //
+  // A size is rounded too, as the difference of its two edges where they
+  // are: laid out 45 million points down, a row's height and a cell's
+  // line came out a multiple of 4 (#518). The Mac's layout engine is
+  // patched to take the difference first (apps/desktop's react-native-macos
+  // patch); iOS and Android link React Native prebuilt, where it can't be.
+  // They draw a view whatever its frame, so there the box stays at the
+  // top, moved all the way by the transform, and nothing is laid out far down.
+  const base = count && lastDrawn >= first ? Math.max(0, layout.itemTop(first) - drawn.shift) : 0;
+  const laidAt = Platform.OS === "macos" ? Math.floor(base / 4) * 4 : 0;
+  const span = count && lastDrawn >= first ? (lastDrawn + 1 < count ? layout.itemTop(lastDrawn + 1) : layout.height) - drawn.shift - base : 0;
+  // Rows are recycled: each is keyed by a slot, its place modulo how many
+  // slots there are, so a row scrolled off one end and the row coming on at
+  // the other share a key, and React gives the first one's views the second
+  // one's values instead of making them again. Slots only grow (a change of
+  // count changes keys, which remakes rows), so the rows drawn, a run of
+  // places, never share one. The raised row (the selected one) keeps a key
+  // of its own: what's being typed in it stays with its row.
+  const slots = useRef(0);
+  const drawnCount = lastDrawn - first + 1;
+  if (drawnCount > slots.current) slots.current = Math.ceil(drawnCount / 16) * 16;
   const rows: ReactNode[] = [];
   for (let i = first; i <= lastDrawn; i++) {
     const item = items[i]!;
@@ -259,16 +351,19 @@ function WindowedRows<T>({
     const height = (i + 1 < count ? layout.itemTop(i + 1) : layout.height) - itemTop;
     rows.push(
       <View
-        key={keyOf(item)}
-        style={{ position: "absolute", top: itemTop - drawn.shift, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
+        key={raised?.(item) ? `raised:${keyOf(item)}` : `slot:${i % slots.current}`}
+        style={{ position: "absolute", top: itemTop - drawn.shift - base, left: 0, right: 0, height, zIndex: raised?.(item) ? 1 : 0 }}
       >
-        {render(item, i)}
+        <DrawnItem item={item} index={i} renderer={renderer} drawKey={stampOf ? drawKey : render} stamp={stampOf?.(item)} />
       </View>,
     );
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
-      {rows}
+      {/* Named for the Mac app's scrolling run (TableScrollBench), which measures how much of the list's place on screen this box covers. */}
+      <View nativeID="table-rows" style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>
+        {rows}
+      </View>
     </View>
   );
 }

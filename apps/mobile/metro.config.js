@@ -34,11 +34,20 @@ config.resolver.nodeModulesPaths = [
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const blockExact = (p) => new RegExp(`^${escapeRe(p)}(\\/|$)`);
 
+// The copy of a package this app resolves: its own nested one, or the root's
+// when npm has hoisted the app's version there (the same version as the root
+// asks for), in which case the root's is the one to keep.
+const ownCopy = (name) => path.dirname(require.resolve(`${name}/package.json`, { paths: [projectRoot] }));
+const rootCopyUnlessOwn = (name) => {
+  const root = path.resolve(workspaceRoot, "node_modules", name);
+  return ownCopy(name) === root ? [] : [blockExact(root)];
+};
+
 config.resolver.blockList = [
   ...Array.from(config.resolver.blockList ?? []),
-  // Root hoisted copies.
-  blockExact(path.resolve(workspaceRoot, "node_modules", "react")),
-  blockExact(path.resolve(workspaceRoot, "node_modules", "react-native")),
+  // Root hoisted copies, unless they're this app's own.
+  ...rootCopyUnlessOwn("react"),
+  ...rootCopyUnlessOwn("react-native"),
   // Per-package node_modules — workspace packages install react as a
   // devDep for typecheck. Block them so Metro walks past and lands on
   // THIS app's copy (otherwise dual-React instance → useState is null).

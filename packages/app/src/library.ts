@@ -18,6 +18,13 @@ export interface Library {
   paths: Record<string, string>;
   /** Problems reading a bundle, by bundle key. Shown, never thrown. */
   problems: Record<string, string[]>;
+  /**
+   * The bundles that are single-file `.table`s (SPEC section 13, D49):
+   * where each file is. Its `paths` entry is then the working folder it's
+   * edited in, packed back into the file after each write (`singleFile.ts`).
+   * A bundle not named here is a folder, edited where it is.
+   */
+  singleFiles?: Record<string, string>;
 }
 
 /** A bundle's key: its folder's name without `.table` (D37), unique among `taken`. */
@@ -51,7 +58,11 @@ export async function openLibrary(fs: TableFs, paths: string[], held: Iterable<s
     Object.assign(library.tables, fromBundle(key, bundle));
     library.bundles[key] = bundle.meta;
     library.paths[key] = path;
-    const messages = (bundle.diagnostics ?? []).map((d) => d.message);
+    // And each table's: a line of its rows that couldn't be read is said, and kept (SPEC section 3).
+    const messages = [
+      ...(bundle.diagnostics ?? []).map((d) => d.message),
+      ...Object.entries(bundle.tables).flatMap(([name, table]) => (table.diagnostics ?? []).map((d) => `${name}: ${d.message}`)),
+    ];
     if (messages.length > 0) library.problems[key] = messages;
   }
   return library;

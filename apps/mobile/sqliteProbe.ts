@@ -8,7 +8,7 @@
 import { openDatabaseSync } from "expo-sqlite";
 import { File, Paths } from "expo-file-system";
 import { Linking } from "react-native";
-import { buildIndex, buildSearchIndex, putRows, queryIndex, rowsBeingBuilt, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
+import { buildIndex, buildSearchIndex, idNumber, putRows, queryIndex, rowsBeingBuilt, type IndexQuery, type Row, type TableSchema } from "@workspace.sh/table-core";
 import { expoDriver, type ExpoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { indexerCases, type CaseAssert } from "@workspace.sh/table-core/indexer-cases";
 
@@ -188,7 +188,7 @@ async function* bigRows(n: number): AsyncIterable<Row> {
     const month = 1 + Math.floor(random() * 12);
     const day = 1 + Math.floor(random() * 28);
     const row: Row = {
-      id: `d${i.toString(36)}`,
+      id: `d${idNumber(i)}`,
       title: `${pick(words)} ${pick(kinds)} ${i + 1}`,
       stage: pick(stages),
       amount: Math.round(random() * 200) * 500,

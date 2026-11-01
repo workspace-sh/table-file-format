@@ -18,25 +18,25 @@ test("ledger balances run down by date, not as entered", async () => {
   const { rows, diagnostics } = computeRows(tables.ledger!.schema, tables.ledger!.rows, { tables, self: "ledger" });
   assert.deepEqual(diagnostics, []);
   assert.deepEqual(Object.fromEntries(rows.map((r) => [r.id, r.balance])), {
-    opening: 1200,
-    "salary-jan": 2798,
-    "rent-jan": -250,
-    "groceries-jan": -660,
-    "energy-jan": -802,
-    "rent-feb": 1348,
-    "salary-feb": 4688,
-    "transport-feb": 1183,
-    "eating-feb": 1088,
-    "savings-feb": 4188,
+    "z4bfkjkfy5csqpyjgrj8ctqz4o": 1200,
+    "xzit1mrr1mgoiqo6ee5aon4c7f": 2798,
+    "zc97gcrezrrayob3mtz7c6miqa": -250,
+    "kwmndi1coeyj44ui3fba8xm1ya": -660,
+    "3agkc9teunqagz4t4x63z8mphm": -802,
+    "3k3n65mn4hi5p193ofrhrxk58d": 1348,
+    "8qu3wjyhxcy94ow8ecekqjrrt3": 4688,
+    "j6xmp5j9wkexyaesqa5uaiwqbb": 1183,
+    "e5sjrefsnss7c8xgbjmcwtgeqy": 1088,
+    "6834q711q9jsjuo5785dcq14sr": 4188,
   });
 });
 
 test("the By date sheet numbers the rows by date", async () => {
   const tables = await budget();
-  const grid = sheetGrid(tables.ledger!, "by-date", { tables, self: "ledger" })!;
+  const grid = sheetGrid(tables.ledger!, "87jkeekgwbfgr", { tables, self: "ledger" })!;
   assert.deepEqual(grid.rows.map((r) => r.id), [
-    "opening", "rent-jan", "groceries-jan", "energy-jan", "salary-jan",
-    "rent-feb", "transport-feb", "eating-feb", "salary-feb", "savings-feb",
+    "z4bfkjkfy5csqpyjgrj8ctqz4o", "zc97gcrezrrayob3mtz7c6miqa", "kwmndi1coeyj44ui3fba8xm1ya", "3agkc9teunqagz4t4x63z8mphm", "xzit1mrr1mgoiqo6ee5aon4c7f",
+    "3k3n65mn4hi5p193ofrhrxk58d", "j6xmp5j9wkexyaesqa5uaiwqbb", "e5sjrefsnss7c8xgbjmcwtgeqy", "8qu3wjyhxcy94ow8ecekqjrrt3", "6834q711q9jsjuo5785dcq14sr",
   ]);
   assert.equal(grid.rows.at(-1)!.balance, 4188);
   assert.equal(grid.loop, false);

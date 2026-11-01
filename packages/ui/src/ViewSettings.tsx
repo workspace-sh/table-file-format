@@ -10,7 +10,7 @@ import type React from "react";
 import { html, css } from "react-strict-dom";
 import { Select, Toggle, usePlatformControls } from "./PlatformControls";
 import type { Field, FilterOperator, TableSchema, View, ViewFilter, ViewLayout, ViewSort, ViewTotal } from "@workspace.sh/table-core";
-import { TOTAL_NAMES } from "./display";
+import { TOTAL_NAMES, totalKindsFor } from "./display";
 import type { SelectOption, SettingsRow, SettingsSection } from "./controlSlots";
 import { enumOptions } from "@workspace.sh/table-core";
 
@@ -33,8 +33,24 @@ import {
   columnShownPatch,
   takesValue,
   viewFieldChoices,
+  sheetNote,
   sheetPatch,
   orderNote,
+  RULE_COLORS,
+  colorLabel,
+  hiddenRowsText,
+  frozenColumnsOf,
+  frozenOptions,
+  frozenPatch,
+  frozenRowsOf,
+  frozenRowOptions,
+  frozenRowsPatch,
+  colorRulesOf,
+  colorRulesPatch,
+  colorTargetPatch,
+  newColorRule,
+  withColorRule,
+  withFirstCondition,
 } from "./viewEdit";
 
 export type { ViewSettingsProps } from "./viewEdit";
@@ -52,6 +68,7 @@ export function ViewSettings({
   personal,
   onSaveForEveryone,
   onReset,
+  sheetReaders,
 }: ViewSettingsProps) {
   const { Sheet: SheetControl, SettingsForm } = usePlatformControls();
   const arrange = onArrange ?? onChange;
@@ -126,9 +143,29 @@ export function ViewSettings({
               onChange={(checked) => onChange(sheetPatch(checked))}
               style={styles.check}
             >
-              Letter the columns and number the rows, so formulas can use =B7
+              {sheetNote(view, sheetReaders)}
             </Toggle>
           </FieldRow>
+        )}
+        {view.layout === "table" && (
+          <>
+            <FieldRow label="Freeze columns">
+              <Select
+                value={String(frozenColumnsOf(view))}
+                options={frozenOptions(shown.size)}
+                onChange={(n) => onChange(frozenPatch(view, Number(n)))}
+                style={styles.input}
+              />
+            </FieldRow>
+            <FieldRow label="Freeze rows">
+              <Select
+                value={String(frozenRowsOf(view))}
+                options={frozenRowOptions()}
+                onChange={(n) => onChange(frozenRowsPatch(view, Number(n)))}
+                style={styles.input}
+              />
+            </FieldRow>
+          </>
         )}
         {(view.layout === "table" || view.layout === "list") && (
           <FieldRow label="Group by">
@@ -182,6 +219,60 @@ export function ViewSettings({
         + Add filter
       </html.button>
       {filters.length > 1 && <html.span style={styles.note}>Rows must match every filter.</html.span>}
+      {hiddenRowsText(view) && (
+        <html.div style={styles.row}>
+          <html.span style={styles.note}>{hiddenRowsText(view)}</html.span>
+          <html.button style={styles.add} onClick={() => onChange({ hidden: undefined })}>
+            Show all
+          </html.button>
+        </html.div>
+      )}
+
+      <html.span style={styles.section}>Colours</html.span>
+      {colorRulesOf(view).map((rule, i) => {
+        const rules = colorRulesOf(view);
+        const set = (next: typeof rule | null) => onChange(colorRulesPatch(withColorRule(rules, i, next)));
+        const first = rule.filter[0] ?? newFilter(live);
+        return (
+          <html.div key={i} style={styles.rule}>
+            {first && (
+              <FilterRow
+                filter={first}
+                fields={live}
+                field={byName.get(first.field)}
+                label={label}
+                onChange={(next) => set(withFirstCondition(rule, next))}
+                onRemove={() => set(null)}
+              />
+            )}
+            <html.div style={styles.row}>
+              <Select
+                value={RULE_COLORS.includes(rule.color as never) ? rule.color : "gray"}
+                options={RULE_COLORS.map((c) => ({ value: c, label: colorLabel(c) }))}
+                onChange={(next) => set({ ...rule, color: next })}
+                style={styles.input}
+              />
+              <Select
+                value={rule.field ?? ""}
+                options={[{ value: "", label: "Whole row" }, ...live.map((f) => ({ value: f.name, label: `${label(f)} only` }))]}
+                onChange={(next) => set(colorTargetPatch(rule, next))}
+                style={styles.input}
+              />
+              {rule.filter.length > 1 && <html.span style={styles.note}>{`and ${rule.filter.length - 1} more condition${rule.filter.length === 2 ? "" : "s"}`}</html.span>}
+            </html.div>
+          </html.div>
+        );
+      })}
+      <html.button
+        style={styles.add}
+        onClick={() => {
+          const made = newColorRule(live, colorRulesOf(view));
+          if (made) onChange(colorRulesPatch([...colorRulesOf(view), made]));
+        }}
+      >
+        + Add colour
+      </html.button>
+      {colorRulesOf(view).length > 1 && <html.span style={styles.note}>The first rule that matches a row or cell colours it.</html.span>}
 
       <html.span style={styles.section}>Sort</html.span>
       {sorts.map((srt, i) => (
@@ -272,7 +363,7 @@ export function ViewSettings({
         fill
       >
         <SettingsForm
-          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset })}
+          sections={viewSettingsSections({ view, schema, onChange, onDelete, arrange, onArrange, personal, onSaveForEveryone, onReset, sheetReaders, reorderHint: SettingsForm.reorderHint })}
         />
       </SheetControl>
     );
@@ -330,8 +421,12 @@ function viewSettingsSections({
   personal,
   onSaveForEveryone,
   onReset,
-}: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset"> & {
+  sheetReaders,
+  reorderHint = "Touch and hold to reorder.",
+}: Pick<ViewSettingsProps, "view" | "schema" | "onChange" | "onDelete" | "onArrange" | "personal" | "onSaveForEveryone" | "onReset" | "sheetReaders"> & {
   arrange: ViewSettingsProps["onChange"];
+  /** How the form's rows are reordered, said under the sorts: a phone's gesture unless the form says otherwise. */
+  reorderHint?: string;
 }): SettingsSection[] {
   const choices = viewFieldChoices(schema);
   const live = choices.live;
@@ -340,6 +435,8 @@ function viewSettingsSections({
   const sorts = view.sort ?? [];
   const setFilters = (next: ViewFilter[]) => arrange(filtersPatch(next));
   const setSorts = (next: ViewSort[]) => arrange(sortsPatch(next));
+  const rules = colorRulesOf(view);
+  const setRules = (next: typeof rules) => onChange(colorRulesPatch(next));
   const choice = (
     id: string,
     label: string,
@@ -347,6 +444,47 @@ function viewSettingsSections({
     options: SelectOption[],
     onPick: (value: string) => void,
   ): SettingsRow => ({ kind: "choice", id, label, value: value ?? "", options, onChange: onPick });
+  // One condition's rows, as a filter and a colour rule both ask one: its field, its condition and its value.
+  const conditionParts = (key: string, flt: ViewFilter, set: (next: ViewFilter) => void): SettingsRow[] => {
+    const field = byName.get(flt.field);
+    const parts: SettingsRow[] = [
+      choice(`${key}-field`, "Field", flt.field, fieldOptions(live), (name) => {
+        const next = live.find((f) => f.name === name);
+        if (next) set(filterOnField(flt, next));
+      }),
+      choice(
+        `${key}-operator`,
+        "Condition",
+        flt.operator,
+        operatorsFor(field).map((op) => ({ value: op, label: OPERATOR_LABELS[op] })),
+        (op) => set(filterWithOperator(flt, field, op as FilterOperator, filterValueText(flt.value))),
+      ),
+    ];
+    if (takesValue(flt.operator)) {
+      if (picksChoice(field, flt.operator)) {
+        parts.push(
+          choice(
+            `${key}-value`,
+            "Value",
+            String(flt.value ?? ""),
+            [{ value: "", label: "Choose…" }, ...enumOptions(field).map((c) => ({ value: c.value, label: c.label ?? c.value }))],
+            (value) => set({ ...flt, value }),
+          ),
+        );
+      } else {
+        parts.push({
+          kind: "text",
+          // Its field and condition in the id: a new field starts the value afresh.
+          id: `${key}-value-${flt.field}-${flt.operator}`,
+          label: "Value",
+          value: filterValueText(flt.value),
+          placeholder: flt.operator === "in" || flt.operator === "not_in" ? "a, b, c" : "Value",
+          onChange: (text) => set({ ...flt, value: filterValueFrom(field, flt.operator, text) }),
+        });
+      }
+    }
+    return parts;
+  };
 
   const viewRows: SettingsRow[] = [
     { kind: "text", id: "name", label: "Name", value: view.name, onChange: (name) => onChange({ name }) },
@@ -361,6 +499,8 @@ function viewSettingsSections({
   if (view.layout === "gallery") {
     viewRows.push(choice("gallery", "Card lead", view.gallery_field, fieldOptions(live, "Nothing"), (f) => onChange({ gallery_field: f || undefined })));
   }
+  // No Freeze here yet: iOS and the Mac draw a table edge to edge, with no
+  // frozen columns or rows to set (#674).
   if (view.layout === "table" || view.layout === "list") {
     viewRows.push(
       choice("group", "Group by", view.group?.field, fieldOptions(choices.group, "No grouping"), (f) => arrange({ group: f ? { field: f } : undefined })),
@@ -399,8 +539,7 @@ function viewSettingsSections({
       title: "Totals",
       footer: "Shown in a row under the table.",
       rows: shownFields.map((f) => {
-        const numeric = f.type === "number" || f.type === "integer" || f.type === "year" || f.computed !== undefined;
-        const kinds: ViewTotal[] = [...(numeric ? (["sum", "average", "min", "max"] as ViewTotal[]) : []), "count", "count_empty"];
+        const kinds = totalKindsFor(f);
         return choice(
           `total-${f.name}`,
           f.title ?? f.name,
@@ -422,7 +561,7 @@ function viewSettingsSections({
   if (view.layout === "table") {
     sections.push({
       id: "sheet",
-      footer: "Letter the columns and number the rows, so formulas can use =B7.",
+      footer: sheetNote(view, sheetReaders),
       rows: [{ kind: "toggle", id: "sheet", label: "Sheet", value: view.coordinates === true, onChange: (on) => onChange(sheetPatch(on)) }],
     });
   }
@@ -434,44 +573,8 @@ function viewSettingsSections({
     onRemove: (i) => setFilters(filters.filter((_, j) => j !== i)),
     rows: [
       ...filters.map((flt, i): SettingsRow => {
-        const field = byName.get(flt.field);
         const set = (next: ViewFilter) => setFilters(filters.map((f, j) => (j === i ? next : f)));
-        const parts: SettingsRow[] = [
-          choice(`filter-${i}-field`, "Field", flt.field, fieldOptions(live), (name) => {
-            const next = live.find((f) => f.name === name);
-            if (next) set(filterOnField(flt, next));
-          }),
-          choice(
-            `filter-${i}-operator`,
-            "Condition",
-            flt.operator,
-            operatorsFor(field).map((op) => ({ value: op, label: OPERATOR_LABELS[op] })),
-            (op) => set(filterWithOperator(flt, field, op as FilterOperator, filterValueText(flt.value))),
-          ),
-        ];
-        if (takesValue(flt.operator)) {
-          if (picksChoice(field, flt.operator)) {
-            parts.push(
-              choice(
-                `filter-${i}-value`,
-                "Value",
-                String(flt.value ?? ""),
-                [{ value: "", label: "Choose…" }, ...enumOptions(field).map((c) => ({ value: c.value, label: c.label ?? c.value }))],
-                (value) => set({ ...flt, value }),
-              ),
-            );
-          } else {
-            parts.push({
-              kind: "text",
-              // Its field and condition in the id: a new field starts the value afresh.
-              id: `filter-${i}-value-${flt.field}-${flt.operator}`,
-              label: "Value",
-              value: filterValueText(flt.value),
-              placeholder: flt.operator === "in" || flt.operator === "not_in" ? "a, b, c" : "Value",
-              onChange: (text) => set({ ...flt, value: filterValueFrom(field, flt.operator, text) }),
-            });
-          }
-        }
+        const parts = conditionParts(`filter-${i}`, flt, set);
         return { kind: "compound", id: `filter-${i}`, parts, removeLabel: "Remove filter" };
       }),
       {
@@ -487,10 +590,45 @@ function viewSettingsSections({
     ],
   });
 
+  // Rows hidden by hand (D58): said, and put back in one go.
+  const hiddenText = hiddenRowsText(view);
+  if (hiddenText) {
+    sections.push({ id: "hidden", footer: hiddenText, rows: [{ kind: "action", id: "show-hidden", label: "Show Hidden Rows", onPress: () => onChange({ hidden: undefined }) }] });
+  }
+  sections.push({
+    id: "colors",
+    title: "Colours",
+    footer: rules.length > 1 ? "The first rule that matches a row or cell colours it." : undefined,
+    onRemove: (i) => setRules(withColorRule(rules, i, null)),
+    rows: [
+      ...rules.map((rule, i): SettingsRow => {
+        const set = (next: typeof rule | null) => setRules(withColorRule(rules, i, next));
+        const first = rule.filter[0] ?? newFilter(live);
+        const parts: SettingsRow[] = first ? conditionParts(`color-${i}`, first, (next) => set(withFirstCondition(rule, next))) : [];
+        if (rule.filter.length > 1) parts.push({ kind: "info", id: `color-${i}-more`, label: "And", value: `${rule.filter.length - 1} more condition${rule.filter.length === 2 ? "" : "s"}` });
+        parts.push(
+          choice(`color-${i}-color`, "Colour", RULE_COLORS.includes(rule.color as never) ? rule.color : "gray", RULE_COLORS.map((c) => ({ value: c, label: colorLabel(c) })), (c) => set({ ...rule, color: c })),
+          choice(`color-${i}-target`, "Colours", rule.field ?? "", [{ value: "", label: "Whole row" }, ...fieldOptions(live).map((o) => ({ ...o, label: `${o.label} only` }))], (t) => set(colorTargetPatch(rule, t))),
+        );
+        return { kind: "compound", id: `color-${i}`, parts, removeLabel: "Remove colour" };
+      }),
+      {
+        kind: "action",
+        id: "add-color",
+        label: "Add Colour",
+        role: "add",
+        onPress: () => {
+          const made = newColorRule(live, rules);
+          if (made) setRules([...rules, made]);
+        },
+      },
+    ],
+  });
+
   sections.push({
     id: "sorts",
     title: "Sort",
-    footer: orderNote(view, sorts) || (sorts.length > 1 ? "The first sort comes first. Touch and hold to reorder." : undefined),
+    footer: orderNote(view, sorts) || (sorts.length > 1 ? `The first sort comes first. ${reorderHint}` : undefined),
     onRemove: (i) => setSorts(sorts.filter((_, j) => j !== i)),
     onMove: (from, to) => setSorts(moveSort(sorts, from, to)),
     rows: [
@@ -666,6 +804,8 @@ const styles = css.create({
     maxWidth: 720,
   },
   row: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  // A colour rule: its condition, and under it its colour and what it colours.
+  rule: { display: "flex", flexDirection: "column", gap: 6 },
   // In a phone's sheet: the panel's spacing without its frame.
   sheetBody: { display: "flex", flexDirection: "column", gap: 8 },
   fields: { display: "flex", flexDirection: "column", gap: 8 },

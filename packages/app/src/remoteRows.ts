@@ -121,8 +121,47 @@ export async function remoteViewRows(
   };
 }
 
-/** The page's side of an edit: made in the worker, which says how many rows the table has after. */
-export function remoteEdits(ask: (request: RowsRequest) => Promise<unknown>, name: string, table: TableFacts, edits: readonly IndexEdit[]): Promise<number> {
+/**
+ * The page's side of edits: made in the worker, which says how many rows
+ * the table has after, and what undoes each (`back`, by the edit's `n`;
+ * none for an edit that changed nothing, or a page's).
+ */
+export async function remoteEdits(
+  ask: (request: RowsRequest) => Promise<unknown>,
+  name: string,
+  table: TableFacts,
+  edits: readonly (IndexEdit & { n: number })[],
+): Promise<{ count: number; back: Record<number, IndexEdit> }> {
   const { schema, bodies, indexed } = table;
-  return ask({ ask: "edits", name, table: { schema, ...(bodies ? { bodies } : {}), ...(indexed ? { indexed } : {}) }, edits: [...edits] }) as Promise<number>;
+  const made = (await ask({
+    ask: "edits",
+    name,
+    table: { schema, ...(bodies ? { bodies } : {}), ...(indexed ? { indexed } : {}) },
+    edits: edits.map(({ n: _, ...edit }) => edit as IndexEdit),
+  })) as { count: number; back: (IndexEdit | null)[] };
+  const back: Record<number, IndexEdit> = {};
+  made.back.forEach((edit, i) => {
+    if (edit) back[edits[i]!.n] = edit;
+  });
+  return { count: made.count, back };
+}
+
+/**
+ * A table's rows while they're being read (its `loading`): about as many as
+ * it has, none of them yet. A list sized from it has its scroll range from
+ * the first frame, and draws empty rows until the table has its own.
+ */
+export function loadingViewRows(key: string, estimate: number): ViewRows {
+  return {
+    count: estimate,
+    inView: estimate,
+    version: `loading ${key}`,
+    rows: async () => [],
+    peek: () => undefined,
+    ids: async () => [],
+    placeOf: async () => -1,
+    row: async () => undefined,
+    totals: async () => ({}),
+    groups: async () => [],
+  };
 }

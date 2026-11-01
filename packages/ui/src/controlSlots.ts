@@ -5,10 +5,11 @@
 // own where it wants something else. Free of any renderer, as shared.ts.
 
 import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
+import type { AnchorRect } from "./internal/anchorRect";
 
-/** Something that can be done to a row as a whole, from its row menu. */
-export interface RowAction {
-  id: "open-page" | "add-page" | "insert-above" | "insert-below" | "delete";
+/** An entry of a menu the platform draws: a row's, or a column's. */
+interface Action<Id extends string> {
+  id: Id;
   /** In title case, as menus are on every platform (Apple's and GNOME's guidelines). */
   label: string;
   /** The action's symbol where the platform shows one: an SF Symbol on iOS, a Material Symbol on Android. */
@@ -18,6 +19,15 @@ export interface RowAction {
   onSelect: () => void;
 }
 
+/** Something that can be done to a row as a whole, from its row menu. */
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "merge-cells" | "unmerge-cells" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
+
+/** Something that can be done to a column, from its header's menu (columnActions). */
+export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
+
+/** Either: what a menu drawn by the RowActions slot is made of. */
+export type MenuAction = RowAction | FieldAction;
+
 /**
  * The RowActions slot: wraps a row (`children`, one element) and offers
  * its `actions` the platform's way. iOS: touch and hold for a context
@@ -26,7 +36,7 @@ export interface RowAction {
  * as it is.
  */
 export interface RowActionsProps {
-  actions: RowAction[];
+  actions: MenuAction[];
   children: ReactElement;
   /** The row's title as shown, for a menu that names the row (the defaults lift or point at the row itself). */
   title?: string;
@@ -36,6 +46,8 @@ export interface SelectOption {
   value: string;
   label: string;
   disabled?: boolean;
+  /** A choice's colour (EnumColor), for a control that draws choices as tags. */
+  color?: string;
 }
 
 /**
@@ -89,6 +101,43 @@ export interface DateInputProps {
   /** The cell's value as it's shown, for a picker that opens from it (Android). */
   trigger: ReactElement;
 }
+
+/**
+ * Several choices from a list, opened over a cell (a multi-select's
+ * tags, a link to several rows): each choice toggles as it's picked and
+ * the list stays open, as a quick choice should. The platform's own: a
+ * popover of the system's on a Mac. Absent, the views draw their own menu.
+ */
+export interface ChooseManyProps {
+  options: { value: string; label: string; /** A choice's colour's name (EnumColor), for its tag. */ color?: string }[];
+  /** The values chosen now. */
+  selected: string[];
+  /** A choice picked: on if it was off, off if it was on. */
+  onToggle: (value: string) => void;
+  /** The cell it opens from: the `id` its element carries, and where it is as React measures. */
+  anchor: string;
+  rect: AnchorRect | null;
+  /** Closed: by a click outside, Escape or Return. */
+  onClose: () => void;
+}
+
+/** A ChooseMany control, or null where the views draw their own. */
+export type ChooseManySlot = ((props: ChooseManyProps) => ReactElement | null) | null;
+
+/**
+ * One of a list, picked from a popover pointing at the element whose `id` is
+ * `anchor` (the Mac's, the same as ChooseMany's): the rows of a calendar's
+ * day, say. A pick or a click outside closes it.
+ */
+export interface ChooseOneProps {
+  options: { value: string; label: string; color?: string }[];
+  anchor: string;
+  onPick: (value: string) => void;
+  onClose: () => void;
+}
+
+/** A ChooseOne control, or null where the views draw their own (a sheet). */
+export type ChooseOneSlot = ((props: ChooseOneProps) => ReactElement | null) | null;
 
 /** A DateInput control; `available` false where cells type their dates instead. */
 export type DateInputSlot = ((props: DateInputProps) => ReactElement) & { available?: boolean };
@@ -217,8 +266,12 @@ export interface SettingsFormProps {
   sections: SettingsSection[];
 }
 
-/** A platform's own settings form, or null where the shared layout is drawn instead. */
-export type SettingsFormSlot = ((props: SettingsFormProps) => ReactElement) | null;
+/**
+ * A platform's own settings form, or null where the shared layout is drawn
+ * instead. `reorderHint` says how its rows are reordered, where that isn't
+ * a phone's touch and hold ("Use a row's menu to reorder.").
+ */
+export type SettingsFormSlot = (((props: SettingsFormProps) => ReactElement) & { reorderHint?: string }) | null;
 
 /**
  * A Sheet control; `presentsSettings` when it shows `settings` as a sheet
@@ -238,7 +291,31 @@ export interface PlatformControls {
   Toggle: ToggleSlot;
   Sheet: SheetSlot;
   SettingsForm: SettingsFormSlot;
+  /** Several choices over a cell; absent or null, the views' own menu. */
+  ChooseMany?: ChooseManySlot;
+  ChooseOne?: ChooseOneSlot;
+  /** Why a cell's draft wasn't saved; absent or null, the views' own note under the cell. */
+  CellProblem?: CellProblemSlot;
 }
+
+/**
+ * Why a cell's draft wasn't saved (D42), shown at the cell while it's
+ * still being edited: a value the column can't hold, or one to confirm
+ * (Return again keeps it), with a value to use instead where there is one.
+ * The platform's own: a popover of the system's on a Mac. Absent, the
+ * views draw their own note under the cell.
+ */
+export interface CellProblemProps {
+  message: string;
+  /** Asked, not refused: Return again keeps the draft. */
+  confirmable: boolean;
+  /** A value to use instead, as a button ("Use 2024"). */
+  suggestion?: { label: string; onUse: () => void };
+  /** The cell's input, where React measures it. */
+  rect: AnchorRect;
+}
+
+export type CellProblemSlot = ((props: CellProblemProps) => ReactElement | null) | null;
 
 /** A RowActions control, and how a viewer opens it, for the views' hints ("Right-click a row…"). */
 export type RowActionsSlot = ((props: RowActionsProps) => ReactElement) & { gesture?: string };
@@ -250,11 +327,23 @@ export function rowActions(
     onOpenBody?: (rowId: string) => void;
     hasBody?: boolean;
     onInsertRow?: (rowId: string, where: "above" | "below") => void;
+    /** Fit the row's height to what it holds. */
+    onFitRow?: (rowId: string) => void;
+    /** Only for a row the user has resized: back to the view's height. */
+    onResetRowHeight?: (rowId: string) => void;
     onDeleteRow?: (rowId: string) => void;
+    /** The selected cell's note, in this row (D57). */
+    onCellNote?: () => void;
+    /** Leave the row out of this view by hand (D58). */
+    onHideRow?: (rowId: string) => void;
+    /** Merge a block of a Sheet view's cells, from the selected one (D58). */
+    onMergeCells?: () => void;
+    /** The selected cell is in a merged block: show its cells again (D58). */
+    onUnmergeCells?: () => void;
   },
 ): RowAction[] {
   const actions: RowAction[] = [];
-  const { onOpenBody, onInsertRow, onDeleteRow } = can;
+  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote, onHideRow, onMergeCells, onUnmergeCells } = can;
   // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
@@ -268,8 +357,65 @@ export function rowActions(
     actions.push({ id: "insert-above", label: "Insert Row Above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
     actions.push({ id: "insert-below", label: "Insert Row Below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
   }
+  if (onCellNote) {
+    actions.push({ id: "cell-note", label: "Cell Note…", symbol: { sf: "note.text", material: "sticky_note_2" }, onSelect: onCellNote });
+  }
+  if (onUnmergeCells) {
+    actions.push({ id: "unmerge-cells", label: "Unmerge Cells", symbol: { sf: "rectangle.split.2x2", material: "grid_view" }, onSelect: onUnmergeCells });
+  } else if (onMergeCells) {
+    actions.push({ id: "merge-cells", label: "Merge Cells…", symbol: { sf: "rectangle.grid.1x2", material: "select_all" }, onSelect: onMergeCells });
+  }
+  if (onHideRow) {
+    actions.push({ id: "hide-row", label: "Hide Row", symbol: { sf: "eye.slash", material: "visibility_off" }, onSelect: () => onHideRow(rowId) });
+  }
+  if (onFitRow) {
+    actions.push({ id: "fit-row", label: "Fit Row to Content", symbol: { sf: "arrow.up.and.down", material: "height" }, onSelect: () => onFitRow(rowId) });
+  }
+  if (onResetRowHeight) {
+    actions.push({ id: "reset-row-height", label: "Reset Row Height", symbol: { sf: "arrow.counterclockwise", material: "restart_alt" }, onSelect: () => onResetRowHeight(rowId) });
+  }
   if (onDeleteRow) {
     actions.push({ id: "delete", label: "Delete Row", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteRow(rowId) });
+  }
+  return actions;
+}
+
+/**
+ * What a column's header menu offers (right-click, or touch and hold), in
+ * order. Inserting is by what's seen, left or right, so in a right-to-left
+ * layout "Left" is after the column in field order.
+ */
+export function columnActions(
+  name: string,
+  can: {
+    onInsertField?: (name: string, side: "before" | "after") => void;
+    /** Only for a column the user has resized: back to its share of the width. */
+    onResetWidth?: (name: string) => void;
+    onDeleteField?: (name: string) => void;
+    rtl?: boolean;
+  },
+): FieldAction[] {
+  const actions: FieldAction[] = [];
+  const { onInsertField, onResetWidth, onDeleteField, rtl } = can;
+  if (onInsertField) {
+    actions.push({
+      id: "insert-left",
+      label: "Insert Field Left",
+      symbol: { sf: "arrow.left.to.line", material: "first_page" },
+      onSelect: () => onInsertField(name, rtl ? "after" : "before"),
+    });
+    actions.push({
+      id: "insert-right",
+      label: "Insert Field Right",
+      symbol: { sf: "arrow.right.to.line", material: "last_page" },
+      onSelect: () => onInsertField(name, rtl ? "before" : "after"),
+    });
+  }
+  if (onResetWidth) {
+    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "width" }, onSelect: () => onResetWidth(name) });
+  }
+  if (onDeleteField) {
+    actions.push({ id: "delete-field", label: "Delete Field", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteField(name) });
   }
   return actions;
 }

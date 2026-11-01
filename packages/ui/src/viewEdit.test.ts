@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { Field, TableSchema } from "@workspace.sh/table-core";
+import type { Field, TableSchema, View } from "@workspace.sh/table-core";
 import {
+  sheetNote,
   canUseLayout,
   filterOnField,
   filtersPatch,
@@ -149,4 +150,51 @@ test("columns are shown and hidden in the schema's order; all shown is no list; 
   assert.deepEqual(columnShownPatch(view, schema, "b", false), { fields: ["a", "c"] });
   assert.deepEqual(columnShownPatch({ ...view, fields: ["c", "a"] }, schema, "b", true), { fields: undefined });
   assert.equal(columnShownPatch({ ...view, fields: ["a"] }, schema, "a", false), null);
+});
+
+test("colour rules: a new one takes an unused colour and the whole row, and none left is no colors (D53)", async () => {
+  const { colorRulesPatch, colorTargetPatch, newColorRule, withColorRule, withFirstCondition } = await import("./viewEdit");
+  const live: Field[] = [{ name: "status", type: "string" }, { name: "budget", type: "number" }];
+  const first = newColorRule(live, [])!;
+  assert.deepEqual(first, { filter: [{ field: "status", operator: "eq" }], color: "red" });
+  assert.equal(newColorRule(live, [first])!.color, "orange");
+  assert.equal(newColorRule([], []), null);
+  const cell = colorTargetPatch(first, "budget");
+  assert.equal(cell.field, "budget");
+  assert.equal("field" in colorTargetPatch(cell, ""), false);
+  const two = { ...first, filter: [{ field: "status", operator: "eq" as const, value: "a" }, { field: "budget", operator: "gt" as const, value: 1 }] };
+  assert.deepEqual(withFirstCondition(two, { field: "budget", operator: "lt", value: 5 }).filter, [{ field: "budget", operator: "lt", value: 5 }, two.filter[1]]);
+  assert.deepEqual(withColorRule([first, cell], 0, null), [cell]);
+  assert.deepEqual(colorRulesPatch([]), { colors: undefined });
+});
+
+test("a view's frozen columns (D58): the first by default, none to all but one, the first alone said by nothing, frozen rows kept", async () => {
+  const { frozenColumnsOf, frozenOptions, frozenPatch } = await import("./viewEdit.ts");
+  assert.equal(frozenColumnsOf({}), 1);
+  assert.equal(frozenColumnsOf({ frozen: { columns: 0 } }), 0);
+  assert.deepEqual(frozenOptions(3).map((o) => o.value), ["0", "1", "2"]);
+  assert.deepEqual(frozenOptions(1).map((o) => o.value), ["0", "1"]);
+  assert.equal(frozenOptions(20).at(-1)!.label, "First 5 columns");
+  assert.deepEqual(frozenPatch({}, 2), { frozen: { columns: 2 } });
+  assert.deepEqual(frozenPatch({ frozen: { columns: 2 } }, 1), { frozen: undefined });
+  assert.deepEqual(frozenPatch({ frozen: { columns: 2, rows: 1 } }, 1), { frozen: { rows: 1 } });
+  assert.deepEqual(frozenPatch({}, 0), { frozen: { columns: 0 } });
+});
+
+test("a view's frozen rows (D58): the header alone by default, up to five, none said by nothing, frozen columns kept", async () => {
+  const { frozenRowsOf, frozenRowOptions, frozenRowsPatch } = await import("./viewEdit.ts");
+  assert.equal(frozenRowsOf({}), 0);
+  assert.deepEqual(frozenRowOptions().map((o) => o.value), ["0", "1", "2", "3", "4", "5"]);
+  assert.deepEqual(frozenRowsPatch({}, 2), { frozen: { rows: 2 } });
+  assert.deepEqual(frozenRowsPatch({ frozen: { rows: 2 } }, 0), { frozen: undefined });
+  assert.deepEqual(frozenRowsPatch({ frozen: { columns: 2, rows: 1 } }, 0), { frozen: { columns: 2 } });
+});
+
+test("the Sheet switch says what it means, and, while formulas read the sheet by place, that they depend on it (D41)", () => {
+  const sheet = { id: "v", name: "v", layout: "table", coordinates: true } as View;
+  assert.equal(sheetNote(sheet), "Letter the columns and number the rows, so formulas can use =B7.");
+  assert.match(sheetNote(sheet, 1), /A formula reads this sheet by place: it shows #REF! if this stops being a sheet\.$/);
+  assert.match(sheetNote(sheet, 3), /3 formulas read this sheet by place/);
+  // Not a sheet: nothing reads it by place, whatever the count says.
+  assert.equal(sheetNote({ ...sheet, coordinates: undefined }, 3), "Letter the columns and number the rows, so formulas can use =B7.");
 });

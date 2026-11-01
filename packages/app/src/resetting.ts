@@ -1,6 +1,6 @@
 // Starting again from the example tables: what to ask first, and what's
 // held after. Edits to the examples go, and so do tables made or opened
-// from a .table.zip here; a .table folder opened from disk is the
+// from a single-file .table here; a .table folder opened from disk is the
 // person's own file, so it's kept, open, as it is.
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";

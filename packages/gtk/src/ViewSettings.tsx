@@ -19,9 +19,24 @@ import {
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkDropDown, GtkEntry } from "@gtkx/jsx/gtk";
-import { enumOptions, type Field, type FilterOperator, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
+import { enumOptions, type Field, type FilterOperator, type ViewFilter, type ViewLayout, type ViewSort, type ViewTotal } from "@workspace.sh/table-core";
 import {
   OPERATOR_LABELS,
+  RULE_COLORS,
+  colorLabel,
+  hiddenRowsText,
+  frozenColumnsOf,
+  frozenOptions,
+  frozenPatch,
+  frozenRowsOf,
+  frozenRowOptions,
+  frozenRowsPatch,
+  colorRulesOf,
+  colorRulesPatch,
+  colorTargetPatch,
+  newColorRule,
+  withColorRule,
+  withFirstCondition,
   filterOnField,
   filtersPatch,
   filterValueFrom,
@@ -34,11 +49,16 @@ import {
   operatorsFor,
   picksChoice,
   sortsPatch,
+  moveSort,
   takesValue,
   viewFieldChoices,
   type ViewSettingsProps,
   sheetPatch,
   orderNote,
+  shownColumns,
+  columnShownPatch,
+  TOTAL_NAMES,
+  totalKindsFor,
 } from "@workspace.sh/table-ui/shared";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
@@ -157,7 +177,23 @@ function FilterRow({ filter, fields, onChange, onRemove }: { filter: ViewFilter;
   );
 }
 
-function SortRow({ sort, fields, onChange, onRemove }: { sort: ViewSort; fields: Field[]; onChange: (next: ViewSort) => void; onRemove: () => void }) {
+function SortRow({
+  sort,
+  fields,
+  onChange,
+  onRemove,
+  onEarlier,
+  onLater,
+}: {
+  sort: ViewSort;
+  fields: Field[];
+  onChange: (next: ViewSort) => void;
+  onRemove: () => void;
+  /** Sort by this before the one above it; absent for the first. */
+  onEarlier?: () => void;
+  /** After the one below it; absent for the last. */
+  onLater?: () => void;
+}) {
   return (
     <AdwActionRow title="By" activatable={false}>
       <GtkBox spacing={6} valign={Gtk.Align.CENTER}>
@@ -171,6 +207,8 @@ function SortRow({ sort, fields, onChange, onRemove }: { sort: ViewSort; fields:
           value={sort.direction}
           onChange={(d) => onChange({ ...sort, direction: d as "asc" | "desc" })}
         />
+        <GtkButton iconName="go-up-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Sort Earlier" sensitive={!!onEarlier} onClicked={() => onEarlier?.()} />
+        <GtkButton iconName="go-down-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Sort Later" sensitive={!!onLater} onClicked={() => onLater?.()} />
         <GtkButton iconName="list-remove-symbolic" cssClasses={["flat", "circular"]} valign={Gtk.Align.CENTER} tooltipText="Remove Sort" onClicked={onRemove} />
       </GtkBox>
     </AdwActionRow>
@@ -186,9 +224,12 @@ export interface GtkViewSettingsProps extends ViewSettingsProps {
   revision?: number;
 }
 
-export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
+export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCancel, onArrange, personal, onSaveForEveryone, onReset, revision = 0 }: GtkViewSettingsProps) {
   const arrange = onArrange ?? onChange;
   const choices = viewFieldChoices(schema);
+  const shown = shownColumns(view, schema);
+  // A switch that was refused (the last column shown) is drawn again as it was.
+  const [refused, setRefused] = useState(0);
   const filters = view.filter ?? [];
   const sorts = view.sort ?? [];
   const fieldOptions = (fields: Field[]) => fields.map((f) => ({ value: f.name, label: label(f) }));
@@ -197,7 +238,8 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
 
   return (
     <AdwDialog title="View Settings" contentWidth={560} contentHeight={640} onClosed={onClose}>
-      <AdwToolbarView topBar={<AdwHeaderBar />}>
+      {/* Changes are made as they're chosen; Cancel puts the view back as it was when this opened. */}
+      <AdwToolbarView topBar={<AdwHeaderBar start={onCancel ? <GtkButton label="Cancel" onClicked={onCancel} /> : undefined} />}>
         <AdwPreferencesPage>
           <AdwPreferencesGroup key={revision}>
             <AdwEntryRow title="Name" text={view.name} showApplyButton onApply={(row) => onChange({ name: row.getText() })} />
@@ -227,6 +269,24 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
                 }}
               />
             ) : null}
+            {view.layout === "table" ? (
+              <>
+                <Choice
+                  title="Freeze Columns"
+                  subtitle="Columns that stay put while the rest scroll across"
+                  options={frozenOptions(shown.size).map((o) => ({ ...o, label: o.label.replace(/column/, "Column") }))}
+                  value={String(frozenColumnsOf(view))}
+                  onChange={(n) => n !== undefined && onChange(frozenPatch(view, Number(n)))}
+                />
+                <Choice
+                  title="Freeze Rows"
+                  subtitle="Rows that stay at the top with the header as the rest scroll down"
+                  options={frozenRowOptions().map((o) => ({ ...o, label: o.label.replace(/\b(only|row|rows)\b/g, (w) => w[0]!.toUpperCase() + w.slice(1)) }))}
+                  value={String(frozenRowsOf(view))}
+                  onChange={(n) => n !== undefined && onChange(frozenRowsPatch(view, Number(n)))}
+                />
+              </>
+            ) : null}
             {view.layout === "table" || view.layout === "list" ? (
               <Choice
                 title="Group By"
@@ -237,6 +297,50 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
               />
             ) : null}
           </AdwPreferencesGroup>
+
+          {/* Which columns show: the view's own (`fields`), in the table's order. One always does. */}
+          {view.layout === "table" || view.layout === "list" ? (
+            <AdwPreferencesGroup title="Columns" description={shown.size === 1 ? "One column always shows." : undefined}>
+              {schema.fields.map((f) => (
+                <AdwSwitchRow
+                  key={`${f.name}:${shown.has(f.name)}:${refused}`}
+                  title={f.title ?? f.name}
+                  active={shown.has(f.name)}
+                  onNotifyActive={(active) => {
+                    if (!!active === shown.has(f.name)) return;
+                    const patch = columnShownPatch(view, schema, f.name, !!active);
+                    // The last column can't be hidden: the switch goes back.
+                    if (patch) onChange(patch);
+                    else setRefused((n) => n + 1);
+                  }}
+                />
+              ))}
+            </AdwPreferencesGroup>
+          ) : null}
+
+          {/* A total under each column the table shows (SPEC section 4, `totals`), as its footer's cells choose. */}
+          {view.layout === "table" ? (
+            <AdwPreferencesGroup title="Totals" description="Shown in a row under the table.">
+              {(view.fields ?? schema.fields.map((f) => f.name))
+                .map((name) => schema.fields.find((f) => f.name === name))
+                .filter((f): f is Field => !!f)
+                .map((f) => (
+                  <Choice
+                    key={f.name}
+                    title={label(f)}
+                    options={totalKindsFor(f).map((k) => ({ value: k, label: TOTAL_NAMES[k] }))}
+                    value={view.totals?.[f.name]}
+                    none="None"
+                    onChange={(kind) => {
+                      const next = { ...(view.totals ?? {}) };
+                      if (kind) next[f.name] = kind as ViewTotal;
+                      else delete next[f.name];
+                      onChange({ totals: Object.keys(next).length ? next : undefined });
+                    }}
+                  />
+                ))}
+            </AdwPreferencesGroup>
+          ) : null}
 
           <AdwPreferencesGroup
             title="Filters"
@@ -263,6 +367,54 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
             ))}
           </AdwPreferencesGroup>
 
+          {hiddenRowsText(view) ? (
+            <AdwPreferencesGroup>
+              <AdwActionRow title={hiddenRowsText(view)!} activatable={false}>
+                <GtkButton label="Show All" valign={Gtk.Align.CENTER} onClicked={() => onChange({ hidden: undefined })} />
+              </AdwActionRow>
+            </AdwPreferencesGroup>
+          ) : null}
+
+          <AdwPreferencesGroup
+            title="Colours"
+            description={colorRulesOf(view).length > 1 ? "The first rule that matches a row or cell colours it." : undefined}
+            headerSuffix={
+              <GtkButton
+                iconName="list-add-symbolic"
+                cssClasses={["flat"]}
+                tooltipText="Add Colour"
+                onClicked={() => {
+                  const made = newColorRule(choices.live, colorRulesOf(view));
+                  if (made) onChange(colorRulesPatch([...colorRulesOf(view), made]));
+                }}
+              />
+            }
+          >
+            {colorRulesOf(view).flatMap((rule, i) => {
+              const set = (next: typeof rule | null) => onChange(colorRulesPatch(withColorRule(colorRulesOf(view), i, next)));
+              const first = rule.filter[0] ?? newFilter(choices.live);
+              return [
+                first ? <FilterRow key={`where-${i}`} filter={first} fields={choices.live} onChange={(next) => set(withFirstCondition(rule, next))} onRemove={() => set(null)} /> : null,
+                <AdwActionRow key={`color-${i}`} title="Colour" subtitle={rule.filter.length > 1 ? `And ${rule.filter.length - 1} more condition${rule.filter.length === 2 ? "" : "s"}` : undefined} activatable={false}>
+                  <GtkBox spacing={6} valign={Gtk.Align.CENTER}>
+                    <Pick
+                      tooltip="Colour"
+                      options={RULE_COLORS.map((c) => ({ value: c, label: colorLabel(c) }))}
+                      value={RULE_COLORS.includes(rule.color as never) ? rule.color : "gray"}
+                      onChange={(c) => set({ ...rule, color: c })}
+                    />
+                    <Pick
+                      tooltip="What it colours"
+                      options={[{ value: "", label: "Whole row" }, ...choices.live.map((f) => ({ value: f.name, label: `${label(f)} only` }))]}
+                      value={rule.field ?? ""}
+                      onChange={(t) => set(colorTargetPatch(rule, t))}
+                    />
+                  </GtkBox>
+                </AdwActionRow>,
+              ];
+            })}
+          </AdwPreferencesGroup>
+
           <AdwPreferencesGroup
             title="Sorts"
             description={orderNote(view, sorts)}
@@ -285,6 +437,8 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onArra
                 fields={choices.live}
                 onChange={(next) => arrange(sortsPatch(sorts.map((s, j) => (j === i ? next : s))))}
                 onRemove={() => arrange(sortsPatch(sorts.filter((_, j) => j !== i)))}
+                onEarlier={i > 0 ? () => arrange(sortsPatch(moveSort(sorts, i, i - 1))) : undefined}
+                onLater={i < sorts.length - 1 ? () => arrange(sortsPatch(moveSort(sorts, i, i + 1))) : undefined}
               />
             ))}
           </AdwPreferencesGroup>

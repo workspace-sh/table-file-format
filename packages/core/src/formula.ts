@@ -23,7 +23,7 @@
  * wherever table-core does and any app's formula bar can share it.
  */
 
-import { FUNCTION_NAMES, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
+import { FORMER_NAMES, FUNCTION_NAMES, isSymbol, parseExpr, placeOf, FormulaError, type Expr, type Place } from "./expr.js";
 import type { FieldType } from "./types.js";
 
 export type CompileResult =
@@ -41,13 +41,7 @@ export type CompileResult =
 
 /** A field name the stored grammar can write as a bare word (SPEC section 2). */
 function isBareWord(name: string): boolean {
-  return (
-    /^[^\s()"]+$/.test(name) &&
-    name !== "true" &&
-    name !== "false" &&
-    name !== "nil" &&
-    !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(name)
-  );
+  return isSymbol(name) && name !== "true" && name !== "false" && name !== "nil";
 }
 
 /** A reference to field `name`: a bare word when it can be one, else `(field "…")`. */
@@ -240,7 +234,7 @@ const BINARY: Record<string, { prec: number; fn: string; flat: boolean }> = {
   "<=": { prec: 1, fn: "<=", flat: false },
   ">": { prec: 1, fn: ">", flat: false },
   ">=": { prec: 1, fn: ">=", flat: false },
-  "&": { prec: 2, fn: "concat", flat: true },
+  "&": { prec: 2, fn: "concatenate", flat: true },
   "+": { prec: 3, fn: "+", flat: true },
   "-": { prec: 3, fn: "-", flat: false },
   "*": { prec: 4, fn: "*", flat: true },
@@ -317,7 +311,16 @@ export function coordinateOf(field: string, rowId: string, grid: Grid): string |
  */
 export function compileFormula(
   text: string,
-  options: { fields?: Iterable<string>; grid?: Grid } = {},
+  options: {
+    fields?: Iterable<string>;
+    grid?: Grid;
+    /**
+     * A function the library doesn't have is kept, as a call to it, instead of refusing the
+     * formula: it reads, so it can be stored, and shows #NAME? where it's worked out. For an
+     * edit that's left unfinished (the editor closed on it), so what was typed isn't lost.
+     */
+    keepUnknownFunctions?: boolean;
+  } = {},
 ): CompileResult {
   const fields = options.fields ? new Set(options.fields) : undefined;
   const lead = /^\s*=?/.exec(text)![0].length;
@@ -329,14 +332,14 @@ export function compileFormula(
   // it reads completely and uses D32's functions, so an Excel-style
   // "(budget + 1) * 2" still compiles as Excel.
   if (body.trimStart().startsWith("(")) {
-    const stored = compileStoredForm(body, lead, fields);
+    const stored = compileStoredForm(body, lead, fields, options.keepUnknownFunctions);
     if (stored.ok) return stored;
-    const excel = compileExcel(body, lead, fields, options.grid);
+    const excel = compileExcel(body, lead, fields, options.grid, options.keepUnknownFunctions);
     // Neither: the stored form's reason when it read as one, so a typo in
     // a function name isn't reported as an Excel syntax error.
     return excel.ok || !stored.parsed ? excel : stored.failure;
   }
-  return compileExcel(body, lead, fields, options.grid);
+  return compileExcel(body, lead, fields, options.grid, options.keepUnknownFunctions);
 }
 
 /** Library functions, as the stored form names them (D32). */
@@ -346,6 +349,7 @@ function compileStoredForm(
   body: string,
   lead: number,
   fields: Set<string> | undefined,
+  keepUnknown = false,
 ): (CompileResult & { ok: true }) | { ok: false; parsed: boolean; failure: CompileResult & { ok: false } } {
   const read = parseExpr(body);
   if (!read.ok) {
@@ -377,7 +381,7 @@ function compileStoredForm(
     return { kind: "call", fn, args: e.args.map(walk) };
   };
   const expr = walk(read.expr);
-  if (unknown !== null) {
+  if (unknown !== null && !keepUnknown) {
     const names = [...LIBRARY].filter((n) => /^[a-z]/.test(n) && n !== "field").join(", ");
     return {
       ok: false,
@@ -393,7 +397,7 @@ function compileStoredForm(
   return { ok: true, expr, stored, warnings: [...warnings] };
 }
 
-function compileExcel(body: string, lead: number, fields: Set<string> | undefined, grid?: Grid): CompileResult {
+function compileExcel(body: string, lead: number, fields: Set<string> | undefined, grid?: Grid, keepUnknown = false): CompileResult {
   const warnings = new Set<string>();
 
   let tokens: Token[];
@@ -532,7 +536,13 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         }
       });
     }
-    if (!CALLABLE.has(fn)) {
+    // A name a form had before (D48) is taken as the name it has now.
+    const known = FORMER_NAMES[fn] ?? fn;
+    if (!CALLABLE.has(known) && keepUnknown) {
+      warnings.add(`${name} isn't a function .table formulas have, so the result will show #NAME?.`);
+      return { kind: "call", fn: known.toLowerCase(), args };
+    }
+    if (!CALLABLE.has(known)) {
       throw new CompileError(
         `${name} isn't a function .table formulas have. They can use: ${[...CALLABLE]
           .filter((n) => n !== "field")
@@ -540,7 +550,7 @@ function compileExcel(body: string, lead: number, fields: Set<string> | undefine
         at,
       );
     }
-    return { kind: "call", fn, args };
+    return { kind: "call", fn: known, args };
   };
 
   const primary = (): Expr => {
@@ -866,17 +876,17 @@ export function printFormula(
 
 const NUMBER_FNS = new Set(["+", "-", "*", "/", "sum", "min", "max", "round", "abs", "len", "count", "average", "row", "rows"]);
 /** What reads across rows as a list (D36). */
-const LIST_FNS = new Set(["column", "linked"]);
-const TEXT_FNS = new Set(["concat", "upper", "lower"]);
+const LIST_FNS = new Set(["values", "linked"]);
+const TEXT_FNS = new Set(["concatenate", "upper", "lower"]);
 const BOOLEAN_FNS = new Set(["=", "<>", "<", "<=", ">", ">=", "and", "or", "not", "isblank"]);
 
 export interface FormulaTypeOptions {
   /**
-   * The type of the field a lookup reads: `relation` is this table's field
+   * The type of the field `related` reads: `relation` is this table's field
    * that points at the other table, `target` the field read there.
    * Undefined when it can't be told (no such table at hand).
    */
-  lookup?: (relation: string, target: string) => FieldType | undefined;
+  related?: (relation: string, target: string) => FieldType | undefined;
 }
 
 /** A formula's type, and whether it was worked out or is only the likeliest. */
@@ -897,16 +907,20 @@ function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: Formula
     case "field":
       return of(expr.name);
     case "call": {
+      // The clock and chance (D55).
+      if (expr.fn === "today") return { type: "date", known: true };
+      if (expr.fn === "now") return { type: "datetime", known: true };
+      if (expr.fn === "rand") return { type: "number", known: true };
       if (TEXT_FNS.has(expr.fn)) return { type: "string", known: true };
       if (BOOLEAN_FNS.has(expr.fn)) return { type: "boolean", known: true };
       if (NUMBER_FNS.has(expr.fn)) return { type: "number", known: true };
       if (LIST_FNS.has(expr.fn) || expr.fn === "range") return { type: "array", known: true };
       // A place reads one cell of a field, of whatever type it is (D41).
       if (expr.fn === "at" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
-      // A lookup is whatever it reads in the other table; not knowing, text is the safe guess.
-      if (expr.fn === "lookup") {
+      // `related` is whatever it reads in the other table; not knowing, text is the safe guess.
+      if (expr.fn === "related") {
         const [relation, target] = expr.args;
-        const read = relation?.kind === "string" && target?.kind === "string" ? options.lookup?.(relation.value, target.value) : undefined;
+        const read = relation?.kind === "string" && target?.kind === "string" ? options.related?.(relation.value, target.value) : undefined;
         return read === undefined ? { type: "string", known: false } : { type: read, known: true };
       }
       if (expr.fn === "field" && expr.args[0]?.kind === "string") return of(expr.args[0].value);
@@ -919,7 +933,7 @@ function typeOf(expr: Expr, fieldTypes: Map<string, FieldType>, options: Formula
 /**
  * The field type a formula produces, for declaring a new computed field.
  * `fieldTypes` resolves references to other fields; anything unknown is
- * taken as a number, which is what most formulas make, and a lookup whose
+ * taken as a number, which is what most formulas make, and a `related` whose
  * target isn't known as text.
  */
 export function formulaType(expr: Expr, fieldTypes: Map<string, FieldType> = new Map(), options: FormulaTypeOptions = {}): FieldType {

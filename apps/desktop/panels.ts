@@ -15,7 +15,7 @@ export function chooseFolder(title: string): Promise<string | null> {
   return panels ? panels.chooseFolder(title) : Promise.resolve(null);
 }
 
-/** A file with one of `extensions` (without the dot), or null when cancelled. */
+/** A file of one of `extensions` (without the dot), or of a type identifier (`sh.workspace.table`), or null when cancelled. */
 export function chooseFile(title: string, extensions: string[]): Promise<string | null> {
   return panels ? panels.chooseFile(title, extensions) : Promise.resolve(null);
 }

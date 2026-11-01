@@ -9,14 +9,17 @@ are written down rather than implied.
 
 Companion docs: SPEC section 3 (canonical write order), SPEC
 section 8 (the SQLite cache contract), DECISIONS D14–D17, and the
-workspace-p2p-spike repo's FINDINGS.md (Hypercore viability across
-Node / macOS). [LARGE-TABLES.md](LARGE-TABLES.md) measures 50k to 1M
+Workspace Protocol, which specifies the sync layer itself:
+[`workspace-protocol/docs/sync`](https://github.com/workspace-sh/workspace-protocol/tree/develop/docs/sync), its
+[ADR 0002](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/adr/0002-autobase-merge-strategy.md)
+on merging, and [FINDINGS.md](https://github.com/workspace-sh/workspace-protocol/blob/develop/FINDINGS.md) (Hypercore
+viability across Node / macOS). [LARGE-TABLES.md](LARGE-TABLES.md) measures 50k to 1M
 rows: SQLite, DuckDB, compression, splitting rows, and sparse sync.
 
 ## 1. The three storage tiers
 
 ```
-text layer        schema.json + rows.ndjson + bodies/ + …
+text layer        schema.json + rows/ + bodies/ + …
                   → canonical interchange + at-rest form
                   → git-diffable, human-readable, portable
 
@@ -51,7 +54,7 @@ device, and the architecture — not row counts — is why:
 - **The text layer bottlenecks first.** Whole-file rewrite per save
   hurts before SQLite does. When a table outgrows that, the answer is
   not a bigger database — it's moving the hot path to the cache/log
-  and demoting `rows.ndjson` to snapshot/export, which SPEC section 8
+  and demoting the rows files to snapshot/export, which SPEC section 8
   already permits ("apps decide their own caching strategy").
 
 Platform drivers: Node has `node:sqlite` built in (≥22) — the Node
@@ -68,7 +71,7 @@ honest bridges:
 
 **File-level replication** (e.g. Hyperdrive): treat the directory as
 blobs, last-writer-wins per file. Trivial, but two peers editing
-different rows of the same `rows.ndjson` conflict at file
+different rows of the same rows file conflict at file
 granularity. Viable only for single-writer / many-reader publishing.
 
 **Op-log transport** — the intended model:
@@ -77,14 +80,16 @@ granularity. Viable only for single-writer / many-reader publishing.
   (`set` / `insert` / `delete`, schema ops, view ops, body and
   attachment references).
 - Autobase linearises the multi-writer logs into one causal order
-  (validated in workspace-p2p-spike).
+  (validated in the P2P spike, now the Workspace Protocol).
 - Every peer applies the linearised ops to materialise the `.table/`
   locally — the directory becomes a deterministic *checkout* of the
   log, the way a working tree is a checkout of git history. The
   SQLite cache can even be the materialisation target directly, with
   NDJSON written as the export surface.
 - **Conflict semantics:** per-field last-writer-wins on the causal
-  order. Sufficient for structured records (the Figma/Linear class
+  order: per row and per column, ties broken by timestamp and then the
+  writer's key (the protocol's
+  [ADR 0002](https://github.com/workspace-sh/workspace-protocol/blob/develop/docs/adr/0002-autobase-merge-strategy.md)). Sufficient for structured records (the Figma/Linear class
   of sync); long-form *body* text wants real text merging and is a
   separate problem with separate tooling. One rule the sync layer
   must still define: **row-delete vs concurrent field-update** —

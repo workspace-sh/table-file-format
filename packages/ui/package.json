@@ -15,6 +15,11 @@
       "react-native": "./src/shared.ts",
       "default": "./src/shared.ts"
     },
+    "./fieldKey": {
+      "source": "./src/fieldKey.ts",
+      "react-native": "./src/fieldKey.ts",
+      "default": "./src/fieldKey.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -22,14 +27,13 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=source --import tsx --test src/*.test.ts"
+    "test": "node --conditions=source --import tsx --import ../../edn/js/src/node-engine.ts --test src/*.test.ts"
   },
   "dependencies": {
     "@workspace.sh/table-core": "file:../core"
   },
   "peerDependencies": {
     "@expo/ui": ">=55.0.0",
-    "@legendapp/list": ">=3.6.0",
     "expo-haptics": ">=55.0.0",
     "expo-symbols": ">=55.0.0",
     "react": ">=19.0.0",
@@ -81,10 +85,6 @@
     "react-native-screens": {
       "optional": true,
       "comment": "iOS only: a view's settings as a form sheet with detents (Sheet.ios.tsx). Web, macOS and Android never load it."
-    },
-    "@legendapp/list": {
-      "optional": true,
-      "comment": "Web for now: a table draws only the rows on screen (RowList.web.tsx). Native follows with LARGE-TABLES-PLAN I1."
     }
   },
   "devDependencies": {

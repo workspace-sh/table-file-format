@@ -4,17 +4,17 @@
 // opening it shows. The web, macOS and Linux each draw it; what's folded
 // or opened is theirs to say, so it comes in as input.
 
-import { bundleFiles, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
+import { bundleFiles, HISTORY_FILE, type BundleMeta, type ParsedTable } from "@workspace.sh/table-core";
 import { isImageFile } from "@workspace.sh/table-ui/shared";
 
 import { tableKeysIn, toBundle } from "./bundles.ts";
 
 /** What a file of a `.table` is. */
-export type BundleFileKind = "manifest" | "schema" | "rows" | "views" | "meta" | "body" | "attachment";
+export type BundleFileKind = "manifest" | "schema" | "rows" | "views" | "meta" | "history" | "body" | "attachment";
 
 export interface FilesTreeFile {
   name: string;
-  /** Its path inside `<bundle>.table/`: `tables/deals/rows.ndjson`. */
+  /** Its path inside `<bundle>.table/`: `tables/deals/rows/0001.ndjson`. */
   path: string;
   kind: BundleFileKind;
   /** Opening it shows its text as saving writes it, or an attachment's bytes. */
@@ -58,6 +58,12 @@ export interface FilesTreeOptions {
   opened?: Record<string, boolean>;
   /** A table's attachment file names, by its `bundle/table` key. */
   attachmentsOf?: (tableKey: string) => string[];
+  /**
+   * Whether a table has an edit history (`history.ndjson`, SPEC section
+   * 14) where the app keeps it: in its folder, or in the app's store. One
+   * a table holds itself (it came from an archive) is listed without this.
+   */
+  hasHistory?: (tableKey: string) => boolean;
 }
 
 export function filesTree(
@@ -71,6 +77,8 @@ export function filesTree(
     const paths = bundleFiles(toBundle(tables, bundles, bundle)).map((f) => f.path);
     for (const key of tableKeysIn(tables, bundles, bundle)) {
       const name = key.slice(bundle.length + 1);
+      const history = `tables/${name}/${HISTORY_FILE}`;
+      if (options.hasHistory?.(key) && !paths.includes(history)) paths.push(history);
       for (const file of options.attachmentsOf?.(key) ?? []) paths.push(`tables/${name}/attachments/${file}`);
     }
     const root: FilesTreeDir = { name: "", path: "", open: true, files: [], dirs: [] };
@@ -90,7 +98,7 @@ export function filesTree(
       }
       const kind = fileKind(path);
       const table = dir.tableKey ? tables[dir.tableKey] : undefined;
-      const note = table ? noteFor(kind, table) : undefined;
+      const note = table ? noteFor(kind, table, parts[parts.length - 1]!) : undefined;
       dir.files.push({
         name: parts[parts.length - 1]!,
         path,
@@ -110,8 +118,9 @@ export function fileKind(path: string): BundleFileKind {
   if (/^tables\/[^/]+\/attachments\//.test(path)) return "attachment";
   if (/^tables\/[^/]+\/bodies\//.test(path)) return "body";
   if (path.endsWith("/schema.json")) return "schema";
-  if (path.endsWith("/rows.ndjson")) return "rows";
+  if (/^tables\/[^/]+\/(rows\/\d{4,}[a-z]*\.ndjson|rows\.ndjson)$/.test(path)) return "rows";
   if (path.endsWith("/views.json")) return "views";
+  if (/^tables\/[^/]+\/history\.ndjson$/.test(path)) return "history";
   return "meta";
 }
 
@@ -121,14 +130,28 @@ export function attachmentAt(bundle: string, path: string): { tableKey: string; 
   return m ? { tableKey: `${bundle}/${m[1]}`, name: m[2]! } : null;
 }
 
-/** A file's text as saving writes it, or undefined when there's no such text file. */
+/** A table's history file (`bundle/table`), or null for any other file. */
+export function historyAt(bundle: string, path: string): { tableKey: string } | null {
+  const m = /^tables\/([^/]+)\/history\.ndjson$/.exec(path);
+  return m ? { tableKey: `${bundle}/${m[1]}` } : null;
+}
+
+/**
+ * A file's text as saving writes it, or undefined when there's no such
+ * text file. A table's history is the app's to give (`historyOf`, by
+ * `bundle/table`), from where it keeps it; without that, what the table
+ * holds itself.
+ */
 export function fileText(
   tables: Record<string, ParsedTable>,
   bundles: Record<string, BundleMeta>,
   bundle: string,
   path: string,
+  historyOf?: (tableKey: string) => string | undefined,
 ): string | undefined {
-  return bundleFiles(toBundle(tables, bundles, bundle)).find((f) => f.path === path)?.content;
+  const history = historyAt(bundle, path);
+  const kept = history ? historyOf?.(history.tableKey) : undefined;
+  return kept || bundleFiles(toBundle(tables, bundles, bundle)).find((f) => f.path === path)?.content;
 }
 
 /** One line of the tree, for a UI that draws it as a flat list (GTK's ListBox). */
@@ -158,9 +181,15 @@ function openByDefault(dir: FilesTreeDir, bundle: string, activeTable: string | 
   return true;
 }
 
-function noteFor(kind: BundleFileKind, table: ParsedTable): string | undefined {
+function noteFor(kind: BundleFileKind, table: ParsedTable, name: string): string | undefined {
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-  if (kind === "rows") return plural(table.indexed ? table.indexed.count : table.rows.length, "row");
+  if (kind === "rows") {
+    // One of several rows files (D51): the rows it was read with; the only one: the table's.
+    const files = table.rowFiles ?? [];
+    const read = files.length > 1 ? files.find((f) => f.name === name) : undefined;
+    if (read) return plural(read.ids.length, "row");
+    return files.length > 1 ? undefined : plural(table.indexed ? table.indexed.count : table.rows.length, "row");
+  }
   if (kind === "schema") return plural(table.schema.fields.length, "field");
   if (kind === "views") return plural(table.views.length, "view");
   return undefined;

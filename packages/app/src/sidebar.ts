@@ -8,6 +8,7 @@ import type { BundleMeta, ParsedTable, View, ViewLayout } from "@workspace.sh/ta
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, tableKeysIn, tableNameOf } from "./bundles.ts";
+import { canClose } from "./closing.ts";
 
 export interface SidebarView {
   view: View;
@@ -42,6 +43,8 @@ export interface SidebarBundle {
   tables: SidebarTable[];
   /** Whether to offer "+ New table" in this bundle, as `newTableIn` says. */
   offersNewTable: boolean;
+  /** Whether to offer Close: not on the only file open (closing.ts). */
+  closable: boolean;
 }
 
 export interface SidebarOptions {
@@ -75,6 +78,7 @@ export function sidebarTree(
       title: bundles[bundle]?.title ?? bundle,
       file: `${bundle}.table`,
       folded: isFolded,
+      closable: canClose(bundles, bundle),
       offersNewTable:
         !isFolded && (newTableIn === "every" || (newTableIn === "active" && active !== undefined && bundleOf(active.key) === bundle)),
       tables: isFolded

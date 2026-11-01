@@ -10,7 +10,9 @@
 // ever approximately right.
 
 import { instantOf } from "./encoding.js";
-import type { Field, ParsedTable, Row, TableSchema, ViewFilter, ViewSort, ViewTotal } from "./types.js";
+import type { CellFormula, Field, ParsedTable, Row, TableSchema, ViewFilter, ViewSort, ViewTotal } from "./types.js";
+import { cellFormulas, cellLine } from "./cells.js";
+import { cellRenamed } from "./renameField.js";
 import { enumValues } from "./types.js";
 import type { RowGroup, ViewRows } from "./row-source.js";
 import { exactSum } from "./query.js";
@@ -25,6 +27,13 @@ export interface SqlDriver {
   all(sql: string, params?: SqlValue[]): Promise<Record<string, SqlValue>[]>;
   /** Runs one statement for many parameter lists, if the binding can do that faster than `run` in a loop. */
   batch?(sql: string, params: SqlValue[][]): Promise<void>;
+  /**
+   * True when every statement runs in this process, so a statement a row
+   * costs only SQLite's own work (node:sqlite, SQLite WASM). Unset, each
+   * statement crosses to native code (op-sqlite, expo-sqlite), and the
+   * indexer sends a batch of rows as one statement where it can.
+   */
+  inProcess?: boolean;
 }
 
 /** Structured query: the view's filter and sort, a manual order, and free text (SPEC section 8). Never raw SQL. */
@@ -39,6 +48,8 @@ export interface IndexQuery {
   group?: string;
   /** The view's totals, by field. */
   totals?: Record<string, ViewTotal>;
+  /** Rows the view hides by hand, by id (D58). */
+  hidden?: string[];
 }
 
 /** The rows a query matches, as a view reads them (a ViewRows), every answer a promise. */
@@ -79,6 +90,8 @@ export interface BuildOptions {
    * part-way leaves none.
    */
   commitEvery?: number;
+  /** Cells' own formulas (D52): every `cells/` line, kept with the rows. Each must read only its own row. */
+  cells?: CellFormula[];
 }
 
 export const INDEX_FORMAT = 1;
@@ -220,12 +233,199 @@ async function tableNumber(db: SqlDriver, name: string, create: boolean): Promis
   return next + 1;
 }
 
+// ---- Cells' own formulas (D52): every `cells/` line, kept by the index as the table's rows are
+
+/** The key a row read out of the index carries its cells' own formulas under, by field: for an editor to start from. Never a field's name. */
+export const OWN_FORMULAS = "\u0000cells";
+/** The key a row read out of the index carries its cells' notes under, by field (D57). Never a field's name. */
+export const CELL_NOTES = "\u0000notes";
+
+async function cellsTable(db: SqlDriver): Promise<void> {
+  await db.exec("create table if not exists _cells(n integer not null, seq integer not null, id text not null, field text not null, line text not null, primary key(n, seq)); create index if not exists _cells_id on _cells(n, id)");
+}
+
+/** A table's `cells/` lines, all of them, replaced. */
+async function setCellLines(db: SqlDriver, n: number, cells: readonly CellFormula[]): Promise<void> {
+  await cellsTable(db);
+  await db.run("delete from _cells where n = ?", [n]);
+  let seq = 0;
+  for (const c of cells) await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, ++seq, c.id, c.field, cellLine(c)]);
+}
+
+/** The lines of the rows `ids` (all of the table's when absent), in the order kept. */
+async function cellLinesOf(db: SqlDriver, n: number, ids?: readonly string[]): Promise<CellFormula[]> {
+  await cellsTable(db);
+  if (ids && ids.length === 0) return [];
+  const found = ids
+    ? await db.all(`select line from _cells where n = ? and id in (${ids.map(() => "?").join(", ")}) order by seq`, [n, ...ids])
+    : await db.all("select line from _cells where n = ? order by seq", [n]);
+  return found.map((r) => JSON.parse(r.line as string) as CellFormula);
+}
+
+/** Whether a table has any cells' own formulas, so reads put their results back (D52). */
+async function hasCells(db: SqlDriver, n: number): Promise<boolean> {
+  await cellsTable(db);
+  return (await db.all("select 1 from _cells where n = ? limit 1", [n])).length > 0;
+}
+
+/**
+ * Rows as computed, and the JSON the index keeps for each: the computed
+ * row without the results of formulas cells have of their own in stored
+ * fields, which are never stored (D52), so the rows written back hold none.
+ */
+function withOwnCells(schema: TableSchema, raw: Row[], cells: readonly CellFormula[], compute: boolean): { shown: Row[]; kept: Row[] } {
+  if (cells.length === 0) {
+    const shown = compute ? computeRows(schema, raw).rows : raw;
+    return { shown, kept: shown };
+  }
+  const shown = computeRows(schema, raw, { cells: [...cells] }).rows;
+  const own = cellFormulas(schema, raw, cells);
+  const stored = new Set(schema.fields.filter((f) => !f.computed).map((f) => f.name));
+  const kept = shown.map((row) => {
+    const mine = own.get(row.id);
+    if (!mine) return row;
+    const next = { ...row };
+    for (const field of mine.keys()) if (stored.has(field)) delete next[field];
+    return next;
+  });
+  return { shown, kept };
+}
+
+/** Rows read out of the index, their cells' own formulas' results put back and the formulas themselves carried for an editor (OWN_FORMULAS). */
+async function withCellResults(db: SqlDriver, n: number, schema: TableSchema, rows: Row[]): Promise<Row[]> {
+  const ids = rows.map((r) => r.id);
+  const cells = await cellLinesOf(db, n, ids);
+  if (cells.length === 0) return rows;
+  const formulas = cells.some((c) => c.expr !== undefined);
+  const shown = formulas ? computeRows(schema, rows, { cells }).rows : rows;
+  const own = cellFormulas(schema, rows, cells);
+  // Each cell's note, the first line's for it (D57).
+  const notes = new Map<string, Record<string, string>>();
+  for (const c of cells) {
+    if (c.note === undefined) continue;
+    const mine = notes.get(c.id) ?? {};
+    mine[c.field] ??= c.note;
+    notes.set(c.id, mine);
+  }
+  return shown.map((row) => {
+    const mine = own.get(row.id);
+    const noted = notes.get(row.id);
+    if (!mine && !noted) return row;
+    return {
+      ...row,
+      ...(mine ? { [OWN_FORMULAS]: Object.fromEntries([...mine].map(([f, c]) => [f, c.expr])) } : {}),
+      ...(noted ? { [CELL_NOTES]: noted } : {}),
+    };
+  });
+}
+
+/** Whether cells' formulas read only their own row, as an index of row-at-a-time work needs. */
+export function cellsRowLocal(cells: readonly CellFormula[] | undefined): boolean {
+  if (!cells || cells.length === 0) return true;
+  const fields = cells.flatMap((c, i) => (c.expr === undefined ? [] : [{ name: `\u0000${i}`, type: "string" as const, computed: { expr: c.expr, dialect: c.dialect ?? "table-expr-v1" } }]));
+  return rowLocal({ fields }, fields);
+}
+
+/**
+ * A cell of an indexed table given its own formula, in the stored form, or
+ * none (null) (D52): every line for that cell replaced, the row worked out
+ * again. A formula set on a stored field takes the row's value's place.
+ * Gives back the formula it had, or null when there's no such row.
+ */
+export async function setIndexedCellFormula(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; rowId: string; field: string; expr: string | null; key: string },
+): Promise<{ was: string | undefined } | null> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  const found = (await db.all(`select j from r${n} where id = ?`, [options.rowId]))[0];
+  if (!found) return null;
+  await cellsTable(db);
+  const line = (await cellLinesOf(db, n, [options.rowId])).find((c) => c.field === options.field);
+  const had = line?.expr;
+  await db.run("delete from _cells where n = ? and id = ? and field = ?", [n, options.rowId, options.field]);
+  // The cell's note stays, with or without a formula (D57).
+  const note = line?.note;
+  if (options.expr !== null || note !== undefined) {
+    const seq = Number((await db.all("select coalesce(max(seq), 0) as m from _cells where n = ?", [n]))[0]!.m) + 1;
+    const next: CellFormula = { id: options.rowId, field: options.field, ...(options.expr !== null ? { expr: options.expr } : {}), ...(note !== undefined ? { note } : {}) };
+    await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, seq, options.rowId, options.field, cellLine(next)]);
+  }
+  const row = JSON.parse(found.j as string) as Row;
+  if (options.expr !== null && !options.schema.fields.find((f) => f.name === options.field)?.computed) delete row[options.field];
+  await putRows(db, { name: options.name, schema: options.schema, rows: [row], key: options.key });
+  return { was: had };
+}
+
+/** A cell of an indexed table's note set, or taken away (empty) (D57). Gives back the note it had; null when there's no such row. */
+export async function setIndexedCellNote(
+  db: SqlDriver,
+  options: { name: string; rowId: string; field: string; note: string; key: string },
+): Promise<{ was: string | undefined } | null> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  if ((await db.all(`select 1 from r${n} where id = ?`, [options.rowId])).length === 0) return null;
+  const line = (await cellLinesOf(db, n, [options.rowId])).find((c) => c.field === options.field);
+  const kept = options.note.trim() === "" ? undefined : options.note;
+  await db.run("delete from _cells where n = ? and id = ? and field = ?", [n, options.rowId, options.field]);
+  const { note: _was, ...rest } = line ?? { id: options.rowId, field: options.field };
+  const next: CellFormula = { ...rest, ...(kept !== undefined ? { note: kept } : {}) } as CellFormula;
+  if (next.expr !== undefined || next.note !== undefined) {
+    const seq = Number((await db.all("select coalesce(max(seq), 0) as m from _cells where n = ?", [n]))[0]!.m) + 1;
+    await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, seq, options.rowId, options.field, cellLine(next)]);
+  }
+  await db.run("update _tables set key = ?, built_at = ? where n = ?", [options.key, new Date().toISOString(), n]);
+  return { was: line?.note };
+}
+
+/** A table's cells' own formulas, out of its index: all its lines (D52). */
+export async function indexedCells(db: SqlDriver, name: string): Promise<CellFormula[]> {
+  const n = await tableNumber(db, name, false);
+  if (n === null) throw new Error(`no index for ${name}`);
+  return cellLinesOf(db, n);
+}
+
+/**
+ * A table's `cells/` text out of its index, as a writer writes it (D52):
+ * in the rows' file order, a line for no row after; a stored field's line
+ * whose row holds a value as well goes (the value was typed after it).
+ * Empty when it has none.
+ */
+export async function storedCellsText(db: SqlDriver, options: { name: string; schema: TableSchema }): Promise<string> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  await cellsTable(db);
+  const stored = new Set(options.schema.fields.filter((f) => !f.computed).map((f) => f.name));
+  const found = await db.all(`select c.line as line, c.field as field, r.j as j from _cells c left join r${n} r on r.id = c.id where c.n = ? order by (r.pos is null), r.pos, c.seq`, [n]);
+  let text = "";
+  for (const r of found) {
+    let line = r.line as string;
+    if (r.j !== null && r.j !== undefined && stored.has(r.field as string)) {
+      const v = (JSON.parse(r.j as string) as Row)[r.field as string];
+      const c = JSON.parse(line) as CellFormula;
+      if (c.expr !== undefined && v !== undefined && v !== null && v !== "") {
+        // A value typed over a formula takes its place; a note stays (D57).
+        if (c.note === undefined) continue;
+        const { expr: _gone, dialect: _with, ...rest } = c;
+        line = cellLine(rest as CellFormula);
+      }
+    }
+    text += `${line}\n`;
+  }
+  return text;
+}
+
 async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await db.exec(`drop table if exists x${n}; drop table if exists r${n};`);
   await db.exec("create table if not exists _bad(n integer, fld integer, bad integer, primary key(n, fld))");
   await db.run("delete from _bad where n = ?", [n]);
   await searchUpTo(db, n);
   await db.run("delete from _fts where n = ?", [n]);
+  // A fill left under way by a change of fields, and fields' values kept hidden, are for the tables just dropped.
+  await setFill(db, n, null);
+  await setHidden(db, n, []);
+  await cellsTable(db);
+  await db.run("delete from _cells where n = ?", [n]);
 }
 
 /**
@@ -250,6 +450,8 @@ export async function buildSearchIndex(db: SqlDriver, name: string, batchSize = 
   if (n === null) return false;
   const upto = await searchUpTo(db, n);
   if (upto === null) return false;
+  // The search text is being made again (alterIndex): its index is made after.
+  if ((await fillOf(db, n))?.search) return false;
   const last = (await db.all(`select max(pos) as m from (select pos from r${n} where pos > ? order by pos limit ?)`, [upto, batchSize]))[0]?.m as number | null;
   await db.exec("begin");
   try {
@@ -280,6 +482,8 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
   const plan = planOf(schema);
   const n = (await tableNumber(db, name, true))!;
   forgetIndexes(db, n);
+  // Not given cells' own formulas: the ones it holds already, as a build again from its own rows file has none to give (D52).
+  const heldCells = options.cells ? undefined : await cellLinesOf(db, n);
   await db.exec("begin");
   try {
     await createTables(db, n, plan);
@@ -298,20 +502,37 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
     if (across && !Array.isArray(rows)) throw new Error("formulas that read other rows need the rows as an array");
     const source = Array.isArray(rows) && across ? computeRows(schema, rows).rows : rows;
     const perBatch = computed.length > 0 && !across;
+    // Cells' own formulas (D52), worked out a batch at a time with their rows: so each must read only its own.
+    const cells = options.cells ?? heldCells ?? [];
+    if (cells.length > 0 && (across || !cellsRowLocal(cells))) throw new Error("cells' own formulas that read other rows can't be indexed");
+    await setCellLines(db, n, cells);
+    const cellsByRow = new Map<string, CellFormula[]>();
+    for (const c of cells) {
+      const mine = cellsByRow.get(c.id);
+      if (mine) mine.push(c);
+      else cellsByRow.set(c.id, [c]);
+    }
     const size = options.batchSize ?? BATCH;
     const bad = new Map<number, number>();
     for (const f of plan.never) bad.set(f, NEVER);
     const sql = `insert into r${n}(id, j, s, ${plan.columns.join(", ")}) values(?, ?, ?, ${plan.columns.map(() => "?").join(", ")})`;
     const flush = async (chunk: Row[]) => {
       if (chunk.length === 0) return;
-      const shown = perBatch ? computeRows(schema, chunk).rows : chunk;
-      const lists = shown.map((row) => {
+      const mine = cellsByRow.size > 0 ? chunk.flatMap((r) => cellsByRow.get(r.id) ?? []) : [];
+      const { shown, kept } = withOwnCells(schema, chunk, mine, perBatch);
+      const lists = shown.map((row, x) => {
         const e = encode(plan, row, bodies?.[row.id]);
         for (const f of e.bad) bad.set(f, (bad.get(f) ?? 0) + 1);
-        return [String(row.id), JSON.stringify(row), e.search, ...e.values] as SqlValue[];
+        return [String(row.id), JSON.stringify(kept[x]), e.search, ...e.values] as SqlValue[];
       });
-      if (db.batch) await db.batch(sql, lists);
-      else for (const params of lists) await db.run(sql, params);
+      try {
+        if (db.batch) await db.batch(sql, lists);
+        else for (const params of lists) await db.run(sql, params);
+      } catch (error) {
+        // A row's id on more than one line (D54): the reader keeps the later lines as they are, which the index can't.
+        if (/unique/i.test(error instanceof Error ? error.message : String(error))) throw new Error("two of its rows have the same id");
+        throw error;
+      }
     };
     let chunk: Row[] = [];
     for await (const row of source) {
@@ -348,6 +569,345 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
   }
 }
 
+// -- A change of fields, in place ---------------------------------------
+//
+// A field added, removed, moved, retyped or given a formula changes the
+// index where it is, from each row's JSON (`j`): never by reading the rows
+// file again (#551). Columns are by field position, so they are renamed to
+// their new places (a change to the table's schema, not its rows); a
+// field's new columns are added empty; a removed field's are parked. What
+// has to be worked out again (a formula's values, a retyped field's
+// columns, the search text) is filled a step at a time behind whatever is
+// asked meanwhile (`fillIndex`); until it's done, those fields are ones
+// the index doesn't promise, and a view that sorts, filters or groups by
+// them is worked out the slow way, which is right.
+
+/** A pending fill: which fields, by their place in the schema, and how far it has got. */
+interface Fill {
+  upto: number;
+  fields: number[];
+  search: boolean;
+  /** Values found that their field's type doesn't hold, by field. */
+  bad: Record<number, number>;
+}
+
+async function fillOf(db: SqlDriver, n: number): Promise<Fill | null> {
+  await db.exec("create table if not exists _fill(n integer primary key, upto integer not null, fill text not null)");
+  const found = await db.all("select upto, fill from _fill where n = ?", [n]);
+  if (!found[0]) return null;
+  const { drop, ...rest } = JSON.parse(found[0].fill as string) as Omit<Fill, "upto"> & { drop?: string[] };
+  // A fill from before fields were hidden took gone fields out as it went: what it hadn't yet is hidden now.
+  if (drop?.length) await setHidden(db, n, [...new Set([...(await hiddenOf(db, n)), ...drop])]);
+  return { upto: found[0].upto as number, ...rest };
+}
+
+async function setFill(db: SqlDriver, n: number, fill: Fill | null): Promise<void> {
+  await db.exec("create table if not exists _fill(n integer primary key, upto integer not null, fill text not null)");
+  if (!fill) {
+    await db.run("delete from _fill where n = ?", [n]);
+    return;
+  }
+  const { upto, ...rest } = fill;
+  await db.run("insert or replace into _fill(n, upto, fill) values(?, ?, ?)", [n, upto, JSON.stringify(rest)]);
+}
+
+// -- Fields hidden --------------------------------------------------------
+//
+// A field removed from the schema leaves its values in each row's JSON,
+// hidden: every row read or saved leaves them out, so the file loses the
+// field as it did. An undo that brings the field back (alterIndex's
+// `restore`) finds its values where they were (#562). A new field that
+// only reuses the name has them taken out then; a build forgets them.
+
+async function hiddenOf(db: SqlDriver, n: number): Promise<string[]> {
+  await db.exec("create table if not exists _hidden(n integer, name text not null, primary key(n, name))");
+  return (await db.all("select name from _hidden where n = ? order by name", [n])).map((r) => r.name as string);
+}
+
+async function setHidden(db: SqlDriver, n: number, names: string[]): Promise<void> {
+  await db.exec("create table if not exists _hidden(n integer, name text not null, primary key(n, name))");
+  await db.run("delete from _hidden where n = ?", [n]);
+  for (const name of names) await db.run("insert into _hidden(n, name) values(?, ?)", [n, name]);
+}
+
+/** Rows as they are read: without the fields hidden. */
+function withoutHidden<R extends Row>(hidden: string[], rows: R[]): R[] {
+  if (hidden.length === 0) return rows;
+  return rows.map((row) => {
+    if (!hidden.some((name) => name in row)) return row;
+    const out = { ...row };
+    for (const name of hidden) delete out[name];
+    return out;
+  });
+}
+
+/** A row's hidden fields' values, to keep when the row is written again. */
+function hiddenValues(hidden: string[], row: Row): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const name of hidden) if (name in row) kept[name] = row[name];
+  return kept;
+}
+
+/** Field names in the order the search text holds them. */
+const searchedNames = (schema: TableSchema) => schema.fields.filter(searched).map((f) => f.name);
+
+/**
+ * How schema `from`'s fields became `to`'s: each field of `to`'s place in `from` (undefined
+ * for a new field), the fields renamed, and the names of those gone. Matched by id (D62), so a
+ * field renamed is the same field (D63); else by name, unless the field of that name has
+ * another id, which makes it another field.
+ */
+export function fieldChanges(from: TableSchema, to: TableSchema): { matched: (number | undefined)[]; renamed: { from: string; to: string }[]; gone: string[] } {
+  const before = new Map(from.fields.map((f, i) => [f.name, i]));
+  const byId = new Map(from.fields.flatMap((f, i) => (f.id !== undefined ? [[f.id, i] as const] : [])));
+  const matched = to.fields.map((f): number | undefined => {
+    if (f.id !== undefined && byId.has(f.id)) return byId.get(f.id);
+    const o = before.get(f.name);
+    if (o !== undefined && f.id !== undefined && from.fields[o]!.id !== undefined && from.fields[o]!.id !== f.id) return undefined;
+    return o;
+  });
+  const renamed = to.fields.flatMap((f, k) => {
+    const o = matched[k];
+    return o !== undefined && from.fields[o]!.name !== f.name ? [{ from: from.fields[o]!.name, to: f.name }] : [];
+  });
+  const kept = new Set(matched);
+  const gone = from.fields.filter((_, i) => !kept.has(i)).map((f) => f.name);
+  return { matched, renamed, gone };
+}
+
+/**
+ * Whether field `from` of a table held in the index can be renamed `to` there (alterIndex):
+ * not when its formulas read other rows (those are worked out over every row at once), nor
+ * to or from a name the index's JSON paths can't hold.
+ */
+export function renamesInIndex(schema: TableSchema, from: string, to: string): boolean {
+  return planOf(schema).never.size === 0 && ![from, to].some((name) => /["\\]/.test(name));
+}
+
+let parked = 0;
+
+/**
+ * Change table `name`'s index from schema `from` to schema `to` in place.
+ * Resolves false when it can't (no index, an index of another schema, or
+ * formulas that read other rows among those changed): build it instead.
+ * Resolves true with the index answering for `to` at once; what has to be
+ * worked out again is left to `fillIndex`.
+ *
+ * A field `to` doesn't have keeps its values, hidden. `restore` names the
+ * fields of `to` that come back with them (an undo of their removal);
+ * any other field of a hidden field's name starts empty.
+ */
+export async function alterIndex(db: SqlDriver, name: string, from: TableSchema, to: TableSchema, options: { restore?: string[] } = {}): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || (await indexKey(db, name)) === null) return false;
+  const sig = (await db.all("select sig from _tables where n = ?", [n]))[0]?.sig;
+  if (sig !== signature(from)) return false;
+  const was = planOf(from);
+  const now = planOf(to);
+  // Formulas over other rows are worked out over every row at once: no steps for them.
+  if (was.never.size > 0 || now.never.size > 0) return false;
+  const after = new Set(to.fields.map((f) => f.name));
+  const { matched, renamed } = fieldChanges(from, to);
+  const kept = new Set(matched.filter((o) => o !== undefined));
+  const pending = await fillOf(db, n);
+  const wasHidden = await hiddenOf(db, n);
+  // A field gone is hidden, its values kept. One that comes back is shown again: with its
+  // values when it's restored, and emptied first when it's a new field of that name.
+  const gone = from.fields.filter((_, i) => !kept.has(i)).map((f) => f.name);
+  const back = wasHidden.filter((name) => after.has(name));
+  const hidden = [...new Set([...wasHidden.filter((name) => !after.has(name)), ...gone])];
+  const emptied = back.filter((name) => !(options.restore ?? []).includes(name));
+  // A field that keeps its name and loses its formula holds nothing (its results were never
+  // in the file): taken out of the JSON now, as edits to it from now on are its own.
+  const unformulated = from.fields.filter((f, i) => f.computed && kept.has(i) && !to.fields[matched.indexOf(i)]!.computed).map((f) => f.name);
+  if ([...unformulated, ...emptied, ...renamed.flatMap((r) => [r.from, r.to])].some((name) => /["\\]/.test(name))) return false;
+
+  // Each field of `to`: where it was, and whether its values are worked out again.
+  // A new field is: its values are whatever the rows hold under its name, as a build reads them.
+  const moves = to.fields.map((f, k) => {
+    const o = matched[k];
+    if (o === undefined) return { k, o: null as number | null, refill: true };
+    const old = from.fields[o]!;
+    const retyped = was.kinds[o] !== now.kinds[k];
+    const reformulated = JSON.stringify(old.computed ?? null) !== JSON.stringify(f.computed ?? null);
+    return { k, o, refill: retyped || reformulated };
+  });
+  // The search text holds the searched fields' values in order.
+  // A field renamed is searched as it was: its new name stands for its old.
+  const renamedTo = new Map(renamed.map((r) => [r.from, r.to]));
+  const searchChanged =
+    JSON.stringify(searchedNames(from).map((f) => renamedTo.get(f) ?? f)) !== JSON.stringify(searchedNames(to)) || moves.some((m) => m.refill && searched(to.fields[m.k]!));
+
+  forgetIndexes(db, n);
+  await db.exec("begin");
+  try {
+    // Sort indexes are named by field place: dropped, and made again as they're asked for.
+    for (const ix of await db.all("select name from sqlite_master where type = 'index' and tbl_name = ? and name like ?", [`r${n}`, `r${n}\_o%`])) {
+      if (String(ix.name).startsWith(`r${n}_o`)) await db.exec(`drop index if exists ${ix.name as string}`);
+    }
+    for (const name of [...unformulated, ...emptied]) await db.run(`update r${n} set j = json_remove(j, ?) where json_type(j, ?) is not null`, [`$."${name}"`, `$."${name}"`]);
+    // A field renamed (D63): its key in every row's JSON, its cells' lines and what reads it in them,
+    // and the hidden names. Through a name nothing has, so two fields that swap names don't meet.
+    if (renamed.length > 0) {
+      const step = `${Date.now().toString(36)}${(parked++).toString(36)}`;
+      const passes = [renamed.map((r, i) => ({ from: r.from, to: `__renaming_${step}_${i}` })), renamed.map((r, i) => ({ from: `__renaming_${step}_${i}`, to: r.to }))];
+      const cells = await db.all("select seq, line from _cells where n = ?", [n]).catch(() => [] as Record<string, unknown>[]);
+      let lines = cells.map((c) => ({ seq: c.seq as number, cell: JSON.parse(c.line as string) as CellFormula }));
+      for (const pass of passes) {
+        for (const r of pass) {
+          await db.run(`update r${n} set j = json_set(json_remove(j, ?), ?, json(j -> ?)) where json_type(j, ?) is not null`, [`$."${r.from}"`, `$."${r.to}"`, `$."${r.from}"`, `$."${r.from}"`]);
+          lines = lines.map((l) => ({ seq: l.seq, cell: cellRenamed(l.cell, to, name, r.from, r.to) }));
+        }
+      }
+      for (const l of lines) await db.run("update _cells set field = ?, line = ? where n = ? and seq = ?", [l.cell.field, cellLine(l.cell), n, l.seq]);
+    }
+    // Every column out of the way first, so no new name meets an old one.
+    for (const col of was.columns) await db.exec(`alter table r${n} rename column ${col} to q_${col}`);
+    const kept = new Set<string>();
+    for (const { k, o } of moves) {
+      for (const [mine, theirs] of [
+        [now.c[k], o === null ? null : was.c[o]],
+        [now.f[k], o === null ? null : was.f[o]],
+        [now.i[k], o === null ? null : was.i[o]],
+      ] as [string | null | undefined, string | null | undefined][]) {
+        if (!mine) continue;
+        if (theirs) {
+          await db.exec(`alter table r${n} rename column q_${theirs} to ${mine}`);
+          kept.add(theirs);
+        } else {
+          await db.exec(`alter table r${n} add column ${mine}`);
+        }
+      }
+    }
+    // What no field holds any more is parked, under a name nothing will ask for.
+    const mark = `${Date.now().toString(36)}${(parked++).toString(36)}`;
+    for (const col of was.columns) if (!kept.has(col)) await db.exec(`alter table r${n} rename column q_${col} to z${mark}_${col}`);
+
+    // Which fields hold values their type doesn't: kept for those that kept their values;
+    // promised by none being filled (counted as they are).
+    const oldBad = new Map(
+      (await db.all("select fld, bad from _bad where n = ?", [n])).map((r) => [r.fld as number, r.bad as number] as const),
+    );
+    await db.run("delete from _bad where n = ?", [n]);
+    const refill = new Set(moves.filter((m) => m.refill).map((m) => m.k));
+    // A fill under way carries on, its fields at their new places.
+    if (pending) for (const m of moves) if (m.o !== null && pending.fields.includes(m.o)) refill.add(m.k);
+    for (const { k, o } of moves) {
+      const bad = refill.has(k) ? NEVER : (oldBad.get(o!) ?? 0);
+      if (bad !== 0) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, k, bad]);
+    }
+
+    const search = searchChanged || (pending?.search ?? false);
+    await setHidden(db, n, hidden);
+    if (refill.size > 0 || search) {
+      await setFill(db, n, { upto: -1, fields: [...refill].sort((a, b) => a - b), search, bad: {} });
+      // Until the search text is made again, a search reads every row's text, and the search's own index is made after.
+      if (search) {
+        await searchUpTo(db, n);
+        await db.run("insert or replace into _fts(n, upto) values(?, -1)", [n]);
+        await db.exec(`insert into x${n}(x${n}) values('delete-all')`);
+      }
+    } else {
+      await setFill(db, n, null);
+    }
+    await db.run("update _tables set sig = ? where n = ?", [signature(to), n]);
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback").catch(() => {});
+    throw error;
+  }
+  return true;
+}
+
+/** Whether table `name`'s index has fields still being worked out after a change of fields. */
+export async function indexFilling(db: SqlDriver, name: string): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  return n !== null && (await fillOf(db, n)) !== null;
+}
+
+/**
+ * Work out the next piece of what a change of fields left (alterIndex):
+ * a batch of rows, in file order, in one short transaction, so whatever
+ * else is asked is answered between calls. Resolves true while there is
+ * more. `schema` is the table's schema now.
+ */
+export async function fillIndex(db: SqlDriver, name: string, schema: TableSchema, batchSize = BATCH): Promise<boolean> {
+  const n = await tableNumber(db, name, false);
+  if (n === null) return false;
+  const fill = await fillOf(db, n);
+  if (!fill) return false;
+  const plan = planOf(schema);
+  const sig = (await db.all("select sig from _tables where n = ?", [n]))[0]?.sig;
+  if (sig !== signature(schema)) return false;
+  const found = await db.all(`select pos, j, s from r${n} where pos > ? order by pos limit ?`, [fill.upto, batchSize]);
+  await db.exec("begin");
+  try {
+    if (found.length === 0) {
+      // Done: each filled field is promised again when what it holds fits its type.
+      for (const k of fill.fields) {
+        const counted = fill.bad[k] ?? 0;
+        // Edits made meanwhile shifted the count from where the change left it.
+        const now = ((await db.all("select bad from _bad where n = ? and fld = ?", [n, k]))[0]?.bad as number | undefined) ?? NEVER;
+        const bad = Math.max(0, counted + now - NEVER);
+        await db.run("delete from _bad where n = ? and fld = ?", [n, k]);
+        if (bad > 0) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, k, bad]);
+      }
+      await setFill(db, n, null);
+      await db.exec("commit");
+      return false;
+    }
+    const computes = fill.fields.some((k) => schema.fields[k]?.computed);
+    const hidden = await hiddenOf(db, n);
+    const raw = found.map((r) => JSON.parse(r.j as string) as Row);
+    // Worked out as a build would: without the fields hidden.
+    const stored = withoutHidden(hidden, raw);
+    // With the batch's cells' own formulas (D52), whose results stay out of the rows' JSON.
+    const own = withOwnCells(schema, stored, await cellLinesOf(db, n, stored.map((r) => String(r.id))), computes);
+    const rows = own.shown;
+    // Each row's JSON is written again when its formulas' results change it, keeping its hidden values.
+    const rewrite = computes;
+    const cols: { col: string; at: number }[] = [];
+    for (const k of fill.fields) {
+      // The value's place in what `encode` gives: the fields' columns in order.
+      let at = 0;
+      for (let m = 0; m < k; m++) at += 1 + (plan.f[m] ? 1 : 0) + (plan.i[m] ? 1 : 0);
+      cols.push({ col: plan.c[k]!, at });
+      if (plan.f[k]) cols.push({ col: plan.f[k]!, at: at + 1 });
+      if (plan.i[k]) cols.push({ col: plan.i[k]!, at: at + 1 + (plan.f[k] ? 1 : 0) });
+    }
+    // What each row is set to, after its place: the JSON, the search text, then the columns.
+    const sets = [...(rewrite ? ["j"] : []), ...(fill.search ? ["s"] : []), ...cols.map((c) => c.col)];
+    const lists = rows.map((row, x) => {
+      const body = bodyOf(found[x]!.s as string);
+      const e = encode(plan, row, body === "" ? undefined : body);
+      for (const k of e.bad) if (fill.fields.includes(k)) fill.bad[k] = (fill.bad[k] ?? 0) + 1;
+      const values: SqlValue[] = [found[x]!.pos as number];
+      if (rewrite) values.push(JSON.stringify({ ...own.kept[x]!, ...hiddenValues(hidden, raw[x]!) }));
+      if (fill.search) values.push(e.search);
+      for (const { at } of cols) values.push(e.values[at] ?? null);
+      return values;
+    });
+    if (sets.length > 0 && db.inProcess && db.batch) {
+      // A statement a row, prepared once: the fastest where nothing crosses.
+      await db.batch(`update r${n} set ${sets.map((col) => `${col} = ?`).join(", ")} where pos = ?`, lists.map(([pos, ...set]) => [...set, pos!]));
+    } else if (sets.length > 0) {
+      // The whole batch in one statement, its rows as one JSON array: a driver whose every
+      // statement crosses to native code (the Mac's and the phone's) crosses once a batch, not once a row.
+      const value = (i: number) => `json_extract(u.value, '$[${i}]')`;
+      await db.run(
+        `update r${n} set ${sets.map((col, i) => `${col} = ${value(i + 1)}`).join(", ")} from json_each(?) as u where r${n}.pos = ${value(0)}`,
+        [JSON.stringify(lists)],
+      );
+    }
+    await setFill(db, n, { ...fill, upto: found[found.length - 1]!.pos as number });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback").catch(() => {});
+    throw error;
+  }
+  return true;
+}
+
 /** The content key the index was built from, or null when there is no index of this name. */
 export async function indexKey(db: SqlDriver, name: string): Promise<string | null> {
   const n = await tableNumber(db, name, false);
@@ -378,13 +938,24 @@ export async function dropIndex(db: SqlDriver, name: string): Promise<void> {
  * New rows go at the end of the file order. Not for schemas with formulas
  * that read other rows (a change in one row changes others): rebuild.
  * `bodies` sets the page of a row (an empty string removes it); a row
- * given without an entry keeps its page.
+ * given without an entry keeps its page. `at` gives a new row its place
+ * in the file order (a row removed, put back where removeRows found it);
+ * a place another row has since taken is not used, and it goes at the end.
  */
 export async function putRows(
   db: SqlDriver,
-  options: { name: string; schema: TableSchema; rows: Row[]; bodies?: Record<string, string>; key: string },
+  options: {
+    name: string;
+    schema: TableSchema;
+    rows: Row[];
+    bodies?: Record<string, string>;
+    at?: Record<string, number>;
+    key: string;
+    /** Cells' own formulas to add with the rows: a row put back with its (D52). */
+    cells?: CellFormula[];
+  },
 ): Promise<void> {
-  const { name, schema, rows, bodies, key } = options;
+  const { name, schema, rows, bodies, at, key } = options;
   const plan = planOf(schema);
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
@@ -396,32 +967,48 @@ export async function putRows(
   // A search index still being made holds only the rows up to here; the rest reach it as it gets to them.
   const upto = await searchUpTo(db, n);
   const searched = (pos: number) => upto === null || pos <= upto;
+  const counted = countedAt(await fillOf(db, n));
+  // A row written again keeps its hidden fields' values: an undo of their removal finds them.
+  const hidden = await hiddenOf(db, n);
+  // Cells' own formulas (D52): worked out with their row, their results kept out of its JSON.
+  if (options.cells && options.cells.length > 0) {
+    await cellsTable(db);
+    let seq = Number((await db.all("select coalesce(max(seq), 0) as m from _cells where n = ?", [n]))[0]!.m);
+    for (const c of options.cells) await db.run("insert into _cells(n, seq, id, field, line) values(?, ?, ?, ?, ?)", [n, ++seq, c.id, c.field, cellLine(c)]);
+  }
+  const cells = await cellLinesOf(db, n, rows.map((r) => String(r.id)));
   await db.exec("begin");
   try {
     for (const raw of rows) {
-      const row = computed ? computeRows(schema, [raw]).rows[0]! : raw;
+      const own = withOwnCells(schema, [raw], cells.length > 0 ? cells.filter((c) => c.id === raw.id) : [], computed);
+      const row = own.shown[0]!;
+      const keep = own.kept[0]!;
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [String(row.id)]))[0];
       const priorBody = old ? bodyOf(old.s as string) : "";
       const body = bodies && row.id in bodies ? bodies[row.id]!.toLowerCase() : priorBody;
       const e = encode(plan, row, body === "" ? undefined : body);
       if (old) {
         const was = encode(plan, JSON.parse(old.j as string) as Row, undefined);
-        await shiftBad(db, n, was.bad, -1);
+        await shiftBad(db, n, counted(was.bad, old.pos as number), -1);
         if (searched(old.pos as number)) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
         await db.run(
           `update r${n} set j = ?, s = ?, ${cols.map((c) => `${c} = ?`).join(", ")} where pos = ?`,
-          [JSON.stringify(row), e.search, ...e.values, old.pos as number],
+          [JSON.stringify({ ...keep, ...hiddenValues(hidden, JSON.parse(old.j as string) as Row) }), e.search, ...e.values, old.pos as number],
         );
         if (searched(old.pos as number)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [old.pos as number, e.search]);
       } else {
+        const wanted = at?.[row.id];
+        const free = wanted !== undefined && (await db.all(`select 1 from r${n} where pos = ?`, [wanted])).length === 0;
         await db.run(
-          `insert into r${n}(id, j, s, ${cols.join(", ")}) values(?, ?, ?, ${cols.map(() => "?").join(", ")})`,
-          [String(row.id), JSON.stringify(row), e.search, ...e.values],
+          `insert into r${n}(pos, id, j, s, ${cols.join(", ")}) values(?, ?, ?, ?, ${cols.map(() => "?").join(", ")})`,
+          [free ? wanted : null, String(row.id), JSON.stringify(keep), e.search, ...e.values],
         );
         const pos = (await db.all(`select pos from r${n} where id = ?`, [String(row.id)]))[0]!.pos as number;
         if (searched(pos)) await db.run(`insert into x${n}(rowid, s) values(?, ?)`, [pos, e.search]);
+        await shiftBad(db, n, counted(e.bad, pos), 1);
+        continue;
       }
-      await shiftBad(db, n, e.bad, 1);
+      await shiftBad(db, n, counted(e.bad, old.pos as number), 1);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
     await db.exec("commit");
@@ -436,19 +1023,31 @@ function bodyOf(search: string): string {
   return search.slice(search.lastIndexOf(SEP) + 1);
 }
 
-/** Remove rows by id, and their pages. */
-export async function removeRows(db: SqlDriver, options: { name: string; schema: TableSchema; ids: string[]; key: string }): Promise<void> {
+/** Remove rows by id, and their pages. Gives back each row removed and its place in the file order, which putRows' `at` puts it back at. */
+export async function removeRows(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; ids: string[]; key: string },
+): Promise<{ row: Row; at: number; cells?: CellFormula[] }[]> {
   const { name, schema, ids, key } = options;
   const plan = planOf(schema);
   const n = await tableNumber(db, name, false);
   if (n === null || (await indexKey(db, name)) === null) throw new Error(`no index for ${name}`);
   const upto = await searchUpTo(db, n);
+  const fill = await fillOf(db, n);
+  const counted = countedAt(fill);
+  const removed: { row: Row; at: number; cells?: CellFormula[] }[] = [];
+  // Their cells' own formulas go with them, and come back with them (D52).
+  const cells = await cellLinesOf(db, n, ids);
   await db.exec("begin");
   try {
     for (const id of ids) {
       const old = (await db.all(`select pos, j, s from r${n} where id = ?`, [id]))[0];
       if (!old) continue;
-      await shiftBad(db, n, encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, -1);
+      // Whole, hidden fields and all: put back (undo), it is as it was.
+      const mine = cells.filter((c) => c.id === id);
+      removed.push({ row: JSON.parse(old.j as string) as Row, at: num(old.pos), ...(mine.length > 0 ? { cells: mine } : {}) });
+      if (mine.length > 0) await db.run("delete from _cells where n = ? and id = ?", [n, id]);
+      await shiftBad(db, n, counted(encode(plan, JSON.parse(old.j as string) as Row, undefined).bad, old.pos as number), -1);
       if (upto === null || (old.pos as number) <= upto) await db.run(`insert into x${n}(x${n}, rowid, s) values('delete', ?, ?)`, [old.pos as number, old.s as string]);
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
     }
@@ -458,7 +1057,16 @@ export async function removeRows(db: SqlDriver, options: { name: string; schema:
     await db.exec("rollback").catch(() => {});
     throw error;
   }
+  return removed;
 }
+
+/**
+ * Of the fields a row at `pos` holds wrongly, those its count goes by: while
+ * a fill is under way (fillIndex), its fields are counted as it reaches
+ * each row, so a row it hasn't reached yet isn't counted for them here.
+ */
+const countedAt = (fill: Fill | null) => (fields: number[], pos: number) =>
+  fill === null || pos <= fill.upto ? fields : fields.filter((k) => !fill.fields.includes(k));
 
 async function shiftBad(db: SqlDriver, n: number, fields: number[], by: 1 | -1): Promise<void> {
   for (const fld of fields) {
@@ -483,7 +1091,7 @@ const blank = (col: string) => `(${col} is null or ${col} = '')`;
 const items = (col: string) => `json_each(case when ${col} = '' then '[]' else ${col} end)`;
 
 /** A filter as SQL over the column `col`, exactly as matchesFilter answers it, or null when it can't promise that. */
-function filterSql(kind: Kind, col: string, f: ViewFilter): Compiled {
+function filterSql(kind: Kind, col: string, f: ViewFilter, instantCol?: string): Compiled {
   const value = f.value;
   if (kind === "opaque" && f.operator !== "empty" && f.operator !== "not_empty") return null;
   const text = kind === "text" || kind === "datetime";
@@ -512,8 +1120,12 @@ function filterSql(kind: Kind, col: string, f: ViewFilter): Compiled {
     case "lte": {
       // Empty cells match none of these (SPEC "Empty values"). Anything but one kind of value on both sides is JS coercion.
       if (!same || kind === "boolean") return null;
-      if (typeof value === "string" && WIDE.test(value)) return null;
       const op = { gt: ">", gte: ">=", lt: "<", lte: "<=" }[f.operator];
+      // A datetime against a datetime: the instants, as applyFilters compares them.
+      if (kind === "datetime" && instantCol && typeof value === "string" && !Number.isNaN(instantOf(value))) {
+        return { sql: `(${instantCol} is not null and ${instantCol} ${op} ?)`, params: [instantOf(value)] };
+      }
+      if (typeof value === "string" && WIDE.test(value)) return null;
       return { sql: `(${col} is not null and ${col} <> '' and ${col} ${op} ?)`, params: [value as SqlValue] };
     }
     case "contains":
@@ -668,6 +1280,11 @@ export async function queryIndex(
   if (sig !== signature(schema)) return null;
   const plan = planOf(schema);
   const bad = await badFields(db, n);
+  const pendingFill = await fillOf(db, n);
+  const hidden = await hiddenOf(db, n);
+  const filling = pendingFill !== null && plan.never.size === 0 && pendingFill.fields.some((k) => schema.fields[k]?.computed);
+  let cellsKnown: Promise<boolean> | undefined;
+  const cellsHere = () => (cellsKnown ??= hasCells(db, n));
   const index = new Map(schema.fields.map((f, i) => [f.name, i]));
   const usable = (fieldName: string): number | null => {
     const i = index.get(fieldName);
@@ -679,16 +1296,24 @@ export async function queryIndex(
   for (const f of query.filter ?? []) {
     const i = usable(f.field);
     if (i === null) return null;
-    const compiled = filterSql(plan.kinds[i]!, `r.${plan.c[i]}`, f);
+    const compiled = filterSql(plan.kinds[i]!, `r.${plan.c[i]}`, f, plan.i[i] ? `r.${plan.i[i]}` : undefined);
     if (!compiled) return null;
     where.push(compiled.sql);
     whereParams.push(...compiled.params);
+  }
+
+  // Rows hidden by hand (D58).
+  if (query.hidden && query.hidden.length > 0) {
+    where.push(`r.id not in (${query.hidden.map(() => "?").join(", ")})`);
+    whereParams.push(...query.hidden);
   }
 
   const needle = (query.search ?? "").trim().toLowerCase();
   let narrowed = false;
   if (needle.length > 0) {
     if (needle.includes(SEP) || needle.includes("\u0002")) return null;
+    // The search text is being made again after a change of fields (alterIndex).
+    if (pendingFill?.search) return null;
     // The trigram index finds candidates (it folds a little more than lower case does); instr is the exact test.
     // (While a search index is still being made, every row's text is read instead.)
     narrowed = [...needle].length >= 3 && (await searchUpTo(db, n)) === null;
@@ -839,10 +1464,7 @@ export async function queryIndex(
         bucket.count += row.n as number;
       }
       const declared = enumValues(schema.fields[groupAt!]);
-      // applyGroup hands its groups back as an object's keys, and those come
-      // out with whole numbers first, smallest first, whatever went in.
-      const whole = (key: string) => /^(0|[1-9]\d*)$/.test(key) && Number(key) < 4294967295;
-      const rank = (b: Bucket) => (whole(b.key) ? 0 : b.key === "(empty)" ? 3 : declared.includes(b.key) ? 1 : 2);
+      const rank = (b: Bucket) => (b.key === "(empty)" ? 3 : declared.includes(b.key) ? 1 : 2);
       // The rest come as they first appear in the view's order.
       const rest = [...byKey.values()].filter((b) => rank(b) === 2);
       if (rest.length > MAX_FIRSTS) {
@@ -875,7 +1497,6 @@ export async function queryIndex(
       const ordered = [...byKey.values()].sort((a, b) => {
         const by = rank(a) - rank(b);
         if (by !== 0) return by;
-        if (rank(a) === 0) return Number(a.key) - Number(b.key);
         return rank(a) === 1 ? declared.indexOf(a.key) - declared.indexOf(b.key) : a.first - b.first;
       });
       let start = 0;
@@ -964,7 +1585,12 @@ export async function queryIndex(
     inView,
     version: options.version ?? `${(await indexKey(db, name)) ?? ""}|${JSON.stringify(query)}`,
     async rows(start, end) {
-      return (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
+      const rows = (await windowOf("r.j", start, end)).map((j) => JSON.parse(j as string) as Row);
+      // A formula still being filled in (alterIndex) is worked out for the rows asked, so they show it at once.
+      const shown = withoutHidden(hidden, rows);
+      const filled = filling ? computeRows(schema, shown).rows : shown;
+      // Cells' own formulas (D52): their results aren't kept, and are worked out as their rows are read.
+      return (await cellsHere()) ? withCellResults(db, n, schema, filled) : filled;
     },
     async ids(start, end) {
       return (await windowOf("r.id", start, end)) as string[];
@@ -984,7 +1610,11 @@ export async function queryIndex(
     },
     async row(id) {
       const found = await db.all(`select r.j as j from r${n} r ${and("r.id = ?")}`, [...whereParams, id]);
-      return found[0] ? (JSON.parse(found[0].j as string) as Row) : undefined;
+      if (!found[0]) return undefined;
+      const row = JSON.parse(found[0].j as string) as Row;
+      const [shown] = withoutHidden(hidden, [row]);
+      const filled = filling ? computeRows(schema, [shown!]).rows[0]! : shown!;
+      return (await cellsHere()) ? (await withCellResults(db, n, schema, [filled]))[0] : filled;
     },
     totals: () => (totals ??= loadTotals()),
     groups: async () => (await loadBuckets()).map(({ key, start, count }) => ({ key, start, count })),
@@ -1031,7 +1661,8 @@ export async function* storedRows(
   const n = await tableNumber(db, options.name, false);
   if (n === null) throw new Error(`no index for ${options.name}`);
   const size = options.batchSize ?? BATCH;
-  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? [])];
+  // And the fields a fill has still to take out of rows' JSON.
+  const computed = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...(await hiddenOf(db, n))];
   let after = -1;
   for (;;) {
     const found = await db.all(`select pos, j from r${n} where pos > ? order by pos limit ?`, [after, size]);
@@ -1048,6 +1679,48 @@ export async function* storedRows(
     }
     yield text;
   }
+}
+
+/**
+ * The same rows as storedRows gives, a batch at a time, each with its place
+ * in the file order: for a writer that puts each row back in the rows file
+ * it came from (SPEC section 3, D51).
+ */
+export async function* storedRowLines(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; batchSize?: number; omit?: string[]; from?: number; before?: number },
+): AsyncIterable<{ pos: number; line: string }[]> {
+  const n = await tableNumber(db, options.name, false);
+  if (n === null) throw new Error(`no index for ${options.name}`);
+  const size = options.batchSize ?? BATCH;
+  const leave = [...options.schema.fields.filter((f) => f.computed).map((f) => f.name), ...(options.omit ?? []), ...(await hiddenOf(db, n))];
+  // Only the places from `from` up to (not including) `before`, when given: one rows file's.
+  let after = options.from !== undefined && Number.isFinite(options.from) ? options.from - 1 : -1;
+  const below = options.before !== undefined && Number.isFinite(options.before) ? ` and pos < ${Math.floor(options.before)}` : "";
+  for (;;) {
+    const found = await db.all(`select pos, j from r${n} where pos > ?${below} order by pos limit ?`, [after, size]);
+    if (found.length === 0) return;
+    after = found[found.length - 1]!.pos as number;
+    yield found.map((r) => {
+      if (leave.length === 0) return { pos: r.pos as number, line: r.j as string };
+      const row = JSON.parse(r.j as string) as Row;
+      for (const field of leave) delete row[field];
+      return { pos: r.pos as number, line: JSON.stringify(row) };
+    });
+  }
+}
+
+/** Where rows are in the file order (their places), by id: those the index has. */
+export async function rowPlaces(db: SqlDriver, name: string, ids: string[]): Promise<number[]> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || ids.length === 0) return [];
+  const places: number[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const some = ids.slice(i, i + 500);
+    const found = await db.all(`select pos from r${n} where id in (${some.map(() => "?").join(", ")})`, some);
+    for (const r of found) places.push(r.pos as number);
+  }
+  return places;
 }
 
 /** A parsed table's rows as the index holds them: handy for the apps' first build. */

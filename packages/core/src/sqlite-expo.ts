@@ -1,4 +1,5 @@
 import type { SqlDriver, SqlValue } from "./indexer.js";
+import { manyRowInserts } from "./sqlite-batch.js";
 
 /** The parts of expo-sqlite's `SQLiteStatement` the driver uses, so core takes no dependency on the package. */
 export interface ExpoStatement {
@@ -21,10 +22,6 @@ export interface ExpoDriver extends SqlDriver {
 }
 
 const CACHED = 64;
-/** Bound values per statement: SQLite's limit is 32,766; this keeps each statement's work short. */
-const VALUES_PER_STATEMENT = 4_000;
-/** `insert into t(a, b) values(?, ?)`: one row's insert, which a batch can repeat as `values(?, ?), (?, ?), …`. */
-const ONE_ROW_INSERT = /^\s*insert\s+into\s+[^;]+?\bvalues\s*(\(\s*\?(?:\s*,\s*\?)*\s*\))\s*$/i;
 
 export interface ExpoDriverOptions {
   /**
@@ -108,18 +105,12 @@ export function expoDriver(db: ExpoDatabase, mode: "async" | "sync" = "async", o
     // So anything else asked of the driver during a build runs inside the build's transaction: a host must hold its
     // writes to this database until the build is done.
     batch: async (sql, lists) => {
-      const tuple = ONE_ROW_INSERT.exec(sql)?.[1];
-      const width = lists[0]?.length ?? 0;
-      if (!tuple || width === 0 || lists.some((l) => l.length !== width)) {
+      const many = manyRowInserts(sql, lists);
+      if (!many) {
         for (const params of lists) await inTurn(async () => step(await prepared(sql), params));
         return;
       }
-      const per = Math.max(1, Math.floor(VALUES_PER_STATEMENT / width));
-      for (let at = 0; at < lists.length; at += per) {
-        const part = lists.slice(at, at + per);
-        const many = sql.slice(0, sql.lastIndexOf(tuple)) + Array.from(part, () => tuple).join(", ");
-        await inTurn(async () => step(await prepared(many), part.flat()));
-      }
+      for (const statement of many) await inTurn(async () => step(await prepared(statement.sql), statement.params));
     },
     close: () =>
       inTurn(async () => {

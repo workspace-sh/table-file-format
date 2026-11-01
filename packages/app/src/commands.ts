@@ -6,9 +6,10 @@
 
 export type AppCommandId =
   | "new-file"
-  | "open-folder"
-  | "open-zip"
-  | "export-zip"
+  | "open"
+  | "export-file"
+  | "undo"
+  | "redo"
   | "toggle-sidebar"
   | "tables-mode"
   | "files-mode"
@@ -45,22 +46,32 @@ export interface AppCommandState {
   /** From history's canGoBack and canGoForward; both false when absent. */
   canGoBack?: boolean;
   canGoForward?: boolean;
+  /** Whether the table on screen has an edit to undo, or to redo; both false when absent. */
+  canUndo?: boolean;
+  canRedo?: boolean;
+  /** What each would act on, as a menu says it ("Delete Row"): the labels read "Undo Delete Row". Plain "Undo" and "Redo" when absent. */
+  undoName?: string | null;
+  redoName?: string | null;
+  /** The file on screen is a single-file `.table` already: there's nothing to export as one. */
+  singleFile?: boolean;
 }
 
 /** The commands in menu order, labelled and ticked for the state they're shown in. */
 export function appCommands(state: AppCommandState): AppCommand[] {
   return [
     { id: "new-file", menu: "File", label: "New .table File…", key: "n" },
-    { id: "open-folder", menu: "File", label: "Open .table…", key: "o" },
-    { id: "open-zip", menu: "File", label: "Open .table.zip…", key: "o", shift: true },
+    { id: "open", menu: "File", label: "Open…", key: "o", hint: "Open a .table, a folder or a single file, or a spreadsheet as a new table" },
     {
-      id: "export-zip",
+      id: "export-file",
       menu: "File",
-      label: "Export .table.zip…",
+      label: "Export as a Single File…",
       key: "e",
       shift: true,
-      hint: "Save this table as a .table.zip: a folder of plain files (schema, one row per line, views, pages) that any .table reader opens.",
+      enabled: !state.singleFile,
+      hint: "Save a copy of this file as a single .table: every table in it, its pages and attachments, in one file that any .table reader opens.",
     },
+    { id: "undo", menu: "Edit", label: state.undoName ? `Undo ${state.undoName}` : "Undo", key: "z", enabled: state.canUndo ?? false, hint: "Put the table back as it was before its last edit" },
+    { id: "redo", menu: "Edit", label: state.redoName ? `Redo ${state.redoName}` : "Redo", key: "z", shift: true, enabled: state.canRedo ?? false, hint: "Make the edit just undone again" },
     { id: "copy-link", menu: "Edit", label: "Copy Link to View", key: "c", option: true },
     { id: "tables-mode", menu: "View", label: "Tables", key: "1", checked: !state.filesMode },
     { id: "files-mode", menu: "View", label: "Files", key: "2", checked: state.filesMode },
@@ -113,4 +124,56 @@ export function shortcutText(command: AppCommand, platform: "mac" | "gtk" | "web
 /** A command's hint with its shortcut, where the platform has one: "Hide the sidebar (⌘B)". */
 export function hintWithShortcut(command: AppCommand, platform: "mac" | "gtk" | "web"): string {
   return `${command.hint ?? command.label} (${shortcutText(command, platform)})`;
+}
+
+/**
+ * One item of a menu an app draws its own way (a toolbar's menu, the glass
+ * bar's More): what it says, its symbol (SF Symbols on Apple's platforms,
+ * Material Symbols on Android), whether it's ticked or can't be chosen now,
+ * and what it does.
+ */
+export interface MenuItem {
+  key: string;
+  label: string;
+  sf?: string;
+  material?: string;
+  on?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}
+
+/** A table's views, the one shown ticked, then New View where the file can be changed: the Views menu every app has. */
+export function viewsMenu(input: {
+  views: readonly { id: string; name: string }[];
+  view: string;
+  showView: (id: string) => void;
+  /** Absent where the file is only to look at. */
+  addView?: () => void;
+}): MenuItem[] {
+  const items: MenuItem[] = input.views.map((v) => ({
+    key: v.id,
+    label: v.name,
+    sf: "rectangle.grid.1x2",
+    on: v.id === input.view,
+    onPress: () => input.showView(v.id),
+  }));
+  if (input.addView) items.push({ key: "new-view", label: "New View", sf: "plus", material: "add", onPress: input.addView });
+  return items;
+}
+
+/** Undo and Redo for the table on screen, named as the Edit menu names them ("Undo Delete Row"). */
+export function undoRedoMenu(input: {
+  canUndo: boolean;
+  canRedo: boolean;
+  undoName: string | null;
+  redoName: string | null;
+  undo: () => void;
+  redo: () => void;
+}): MenuItem[] {
+  const commands = appCommands({ sidebarCollapsed: false, filesMode: false, canUndo: input.canUndo, canRedo: input.canRedo, undoName: input.undoName, redoName: input.redoName });
+  const label = (id: string) => commands.find((c) => c.id === id)!.label;
+  return [
+    { key: "undo", label: label("undo"), sf: "arrow.uturn.backward", material: "undo", disabled: !input.canUndo, onPress: input.undo },
+    { key: "redo", label: label("redo"), sf: "arrow.uturn.forward", material: "redo", disabled: !input.canRedo, onPress: input.redo },
+  ];
 }

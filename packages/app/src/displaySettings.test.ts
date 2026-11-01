@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, withDisplayChoice, LOCALES, viewerLocale, viewerOrder } from "./displaySettings.ts";
+import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, displayFor, withDisplayChoice, LOCALES, viewerLocale, viewerOrder } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
+import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
 function memory(initial: Record<string, string> = {}): KeyValueStore {
   const data = { ...initial };
@@ -31,19 +32,45 @@ test("anything unknown is dropped, not trusted", () => {
   assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"locale":"de-DE","dateFormat":"bogus"}' })), { locale: "de-DE" });
 });
 
-test("formula syntax: the stored form is kept; Excel style is the default, so it isn't", () => {
+test("formula syntax is chosen table by table: the tables shown in stored form are kept", () => {
   const store = memory();
-  saveDisplay(store, { formulaSyntax: "stored" });
-  assert.deepEqual(loadDisplay(store), { formulaSyntax: "stored" });
-  saveDisplay(store, { formulaSyntax: "excel" });
+  saveDisplay(store, { storedFormulaTables: ["shop.table/orders"] });
+  assert.deepEqual(loadDisplay(store), { storedFormulaTables: ["shop.table/orders"] });
+  saveDisplay(store, {});
   assert.deepEqual(loadDisplay(store), {});
-  assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"formulaSyntax":"lisp"}' })), {});
+  assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"storedFormulaTables":"orders","formulaSyntax":"stored"}' })), {});
 });
 
-test("displayChoices: three rows, in order, with the chosen values", () => {
-  const rows = displayChoices({}, "en-GB");
-  assert.deepEqual(rows.map((r) => r.kind), ["locale", "dateFormat", "formulaSyntax"]);
-  assert.deepEqual(rows.map((r) => r.value), ["", "iso", "excel"]);
+test("the table on screen shows its formulas in the syntax chosen for it, and only it", () => {
+  const display: DisplaySettings = withDisplayChoice({ locale: "de-DE" }, "formulaSyntax", "stored", "shop.table/orders");
+  assert.deepEqual({ ...display }, { locale: "de-DE", storedFormulaTables: ["shop.table/orders"] });
+  assert.equal(displayFor(display, "shop.table/orders").formulaSyntax, "stored");
+  assert.equal(displayFor(display, "shop.table/products").formulaSyntax, undefined);
+  assert.equal(displayChoices(display, "en-GB", "Browser", "shop.table/orders")[2]!.value, "stored");
+  assert.equal(displayChoices(display, "en-GB", "Browser", "shop.table/products")[2]!.value, "excel");
+  // Back to Excel style: nothing kept for it.
+  assert.deepEqual(withDisplayChoice(display, "formulaSyntax", "excel", "shop.table/orders"), { locale: "de-DE" });
+  // With no table on screen there's nothing to choose for.
+  assert.deepEqual(displayChoices(display, "en-GB").map((r) => r.kind), ["locale", "dateFormat", "resizeHandles"]);
+  assert.equal(withDisplayChoice(display, "formulaSyntax", "excel"), display);
+});
+
+test("resize handles: grabbers are kept; pills are the default, so they aren't", () => {
+  const store = memory();
+  saveDisplay(store, { resizeHandles: "grabbers" });
+  assert.deepEqual(loadDisplay(store), { resizeHandles: "grabbers" });
+  saveDisplay(store, {});
+  assert.deepEqual(loadDisplay(store), {});
+  assert.deepEqual(loadDisplay(memory({ [DISPLAY_KEY]: '{"resizeHandles":"knobs"}' })), {});
+  assert.equal(withDisplayChoice({}, "resizeHandles", "grabbers").resizeHandles, "grabbers");
+  assert.equal(withDisplayChoice({ resizeHandles: "grabbers" }, "resizeHandles", "pills").resizeHandles, undefined);
+});
+
+test("displayChoices: four rows, in order, with the chosen values", () => {
+  const rows = displayChoices({}, "en-GB", "Browser", "t");
+  assert.deepEqual(rows.map((r) => r.kind), ["locale", "dateFormat", "formulaSyntax", "resizeHandles"]);
+  assert.deepEqual(rows.map((r) => r.value), ["", "iso", "excel", "pills"]);
+  assert.deepEqual(rows[3]!.options.map((o) => o.label), ["Pills", "Grabbers"]);
   assert.equal(rows[0]!.options[0]!.label, "Browser (en-GB)");
   assert.equal(rows[0]!.options.length, LOCALES.length + 1);
   assert.equal(rows[1]!.options.find((o) => o.value === "iso")!.label, "ISO (2026-04-20)");
@@ -51,8 +78,8 @@ test("displayChoices: three rows, in order, with the chosen values", () => {
   assert.equal(rows[0]!.note, undefined);
   assert.ok(rows[1]!.note && rows[2]!.note);
   assert.equal(displayChoices({}, "fr-FR", "System")[0]!.options[0]!.label, "System (fr-FR)");
-  const chosen = displayChoices({ locale: "de-DE", dateFormat: "long", formulaSyntax: "stored" }, "en-GB");
-  assert.deepEqual(chosen.map((r) => r.value), ["de-DE", "long", "stored"]);
+  const chosen = displayChoices({ locale: "de-DE", dateFormat: "long", storedFormulaTables: ["t"], resizeHandles: "grabbers" }, "en-GB", "Browser", "t");
+  assert.deepEqual(chosen.map((r) => r.value), ["de-DE", "long", "stored", "grabbers"]);
 });
 
 test("withDisplayChoice: a default is stored as absent", () => {
@@ -60,13 +87,11 @@ test("withDisplayChoice: a default is stored as absent", () => {
   assert.equal(withDisplayChoice({ locale: "fr-FR" }, "locale", "").locale, undefined);
   assert.equal(withDisplayChoice({ dateFormat: "long" }, "dateFormat", "iso").dateFormat, undefined);
   assert.equal(withDisplayChoice({}, "dateFormat", "weekday").dateFormat, "weekday");
-  assert.equal(withDisplayChoice({}, "formulaSyntax", "stored").formulaSyntax, "stored");
-  assert.equal(withDisplayChoice({ formulaSyntax: "stored" }, "formulaSyntax", "excel").formulaSyntax, undefined);
   // The others are kept.
-  assert.deepEqual(withDisplayChoice({ locale: "ja-JP", dateFormat: "short" }, "formulaSyntax", "stored"), {
+  assert.deepEqual(withDisplayChoice({ locale: "ja-JP", dateFormat: "short" }, "formulaSyntax", "stored", "t"), {
     locale: "ja-JP",
     dateFormat: "short",
-    formulaSyntax: "stored",
+    storedFormulaTables: ["t"],
   });
 });
 

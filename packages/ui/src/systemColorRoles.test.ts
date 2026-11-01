@@ -31,3 +31,13 @@ test("a known pair becomes its role, an unknown one stays, and pills are skipped
   assert.deepEqual(styles.pillBlue.color, { default: "#1d4ed8", [DARK]: "#8ab4ff" });
   assert.deepEqual(styles.at(4), { top: 4, borderColor: "system:separator" });
 });
+
+test("a platform that takes only some roles leaves the others as written (the Mac takes the lines)", () => {
+  const styles = {
+    text: { color: { default: "#1c1c1e", [DARK]: "#f5f5f7" } },
+    line: { borderBottomColor: { default: "#e5e5ea", [DARK]: "#26262b" } },
+  };
+  swapSystemColors(styles, (role) => (role === "separator" ? "system:separatorColor" : undefined));
+  assert.deepEqual(styles.text.color, { default: "#1c1c1e", [DARK]: "#f5f5f7" });
+  assert.equal(styles.line.borderBottomColor, "system:separatorColor");
+});

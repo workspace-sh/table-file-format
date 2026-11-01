@@ -7,14 +7,15 @@
   "workspaces": [
     "packages/*",
     "apps/web",
-    "apps/mobile"
+    "apps/mobile",
+    "edn/js"
   ],
   "//workspaces": "apps/desktop is intentionally NOT a workspace member — bare RN doesn't compose with npm hoisting. See apps/desktop/README.md.",
   "scripts": {
     "dev": "npm run web:dev",
     "//postinstall": "patches/: fixes to installed packages, applied on every install (patch-package). apps/mobile has its own for the packages nested there.",
     "postinstall": "patch-package",
-    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run app:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
+    "typecheck": "npm run core:typecheck && npm run ui:typecheck && npm run app:typecheck && npm run fixtures:typecheck && npm run web:typecheck && npm run glass-bar:typecheck && npm run file-browser:typecheck && npm run files:typecheck && npm run mobile:typecheck && npm run desktop:typecheck",
 
     "core:build": "npm run build -w @workspace.sh/table-core",
     "core:test": "npm run test -w @workspace.sh/table-core",
@@ -23,6 +24,9 @@
     "core:typecheck": "npm run typecheck -w @workspace.sh/table-core",
 
     "ui:typecheck": "npm run typecheck -w @workspace.sh/table-ui",
+    "glass-bar:typecheck": "npm run typecheck -w @workspace.sh/glass-bar",
+    "file-browser:typecheck": "npm run typecheck -w @workspace.sh/file-browser",
+    "files:typecheck": "npm run typecheck -w @workspace.sh/table-files",
     "ui:test": "npm run test -w @workspace.sh/table-ui",
 
     "app:typecheck": "npm run typecheck -w @workspace.sh/table-app",
@@ -33,6 +37,7 @@
 
     "fixtures:typecheck": "npm run typecheck -w @workspace.sh/table-fixtures",
     "fixtures:generate": "npm run generate -w @workspace.sh/table-fixtures",
+    "fixtures:export": "node --conditions=source --import tsx scripts/fixtures-export.mts",
     "fixtures:test": "npm run test -w @workspace.sh/table-fixtures",
 
     "web:dev": "npm run dev -w @workspace.sh/table-web",

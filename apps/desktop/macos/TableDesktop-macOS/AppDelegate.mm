@@ -1,7 +1,9 @@
 #import "AppDelegate.h"
 
 #import <React/RCTBundleURLProvider.h>
+#import <React/RCTDevLoadingViewSetEnabled.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
+#import <TablePanels/TableShellEntry.h>
 
 @implementation AppDelegate
 
@@ -12,8 +14,65 @@
   // They will be passed down to the ViewController used by React Native.
   self.initialProps = @{};
   self.dependencyProvider = [RCTAppDependencyProvider new];
+#if DEBUG
+  // React Native's "Downloading…" banner is a window of its own that, in a
+  // Debug build here, stays up after the bundle has loaded and takes every
+  // click and key, ⌘R included. Metro's terminal shows the same progress.
+  RCTDevLoadingViewSetEnabled(NO);
+#endif
   
   return [super applicationDidFinishLaunching:notification];
+}
+
+/// The window, as a Mac app's: a split view with a real sidebar and the
+/// React view beside it (TableShell), under one toolbar that shares the
+/// title bar's row. The content is full size, so the sidebar runs the
+/// window's height and the toolbar floats over it, as the system draws them.
+- (void)loadReactNativeWindow:(NSDictionary *)launchOptions
+{
+  RCTPlatformView *rootView = [self.rootViewFactory viewWithModuleName:self.moduleName
+                                                     initialProperties:self.initialProps
+                                                         launchOptions:launchOptions];
+
+  // A second React view, for the inspector: the same app and runtime,
+  // registered under its own name (index.js).
+  RCTPlatformView *inspectorView = [self.rootViewFactory viewWithModuleName:@"TableInspector"
+                                                         initialProperties:@{}
+                                                             launchOptions:launchOptions];
+
+  // Neither React view paints a background of its own (the default is
+  // white): each sits on its pane's, which is the system's.
+  for (NSView *view in @[rootView, inspectorView]) {
+    if ([view respondsToSelector:@selector(setBackgroundColor:)]) {
+      [view setValue:NSColor.clearColor forKey:@"backgroundColor"];
+    }
+  }
+
+  self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1280, 760)
+                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskClosable |
+                                                      NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView
+                                              backing:NSBackingStoreBuffered
+                                                defer:NO];
+  self.window.title = @".table";
+  self.window.autorecalculatesKeyViewLoop = YES;
+  self.window.contentViewController = TableShellCreate(rootView, inspectorView);
+
+  self.window.toolbar = TableShellToolbar();
+  self.window.toolbarStyle = NSWindowToolbarStyleUnified;
+  // No line under the toolbar. The title bar stays the system's own (not
+  // transparent): a transparent one opts the window out of the system's
+  // scroll-edge effect, so content passes sharp behind the title.
+  // TODO(#383): the soft effect behind the toolbar; see TableShell.swift.
+  self.window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+
+  [self.window makeKeyAndOrderFront:self];
+  if (![self.window setFrameUsingName:@"TableDesktopMainWindow"]) {
+    [self.window setContentSize:NSMakeSize(1280, 760)];
+    [self.window center];
+  }
+  [self.window setFrameAutosaveName:@"TableDesktopMainWindow"];
+  // The table, not the sidebar, starts with the keyboard.
+  TableShellFocusContent();
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge

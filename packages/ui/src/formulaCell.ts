@@ -7,6 +7,7 @@ import {
   compileFormula,
   computeRows,
   coordinateOf,
+  FormulaError,
   formulaRefs,
   formulaTypeIfKnown,
   parseExpr,
@@ -72,7 +73,27 @@ export interface FormulaExplained {
   preview?: { value: unknown };
   /** What saving stores, when it can be saved: the formula, and a new type if its family changed. */
   save?: Partial<Field>;
+  /** For this row only (`rowOnly`): the cell's own formula saving stores, in the stored form (D52). */
+  saveRow?: string;
+  /**
+   * Loops (D60): "stuck", this cell is #REF! from a loop that repeating the
+   * calculation would work out; "repeating", the table already repeats its
+   * loops, whatever this cell is.
+   */
+  loops?: "stuck" | "repeating";
 }
+
+/** How a table repeats its loops once asked (D60): a spreadsheet's usual, 100 passes, until nothing moves by more than 0.001. */
+export const LOOP_ITERATION = { max: 100, change: 0.001 };
+
+/** What the formula panel says of a loop (D60). */
+export function loopNote(loops: "stuck" | "repeating"): string {
+  return loops === "stuck"
+    ? "This formula reads itself, through the formulas it reads, so it has no answer. The table can repeat the calculation until it settles."
+    : "This table works out its loops by repeating the calculation until it settles.";
+}
+
+const isRef = (value: unknown) => value instanceof FormulaError && value.code === "#REF!";
 
 /**
  * Explain the formula in `field` for `row` (as displayed, computed values
@@ -89,9 +110,13 @@ export function explainFormula(options: {
   grid?: Grid;
   allRows?: Row[];
   computeOptions?: ComputeOptions;
+  /** The cell's own formula, when it has one: this row's exception to the column's (D52). */
+  own?: string;
+  /** The draft is for this row only: compared with, and saved as, the cell's own formula. */
+  rowOnly?: boolean;
 }): FormulaExplained {
   const { field, row, fields, draft, editable, grid, computeOptions } = options;
-  const stored = field.computed?.expr ?? "";
+  const stored = options.rowOnly ? (options.own ?? "") : (field.computed?.expr ?? "");
   const compiled = editable ? compileFormula(draft, { fields: fields.map((f) => f.name), grid }) : null;
   const changed = compiled?.ok === true && compiled.stored !== stored;
   const shownExpr = changed && compiled?.ok ? compiled.expr : null;
@@ -117,15 +142,22 @@ export function explainFormula(options: {
 
   let preview: { value: unknown } | undefined;
   let save: Partial<Field> | undefined;
-  if (changed && compiled?.ok) {
+  let saveRow: string | undefined;
+  if (changed && compiled?.ok && options.rowOnly) {
+    // This row's own formula (D52): the others keep the column's.
+    const table = computeOptions?.cells ?? (computeOptions?.self !== undefined ? computeOptions.tables?.[computeOptions.self]?.cells : undefined);
+    const cells = [...(table ?? []).filter((c) => !(c.id === rowId && c.field === field.name)), { id: rowId, field: field.name, expr: compiled.stored }];
+    preview = { value: computeRows({ fields }, tableRows, { ...computeOptions, cells }).rows.find((r) => r.id === rowId)?.[field.name] };
+    saveRow = compiled.stored;
+  } else if (changed && compiled?.ok) {
     const trial = fields.map((f) => (f.name === field.name ? { ...f, computed: { expr: compiled.stored, dialect: FORMULA_DIALECT } } : f));
     preview = { value: computeRows({ fields: trial }, tableRows, computeOptions).rows.find((r) => r.id === rowId)?.[field.name] };
     // The field's type follows the formula only when the formula's type is
-    // known: a lookup reads a field of another table, and is that field's
+    // known: `related` reads a field of another table, and is that field's
     // type when the table is at hand. A guess is no reason to change a type
     // the field already has (a price that became text, and lost its format).
     const produced = formulaTypeIfKnown(compiled.expr, new Map(fields.map((f) => [f.name, f.type] as const)), {
-      lookup: (relation, target) => {
+      related: (relation, target) => {
         const table = fields.find((f) => f.name === relation)?.relation?.table;
         return table === undefined ? undefined : computeOptions?.tables?.[table]?.schema.fields.find((f) => f.name === target)?.type;
       },
@@ -136,6 +168,15 @@ export function explainFormula(options: {
     };
   }
 
+  // A loop: worked out already, or #REF! now and not when repeated.
+  const iterating = computeOptions?.iteration ?? (computeOptions?.self !== undefined ? computeOptions.tables?.[computeOptions.self]?.meta?.iteration : undefined);
+  let loops: FormulaExplained["loops"];
+  if (iterating) loops = "repeating";
+  else if (isRef(row[field.name])) {
+    const repeated = computeRows({ fields }, tableRows, { ...computeOptions, iteration: LOOP_ITERATION }).rows.find((r) => r.id === rowId)?.[field.name];
+    if (!isRef(repeated)) loops = "stuck";
+  }
+
   return {
     compiled,
     status: compiled ? formulaStatus(compiled, draft) : null,
@@ -144,6 +185,8 @@ export function explainFormula(options: {
     otherRows,
     ...(preview ? { preview } : {}),
     ...(save ? { save } : {}),
+    ...(saveRow ? { saveRow } : {}),
+    ...(loops ? { loops } : {}),
   };
 }
 

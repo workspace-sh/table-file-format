@@ -26,6 +26,22 @@ final class FormulaFieldProps: UIBaseViewProps {
   var onSelectionChange = EventDispatcher()
   /// Return: a formula never takes a new line.
   var onSubmit = EventDispatcher()
+  /// Backspace with the cursor at the very start and nothing selected: there
+  /// is no text to delete, so a prefix drawn before the field can go instead.
+  var onDeleteAtStart = EventDispatcher()
+}
+
+/// A text view that says when Backspace is pressed at its very start, which
+/// UIKit doesn't pass to the delegate: there's nothing there to change.
+final class PrefixedTextView: UITextView {
+  var onDeleteAtStart: (() -> Void)?
+
+  override func deleteBackward() {
+    if selectedRange.location == 0 && selectedRange.length == 0 && markedTextRange == nil {
+      onDeleteAtStart?()
+    }
+    super.deleteBackward()
+  }
 }
 
 /// Held by reference, so the view's async functions reach the same text view.
@@ -83,7 +99,9 @@ struct FormulaTextView: UIViewRepresentable {
   }
 
   func makeUIView(context: Context) -> UITextView {
-    let tv = UITextView()
+    let tv = PrefixedTextView()
+    let coordinator = context.coordinator
+    tv.onDeleteAtStart = { [weak coordinator] in coordinator?.props.onDeleteAtStart([:]) }
     tv.backgroundColor = .clear
     tv.isScrollEnabled = false
     tv.textContainerInset = .zero

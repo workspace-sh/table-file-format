@@ -33,9 +33,9 @@ const ledger = tables["ledger"]!;
 const version = (t: ParsedTable) => (t.schema["schema-version"] as number | undefined) ?? 1;
 
 test("an edit returns a new table and leaves the one it was given alone", () => {
-  const edited = withCell(tasks, "t1", "title", "Renamed");
-  assert.equal(edited.rows.find((r) => r.id === "t1")!.title, "Renamed");
-  assert.equal(tasks.rows.find((r) => r.id === "t1")!.title, "Land .table extension");
+  const edited = withCell(tasks, "ytjc8tj8w8ftnbf9h86s5k9jfk", "title", "Renamed");
+  assert.equal(edited.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Renamed");
+  assert.equal(tasks.rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")!.title, "Land .table extension");
   assert.equal(edited.rows.length, tasks.rows.length);
 });
 
@@ -57,9 +57,9 @@ test("a page saved after its row was deleted leaves no orphan body", () => {
 
 test("a row goes above or below another in a Sheet view's file order", () => {
   const first = ledger.rows[0]!.id;
-  const below = withRowAt(ledger, "as-entered", first, "below", "ins");
+  const below = withRowAt(ledger, "f179qhc4jxi7y", first, "below", "ins");
   assert.equal(below.rows[1]!.id, "ins");
-  const above = withRowAt(ledger, "as-entered", first, "above", "ins");
+  const above = withRowAt(ledger, "f179qhc4jxi7y", first, "above", "ins");
   assert.equal(above.rows[0]!.id, "ins");
 });
 
@@ -89,41 +89,41 @@ test("fields move one place, not past either end", () => {
 });
 
 test("a new field joins the view it was added from, when that view lists its fields", () => {
-  const listing = withViewPatch(withViewPatch(tasks, "v1", { fields: ["title"] }), "v2", { fields: ["title", "status"] });
-  const added = withField(listing, { name: "notes", type: "string" }, "v1");
-  assert.deepEqual(added.views.find((v) => v.id === "v1")!.fields, ["title", "notes"]);
-  assert.deepEqual(added.views.find((v) => v.id === "v2")!.fields, ["title", "status"]);
-  assert.equal(withField(added, { name: "notes", type: "string" }, "v1"), added);
+  const listing = withViewPatch(withViewPatch(tasks, "juycicwios88m", { fields: ["title"] }), "mufe9nmjruiq5", { fields: ["title", "status"] });
+  const added = withField(listing, { name: "notes", type: "string" }, "juycicwios88m");
+  assert.deepEqual(added.views.find((v) => v.id === "juycicwios88m")!.fields, ["title", "notes"]);
+  assert.deepEqual(added.views.find((v) => v.id === "mufe9nmjruiq5")!.fields, ["title", "status"]);
+  assert.equal(withField(added, { name: "notes", type: "string" }, "juycicwios88m"), added);
 });
 
 test("the last view is never removed", () => {
-  const one = withoutView(tasks, "v2");
+  const one = withoutView(tasks, "mufe9nmjruiq5");
   assert.equal(one.views.length, 1);
-  assert.equal(withoutView(one, "v1"), one);
+  assert.equal(withoutView(one, "juycicwios88m"), one);
 });
 
 test("onTable edits one table in an app's map and leaves the rest", () => {
   const all = { "projects/tasks": tasks, "household-budget/ledger": ledger };
-  const next = onTable(all, "projects/tasks", (t) => withCell(t, "t1", "priority", 9));
+  const next = onTable(all, "projects/tasks", (t) => withCell(t, "ytjc8tj8w8ftnbf9h86s5k9jfk", "priority", 9));
   assert.equal(next["household-budget/ledger"], ledger);
   assert.equal(next["projects/tasks"]!.rows[0]!.priority, 9);
   assert.equal(onTable(all, "nope/none", (t) => t), all);
 });
 
 test("a row is named by its first text field", () => {
-  assert.equal(rowTitleFor(tasks, "t1"), "Land .table extension");
+  assert.equal(rowTitleFor(tasks, "ytjc8tj8w8ftnbf9h86s5k9jfk"), "Land .table extension");
   assert.equal(rowTitleFor(tasks, "missing"), "missing");
 });
 
 test("deleting a view asks first, and warns when formulas read a Sheet view by place", () => {
   const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
-  const byDate = ledger.views.find((v) => v.id === "by-date")!;
+  const byDate = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
   const asked = deleteViewPrompt(held, "household-budget/ledger", byDate)!;
   assert.equal(asked.heading, "Delete the view “By date”?");
   assert.match(asked.body, /formula.* by place and will show #REF!/);
   const plain = deleteViewPrompt(held, "projects/tasks", tasks.views[0]!)!;
   assert.equal(plain.body, "The rows stay; only this way of showing them goes.");
-  assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "v2") }, "projects/tasks", tasks.views[0]!), null);
+  assert.equal(deleteViewPrompt({ "projects/tasks": withoutView(tasks, "mufe9nmjruiq5") }, "projects/tasks", tasks.views[0]!), null);
 });
 
 test("a view's delete prompt carries its responses, Cancel first", () => {
@@ -141,20 +141,20 @@ test("deleting a view shows the table's first other view after", () => {
 
 test("deleting a row names it, says whether its page goes, and closes that page if it's open", () => {
   const projects = tables["projects"]!;
-  const withDoc = deletingRow(projects, "p2", "p2");
-  assert.equal(withDoc.prompt.heading, `Delete “${rowTitleFor(projects, "p2")}”?`);
+  const withDoc = deletingRow(projects, "1h38m5st7rwanz3hyjb6dy8igr", "1h38m5st7rwanz3hyjb6dy8igr");
+  assert.equal(withDoc.prompt.heading, `Delete “${rowTitleFor(projects, "1h38m5st7rwanz3hyjb6dy8igr")}”?`);
   assert.equal(withDoc.prompt.body, "The row and its page are removed from the file.");
   assert.equal(withDoc.closeBody, true);
-  const plain = deletingRow(tasks, "t1", "p2");
+  const plain = deletingRow(tasks, "ytjc8tj8w8ftnbf9h86s5k9jfk", "1h38m5st7rwanz3hyjb6dy8igr");
   assert.equal(plain.prompt.body, "The row is removed from the file.");
   assert.equal(plain.closeBody, false);
-  assert.equal(deletingRow(tasks, "t1", null).closeBody, false);
+  assert.equal(deletingRow(tasks, "ytjc8tj8w8ftnbf9h86s5k9jfk", null).closeBody, false);
   assert.equal(plain.prompt.responses.at(-1)!.destructive, true);
 });
 
 test("turning a Sheet view that formulas read into anything else asks first", () => {
   const held = { "household-budget/ledger": ledger, "household-budget/budget": tables["budget"]!, "projects/tasks": tasks };
-  const byDate = ledger.views.find((v) => v.id === "by-date")!;
+  const byDate = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
   const asked = viewPatchPrompt(held, "household-budget/ledger", byDate, { coordinates: undefined })!;
   assert.match(asked.heading, /^(A formula reads|\d+ formulas read) this sheet by place and will show #REF!\.$/);
   assert.equal(asked.body, "Stop showing it as a sheet?");
@@ -198,4 +198,40 @@ test("deleting a field takes it from the schema, every row and every view that n
     assert.notEqual(v.board_field, "industry");
   }
   assert.equal(withoutField(companies, "no-such-field"), companies);
+});
+
+test("deleting a field takes the colour rules that colour it or ask about it, and leaves the rest (D53)", () => {
+  const companies = tables["companies"]!;
+  const colors = [
+    { filter: [{ field: "industry", operator: "eq" as const, value: "Retail" }], color: "red" },
+    { filter: [{ field: "employees", operator: "gt" as const, value: 100 }], color: "green", field: "industry" },
+    { filter: [{ field: "employees", operator: "gt" as const, value: 100 }], color: "blue" },
+  ];
+  const coloured = { ...companies, views: companies.views.map((v, i) => (i === 0 ? { ...v, colors } : v)) };
+  assert.deepEqual(withoutField(coloured, "industry").views[0]!.colors, [colors[2]]);
+  assert.equal("colors" in withoutField(withoutField(coloured, "industry"), "employees").views[0]!, false);
+});
+
+test("withField: beside a field, in the schema and the view that lists its fields", () => {
+  const view = tasks.views[0]!;
+  const listed = { ...tasks, views: [{ ...view, fields: tasks.schema.fields.map((f) => f.name) }, ...tasks.views.slice(1)] };
+  const second = listed.schema.fields[1]!.name;
+  const out = withField(listed, { name: "extra", type: "string" }, view.id, { name: second, side: "before" });
+  assert.equal(out.schema.fields[1]!.name, "extra");
+  assert.equal(out.views[0]!.fields![1], "extra");
+  const after = withField(listed, { name: "extra", type: "string" }, view.id, { name: second, side: "after" });
+  assert.equal(after.schema.fields[2]!.name, "extra");
+  assert.equal(after.views[0]!.fields![2], "extra");
+});
+
+test("deleting a field takes the merged blocks with a corner in it, and keeps the rest (D58)", () => {
+  const companies = tables["companies"]!;
+  const [first, ...others] = companies.views;
+  const merged = [
+    { from: { field: "industry", row: "a" }, to: { field: "name", row: "b" } },
+    { from: { field: "name", row: "a" }, to: { field: "name", row: "b" } },
+  ];
+  const table = { ...companies, views: [{ ...first!, merged }, ...others] };
+  assert.deepEqual(withoutField(table, "industry").views[0]!.merged, [merged[1]]);
+  assert.equal("merged" in withoutField({ ...table, views: [{ ...first!, merged: [merged[0]!] }] }, "industry").views[0]!, false);
 });
