@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PlatformColor, ScrollView, Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { MEASURING, report } from "../measure";
-import { cases, features, heartbeat, saveResults, timings, type Mode, type Results } from "../sqliteProbe";
+import { cases, features, heartbeat, saveResults, timings, type Mode, type Results, SITTING } from "../sqliteProbe";
 import { saveProbe } from "../saveProbe";
 import { alterProbe } from "../alterProbe";
 
@@ -31,7 +31,7 @@ function Heartbeat() {
 }
 
 export default function SqliteProbe() {
-  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; batch?: string; ckpt?: string; commit?: string; save?: string; alter?: string; drop?: string }>();
+  const params = useLocalSearchParams<{ rows?: string; modes?: string; cases?: string; yield?: string; via?: string; batch?: string; ckpt?: string; commit?: string; sitting?: string; save?: string; alter?: string; drop?: string }>();
   const [lines, setLines] = useState<string[]>([]);
   const ran = useRef(false);
 
@@ -67,14 +67,20 @@ export default function SqliteProbe() {
         }
         await keep("features", await features());
         if (params.cases !== "0") for (const mode of modes) await keep(`cases-${mode}`, await cases(mode, say));
-        const build = { yieldAfterMs: Number(params.yield ?? 0) || undefined, batchSize: Number(params.batch ?? 0) || undefined, autocheckpoint: params.ckpt === undefined ? undefined : Number(params.ckpt), commitEvery: Number(params.commit ?? 0) || undefined };
-        for (const n of sizes) for (const mode of modes) await keep(`timings-${n}-${mode}`, await timings(n, mode, build));
+        if (params.sitting === "1") {
+          // Every arrangement in turn, each under its own name, so one run on a phone compares them all.
+          for (const n of sizes) for (const { label, mode, build } of SITTING) await keep(`timings-${n}-${label}`, await timings(n, mode, build));
+        } else {
+          const via = (["timer", "scheduler", "main", "background", "mixed"] as const).find((v) => v === params.via);
+          const build = { yieldAfterMs: Number(params.yield ?? 0) || undefined, ...(via ? { yieldVia: via } : {}), batchSize: Number(params.batch ?? 0) || undefined, autocheckpoint: params.ckpt === undefined ? undefined : Number(params.ckpt), commitEvery: Number(params.commit ?? 0) || undefined };
+          for (const n of sizes) for (const mode of modes) await keep(`timings-${n}-${mode}`, await timings(n, mode, build));
+        }
         await keep("done", true);
       } catch (error) {
         await keep("error", String(error));
       }
     })();
-  }, [params.rows, params.modes, params.cases, params.yield, params.batch, params.ckpt, params.commit, params.save, params.alter, params.drop]);
+  }, [params.rows, params.modes, params.cases, params.yield, params.via, params.batch, params.ckpt, params.commit, params.sitting, params.save, params.alter, params.drop]);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 16 }}>
